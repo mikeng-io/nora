@@ -48,6 +48,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -68,6 +69,7 @@ ADD CONSTRAINT fact_premise_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public
 ADD CONSTRAINT fact_premise_pkey PRIMARY KEY (fact_id, premise_fact_id);
 ADD CONSTRAINT fact_premise_premise_fact_id_fkey FOREIGN KEY (premise_fact_id) REFERENCES public.fact(id);
 ADD CONSTRAINT fact_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES public.fact(id);
+ADD CONSTRAINT generated_images_pkey PRIMARY KEY (sha256);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
 ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (message_id, canonical_form, sense);
 ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
@@ -123,6 +125,7 @@ ALTER TABLE ONLY public.fact_entity
 ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.fact_premise
 ALTER TABLE ONLY public.fact_premise
+ALTER TABLE ONLY public.generated_images
 ALTER TABLE ONLY public.geocode_cache
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.language_observation
@@ -263,6 +266,7 @@ CREATE TABLE public.fact (
 CREATE TABLE public.fact_candidate (
 CREATE TABLE public.fact_entity (
 CREATE TABLE public.fact_premise (
+CREATE TABLE public.generated_images (
 CREATE TABLE public.geocode_cache (
 CREATE TABLE public.language_observation (
 CREATE TABLE public.media_descriptions (
@@ -347,6 +351,7 @@ anchor_date integer,
 anchor_entity_ids text[] DEFAULT '{}'::text[] NOT NULL,
 announced_at timestamp with time zone NOT NULL,
 artifact_id text,
+aspect_ratio text,
 attempts integer DEFAULT 0 NOT NULL,
 avg_speed_kmh double precision NOT NULL,
 backend_job_id text NOT NULL,
@@ -376,6 +381,7 @@ conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
+conversation_id text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
@@ -393,9 +399,11 @@ created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone NOT NULL,
 created_at timestamp with time zone NOT NULL,
+created_at_ms bigint NOT NULL
 created_by text NOT NULL,
 delivery_status text DEFAULT 'pending'::text NOT NULL,
 deriver_name text NOT NULL,
+description text NOT NULL,
 description text NOT NULL,
 description text NOT NULL,
 distance_m double precision NOT NULL,
@@ -499,9 +507,11 @@ mean_departure_minute double precision,
 media_json text,
 media_type text DEFAULT ''::text NOT NULL,
 media_type text NOT NULL,
+media_type text NOT NULL,
 message_id integer NOT NULL,
 message_ids integer[] NOT NULL,
 messages jsonb NOT NULL,
+model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
@@ -554,10 +564,13 @@ platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
+platform text NOT NULL,
 predicate text NOT NULL,
 predicate text NOT NULL,
 premise_fact_id uuid NOT NULL,
 probe text NOT NULL,
+prompt text NOT NULL,
+provider text NOT NULL,
 quoted_ts bigint,
 radius_m double precision NOT NULL,
 radius_m double precision NOT NULL,
@@ -603,6 +616,8 @@ series_anchor_at timestamp with time zone,
 series_id uuid,
 sha256 text NOT NULL,
 sha256 text NOT NULL,
+sha256 text NOT NULL,
+size bigint NOT NULL,
 size integer DEFAULT 0 NOT NULL,
 size_bytes bigint NOT NULL,
 slug text NOT NULL,
@@ -641,6 +656,7 @@ tag_id text NOT NULL,
 task text NOT NULL,
 task_sha256 text DEFAULT ''::text NOT NULL,
 text text NOT NULL,
+title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,

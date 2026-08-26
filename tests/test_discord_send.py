@@ -200,27 +200,30 @@ async def test_a_failed_member_lookup_falls_back_to_the_original_text(rest_serve
     }
 
 
-async def test_an_attachment_is_refused_rather_than_silently_dropped(rest_server):
-    """`attachments` is the payload, not decoration.
-
-    The sender has no multipart upload yet. Sending the caption alone and
-    answering `ok=True` would make `Deliverer` write the row SENT with its
-    media metadata, tell the model `send_gif` succeeded, tick
-    `nora_replies_total{status="sent"}` and raise the ✅ — while the channel
-    saw a caption pointing at nothing. Every instrument would agree on a
-    delivery that did not happen, which is the exact silent-failure shape R-5
-    exists to forbid.
-
-    Asserts `rest_server.calls == []` too: the refusal must happen BEFORE the
-    network, so no half-message is posted.
-    """
+async def test_an_attachment_is_sent_as_multipart(aiohttp_server):
+    """`attachments` is the payload and IS supported (2026-08-26): a
+    multipart form with `payload_json` + `files[0]`, so a generated image
+    arrives as a real Discord attachment."""
     from nora.domain.ports import OutboundAttachment
 
-    sender = DiscordSender("tok", base_url=str(rest_server.make_url("")).rstrip("/"))
+    calls: list[tuple[str, bytes]] = []
 
+    async def handler(request: web.Request) -> web.Response:
+        reader = await request.multipart()
+        while True:
+            part = await reader.next()
+            if part is None:
+                break
+            data = await part.read()
+            calls.append((str(part.name or ""), bytes(data)))
+        return web.json_response({"id": "999999999999999999"}, status=200)
+
+    app = web.Application()
+    app.router.add_post("/channels/2/messages", handler)
+    server = await aiohttp_server(app)
+
+    sender = DiscordSender("tok", base_url=str(server.make_url("")).rstrip("/"))
     result = await sender.send(
-        # TARGET, whose channel the stand-in server actually routes — an
-        # unrouted channel would 404 and make this pass without the guard.
         TARGET,
         "here you go",
         attachments=(
@@ -230,5 +233,8 @@ async def test_an_attachment_is_refused_rather_than_silently_dropped(rest_server
         ),
     )
 
-    assert result.ok is False
-    assert rest_server.calls == [], "nothing may be posted when the payload cannot be"
+    assert result.ok is True
+    names = [name for name, _ in calls]
+    assert "payload_json" in names
+    assert "files[0]" in names
+    assert any(b"GIF89a" in data for _, data in calls)

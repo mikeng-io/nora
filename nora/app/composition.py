@@ -75,6 +75,7 @@ from nora.infra.sql.events import SqlEventStore
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore
+from nora.infra.sql.generated_images import SqlGeneratedImageStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
@@ -914,6 +915,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # lifecycle; a second `create_sql_engine` would fork the pool and its own
     # `aclose()` would dispose the engine everything else is still using).
     media_descriptions = SqlMediaDescriptionStore(engine)
+    generated_images = SqlGeneratedImageStore(engine)
     vision_client = VisionClient(
         client=client,
         model=cfg.media.vision_model,
@@ -1146,23 +1148,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `.env` holds only the refresh token).
     image_generator = None
     image_refs_allowed = False
-    # M1 (Kimi audit): generated images go through `drop` (public URL) when
-    # the shortener credential is present — the design's "a public URL is
-    # required by the reply surface". Reuses the SAME base_url/token pair
-    # `LinkShortener` below resolves (and `LocalDockerBackend` above does):
-    # drop's internal listener + NORA_DROP_TOKEN. When shortener is off or
-    # tokenless, drop stays unwired and the adapter falls back to a data URI
-    # (tool-layer rejected on size grounds, never the production default).
-    drop_ingest = None
-    if cfg.shortener.enabled:
-        drop_token = os.environ.get(cfg.shortener.token_env, "")
-        if drop_token:
-            from nora.infra.drop import DropArtifactIngest
-            drop_ingest = DropArtifactIngest(
-                base_url=cfg.shortener.base_url,
-                token=drop_token,
-                timeout_seconds=cfg.shortener.timeout_seconds,
-            )
+    # Image custody (Miles 2026-08-26): generated images are stored in Nora's
+    # OWN blob_store (rustfs) and sent as platform attachments — the
+    # `drop`/shortener path is NOT involved (drop's own rustfs backend serves
+    # HTML artifacts, a different concern).
     if cfg.image_gen.enabled:
         image_refs_allowed = cfg.image_gen.allow_reference_images
         xai_cfg = cfg.image_gen.xai
@@ -1177,7 +1166,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 model=xai_cfg.model,
                 quality_model=xai_cfg.quality_model,
                 timeout_seconds=xai_cfg.timeout_seconds,
-                drop=drop_ingest,
             )
             if image_generator is None:
                 # M6: unknown provider (or unconstructable lane) degrades
@@ -1444,7 +1432,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # rows `remind` wrote would sit in one while the heartbeat watched the
         # other.
         reminders=reminders,
-        # `EventService`, built above alongside `event_store`/`reminder_caps` —
+        # The generated-image library store — same engine, same lifecycle.
+        image_store=generated_images,
         # the six event tools (`create_event`/`update_event`/`rsvp_event`/
         # `cancel_event`/`list_events`/`suggest_venue`) answer `unavailable`
         # (R-5) whenever a composition has not wired one; every deployment

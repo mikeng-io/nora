@@ -1604,6 +1604,32 @@ MUSIC_QUEUE = sa.Table(
     sa.UniqueConstraint("guild_id", "position", name="uq_music_queue_guild_position"),
 )
 
+# Nora's own generated-image library (Miles 2026-08-26): one row per
+# successful `generate_image` call, keyed by the content address (sha256) of
+# the bytes in the SAME `blob_store` (rustfs) the inbound media pipeline
+# uses. Prompt/title/description are what make a later lookup meaningful —
+# Nora searches by text and pulls bytes by sha256, so she can resend or
+# reuse an image days later without regenerating it. `created_at_ms` is
+# ms-epoch, matching `messages.ts` so a time join is a plain integer
+# comparison. Parity-gated by `tests/infra/test_schema_parity.py` against
+# migration 0031_generated_images.
+GENERATED_IMAGES = sa.Table(
+    "generated_images",
+    METADATA,
+    sa.Column("sha256", sa.Text, primary_key=True),
+    sa.Column("prompt", sa.Text, nullable=False),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("description", sa.Text, nullable=False),
+    sa.Column("provider", sa.Text, nullable=False),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column("aspect_ratio", sa.Text),
+    sa.Column("media_type", sa.Text, nullable=False),
+    sa.Column("size", sa.BigInteger, nullable=False),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("created_at_ms", sa.BigInteger, nullable=False),
+)
+
 # One row per guild -- a SNAPSHOT of what `MusicPlayer` holds in memory
 # (design/discord-music/06-session-persistence.md), not an append log like
 # `MUSIC_QUEUE` above. `guild_id` is the primary key itself: there is

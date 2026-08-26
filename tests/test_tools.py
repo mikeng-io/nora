@@ -14,7 +14,7 @@ from nora.agent.tools import (
     build_tools,
 )
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.media import GifCandidate
+from nora.domain.media import GeneratedImage, GifCandidate
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
 from nora.domain.ports import ImageResult, OutboundAttachment, Roster
 from nora.domain.utf16 import utf16_len
@@ -104,6 +104,7 @@ def test_every_declared_tool_is_built(wiring):
         "where_is",
         "media_fetch",
         "generate_image",
+        "images_lookup", "images_resend",
         "web_search", "web_fetch",
         "weather",
         # Discord-only music (design/discord-music/07-agent-tool.md).
@@ -748,11 +749,12 @@ class _ImageGenerator:
     network. The behavioural contract over the REAL adapter lives in
     `tests/contract/test_image_generator_contract.py`; these tests pin the
     tool's own layer: the docstring gate, the wiring-gap state, the
-    reference privacy gate."""
+    reference privacy gate, the direct-send path."""
 
     def __init__(self, result: ImageResult | None = None):
         self.result = result or ImageResult(
-            status="ok", artifact="data:image/png;base64,AA==", provider="xai"
+            status="ok", artifact="data:image/png;base64,AA==", provider="xai",
+            raw=b"AA", media_type="image/png",
         )
         self.calls: list[dict] = []
 
@@ -761,12 +763,14 @@ class _ImageGenerator:
         return self.result
 
 
-def _with_image_tools(wiring, *, generator=None, refs_allowed=False):
+def _with_image_tools(wiring, *, generator=None, refs_allowed=False,
+                      image_store=None, blob_store=None):
     return {tool.tool_name: tool for tool in build_tools(
         store=wiring["store"], conversation_id="g1", conversation_type="group",
         persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
         metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         image_generator=generator, image_refs_allowed=refs_allowed,
+        image_store=image_store, blob_store=blob_store,
     )}
 
 
@@ -787,8 +791,10 @@ async def test_generate_image_ok_returns_the_artifact(wiring):
     tools = _with_image_tools(wiring, generator=gen)
     result = await _call(tools["generate_image"], prompt="a cat")
     assert result["status"] == "ok"
-    assert result["url"] == "data:image/png;base64,AA=="
+    # Raw bytes → direct-send path: delivered as an attachment, no URL.
+    assert result["sent"] is True
     assert gen.calls[0]["prompt"] == "a cat"
+    assert wiring["deliverer"].delivered is True
 
 
 async def test_generate_image_reference_respects_the_privacy_gate(wiring):
@@ -800,6 +806,97 @@ async def test_generate_image_reference_respects_the_privacy_gate(wiring):
     result = await _call(tools["generate_image"], prompt="edit this", reference="a3f2c1")
     assert result["status"] == "unavailable"
     assert gen.calls == []  # the gate refused before the provider was touched
+
+
+# ---- images_lookup / images_resend (generated-image library) ---------------
+
+
+class _FakeImageStore:
+    """Fake `GeneratedImageStore` — in-memory rows, no SQL."""
+
+    def __init__(self, images: list[GeneratedImage] | None = None):
+        self.images = list(images or [])
+        self.saved: list[GeneratedImage] = []
+
+    async def save(self, *, image: GeneratedImage) -> bool:
+        self.saved.append(image)
+        self.images.append(image)
+        return True
+
+    async def search(self, *, query: str, limit: int = 20) -> tuple[GeneratedImage, ...]:
+        if not query:
+            return tuple(self.images[:limit])
+        q = query.casefold()
+        return tuple(
+            img for img in self.images[:limit]
+            if q in img.prompt.casefold() or q in img.title.casefold()
+            or q in img.description.casefold()
+        )
+
+    async def get(self, *, sha256: str) -> GeneratedImage | None:
+        return next((img for img in self.images if img.sha256 == sha256), None)
+
+
+class _FakeBlobStore:
+    """Fake `BlobStore` — a content-addressed dict."""
+
+    def __init__(self, blobs: dict[str, bytes] | None = None):
+        self.blobs = dict(blobs or {})
+
+    async def put(self, *, data: bytes) -> str:
+        import hashlib
+        key = hashlib.sha256(data).hexdigest()
+        self.blobs[key] = data
+        return key
+
+    async def get(self, *, key: str) -> bytes | None:
+        return self.blobs.get(key)
+
+
+def _make_image(
+    sha256: str = "aabbccddeeff00112233445566778899",
+    prompt: str = "a cat",
+) -> GeneratedImage:
+    return GeneratedImage(
+        sha256=sha256, prompt=prompt, title=prompt[:80], description=prompt,
+        provider="xai", model="grok-imagine-image", media_type="image/png",
+        size=4, platform="signal", conversation_id="g1", created_at_ms=1_700_000_000_000,
+    )
+
+
+async def test_images_lookup_wiring_gap_is_unavailable(wiring):
+    tools = _with_image_tools(wiring, generator=_ImageGenerator(), image_store=None)
+    result = await _call(tools["images_lookup"], query="cat")
+    assert result["status"] == "unavailable"
+
+
+async def test_images_lookup_returns_metadata(wiring):
+    store = _FakeImageStore([_make_image()])
+    tools = _with_image_tools(wiring, generator=_ImageGenerator(), image_store=store)
+    result = await _call(tools["images_lookup"], query="cat")
+    assert result["status"] == "ok"
+    assert result["results"][0]["handle"] == "aabbcc"
+    assert result["results"][0]["prompt"] == "a cat"
+
+
+async def test_images_resend_sends_stored_bytes(wiring):
+    store = _FakeImageStore([_make_image()])
+    blobs = _FakeBlobStore({_make_image().sha256: b"PNGDATA"})
+    tools = _with_image_tools(wiring, generator=_ImageGenerator(),
+                              image_store=store, blob_store=blobs)
+    result = await _call(tools["images_resend"], handle="aabbcc")
+    assert result["status"] == "ok"
+    assert wiring["deliverer"].delivered is True
+
+
+async def test_images_resend_unknown_handle_is_nothing_found(wiring):
+    store = _FakeImageStore([])
+    blobs = _FakeBlobStore({})
+    tools = _with_image_tools(wiring, generator=_ImageGenerator(),
+                              image_store=store, blob_store=blobs)
+    result = await _call(tools["images_resend"], handle="ffffff")
+    assert result["status"] == "nothing_found"
+    assert wiring["deliverer"].delivered is False
 
 
 async def test_generate_image_references_passed_as_custody_handle(wiring):

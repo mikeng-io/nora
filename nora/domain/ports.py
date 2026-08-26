@@ -207,6 +207,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from nora.domain.facts import Fact as Fact
 from nora.domain.facts import FactCandidate as FactCandidate
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
+from nora.domain.media import GeneratedImage as GeneratedImage
 from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBlob as MediaBlob
 from nora.domain.media import MediaBytes as MediaBytes
@@ -848,6 +849,20 @@ class BlobStore(Protocol):
     async def put(self, *, data: bytes) -> str: ...
 
     async def get(self, *, key: str) -> bytes | None: ...
+
+
+@runtime_checkable
+class GeneratedImageStore(Protocol):
+    """The generated-image library (Miles 2026-08-26): metadata for every
+    successful `generate_image` call, keyed by the same content address the
+    `BlobStore` uses. Search by prompt/title/description so Nora can find and
+    resend an image days later without regenerating it."""
+
+    async def save(self, *, image: GeneratedImage) -> bool: ...
+
+    async def search(self, *, query: str, limit: int = 20) -> tuple[GeneratedImage, ...]: ...
+
+    async def get(self, *, sha256: str) -> GeneratedImage | None: ...
 
 
 @runtime_checkable
@@ -1796,7 +1811,9 @@ class ImageResult:
     """Outcome of an image-generation attempt — this file's R-27 three-state
     discipline: `ok` / `nothing_found` / `unavailable`, never conflated.
 
-    `artifact` (a URL / drop slug / provider handle) and `provider` are only
+    `artifact` (a URL / drop slug / provider handle), `raw` (the generated
+    bytes, when the provider returned them — lets the caller send the image
+    as a platform attachment without a second fetch) and `provider` are only
     meaningful on `ok`. `reason` distinguishes the failure classes the model
     must answer differently — quota-exhausted vs auth-expired vs
     provider-down — mirroring `MusicToolOutcome.note`; the adapter never
@@ -1807,6 +1824,8 @@ class ImageResult:
     artifact: str | None = None
     provider: str = ""
     reason: str = ""
+    raw: bytes | None = None
+    media_type: str = ""
 
 
 @runtime_checkable

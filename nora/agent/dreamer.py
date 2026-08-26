@@ -189,6 +189,11 @@ class DreamToolSource(Protocol):
 # did.
 WORKSPACE_SAFE_TOOLS: frozenset[str] = frozenset({
     "web_search", "web_fetch", "now", "calculate", "weather", "version",
+    # Nora's OWN generated-image library — reads her library across every
+    # conversation (the store records platform/conversation as provenance,
+    # but a lookup is a global search of her own creations, never
+    # conversation-scoped like `load_transcript`).
+    "images_lookup",
 })
 
 
