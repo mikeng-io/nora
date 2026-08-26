@@ -83,18 +83,26 @@ xAI implementation both running the same cases.
 
 ### 4.1 Credential model — Option A (Nora owns her token)
 
-Nora does her **own** xAI OAuth device flow, storing tokens in her own
-Postgres (she has alembic). She does NOT borrow Hermes' auth store and does NOT
-depend on a host-side credential proxy.
+Nora does her **own** xAI OAuth device flow, with tokens stored the same way
+every other Nora credential is stored: **host `.env`**, injected through
+compose (`DEC-8` — one name for one secret; `TAVILY_API_KEY`,
+`GIPHY_API_KEY`, `GOOGLE_MAPS_API_KEY`, `OMNIROUTE_API_KEY`,
+`DISCORD_BOT_TOKEN` all live there). NO Postgres table for credentials —
+Nora's db is for her record store, not an auth store, and the `.env` pattern
+already answers "who may talk to her, and where" without a new schema.
 
 Why A over the alternatives:
 
-- **A (self-owned):** consistent with Nora's independence — she already holds
-  five service keys; this is the sixth, differing only in that it needs a
-  refresh. Quota and expiry errors surface *to her* so she can answer the user
-  honestly ("今日 quota 用晒" vs "我 auth 過期咗"), which is exactly the
-  R-27 fail-closed discipline: `unavailable` with a reason the model can act
-  on, never a generic 401.
+- **A (self-owned, `.env`):** consistent with Nora's independence — she already
+  holds five service keys from `.env`; this is the sixth, differing only in
+  that it needs a refresh. Quota and expiry errors surface *to her* so she can
+  answer the user honestly ("今日 quota 用晒" vs "我 auth 過期咗"), which is
+  exactly the R-27 fail-closed discipline: `unavailable` with a reason the
+  model can act on, never a generic 401.
+- **A-with-db (tokens in Postgres):** rejected by the operator (2026-08-26) —
+  a credential is not record-store data. Nora's db exists for messages,
+  facts, notes, events; adding an auth table for one service key invents a
+  new storage pattern where `.env` already is one.
 - **B (host Hermes proxy):** rejected. It re-couples Nora to Hermes infra —
   a new host service, a dependency on Hermes' `auth.json` shape, and a
   "why is image generation down because Hermes auth rotated" failure mode.
@@ -107,13 +115,22 @@ Why A over the alternatives:
 - New CLI: `nora xai-login` — device-code flow against `https://auth.x.ai`
   (same endpoints Hermes uses: `POST /oauth2/device/code` →
   `POST /oauth2/device/token`), Miles approves in browser once.
-- Tokens (`access_token`, `refresh_token`, `expires_in`, `token_type`) stored
-  in a new `xai_oauth` table (alembic migration, owned by Nora's chain).
+- The CLI **writes the tokens into `.env`** (`XAI_OAUTH_REFRESH_TOKEN` +
+  `XAI_OAUTH_ACCESS_TOKEN` + `XAI_OAUTH_TOKEN_TYPE`, the same shape every
+  other secret takes), then tells the operator to
+  `docker compose up -d nora` — the same "edit .env, recreate" loop the
+  deployment already uses. `docker-compose.yml` gains the two new
+  `environment:` entries (and a bind-mount for the refresh state, below).
 - Refresh: standard OIDC `POST /oauth2/token` with `grant_type=refresh_token`,
   reusing the same skew policy Hermes uses (proactive refresh before expiry,
-  not on-401). The adapter refreshes lazily under a lock, single-flight, and
-  **fails closed** to `unavailable` if the refresh_token itself is dead
-  (which means: re-run `nora xai-login`, not "retry forever").
+  not on-401). The **access token updates are written back to a small
+  container-writable state file** (`./state/xai-oauth.json`, the same
+  repo-tree state pattern `./state/signal-cli` already uses — `DEC-8`'s
+  "one place to look" rule), seeded from `.env` at first boot. The
+  refresh_token itself stays in `.env` as the long-lived source of truth.
+- The adapter refreshes lazily under a lock, single-flight, and **fails
+  closed** to `unavailable` if the refresh_token itself is dead (which
+  means: re-run `nora xai-login`, not "retry forever").
 - The access token is a JWT with scopes `grok-cli:access api:access` — the
   `api:access` scope is what entitles image generation through the
   subscription lane. This is confirmed working: Hermes' own `xai-oauth`
@@ -231,11 +248,12 @@ nora/infra/imagegen/xai_oauth.py         # new — device flow + refresh
 nora/infra/imagegen/__init__.py          # provider factory from config
 nora/config.py                           # [image_gen] section
 nora/agent/tools.py                      # + generate_image NativeTool + wiring
-nora/infra/sql/migrations/versions/0008_xai_oauth.py   # tokens table
 nora/cli.py                              # + xai-login command
 tests/contract/test_image_generator_contract.py        # shared suite
 tests/test_config.py                     # [image_gen] keys, forbid/optional cases
 config.toml                              # [image_gen] block (enabled = false)
+docker-compose.yml                       # + XAI_OAUTH_* env entries, ./state/xai-oauth.json bind-mount
+.env (operator, gitignored)              # + XAI_OAUTH_REFRESH_TOKEN/ACCESS_TOKEN/TOKEN_TYPE
 design/09-decision-index.md              # DEC-137 row
 ```
 
