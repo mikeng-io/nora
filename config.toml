@@ -602,7 +602,9 @@ secret_key_env = "RUSTFS_ROOT_PASSWORD"
 # the container. The access token is NOT stored in `.env` — it lives in the
 # container-writable `./state/xai-oauth.json` and refreshes automatically
 # from the `.env` refresh token (single source of truth, DEC-8 pattern).
-enabled = false
+# 2026-08-26: ON — operator enabled after live smoke (refresh→generate
+# status=ok) on the subscription lane.
+enabled = true
 provider = "xai"
 # Reference images (editing a photo already in this conversation) are a
 # PRIVACY gate: references upload to a third-party cloud, so they default
