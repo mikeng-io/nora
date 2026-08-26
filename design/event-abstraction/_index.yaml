@@ -10,6 +10,7 @@ description: >
 status: proposed
 governance: pre-governance-input
 timestamp: '2026-08-22'
+revision: '2026-08-27 — adversarial review (Hermes delegate) REQUEST CHANGES; all findings addressed: platform="event" sentinel fix (05), Occasion layering boundary (04), registry scoped to reminder-derived kinds (04), rename surface completed + retained spec note (02), text/payload coexistence (03), payload-shape closed (03), batching accounting documented (04), per-kind payload validation (04). Open questions resolved (00).'
 origin: "brainstorming session with miles, 2026-08-22"
 members:
   - 00-overview.md

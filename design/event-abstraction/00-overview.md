@@ -36,8 +36,11 @@ machinery into anything (see `01-shape-decision.md`).
 
 **Is:** promoting `Occasion` to `Event`, a `kind`-dispatched registry
 replacing one hardcoded call, two additive columns on `Reminder`
-(`kind`, `payload`), and a rename of the existing gathering/RSVP module
-(currently also called `Event`) to `Gathering` so the name is free.
+(`kind`, `payload`), a rename of the existing gathering/RSVP module
+(currently also called `Event`) to `Gathering` so the name is free —
+and, surfaced for the first time by this bundle, the removal of the
+`platform="event"` sentinel that makes gathering-notify undeliverable
+today (see `05-gathering-fold-in.md`).
 
 **Is not:** a generic event bus (no pub/sub, no arbitrary system
 telemetry, no subscribers), a rewrite of `reminders.py`'s scheduling
@@ -81,19 +84,23 @@ instead — see `05-gathering-fold-in.md`).
    notifications become a real `Event` kind instead of faking a plain
    reminder's text.
 
-## Open questions for review
+## Open questions — RESOLVED by this revision
 
-1. Is `payload: Mapping[str, str] | None` (flat string map, see
-   `03-reminder-schema.md`) sufficient for every kind you expect to
-   register, or does any anticipated kind need structured (non-string)
-   values? A flat map keeps the migration trivial (one JSON/JSONB
-   column) but would need revisiting if a kind needs, say, a list or a
-   number.
-2. `gathering_occasion`'s header/body prose (`05-gathering-fold-in.md`)
-   is not drafted here. It should read the way `_fire_header` reads for
-   plain reminders: her own voice, escaped operator/group-authored
-   text, no bare timestamp dumps. Worth a pass once this is
-   implemented, alongside the existing fire-header tests.
+1. **Payload flat-map sufficiency — closed.** The flat
+   `Mapping[str, str] | None` is sufficient for every kind this bundle
+   registers, and it is the binding constraint for future kinds: a
+   kind needing structured values is a schema change on the JSONB
+   column plus per-kind payload validation, treated as its own
+   decision — not an automatic widening. Closed in
+   `03-reminder-schema.md` ("Payload shape is a closed decision").
+2. **Gathering header/body prose — committed, not drafted.** The prose
+   itself is still deferred to implementation (it is her voice, written
+   against the real `_fire_header`), but the bundle now COMMITS that
+   `gathering_occasion`'s header reads the way `_fire_header` reads for
+   plain reminders — her own voice, `escape()`-d operator/group text,
+   no bare timestamp dumps — and the body stays the requester's own
+   words, never a fabricated sentence. See `04-dispatch-and-batching.md`
+   (layering: prose stays app-layer) and `05-gathering-fold-in.md`.
 
 ## Status / Checkpoint
 

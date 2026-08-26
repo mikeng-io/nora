@@ -35,9 +35,41 @@ Renamed throughout, mechanically, 1:1:
 | `AmbiguousOpenEventsError` | `AmbiguousOpenGatheringsError` |
 | `nora.app.events.EventService` | `nora.app.gatherings.GatheringService` |
 | `nora.infra.sql.events` | `nora.infra.sql.gatherings` |
+| `nora.web.events` | `nora.web.gatherings` |
+| `nora.testing.events` | `nora.testing.gatherings` |
+| `normalise_event` | `normalise_gathering` |
+
+`normalise_event` (`nora/domain/events.py:178`) is a public port-level
+function imported by both store implementations
+(`nora/infra/sql/events.py`, `nora/testing/events.py`) — it is a
+collision site like any other and renames with the module.
+
+Test files that exercise the module rename alongside it, 1:1:
+
+| today | renamed to |
+|---|---|
+| `tests/test_events_domain.py` | `tests/test_gatherings_domain.py` |
+| `tests/test_events_service.py` | `tests/test_gatherings_service.py` |
+| `tests/test_event_tools.py` | `tests/test_gathering_tools.py` |
+| `tests/contract/test_event_store_contract.py` | `tests/contract/test_gathering_store_contract.py` |
+| `tests/web/test_api.py` | (kept — covers the `/events` routes; its `EventService`/`RSVPResponse`/`FakeEventStore` imports update to the renamed types) |
 
 `RSVP`/`RSVPResponse`/`VenueCandidate`/`VenueSuggestions` are unaffected
 — they never collided.
+
+## The retained 2026-08-19 spec
+
+`docs/superpowers/specs/2026-08-19-event-module-design.md` is still live
+and describes the feature under the old vocabulary — `Event`,
+`platform="event"`, `text=f"Event: …"`. It is superseded for its
+naming but not for its behaviour; rather than deleting it (its
+behavioural prose remains the Gathering feature's contract), it gains a
+header note pointing at this bundle as the rename + `kind="gathering"`
+authority, and its identifier references are updated where they name
+renamed types. The plan doc that references it is updated the same way.
+The single-file draft at
+`docs/superpowers/specs/2026-08-22-event-abstraction-design.md` remains
+removed — this bundle is the source of truth.
 
 ## What does not rename
 
@@ -47,9 +79,9 @@ they are. A human asking Nora to plan a dinner still says "event" — the
 collision is a Python identifier collision, not a product one, and the
 tool surface is a string contract with the model, not a Python name.
 
-`nora/web/api.py`'s `GET /events`, `GET /events/{id}` routes and their
-imports update to the renamed types; the URL paths themselves are
-unaffected for the same reason the tool names are.
+`nora/web/api.py`'s `GET /app/v1/events`, `GET /app/v1/events/{id}`
+routes and their imports update to the renamed types; the URL paths
+themselves are unaffected for the same reason the tool names are.
 
 ## Testing impact
 

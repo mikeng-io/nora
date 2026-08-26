@@ -22,6 +22,42 @@ row — a string faking the payload a real kind should carry. It becomes:
 `gathering_occasion(rows)` reads `payload["title"]` and builds the
 header/body the way `reminder_occasion` builds the requester's sentence
 today, without needing a `GatheringStore` dependency on the fire path.
+The legacy `text` string is KEPT on the row, unread by the fire path
+(see `03-reminder-schema.md` — `text` vs `payload` coexistence).
+
+## The `platform="event"` sentinel — this bundle fixes it
+
+`EventService._link_reminder` today writes `platform="event"` into the
+linked reminder row (`nora/app/events.py:353`). The fire path resolves
+delivery via `self._adapters[platform]` — a direct dict key whose only
+wired entries are `"signal"` and `"discord"` (`nora/platform/registry.py`)
+— so a gathering reminder can never be delivered today: `_adapter_for
+("event")` raises `KeyError` and the notify dies as a heartbeat error,
+invisible to the group. This is a LATENT bug in the existing
+gathering-notify path that this bundle is the first to surface and
+FIX, not a new one introduced here: a gathering reminder today is
+already dead on arrival. (See the retained 2026-08-19 spec note in
+`02-naming-rename.md` — that spec describes the same sentinel.)
+
+The fix: `_link_reminder` gains a `platform: str` parameter carrying
+the REAL delivery platform of the conversation the gathering belongs
+to, replacing the hardcoded `"event"`. The `create_event`/
+`update_event` TOOL callers pass `room.platform` (the tool layer knows
+the room; `nora/agent/tools.py` — the only production caller of
+`_link_reminder`). The web surface (`nora/web/api.py`) exposes only
+read-only `GET /app/v1/events` list/detail routes and never writes a
+gathering reminder, so it has no platform to pass — its imports update
+with the rename, nothing else. The `Reminder` row then records a wired
+platform, and the fired `gathering_occasion` resolves an adapter
+exactly like a plain reminder does. No `_adapters["event"]` entry is
+added — the sentinel is removed, not papered over.
+
+Contract obligations added by this fix:
+
+- A test that a `kind="gathering"` reminder row resolves a WIRED
+  adapter and completes a fire turn (the old sentinel would fail it).
+- A test that `platform="event"` no longer appears in any row written
+  by `GatheringService` after the change.
 
 ## Why denormalize instead of a live lookup
 
