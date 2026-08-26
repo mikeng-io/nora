@@ -764,13 +764,13 @@ class _ImageGenerator:
 
 
 def _with_image_tools(wiring, *, generator=None, refs_allowed=False,
-                      image_store=None, blob_store=None):
+                      media_store=None, blob_store=None):
     return {tool.tool_name: tool for tool in build_tools(
         store=wiring["store"], conversation_id="g1", conversation_type="group",
         persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
         metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         image_generator=generator, image_refs_allowed=refs_allowed,
-        image_store=image_store, blob_store=blob_store,
+        media_store=media_store, blob_store=blob_store,
     )}
 
 
@@ -884,14 +884,14 @@ def _make_image(
 
 
 async def test_media_search_wiring_gap_is_unavailable(wiring):
-    tools = _with_image_tools(wiring, generator=_ImageGenerator(), image_store=None)
+    tools = _with_image_tools(wiring, generator=_ImageGenerator(), media_store=None)
     result = await _call(tools["media_search"], query="cat")
     assert result["status"] == "unavailable"
 
 
 async def test_media_search_returns_metadata(wiring):
     store = _FakeMediaObjectStore([_make_image()])
-    tools = _with_image_tools(wiring, generator=_ImageGenerator(), image_store=store)
+    tools = _with_image_tools(wiring, generator=_ImageGenerator(), media_store=store)
     result = await _call(tools["media_search"], query="cat")
     assert result["status"] == "ok"
     assert result["results"][0]["handle"] == "aabbcc"
@@ -906,7 +906,7 @@ async def test_media_search_never_returns_inbound(wiring):
         _make_image(sha256="aabbccddeeff00112233445566778899", prompt="a cat", source="generated"),
         _make_image(sha256="112233445566778899aabbccddeeff00", prompt="a cat", source="inbound"),
     ])
-    tools = _with_image_tools(wiring, generator=_ImageGenerator(), image_store=store)
+    tools = _with_image_tools(wiring, generator=_ImageGenerator(), media_store=store)
     result = await _call(tools["media_search"], query="cat")
     assert result["status"] == "ok"
     assert len(result["results"]) == 1
@@ -917,7 +917,7 @@ async def test_media_send_sends_stored_bytes(wiring):
     store = _FakeMediaObjectStore([_make_image()])
     blobs = _FakeBlobStore({_make_image().sha256: b"PNGDATA"})
     tools = _with_image_tools(wiring, generator=_ImageGenerator(),
-                              image_store=store, blob_store=blobs)
+                              media_store=store, blob_store=blobs)
     result = await _call(tools["media_send"], handle="aabbcc")
     assert result["status"] == "ok"
     assert wiring["deliverer"].delivered is True
@@ -927,7 +927,7 @@ async def test_media_send_unknown_handle_is_nothing_found(wiring):
     store = _FakeMediaObjectStore([])
     blobs = _FakeBlobStore({})
     tools = _with_image_tools(wiring, generator=_ImageGenerator(),
-                              image_store=store, blob_store=blobs)
+                              media_store=store, blob_store=blobs)
     result = await _call(tools["media_send"], handle="ffffff")
     assert result["status"] == "nothing_found"
     assert wiring["deliverer"].delivered is False
@@ -943,7 +943,7 @@ async def test_media_send_collision_is_ambiguous(wiring):
     ])
     blobs = _FakeBlobStore({})
     tools = _with_image_tools(wiring, generator=_ImageGenerator(),
-                              image_store=store, blob_store=blobs)
+                              media_store=store, blob_store=blobs)
     result = await _call(tools["media_send"], handle="aabbcc")
     assert result["status"] == "ambiguous"
     assert "could_be" in result

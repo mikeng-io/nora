@@ -1652,7 +1652,7 @@ def build_tool_specs(
     music: MusicToolBridge | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
-    image_store: MediaObjectStore | None = None,
+    media_store: MediaObjectStore | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -3242,7 +3242,10 @@ def build_tool_specs(
         or "quality" (default provider standard).
 
         `status` tells you what happened:
-          - `ok` — `url` is the generated image; share it.
+          - `ok` — the image was already sent to this chat as an attachment;
+            there is NO url and NO link to share. The transcript shows
+            `[image <handle>]`. Do not paste any URL, and never re-use a
+            drop/upload link from an earlier message — those links are stale.
           - `nothing_found` — the provider refused the prompt, or the
             reference code is not in view here. Do not guess why; say it
             could not be made.
@@ -3380,8 +3383,8 @@ def build_tool_specs(
                 except Exception:
                     log.exception("generate_image: blob store put failed")
                 try:
-                    if sha256 and image_store is not None:
-                        await image_store.save(obj=MediaObject(
+                    if sha256 and media_store is not None:
+                        await media_store.save(obj=MediaObject(
                             sha256=sha256,
                             media_type=result.media_type or "image/png",
                             size=len(raw),
@@ -3410,7 +3413,7 @@ def build_tool_specs(
                             created_at_ms=int(datetime.now(UTC).timestamp() * 1000),
                         ))
                 except Exception:
-                    log.exception("generate_image: image_store save failed")
+                    log.exception("generate_image: media_store save failed")
 
                 caption = ""
                 media_type = result.media_type or "image/png"
@@ -3513,7 +3516,7 @@ def build_tool_specs(
             with an empty list when nothing matches; `unavailable` when the
             library cannot be read.
         """
-        if image_store is None:
+        if media_store is None:
             return {
                 "status": "unavailable",
                 "note": "I can't look up my stored media right now. Say "
@@ -3523,7 +3526,7 @@ def build_tool_specs(
             # Custody-scoped (DEC-138): Nora's OWN media only — generated or
             # fetched; never inbound (other people's photos are not her
             # library).
-            found = await image_store.search(
+            found = await media_store.search(
                 query=query, limit=10, sources=("generated", "fetched"),
             )
         except Exception:
@@ -3557,7 +3560,7 @@ def build_tool_specs(
             which one); `unavailable` when the bytes could not be retrieved
             or delivered.
         """
-        if image_store is None or blob_store is None:
+        if media_store is None or blob_store is None:
             return {
                 "status": "unavailable",
                 "note": "I can't send stored media right now. Say so plainly.",
@@ -3570,7 +3573,7 @@ def build_tool_specs(
                         "you can't find it rather than guessing.",
             }
         try:
-            rows = await image_store.by_prefix(handle=hex_handle)
+            rows = await media_store.by_prefix(handle=hex_handle)
             meta = next(
                 (obj for obj in rows if obj.source in ("generated", "fetched")),
                 None,
@@ -3614,13 +3617,19 @@ def build_tool_specs(
             }
         media_type = meta.media_type or "image/png"
         filename = f"nora-media-{meta.handle}.png"
+        # The transcript label follows the modality of the bytes (DEC-138:
+        # media is ONE index — a fetched video must record `[video ...]`, not
+        # `[image ...]`). Derived the same way `_BY_TOP_LEVEL` derives
+        # `label_for`, so a future media type never silently mislabels.
+        top, _, _ = media_type.partition("/")
+        modality = top if top in ("image", "video", "audio") else "file"
         sent = await deliverer.deliver(
             "", source="tool",
             attachments=(OutboundAttachment(
                 content=raw, media_type=media_type, filename=filename,
             ),),
-            record_text=f"[image {meta.handle}] (resent)",
-            record_metadata={"media": {"type": "image", "sha256": meta.sha256,
+            record_text=f"[{modality} {meta.handle}] (resent)",
+            record_metadata={"media": {"type": modality, "sha256": meta.sha256,
                                        "resent": True}},
         )
         if not sent:
@@ -5545,7 +5554,7 @@ def build_tools(
     note_workspace: Callable[[str, str], str | None] | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
-    image_store: MediaObjectStore | None = None,
+    media_store: MediaObjectStore | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -5567,6 +5576,6 @@ def build_tools(
         links=links, giphy_source=giphy_source,
         notes=notes, note_workspace=note_workspace,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
-        image_store=image_store,
+        media_store=media_store,
     )
     return [adapt(spec) for spec in specs]

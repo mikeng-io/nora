@@ -36,6 +36,7 @@ from nora.domain.ports import (
     BlobStore,
     EngageDecision,
     EngagePolicy,
+    MediaObjectStore,
     MemoryStore,
     RecordStore,
     Transcriber,
@@ -74,6 +75,7 @@ class IngestPipeline:
         spawn: Callable[[Coroutine[Any, Any, None]], None],
         media_sources: MediaSourceRegistry | None = None,
         blobs: BlobStore | None = None,
+        media_store: MediaObjectStore | None = None,
         stickers: StickerReader | None = None,
         transcriber: Transcriber | None = None,
         language: str = "",
@@ -113,6 +115,7 @@ class IngestPipeline:
         self._spawn = spawn
         self._media_sources = media_sources
         self._blobs = blobs
+        self._media_store = media_store
         self._stickers = stickers
         self._transcriber = transcriber
         self._language = language
@@ -146,7 +149,8 @@ class IngestPipeline:
         # blob it names are committed by the same INSERT. See that module for
         # why it is inline rather than spawned like `memory_feed`.
         message = await media_stage.run(
-            message=message, sources=self._media_sources, blobs=self._blobs, metrics=m,
+            message=message, sources=self._media_sources, blobs=self._blobs,
+            media_store=self._media_store, metrics=m,
             stickers=self._stickers, transcriber=self._transcriber,
             language=self._language, max_description_chars=self._max_description_chars,
         )
