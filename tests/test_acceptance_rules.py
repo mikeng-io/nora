@@ -384,6 +384,10 @@ RULE_TESTS = {
     # R-65: a dead voice connection tears the session down like a stop
     # instead of stranding now-playing state.
     "R-65": "test_a_dead_voice_connection_tears_down_the_session",
+    # R-66: DiscordVoiceSession monitors the voice websocket + audio thread
+    # while a track is loaded, and on two consecutive dead observations
+    # signals on_voice_death so the session is torn down like a stop.
+    "R-66": "test_the_voice_death_monitor_signals_death_after_two_dead_ticks",
 }
 
 

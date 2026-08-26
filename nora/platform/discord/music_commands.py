@@ -76,9 +76,19 @@ def _connect_factory(
         async def _on_finished() -> None:
             await manager.on_track_finished(guild_id)
 
+        async def _on_voice_death() -> None:
+            # The voice connection died while a track was supposedly
+            # audible (a silent voice-websocket drop Discord never surfaces
+            # as a state change — R-66, found live 2026-08-26: "now its NOT
+            # even playing" after a `discord gateway resumed`). The player
+            # still believes it is playing; end the session like a stop so
+            # a fresh `/music play` joins a clean connection instead of
+            # streaming into a dead socket.
+            await manager.on_voice_death(guild_id)
+
         return DiscordVoiceSession(
             voice_client, loop=asyncio.get_running_loop(), on_finished=_on_finished,
-            crossfade_seconds=crossfade_seconds,
+            on_voice_death=_on_voice_death, crossfade_seconds=crossfade_seconds,
         )
 
     return connect

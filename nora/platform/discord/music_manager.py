@@ -191,6 +191,17 @@ class MusicPlayerManager:
         no idle grace period (03's disconnect-timer rules, trigger 1)."""
         await self._leave(guild_id)
 
+    async def on_voice_death(self, guild_id: str) -> None:
+        """The voice connection died while a track was supposedly audible —
+        a silent voice-websocket drop that discord.py's `is_connected()`
+        never reflects (R-66, found live 2026-08-26: "now its NOT even
+        playing" after a `discord gateway resumed`, while every subsequent
+        `voice.play()` raised `Not connected to voice.`). The player still
+        believes it is playing; end the session like a stop so a fresh
+        `/music play` joins a clean connection instead of streaming into a
+        dead socket."""
+        await self._leave(guild_id)
+
     async def persisted_sessions(self) -> Sequence[MusicSession]:
         """Every session a PRIOR process left behind — the boot-time
         resume scan's input (design/discord-music/06-session-persistence

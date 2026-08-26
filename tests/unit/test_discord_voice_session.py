@@ -43,8 +43,20 @@ class _FakeAudioSource(discord.AudioSource):
         return b""
 
 
+class _FakeVoiceWS:
+    def __init__(self, closed: bool = False) -> None:
+        self.closed = closed
+
+
+class _FakeVoiceConnection:
+    """The shape `_voice_connection_ws()` probes: `VoiceClient._connection.ws`."""
+
+    def __init__(self, ws_closed: bool = False) -> None:
+        self.ws = _FakeVoiceWS(ws_closed)
+
+
 class _FakeVoiceClient:
-    def __init__(self, *, connected: bool = True) -> None:
+    def __init__(self, *, connected: bool = True, ws_closed: bool = False) -> None:
         self.played_sources: list[object] = []
         # Real `discord.VoiceClient.source` has a setter that swaps the
         # live `AudioPlayer`'s source without stopping it -- a distinct
@@ -65,6 +77,11 @@ class _FakeVoiceClient:
         # own state are two different things, found live 2026-08-24 as
         # "the music is NOT playing again after it reply start play").
         self.connected = connected
+        # The voice-websocket shape the death monitor probes
+        # (`VoiceConnectionState.ws`), defaulting to OPEN -- a test flips
+        # `_connection.ws.closed` to reproduce the silent voice-side drop
+        # of 2026-08-26.
+        self._connection = _FakeVoiceConnection(ws_closed=ws_closed)
 
     def is_connected(self) -> bool:
         return self.connected
@@ -568,3 +585,52 @@ async def test_stop_cancels_a_pending_crossfade_timer() -> None:
     # above) -- the thing THIS test guards is the early timer specifically
     # not also firing on top of that.
     assert calls == []
+
+
+async def test_the_voice_death_monitor_signals_death_after_two_dead_ticks() -> None:
+    """R-66: the voice websocket closed silently (the 2026-08-26 live
+    failure) while a track is loaded -- the monitor observes two
+    consecutive dead ticks and fires `on_voice_death` exactly once, so
+    `MusicPlayerManager` can tear the session down like a stop."""
+    voice_client = _FakeVoiceClient(ws_closed=True)
+    deaths = 0
+
+    async def on_voice_death() -> None:
+        nonlocal deaths
+        deaths += 1
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        on_voice_death=on_voice_death,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        monitor_interval_seconds=0.02,
+    )
+    session.play("https://cdn.example/a")
+
+    await asyncio.sleep(0.12)
+
+    assert deaths == 1, "two consecutive dead ticks must signal death exactly once"
+
+
+async def test_the_voice_death_monitor_stays_silent_while_the_connection_is_alive() -> None:
+    """The monitor must NOT fire on a healthy connection -- a reconnect
+    blip or momentary thread pause must never tear a live session down."""
+    voice_client = _FakeVoiceClient()  # ws open, playing after play()
+    deaths = 0
+
+    async def on_voice_death() -> None:
+        nonlocal deaths
+        deaths += 1
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        on_voice_death=on_voice_death,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        monitor_interval_seconds=0.02,
+    )
+    session.play("https://cdn.example/a")
+
+    await asyncio.sleep(0.08)
+    session.stop()  # cancels the still-running monitor so no task leaks
+
+    assert deaths == 0
