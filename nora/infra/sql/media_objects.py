@@ -79,7 +79,12 @@ class SqlMediaObjectStore:
                     *[
                         sa.or_(
                             MEDIA_OBJECTS.c.description.ilike(f"%{w}%"),
-                            MEDIA_OBJECTS.c.provenance.astext.ilike(f"%{w}%"),
+                            # provenance::text — cast, not `.astext` (which
+                            # raises on SQLAlchemy 2.x JSONB columns; found
+                            # live 2026-08-26 on the first container smoke).
+                            sa.cast(
+                                MEDIA_OBJECTS.c.provenance, sa.Text
+                            ).ilike(f"%{w}%"),
                         )
                         for w in words
                     ]
