@@ -357,6 +357,125 @@ async def test_autoplay_never_seeds_from_nothing_on_the_very_first_track() -> No
     assert source.related_calls == []
 
 
+async def test_autoplay_skips_tracks_already_played_this_session() -> None:
+    """Played-history dedup (design/discord-music/08-autoplay.md, found
+    live 2026-08-26 -- \"it keep repeating some of the songs\"): a Mix
+    only excludes its own seed, so a chain that keeps reseeding from the
+    latest pick drifts into the same few tracks. Once a track has played
+    this session, autoplay must skip it and take the next fresh one from
+    the Mix instead."""
+    voice = _FakeVoiceSession()
+    session = FakeMusicSessionStore()
+    source = _StubSource(
+        {
+            "track a": _TRACK_A,
+            "locator-b": _TRACK_B,
+            "locator-c": _TRACK_C,
+        },
+        related={
+            # Both B and C offered after A. B is skipped (already played)
+            # so C plays next.
+            "locator-a": (_TRACK_B, _TRACK_C),
+            # After B, its Mix offers C: fresh, picked.
+            "locator-b": (_TRACK_C,),
+            # After C, the Mix offers C's own seed plus B and A -- all
+            # already played -- so autoplay falls to idle.
+            "locator-c": (_TRACK_C, _TRACK_B, _TRACK_A),
+        },
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source, voice=voice,
+        session=session, voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1", autoplay_enabled=True,
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    # A finishes -> B and C offered; B (locator-b) already played? No --
+    # A played, B is fresh. B is picked.
+    await player.on_track_finished()
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+    # B finishes -> related(B) yields (C,): C fresh, picked.
+    await player.on_track_finished()
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track C"
+    # C finishes -> its Mix is all repeats -> idle, no fourth track.
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is None
+    assert voice.played == [
+        "https://cdn.example/a", "https://cdn.example/b", "https://cdn.example/c",
+    ]
+
+
+async def test_autoplay_with_an_all_repeats_mix_falls_back_to_idle() -> None:
+    """A Mix whose every entry has already played this session offers
+    nothing new -- must fall through to the same idle behaviour as an
+    empty one, never retried and never substituted with a guess."""
+    source = _StubSource(
+        {"track a": _TRACK_A, "locator-b": _TRACK_B},
+        related={"locator-a": (_TRACK_B,), "locator-b": (_TRACK_A,)},
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source, voice=_FakeVoiceSession(),
+        session=FakeMusicSessionStore(), voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1", autoplay_enabled=True,
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    # A -> autoplay B (fresh) -> B's Mix has only A (already played) -> idle.
+    await player.on_track_finished()
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is None
+
+
+async def test_user_play_of_the_same_track_twice_is_not_deduped() -> None:
+    """Dedup is autoplay's pick selection only: the played-history set
+    never filters what a PERSON explicitly queues. `related()` (and the
+    autoplay path) is the only reader of `_played_locators`; an ordinary
+    `/music play` resolving to a track that already played still plays."""
+    player, voice, _session = _player({"track a": _TRACK_A})
+
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    await player.on_track_finished()  # A finished; no autoplay configured
+    second = await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    assert second.status == "playing"
+    assert voice.played == ["https://cdn.example/a", "https://cdn.example/a"]
+
+
+async def test_resumed_persisted_track_occupies_a_dedup_slot() -> None:
+    """`resume_from_persisted` restarts the interrupted track from
+    position 0 -- it HAS played this session, so the first autoplay pick
+    after a restart must not be able to repeat it."""
+    session = FakeMusicSessionStore()
+    source = _StubSource(
+        {"locator-a": _TRACK_A, "locator-b": _TRACK_B},
+        related={"locator-a": (_TRACK_A, _TRACK_B)},
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source, voice=_FakeVoiceSession(),
+        session=session, voice_channel_id="voice-channel-1",
+        notify_channel_id="notify-channel-1", autoplay_enabled=True,
+    )
+
+    resumed = await player.resume_from_persisted(
+        source="youtube", locator="locator-a", title="Track A", paused=False, volume=1.0,
+    )
+    assert resumed is True
+    # A -> autoplay: Mix offers A (already resumed) and B (fresh) -> B.
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+
+
 async def test_pause_returns_false_when_nothing_is_playing() -> None:
     player, voice, _session = _player({})
 

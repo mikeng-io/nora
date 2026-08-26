@@ -87,6 +87,18 @@ class MusicPlayer:
         self._now_playing: QueuedTrack | None = None
         self._paused = False
         self._volume = 1.0
+        # Locators of every track that actually STARTED playing in this
+        # session (recorded in `_advance`/`resume_from_persisted`, right
+        # before the stream starts). Autoplay's pick selection skips
+        # anything already here (design/discord-music/08-autoplay.md —
+        # played-history dedup): one-at-a-time reseeding from a YouTube
+        # Mix that only excludes its own seed is how a long autoplay chain
+        # drifts into repeating the same few tracks (found live 2026-08-26
+        # — \"it keep repeating some of the songs\"). In-memory and
+        # session-scoped on purpose, like every other playback-state field:
+        # a restart begins a fresh window, matching the session-persistence
+        # boundary (06) where only the queue/now-playing row survives.
+        self._played_locators: set[str] = set()
 
     async def _persist_session(self) -> None:
         now_playing = self._now_playing
@@ -219,6 +231,10 @@ class MusicPlayer:
             url=resolved[0].locator, title=title or resolved[0].title,
             added_by_person_id="", added_at=self._clock(),
         )
+        # Same played-history record as `_advance`: a track resumed at
+        # boot HAS played in this session and must occupy a dedup slot,
+        # or the first autoplay pick after a restart could repeat it.
+        self._played_locators.add(self._now_playing.url)
         self._paused = False
         self._voice.play(resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds)
         if paused:
@@ -284,6 +300,13 @@ class MusicPlayer:
                 return
             resolved = await self._source.resolve(query_or_url=self._now_playing.url)
             if resolved:
+                # Recorded HERE, right before the stream starts -- the
+                # played history autoplay's pick selection dedups from
+                # (design/discord-music/08-autoplay.md). A track that
+                # failed to resolve (the stale-entry warning path below)
+                # is never recorded: it never played, so it has no right
+                # to occupy a dedup slot.
+                self._played_locators.add(self._now_playing.url)
                 self._voice.play(
                     resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds,
                 )
@@ -304,7 +327,19 @@ class MusicPlayer:
         related = await self._source.related(locator=previous.url)
         if not related:
             return False
-        pick = related[0]
+        # Played-history dedup: a Mix only excludes its own seed, so a
+        # chain that keeps reseeding from the latest pick drifts into the
+        # same few tracks (found live 2026-08-26 -- "it keep repeating
+        # some of the songs"). Anything already played this session is
+        # skipped; an all-repeats Mix falls through to the caller's idle
+        # behaviour exactly like an empty one -- never retried, never
+        # substituted with a guess (the existing autoplay discipline).
+        pick = next(
+            (t for t in related if t.locator not in self._played_locators),
+            None,
+        )
+        if pick is None:
+            return False
         await self._queue.enqueue(
             guild_id=self._guild_id, source=pick.source, url=pick.locator, title=pick.title,
             added_by_person_id=AUTOPLAY_PERSON_ID, added_at=self._clock(),

@@ -373,6 +373,7 @@ RULE_TESTS = {
     # (default false). related() returning empty falls straight through to
     # idle -- never retried or substituted with a guess.
     "R-62": "test_autoplay_enqueues_and_plays_a_related_track_when_the_queue_empties",
+    "R-63": "test_autoplay_skips_tracks_already_played_this_session",
 }
 
 

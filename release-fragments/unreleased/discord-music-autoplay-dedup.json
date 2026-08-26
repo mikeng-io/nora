@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "Discord music autoplay no longer repeats the same few songs: autoplay skips any track already played in the current session.",
+  "details": [
+    "Autoplay reseeds one-at-a-time from whatever just finished, and YouTube's Mix only ever excludes its own seed -- so a long autoplay chain drifted into repeating the same few tracks of one Mix neighborhood.",
+    "MusicPlayer now keeps a session-scoped, in-memory set of locators that actually started playing (_played_locators, recorded in _advance and resume_from_persisted right before the stream starts). Autoplay's pick selection skips anything already in it and takes the next fresh track from the Mix instead.",
+    "A Mix whose every entry has already played falls through to the ordinary idle behaviour exactly like an empty one -- never retried, never substituted with a guess.",
+    "User-requested playback is never deduped: the played-history set is read only by the autoplay pick path, so /music play of a song already played still plays it."
+  ],
+  "limitations": [
+    "The played history is session-scoped and in-memory: a restart (or deploy) begins a fresh window, so a track played before a restart can be autoplayed again after it.",
+    "The Mix is still reseeded one track at a time from whatever most recently played -- a multi-track lookahead queue remains deferred."
+  ]
+}
