@@ -35,6 +35,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 import aiohttp
 
@@ -45,7 +46,12 @@ XAI_OAUTH_ISSUER = "https://auth.x.ai"
 XAI_OAUTH_CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828"
 XAI_OAUTH_SCOPE = "openid profile email offline_access grok-cli:access api:access"
 XAI_OAUTH_DEVICE_CODE_URL = f"{XAI_OAUTH_ISSUER}/oauth2/device/code"
-XAI_OAUTH_DEVICE_TOKEN_URL = f"{XAI_OAUTH_ISSUER}/oauth2/device/token"
+# The device-flow poll hits the OIDC *token* endpoint, not a bespoke
+# /device/token path (RFC 8629 §3.5). Resolve it from discovery instead of
+# hardcoding: xAI's token_endpoint is currently /oauth2/token, and the
+# constants below mirror Hermes' discovery-driven flow so a provider
+# endpoint move is absorbed once at boot, not across three call sites.
+XAI_OAUTH_DISCOVERY_URL = f"{XAI_OAUTH_ISSUER}/.well-known/openid-configuration"
 XAI_OAUTH_TOKEN_URL = f"{XAI_OAUTH_ISSUER}/oauth2/token"
 # xAI access tokens are short-lived (~6h); refresh up to an hour early so an
 # idle gateway (30 min between calls) never hits an expired token (Hermes'
@@ -59,11 +65,48 @@ class XaiOAuthFlowError(Exception):
     catches it and prints a sentence, never a traceback."""
 
 
+async def _discover_token_endpoint(
+    session: aiohttp.ClientSession,
+    discovery_url: str,
+) -> str:
+    """Resolve xAI's OIDC token endpoint (RFC 8629 §3.5: the device-flow poll
+    targets the token endpoint, which is NOT a fixed /device/token path)."""
+    async with session.get(discovery_url) as resp:
+        if resp.status != 200:
+            raise XaiOAuthFlowError(
+                f"xAI OIDC discovery failed (HTTP {resp.status})"
+            )
+        try:
+            payload = await resp.json(content_type=None)
+        except (aiohttp.ClientError, ValueError) as exc:
+            raise XaiOAuthFlowError(
+                "xAI OIDC discovery returned a non-JSON response"
+            ) from exc
+    endpoint = str((payload or {}).get("token_endpoint") or "")
+    if not _looks_like_oauth_endpoint(endpoint):
+        raise XaiOAuthFlowError(
+            "xAI OIDC discovery returned no usable token_endpoint"
+        )
+    return endpoint
+
+
+def _looks_like_oauth_endpoint(endpoint: str) -> bool:
+    """HTTPS-only, except loopback (contract tests run a local TestServer)."""
+    parsed = urlparse(endpoint)
+    if parsed.scheme not in ("https", "http"):
+        return False
+    if parsed.scheme == "http":
+        host = (parsed.hostname or "").lower()
+        return host in ("localhost", "127.0.0.1", "::1")
+    return bool(parsed.hostname)
+
+
 async def device_flow_login(
     *,
     client_id: str = XAI_OAUTH_CLIENT_ID,
     scope: str = XAI_OAUTH_SCOPE,
     timeout_seconds: float = 30.0,
+    base_url: str | None = None,
 ) -> str:
     """Run the xAI OAuth device flow and return the long-lived REFRESH token.
 
@@ -72,12 +115,19 @@ async def device_flow_login(
     the browser, and returns the refresh token to be written to the host
     `.env`. Fails with `XaiOAuthFlowError` — never a bare raise.
     """
+    issuer = (base_url or XAI_OAUTH_ISSUER).rstrip("/")
+    discovery_url = f"{issuer}/.well-known/openid-configuration"
+    device_code_url = f"{issuer}/oauth2/device/code"
     timeout = aiohttp.ClientTimeout(total=timeout_seconds)
     async with aiohttp.ClientSession(timeout=timeout) as session:
+        # 0. Resolve the real token endpoint from OIDC discovery — the
+        # device-flow poll must hit the *token* endpoint, which is not a
+        # fixed /device/token path (RFC 8629 §3.5).
+        token_endpoint = await _discover_token_endpoint(session, discovery_url)
         # 1. Request a device code.
         try:
             async with session.post(
-                XAI_OAUTH_DEVICE_CODE_URL,
+                device_code_url,
                 data={"client_id": client_id, "scope": scope},
             ) as resp:
                 body = await resp.json(content_type=None)
@@ -110,7 +160,7 @@ async def device_flow_login(
             await asyncio.sleep(max(interval, 1.0))
             try:
                 async with session.post(
-                    XAI_OAUTH_DEVICE_TOKEN_URL,
+                    token_endpoint,
                     data={
                         "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                         "device_code": device_code,

@@ -30,7 +30,12 @@ from aiohttp.test_utils import TestServer
 
 from nora.domain.ports import ImageReference, ImageSize
 from nora.infra.image_gen.xai_adapter import XaiImageGenerator
-from nora.infra.image_gen.xai_oauth import OAuthState, XaiOAuth
+from nora.infra.image_gen.xai_oauth import (
+    OAuthState,
+    XaiOAuth,
+    XaiOAuthFlowError,
+    device_flow_login,
+)
 
 
 class _CannedOAuth(XaiOAuth):
@@ -64,6 +69,47 @@ async def server_factory():
 
 def _json(data, status: int = 200):
     return web.json_response(data, status=status)
+
+
+# -- device-flow -----------------------------------------------------------
+
+@pytest.fixture
+async def device_server():
+    """Local stand-in for xAI's OIDC discovery + token endpoints."""
+    app = web.Application()
+    started: dict = {}
+
+    async def discovery(_request: web.Request) -> web.Response:
+        return _json({"token_endpoint": str(server.make_url("/oauth2/token"))})
+
+    async def device_code(_request: web.Request) -> web.Response:
+        return _json(
+            {
+                "device_code": "dev-1",
+                "user_code": "ABCD-1234",
+                "verification_uri": "https://auth.x.ai/oauth2/device",
+                "verification_uri_complete": "https://auth.x.ai/oauth2/device?code=ABCD-1234",
+                "expires_in": started.get("expires_in", 900),
+                "interval": started.get("interval", 1),
+            }
+        )
+
+    async def token(_request: web.Request) -> web.Response:
+        started["polls"] = started.get("polls", 0) + 1
+        if started.get("always_pending"):
+            return _json({"error": "authorization_pending"}, status=400)
+        if started["polls"] <= 2:
+            # first two polls: user hasn't approved yet
+            return _json({"error": "authorization_pending"}, status=400)
+        return _json({"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600})
+
+    app.router.add_get("/.well-known/openid-configuration", discovery)
+    app.router.add_post("/oauth2/device/code", device_code)
+    app.router.add_post("/oauth2/token", token)
+    server = TestServer(app)
+    await server.start_server()
+    yield str(server.make_url("/")).rstrip("/"), started
+    await server.close()
 
 
 async def test_generate_ok_b64(server_factory):
@@ -260,3 +306,27 @@ async def test_aspect_ratio_is_sent(server_factory):
         prompt="a cat", size=ImageSize(tier="large", aspect_ratio="16:9")
     )
     assert captured["aspect"] == "16:9"
+
+
+async def test_device_flow_polls_token_endpoint_until_approved(device_server):
+    base, started = device_server
+    refresh = await device_flow_login(
+        client_id="client-1",
+        timeout_seconds=10.0,
+        base_url=base,  # type: ignore[arg-type]
+    )
+    assert refresh == "rt-1"
+    assert started["polls"] >= 3
+
+
+async def test_device_flow_never_waits_forever(device_server):
+    base, started = device_server
+    started["always_pending"] = True
+    started["expires_in"] = 3  # fast-expiring code
+    with pytest.raises(XaiOAuthFlowError):
+        await device_flow_login(
+            client_id="client-1",
+            timeout_seconds=10.0,
+            base_url=base,  # type: ignore[arg-type]
+        )
+    assert started["polls"] > 0
