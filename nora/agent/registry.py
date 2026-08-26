@@ -33,9 +33,9 @@ from ..domain.compute import ComputeJobStore
 from ..domain.ports import (
     BlobStore,
     ComputeBackend,
-    GeneratedImageStore,
     GifSource,
     MediaDescriptionStore,
+    MediaObjectStore,
     MusicToolBridge,
     SearchProvider,
     WeatherProvider,
@@ -121,7 +121,7 @@ class ToolRegistry:
         music: MusicToolBridge | None = None,
         image_generator: ImageGenerator | None = None,
         image_refs_allowed: bool = False,
-        image_store: GeneratedImageStore | None = None,
+        image_store: MediaObjectStore | None = None,
         budget_overrides: Mapping[str, int] | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})

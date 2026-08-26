@@ -207,10 +207,10 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from nora.domain.facts import Fact as Fact
 from nora.domain.facts import FactCandidate as FactCandidate
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
-from nora.domain.media import GeneratedImage as GeneratedImage
 from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBlob as MediaBlob
 from nora.domain.media import MediaBytes as MediaBytes
+from nora.domain.media import MediaObject as MediaObject
 from nora.domain.media import MediaRef as MediaRef
 from nora.domain.models import (
     ConversationTarget,
@@ -852,17 +852,24 @@ class BlobStore(Protocol):
 
 
 @runtime_checkable
-class GeneratedImageStore(Protocol):
-    """The generated-image library (Miles 2026-08-26): metadata for every
-    successful `generate_image` call, keyed by the same content address the
-    `BlobStore` uses. Search by prompt/title/description so Nora can find and
-    resend an image days later without regenerating it."""
+class MediaObjectStore(Protocol):
+    """The unified media index (DEC-138, migration 0032): metadata for every
+    byte Nora holds — inbound photos, generated images, fetched attachments —
+    keyed by the same content address the `BlobStore` uses. `source` is an
+    attribute; generated objects carry prompt/title/description in
+    provenance. Search by text so Nora can find and resend her own media
+    days later without regenerating it."""
 
-    async def save(self, *, image: GeneratedImage) -> bool: ...
+    async def save(self, *, obj: MediaObject) -> bool: ...
 
-    async def search(self, *, query: str, limit: int = 20) -> tuple[GeneratedImage, ...]: ...
+    async def search(
+        self, *, query: str, limit: int = 20,
+        sources: tuple[str, ...] = (),
+    ) -> tuple[MediaObject, ...]: ...
 
-    async def get(self, *, sha256: str) -> GeneratedImage | None: ...
+    async def get(self, *, sha256: str) -> MediaObject | None: ...
+
+    async def by_prefix(self, *, handle: str, limit: int = 20) -> tuple[MediaObject, ...]: ...
 
 
 @runtime_checkable

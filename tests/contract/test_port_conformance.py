@@ -221,6 +221,18 @@ def test_the_media_description_stores_conform_to_the_port():
     assert isinstance(FakeMediaDescriptionStore(), MediaDescriptionStore)
 
 
+def test_the_media_object_store_conforms_to_the_port():
+    """`MediaObjectStore` — the unified media index (DEC-138) — at the name
+    level, the same floor every other port gets. Behaviour is the store's own
+    suite; `create_sql_engine` is lazy so this needs no live database."""
+    from nora.domain.ports import MediaObjectStore
+    from nora.infra.sql.engine import create_sql_engine
+    from nora.infra.sql.media_objects import SqlMediaObjectStore
+
+    engine = create_sql_engine("postgresql+asyncpg://u:p@127.0.0.1:1/db")
+    assert isinstance(SqlMediaObjectStore(engine), MediaObjectStore)
+
+
 def test_tavily_provider_satisfies_the_search_provider_port():
     """`TavilySearchProvider` is `SearchProvider`'s only implementation today; the
     port (DEC-73, extended DEC-116) exists so another backend plugs in behind

@@ -1,10 +1,11 @@
 """`MediaDescriptionStore` over SQLAlchemy Core — the two-level media dedup
-cache (sticker spec §4.1). Shaped like `nora.infra.sql.tool_call_log`, plus
-upserts, because a sticker is seen many times.
+cache (sticker spec §4.1), re-rooted onto `media_objects` (DEC-138). Shaped
+like `nora.infra.sql.tool_call_log`, plus upserts, because a sticker is seen
+many times.
 
 **Never raises.** The port says so and the ingest path depends on it: a cache
-failure must cost one re-description, never the message. Every method wraps its
-own statement, logs, and degrades — a read to a miss, a write to a no-op.
+failure must cost one re-description, never the message. Every method wraps
+its own statement, logs, and degrades — a read to a miss, a write to a no-op.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.media import MediaBlob
-from nora.infra.sql.schema import MEDIA_DESCRIPTIONS, STICKER_INDEX
+from nora.infra.sql.schema import MEDIA_OBJECTS, STICKER_INDEX
 
 log = logging.getLogger("nora.infra.sql.media_descriptions")
 
@@ -45,14 +46,14 @@ class SqlMediaDescriptionStore:
         return MediaBlob(sha256=row.sha256, media_type=row.media_type, size=row.size)
 
     async def describe(self, *, sha256: str) -> str | None:
-        stmt = sa.select(MEDIA_DESCRIPTIONS.c.description).where(
-            MEDIA_DESCRIPTIONS.c.sha256 == sha256
+        stmt = sa.select(MEDIA_OBJECTS.c.description).where(
+            MEDIA_OBJECTS.c.sha256 == sha256
         )
         try:
             async with self._engine.connect() as conn:
                 row = (await conn.execute(stmt)).first()
         except Exception:
-            log.exception("media_descriptions read failed; treating as a miss")
+            log.exception("media_objects read failed; treating as a miss")
             return None
         return None if row is None else str(row.description)
 
@@ -73,9 +74,25 @@ class SqlMediaDescriptionStore:
         description row is written regardless: content-level dedup is the
         whole point even when there is no identity to index.
         """
-        desc_stmt = pg_insert(MEDIA_DESCRIPTIONS).values(
-            sha256=blob.sha256, description=description, model=model,
-        ).on_conflict_do_nothing(index_elements=[MEDIA_DESCRIPTIONS.c.sha256])
+        desc_insert = pg_insert(MEDIA_OBJECTS).values(
+            sha256=blob.sha256, media_type=blob.media_type, size=blob.size,
+            source="inbound", description=description, describe_model=model,
+            provenance={}, created_at_ms=0,
+        )
+        desc_stmt = desc_insert.on_conflict_do_update(
+            index_elements=[MEDIA_OBJECTS.c.sha256],
+            # Description is a pure function of the bytes: a later describer
+            # may refresh it (DEC-138). Provenance is NEVER overwritten — the
+            # first source to hold the bytes wins. `source` stays as first
+            # seen; a sticker described as 'inbound' is inbound even if the
+            # same art was later generated.
+            set_={
+                "description": desc_insert.excluded.description,
+                "describe_model": desc_insert.excluded.describe_model,
+                "media_type": desc_insert.excluded.media_type,
+                "size": desc_insert.excluded.size,
+            },
+        )
         try:
             async with self._engine.begin() as conn:
                 if token:

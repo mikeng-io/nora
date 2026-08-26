@@ -69,7 +69,7 @@ def test_the_registry_exposes_every_declared_tool():
         "where_is",
         "media_fetch",
         "generate_image",
-        "images_lookup", "images_resend",
+        "media_search", "media_send",
         "web_search", "web_fetch",
         "weather",
         # Discord-only music (design/discord-music/07-agent-tool.md).
@@ -142,9 +142,9 @@ def test_budgets_match_todays_table():
         # first; each call is a slow provider round trip on a quota-bounded
         # subscription, so 2 is the honest turn ceiling (DEC-137).
         "generate_image": 2,
-        # images_lookup is a local table read (like recall_lookups); resend
+        # media_search is a local table read (like recall_lookups); media_send
         # delivers a stored attachment (like send_gif).
-        "images_lookup": 2, "images_resend": 2,
+        "media_search": 2, "media_send": 2,
         # search (DEC-73, Tavily): sized by model round trips — search, then
         # refine once or twice; the doctrine says a couple is plenty.
         "web_search": 4,
@@ -542,9 +542,9 @@ ACT_VERBS = frozenset({
     # DEC-137: generation is an external side effect (provider call +
     # artifact hosting), never a read — the Dreamer may not generate.
     "generate_image",
-    # images_resend delivers a stored attachment (an act, like send_gif);
-    # images_lookup is a read.
-    "images_resend",
+    # media_send delivers a stored attachment (an act, like send_gif);
+    # media_search is a read.
+    "media_send",
     # The note tier's two write verbs (landed on master 2026-08-21). A read
     # verb that forgets the flag fails the classification test by name; these
     # two are acts and belong here.
@@ -563,7 +563,7 @@ READ_ONLY = frozenset({
     "now", "calculate", "transit", "route", "where_is", "place_info",
     "saved_places", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
-    "images_lookup",
+    "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "list_events",
     "suggest_venue", "version", "search_gifs",
     "note_read", "note_search",

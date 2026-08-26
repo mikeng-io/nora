@@ -75,9 +75,9 @@ from nora.infra.sql.events import SqlEventStore
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore
-from nora.infra.sql.generated_images import SqlGeneratedImageStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
+from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
@@ -915,7 +915,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # lifecycle; a second `create_sql_engine` would fork the pool and its own
     # `aclose()` would dispose the engine everything else is still using).
     media_descriptions = SqlMediaDescriptionStore(engine)
-    generated_images = SqlGeneratedImageStore(engine)
+    media_objects = SqlMediaObjectStore(engine)
     vision_client = VisionClient(
         client=client,
         model=cfg.media.vision_model,
@@ -1432,8 +1432,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # rows `remind` wrote would sit in one while the heartbeat watched the
         # other.
         reminders=reminders,
-        # The generated-image library store — same engine, same lifecycle.
-        image_store=generated_images,
+        # The unified media index store — same engine, same lifecycle.
+        image_store=media_objects,
         # the six event tools (`create_event`/`update_event`/`rsvp_event`/
         # `cancel_event`/`list_events`/`suggest_venue`) answer `unavailable`
         # (R-5) whenever a composition has not wired one; every deployment

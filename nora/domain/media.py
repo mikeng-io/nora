@@ -177,35 +177,67 @@ class MediaBlob:
 
 
 @dataclass(frozen=True)
-class GeneratedImage:
-    """One row of Nora's generated-image library (migration 0031).
+class MediaObject:
+    """One row of Nora's unified media index (DEC-138, migration 0032).
 
     `sha256` is the content address of the bytes in the SAME `blob_store`
-    (rustfs) the inbound media pipeline uses — a generated image is
-    custody-first. The prompt/title/description are what make a later
-    lookup meaningful: Nora searches by text and pulls bytes by sha256, so
-    she can resend or reuse an image days later without regenerating it.
+    (rustfs) every acquisition path uses — inbound photos, generated images
+    and fetched attachments land in ONE table, distinguished by `source`
+    (an attribute, not a table). `description` is a pure function of the
+    bytes; it is SEEDED for generated media at creation (the prompt IS the
+    description) or learned by a describer on first sight.
 
-    `platform`/`conversation_id`/`created_at_ms` record where the image was
-    born — the audit trail (Miles 2026-08-26: "auditability + observability").
+    `provenance` is source-dependent JSONB — the birth record:
+      generated: prompt, title, description, provider, model, aspect_ratio,
+                 platform, conversation_id
+    `describe_model` records which describer wrote the description (NULL
+    when seeded from the prompt). `platform`/`conversation_id`/`created_at_ms`
+    record where the object was born — the audit trail.
     """
 
     sha256: str
-    prompt: str
-    title: str
-    description: str
-    provider: str
-    model: str
     media_type: str
     size: int
-    platform: str
-    conversation_id: str
-    created_at_ms: int
-    aspect_ratio: str | None = None
+    source: str
+    description: str
+    provenance: dict[str, object] | None = None
+    describe_model: str | None = None
+    created_at_ms: int = 0
 
     @property
     def handle(self) -> str:
         return self.sha256[:HANDLE_CHARS]
+
+    # Generated-media provenance accessors (NULL-equivalent when the object
+    # is not generated): the generated-image library shape DEC-137 built.
+    @property
+    def prompt(self) -> str:
+        return str((self.provenance or {}).get("prompt", ""))
+
+    @property
+    def title(self) -> str:
+        return str((self.provenance or {}).get("title", ""))
+
+    @property
+    def provider(self) -> str:
+        return str((self.provenance or {}).get("provider", ""))
+
+    @property
+    def model(self) -> str:
+        return str((self.provenance or {}).get("model", ""))
+
+    @property
+    def aspect_ratio(self) -> str | None:
+        v = (self.provenance or {}).get("aspect_ratio")
+        return None if v is None else str(v)
+
+    @property
+    def platform(self) -> str:
+        return str((self.provenance or {}).get("platform", ""))
+
+    @property
+    def conversation_id(self) -> str:
+        return str((self.provenance or {}).get("conversation_id", ""))
 
 
 @dataclass(frozen=True)

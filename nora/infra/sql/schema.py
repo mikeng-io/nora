@@ -741,25 +741,36 @@ STICKER_INDEX = sa.Table(
     sa.Column("hits", sa.Integer, nullable=False, server_default="0"),
 )
 
-# `media_descriptions` — content hash to what a vision model said the bytes
-# depict. Keyed on the CONTENT and not on sticker identity because a
-# description is a pure function of the bytes, so the same art in two packs is
-# one row and one call.
+# `media_objects` — ONE content-addressed index for every byte Nora holds
+# (DEC-138). `sha256` is the content address in the SAME `blob_store`
+# (rustfs) — it is the primary key AND the handle. `source` is an attribute,
+# not a table: inbound photos, generated images, fetched attachments all land
+# here. `description` is a pure function of the bytes (the same art in two
+# packs is one row and one call) and is seeded for generated media at
+# creation (the prompt IS the description) or learned by a describer on first
+# sight. `provenance` is source-dependent JSONB — the birth record.
+# `describe_model` records which describer wrote the description (NULL when
+# seeded from the prompt).
 #
-# Shared with `media_fetch`: `nora.infra.vision.VisionCache` becomes a
-# read-through in front of this table rather than a second, disagreeing copy.
-# The RAW description is stored; the identifier screen runs on every SERVE, so
-# a cache hit can never bypass it.
-MEDIA_DESCRIPTIONS = sa.Table(
-    "media_descriptions",
+# One row per sha256: the FIRST source to store identical bytes wins
+# (provenance never overwritten); a later describer may refresh
+# description/describe_model without touching provenance.
+#
+# `media_json` in the transcript stays the per-conversation REFERENCE list
+# (DEC-24); this table is the object store behind it. The `sticker_index`
+# identity layer (platform, fetch_token) → sha256 lives BESIDE this table,
+# never inside it — an identity is not a media object.
+MEDIA_OBJECTS = sa.Table(
+    "media_objects",
     METADATA,
     sa.Column("sha256", sa.Text, primary_key=True),
-    sa.Column("description", sa.Text, nullable=False),
-    sa.Column("model", sa.Text, nullable=False),
-    sa.Column(
-        "created_at", sa.DateTime(timezone=True), nullable=False,
-        server_default=sa.text("now()"),
-    ),
+    sa.Column("media_type", sa.Text, nullable=False, server_default=""),
+    sa.Column("size", sa.BigInteger, nullable=False, server_default="0"),
+    sa.Column("source", sa.Text, nullable=False),
+    sa.Column("description", sa.Text, nullable=False, server_default=""),
+    sa.Column("describe_model", sa.Text),
+    sa.Column("provenance", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+    sa.Column("created_at_ms", sa.BigInteger, nullable=False),
 )
 
 # The Dreamer's cursor, one row per (consolidator, scope). GENERIC on purpose:
@@ -1602,32 +1613,6 @@ MUSIC_QUEUE = sa.Table(
     # (`_PG_UNIQUE_VIOLATION`, the same translation `SqlReminderStore.create`
     # already does), rather than two silently-colliding rows.
     sa.UniqueConstraint("guild_id", "position", name="uq_music_queue_guild_position"),
-)
-
-# Nora's own generated-image library (Miles 2026-08-26): one row per
-# successful `generate_image` call, keyed by the content address (sha256) of
-# the bytes in the SAME `blob_store` (rustfs) the inbound media pipeline
-# uses. Prompt/title/description are what make a later lookup meaningful —
-# Nora searches by text and pulls bytes by sha256, so she can resend or
-# reuse an image days later without regenerating it. `created_at_ms` is
-# ms-epoch, matching `messages.ts` so a time join is a plain integer
-# comparison. Parity-gated by `tests/infra/test_schema_parity.py` against
-# migration 0031_generated_images.
-GENERATED_IMAGES = sa.Table(
-    "generated_images",
-    METADATA,
-    sa.Column("sha256", sa.Text, primary_key=True),
-    sa.Column("prompt", sa.Text, nullable=False),
-    sa.Column("title", sa.Text, nullable=False),
-    sa.Column("description", sa.Text, nullable=False),
-    sa.Column("provider", sa.Text, nullable=False),
-    sa.Column("model", sa.Text, nullable=False),
-    sa.Column("aspect_ratio", sa.Text),
-    sa.Column("media_type", sa.Text, nullable=False),
-    sa.Column("size", sa.BigInteger, nullable=False),
-    sa.Column("platform", sa.Text, nullable=False),
-    sa.Column("conversation_id", sa.Text, nullable=False),
-    sa.Column("created_at_ms", sa.BigInteger, nullable=False),
 )
 
 # One row per guild -- a SNAPSHOT of what `MusicPlayer` holds in memory

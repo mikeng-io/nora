@@ -193,7 +193,7 @@ WORKSPACE_SAFE_TOOLS: frozenset[str] = frozenset({
     # conversation (the store records platform/conversation as provenance,
     # but a lookup is a global search of her own creations, never
     # conversation-scoped like `load_transcript`).
-    "images_lookup",
+    "media_search",
 })
 
 

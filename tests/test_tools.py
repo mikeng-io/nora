@@ -14,7 +14,7 @@ from nora.agent.tools import (
     build_tools,
 )
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.media import GeneratedImage, GifCandidate
+from nora.domain.media import GifCandidate, MediaObject
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
 from nora.domain.ports import ImageResult, OutboundAttachment, Roster
 from nora.domain.utf16 import utf16_len
@@ -104,7 +104,7 @@ def test_every_declared_tool_is_built(wiring):
         "where_is",
         "media_fetch",
         "generate_image",
-        "images_lookup", "images_resend",
+        "media_search", "media_send",
         "web_search", "web_fetch",
         "weather",
         # Discord-only music (design/discord-music/07-agent-tool.md).
@@ -808,33 +808,46 @@ async def test_generate_image_reference_respects_the_privacy_gate(wiring):
     assert gen.calls == []  # the gate refused before the provider was touched
 
 
-# ---- images_lookup / images_resend (generated-image library) ---------------
+# ---- media_search / media_send (DEC-138 — unified media library) ---------
 
 
-class _FakeImageStore:
-    """Fake `GeneratedImageStore` — in-memory rows, no SQL."""
+class _FakeMediaObjectStore:
+    """Fake `MediaObjectStore` — in-memory rows, no SQL."""
 
-    def __init__(self, images: list[GeneratedImage] | None = None):
-        self.images = list(images or [])
-        self.saved: list[GeneratedImage] = []
+    def __init__(self, objs: list[MediaObject] | None = None):
+        self.objs = list(objs or [])
+        self.saved: list[MediaObject] = []
 
-    async def save(self, *, image: GeneratedImage) -> bool:
-        self.saved.append(image)
-        self.images.append(image)
+    async def save(self, *, obj: MediaObject) -> bool:
+        self.saved.append(obj)
+        self.objs.append(obj)
         return True
 
-    async def search(self, *, query: str, limit: int = 20) -> tuple[GeneratedImage, ...]:
+    async def search(
+        self, *, query: str, limit: int = 20,
+        sources: tuple[str, ...] = (),
+    ) -> tuple[MediaObject, ...]:
+        pool = self.objs
+        if sources:
+            pool = [o for o in pool if o.source in sources]
         if not query:
-            return tuple(self.images[:limit])
+            return tuple(pool[:limit])
         q = query.casefold()
         return tuple(
-            img for img in self.images[:limit]
-            if q in img.prompt.casefold() or q in img.title.casefold()
-            or q in img.description.casefold()
+            o for o in pool[:limit]
+            if q in o.description.casefold() or q in o.prompt.casefold()
+            or q in o.title.casefold()
         )
 
-    async def get(self, *, sha256: str) -> GeneratedImage | None:
-        return next((img for img in self.images if img.sha256 == sha256), None)
+    async def get(self, *, sha256: str) -> MediaObject | None:
+        return next((o for o in self.objs if o.sha256 == sha256), None)
+
+    async def by_prefix(
+        self, *, handle: str, limit: int = 20,
+    ) -> tuple[MediaObject, ...]:
+        return tuple(
+            o for o in self.objs[:limit] if o.sha256.startswith(handle)
+        )
 
 
 class _FakeBlobStore:
@@ -856,46 +869,84 @@ class _FakeBlobStore:
 def _make_image(
     sha256: str = "aabbccddeeff00112233445566778899",
     prompt: str = "a cat",
-) -> GeneratedImage:
-    return GeneratedImage(
-        sha256=sha256, prompt=prompt, title=prompt[:80], description=prompt,
-        provider="xai", model="grok-imagine-image", media_type="image/png",
-        size=4, platform="signal", conversation_id="g1", created_at_ms=1_700_000_000_000,
+    source: str = "generated",
+) -> MediaObject:
+    return MediaObject(
+        sha256=sha256, media_type="image/png", size=4, source=source,
+        description=prompt,
+        provenance={
+            "prompt": prompt, "title": prompt[:80], "description": prompt,
+            "provider": "xai", "model": "grok-imagine-image",
+            "platform": "signal", "conversation_id": "g1",
+        },
+        created_at_ms=1_700_000_000_000,
     )
 
 
-async def test_images_lookup_wiring_gap_is_unavailable(wiring):
+async def test_media_search_wiring_gap_is_unavailable(wiring):
     tools = _with_image_tools(wiring, generator=_ImageGenerator(), image_store=None)
-    result = await _call(tools["images_lookup"], query="cat")
+    result = await _call(tools["media_search"], query="cat")
     assert result["status"] == "unavailable"
 
 
-async def test_images_lookup_returns_metadata(wiring):
-    store = _FakeImageStore([_make_image()])
+async def test_media_search_returns_metadata(wiring):
+    store = _FakeMediaObjectStore([_make_image()])
     tools = _with_image_tools(wiring, generator=_ImageGenerator(), image_store=store)
-    result = await _call(tools["images_lookup"], query="cat")
+    result = await _call(tools["media_search"], query="cat")
     assert result["status"] == "ok"
     assert result["results"][0]["handle"] == "aabbcc"
     assert result["results"][0]["prompt"] == "a cat"
 
 
-async def test_images_resend_sends_stored_bytes(wiring):
-    store = _FakeImageStore([_make_image()])
+async def test_media_search_never_returns_inbound(wiring):
+    """DEC-138 custody scope: media_search searches Nora's OWN media
+    (generated/fetched), never inbound rows — other people's photos are not
+    her library."""
+    store = _FakeMediaObjectStore([
+        _make_image(sha256="aabbccddeeff00112233445566778899", prompt="a cat", source="generated"),
+        _make_image(sha256="112233445566778899aabbccddeeff00", prompt="a cat", source="inbound"),
+    ])
+    tools = _with_image_tools(wiring, generator=_ImageGenerator(), image_store=store)
+    result = await _call(tools["media_search"], query="cat")
+    assert result["status"] == "ok"
+    assert len(result["results"]) == 1
+    assert result["results"][0]["handle"] == "aabbcc"
+
+
+async def test_media_send_sends_stored_bytes(wiring):
+    store = _FakeMediaObjectStore([_make_image()])
     blobs = _FakeBlobStore({_make_image().sha256: b"PNGDATA"})
     tools = _with_image_tools(wiring, generator=_ImageGenerator(),
                               image_store=store, blob_store=blobs)
-    result = await _call(tools["images_resend"], handle="aabbcc")
+    result = await _call(tools["media_send"], handle="aabbcc")
     assert result["status"] == "ok"
     assert wiring["deliverer"].delivered is True
 
 
-async def test_images_resend_unknown_handle_is_nothing_found(wiring):
-    store = _FakeImageStore([])
+async def test_media_send_unknown_handle_is_nothing_found(wiring):
+    store = _FakeMediaObjectStore([])
     blobs = _FakeBlobStore({})
     tools = _with_image_tools(wiring, generator=_ImageGenerator(),
                               image_store=store, blob_store=blobs)
-    result = await _call(tools["images_resend"], handle="ffffff")
+    result = await _call(tools["media_send"], handle="ffffff")
     assert result["status"] == "nothing_found"
+    assert wiring["deliverer"].delivered is False
+
+
+async def test_media_send_collision_is_ambiguous(wiring):
+    """DEC-138: a 6-hex prefix collision is a QUESTION, never a default —
+    the old images_resend silently picked the first; media_send must refuse
+    exactly like media_fetch does."""
+    store = _FakeMediaObjectStore([
+        _make_image(sha256="aabbcc14924244741244445555667788", prompt="cat one"),
+        _make_image(sha256="aabbcc99998888777766665555444433", prompt="cat two"),
+    ])
+    blobs = _FakeBlobStore({})
+    tools = _with_image_tools(wiring, generator=_ImageGenerator(),
+                              image_store=store, blob_store=blobs)
+    result = await _call(tools["media_send"], handle="aabbcc")
+    assert result["status"] == "ambiguous"
+    assert "could_be" in result
     assert wiring["deliverer"].delivered is False
 
 
