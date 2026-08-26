@@ -1020,3 +1020,52 @@ def test_the_adjudicator_is_budgeted_more_generously_than_the_extractor(toml_pat
     assert adjudicate.turns > extract.turns
     assert adjudicate.total_tokens > extract.total_tokens
     assert adjudicate.timeout_seconds > extract.timeout_seconds
+
+
+# --- [standing] (design/dreamer-agent-loop/26-standing §4.0) ----------------
+
+def test_the_standing_section_is_optional_and_ships_inert(toml_path):
+    """A config.toml written before this section existed must keep loading
+    under `extra="forbid"`, and must load with the tier OFF. This tier has the
+    strongest version of that argument in the repo: it is the only optional one
+    whose work runs INSIDE the live reply slot, so switching it on lengthens a
+    hold real people wait behind."""
+    text = toml_path.read_text()
+    start = text.index("\n[standing]")
+    toml_path.write_text(text[:start] + text[text.index("\n[music]"):])
+    cfg = load(toml_path)
+    assert cfg.standing.enabled is False
+    assert cfg.standing.max_chars == 1200
+    assert cfg.standing.window == 12
+    assert cfg.standing.model == ""
+
+
+def test_a_standing_cap_above_the_database_ceiling_refuses_to_start(toml_path):
+    """**The startup refusal, not a runtime one.** `max_chars` is a knob and
+    `standing_body_fits_the_ceiling_check` is DDL that cannot be one, so a
+    config above the ceiling means every fold the sink accepted is refused by
+    Postgres — a config error discovered by a production turn, on the live
+    reply path, rather than at boot. `policy.toml`'s own refuse-to-start shape,
+    applied to a number.
+    """
+    toml_path.write_text(
+        toml_path.read_text().replace("max_chars = 1200", "max_chars = 5000"))
+    with pytest.raises(ConfigError, match="ceiling"):
+        load(toml_path)
+
+
+def test_a_standing_cap_exactly_at_the_ceiling_is_allowed(toml_path):
+    """The boundary from the accepting side: the ceiling is the largest value a
+    writer may pass, not the first one it may not."""
+    toml_path.write_text(
+        toml_path.read_text().replace("max_chars = 1200", "max_chars = 4000"))
+    assert load(toml_path).standing.max_chars == 4000
+
+
+def test_an_unknown_standing_key_is_a_startup_failure(toml_path):
+    """`extra="forbid"`, so `windwo = 12` is a boot failure rather than a
+    silently ignored line that leaves the debrief reading forty rows."""
+    toml_path.write_text(
+        toml_path.read_text().replace("window = 12", "windwo = 12"))
+    with pytest.raises(ConfigError):
+        load(toml_path)

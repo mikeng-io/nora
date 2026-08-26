@@ -60,6 +60,12 @@ supersession warrant), so joining could not be the "genuinely one entry" that
 file's docstring promises without a schema change this branch is not
 permitted to make.
 
+`InMemoryStandingStore` is the same rule again for Standing, bound to
+`nora.infra.sql.standing.SqlStandingStore` by
+`tests/contract/test_standing_store_contract.py`. Its one production refusal
+is the body ceiling, and it inherits it structurally by holding `Standing`
+objects rather than dicts.
+
 `InMemoryNoteStore` is the same rule for the note tier, bound to
 `nora.infra.sql.notes.SqlNoteStore` by
 `tests/contract/test_note_store_contract.py`. It lives in its own module
@@ -127,6 +133,7 @@ from nora.testing.scripted_agent import (
     group_event,
     limit_stop_reason,
 )
+from nora.testing.standing_store import InMemoryStandingStore
 
 __all__ = [
     "BACKED_TOOLS",
@@ -156,6 +163,7 @@ __all__ = [
     "InMemoryFactCandidateStore",
     "InMemoryFactStore",
     "InMemoryNoteStore",
+    "InMemoryStandingStore",
     "NoteCandidate",
     "ScriptedModel",
     "ScriptedTurn",

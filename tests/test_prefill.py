@@ -15,15 +15,17 @@ from nora.domain.models import (
     TranscriptRow,
 )
 from nora.domain.notes import Note
+from nora.domain.standing import Standing
 
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
          quote=None, platform="signal", room_language=None, room_portrait=None,
-         room_exchange=None, tagger_card=(), facts=(), notes=()) -> TagContext:
+         room_exchange=None, tagger_card=(), facts=(), notes=(),
+         standing=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     kwargs = {"tagger_card": tuple(tagger_card), "facts": tuple(facts),
-              "notes": tuple(notes)}
+              "notes": tuple(notes), "standing": standing}
     if room_language is not None:
         kwargs["room_language"] = room_language
     if room_portrait is not None:
@@ -32,6 +34,11 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, se
         kwargs["room_exchange"] = room_exchange
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       tuple(self_card), **kwargs)
+
+
+def _standing(body="They are deciding where to eat; nobody has picked yet.") -> Standing:
+    return Standing(platform="signal", conversation_id="g1", body=body,
+                    fold_count=3, updated_at=1)
 
 
 def _fact(obj="black_tower") -> Fact:
@@ -149,6 +156,7 @@ def test_transcript_is_wrapped_and_labelled_untrusted():
 _ALL_BLOCKS = (
     "group_transcript", "self_card", "peer_card", "peer_history",
     "room_language", "room_exchange", "room_portrait", "facts", "notes",
+    "standing",
 )
 
 
@@ -160,6 +168,7 @@ def _full_prefill_body() -> str:
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
         room_language=_room_language(), room_exchange=_room_exchange(),
         room_portrait=_room_portrait(), facts=(_fact(),), notes=(_note(),),
+        standing=_standing(),
     )
     return build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
 

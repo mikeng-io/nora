@@ -9,6 +9,7 @@ from typing import Any
 from .facts import Fact
 from .media import MediaBlob, MediaRef
 from .notes import Note
+from .standing import Standing
 
 
 @dataclass(frozen=True)
@@ -329,6 +330,29 @@ class TagContext:
     # absent. The prompt budget is paid by the per-entry caps in
     # `nora.domain.notes` and by the curator's retirement pass, not here.
     notes: tuple[Note, ...] = ()
+    # Standing (design/dreamer-agent-loop/26-standing.md) — HER OWN position in
+    # THIS conversation, folded from the previous turn by the debrief stage.
+    #
+    # It is the odd one out among the six blocks above and in three ways worth
+    # naming here, because each one is a rule somewhere else. It is the only
+    # one that is Nora's own output rather than a distillation of other
+    # people's (§8 — a position, not a record). It is the only one keyed on the
+    # CONVERSATION where `facts`/`notes` are keyed on the workspace, and unlike
+    # them it is not shared across a workspace's rooms at all: a position held
+    # in one room is not a position held in another. And it is the only block
+    # in the prompt that is REVISED IN PLACE rather than rebuilt from the store
+    # each turn, which is why `nora.language.standing_render` still marks it
+    # untrusted despite it being hers — an injection reaching any other block
+    # lives one turn, and one reaching this row persists until a later fold
+    # drops it (§4.1, carried risk, stated and not solved).
+    #
+    # `None` rather than a defaulted empty `Standing`: a conversation with no
+    # position yet is not a conversation she has an empty opinion about, and
+    # `render_standing(None)` emits no block for exactly that reason. Defaulted
+    # like its five siblings so the ~40 existing construction sites keep
+    # working, and `[standing] enabled = false` (the shipped default) leaves it
+    # `None` on every turn.
+    standing: Standing | None = None
 
 
 @dataclass(frozen=True)

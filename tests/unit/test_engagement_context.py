@@ -703,3 +703,71 @@ async def test_a_fact_read_failure_never_cancels_its_siblings():
     assert ctx.facts == ()
     assert metrics.get("nora_errors_total", stage="facts", platform="signal") == 1
     assert ctx.room_language is not None
+
+
+# --- Standing's read half (design/dreamer-agent-loop/26-standing §4) --------
+
+async def test_no_standing_store_is_the_dormant_default_and_costs_no_query():
+    """`[standing] enabled = false` — not an error, not counted, the same
+    "not yet wired" shape `language`/`exchange`/`portrait`/`notes` use."""
+    metrics = Metrics()
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=metrics, standing=None,
+    )
+    ctx = await assembler.assemble(request=_request())
+    assert ctx.standing is None
+    assert metrics.get("nora_errors_total", stage="standing") == 0
+
+
+async def test_the_position_is_read_by_platform_and_conversation():
+    """S4, asserted on the ARGUMENTS rather than on the value: this is the one
+    read in the assembler keyed on `(platform, conversation_id)` rather than on
+    a workspace or a scope, and a store called with the wrong key would return
+    a plausible position belonging to another room."""
+    from nora.domain.standing import Standing
+    from nora.testing import InMemoryStandingStore
+
+    class _Spy(InMemoryStandingStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.reads: list[tuple[str, str]] = []
+
+        async def read(self, *, platform: str, conversation_id: str):
+            self.reads.append((platform, conversation_id))
+            return await super().read(
+                platform=platform, conversation_id=conversation_id)
+
+    store = _Spy()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="a position",
+        fold_count=1, updated_at=1,
+    ))
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), standing=store,
+    )
+    ctx = await assembler.assemble(request=_request())
+    assert store.reads == [("signal", "g1")]
+    assert ctx.standing.body == "a position"
+
+
+async def test_a_failed_standing_read_is_counted_rather_than_swallowed():
+    """The THIRD state, and it is not the same as the other two. A position
+    that exists and could not be fetched is `unavailable`; folding it in with
+    "no store" and "no row" reports it as `nothing_found`, which is exactly the
+    substitution R-27 exists to prevent. Fail-SOFT on the value — a thinner
+    prompt beats no reply — and never silent."""
+    class _Broken:
+        async def read(self, *, platform: str, conversation_id: str):
+            raise RuntimeError("db down")
+
+    metrics = Metrics()
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=metrics, standing=_Broken(),
+    )
+    ctx = await assembler.assemble(request=_request())
+    assert ctx.standing is None
+    assert metrics.get(
+        "nora_errors_total", stage="standing", platform="signal") == 1

@@ -224,6 +224,7 @@ from nora.domain.models import (
     UnattributedRow,
     WeatherObservation,
 )
+from nora.domain.standing import Standing as Standing
 from nora.domain.utf16 import utf16_len
 
 # `PlatformIdentity` is re-exported, not declared here — it moved next to
@@ -1864,3 +1865,52 @@ class ImageGenerator(Protocol):
     ) -> ImageResult: ...
 
     async def health(self) -> bool: ...
+
+
+@runtime_checkable
+class StandingStore(Protocol):
+    """Where the debrief's per-conversation position is read and revised
+    (`design/dreamer-agent-loop/26-standing.md`).
+
+    **Two verbs, and the READ is the non-negotiable one.** `write` without a
+    preceding `read` reproduces the language tier's exact failure — two
+    contradictory positions coexisting, neither able to correct the other
+    (`12-self-correction.md` §3, and the live evidence: across 963 processed
+    messages the Dreamer's whole output was two rows, both wrong, both glossing
+    the same thing, because nothing in its write path could see what was
+    already written). That is why `read` is on this port at all rather than the
+    fold being handed a blob: the fold's second argument comes from HERE, on
+    every fold, and `nora_debrief_prior_total` is what makes «it read nothing»
+    visible rather than assumed.
+
+    **No delete, and unlike `DreamSink` no supersede either.** The row is
+    REVISED, in place — that is the tier's shape (26 §4), not an economy. What
+    a lossy revision is rebuilt from is `tag_trace` (`TagTraceStore.recent`),
+    retained for exactly this reason, so history lives one tier down rather
+    than in a column here.
+
+    **Never raises for an absent row.** `read` answers `None`, which is a
+    first-class state and not an error: a conversation Nora has not folded yet
+    has no position, and the fold is told so explicitly (26 §4.2 — `prior` is
+    "always present, even when empty"). Implementations still raise on a
+    genuine store failure; the CALLER decides what an unreachable store means,
+    and for the debrief that is `unavailable`, never a fold against a guessed
+    empty prior.
+    """
+
+    async def read(
+        self, *, platform: str, conversation_id: str
+    ) -> Standing | None:
+        """This conversation's current position, or `None` if it has none."""
+        ...
+
+    async def write(self, *, standing: Standing) -> None:
+        """Revise the row in place, keyed `(platform, conversation_id)`.
+
+        An upsert rather than an insert-or-update pair: two tags for one
+        conversation cannot run concurrently (R-10's per-conversation lock), but
+        a tag and the fire path CAN both reach a conversation, and a
+        read-then-insert would race into a duplicate-key error on exactly the
+        turn that already went unusually slowly.
+        """
+        ...

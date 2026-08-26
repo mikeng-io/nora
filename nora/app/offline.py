@@ -52,6 +52,7 @@ def build_offline_pipeline(
     roster_source: RosterSource | None = None,
     tool_registry: ToolRegistry | None = None,
     tag_trace_store: Any = None,
+    debrief_wiring: Any = None,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
@@ -131,6 +132,13 @@ def build_offline_pipeline(
         # caller that wants to assert on retained `TagTrace`s (e.g. the
         # integration suite) passes its own.
         tag_trace_store=tag_trace_store,
+        # The debrief stage's collaborators (26-standing). `None` here in
+        # every eval/integration run by default, for the same reason
+        # `tag_trace_store` is: the fold spends a model call inside the
+        # reply slot, and an eval measuring a tag's trajectory must not
+        # have a second, unrelated completion added to its budget. A
+        # caller that wants to exercise the stage passes its own.
+        debrief_wiring=debrief_wiring,
     )
     dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
     return dispatcher, engagement, background

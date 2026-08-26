@@ -840,6 +840,51 @@ enabled = false
 # the domain type (title <= 60 chars, description <= 200) and by the curator
 # retiring closed notes.
 
+[standing]
+# The debrief stage's gate (design/dreamer-agent-loop/26-standing.md). ON, a
+# SECOND model reads each finished turn — success, silence, veto and timeout
+# alike — and revises one short paragraph: where this conversation currently
+# stands. That paragraph is then injected as <standing> at the top of the next
+# turn. OFF, no fold runs, nothing is written, and the block never appears.
+#
+# READ THIS BEFORE TURNING IT ON. Unlike [facts], [notes] and [language], this
+# tier is NOT background: it runs INSIDE the conversation's slot, immediately
+# after the reply is delivered. Its cost is user-visible — but not to the
+# person it just answered, who already has their reply. It lands on the SECOND
+# person queued behind a busy conversation. The gate is nora_debrief_seconds
+# p95 <= 5s, measured against exactly that case rather than against an average.
+enabled = false
+# The OPERATING cap on the position, in characters. The database also carries
+# an absolute ceiling of 4000 (standing_body_fits_the_ceiling_check) that no
+# config can pass — a value above it refuses to START rather than failing at
+# the first oversized fold. The two layers do different jobs: a constraint is
+# DDL and cannot be a knob, and the right prompt size is a judgement that
+# changes.
+#
+# Why 1200: this block is injected on EVERY turn, so it is a per-turn tax, not
+# a storage question. 1200 characters is ~300 tokens in English and approaches
+# 1200 tokens in a CJK-heavy room — and this room is mixed by default, so read
+# it against the denser case. A fold that will not fit is REFUSED and the model
+# is asked to consolidate; nothing is ever truncated, because silently dropping
+# the oldest line is how a rolling position quietly becomes a recent summary.
+# nora_standing_overflow_refusals_total is the reading: never firing means the
+# cap is not binding, constantly firing means it is too small.
+max_chars = 1200
+# How many transcript rows the debrief sees — its OWN window, deliberately
+# smaller than [store] context_window (40). The debrief revises a position; it
+# does not need the full reply context, and a smaller input is also one of the
+# two levers against the token runaway that made this a plain completion
+# instead of an agent loop.
+window = 12
+# The fold's own timeout. The number that matters is the SUM: the debrief holds
+# the slot, so the worst-case hold is [llm] timeout_seconds + this. Raise it
+# only against nora_debrief_seconds, not against a hunch.
+timeout_seconds = 20.0
+# Empty means [llm] model. A separate name is available because the fold is a
+# different job from replying — one structured output, no tools, no audience —
+# and may want a cheaper or a more literal model.
+model = ""
+
 [music]
 # The Discord music bot's gate (design/discord-music/00-overview.md). ON,
 # and with [platforms.discord] enabled, DiscordAdapter registers /music

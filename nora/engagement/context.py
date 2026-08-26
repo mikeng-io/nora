@@ -42,7 +42,9 @@ from nora.domain.ports import (
     RoomExchangeReader,
     RoomLanguageReader,
     RoomPortraitReader,
+    StandingStore,
 )
+from nora.domain.standing import Standing
 from nora.persons import Persons
 from nora.policy import Policy
 
@@ -135,6 +137,7 @@ class TranscriptInjection:
         policy: Policy | None = None,
         facts: FactReader | None = None,
         max_rendered_facts: int = 8,
+        standing: StandingStore | None = None,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -174,6 +177,23 @@ class TranscriptInjection:
         # room's workspace is.
         self._facts_reader = facts
         self._max_rendered_facts = max_rendered_facts
+        # Standing (design/dreamer-agent-loop/26-standing.md). `None` while
+        # `[standing] enabled = false`, the same "not yet wired" shape its five
+        # neighbours use.
+        #
+        # **It is the whole `StandingStore`, not a read-only narrowing**, and
+        # that is the one place this collaborator differs from every other
+        # reader above. `nora.domain.ports.StandingStore` has two verbs and the
+        # debrief stage needs both, so narrowing it here to a `read`-only
+        # Protocol would mean composition constructing the store twice or
+        # threading two names for one object — and the fold's non-negotiable is
+        # precisely that the READ and the WRITE are the same row seen twice
+        # (26 §4). One port, one instance, two callers.
+        #
+        # It is keyed `(platform, conversation_id)` and needs no `Policy`,
+        # unlike `notes`/`facts`: a position is held in a room, not shared
+        # across a workspace's rooms, so there is no workspace to resolve.
+        self._standing_store = standing
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -206,6 +226,13 @@ class TranscriptInjection:
         # coroutine into a `Task` immediately, so the inner ones' own
         # children start concurrently too — nothing here becomes sequential.
         #
+        # The NINTH (`_standing`) joins the FIRST branch, which had four, rather
+        # than the second, which now has five: both stay inside the six the
+        # `asyncio.gather` overloads type distinctly, and the first branch is
+        # where it belongs on grounds other than arity — `_standing` is keyed on
+        # `(platform, conversation_id)` like `_recent` beside it, where all four
+        # reads in the second branch are keyed on a workspace or a scope.
+        #
         # The EIGHTH (`_notes`, the note tier) joins the second branch rather
         # than adding a third: both branches stay at four, well inside the six
         # the overloads type, and the outer `gather` stays at two. It sits with
@@ -213,7 +240,7 @@ class TranscriptInjection:
         # workspace and not by room — grouping is about arity here, and where a
         # read is scheduled says nothing about what it is keyed on.
         (
-            (transcript, card, self_card, tagger_card),
+            (transcript, card, self_card, tagger_card, standing),
             (room_language, room_exchange, room_portrait, notes, facts),
         ) = await asyncio.gather(
             asyncio.gather(
@@ -221,6 +248,7 @@ class TranscriptInjection:
                 self._peer_card(ref, msg),
                 self._recall_self(msg),
                 self._recall_tagger(ref, msg),
+                self._standing(msg),
             ),
             asyncio.gather(
                 self._room_language(msg),
@@ -248,6 +276,7 @@ class TranscriptInjection:
             room_portrait=room_portrait,
             notes=notes,
             facts=facts,
+            standing=standing,
         )
 
     async def _recent(self, msg: NormalizedMessage) -> tuple[TranscriptRow, ...]:
@@ -482,6 +511,43 @@ class TranscriptInjection:
             self._metrics.inc(
                 "nora_errors_total", stage="room_portrait", platform=msg.platform)
             return RoomPortrait(scope_id=msg.conversation_id)
+
+    async def _standing(self, msg: NormalizedMessage) -> Standing | None:
+        """Her own position in THIS conversation, or `None`
+        (`design/dreamer-agent-loop/26-standing.md` §4).
+
+        **Keyed `(platform, conversation_id)`** — S4, and unlike `_notes`/
+        `_facts` beside it there is no workspace to resolve and no `Policy` read
+        here at all. A position is held in a room. Two rooms in one workspace
+        share what the workspace KNOWS (facts) and what it has not settled
+        (notes); they do not share where a conversation had got to, and keying
+        this on the workspace would have one room's position rewritten by
+        another room's turn.
+
+        Three states, and they are deliberately not three: **no store** is
+        `[standing] enabled = false`, the dormant default, not an error and not
+        counted; **no row** is a conversation with no position yet, which
+        `render_standing` renders as no block at all rather than as an empty
+        opinion. Both answer `None`, and that is correct — the prompt cannot
+        express the difference and nothing downstream needs it.
+
+        The THIRD state is a failed read, and it is counted, because it is not
+        the same thing at all: a position that exists and could not be fetched
+        is `unavailable` reported as `nothing_found` if it is silently folded
+        into the two above (R-27). Fail-SOFT on the value, like every sibling —
+        a thinner prompt beats no reply — but never a silent one.
+        """
+        if self._standing_store is None:
+            return None
+        try:
+            return await self._standing_store.read(
+                platform=msg.platform, conversation_id=msg.conversation_id,
+            )
+        except Exception:
+            log.exception("standing read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="standing", platform=msg.platform)
+            return None
 
     async def _notes(self, msg: NormalizedMessage) -> tuple[Note, ...]:
         """The standing note index (2026-08-21 note-tier design §5.1).

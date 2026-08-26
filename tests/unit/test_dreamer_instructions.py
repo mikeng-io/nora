@@ -355,7 +355,17 @@ def test_the_objective_file_is_the_pre_move_constant_byte_for_byte(objective):
 # nothing to notice — and a set difference alone cannot tell that apart from an
 # honest new file. Naming each one here makes adding a natively-authored
 # objective a one-line, deliberate act, and leaves the lifted three pinned.
-NATIVELY_AUTHORED = {"fact-candidates", "fact-adjudication"}
+NATIVELY_AUTHORED = {"fact-candidates", "fact-adjudication", "standing-debrief"}
+
+# `standing-debrief` is the odd one in that set and it is worth saying why
+# it lives in this directory at all: Standing is a TAG-PATH STAGE, not a
+# Dreamer adaptor (design/dreamer-agent-loop/26-standing, §1) — it runs
+# inside the reply slot rather than on the Dreamer's clock. The file is here
+# because this is where the bind-mounted, hot-reloading instruction text
+# lives, and the stage reads it through `objective_body` and never
+# `for_objective`: the latter prepends the Dreamer's research-framed
+# doctrine, which on a task with no research is one of the two named causes
+# of the token runaway that made the debrief a plain completion.
 
 
 def test_every_lifted_objective_still_ships():

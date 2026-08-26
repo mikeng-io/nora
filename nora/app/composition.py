@@ -63,6 +63,8 @@ from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
+from nora.engagement.stages.debrief import Completion as DebriefCompletion
+from nora.engagement.stages.debrief import Wiring as DebriefWiring
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.compute.docker_backend import LocalDockerBackend
@@ -84,6 +86,7 @@ from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.room_portrait import SqlRoomPortraitStore
+from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.version import OK as VERSION_OK
@@ -222,6 +225,62 @@ class _LanguageModelClient:
             timeout=self._timeout_seconds,
         )
         return (response.choices[0].message.content or "").strip()
+
+
+class _DebriefModelClient:
+    """Satisfies `nora.engagement.stages.debrief.ModelClient` — the same raw
+    one-shot completion `_LanguageModelClient` above makes, with ONE field
+    added and it is the reason this is a separate class rather than a
+    parameter on that one.
+
+    **`finish_reason` comes back with the content.** A raw
+    `chat.completions.create` does not raise on a cut-off the way a Strands
+    agent's `MaxTokensReachedException` does — it returns
+    `finish_reason="length"` and a **silently truncated body**, which can still
+    parse as JSON into something shorter and wrong. That is the R-27
+    substitution (an ERROR reported as a PASS) one layer down from where this
+    repo usually enforces it, and the only way to keep it out is to hand the
+    caller the field it must check. `_LanguageModelClient` returns a bare `str`
+    and therefore cannot; widening it would change what four existing callers
+    receive for a check none of them make.
+
+    Everything else is `_LanguageModelClient`'s, for its stated reasons:
+    `response_format={"type": "json_object"}` because prompt-only JSON
+    enforcement was proven insufficient here once already, and an explicit
+    `asyncio.wait_for` because the bare `AsyncOpenAI` default is 600s x
+    retries — and this call HOLDS THE CONVERSATION'S SLOT, so an unbounded one
+    is not a slow background job, it is a room that stops answering.
+    """
+
+    def __init__(self, *, client: AsyncOpenAI, model: str, timeout_seconds: float) -> None:
+        self._client = client
+        self._model = model
+        self._timeout_seconds = timeout_seconds
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    async def complete(self, *, prompt: str) -> DebriefCompletion:
+        response = await asyncio.wait_for(
+            self._client.chat.completions.create(
+                model=self._model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            ),
+            timeout=self._timeout_seconds,
+        )
+        choice = response.choices[0]
+        return DebriefCompletion(
+            content=(choice.message.content or "").strip(),
+            # `or ""` rather than a default of `"stop"`: a provider that omits
+            # the field has told us nothing, and inventing `"stop"` would be
+            # asserting the call completed. An empty string is not `"length"`,
+            # so the body is parsed — which is the right call, because the
+            # parse itself is the second gate and a well-formed body is
+            # evidence the generation finished.
+            finish_reason=choice.finish_reason or "",
+        )
 
 
 # The one subdirectory name a compute job's workspace lives under, appended to
@@ -548,6 +607,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # raw retention write — retention must exist and be provably working
     # BEFORE that flag has anything to gate (spec §7.4, task-6-brief.md).
     tag_trace_store = SqlTagTraceStore(engine)
+    # Standing (26-standing). The STORE is built unconditionally, REUSING
+    # `engine` for the same reason its four neighbours above do — the read half
+    # feeds `TranscriptInjection`, whose own `_standing` returns `None` for a
+    # `None` store, so an always-built store costs one attribute on a
+    # deployment with the flag off and removes a whole class of "wired the
+    # writer, forgot the reader" mistake. What the flag gates is the FOLD,
+    # which is the part that spends a model call inside the reply slot.
+    standing_store = SqlStandingStore(engine)
     # The Dreamer's store (Task 11), REUSING `engine` for the same reason
     # `reminders`/`compute_jobs`/`tool_call_log_store` do above. UNLIKE those,
     # this one IS gated on the feature flag — `[route]`/`[search]`-shaped,
@@ -793,6 +860,18 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # must not each carry their own idea of what a room's workspace is.
         facts=fact_store,
         max_rendered_facts=cfg.facts.max_rendered_facts,
+        # Standing's READ half. `None` while `[standing] enabled = false`, the
+        # shipped default, so `<standing>` renders nothing. Unlike `notes`/
+        # `facts` beside it this needs no `policy=` at all: a position is keyed
+        # `(platform, conversation_id)` (S4) and is NOT shared across a
+        # workspace's rooms — two rooms in one social unit share what the
+        # workspace knows, not where a conversation had got to.
+        #
+        # It is the WHOLE store rather than a read-only narrowing, and the same
+        # instance the debrief's `Wiring` gets below: the fold's non-negotiable
+        # is that the read and the write are the same row seen twice, and two
+        # objects for one row is how that stops being structurally true.
+        standing=standing_store if cfg.standing.enabled else None,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -1545,6 +1624,40 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # first boot.
             self_ids=registry.self_aliases(),
         ))
+    # The debrief's collaborators, as ONE object that is either present or
+    # absent (`debrief.Wiring` — the shape is deliberate: four optional
+    # parameters would let a deployment wire the store and forget the client,
+    # which runs the stage, finds nothing to do, and reports nothing).
+    #
+    # `[standing] model` empty means `[llm] model`, the same defaulting
+    # `[language] exchange_model` uses one section over. A separate name is
+    # available because the fold is a different job from replying — one
+    # structured output, no tools, no audience — and may want a cheaper or a
+    # more literal model; empty is the honest default rather than a guess.
+    #
+    # `objective=dreamer_instructions` is the SAME hot-reloading instruction
+    # substrate the language observers hold, read through `objective_body` and
+    # NOT `for_objective`: the latter prepends the Dreamer's own doctrine,
+    # which is research-framed, and «a research-framed doctrine on a task with
+    # no research» is one of the two named causes of the 4096-token runaway
+    # that made this a plain completion in the first place. The file living
+    # under `nora/dreamer/objectives/` says nothing about Standing being a
+    # Dreamer adaptor — it is a tag-path stage; that directory is simply where
+    # the bind-mounted, hot-reloading instruction text lives.
+    debrief_wiring: DebriefWiring | None = None
+    if cfg.standing.enabled:
+        debrief_wiring = DebriefWiring(
+            store=standing_store,
+            client=_DebriefModelClient(
+                client=client,
+                model=cfg.standing.model or cfg.llm.model,
+                timeout_seconds=cfg.standing.timeout_seconds,
+            ),
+            objective=dreamer_instructions,
+            max_chars=cfg.standing.max_chars,
+            window=cfg.standing.window,
+            timeout_seconds=cfg.standing.timeout_seconds,
+        )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the
         # platform it arrived from, and `registry.adapters` is exactly the set
@@ -1568,6 +1681,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         slots=slots,
         tool_call_log_store=tool_call_log_store,
         tag_trace_store=tag_trace_store,
+        debrief_wiring=debrief_wiring,
         # `[language].max_rendered_lexemes` — harmless to pass even when
         # `[language] enabled = false`: `language_store` is `None` there, so
         # `TranscriptInjection` never produces a non-empty `RoomLanguage` for
