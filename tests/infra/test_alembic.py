@@ -139,3 +139,46 @@ def test_alembic_ini_does_not_point_at_the_production_database():
     assert url_lines, "alembic.ini has no sqlalchemy.url"
     assert all("scratch" in ln for ln in url_lines), url_lines
     assert not any("nora-db" in ln for ln in url_lines), url_lines
+
+
+def test_pre_0033_row_inserted_before_kind_columns_gets_the_reminder_default(pg_url):
+    """03-reminder-schema's migration compatibility claim, against the REAL
+    migration path: a row written BEFORE 0033 (no `kind`, no `payload` — the
+    raw INSERT omits both) upgrades through the migration and reads back with
+    `kind='reminder'`, `payload=NULL`. The server default does the backfill;
+    no rewrite pass is needed."""
+    from alembic import command as alembic_command
+
+    from nora.infra.sql.migrations_runner import alembic_config
+
+    run_migrations(pg_url)
+    # Take the schema back to 0032, the state a pre-DEC-139 database had.
+    alembic_command.downgrade(alembic_config(pg_url), "0032_media_objects")
+
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO reminders (id, requester_person_id, platform, "
+                "conversation_id, conversation_type, text, created_at, due_at, "
+                "state, recurrence, occurrence) VALUES "
+                "(:id, 'miles', 'signal', 'conv-1', 'group', '記得食藥', "
+                "now(), now() + interval '1 hour', 'pending', 'none', 0)"
+            ), {"id": str(uuid.uuid4())})
+            conn.commit()
+    finally:
+        engine.dispose()
+
+    # Bring 0033 back: `kind` gains its server default `'reminder'`.
+    run_migrations(pg_url)
+
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(sa.text(
+                "SELECT kind, payload FROM reminders WHERE text = '記得食藥'"
+            )).one()
+    finally:
+        engine.dispose()
+    assert row.kind == "reminder"
+    assert row.payload is None

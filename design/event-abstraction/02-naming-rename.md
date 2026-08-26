@@ -51,8 +51,9 @@ Test files that exercise the module rename alongside it, 1:1:
 | `tests/test_events_domain.py` | `tests/test_gatherings_domain.py` |
 | `tests/test_events_service.py` | `tests/test_gatherings_service.py` |
 | `tests/test_event_tools.py` | `tests/test_gathering_tools.py` |
+| `tests/test_web_events.py` | `tests/test_web_gatherings.py` |
 | `tests/contract/test_event_store_contract.py` | `tests/contract/test_gathering_store_contract.py` |
-| `tests/web/test_api.py` | (kept — covers the `/events` routes; its `EventService`/`RSVPResponse`/`FakeEventStore` imports update to the renamed types) |
+| `tests/web/test_api.py` | (kept — covers the `/events` routes; its `GatheringService`/`RSVPResponse`/`FakeGatheringStore` imports update to the renamed types) |
 
 `RSVP`/`RSVPResponse`/`VenueCandidate`/`VenueSuggestions` are unaffected
 — they never collided.

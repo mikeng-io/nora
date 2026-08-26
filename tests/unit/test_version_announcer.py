@@ -11,7 +11,7 @@ Stubbed: the TURN, and only the turn — `_SpokenFor` stands in for
 `FirePath.speak`. It behaves like the real thing where behaviour matters: it
 answers one of §8.1's four outcome strings (never a bool, never None), it can be
 told to answer a FAILURE, and it can be told to RAISE — all three of which the
-real fire path does. It also records the `Occasion` it was handed, so the tests
+real fire path does. It also records the `Event` it was handed, so the tests
 below can assert what she would have been asked rather than only that something
 was asked.
 """
@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 import pytest
 
 from nora.app.announce import AnnouncementTarget, VersionAnnouncer
-from nora.app.fire import Occasion
+from nora.domain.events import Event
 from nora.engagement.slots import ConversationSlots
 from nora.infra.sql.announcements import ANNOUNCING, DONE, FAILED, SqlAnnouncementLog
 from nora.infra.sql.engine import create_sql_engine
@@ -57,9 +57,9 @@ class _SpokenFor:
     def __init__(self, outcome: str = "sent", raises: Exception | None = None) -> None:
         self.outcome = outcome
         self.raises = raises
-        self.occasions: list[Occasion] = []
+        self.occasions: list[Event] = []
 
-    async def __call__(self, occasion: Occasion) -> str:
+    async def __call__(self, occasion: Event) -> str:
         self.occasions.append(occasion)
         if self.raises is not None:
             raise self.raises
@@ -237,7 +237,7 @@ async def test_one_rooms_failure_does_not_cost_the_next_room_its_note(
     """The per-target guard, made true: a store or a turn that explodes for g1
     must not silently skip every room ordered after it."""
     class _BoomInG1(_SpokenFor):
-        async def __call__(self, occasion: Occasion) -> str:
+        async def __call__(self, occasion: Event) -> str:
             if occasion.conversation_id == "g1":
                 raise RuntimeError("g1 exploded")
             return await super().__call__(occasion)

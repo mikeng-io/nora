@@ -1,4 +1,4 @@
-"""Every EventStore implementation passes this. CLAUDE.md: a port never
+"""Every GatheringStore implementation passes this. CLAUDE.md: a port never
 gains a second implementation — including a test fake — without a shared
 contract suite both pass."""
 from __future__ import annotations
@@ -8,17 +8,17 @@ from uuid import uuid4
 
 import pytest
 
-from nora.domain.events import (
+from nora.domain.gatherings import (
     RSVP,
-    DuplicateEventError,
-    Event,
-    EventStatus,
+    DuplicateGatheringError,
+    Gathering,
+    GatheringStatus,
     RSVPResponse,
 )
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.events import SqlEventStore
+from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.testing.events import FakeEventStore
+from nora.testing.gatherings import FakeGatheringStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.asyncio
 HKT = timezone(timedelta(hours=8), "HKT")
 
 
-def _event(**overrides) -> Event:
+def _event(**overrides) -> Gathering:
     now = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
     defaults = {
         "id": uuid4(),
@@ -44,12 +44,12 @@ def _event(**overrides) -> Event:
         "venue_price_level": "",
         "venue_maps_url": None,
         "venue_resolved_at": None,
-        "status": EventStatus.PROPOSED,
+        "status": GatheringStatus.PROPOSED,
         "reminder_id": None,
         "created_at": now,
     }
     defaults.update(overrides)
-    return Event(**defaults)
+    return Gathering(**defaults)
 
 
 @pytest.fixture(params=["sql", "fake"])
@@ -57,9 +57,9 @@ async def store(request):
     if request.param == "sql":
         pg_url = request.getfixturevalue("pg_url")
         run_migrations(pg_url)
-        s = SqlEventStore(create_sql_engine(pg_url))
+        s = SqlGatheringStore(create_sql_engine(pg_url))
     else:
-        s = FakeEventStore()
+        s = FakeGatheringStore()
     yield s
     await s.aclose()
 
@@ -81,7 +81,7 @@ async def test_get_missing_returns_none(store):
 async def test_duplicate_create_raises(store):
     ev = _event()
     await store.create(ev)
-    with pytest.raises(DuplicateEventError):
+    with pytest.raises(DuplicateGatheringError):
         await store.create(ev)
 
 
@@ -116,13 +116,13 @@ async def test_stored_datetimes_come_back_utc_aware(store):
 
 
 async def test_list_for_conversation_filters_by_status(store):
-    proposed = _event(conversation_id="signal:group-2", status=EventStatus.PROPOSED)
-    cancelled = _event(conversation_id="signal:group-2", status=EventStatus.CANCELLED)
+    proposed = _event(conversation_id="signal:group-2", status=GatheringStatus.PROPOSED)
+    cancelled = _event(conversation_id="signal:group-2", status=GatheringStatus.CANCELLED)
     await store.create(proposed)
     await store.create(cancelled)
 
     only_proposed = await store.list_for_conversation(
-        conversation_id="signal:group-2", status=EventStatus.PROPOSED,
+        conversation_id="signal:group-2", status=GatheringStatus.PROPOSED,
     )
     assert [e.id for e in only_proposed] == [proposed.id]
 
@@ -191,11 +191,11 @@ async def test_update_persists_changes(store):
     await store.create(ev)
     from dataclasses import replace
 
-    updated = replace(ev, status=EventStatus.CONFIRMED, venue_text="Soi 29")
+    updated = replace(ev, status=GatheringStatus.CONFIRMED, venue_text="Soi 29")
     await store.update(updated)
 
     back = await store.get(ev.id)
-    assert back.status == EventStatus.CONFIRMED
+    assert back.status == GatheringStatus.CONFIRMED
     assert back.venue_text == "Soi 29"
 
 

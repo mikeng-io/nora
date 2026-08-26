@@ -148,7 +148,7 @@ class MusicSessionStore(Protocol):
     async def aclose(self) -> None: ...
 
 
-# Re-exported, not re-implemented: `nora.domain.events` already established
+# Re-exported, not re-implemented: `nora.domain.gatherings` already established
 # the precedent (imports the same function rather than restating the naive-
 # datetime guard a second time) — a naive `added_at` names no instant for
 # exactly the reason it names no instant for a reminder, and two copies of

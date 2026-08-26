@@ -1,9 +1,9 @@
-"""`EventStore` over SQLAlchemy Core. Shaped like `nora.infra.sql.reminders`:
+"""`GatheringStore` over SQLAlchemy Core. Shaped like `nora.infra.sql.reminders`:
 the engine comes through `__init__`, every write is one statement inside
 `async with self._engine.begin()`, every read inside
 `async with self._engine.connect()`.
 
-`FakeEventStore` (`nora/testing/events.py`) is the second implementation;
+`FakeGatheringStore` (`nora/testing/events.py`) is the second implementation;
 `tests/contract/test_event_store_contract.py` is the one suite both pass.
 """
 
@@ -19,13 +19,13 @@ from sqlalchemy.engine import Row
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.events import (
+from nora.domain.gatherings import (
     RSVP,
-    DuplicateEventError,
-    Event,
-    EventStatus,
+    DuplicateGatheringError,
+    Gathering,
+    GatheringStatus,
     RSVPResponse,
-    normalise_event,
+    normalise_gathering,
 )
 from nora.infra.sql.schema import EVENT_RSVPS, EVENTS
 
@@ -36,9 +36,9 @@ from nora.infra.sql.schema import EVENT_RSVPS, EVENTS
 _PG_UNIQUE_VIOLATION = "23505"
 
 
-def _row_to_event(r: Row[Any]) -> Event:
-    return normalise_event(
-        Event(
+def _row_to_event(r: Row[Any]) -> Gathering:
+    return normalise_gathering(
+        Gathering(
             id=r.id,
             conversation_id=r.conversation_id,
             title=r.title,
@@ -52,7 +52,7 @@ def _row_to_event(r: Row[Any]) -> Event:
             venue_price_level=r.venue_price_level,
             venue_maps_url=r.venue_maps_url,
             venue_resolved_at=r.venue_resolved_at,
-            status=EventStatus(r.status),
+            status=GatheringStatus(r.status),
             reminder_id=r.reminder_id,
             created_at=r.created_at,
         )
@@ -68,7 +68,7 @@ def _row_to_rsvp(r: Row[Any]) -> RSVP:
     )
 
 
-def _insert_values(event: Event) -> dict[str, Any]:
+def _insert_values(event: Gathering) -> dict[str, Any]:
     return {
         "id": event.id,
         "conversation_id": event.conversation_id,
@@ -89,14 +89,14 @@ def _insert_values(event: Event) -> dict[str, Any]:
     }
 
 
-class SqlEventStore:
-    """Satisfies `nora.domain.events.EventStore`."""
+class SqlGatheringStore:
+    """Satisfies `nora.domain.gatherings.GatheringStore`."""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def create(self, event: Event) -> None:
-        row = normalise_event(event)
+    async def create(self, event: Gathering) -> None:
+        row = normalise_gathering(event)
         stmt = sa.insert(EVENTS).values(**_insert_values(row))
         try:
             async with self._engine.begin() as conn:
@@ -104,17 +104,17 @@ class SqlEventStore:
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
                 raise
-            raise DuplicateEventError(row.id) from exc
+            raise DuplicateGatheringError(row.id) from exc
 
-    async def get(self, event_id: UUID) -> Event | None:
+    async def get(self, event_id: UUID) -> Gathering | None:
         stmt = sa.select(EVENTS).where(EVENTS.c.id == event_id)
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).one_or_none()
         return None if row is None else _row_to_event(row)
 
     async def list_for_conversation(
-        self, *, conversation_id: str, status: EventStatus | None = None,
-    ) -> Sequence[Event]:
+        self, *, conversation_id: str, status: GatheringStatus | None = None,
+    ) -> Sequence[Gathering]:
         stmt = (
             sa.select(EVENTS)
             .where(EVENTS.c.conversation_id == conversation_id)
@@ -126,7 +126,7 @@ class SqlEventStore:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_event(r) for r in rows]
 
-    async def list_for_person(self, *, person_id: str) -> Sequence[Event]:
+    async def list_for_person(self, *, person_id: str) -> Sequence[Gathering]:
         rsvpd = sa.select(EVENT_RSVPS.c.event_id).where(
             EVENT_RSVPS.c.person_id == person_id,
         )
@@ -142,8 +142,8 @@ class SqlEventStore:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_event(r) for r in rows]
 
-    async def update(self, event: Event) -> None:
-        row = normalise_event(event)
+    async def update(self, event: Gathering) -> None:
+        row = normalise_gathering(event)
         stmt = (
             sa.update(EVENTS)
             .where(EVENTS.c.id == row.id)
@@ -156,7 +156,7 @@ class SqlEventStore:
         # `on_conflict_do_update` is a postgres-dialect-insert method, not
         # `sa.insert`'s — a person can RSVP more than once (changing their
         # mind), and (event_id, person_id) is the primary key, so a repeat
-        # RSVP must UPDATE, not raise `DuplicateEventError`-shaped noise.
+        # RSVP must UPDATE, not raise `DuplicateGatheringError`-shaped noise.
         stmt = (
             pg_insert(EVENT_RSVPS)
             .values(

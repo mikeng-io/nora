@@ -9,12 +9,12 @@ import pytest
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOLS
-from nora.app.events import EventService
+from nora.app.gatherings import GatheringService
 from nora.domain.models import PersonRef
 from nora.domain.reminders import ReminderCaps
 from nora.obs.metrics import Metrics
 from nora.testing import FakeRosterSource
-from nora.testing.events import FakeEventStore
+from nora.testing.gatherings import FakeGatheringStore
 from nora.testing.reminders import FakeReminderStore
 from tests.fakes import FakeHoncho, SinkSender
 
@@ -25,8 +25,12 @@ OTHER_GROUP = "signal:group-2"
 
 def test_all_six_event_tools_are_registered():
     for name in (
-        "create_event", "update_event", "rsvp_event",
-        "cancel_event", "list_events", "suggest_venue",
+        "create_event",
+        "update_event",
+        "rsvp_event",
+        "cancel_event",
+        "list_events",
+        "suggest_venue",
     ):
         assert name in NATIVE_TOOLS, f"{name} missing from NATIVE_TOOLS"
 
@@ -35,36 +39,47 @@ async def test_r52_two_open_events_refuses_a_third_rather_than_guessing():
     """R-52: create_event fail-closes on ambiguity — spec §3.1's
     'more than one open event' case — rather than silently picking one or
     creating a duplicate."""
-    from nora.app.events import AmbiguousOpenEventsError
+    from nora.app.gatherings import AmbiguousOpenGatheringsError
 
-    svc = EventService(
-        store=FakeEventStore(), reminders=FakeReminderStore(),
-        reminder_caps=ReminderCaps(), route_source=None, honcho=None,
+    svc = GatheringService(
+        store=FakeGatheringStore(),
+        reminders=FakeReminderStore(),
+        reminder_caps=ReminderCaps(),
+        route_source=None,
+        honcho=None,
         ai_peer="nora",
         now=lambda: datetime(2026, 8, 19, tzinfo=UTC),
     )
     await svc.create_event(
-        conversation_id="signal:group-1", requester_person_id="miles", title="A",
+        conversation_id="signal:group-1",
+        requester_person_id="miles",
+        title="A",
+        platform="signal",
     )
     await svc._store.update(  # force a SECOND open event without going
         # through create_event's own guard, to set up the ambiguous state
         await svc.create_event(
-            conversation_id="signal:group-1", requester_person_id="miles",
+            conversation_id="signal:group-1",
+            requester_person_id="miles",
             title="B",
+            platform="signal",
         )
     )
-    with pytest.raises(AmbiguousOpenEventsError):
+    with pytest.raises(AmbiguousOpenGatheringsError):
         await svc.create_event(
-            conversation_id="signal:group-1", requester_person_id="miles",
+            conversation_id="signal:group-1",
+            requester_person_id="miles",
             title="C",
+            platform="signal",
         )
 
 
 # ── Fix I6: tool-LAYER translation coverage — the closures in
-# `nora.agent.tools`, not `EventService` itself, which the two tests above
+# `nora.agent.tools`, not `GatheringService` itself, which the two tests above
 # never touch. `_tools()`/`_room()` mirror `tests/test_web_fetch_tool.py`'s
 # lightweight `ToolRegistry(...).specs(...)` pattern — no database, no real
 # room daemon.
+
 
 class _NullStore:
     async def recent(self, *, conversation_id: str, limit: int):
@@ -82,29 +97,44 @@ class _FakePersons:
 def _room(*, tagger: PersonRef | None = MILES, conversation_id: str = GROUP) -> Room:
     source = FakeRosterSource(groups={conversation_id: (frozenset({"miles"}),)})
     return Room(
-        platform="signal", conversation_id=conversation_id, roster_source=source,
-        persons=_FakePersons(MILES), tagger=tagger,
+        platform="signal",
+        conversation_id=conversation_id,
+        roster_source=source,
+        persons=_FakePersons(MILES),
+        tagger=tagger,
     )
 
 
 def _tools(
-    *, events: EventService | None, metrics: Metrics | None = None,
-    tagger: PersonRef | None = MILES, conversation_id: str = GROUP,
+    *,
+    events: GatheringService | None,
+    metrics: Metrics | None = None,
+    tagger: PersonRef | None = MILES,
+    conversation_id: str = GROUP,
 ) -> dict:
     registry = ToolRegistry(events=events)
     specs = registry.specs(
-        store=_NullStore(), conversation_id=conversation_id, conversation_type="group",
-        persons=_FakePersons(MILES), honcho=FakeHoncho(), deliverer=SinkSender(),
-        metrics=metrics or Metrics(), room=_room(tagger=tagger, conversation_id=conversation_id),
+        store=_NullStore(),
+        conversation_id=conversation_id,
+        conversation_type="group",
+        persons=_FakePersons(MILES),
+        honcho=FakeHoncho(),
+        deliverer=SinkSender(),
+        metrics=metrics or Metrics(),
+        room=_room(tagger=tagger, conversation_id=conversation_id),
     )
     return {spec.name: spec.call for spec in specs}
 
 
-def _events_service(*, store: FakeEventStore | None = None) -> EventService:
-    return EventService(
-        store=store or FakeEventStore(), reminders=FakeReminderStore(),
-        reminder_caps=ReminderCaps(), route_source=None, honcho=None,
-        ai_peer="nora", now=lambda: datetime(2026, 8, 19, 12, tzinfo=UTC),
+def _events_service(*, store: FakeGatheringStore | None = None) -> GatheringService:
+    return GatheringService(
+        store=store or FakeGatheringStore(),
+        reminders=FakeReminderStore(),
+        reminder_caps=ReminderCaps(),
+        route_source=None,
+        honcho=None,
+        ai_peer="nora",
+        now=lambda: datetime(2026, 8, 19, 12, tzinfo=UTC),
     )
 
 
@@ -145,7 +175,10 @@ async def test_update_event_refuses_an_unparseable_when():
     events = _events_service()
     tools = _tools(events=events)
     ev = await events.create_event(
-        conversation_id=GROUP, requester_person_id="miles", title="Dinner",
+        conversation_id=GROUP,
+        requester_person_id="miles",
+        title="Dinner",
+        platform="signal",
     )
     out = await tools["update_event"](event_id=str(ev.id), when="whenever, idk")
     assert out["status"] == "refused"
@@ -185,7 +218,10 @@ async def test_update_event_translates_a_cancelled_event_fix_i2():
     events = _events_service()
     tools = _tools(events=events)
     ev = await events.create_event(
-        conversation_id=GROUP, requester_person_id="miles", title="Dinner",
+        conversation_id=GROUP,
+        requester_person_id="miles",
+        title="Dinner",
+        platform="signal",
     )
     await events.cancel_event(event_id=ev.id, conversation_id=GROUP)
     out = await tools["update_event"](event_id=str(ev.id), venue_text="Soi 29")
@@ -198,7 +234,10 @@ async def test_list_events_and_create_event_bind_to_the_bound_conversation_id():
     that exists in a DIFFERENT conversation must not appear."""
     events = _events_service()
     await events.create_event(
-        conversation_id=OTHER_GROUP, requester_person_id="miles", title="Elsewhere",
+        conversation_id=OTHER_GROUP,
+        requester_person_id="miles",
+        title="Elsewhere",
+        platform="signal",
     )
     tools = _tools(events=events, conversation_id=GROUP)
 
@@ -213,7 +252,10 @@ async def test_list_events_and_create_event_bind_to_the_bound_conversation_id():
 async def test_update_event_refuses_an_event_from_another_conversation_fix_i5():
     events = _events_service()
     ev = await events.create_event(
-        conversation_id=OTHER_GROUP, requester_person_id="miles", title="Elsewhere",
+        conversation_id=OTHER_GROUP,
+        requester_person_id="miles",
+        title="Elsewhere",
+        platform="signal",
     )
     tools = _tools(events=events, conversation_id=GROUP)
     out = await tools["update_event"](event_id=str(ev.id), venue_text="Soi 29")

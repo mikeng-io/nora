@@ -121,6 +121,8 @@ def _row_to_reminder(r: Row[Any]) -> Reminder:
             fired_at=r.fired_at,
             outcome=r.outcome,
             series=_row_to_series(r),
+            kind=r.kind,
+            payload=r.payload,
         )
     )
 
@@ -156,6 +158,8 @@ def _insert_values(row: Reminder) -> dict[str, Any]:
         "series_id": None if series is None else series.id,
         "series_anchor_at": None if series is None else series.anchor_at,
         "occurrence": 0 if series is None else series.occurrence,
+        "kind": row.kind,
+        "payload": row.payload,
     }
 
 

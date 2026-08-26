@@ -114,7 +114,7 @@ A capability claim in an authored file now **fails to load**.
   **re-sent on every subsequent call**, which is why intake compounds.
 - **fire turn** — a turn nobody asked for: same stages, same guards, but no tag
   behind it. The second of exactly two paths that may send (R-1b).
-- **occasion** — WHY a fire turn is happening, as a value (`nora.app.fire.Occasion`):
+- **occasion** — WHY a fire turn is happening, as a value (`nora.domain.events.Event`, DEC-139):
   where she speaks, on whose authority, the words put to her, and the header
   that explains the moment. Two exist — a reminder coming due, and a version
   announcement (DEC-97). A reminder names its requester; an announcement names

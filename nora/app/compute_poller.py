@@ -12,8 +12,9 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 
-from nora.app.fire import SENT, Occasion, compute_occasion
+from nora.app.fire import SENT, compute_occasion
 from nora.domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
+from nora.domain.events import Event
 from nora.domain.ports import ComputeBackend, JobStatus
 from nora.engagement.slots import ConversationSlots, Key
 from nora.obs.metrics import Metrics
@@ -39,7 +40,7 @@ class ComputeJobPoller:
         *,
         store: ComputeJobStore,
         backend: ComputeBackend,
-        speak: Callable[[Occasion], Awaitable[str]],
+        speak: Callable[[Event], Awaitable[str]],
         slots: ConversationSlots,
         metrics: Metrics,
         tick_seconds: float,

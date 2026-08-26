@@ -15,7 +15,10 @@ edges:
 
 `Occasion` moves from a private type in `nora/app/fire.py` to
 `nora.domain.events.Event` (the name is free per `02-naming-rename.md`).
-Its shape is unchanged — this is a promotion, not a redesign:
+Its shape is unchanged in substance — this is a promotion, not a redesign;
+the one literal difference is `kind`, which moves from a defaulted
+trailing field on `Occasion` to a required leading field on `Event` (every
+construction site passes it explicitly, so no call site changes):
 
     kind: str                                    # "reminder" | "compute" | "relay" | "compute_lost" | "gathering" | ...
     platform: str
@@ -78,14 +81,18 @@ rather than introducing a strategy-object hierarchy for five cases.
 An unregistered `kind` on a due row is a wiring bug, not a runtime
 maybe. The failure mechanism, accurately: the registry lookup raises
 INSIDE `FirePath.run`, before `speak`; the exception propagates through
-the turn and is caught by `HeartbeatLoop.tick`'s per-group guard
-(`nora/app/heartbeat.py`) — logged as `nora_errors_total{stage=
-"heartbeat"}`, and the rows, already claimed `PENDING -> FIRING`, are
-resolved to FAILED by boot `recover()`. Observable, fail-closed, and
-NOT the `handler_error` silent-failure path (that one is the in-turn
-guard around `speak` itself, R-5). The unregistered-kind fault is a
-heartbeat wiring error, so it counts as a heartbeat error — the
-`nora_silent_failures_total` counter is not the right signal for it.
+`HeartbeatLoop._run_turn`'s `_fire` guard (`nora/app/heartbeat.py`),
+which resolves the already-claimed `PENDING -> FIRING` rows to FAILED
+(`outcome="failed_error"`) and returns — `tick`'s per-group guard only
+sees the count when the raise escapes `_fire` itself, which it does not
+here. The row is resolved to FAILED (never left FIRING), nothing is
+delivered, and the next boot has nothing to sweep. Observable and
+fail-closed, and NOT the `handler_error` silent-failure path (that one
+is the in-turn guard around `speak` itself, R-5). The unregistered-kind
+fault is a heartbeat wiring error resolved the way every fire-turn
+exception is; the row's `failed_error` outcome is the observable, and
+`nora_reminders_fired_total{outcome="failed_error"}` is the counter that
+moves.
 
 ## Batching must key on kind too
 
@@ -108,16 +115,25 @@ within it today, since only `"reminder"` exists).
 The key change makes one previously-single turn into two when two kinds
 are due for the same requester in the same conversation on the same
 tick. That is a real behavior change in the metrics, and it is accepted
-deliberately: `nora_reminders_fired_total` counts TURNS per tick
-(`heartbeat.py`), so a two-kind tick now increments it twice where it
-incremented once; `nora_heartbeat_deferrals_total` likewise counts the
-slot contention per turn. A two-kind batch is today impossible (only
-`"reminder"` exists), so no existing deployment changes; the
-two-turn split is documented here so the metric deltas are read as the
-design's intent rather than as a regression. `_by_turn`'s docstring in
-`nora/app/heartbeat.py` gains the `kind` component to the key with
-BOTH motivations stated: identity/rendering (the §5.2 reasons) AND
-rendering-fidelity (the cross-kind factory reason), in one place.
+deliberately — but the series the delta shows up on is NOT
+`nora_reminders_fired_total`, which increments PER ROW (`_resolve` runs
+per reminder, `heartbeat.py`), so a two-row mixed batch already
+incremented twice before this change. The observables that DO move:
+
+- the number of fire turns (two turns instead of one), which the
+  heartbeat's own `_run_turn` accounting reflects in twice as many
+  `claim`/terminal-state pairs;
+- `nora_heartbeat_deferrals_total`, which counts per-TURN slot
+  contention (`heartbeat.py`) — a two-kind tick that meets a held slot
+  defers once per turn, where the pre-change single turn deferred once.
+
+A two-kind batch is today impossible (only `"reminder"` exists), so no
+existing deployment changes; the two-turn split is documented here so
+the metric deltas are read as the design's intent rather than as a
+regression. `_by_turn`'s docstring in `nora/app/heartbeat.py` gains the
+`kind` component to the key with BOTH motivations stated:
+identity/rendering (the §5.2 reasons) AND rendering-fidelity (the
+cross-kind factory reason), in one place.
 
 ## Per-kind payload validation
 

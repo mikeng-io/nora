@@ -503,6 +503,15 @@ REMINDERS = sa.Table(
     sa.Column(
         "occurrence", sa.Integer, nullable=False, server_default=sa.text("0"),
     ),
+    # ── event-model abstraction (DEC-139) ────────────────────────────────────
+    # `kind` names WHAT the row is; `"reminder"` is the whole of the
+    # pre-DEC-139 table, so the default keeps every live row satisfying the
+    # NOT NULL without a backfill pass. `payload` is the kind's denormalized
+    # shape (JSONB permits a structured map without a migration).
+    sa.Column(
+        "kind", sa.Text, nullable=False, server_default=sa.text("'reminder'"),
+    ),
+    sa.Column("payload", pg.JSONB, nullable=True),
     sa.CheckConstraint(
         "state IN ('pending','firing','done','cancelled','failed')",
         name="ck_reminders_state",
@@ -1076,7 +1085,7 @@ IDX_MESSAGES_DREAM_LAG = sa.Index(
 # `events` / `event_rsvps` — gatherings among a group, chat-first (spec
 # docs/superpowers/specs/2026-08-19-event-module-design.md). `venue_*` are
 # resolved ONCE via the existing Places infra and cached here — see the
-# module docstring on `nora.domain.events` for what is deliberately absent
+# module docstring on `nora.domain.gatherings` for what is deliberately absent
 # (raw lat/lng, open_now) and why.
 EVENTS = sa.Table(
     "events",

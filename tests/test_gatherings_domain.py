@@ -3,17 +3,17 @@ from uuid import uuid4
 
 import pytest
 
-from nora.domain.events import (
+from nora.domain.gatherings import (
     RSVP,
-    Event,
-    EventStatus,
+    Gathering,
+    GatheringStatus,
     RSVPResponse,
-    normalise_event,
+    normalise_gathering,
 )
 from nora.domain.reminders import NaiveDatetimeError
 
 
-def _event(**overrides) -> Event:
+def _event(**overrides) -> Gathering:
     defaults = {
         "id": uuid4(),
         "conversation_id": "signal:group-1",
@@ -28,24 +28,24 @@ def _event(**overrides) -> Event:
         "venue_price_level": "",
         "venue_maps_url": None,
         "venue_resolved_at": None,
-        "status": EventStatus.PROPOSED,
+        "status": GatheringStatus.PROPOSED,
         "reminder_id": None,
         "created_at": datetime(2026, 8, 19, tzinfo=UTC),
     }
     defaults.update(overrides)
-    return Event(**defaults)
+    return Gathering(**defaults)
 
 
-def test_normalise_event_accepts_utc_aware_datetimes():
+def test_normalise_gathering_accepts_utc_aware_datetimes():
     ev = _event(when=datetime(2026, 8, 22, 19, 0, tzinfo=UTC))
-    out = normalise_event(ev)
+    out = normalise_gathering(ev)
     assert out.when == ev.when
 
 
-def test_normalise_event_rejects_naive_when():
+def test_normalise_gathering_rejects_naive_when():
     ev = _event(when=datetime(2026, 8, 22, 19, 0))  # naive
     with pytest.raises(NaiveDatetimeError):
-        normalise_event(ev)
+        normalise_gathering(ev)
 
 
 def test_rsvp_response_values():
@@ -55,9 +55,9 @@ def test_rsvp_response_values():
 
 
 def test_event_status_values():
-    assert EventStatus.PROPOSED.value == "proposed"
-    assert EventStatus.CONFIRMED.value == "confirmed"
-    assert EventStatus.CANCELLED.value == "cancelled"
+    assert GatheringStatus.PROPOSED.value == "proposed"
+    assert GatheringStatus.CONFIRMED.value == "confirmed"
+    assert GatheringStatus.CANCELLED.value == "cancelled"
 
 
 def test_rsvp_construction():

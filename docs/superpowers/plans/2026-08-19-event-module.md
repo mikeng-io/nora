@@ -1,10 +1,21 @@
 # Event Module Implementation Plan
 
+> **Naming superseded (2026-08-27):** this plan predates the
+> event-abstraction bundle (`design/event-abstraction/`). Its behaviour
+> remains the Gathering feature's contract, but its NAMING is superseded —
+> the module is now `nora.domain.gatherings.Gathering` /
+> `nora.app.gatherings.GatheringService`, and the `platform="event"`
+> sentinel this plan's steps describe is fixed by DEC-139 (the linked
+> reminder now carries the real delivery platform). See
+> `design/event-abstraction/02-naming-rename.md` + `05-gathering-fold-in.md`
+> for the rename + kind authority. Identifier references below have been
+> updated to the renamed types.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build Nora's Event module — durable gatherings/RSVP state, chat-first tools that reuse the existing reminders fire path for notifications and the existing Places infra for venue data, and a read-only web surface — exactly as specified.
 
-**Architecture:** A `nora/domain/events.py` (types + `EventStore` port) and `nora/app/events.py` (`EventService`, the one use-case layer both the agent tools and the web read routes call) sit between a Postgres-backed store and two thin adapters. `EventService` reuses three things that already ship rather than rebuilding them: the reminders domain (for notifications), the `route_source`/`PlaceResolver` (for venue resolution), and Honcho's dialectic `chat()` (for preference-based suggestions).
+**Architecture:** A `nora/domain/events.py` (types + `GatheringStore` port) and `nora/app/events.py` (`GatheringService`, the one use-case layer both the agent tools and the web read routes call) sit between a Postgres-backed store and two thin adapters. `GatheringService` reuses three things that already ship rather than rebuilding them: the reminders domain (for notifications), the `route_source`/`PlaceResolver` (for venue resolution), and Honcho's dialectic `chat()` (for preference-based suggestions).
 
 **Tech Stack:** Python (SQLAlchemy Core, asyncpg, Alembic, pytest), TypeScript/Next.js (App Router, zod, NextAuth) for the web surface.
 
@@ -26,23 +37,23 @@
 ## File Structure
 
 ```
-nora/domain/events.py                 NEW — Event, RSVP, EventStatus, RSVPResponse,
-                                       VenueCandidate, VenueSuggestions, EventStore
-                                       (Protocol), DuplicateEventError, normalise_event
+nora/domain/events.py                 NEW — Event, RSVP, GatheringStatus, RSVPResponse,
+                                       VenueCandidate, VenueSuggestions, GatheringStore
+                                       (Protocol), DuplicateGatheringError, normalise_gathering
 nora/infra/sql/schema.py              MODIFY — add EVENTS, EVENT_RSVPS tables + indexes
 nora/infra/sql/migrations/versions/
   0015_events.py                      NEW — hand-written migration
-nora/infra/sql/events.py              NEW — SqlEventStore
-nora/testing/events.py                NEW — FakeEventStore
+nora/infra/sql/events.py              NEW — SqlGatheringStore
+nora/testing/events.py                NEW — FakeGatheringStore
 tests/contract/
   test_event_store_contract.py        NEW — sql+fake parametrized suite
 nora/agent/security.py                NEW — scan_identifiers/_looks_like_coordinate,
                                        relocated from nora/agent/tools.py so
-                                       EventService can reuse them without
+                                       GatheringService can reuse them without
                                        duplicating the R-28 screen
-nora/app/events.py                    NEW — EventService
-tests/test_events_service.py          NEW — EventService unit tests (fakes only)
-nora/app/composition.py               MODIFY — construct SqlEventStore + EventService
+nora/app/events.py                    NEW — GatheringService
+tests/test_events_service.py          NEW — GatheringService unit tests (fakes only)
+nora/app/composition.py               MODIFY — construct SqlGatheringStore + GatheringService
 nora/agent/tools.py                   MODIFY — 6 new tool closures + NATIVE_TOOLS
                                        entries + build_tool_specs param
 nora/agent/registry.py                MODIFY — ToolRegistry gains `events` param
@@ -76,7 +87,7 @@ docs/superpowers/specs/
 - Test: `tests/test_events_domain.py`
 
 **Interfaces:**
-- Produces: `EventStatus`, `RSVPResponse` (StrEnum); `Event`, `RSVP`, `VenueCandidate`, `VenueSuggestions` (frozen dataclasses); `EventStore` (Protocol); `DuplicateEventError`; `normalise_event(event: Event) -> Event`.
+- Produces: `GatheringStatus`, `RSVPResponse` (StrEnum); `Event`, `RSVP`, `VenueCandidate`, `VenueSuggestions` (frozen dataclasses); `GatheringStore` (Protocol); `DuplicateGatheringError`; `normalise_gathering(event: Event) -> Event`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -87,12 +98,12 @@ from uuid import uuid4
 
 import pytest
 
-from nora.domain.events import (
+from nora.domain.gatherings import (
     Event,
-    EventStatus,
+    GatheringStatus,
     RSVP,
     RSVPResponse,
-    normalise_event,
+    normalise_gathering,
 )
 from nora.domain.reminders import NaiveDatetimeError
 
@@ -112,7 +123,7 @@ def _event(**overrides) -> Event:
         venue_price_level="",
         venue_maps_url=None,
         venue_resolved_at=None,
-        status=EventStatus.PROPOSED,
+        status=GatheringStatus.PROPOSED,
         reminder_id=None,
         created_at=datetime(2026, 8, 19, tzinfo=timezone.utc),
     )
@@ -120,16 +131,16 @@ def _event(**overrides) -> Event:
     return Event(**defaults)
 
 
-def test_normalise_event_accepts_utc_aware_datetimes():
+def test_normalise_gathering_accepts_utc_aware_datetimes():
     ev = _event(when=datetime(2026, 8, 22, 19, 0, tzinfo=timezone.utc))
-    out = normalise_event(ev)
+    out = normalise_gathering(ev)
     assert out.when == ev.when
 
 
-def test_normalise_event_rejects_naive_when():
+def test_normalise_gathering_rejects_naive_when():
     ev = _event(when=datetime(2026, 8, 22, 19, 0))  # naive
     with pytest.raises(NaiveDatetimeError):
-        normalise_event(ev)
+        normalise_gathering(ev)
 
 
 def test_rsvp_response_values():
@@ -139,9 +150,9 @@ def test_rsvp_response_values():
 
 
 def test_event_status_values():
-    assert EventStatus.PROPOSED.value == "proposed"
-    assert EventStatus.CONFIRMED.value == "confirmed"
-    assert EventStatus.CANCELLED.value == "cancelled"
+    assert GatheringStatus.PROPOSED.value == "proposed"
+    assert GatheringStatus.CONFIRMED.value == "confirmed"
+    assert GatheringStatus.CANCELLED.value == "cancelled"
 
 
 def test_rsvp_construction():
@@ -156,13 +167,13 @@ def test_rsvp_construction():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_events_domain.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'nora.domain.events'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'nora.domain.gatherings'`
 
 - [ ] **Step 3: Write the implementation**
 
 ```python
 # nora/domain/events.py
-"""Event/RSVP domain types and the `EventStore` port.
+"""Event/RSVP domain types and the `GatheringStore` port.
 
 Mirrors `nora.domain.reminders`'s split (types + port in one module, no
 separate `ports.py` entry — a domain module's own port lives with its
@@ -175,7 +186,7 @@ scheduling.
 
 Venue fields are resolved ONCE, at write time, through the same
 `route_source`/`PlaceResolver` `nora.agent.tools`'s `place_info` tool
-already uses (see `nora.app.events.EventService`) — `venue_text` is what
+already uses (see `nora.app.gatherings.GatheringService`) — `venue_text` is what
 was actually SAID; `venue_place_id`/`venue_name`/`venue_address`/
 `venue_rating`/`venue_price_level`/`venue_maps_url` are the cached,
 stable result of that one resolution. Raw `lat`/`lng` are deliberately
@@ -196,7 +207,7 @@ from uuid import UUID
 from nora.domain.reminders import ensure_utc
 
 
-class EventStatus(StrEnum):
+class GatheringStatus(StrEnum):
     PROPOSED = "proposed"
     CONFIRMED = "confirmed"
     CANCELLED = "cancelled"
@@ -208,8 +219,8 @@ class RSVPResponse(StrEnum):
     MAYBE = "maybe"
 
 
-class DuplicateEventError(Exception):
-    """Raised by `EventStore.create` on a primary-key collision — mirrors
+class DuplicateGatheringError(Exception):
+    """Raised by `GatheringStore.create` on a primary-key collision — mirrors
     `DuplicateReminderError`'s shape so callers handle both the same way."""
 
     def __init__(self, event_id: UUID) -> None:
@@ -232,7 +243,7 @@ class Event:
     venue_price_level: str
     venue_maps_url: str | None
     venue_resolved_at: datetime | None
-    status: EventStatus
+    status: GatheringStatus
     reminder_id: UUID | None
     created_at: datetime
 
@@ -275,13 +286,13 @@ class VenueSuggestions:
     route_hints: None = None
 
 
-class EventStore(Protocol):
+class GatheringStore(Protocol):
     async def create(self, event: Event) -> None: ...
 
     async def get(self, event_id: UUID) -> Event | None: ...
 
     async def list_for_conversation(
-        self, *, conversation_id: str, status: EventStatus | None = None,
+        self, *, conversation_id: str, status: GatheringStatus | None = None,
     ) -> Sequence[Event]: ...
 
     async def update(self, event: Event) -> None: ...
@@ -293,7 +304,7 @@ class EventStore(Protocol):
     async def aclose(self) -> None: ...
 
 
-def normalise_event(event: Event) -> Event:
+def normalise_gathering(event: Event) -> Event:
     """`ensure_utc` over every one of an event's datetimes — the port's
     rule, in one place, exactly matching `normalise_reminder`'s shape."""
     from dataclasses import replace
@@ -324,7 +335,7 @@ Expected: no new errors.
 
 ```bash
 git add nora/domain/events.py tests/test_events_domain.py
-git commit -m "feat(nora): add Event/RSVP domain types and EventStore port"
+git commit -m "feat(nora): add Event/RSVP domain types and GatheringStore port"
 ```
 
 ---
@@ -362,7 +373,7 @@ Append after `IDX_REMINDERS_DUE` (or after the last table in the file — check 
 # `events` / `event_rsvps` — gatherings among a group, chat-first (spec
 # docs/superpowers/specs/2026-08-19-event-module-design.md). `venue_*` are
 # resolved ONCE via the existing Places infra and cached here — see the
-# module docstring on `nora.domain.events` for what is deliberately absent
+# module docstring on `nora.domain.gatherings` for what is deliberately absent
 # (raw lat/lng, open_now) and why.
 EVENTS = sa.Table(
     "events",
@@ -509,27 +520,27 @@ git commit -m "feat(nora): add events/event_rsvps tables (migration 0015)"
 
 ---
 
-### Task 3: `SqlEventStore` — `nora/infra/sql/events.py`
+### Task 3: `SqlGatheringStore` — `nora/infra/sql/events.py`
 
 **Files:**
 - Create: `nora/infra/sql/events.py`
 
 **Interfaces:**
-- Consumes: `Event`, `RSVP`, `EventStatus`, `RSVPResponse`, `DuplicateEventError`, `normalise_event` from `nora.domain.events`; `EVENTS`, `EVENT_RSVPS` from `nora.infra.sql.schema`.
-- Produces: `SqlEventStore` (satisfies `EventStore`).
+- Consumes: `Event`, `RSVP`, `GatheringStatus`, `RSVPResponse`, `DuplicateGatheringError`, `normalise_gathering` from `nora.domain.gatherings`; `EVENTS`, `EVENT_RSVPS` from `nora.infra.sql.schema`.
+- Produces: `SqlGatheringStore` (satisfies `GatheringStore`).
 
 - [ ] **Step 1: Write the implementation**
 
-(No standalone unit test here — `SqlEventStore` is exercised entirely by Task 5's contract suite, exactly as `SqlReminderStore` has no test file of its own; the contract suite is the test, run against both implementations.)
+(No standalone unit test here — `SqlGatheringStore` is exercised entirely by Task 5's contract suite, exactly as `SqlReminderStore` has no test file of its own; the contract suite is the test, run against both implementations.)
 
 ```python
 # nora/infra/sql/events.py
-"""`EventStore` over SQLAlchemy Core. Shaped like `nora.infra.sql.reminders`:
+"""`GatheringStore` over SQLAlchemy Core. Shaped like `nora.infra.sql.reminders`:
 the engine comes through `__init__`, every write is one statement inside
 `async with self._engine.begin()`, every read inside
 `async with self._engine.connect()`.
 
-`FakeEventStore` (`nora/testing/events.py`) is the second implementation;
+`FakeGatheringStore` (`nora/testing/events.py`) is the second implementation;
 `tests/contract/test_event_store_contract.py` is the one suite both pass.
 """
 
@@ -544,13 +555,13 @@ from sqlalchemy.engine import Row
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.events import (
-    DuplicateEventError,
+from nora.domain.gatherings import (
+    DuplicateGatheringError,
     Event,
-    EventStatus,
+    GatheringStatus,
     RSVP,
     RSVPResponse,
-    normalise_event,
+    normalise_gathering,
 )
 from nora.infra.sql.schema import EVENT_RSVPS, EVENTS
 
@@ -562,7 +573,7 @@ _PG_UNIQUE_VIOLATION = "23505"
 
 
 def _row_to_event(r: Row[Any]) -> Event:
-    return normalise_event(
+    return normalise_gathering(
         Event(
             id=r.id,
             conversation_id=r.conversation_id,
@@ -577,7 +588,7 @@ def _row_to_event(r: Row[Any]) -> Event:
             venue_price_level=r.venue_price_level,
             venue_maps_url=r.venue_maps_url,
             venue_resolved_at=r.venue_resolved_at,
-            status=EventStatus(r.status),
+            status=GatheringStatus(r.status),
             reminder_id=r.reminder_id,
             created_at=r.created_at,
         )
@@ -614,14 +625,14 @@ def _insert_values(event: Event) -> dict[str, Any]:
     )
 
 
-class SqlEventStore:
-    """Satisfies `nora.domain.events.EventStore`."""
+class SqlGatheringStore:
+    """Satisfies `nora.domain.gatherings.GatheringStore`."""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
     async def create(self, event: Event) -> None:
-        row = normalise_event(event)
+        row = normalise_gathering(event)
         stmt = sa.insert(EVENTS).values(**_insert_values(row))
         try:
             async with self._engine.begin() as conn:
@@ -629,7 +640,7 @@ class SqlEventStore:
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
                 raise
-            raise DuplicateEventError(row.id) from exc
+            raise DuplicateGatheringError(row.id) from exc
 
     async def get(self, event_id: UUID) -> Event | None:
         stmt = sa.select(EVENTS).where(EVENTS.c.id == event_id)
@@ -638,7 +649,7 @@ class SqlEventStore:
         return None if row is None else _row_to_event(row)
 
     async def list_for_conversation(
-        self, *, conversation_id: str, status: EventStatus | None = None,
+        self, *, conversation_id: str, status: GatheringStatus | None = None,
     ) -> Sequence[Event]:
         stmt = (
             sa.select(EVENTS)
@@ -652,7 +663,7 @@ class SqlEventStore:
         return [_row_to_event(r) for r in rows]
 
     async def update(self, event: Event) -> None:
-        row = normalise_event(event)
+        row = normalise_gathering(event)
         stmt = (
             sa.update(EVENTS)
             .where(EVENTS.c.id == row.id)
@@ -665,7 +676,7 @@ class SqlEventStore:
         # `on_conflict_do_update` is a postgres-dialect-insert method, not
         # `sa.insert`'s — a person can RSVP more than once (changing their
         # mind), and (event_id, person_id) is the primary key, so a repeat
-        # RSVP must UPDATE, not raise `DuplicateEventError`-shaped noise.
+        # RSVP must UPDATE, not raise `DuplicateGatheringError`-shaped noise.
         stmt = (
             pg_insert(EVENT_RSVPS)
             .values(
@@ -709,27 +720,27 @@ Expected: no new errors (Task 5 provides the actual behavioral test).
 
 ```bash
 git add nora/infra/sql/events.py
-git commit -m "feat(nora): add SqlEventStore"
+git commit -m "feat(nora): add SqlGatheringStore"
 ```
 
 ---
 
-### Task 4: `FakeEventStore` — `nora/testing/events.py`
+### Task 4: `FakeGatheringStore` — `nora/testing/events.py`
 
 **Files:**
 - Create: `nora/testing/events.py`
 
 **Interfaces:**
 - Consumes: same domain types as Task 3.
-- Produces: `FakeEventStore` (satisfies `EventStore`).
+- Produces: `FakeGatheringStore` (satisfies `GatheringStore`).
 
 - [ ] **Step 1: Write the implementation**
 
 ```python
 # nora/testing/events.py
-"""In-memory `EventStore` for tests. Must reproduce the REAL store's
-failure/edge shapes — a duplicate `create` raises `DuplicateEventError`
-exactly like `SqlEventStore` does, `update`/`add_rsvp` on the same
+"""In-memory `GatheringStore` for tests. Must reproduce the REAL store's
+failure/edge shapes — a duplicate `create` raises `DuplicateGatheringError`
+exactly like `SqlGatheringStore` does, `update`/`add_rsvp` on the same
 (event_id, person_id) upserts, `list_for_conversation` sorts by
 `created_at` — never a fake that answers every call the same way
 (CLAUDE.md's rule)."""
@@ -739,31 +750,31 @@ from __future__ import annotations
 from collections.abc import Sequence
 from uuid import UUID
 
-from nora.domain.events import (
-    DuplicateEventError,
+from nora.domain.gatherings import (
+    DuplicateGatheringError,
     Event,
-    EventStatus,
+    GatheringStatus,
     RSVP,
-    normalise_event,
+    normalise_gathering,
 )
 
 
-class FakeEventStore:
+class FakeGatheringStore:
     def __init__(self) -> None:
         self._events: dict[UUID, Event] = {}
         self._rsvps: dict[tuple[UUID, str], RSVP] = {}
 
     async def create(self, event: Event) -> None:
-        row = normalise_event(event)
+        row = normalise_gathering(event)
         if row.id in self._events:
-            raise DuplicateEventError(row.id)
+            raise DuplicateGatheringError(row.id)
         self._events[row.id] = row
 
     async def get(self, event_id: UUID) -> Event | None:
         return self._events.get(event_id)
 
     async def list_for_conversation(
-        self, *, conversation_id: str, status: EventStatus | None = None,
+        self, *, conversation_id: str, status: GatheringStatus | None = None,
     ) -> Sequence[Event]:
         out = [
             e for e in self._events.values()
@@ -773,7 +784,7 @@ class FakeEventStore:
         return sorted(out, key=lambda e: e.created_at)
 
     async def update(self, event: Event) -> None:
-        row = normalise_event(event)
+        row = normalise_gathering(event)
         self._events[row.id] = row
 
     async def add_rsvp(self, rsvp: RSVP) -> None:
@@ -793,7 +804,7 @@ Run: `uv run mypy nora/testing/events.py`
 
 ```bash
 git add nora/testing/events.py
-git commit -m "feat(nora): add FakeEventStore"
+git commit -m "feat(nora): add FakeGatheringStore"
 ```
 
 ---
@@ -804,7 +815,7 @@ git commit -m "feat(nora): add FakeEventStore"
 - Create: `tests/contract/test_event_store_contract.py`
 
 **Interfaces:**
-- Consumes: `SqlEventStore` (Task 3), `FakeEventStore` (Task 4), `Event`/`RSVP`/`EventStatus`/`RSVPResponse`/`DuplicateEventError` (Task 1).
+- Consumes: `SqlGatheringStore` (Task 3), `FakeGatheringStore` (Task 4), `Event`/`RSVP`/`GatheringStatus`/`RSVPResponse`/`DuplicateGatheringError` (Task 1).
 
 - [ ] **Step 1: Write the contract suite**
 
@@ -819,17 +830,17 @@ from uuid import uuid4
 
 import pytest
 
-from nora.domain.events import (
-    DuplicateEventError,
+from nora.domain.gatherings import (
+    DuplicateGatheringError,
     Event,
-    EventStatus,
+    GatheringStatus,
     RSVP,
     RSVPResponse,
 )
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.events import SqlEventStore
+from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.testing.events import FakeEventStore
+from nora.testing.gatherings import FakeGatheringStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -850,7 +861,7 @@ def _event(**overrides) -> Event:
         venue_price_level="",
         venue_maps_url=None,
         venue_resolved_at=None,
-        status=EventStatus.PROPOSED,
+        status=GatheringStatus.PROPOSED,
         reminder_id=None,
         created_at=now,
     )
@@ -863,9 +874,9 @@ async def store(request):
     if request.param == "sql":
         pg_url = request.getfixturevalue("pg_url")
         run_migrations(pg_url)
-        s = SqlEventStore(create_sql_engine(pg_url))
+        s = SqlGatheringStore(create_sql_engine(pg_url))
     else:
-        s = FakeEventStore()
+        s = FakeGatheringStore()
     yield s
     await s.aclose()
 
@@ -887,7 +898,7 @@ async def test_get_missing_returns_none(store):
 async def test_duplicate_create_raises(store):
     ev = _event()
     await store.create(ev)
-    with pytest.raises(DuplicateEventError):
+    with pytest.raises(DuplicateGatheringError):
         await store.create(ev)
 
 
@@ -900,13 +911,13 @@ async def test_stored_datetimes_come_back_utc_aware(store):
 
 
 async def test_list_for_conversation_filters_by_status(store):
-    proposed = _event(conversation_id="signal:group-2", status=EventStatus.PROPOSED)
-    cancelled = _event(conversation_id="signal:group-2", status=EventStatus.CANCELLED)
+    proposed = _event(conversation_id="signal:group-2", status=GatheringStatus.PROPOSED)
+    cancelled = _event(conversation_id="signal:group-2", status=GatheringStatus.CANCELLED)
     await store.create(proposed)
     await store.create(cancelled)
 
     only_proposed = await store.list_for_conversation(
-        conversation_id="signal:group-2", status=EventStatus.PROPOSED,
+        conversation_id="signal:group-2", status=GatheringStatus.PROPOSED,
     )
     assert [e.id for e in only_proposed] == [proposed.id]
 
@@ -929,11 +940,11 @@ async def test_update_persists_changes(store):
     await store.create(ev)
     from dataclasses import replace
 
-    updated = replace(ev, status=EventStatus.CONFIRMED, venue_text="Soi 29")
+    updated = replace(ev, status=GatheringStatus.CONFIRMED, venue_text="Soi 29")
     await store.update(updated)
 
     back = await store.get(ev.id)
-    assert back.status == EventStatus.CONFIRMED
+    assert back.status == GatheringStatus.CONFIRMED
     assert back.venue_text == "Soi 29"
 
 
@@ -977,7 +988,7 @@ async def test_rsvp_upserts_on_same_person(store):
 - [ ] **Step 2: Run against the fake first (no Postgres needed)**
 
 Run: `uv run pytest tests/contract/test_event_store_contract.py -k fake -v`
-Expected: PASS (10 tests), including `test_rsvp_upserts_on_same_person` — the `FakeEventStore.add_rsvp` implementation from Task 4 already upserts by dict key.
+Expected: PASS (10 tests), including `test_rsvp_upserts_on_same_person` — the `FakeGatheringStore.add_rsvp` implementation from Task 4 already upserts by dict key.
 
 - [ ] **Step 3: Run against Postgres**
 
@@ -988,14 +999,14 @@ Expected: PASS (10 tests) — this confirms Task 3's `pg_insert`-based upsert be
 
 ```bash
 git add tests/contract/test_event_store_contract.py
-git commit -m "test(nora): add EventStore contract suite"
+git commit -m "test(nora): add GatheringStore contract suite"
 ```
 
 ---
 
 ### Task 6: Relocate the R-28 identifier/coordinate screen to a shared module
 
-**Why this task exists:** `nora/agent/tools.py`'s `place_info` and `route` tools screen every place-name argument through `scan_identifiers(...)` and `_looks_like_coordinate(...)` before it reaches Google (R-28) — but `EventService` (Task 7) lives in `nora/app/events.py` and needs to apply the *exact same* screen before it resolves a venue, or a coordinate/identifier could reach Google through a second, unaudited path. These functions must be moved, not reimplemented — copying their logic by hand risks silently drifting from the audited original.
+**Why this task exists:** `nora/agent/tools.py`'s `place_info` and `route` tools screen every place-name argument through `scan_identifiers(...)` and `_looks_like_coordinate(...)` before it reaches Google (R-28) — but `GatheringService` (Task 7) lives in `nora/app/events.py` and needs to apply the *exact same* screen before it resolves a venue, or a coordinate/identifier could reach Google through a second, unaudited path. These functions must be moved, not reimplemented — copying their logic by hand risks silently drifting from the audited original.
 
 **Files:**
 - Create: `nora/agent/security.py`
@@ -1019,7 +1030,7 @@ Create `nora/agent/security.py` containing the two function bodies exactly as fo
 a string that might name a person or carry a raw coordinate is about to
 leave the host in a tool argument (Google Places/Routes today; anything
 else with the same shape later) — moved out of `nora.agent.tools` so
-`nora.app.events.EventService` can apply the identical screen to a venue
+`nora.app.gatherings.GatheringService` can apply the identical screen to a venue
 string without a second, unaudited copy of this logic."""
 ```
 
@@ -1050,15 +1061,15 @@ git commit -m "refactor(nora): relocate R-28 identifier/coordinate screen to nor
 
 ---
 
-### Task 7: `EventService` — `nora/app/events.py`
+### Task 7: `GatheringService` — `nora/app/events.py`
 
 **Files:**
 - Create: `nora/app/events.py`
 - Test: `tests/test_events_service.py`
 
 **Interfaces:**
-- Consumes: `EventStore`, `Event`, `RSVP`, `EventStatus`, `RSVPResponse`, `VenueCandidate`, `VenueSuggestions`, `DuplicateEventError` (Task 1); `FakeEventStore` (Task 4); `scan_identifiers`, `looks_like_coordinate` (Task 6); `ReminderStore`, `Reminder`, `ReminderState`, `ReminderCaps`, `ensure_utc` from `nora.domain.reminders`; `FakeReminderStore` from `nora.testing.reminders` (existing); `MemoryStore` from `nora.domain.ports` (its `chat` method).
-- Produces: `EventService` with `create_event`, `update_event`, `rsvp`, `cancel_event`, `list_events`, `get_event`, `suggest_venue` — the exact signatures below, which Task 9's tool closures call directly.
+- Consumes: `GatheringStore`, `Event`, `RSVP`, `GatheringStatus`, `RSVPResponse`, `VenueCandidate`, `VenueSuggestions`, `DuplicateGatheringError` (Task 1); `FakeGatheringStore` (Task 4); `scan_identifiers`, `looks_like_coordinate` (Task 6); `ReminderStore`, `Reminder`, `ReminderState`, `ReminderCaps`, `ensure_utc` from `nora.domain.reminders`; `FakeReminderStore` from `nora.testing.reminders` (existing); `MemoryStore` from `nora.domain.ports` (its `chat` method).
+- Produces: `GatheringService` with `create_event`, `update_event`, `rsvp`, `cancel_event`, `list_events`, `get_event`, `suggest_venue` — the exact signatures below, which Task 9's tool closures call directly.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1071,10 +1082,10 @@ from uuid import uuid4
 
 import pytest
 
-from nora.app.events import EventService
-from nora.domain.events import EventStatus, RSVPResponse
+from nora.app.gatherings import GatheringService
+from nora.domain.gatherings import GatheringStatus, RSVPResponse
 from nora.domain.reminders import ReminderCaps
-from nora.testing.events import FakeEventStore
+from nora.testing.gatherings import FakeGatheringStore
 from nora.testing.reminders import FakeReminderStore
 
 pytestmark = pytest.mark.asyncio
@@ -1106,9 +1117,9 @@ class _FakeHoncho:
 
 def _service(
     *, store=None, reminders=None, route_source=None, honcho=None,
-) -> EventService:
-    return EventService(
-        store=store or FakeEventStore(),
+) -> GatheringService:
+    return GatheringService(
+        store=store or FakeGatheringStore(),
         reminders=reminders or FakeReminderStore(),
         reminder_caps=ReminderCaps(),
         route_source=route_source or _FakeRouteSource(),
@@ -1125,7 +1136,7 @@ async def test_create_event_persists_and_returns_it():
         title="Dinner",
     )
     assert ev.title == "Dinner"
-    assert ev.status is EventStatus.PROPOSED
+    assert ev.status is GatheringStatus.PROPOSED
     back = await svc.get_event(ev.id)
     assert back.id == ev.id
 
@@ -1209,7 +1220,7 @@ async def test_cancel_event_cancels_its_linked_reminder():
         title="Dinner", when=when,
     )
     cancelled = await svc.cancel_event(event_id=ev.id)
-    assert cancelled.status is EventStatus.CANCELLED
+    assert cancelled.status is GatheringStatus.CANCELLED
 
     row = await reminders.get(ev.reminder_id)
     from nora.domain.reminders import ReminderState
@@ -1228,7 +1239,7 @@ async def test_list_events_filters_by_status():
     await svc.cancel_event(event_id=a.id)
 
     proposed = await svc.list_events(
-        conversation_id="signal:group-1", status=EventStatus.PROPOSED,
+        conversation_id="signal:group-1", status=GatheringStatus.PROPOSED,
     )
     assert [e.title for e in proposed] == ["B"]
 
@@ -1266,13 +1277,13 @@ async def test_suggest_venue_nothing_found_when_every_person_is_empty():
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `uv run pytest tests/test_events_service.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'nora.app.events'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'nora.app.gatherings'`
 
 - [ ] **Step 3: Write the implementation**
 
 ```python
 # nora/app/events.py
-"""`EventService` — the ONE use-case layer for Event business rules (spec
+"""`GatheringService` — the ONE use-case layer for Event business rules (spec
 §1: reminders only ever had one adapter, so its rules live inline in a
 tool closure; Event has two adapters from day one, so its rules live
 here, and both the agent tool and the web read routes call these same
@@ -1295,10 +1306,10 @@ from typing import Callable, Protocol
 from uuid import UUID
 
 from nora.agent.security import looks_like_coordinate, scan_identifiers
-from nora.domain.events import (
+from nora.domain.gatherings import (
     Event,
-    EventStatus,
-    EventStore,
+    GatheringStatus,
+    GatheringStore,
     RSVP,
     RSVPResponse,
     VenueCandidate,
@@ -1335,13 +1346,13 @@ class _Honcho(Protocol):
     ) -> str | None: ...
 
 
-class EventNotFoundError(Exception):
+class GatheringNotFoundError(Exception):
     def __init__(self, event_id: UUID) -> None:
         super().__init__(f"event {event_id} not found")
         self.event_id = event_id
 
 
-class AmbiguousOpenEventsError(Exception):
+class AmbiguousOpenGatheringsError(Exception):
     """More than one proposed event exists for a conversation — spec
     §3.1's fail-closed-on-ambiguity case. The caller (the `create_event`
     tool) is expected to catch this and ask which event is meant, never
@@ -1355,11 +1366,11 @@ class AmbiguousOpenEventsError(Exception):
         self.open_events = tuple(open_events)
 
 
-class EventService:
+class GatheringService:
     def __init__(
         self,
         *,
-        store: EventStore,
+        store: GatheringStore,
         reminders: ReminderStore,
         reminder_caps: ReminderCaps,
         route_source: _RouteSource | None,
@@ -1383,13 +1394,13 @@ class EventService:
         have already checked `list_events(status=PROPOSED)` and decided a
         new event is genuinely wanted — this method does not silently
         merge or refuse on its behalf. It DOES still raise
-        `AmbiguousOpenEventsError` if two-or-more open events already
+        `AmbiguousOpenGatheringsError` if two-or-more open events already
         exist, as a last-resort backstop, not the primary mechanism."""
         open_events = await self.list_events(
-            conversation_id=conversation_id, status=EventStatus.PROPOSED,
+            conversation_id=conversation_id, status=GatheringStatus.PROPOSED,
         )
         if len(open_events) >= 2:
-            raise AmbiguousOpenEventsError(conversation_id, open_events)
+            raise AmbiguousOpenGatheringsError(conversation_id, open_events)
 
         now = self._now()
         event = Event(
@@ -1406,7 +1417,7 @@ class EventService:
             venue_price_level="",
             venue_maps_url=None,
             venue_resolved_at=None,
-            status=EventStatus.PROPOSED,
+            status=GatheringStatus.PROPOSED,
             reminder_id=None,
             created_at=now,
         )
@@ -1454,12 +1465,12 @@ class EventService:
             await self._reminders.cancel(
                 current.reminder_id, conversation_id=current.conversation_id,
             )
-        updated = replace(current, status=EventStatus.CANCELLED)
+        updated = replace(current, status=GatheringStatus.CANCELLED)
         await self._store.update(updated)
         return updated
 
     async def list_events(
-        self, *, conversation_id: str, status: EventStatus | None = None,
+        self, *, conversation_id: str, status: GatheringStatus | None = None,
     ) -> Sequence[Event]:
         return await self._store.list_for_conversation(
             conversation_id=conversation_id, status=status,
@@ -1517,7 +1528,7 @@ class EventService:
     async def _require(self, event_id: UUID) -> Event:
         event = await self._store.get(event_id)
         if event is None:
-            raise EventNotFoundError(event_id)
+            raise GatheringNotFoundError(event_id)
         return event
 
     async def _link_reminder(
@@ -1575,7 +1586,7 @@ class EventService:
 
     async def _resolve_place(self, text: str) -> dict | None:
         """The R-28 screen, THEN the same resolver `place_info` calls —
-        applied here because `EventService` reaches Google through a
+        applied here because `GatheringService` reaches Google through a
         second path and must carry the identical guard (Task 6)."""
         if scan_identifiers(text) is not None or looks_like_coordinate(text):
             return None
@@ -1598,18 +1609,18 @@ Expected: PASS (10 tests)
 uv run mypy nora/app/events.py
 uv run ruff check nora/app/events.py tests/test_events_service.py
 git add nora/app/events.py tests/test_events_service.py
-git commit -m "feat(nora): add EventService use-case layer"
+git commit -m "feat(nora): add GatheringService use-case layer"
 ```
 
 ---
 
-### Task 8: Wire `EventService` into `nora/app/composition.py`
+### Task 8: Wire `GatheringService` into `nora/app/composition.py`
 
 **Files:**
 - Modify: `nora/app/composition.py`
 
 **Interfaces:**
-- Consumes: `SqlEventStore` (Task 3), `EventService` (Task 7), the already-built `route_client`/`reminders`/`reminder_caps`/`cfg.honcho`-backed Honcho client, `ai_peer` string — all already constructed elsewhere in this file per the earlier research (route_client at composition.py:698-708; reminders/reminder_caps built from `cfg.reminders` nearby; a Honcho client and `ai_peer` id already threaded to `ToolRegistry`).
+- Consumes: `SqlGatheringStore` (Task 3), `GatheringService` (Task 7), the already-built `route_client`/`reminders`/`reminder_caps`/`cfg.honcho`-backed Honcho client, `ai_peer` string — all already constructed elsewhere in this file per the earlier research (route_client at composition.py:698-708; reminders/reminder_caps built from `cfg.reminders` nearby; a Honcho client and `ai_peer` id already threaded to `ToolRegistry`).
 
 - [ ] **Step 1: Locate the existing collaborators**
 
@@ -1617,16 +1628,16 @@ Run: `grep -n "route_client\|reminder_caps\|ReminderCaps(\|ai_peer\|honcho" nora
 
 Confirm the exact local variable names for the already-built `route_client`, `reminders` (a `ReminderStore`), `reminder_caps`, the Honcho `MemoryStore` instance, and `ai_peer` — use those exact names in Step 2 rather than inventing new ones.
 
-- [ ] **Step 2: Construct `SqlEventStore` + `EventService`**
+- [ ] **Step 2: Construct `SqlGatheringStore` + `GatheringService`**
 
 Immediately after wherever `reminder_caps`/`route_client` are built (same section — Event's collaborators are all things this file already has in scope), add:
 
 ```python
-from nora.app.events import EventService
-from nora.infra.sql.events import SqlEventStore
+from nora.app.gatherings import GatheringService
+from nora.infra.sql.gatherings import SqlGatheringStore
 
-event_store = SqlEventStore(sql_engine)  # reuse the SAME engine reminders/messages use
-events = EventService(
+event_store = SqlGatheringStore(sql_engine)  # reuse the SAME engine reminders/messages use
+events = GatheringService(
     store=event_store,
     reminders=reminders,
     reminder_caps=reminder_caps,
@@ -1651,7 +1662,7 @@ Expected: fails at this step until Task 9 adds `events` to `ToolRegistry.__init_
 
 ```bash
 git add nora/app/composition.py
-git commit -m "feat(nora): wire EventService into composition"
+git commit -m "feat(nora): wire GatheringService into composition"
 ```
 
 ---
@@ -1663,7 +1674,7 @@ git commit -m "feat(nora): wire EventService into composition"
 - Modify: `nora/agent/registry.py`
 
 **Interfaces:**
-- Consumes: `EventService` (Task 7), `EventStatus`, `RSVPResponse`, `AmbiguousOpenEventsError`, `EventNotFoundError` (Task 7/1); the existing `NativeTool`, `NATIVE_TOOLS`, `_spec`, `build_tool_specs` machinery; the existing `_parse_when` helper `remind` already uses; `Room`/`RoomView`/`PersonRef` from `nora.agent.room`/`nora.domain.models`.
+- Consumes: `GatheringService` (Task 7), `GatheringStatus`, `RSVPResponse`, `AmbiguousOpenGatheringsError`, `GatheringNotFoundError` (Task 7/1); the existing `NativeTool`, `NATIVE_TOOLS`, `_spec`, `build_tool_specs` machinery; the existing `_parse_when` helper `remind` already uses; `Room`/`RoomView`/`PersonRef` from `nora.agent.room`/`nora.domain.models`.
 
 - [ ] **Step 1: Add `NATIVE_TOOLS` entries**
 
@@ -1693,15 +1704,15 @@ In `nora/agent/tools.py`, near the existing `remind`/`list_reminders`/`cancel_re
 
 - [ ] **Step 2: Add the `events` parameter to `build_tool_specs`**
 
-At the signature found in research (`nora/agent/tools.py:1236`), add `events: EventService | None = None,` alongside the existing `reminders: ReminderStore | None = None,` parameter, and add the import at the top of the file:
+At the signature found in research (`nora/agent/tools.py:1236`), add `events: GatheringService | None = None,` alongside the existing `reminders: ReminderStore | None = None,` parameter, and add the import at the top of the file:
 
 ```python
-from nora.app.events import (
-    AmbiguousOpenEventsError,
-    EventNotFoundError,
-    EventService,
+from nora.app.gatherings import (
+    AmbiguousOpenGatheringsError,
+    GatheringNotFoundError,
+    GatheringService,
 )
-from nora.domain.events import EventStatus, RSVPResponse
+from nora.domain.gatherings import GatheringStatus, RSVPResponse
 ```
 
 - [ ] **Step 3: Write the six tool closures**
@@ -1720,7 +1731,7 @@ Add these inside `build_tool_specs`, near the `remind`/`list_reminders`/`cancel_
         """
         if events is None:
             return {"status": "unavailable", "note": "Events aren't set up here."}
-        parsed_status = EventStatus(status) if status else None
+        parsed_status = GatheringStatus(status) if status else None
         out = await events.list_events(
             conversation_id=room.conversation_id, status=parsed_status,
         )
@@ -1771,7 +1782,7 @@ Add these inside `build_tool_specs`, near the `remind`/`list_reminders`/`cancel_
                 title=title, when=due_at,
                 venue_text=venue_text or None,
             )
-        except AmbiguousOpenEventsError:
+        except AmbiguousOpenGatheringsError:
             return {
                 "status": "refused",
                 "note": "There's more than one open event here already — "
@@ -1800,7 +1811,7 @@ Add these inside `build_tool_specs`, near the `remind`/`list_reminders`/`cancel_
                 event_id=UUID(event_id), when=due_at,
                 venue_text=venue_text or None,
             )
-        except EventNotFoundError:
+        except GatheringNotFoundError:
             return {"status": "refused", "note": "I don't know that event."}
         except ValueError:
             return {"status": "refused", "note": "That doesn't look like an event id."}
@@ -1826,7 +1837,7 @@ Add these inside `build_tool_specs`, near the `remind`/`list_reminders`/`cancel_
                 event_id=UUID(event_id), person_id=tagger.person_id,
                 response=RSVPResponse(response),
             )
-        except EventNotFoundError:
+        except GatheringNotFoundError:
             return {"status": "refused", "note": "I don't know that event."}
         except ValueError:
             return {"status": "refused", "note": "That's not yes, no, or maybe."}
@@ -1842,7 +1853,7 @@ Add these inside `build_tool_specs`, near the `remind`/`list_reminders`/`cancel_
             return {"status": "unavailable", "note": "Events aren't set up here."}
         try:
             ev = await events.cancel_event(event_id=UUID(event_id))
-        except EventNotFoundError:
+        except GatheringNotFoundError:
             return {"status": "refused", "note": "I don't know that event."}
         except ValueError:
             return {"status": "refused", "note": "That doesn't look like an event id."}
@@ -1876,7 +1887,7 @@ Add these inside `build_tool_specs`, near the `remind`/`list_reminders`/`cancel_
                 event_id=UUID(event_id),
                 roster_person_ids=[p.person_id for p in roster.people],
             )
-        except EventNotFoundError:
+        except GatheringNotFoundError:
             return {"status": "refused", "note": "I don't know that event."}
         except ValueError:
             return {"status": "refused", "note": "That doesn't look like an event id."}
@@ -1911,7 +1922,7 @@ Find the tuple of `_spec(...)` calls (`nora/agent/tools.py:3685` per research) a
 
 - [ ] **Step 5: Add `events` to `ToolRegistry`**
 
-In `nora/agent/registry.py`'s `__init__` (line 78-108 per research), add `events: EventService | None = None,` to the constructor's keyword-only parameters, store it as `self._events = events`, and pass `events=self._events,` into the `build_tool_specs(...)` call inside this class.
+In `nora/agent/registry.py`'s `__init__` (line 78-108 per research), add `events: GatheringService | None = None,` to the constructor's keyword-only parameters, store it as `self._events = events`, and pass `events=self._events,` into the `build_tool_specs(...)` call inside this class.
 
 - [ ] **Step 6: Verify composition + registry now type-check together (closes out Task 8)**
 
@@ -1961,7 +1972,7 @@ git commit -m "feat(nora): add create_event/update_event/rsvp_event/cancel_event
 - Modify: `design/09-decision-index.md`
 
 **Interfaces:**
-- Consumes: `AmbiguousOpenEventsError` (Task 7), `EventService` (Task 7), `FakeEventStore` (Task 4).
+- Consumes: `AmbiguousOpenGatheringsError` (Task 7), `GatheringService` (Task 7), `FakeGatheringStore` (Task 4).
 
 - [ ] **Step 1: Write the named acceptance test**
 
@@ -1974,13 +1985,13 @@ async def test_r52_two_open_events_refuses_a_third_rather_than_guessing():
     creating a duplicate."""
     from datetime import datetime, timezone
 
-    from nora.app.events import AmbiguousOpenEventsError, EventService
+    from nora.app.gatherings import AmbiguousOpenGatheringsError, GatheringService
     from nora.domain.reminders import ReminderCaps
-    from nora.testing.events import FakeEventStore
+    from nora.testing.gatherings import FakeGatheringStore
     from nora.testing.reminders import FakeReminderStore
 
-    svc = EventService(
-        store=FakeEventStore(), reminders=FakeReminderStore(),
+    svc = GatheringService(
+        store=FakeGatheringStore(), reminders=FakeReminderStore(),
         reminder_caps=ReminderCaps(), route_source=None, honcho=None,
         ai_peer="nora",
         now=lambda: datetime(2026, 8, 19, tzinfo=timezone.utc),
@@ -1995,14 +2006,14 @@ async def test_r52_two_open_events_refuses_a_third_rather_than_guessing():
             title="B",
         )
     )
-    with pytest.raises(AmbiguousOpenEventsError):
+    with pytest.raises(AmbiguousOpenGatheringsError):
         await svc.create_event(
             conversation_id="signal:group-1", requester_person_id="miles",
             title="C",
         )
 ```
 
-(The `svc._store.update(...)` no-op line is a harmless way to keep the test self-contained without adding a bypass method to `EventService`; if this reads awkwardly in review, simplify to two direct `await svc.create_event(...)` calls followed by the third that's expected to raise — the two-events-then-a-third shape is what matters, not this exact construction.)
+(The `svc._store.update(...)` no-op line is a harmless way to keep the test self-contained without adding a bypass method to `GatheringService`; if this reads awkwardly in review, simplify to two direct `await svc.create_event(...)` calls followed by the third that's expected to raise — the two-events-then-a-third shape is what matters, not this exact construction.)
 
 - [ ] **Step 2: Run it**
 
@@ -2044,8 +2055,8 @@ git commit -m "test(nora): add R-52 open-event doctrine rule + DEC-117 entry"
 - Modify: `nora/web/api.py`
 
 **Interfaces:**
-- Consumes: `EventService` (Task 7), `Event`/`RSVP` (Task 1).
-- Produces: `build_events_payload(*, events: EventService, conversation_id: str) -> list[dict]`, `build_event_payload(*, events: EventService, event_id: UUID) -> dict | None`.
+- Consumes: `GatheringService` (Task 7), `Event`/`RSVP` (Task 1).
+- Produces: `build_events_payload(*, events: GatheringService, conversation_id: str) -> list[dict]`, `build_event_payload(*, events: GatheringService, event_id: UUID) -> dict | None`.
 
 - [ ] **Step 1: Write the payload builders**
 
@@ -2054,14 +2065,14 @@ git commit -m "test(nora): add R-52 open-event doctrine rule + DEC-117 entry"
 """JSON payload builders for the read-only Event web surface. Plain async
 functions over typed collaborators, matching `nora.web.memory`'s shape
 (`build_memory_payload`) rather than `nora.web.games`'s remote-client-wrapper
-shape — Event's data is local Postgres via `EventService`, not a remote
+shape — Event's data is local Postgres via `GatheringService`, not a remote
 REST API."""
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from nora.app.events import EventService
+from nora.app.gatherings import GatheringService
 
 
 def _event_dict(event) -> dict:
@@ -2084,14 +2095,14 @@ def _event_dict(event) -> dict:
 
 
 async def build_events_payload(
-    *, events: EventService, conversation_id: str,
+    *, events: GatheringService, conversation_id: str,
 ) -> list[dict]:
     out = await events.list_events(conversation_id=conversation_id)
     return [_event_dict(e) for e in out]
 
 
 async def build_event_payload(
-    *, events: EventService, event_id: UUID,
+    *, events: GatheringService, event_id: UUID,
 ) -> dict | None:
     event = await events.get_event(event_id=event_id)
     if event is None:
@@ -2105,7 +2116,7 @@ async def build_event_payload(
     return payload
 ```
 
-**Note**: `build_event_payload` reaches into `events._store` directly for RSVPs because `EventService` has no public `rsvps_for` passthrough yet. Add one instead of reaching past the underscore — amend `nora/app/events.py` (Task 7) with:
+**Note**: `build_event_payload` reaches into `events._store` directly for RSVPs because `GatheringService` has no public `rsvps_for` passthrough yet. Add one instead of reaching past the underscore — amend `nora/app/events.py` (Task 7) with:
 
 ```python
     async def rsvps_for(self, *, event_id: UUID) -> Sequence[RSVP]:
@@ -2118,7 +2129,7 @@ and update `build_event_payload` to call `await events.rsvps_for(event_id=event_
 
 In `nora/web/api.py`, find `register_web_routes(app, *, store, honcho, reminders, persons, ai_peer, started_at, games_client, presence, presence_circles, skills_dir)` (line 113 per research) and:
 
-1. Add `events: EventService,` to its parameter list.
+1. Add `events: GatheringService,` to its parameter list.
 2. Store it: `app["web_events"] = events` (matching however the existing collaborators get stored — confirm the exact pattern with `grep -n 'app\["web_' nora/web/api.py` before writing this line).
 3. Add two handlers and register them:
 
@@ -2156,7 +2167,7 @@ async def events_detail(request: web.Request) -> web.Response:
     app.router.add_get("/app/v1/events/{id}", events_detail)
 ```
 
-(Place this registration alongside the existing games/memory route registrations in the same function, and add `from nora.web.events import build_event_payload, build_events_payload` to the file's imports.)
+(Place this registration alongside the existing games/memory route registrations in the same function, and add `from nora.web.gatherings import build_event_payload, build_events_payload` to the file's imports.)
 
 - [ ] **Step 3: Thread `events` through the caller of `register_web_routes`**
 
@@ -2174,18 +2185,18 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from nora.app.events import EventService
+from nora.app.gatherings import GatheringService
 from nora.domain.reminders import ReminderCaps
-from nora.testing.events import FakeEventStore
+from nora.testing.gatherings import FakeGatheringStore
 from nora.testing.reminders import FakeReminderStore
-from nora.web.events import build_event_payload, build_events_payload
+from nora.web.gatherings import build_event_payload, build_events_payload
 
 pytestmark = pytest.mark.asyncio
 
 
-async def _service() -> EventService:
-    return EventService(
-        store=FakeEventStore(), reminders=FakeReminderStore(),
+async def _service() -> GatheringService:
+    return GatheringService(
+        store=FakeGatheringStore(), reminders=FakeReminderStore(),
         reminder_caps=ReminderCaps(), route_source=None, honcho=None,
         ai_peer="nora",
         now=lambda: datetime(2026, 8, 19, tzinfo=timezone.utc),
@@ -2212,7 +2223,7 @@ async def test_build_event_payload_returns_none_for_missing_event():
 
 
 async def test_build_event_payload_includes_rsvps():
-    from nora.domain.events import RSVPResponse
+    from nora.domain.gatherings import RSVPResponse
 
     svc = await _service()
     ev = await svc.create_event(
@@ -2702,7 +2713,7 @@ git commit -m "docs(nora): release fragment for Event module, fix spec migration
 
 ## Self-Review Notes (for the plan author, not a task)
 
-- **Spec coverage**: §1/§1.1 architecture → Tasks 1,3,7,8. §2/§2.1 data model + venue caching → Tasks 1,2,3. §3/§3.1 EventService + open-event doctrine → Tasks 7,10. §4 notifications → Task 7 (`_link_reminder`/cancel path). §5/§5.1/§5.2 recommendations + reserved routes seam → Task 7 (`suggest_venue`, `route_hints` always `None`). §6 web surface → Tasks 11-14. §7 skills → deliberately no task (spec says not needed). §8 testing/rollout → Tasks 5,10,15. Out-of-scope items (route/ETA, web write path, background extractor, new skills system, cross-workspace visibility) → deliberately have no task; nothing in this plan builds any of them.
+- **Spec coverage**: §1/§1.1 architecture → Tasks 1,3,7,8. §2/§2.1 data model + venue caching → Tasks 1,2,3. §3/§3.1 GatheringService + open-event doctrine → Tasks 7,10. §4 notifications → Task 7 (`_link_reminder`/cancel path). §5/§5.1/§5.2 recommendations + reserved routes seam → Task 7 (`suggest_venue`, `route_hints` always `None`). §6 web surface → Tasks 11-14. §7 skills → deliberately no task (spec says not needed). §8 testing/rollout → Tasks 5,10,15. Out-of-scope items (route/ETA, web write path, background extractor, new skills system, cross-workspace visibility) → deliberately have no task; nothing in this plan builds any of them.
 - **Migration number**: corrected from the spec's `0016` assumption to `0015` (Global Constraints, Task 2, Task 15).
 - **Field naming**: `group_id`→`conversation_id`, `reminder_series_id`→`reminder_id` — both corrected up front in Global Constraints so every later task uses the resolved names consistently, not the spec's original ones.
 - **R-28 reuse**: Task 6 exists specifically so Task 7's venue resolution doesn't duplicate the identifier/coordinate screen — flagged as a real risk in the spec's §2.1, resolved here as a relocate-don't-reinvent task.

@@ -19,7 +19,7 @@ that structural rather than optional: `deliver.build` has exactly TWO callers,
 the tag pipeline and this module, so a second unprompted path cannot be built
 beside this one. It has to be built THROUGH it.
 
-So what differs is factored into `Occasion`: where she speaks, on whose
+So what differs is factored into `Event`: where she speaks, on whose
 authority, the words put to her, and the header that says why this turn is
 happening. `speak(occasion)` is the turn; `run(rows)` is the heartbeat's
 reminder-shaped adapter onto it (see both docstrings).
@@ -64,7 +64,6 @@ import logging
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -81,6 +80,7 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.compute import ComputeJob
+from nora.domain.events import Event, EventFactory
 from nora.domain.models import NormalizedMessage, PersonRef, TagContext, TranscriptRow
 from nora.domain.ports import (
     JobResult,
@@ -129,61 +129,7 @@ _EVERY = {
 }
 
 
-@dataclass(frozen=True)
-class Occasion:
-    """WHY an unprompted turn is happening, and everything that differs because
-    of it. Everything else about the turn is the same turn.
-
-    Four fields carry the conversation (`platform`/`conversation_id`/
-    `conversation_type` — every conversation key in this codebase is a TUPLE,
-    and a value carrying the id alone can build neither a `ConversationTarget`
-    nor a `Policy.is_allowed` call) and the words put to her (`body`).
-
-    `person_id` is WHOSE AUTHORITY the turn runs under, and it is `None`-able on
-    purpose:
-
-    * A reminder HAS one — the requester, already screened against
-      `policy.is_allowed` by the tick — and `speak` refuses the turn when that
-      person has since left `identity.toml` (§12: the grant went away, so
-      `failed_policy` and not a word said).
-    * A version announcement has NOBODY. Nothing was asked; the build spoke.
-      `None` therefore means "this turn is not held on anyone's behalf", and the
-      §12 refusal does not apply — refusing it would be answering a question
-      nobody asked. The cost is that `ctx.tagger` is `None` for that turn, so
-      the room-scoped tools and the peer card go dark (see `build_context`),
-      which is correct: an announcement is about HER, and needs nothing about
-      anyone in the room.
-
-    `speaker` names the body's author for `build_tag_message`'s `from=`
-    attribute when `person_id` is None. A message attributed to nobody would
-    read as unsourced text in the prompt — the one thing R-13's block structure
-    exists to prevent.
-
-    `header` is the situation paragraph, as a callable rather than a string,
-    because it is the one part that has to be rendered against values only the
-    turn knows: the resolved `PersonRef` (or `None`) and the instant the turn
-    ran. Both occasions escape everything group- or operator-authored that goes
-    into it (R-13), which is why each one builds its own rather than formatting
-    a template here.
-
-    `kind` names the occasion in log lines. It is deliberately NOT a metric
-    label: both occasions run under the `heartbeat` doctrine audience and the
-    same `[heartbeat] timeout_seconds`, so they belong to the same population on
-    every series `AUDIENCE` labels (§13's argument), and splitting them would
-    describe neither.
-    """
-
-    platform: str
-    conversation_id: str
-    conversation_type: str
-    person_id: str | None
-    body: str
-    header: Callable[[PersonRef | None, datetime], str]
-    speaker: str = ""
-    kind: str = "reminder"
-
-
-def reminder_occasion(rows: Sequence[Reminder]) -> Occasion:
+def reminder_occasion(rows: Sequence[Reminder]) -> Event:
     """One conversation's due reminders, as the occasion they are.
 
     The heartbeat's rows are already grouped by `(platform, conversation_id,
@@ -196,7 +142,7 @@ def reminder_occasion(rows: Sequence[Reminder]) -> Occasion:
     the person said breaks that premise.
     """
     row = rows[0]
-    return Occasion(
+    return Event(
         platform=row.platform,
         conversation_id=row.conversation_id,
         conversation_type=row.conversation_type,
@@ -207,9 +153,74 @@ def reminder_occasion(rows: Sequence[Reminder]) -> Occasion:
     )
 
 
-def compute_occasion(job: ComputeJob, result: JobResult) -> Occasion:
+def gathering_occasion(rows: Sequence[Reminder]) -> Event:
+    """A gathering's due notify, as the Event it is (DEC-139).
+
+    `kind="gathering"` rows carry the gathering title in
+    `payload["title"]` (denormalized at schedule time —
+    `GatheringService._link_reminder`, design/event-abstraction/05).
+    `body` is that title — the ONE fact she needs to say it back — and the
+    header does the rest, exactly like `reminder_occasion` keeps the
+    requester's own sentence in the body and puts the circumstances in the
+    header.
+
+    A missing `payload["title"]` is a WIRING BUG, not a runtime maybe: the
+    factory raises instead of `KeyError`-ing out of the blue, and the raise
+    lands in the same fail-closed path as an unregistered kind —
+    `HeartbeatLoop._run_turn`'s `_fire` guard resolves the claimed row to
+    FAILED (`failed_error`) immediately, never rendered as a malformed
+    sentence (see design/event-abstraction/04).
+    """
+    row = rows[0]
+    if not isinstance(row.payload, Mapping):
+        raise KeyError(
+            f"kind='gathering' reminder {row.id} has no payload — "
+            "the row was written without its denormalized payload"
+        )
+    title = row.payload.get("title")
+    if not isinstance(title, str):
+        raise KeyError(
+            f"kind='gathering' reminder {row.id} has no string "
+            "payload['title'] — the row was written without its "
+            "denormalized payload"
+        )
+    return Event(
+        platform=row.platform,
+        conversation_id=row.conversation_id,
+        conversation_type=row.conversation_type,
+        person_id=row.requester_person_id,
+        body=title,
+        header=lambda tagger, now: _gathering_header(title, tagger, now),
+        kind="gathering",
+    )
+
+
+def _gathering_header(
+    title: str, tagger: PersonRef | None, now: datetime,
+) -> str:
+    """The situation paragraph for a gathering-notify fire turn.
+
+    Same shape as `_fire_header`: nobody called her, and that is not why
+    this turn is happening. `title` arrives from the factory AFTER its
+    payload guard, so it is a `str` here, never a missing key. The
+    requester's name and the title are escaped because everything else this
+    module puts in a prompt is (R-13).
+    """
+    who = escape(tagger.name if tagger is not None else "")
+    safe_title = escape(str(title))
+    return (
+        "You are in a group chat you have been reading all along. Nobody has "
+        f"just called you. Earlier, {who} asked you to remind the room about "
+        f"«{safe_title}», and that time has come — that is why this turn is "
+        "happening, and it is the only reason.\n"
+        f"Bring the gathering up to {who} and the room now, in your own words. "
+        "Do not read the time back at them unless they asked in those terms."
+    )
+
+
+def compute_occasion(job: ComputeJob, result: JobResult) -> Event:
     """A finished compute job, as the occasion it is (Nora Compute spec §2)
-    — the THIRD `Occasion`, reusing `FirePath.speak` exactly as
+    — the THIRD `Event`, reusing `FirePath.speak` exactly as
     `VersionAnnouncer` (DEC-97) already established as the pattern for a
     second thing built on this turn beside reminders.
 
@@ -224,7 +235,7 @@ def compute_occasion(job: ComputeJob, result: JobResult) -> Occasion:
         if result.status is JobStatus.SUCCEEDED
         else f"It failed: {result.error or 'no reason given'}"
     )
-    return Occasion(
+    return Event(
         platform=job.platform,
         conversation_id=job.conversation_id,
         conversation_type=job.conversation_type,
@@ -237,9 +248,9 @@ def compute_occasion(job: ComputeJob, result: JobResult) -> Occasion:
 
 def relay_occasion(
     *, destination: Any, requester: PersonRef, text: str, from_platform: str,
-) -> Occasion:
+) -> Event:
     """A message somebody asked to be passed into another room — the FOURTH
-    `Occasion` (DEC-105), following DEC-99's ruling exactly: a new way for Nora
+    `Event` (DEC-105), following DEC-99's ruling exactly: a new way for Nora
     to speak is an occasion on this path, never a fourth send mechanism.
 
     That ruling is what keeps R-1b's three links intact. A relay that called
@@ -255,7 +266,7 @@ def relay_occasion(
     room — and so §12's re-check at fire time applies to them, as it does to a
     reminder's owner.
     """
-    return Occasion(
+    return Event(
         platform=destination.platform,
         conversation_id=destination.primary_id,
         conversation_type="group",
@@ -282,8 +293,8 @@ def _relay_header(
     )
 
 
-def lost_job_occasion(job: ComputeJob) -> Occasion:
-    """A job whose delivery was lost across a restart — the FIFTH `Occasion`.
+def lost_job_occasion(job: ComputeJob) -> Event:
+    """A job whose delivery was lost across a restart — the FIFTH `Event`.
 
     Boot recovery cannot know whether the container finished: its handle lives
     in `LocalDockerBackend`'s in-memory registry and did not survive
@@ -297,7 +308,7 @@ def lost_job_occasion(job: ComputeJob) -> Occasion:
     the requester was told «I'm working on it» and, before this, heard nothing
     ever again (operator, live, 2026-08-14).
     """
-    return Occasion(
+    return Event(
         platform=job.platform,
         conversation_id=job.conversation_id,
         conversation_type=job.conversation_type,
@@ -366,6 +377,7 @@ class FirePath:
         tool_call_log_store: ToolCallLogStore | None = None,
         room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
         room_exchange_max_entries: int = DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
+        event_registry: Mapping[str, EventFactory] | None = None,
     ) -> None:
         self._persons = persons
         self._records = records
@@ -379,6 +391,13 @@ class FirePath:
         # channel fires into that channel. A single adapter here would have
         # spoken every occasion into Signal regardless of where it was owed.
         self._adapters = adapters
+        # Kind -> factory, the dispatch point for reminder-derived Events
+        # (DEC-139). Defaults to the pre-DEC-139 hardcoded call so every
+        # construction site that predates the registry behaves identically;
+        # the composition root wires the real registry.
+        self._event_registry = dict(
+            event_registry if event_registry is not None else {"reminder": reminder_occasion}
+        )
         self._registry = registry
         self._canary = canary
         self._display_name = display_name
@@ -426,7 +445,7 @@ class FirePath:
         # Dreamer Plan 2's own sibling of the above.
         self._room_exchange_max_entries = room_exchange_max_entries
 
-    async def build_context(self, occasion: Occasion) -> TagContext:
+    async def build_context(self, occasion: Event) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
 
         **This is the trap the whole section exists for.** The synthetic message
@@ -526,18 +545,39 @@ class FirePath:
     async def run(self, rows: Sequence[Reminder]) -> str:
         """The heartbeat's `fire` collaborator: due rows in, §8.1 outcome out.
 
-        A two-line adapter over `speak`, and it stays a separate method rather
-        than becoming a lambda in the composition root for two reasons. It keeps
-        `HeartbeatLoop._fire` a BOUND METHOD of the real fire path — which is
-        what `tests/test_composition.py::test_the_heartbeat_is_wired_to_the_real_fire_path`
-        asserts, and a lambda would satisfy that test while wrapping anything at
-        all. And it keeps the reminders occasion assembled HERE, beside the
-        header prose it needs, rather than in a module that has no business
+        Dispatch by KIND, through the reminder-derived registry
+        (DEC-139, design/event-abstraction/04): `rows[0].kind` selects the
+        factory that renders the batch's Event. Today that is
+        `"reminder"` → `reminder_occasion` and `"gathering"` →
+        `gathering_occasion`; an UNREGISTERED kind raises inside this call,
+        before `speak`, and `HeartbeatLoop._run_turn`'s `_fire` guard
+        resolves the claimed rows to FAILED (`failed_error`) immediately —
+        never rendered as a malformed sentence, never left FIRING for boot
+        `recover()`.
+
+        The registry defaults to `{"reminder": reminder_occasion}` so a
+        FirePath built without one (every pre-DEC-139 construction site)
+        behaves byte-identically to the hardcoded call it replaces; the
+        composition root wires the real registry.
+
+        It stays a separate method rather than becoming a lambda in the
+        composition root for two reasons. It keeps `HeartbeatLoop._fire` a
+        BOUND METHOD of the real fire path — which is what
+        `tests/test_composition.py::test_the_heartbeat_is_wired_to_the_real_fire_path`
+        asserts, and a lambda would satisfy that test while wrapping anything
+        at all. And it keeps the event factories assembled HERE, beside the
+        header prose they need, rather than in a module that has no business
         knowing what a fire turn is (`nora.app.heartbeat`'s own docstring).
         """
-        return await self.speak(reminder_occasion(rows))
+        factory = self._event_registry.get(rows[0].kind)
+        if factory is None:
+            raise KeyError(
+                f"no event factory registered for kind={rows[0].kind!r} "
+                f"(reminder {rows[0].id}) — wired: {sorted(self._event_registry)}"
+            )
+        return await self.speak(factory(rows))
 
-    async def speak(self, occasion: Occasion) -> str:
+    async def speak(self, occasion: Event) -> str:
         """One turn, and the §8.1 outcome its caller records.
 
         **It does not call `invoke.run` or `deliver.check_outcome`** (§6.2).
@@ -584,7 +624,7 @@ class FirePath:
                 f"wired: {sorted(self._adapters)}"
             ) from None
 
-    async def _turn(self, occasion: Occasion, ctx: TagContext) -> str:
+    async def _turn(self, occasion: Event, ctx: TagContext) -> str:
         """One turn's stages, its last-resort guard, and DEC-42's observable.
 
         The `except` is the fire path's counterpart to
@@ -738,7 +778,7 @@ class FirePath:
             # `sender_id`, which is blank here, and would attribute the request to
             # nobody. Same trap as `build_context`'s `sender_name`. An occasion
             # with no person falls back to the name IT gives its author
-            # (`Occasion.speaker`), because an unattributed `<tag_message>` is
+            # (`Event.speaker`), because an unattributed `<tag_message>` is
             # unsourced text in the prompt — the one thing R-13's block structure
             # exists to prevent.
             tag_message = build_tag_message(
@@ -961,11 +1001,11 @@ class FirePath:
 
 
 def _synthetic_message(
-    occasion: Occasion, ref: PersonRef | None,
+    occasion: Event, ref: PersonRef | None,
 ) -> NormalizedMessage:
     """§6.4's second table. Built in memory only — nothing writes it.
 
-    `body` is `Occasion.body`: for a reminder the requester's OWN sentence(s),
+    `body` is `Event.body`: for a reminder the requester's OWN sentence(s),
     which is the premise of the whole feature (a deferred request, put to her at
     the due time AS a request); for a version announcement the operator's own
     release note, put to her the same way. The circumstances deliberately do NOT
@@ -976,7 +1016,7 @@ def _synthetic_message(
     `indicate.begin` return None and §5.5's "no reactions" hold without a flag
     anywhere. `timestamp` is `0` and not `None` because the field is `int`.
 
-    `sender_name` falls back to `Occasion.speaker` when no `PersonRef` resolved,
+    `sender_name` falls back to `Event.speaker` when no `PersonRef` resolved,
     so a turn nobody asked for still names the author of the words it carries.
     """
     return NormalizedMessage(
@@ -1011,7 +1051,7 @@ def _fire_header(
     The name is escaped because everything else this module puts in a prompt is,
     and `identity.toml` is operator-authored text like any other.
 
-    `tagger` is typed optional only because `Occasion.header` is one callable
+    `tagger` is typed optional only because `Event.header` is one callable
     type for both occasions; a reminders occasion always names a requester, and
     a turn whose requester fell out of `identity.toml` is refused by `_turn`
     before this is ever rendered.

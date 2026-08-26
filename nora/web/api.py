@@ -19,13 +19,12 @@ from uuid import UUID
 from aiohttp import web
 
 from nora.agent.whereis import Circle, PresenceReader
-from nora.app.events import EventService
+from nora.app.gatherings import GatheringService
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.ports import MemoryStore, RecordStore
 from nora.domain.reminders import ReminderStore
 from nora.persons import Persons
 from nora.web.doctrine import build_doctrine_payload
-from nora.web.events import build_event_payload, build_events_payload
 from nora.web.games import (
     GamesUnavailableError,
     PulseGamesClient,
@@ -42,6 +41,7 @@ from nora.web.games import (
     build_game_server_world_payload,
     build_games_servers_payload,
 )
+from nora.web.gatherings import build_gathering_payload, build_gatherings_payload
 from nora.web.memory import build_memory_payload
 from nora.web.persons import build_person_profile_payload, build_persons_roster_payload
 from nora.web.presence import (
@@ -122,7 +122,7 @@ def register_web_routes(
     reminders: ReminderStore, persons: Persons, ai_peer: str, started_at: float,
     games_client: PulseGamesClient | None,
     presence: PresenceReader | None, presence_circles: tuple[Circle, ...],
-    skills_dir: Path, events: EventService, doctrine_store: DoctrineStore,
+    skills_dir: Path, events: GatheringService, doctrine_store: DoctrineStore,
 ) -> None:
     app["web_store"] = store
     app["web_honcho"] = honcho
@@ -375,7 +375,7 @@ def register_web_routes(
         # must resolve to a person this deployment actually knows, mirroring
         # `build_memory_payload`'s `persons.by_person.get(person_id)` check.
         # No `conversation_id` — this list is participant-scoped, not
-        # conversation-scoped: `build_events_payload` already only returns
+        # conversation-scoped: `build_gatherings_payload` already only returns
         # events `person_id` created or RSVP'd to, so there is nothing left
         # for a query param to filter or leak.
         person_id = request.query.get("personId")
@@ -384,14 +384,14 @@ def register_web_routes(
                 {"status": "refused", "note": "a valid personId is required"},
                 status=400,
             )
-        body = await build_events_payload(
+        body = await build_gatherings_payload(
             events=request.app["web_events"], person_id=person_id,
         )
         return web.json_response(body)
 
     async def events_detail(request: web.Request) -> web.Response:
         # Same personId-required minimum as `events_list` above, PLUS
-        # participant scoping: `build_event_payload` returns `None` (→ 404,
+        # participant scoping: `build_gathering_payload` returns `None` (→ 404,
         # never a distinct "forbidden") unless `person_id` created this
         # event or has an RSVP on it.
         person_id = request.query.get("personId")
@@ -404,7 +404,7 @@ def register_web_routes(
             event_id = UUID(request.match_info["id"])
         except ValueError:
             return web.json_response({"status": "refused", "note": "bad id"}, status=400)
-        body = await build_event_payload(
+        body = await build_gathering_payload(
             events=request.app["web_events"], event_id=event_id, person_id=person_id,
         )
         if body is None:

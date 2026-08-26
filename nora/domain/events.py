@@ -1,194 +1,63 @@
-"""Event/RSVP domain types and the `EventStore` port.
+"""The Event abstraction — WHY an unprompted turn is happening (DEC-139).
 
-Mirrors `nora.domain.reminders`'s split (types + port in one module, no
-separate `ports.py` entry — a domain module's own port lives with its
-types, matching `ReminderStore`'s own precedent). An `Event` OWNS at most
-one `Reminder` (`reminder_id`) when it has a `when` — Event never has a
-recurrence concept of its own, so that reminder is always one-shot
-(`Series` is never involved). Notifications are entirely the existing
-`nora.domain.reminders` + `nora.app.fire` path; nothing here re-implements
-scheduling.
+Promoted from `Occasion`, a private type in `nora/app/fire.py`, into a
+first-class domain type. The shape is unchanged — this is a promotion, not
+a redesign — and the factories that BUILD events remain app-layer prose in
+`nora/app/fire.py` (they close over header callables and escaping that
+domain may not import, per the layered import contract).
 
-Venue fields are resolved ONCE, at write time, through the same
-`route_source`/`PlaceResolver` `nora.agent.tools`'s `place_info` tool
-already uses (see `nora.app.events.EventService`) — `venue_text` is what
-was actually SAID; `venue_place_id`/`venue_name`/`venue_address`/
-`venue_rating`/`venue_price_level`/`venue_maps_url` are the cached,
-stable result of that one resolution. Raw `lat`/`lng` are deliberately
-absent (DEC-24 — never in a model-facing schema, and `route()` never
-accepts a coordinate as an argument anyway) and `open_now` is deliberately
-absent (it goes stale by the hour; "is it open now" stays a fresh
-on-demand check, never a cached column).
+`Event` answers *what happens* (via `kind`); `nora.domain.reminders`
+answers *when* (the scheduler). A fire turn's shape is one Event, and the
+registry in `nora/app/fire.py` maps a reminder row's `kind` to the factory
+that renders it.
+
+`EventFactory` is the kind -> factory protocol. The registry itself is a
+plain `dict[str, EventFactory]` wired at the composition root — matching
+the codebase's existing idiom (plain functions over a strategy-object
+hierarchy for five cases), and keeping the domain type free of app wiring.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from enum import StrEnum
-from typing import Protocol, runtime_checkable
-from uuid import UUID
+from typing import TypeAlias
 
-from nora.domain.reminders import ensure_utc
-
-
-class EventStatus(StrEnum):
-    PROPOSED = "proposed"
-    CONFIRMED = "confirmed"
-    CANCELLED = "cancelled"
+from nora.domain.models import PersonRef
+from nora.domain.reminders import Reminder
 
 
-class RSVPResponse(StrEnum):
-    YES = "yes"
-    NO = "no"
-    MAYBE = "maybe"
-
-
-class DuplicateEventError(Exception):
-    """Raised by `EventStore.create` on a primary-key collision — mirrors
-    `DuplicateReminderError`'s shape so callers handle both the same way."""
-
-    def __init__(self, event_id: UUID) -> None:
-        super().__init__(f"event {event_id} already exists")
-        self.event_id = event_id
-
-
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Event:
-    id: UUID
+    """WHY an unprompted turn is happening, and everything that differs because
+    of it. Everything else about the turn is the same turn.
+
+    `platform`/`conversation_id`/`conversation_type` carry the conversation
+    — every conversation key in this codebase is a TUPLE, and a value
+    carrying the id alone can build neither a `ConversationTarget` nor a
+    `Policy.is_allowed` call. `body` is the words put to her.
+
+    `person_id` is WHOSE AUTHORITY the turn runs under — `None` means "this
+    turn is not held on anyone's behalf" (a version announcement).
+
+    `header` is the situation paragraph, as a callable rather than a
+    string, because it is the one part that has to be rendered against
+    values only the turn knows: the resolved `PersonRef` (or `None`) and
+    the instant the turn ran.
+
+    `kind` names the event in log lines; the factories in `nora/app/fire.py`
+    use it to select header prose and payload reading.
+    """
+
+    kind: str
+    platform: str
     conversation_id: str
-    title: str
-    created_by: str  # person_id
-    when: datetime | None
-    venue_text: str | None
-    venue_place_id: str | None
-    venue_name: str | None
-    venue_address: str | None
-    venue_rating: float | None
-    venue_price_level: str
-    venue_maps_url: str | None
-    venue_resolved_at: datetime | None
-    status: EventStatus
-    reminder_id: UUID | None
-    created_at: datetime
+    conversation_type: str
+    person_id: str | None
+    body: str
+    header: Callable[[PersonRef | None, datetime], str]
+    speaker: str = ""
 
 
-@dataclass(frozen=True, slots=True)
-class RSVP:
-    event_id: UUID
-    person_id: str
-    response: RSVPResponse
-    responded_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class VenueCandidate:
-    """One `suggest_venue` candidate. `source` names WHY it was suggested —
-    "mention_frequency" or "explicit_callback" — so a reply can say why,
-    not just what."""
-
-    venue_text: str
-    place_id: str | None
-    name: str | None
-    address: str | None
-    rating: float | None
-    price_level: str
-    maps_url: str | None
-    source: str
-
-
-@dataclass(frozen=True, slots=True)
-class VenueSuggestions:
-    """`status` is the R-27 three-state shape: `ok` / `nothing_found` /
-    `unavailable` — an ERROR is never a PASS. `route_hints` is the reserved
-    seam from spec §5.1: always `None` in this version; a later revision
-    fills it via `saved_places()` + `route()` per attendee under the R-28
-    guard those tools already enforce — the type does not change when it
-    does."""
-
-    status: str
-    candidates: tuple[VenueCandidate, ...] = ()
-    route_hints: None = None
-
-
-class EventNotFoundError(Exception):
-    """Raised by `EventService` (`nora.app.events`) whenever an `event_id`
-    does not resolve. Lives here, not on `EventService` itself, so
-    `nora.agent` — which sits BELOW `nora.app` in the layered-architecture
-    import-linter contract and may not import it — can still catch it: a
-    caller several layers up mints the concrete `EventService`, but the
-    exception TYPE has to be reachable from every layer that calls a method
-    which can raise it."""
-
-    def __init__(self, event_id: UUID) -> None:
-        super().__init__(f"event {event_id} not found")
-        self.event_id = event_id
-
-
-class EventCancelledError(Exception):
-    """Raised by `EventService` (`nora.app.events`) when `update_event`/`rsvp`
-    is asked to act on an event whose `status` is already `CANCELLED` — a new
-    `when` would otherwise re-arm the event's reminder for a gathering that
-    was called off (Fix I2). Lives here for the same layering reason as
-    `EventNotFoundError`: the exception TYPE must be reachable from
-    `nora.agent`, which sits below `nora.app` and may not import it."""
-
-    def __init__(self, event_id: UUID) -> None:
-        super().__init__(f"event {event_id} is cancelled")
-        self.event_id = event_id
-
-
-class AmbiguousOpenEventsError(Exception):
-    """More than one proposed event exists for a conversation — spec
-    §3.1's fail-closed-on-ambiguity case. The caller (the `create_event`
-    tool) is expected to catch this and ask which event is meant, never
-    guess. Same layering reason as `EventNotFoundError` above for why this
-    lives in `nora.domain` rather than alongside `EventService`."""
-
-    def __init__(self, conversation_id: str, open_events: Sequence[Event]) -> None:
-        super().__init__(
-            f"{len(open_events)} open events for {conversation_id}"
-        )
-        self.conversation_id = conversation_id
-        self.open_events = tuple(open_events)
-
-
-@runtime_checkable
-class EventStore(Protocol):
-    async def create(self, event: Event) -> None: ...
-
-    async def get(self, event_id: UUID) -> Event | None: ...
-
-    async def list_for_conversation(
-        self, *, conversation_id: str, status: EventStatus | None = None,
-    ) -> Sequence[Event]: ...
-
-    async def list_for_person(self, *, person_id: str) -> Sequence[Event]: ...
-
-    async def update(self, event: Event) -> None: ...
-
-    async def add_rsvp(self, rsvp: RSVP) -> None: ...
-
-    async def rsvps_for(self, event_id: UUID) -> Sequence[RSVP]: ...
-
-    async def aclose(self) -> None: ...
-
-
-def normalise_event(event: Event) -> Event:
-    """`ensure_utc` over every one of an event's datetimes — the port's
-    rule, in one place, exactly matching `normalise_reminder`'s shape."""
-    from dataclasses import replace
-
-    return replace(
-        event,
-        when=(
-            None if event.when is None
-            else ensure_utc(event.when, field="when")
-        ),
-        venue_resolved_at=(
-            None if event.venue_resolved_at is None
-            else ensure_utc(event.venue_resolved_at, field="venue_resolved_at")
-        ),
-        created_at=ensure_utc(event.created_at, field="created_at"),
-    )
+EventFactory: TypeAlias = Callable[[Sequence[Reminder]], Event]

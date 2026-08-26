@@ -546,3 +546,34 @@ async def test_a_constructed_loop_takes_the_gauge_back_from_the_sentinel():
 # would make it dead code whenever [heartbeat] enabled = false, which is exactly
 # when a stranded FIRING row most needs sweeping. The store half of it is
 # tests/contract/test_reminder_store_contract.py::test_sweep_resolves_firing_rows_to_failed.
+
+
+async def test_rows_of_two_kinds_same_requester_are_two_turns():
+    """DEC-139: the grouping key gains `kind`. A plain reminder and a
+    gathering-notify, same requester, same conversation, same tick, are TWO
+    turns — never a mixed batch whose kind is decided by row order.
+    Accounting consequence (design/event-abstraction/04): the turns split
+    one→two, and `nora_reminders_fired_total` — which increments PER ROW —
+    counts 2 either way."""
+    store = FakeReminderStore()
+    plain = _row(text="買奶")
+    gathering = _row(
+        text="Event: Dinner", kind="gathering",
+        payload={"title": "Dinner"},
+    )
+    await store.create(plain)
+    await store.create(gathering)
+    metrics = Metrics()
+    loop, fired = _build(store=store, metrics=metrics)
+
+    await loop.tick()
+
+    assert len(fired) == 2
+    kinds = {rows[0].kind for rows in fired}
+    assert kinds == {"reminder", "gathering"}
+    # Both rows reached a terminal state — nothing was eaten by the split.
+    assert (await store.get(plain.id)).state is ReminderState.DONE
+    assert (await store.get(gathering.id)).state is ReminderState.DONE
+    # Per-row counter: two reminders resolved, one per row, whatever the
+    # turn split.
+    assert metrics.get("nora_reminders_fired_total", outcome="sent") == 2

@@ -61,13 +61,13 @@ from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
 from nora.agent.security import screen_and_resolve_place as _screen_and_resolve_place
 
 from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
-from ..domain.events import (
+from ..domain.gatherings import (
     RSVP,
-    AmbiguousOpenEventsError,
-    Event,
-    EventCancelledError,
-    EventNotFoundError,
-    EventStatus,
+    AmbiguousOpenGatheringsError,
+    Gathering,
+    GatheringCancelledError,
+    GatheringNotFoundError,
+    GatheringStatus,
     RSVPResponse,
     VenueSuggestions,
 )
@@ -1496,29 +1496,29 @@ def _music_result(outcome: MusicToolOutcome) -> dict[str, object]:
 
 
 class EventsCollaborator(Protocol):
-    """Structural type for `nora.app.events.EventService` — a local Protocol
+    """Structural type for `nora.app.gatherings.GatheringService` — a local Protocol
     rather than an import of the concrete class, because `nora.agent` sits
     BELOW `nora.app` in the "layered architecture" import-linter contract
     (`pyproject.toml`) and may not import it, even for a bare type
     annotation: grimp's `exclude_type_checking_imports` defaults to False and
     this repo does not set it, so a `TYPE_CHECKING` guard would not rescue
-    it either. `nora.app.composition` builds the real `EventService` and
+    it either. `nora.app.composition` builds the real `GatheringService` and
     injects it here (and into `ToolRegistry`); this module only needs its
-    shape. `EventNotFoundError`/`AmbiguousOpenEventsError` live in
-    `nora.domain.events` for the identical reason — an exception TYPE has to
+    shape. `GatheringNotFoundError`/`AmbiguousOpenGatheringsError` live in
+    `nora.domain.gatherings` for the identical reason — an exception TYPE has to
     be importable from every layer that catches it."""
 
     async def create_event(
         self, *, conversation_id: str, requester_person_id: str, title: str,
         when: datetime | None = None, venue_text: str | None = None,
-        person_names: frozenset[str] | None = None,
-    ) -> Event: ...
+        person_names: frozenset[str] | None = None, platform: str,
+    ) -> Gathering: ...
 
     async def update_event(
         self, *, event_id: UUID, conversation_id: str,
         when: datetime | None = None, venue_text: str | None = None,
-        person_names: frozenset[str] | None = None,
-    ) -> Event: ...
+        person_names: frozenset[str] | None = None, platform: str,
+    ) -> Gathering: ...
 
     async def rsvp(
         self, *, event_id: UUID, conversation_id: str, person_id: str,
@@ -1527,11 +1527,11 @@ class EventsCollaborator(Protocol):
 
     async def cancel_event(
         self, *, event_id: UUID, conversation_id: str,
-    ) -> Event: ...
+    ) -> Gathering: ...
 
     async def list_events(
-        self, *, conversation_id: str, status: EventStatus | None = None,
-    ) -> Sequence[Event]: ...
+        self, *, conversation_id: str, status: GatheringStatus | None = None,
+    ) -> Sequence[Gathering]: ...
 
     async def suggest_venue(
         self, *, event_id: UUID, conversation_id: str,
@@ -1555,7 +1555,7 @@ class NoteCollaborator(Protocol):
     `create`, `append_revision`, `record_miss`.
 
     `StaleNoteHeadError` lives in `nora.domain.notes` for the identical reason
-    `EventNotFoundError` lives in `nora.domain.events` — an exception TYPE has
+    `GatheringNotFoundError` lives in `nora.domain.gatherings` — an exception TYPE has
     to be importable from every layer that catches it.
     """
 
@@ -2733,7 +2733,7 @@ def build_tool_specs(
         # identifier/coordinate/person screen, the actual call wrapped in
         # try/except, and a return-path screen on Google's own name/address
         # — lives in `nora.agent.security.screen_and_resolve_place` now,
-        # shared with `EventService._resolve_place`.
+        # shared with `GatheringService._resolve_place`.
         result = await _screen_and_resolve_place(
             name, route_source=route_source, person_names=_route_person_names,
         )
@@ -4409,10 +4409,10 @@ def build_tool_specs(
         if events is None:
             _record(metrics, "list_events", "unavailable")
             return {"status": "unavailable", "note": "Events aren't set up here."}
-        parsed_status: EventStatus | None = None
+        parsed_status: GatheringStatus | None = None
         if status:
             try:
-                parsed_status = EventStatus(status)
+                parsed_status = GatheringStatus(status)
             except ValueError:
                 _record(metrics, "list_events", "refused", reason="bad_status")
                 return {
@@ -4484,8 +4484,9 @@ def build_tool_specs(
                 title=title, when=due_at,
                 venue_text=venue_text or None,
                 person_names=_route_person_names,
+                platform=room.platform,
             )
-        except AmbiguousOpenEventsError:
+        except AmbiguousOpenGatheringsError:
             _record(metrics, "create_event", "refused", reason="ambiguous")
             return {
                 "status": "refused",
@@ -4525,12 +4526,12 @@ def build_tool_specs(
             ev = await events.update_event(
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
                 when=due_at, venue_text=venue_text or None,
-                person_names=_route_person_names,
+                person_names=_route_person_names, platform=room.platform,
             )
-        except EventNotFoundError:
+        except GatheringNotFoundError:
             _record(metrics, "update_event", "refused", reason="not_found")
             return {"status": "refused", "note": "I don't know that event."}
-        except EventCancelledError:
+        except GatheringCancelledError:
             _record(metrics, "update_event", "refused", reason="cancelled")
             return {
                 "status": "refused",
@@ -4574,10 +4575,10 @@ def build_tool_specs(
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
                 person_id=tagger.person_id, response=RSVPResponse(response),
             )
-        except EventNotFoundError:
+        except GatheringNotFoundError:
             _record(metrics, "rsvp_event", "refused", reason="not_found")
             return {"status": "refused", "note": "I don't know that event."}
-        except EventCancelledError:
+        except GatheringCancelledError:
             _record(metrics, "rsvp_event", "refused", reason="cancelled")
             return {
                 "status": "refused",
@@ -4610,7 +4611,7 @@ def build_tool_specs(
             ev = await events.cancel_event(
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
             )
-        except EventNotFoundError:
+        except GatheringNotFoundError:
             _record(metrics, "cancel_event", "refused", reason="not_found")
             return {"status": "refused", "note": "I don't know that event."}
         except ValueError:
@@ -4663,7 +4664,7 @@ def build_tool_specs(
                 roster_person_ids=[p.person_id for p in roster.people],
                 person_names=_route_person_names,
             )
-        except EventNotFoundError:
+        except GatheringNotFoundError:
             _record(metrics, "suggest_venue", "refused", reason="not_found")
             return {"status": "refused", "note": "I don't know that event."}
         except ValueError:

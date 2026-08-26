@@ -47,8 +47,8 @@ class ComputeJob:
     `ComputeBackend.launch`'s own parameter of the same name and purpose.
     `requester_person_id`/`platform`/`conversation_id`/`conversation_type`
     are exactly what `compute_occasion` (nora/app/fire.py) needs to build an
-    `Occasion` once the job completes — the same four fields
-    `Occasion`/`Reminder` both already carry, for the same reason (a fire
+    `Event` once the job completes — the same four fields
+    `Event`/`Reminder` both already carry, for the same reason (a fire
     turn needs one Room, one policy decision, one Deliverer binding).
 
     `task_sha256`/`context_sha256` are the SHA-256 of `task`/`context` as

@@ -2,7 +2,7 @@
 a string that might name a person or carry a raw coordinate is about to
 leave the host in a tool argument (Google Places/Routes today; anything
 else with the same shape later) — moved out of `nora.agent.tools` so
-`nora.app.events.EventService` can apply the identical screen to a venue
+`nora.app.gatherings.GatheringService` can apply the identical screen to a venue
 string without a second, unaudited copy of this logic.
 
 `scan_identifiers` is re-exported here rather than redefined: its body
@@ -99,7 +99,7 @@ async def screen_and_resolve_place(
 ) -> PlaceScreenResult:
     """The FULL R-28 screen-call-screen sandwich for resolving a free-text
     venue/place name through Google Places — shared by `nora.agent.tools`'s
-    `place_info` tool and `nora.app.events.EventService._resolve_place`
+    `place_info` tool and `nora.app.gatherings.GatheringService._resolve_place`
     (Fix I4).
 
     Three phases, all load-bearing:
