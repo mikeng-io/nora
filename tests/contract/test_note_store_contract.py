@@ -854,3 +854,46 @@ async def test_supersede_cannot_reach_another_workspaces_note(
         because=NoteSupersedeReason.RETIRED_EXPIRED, source=None, now_ms=NOW,
     ) == 0
     assert [n.id for n in await notes.store.standing(workspace=WS)] == [note.id]
+
+
+async def test_two_proposals_against_one_note_in_one_tick_refuse_the_second(
+    notes: _Harness,
+) -> None:
+    """The note tier's own determinism question, and it needs pinning for the
+    reason `TurnVerdictStore.latest` needed a tie-break: a contract suite cannot
+    see a divergence if BOTH sides are nondeterministic in the same place — it
+    compares two coin flips and passes.
+
+    `DreamSink.propose` takes a SEQUENCE and one tick may write many, so two
+    proposals naming the same note with the same parent is reachable. The second
+    CASes against a head the first has already moved, so it MUST refuse, and the
+    whole call must fail rather than returning a short id list: the ids are what
+    a later `supersede` names, and a merge that appended to the survivor and
+    then retired the originals must not proceed on the half that landed.
+
+    Deterministic in both implementations by construction — the loop is ordered
+    and the CAS is the comparison — but "obviously deterministic" is what the
+    millisecond tie-break looked like too."""
+    note = await _make(notes.store)
+
+    def _p(body: str) -> Proposal:
+        return Proposal(
+            payload=NoteRevisionProposal(
+                note_id=note.id, body=body,
+                parent_revision_id=note.head_revision_id,
+            ),
+            instruction_sha256="e" * 64, model="curator-model",
+            established_by="run-curator-1",
+        )
+
+    with pytest.raises(StaleNoteHeadError):
+        await notes.store.propose(
+            key=WS, proposals=(_p("first"), _p("second")), now_ms=NOW + 5,
+        )
+
+    # The FIRST one landed and is not rolled back — `propose` is not atomic
+    # across proposals and does not claim to be. What matters is that the caller
+    # is told, rather than handed one id where it sent two.
+    found = await notes.store.read(workspace=WS, note_id=note.id)
+    assert found is not None
+    assert found[1].body == "first"
