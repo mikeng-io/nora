@@ -887,3 +887,53 @@ async def test_workspace_scopes_are_the_allowlists_workspaces_deduplicated(cfg):
     assert len(workspaces) <= len(deps.language_scopes())
 
 
+
+
+# --- Standing / the debrief stage (design/dreamer-agent-loop/26-standing) ---
+
+async def test_standing_disabled_wires_no_debrief_and_no_block(cfg):
+    """`[standing] enabled = false` is the shipped default, and OFF has to mean
+    two things at once — no fold and no block. Wiring one without the other is
+    the failure this asserts against: a store wired into the assembler with no
+    `Wiring` renders an empty block forever (harmless), and a `Wiring` with no
+    reader folds a position nothing ever shows her (invisible work)."""
+    deps = await build_dependencies(cfg)
+    assert deps.engagement._debrief_wiring is None
+    assert deps.engagement._context._standing_store is None
+
+
+async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg):
+    """**One instance, two callers**, and this is the structural half of §4's
+    non-negotiable: the fold must read the position it is about to overwrite.
+    Two separate store objects would still satisfy every type here and still be
+    the same row, but it is the kind of wiring that invites a later change to
+    give the reader a cache — at which point the fold corrects a stale position
+    and the contradiction is back."""
+    deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
+    wiring = deps.engagement._debrief_wiring
+    assert wiring is not None
+    assert wiring.store is deps.engagement._context._standing_store
+    assert wiring.max_chars == 1200
+    assert wiring.window == 12
+
+
+async def test_the_debrief_model_defaults_to_the_reply_model(cfg):
+    """`[standing] model = ""` means `[llm] model`, the same defaulting
+    `[language] exchange_model` uses. An empty string reaching the provider
+    would be a 400 on the first fold, in production, after a config change that
+    looked like it left the model alone."""
+    deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
+    assert deps.engagement._debrief_wiring.client.model == cfg.llm.model
+
+
+async def test_the_debrief_reads_its_objective_from_the_instruction_substrate(cfg):
+    """The text is a SOURCE, not a string, so an operator's edit on the bind
+    mount reaches the next fold rather than the next rebuild. Asserted by
+    actually resolving the objective, because a `Wiring` holding an object with
+    the right method name and no such objective behind it would look identical
+    here and fail on the first fold."""
+    from nora.engagement.stages.debrief import OBJECTIVE
+
+    deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
+    body = deps.engagement._debrief_wiring.objective.objective_body(OBJECTIVE)
+    assert "revise ONE short paragraph" in body

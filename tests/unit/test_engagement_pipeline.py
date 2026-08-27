@@ -267,6 +267,7 @@ def _build_pipeline(
     policy=None,
     room_language_max_entries=None,
     tag_trace_store=None,
+    debrief_wiring=None,
 ):
     # Always a real (fake) store, never `None`: every scenario below can read
     # `pipeline._tag_trace_store.saved` (mirroring how `pipeline._slots` is
@@ -310,6 +311,7 @@ def _build_pipeline(
         slots=ConversationSlots(maxlen=queue_max, spawn=background.spawn),
         policy=policy if policy is not None else permissive_policy(),
         tag_trace_store=tag_trace_store,
+        debrief_wiring=debrief_wiring,
         **extra,
     )
     return pipeline, metrics, audit, memory, background
@@ -2074,3 +2076,242 @@ async def test_the_configured_room_language_render_cap_reaches_build_prefill(mon
     await pipeline.run(_request())
 
     assert captured == [1]
+
+
+# ---------------------------------------------------------------------------
+# The debrief stage's wiring (design/dreamer-agent-loop/26-standing, R-69).
+#
+# The stage's OWN behaviour — the fold, the overflow retry, the screen, the
+# `finish_reason` check — is `tests/unit/test_debrief.py`'s. What is asserted
+# HERE is the thing only this file can see: that the stage is reached on every
+# exit path, that it holds the slot and then gives it back, and that it cannot
+# turn a turn that delivered into a turn that reports a failure.
+# ---------------------------------------------------------------------------
+
+class _RecordingDebrief:
+    """Stands in for `debrief.run`, records what it was given, and can be told
+    to fail the way the real one might.
+
+    `fail` is a `BaseException` on purpose and defaults to `CancelledError` in
+    the test that uses it: `except Exception` does not catch that, which is the
+    whole point of R-69's second clause.
+    """
+
+    def __init__(self, *, fail: BaseException | None = None, sleep: float = 0.0) -> None:
+        self.calls: list[dict] = []
+        self._fail = fail
+        self._sleep = sleep
+
+    async def __call__(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+        if self._sleep:
+            await asyncio.sleep(self._sleep)
+        if self._fail is not None:
+            raise self._fail
+
+
+def _wiring() -> object:
+    """A `debrief.Wiring` whose collaborators are never reached — every test
+    below patches `debrief.run` itself. It exists so `_debrief`'s «is this
+    configured at all» guard passes; the stage's own collaborators have their
+    own suite."""
+    from nora.engagement.stages.debrief import Wiring
+
+    return Wiring(store=object(), client=object(), objective=object(),
+                  max_chars=1200, window=12, timeout_seconds=5.0)
+
+
+def _patch_debrief(monkeypatch, spy) -> None:
+    from nora.engagement.stages import debrief as debrief_module
+
+    monkeypatch.setattr(debrief_module, "run", spy)
+
+
+async def test_no_debrief_wiring_means_the_stage_is_never_reached(monkeypatch):
+    """`[standing] enabled = false` — the shipped default and every offline/
+    eval composition. It must cost NOTHING: no await, so the slot is held for
+    exactly as long as it was before the stage existed."""
+    spy = _RecordingDebrief()
+    _patch_debrief(monkeypatch, spy)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert spy.calls == []
+
+
+@pytest.mark.parametrize("turns, outcome", [
+    (_reply_turns(), "send_reply"),
+    ([ScriptedTurn(final_text="")], "silent"),
+])
+async def test_the_debrief_runs_on_a_delivered_turn_and_on_a_silence(
+    monkeypatch, turns, outcome,
+):
+    """§2, and the silence is the half that matters. A debrief hung off the end
+    of the `try` block would review only the turns that reached
+    `completed = True` — which excludes every silence, every veto, every
+    timeout — and a stage that only reviews successful replies measures the
+    path that already works. R-5 silence is the decision most likely to be
+    wrong in a way nobody complains about, and this is the case that proves it
+    is looked at.
+    """
+    spy = _RecordingDebrief()
+    _patch_debrief(monkeypatch, spy)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        runner=ScriptedRunner(turns), debrief_wiring=_wiring(),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["trace"].outcome == outcome
+    assert spy.calls[0]["platform"] == "signal"
+
+
+async def test_the_debrief_runs_after_a_timeout_too(monkeypatch):
+    """The `not ok` early return — one of the three exits that leave the `try`
+    before `completed = True`."""
+    spy = _RecordingDebrief()
+    _patch_debrief(monkeypatch, spy)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        runner=ScriptedRunner(_reply_turns(), delay=1.0), timeout_seconds=0.01,
+        debrief_wiring=_wiring(),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["trace"].outcome == "timeout"
+
+
+async def test_a_turn_with_no_attributable_trace_is_not_debriefed(monkeypatch):
+    """The mirror of `test_a_fault_before_invoke_run_ever_returns_saves_nothing`.
+
+    A crashed turn's `trace` is cleared deliberately, because its placeholder
+    outcome would be a GUESS about what reached the group. Reviewing a turn
+    under a guessed label is worse than not reviewing it: the fold writes that
+    guess into a row injected into every later turn.
+    """
+    spy = _RecordingDebrief()
+    _patch_debrief(monkeypatch, spy)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        context_assembler=_FaultingContextAssembler(), debrief_wiring=_wiring(),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert spy.calls == []
+    assert _held(pipeline) is False
+
+
+async def test_the_debrief_holds_the_slot_and_then_releases_it(monkeypatch):
+    """§5: it is a STAGE, which is what «holds the slot» means concretely — the
+    lock is still held while it runs, and the conversation's next tag waits.
+    That is the design's own claim about where the cost lands (on the second
+    person queued, never on the person being reviewed), and it is only true if
+    the release happens after.
+    """
+    held_during: list[bool] = []
+    pipeline_ref: list = []
+
+    async def _observe(**kwargs) -> None:
+        held_during.append(_held(pipeline_ref[0]))
+
+    _patch_debrief(monkeypatch, _observe)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        debrief_wiring=_wiring(),
+    )
+    pipeline_ref.append(pipeline)
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert held_during == [True]
+    assert _held(pipeline) is False
+
+
+async def test_a_debrief_that_blows_up_still_releases_the_lock(monkeypatch):
+    """**R-69.** An exception escaping a `finally` skips the REST of that
+    `finally` — and the statement immediately after this call is the one that
+    releases R-10's per-conversation lock and dispatches R-30's queue. A wedged
+    conversation answers nobody, forever, with no error anywhere, which is the
+    worst failure available on this path.
+
+    `CancelledError`, not `RuntimeError`: it is a `BaseException`, so a
+    `try/except Exception` here would let it through and this goes red.
+    """
+    _patch_debrief(monkeypatch, _RecordingDebrief(fail=asyncio.CancelledError()))
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        debrief_wiring=_wiring(),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert _held(pipeline) is False
+
+
+async def test_a_debrief_failure_never_reports_a_partial_reply(monkeypatch):
+    """**R-69's other half** (§5's first failure shape). The turn is marked
+    completed BEFORE the debrief is awaited — expressed here by the debrief
+    living in the `finally`, after `completed` is already final. Get that
+    ordering wrong and a fault in the debrief leaves `completed` False, which
+    `deliver.truncation_reason` reads as «she was cut off mid-reply»: a false
+    `nora_partial_replies_total` on a turn that sent a complete reply, and a
+    false alarm on a working turn is worse than the stage not running.
+    """
+    adapter = _FakeAdapter()
+    _patch_debrief(monkeypatch, _RecordingDebrief(fail=RuntimeError("boom")))
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter, debrief_wiring=_wiring(),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.texts == ["今晚七點半得"]
+    assert metrics.get("nora_partial_replies_total") == 0
+    assert metrics.get("nora_silent_failures_total") == 0
+
+
+async def test_the_debriefs_cost_is_excluded_from_the_tag_latency_series(monkeypatch):
+    """§5, and the reason it is a decision rather than an accident: folding the
+    debrief into `nora_tag_latency_seconds` would move an existing SLO series by
+    changing what it measures — a broken gate wearing a passing number. The
+    debrief's cost is real and user-visible; it belongs on
+    `nora_debrief_seconds`, which is the series the p95 <= 5s gate reads.
+    """
+    _patch_debrief(monkeypatch, _RecordingDebrief(sleep=0.25))
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        debrief_wiring=_wiring(),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    observed = metrics.observations("nora_tag_latency_seconds")
+    assert len(observed) == 1
+    assert observed[0] < 0.25, (
+        "the debrief's own duration leaked into nora_tag_latency_seconds"
+    )
+
+
+async def test_every_retained_trace_is_counted_by_outcome(monkeypatch):
+    """15-roadmap §6.2b's required-before-Phase-2 reading. `tag_trace` is
+    written in a `finally` on every exit path and `nora_tag_latency_seconds`
+    observes once per admitted tag, so the expected ratio is exactly 1.0 — and
+    a recording layer that silently stopped writing would otherwise be
+    discovered at the first fold, which is precisely when the missing traces
+    can no longer be reconstructed."""
+    pipeline, metrics, _audit, _memory, background = _build_pipeline()
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.get("nora_tagtrace_writes_total", outcome="send_reply") == 1
+    assert metrics.get("nora_tagtrace_writes_total") == len(
+        metrics.observations("nora_tag_latency_seconds"))

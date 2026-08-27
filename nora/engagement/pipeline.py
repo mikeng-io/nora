@@ -73,7 +73,7 @@ from nora.tag import Debounce
 
 from .mentions import MentionRenderer
 from .slots import ConversationSlots
-from .stages import admission, deliver, feedback, indicate, invoke
+from .stages import admission, debrief, deliver, feedback, indicate, invoke
 from .stages.admission import Admission
 from .stages.indicate import Indicator
 from .stages.invoke import AgentRunner
@@ -121,6 +121,7 @@ class EngagementPipeline:
         room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
         room_exchange_max_entries: int = DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
         tag_trace_store: Any = None,
+        debrief_wiring: debrief.Wiring | None = None,
     ) -> None:
         # Platform -> adapter, not a single adapter: a reply must leave on the
         # SAME platform the tag arrived on. Nora reached a second platform
@@ -203,6 +204,19 @@ class EngagementPipeline:
         # and be provably working BEFORE Phase 2's `[debrief]` flag has
         # anything to gate.
         self._tag_trace_store = tag_trace_store
+        # The debrief stage's collaborators (26-standing), as ONE object
+        # rather than four optional parameters — see `debrief.Wiring`. `None`
+        # is `[standing] enabled = false`, the shipped default, and in every
+        # offline/eval composition: `_debrief` below returns without awaiting
+        # anything, so a deployment that has not wired it pays nothing and
+        # holds the slot for no longer than it did before this existed.
+        #
+        # Unlike `tag_trace_store` above, this one IS gated on its flag. The
+        # asymmetry is deliberate and is Phase 1's own argument: retention had
+        # to exist unconditionally BEFORE the fold shipped, because a lossy
+        # fold is only recoverable from traces that were already being kept.
+        # The fold is the part an operator turns on.
+        self._debrief_wiring = debrief_wiring
         # `build_prefill`'s RENDER cap for the room-language block (Task 11).
         # Defaults to `DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES` — the same value
         # `build_prefill` itself defaults to — so a caller that does not pass
@@ -324,6 +338,49 @@ class EngagementPipeline:
         re-resolved here (memoized) rather than carried through the queue."""
         identity = await self._adapter_for(request.message.platform).resolve_identity()
         await self._run_admitted(request, identity, indicator)
+
+    async def _debrief(self, *, trace: TagTrace | None, platform: str) -> None:
+        """Hand this finished turn to the debrief stage, or do nothing at all.
+
+        Two guards, and they are different questions rather than one written
+        twice. **No wiring** is `[standing] enabled = false` — the shipped
+        default and every offline/eval composition — and it must cost nothing:
+        this returns without awaiting, so the slot is held for exactly as long
+        as it was before the stage existed. **No trace** is the case where
+        `invoke.run` never returned at all, or where the outer
+        `except BaseException` cleared it deliberately because a crashed turn's
+        placeholder outcome would have been a false label. There is nothing to
+        review in either, and reviewing a turn under a label that is a guess is
+        worse than not reviewing it — the fold would write that guess into a
+        row injected into every later turn.
+
+        `now_ms` is stamped HERE rather than inside the stage, following
+        `DreamSink.propose`'s reason one tier over: the clock belongs to the
+        caller that knows when the work happened, and a stage that reads its
+        own clock cannot be tested for what it writes without freezing time.
+
+        This method exists at all — rather than the call being inlined in the
+        `finally` — because the `finally` is already the most crowded block in
+        this class and the two guards above are exactly the kind of condition
+        that gets quietly widened when it is one more `and` on a line that is
+        already three conditions long.
+        """
+        wiring = self._debrief_wiring
+        if wiring is None or trace is None:
+            return
+        await debrief.run(
+            trace=trace,
+            platform=platform,
+            store=wiring.store,
+            client=wiring.client,
+            objective=wiring.objective,
+            metrics=self._metrics,
+            display_name=self._display_name,
+            max_chars=wiring.max_chars,
+            window=wiring.window,
+            timeout_seconds=wiring.timeout_seconds,
+            now_ms=int(time.time() * 1000),
+        )
 
     async def _run_admitted(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
@@ -707,18 +764,88 @@ class EngagementPipeline:
             indicate.resolve(
                 indicator=indicator, delivered=delivered, spawn=self._spawn,
             )
-            # R-10 released, and in the SAME synchronous step R-30 hands the
-            # conversation's next waiting tag into the slot this turn just
-            # vacated — re-acquiring the lock for it, with no await in the gap,
-            # so no incoming tag can race into RUN_NOW between the two. The
-            # dequeued turn's context is assembled fresh, so it sees this turn's
-            # reply. On an empty queue the dispatch half is a no-op and a
-            # drained conversation retains nothing. ONE call, not two
-            # statements: a release that skipped the dispatch would strand
-            # everyone queued behind this turn until the next tag arrived. This
-            # runs on EVERY exit path, so a turn that timed out or faulted still
-            # lets the people queued behind it be answered.
-            self._slots.release_and_dispatch(key)
+            # THIS TURN'S OWN LATENCY, read HERE and observed further down —
+            # before the debrief holds the slot, and that split is 26-standing
+            # §5's decision rather than an accident of where the line sits.
+            # The debrief's cost IS user-visible, but adding it to
+            # `nora_tag_latency_seconds` would change what that series
+            # measures: an SLO gate that moves because a new stage was added
+            # behind it is a broken gate wearing a passing number. The debrief
+            # has its own series, `nora_debrief_seconds`, and the two answer
+            # two different questions.
+            total = time.perf_counter() - started
+            # THE DEBRIEF (26-standing §1/§2/§5). Four things about this
+            # placement are load-bearing and none of them is obvious:
+            #
+            # 1. **It is in the `finally`, not at the end of the `try`.** §2:
+            #    it runs on EVERY completed turn, and three of them —
+            #    `not ok` (timeout/llm_error), `not delivered` (an R-5 silence
+            #    or a guard veto), and the outer `except` — leave the `try`
+            #    before `completed = True` is ever reached. A debrief hung off
+            #    the happy path would review only the turns that already work,
+            #    and R-5 silence is the decision most likely to be wrong in a
+            #    way nobody complains about.
+            #
+            # 2. **It is BEFORE `release_and_dispatch`, so it holds the
+            #    slot** — deliberately. That is what makes it a stage rather
+            #    than a background job, and it is why its cost lands on the
+            #    SECOND person queued behind a busy conversation rather than
+            #    on the person it is reviewing, who already has their reply.
+            #    `[llm] timeout_seconds + [standing] timeout_seconds` is the
+            #    worst-case hold, and both numbers are chosen against that sum.
+            #
+            # 3. **`completed` is already final by the time this runs**, which
+            #    is the same requirement as «mark the turn completed BEFORE
+            #    awaiting the debrief» (§5) expressed by placement instead of
+            #    by ordering two statements. An escape here must not be able to
+            #    leave `completed` False, because `deliver.truncation_reason`
+            #    reads it and would report a partial reply — and a false
+            #    `nora_partial_replies_total` — on a turn that sent a complete
+            #    one.
+            #
+            # 4. **`debrief.run` never raises**, by construction: its whole
+            #    body is inside one `try` whose `except` is `BaseException`
+            #    (a cancellation is not an `Exception`). The `try/except/
+            #    finally` around the call here is therefore belt-and-braces,
+            #    and it stays anyway because what it protects is
+            #    unrecoverable. An exception raised inside a `finally` skips
+            #    the REST of that `finally` — and the statement immediately
+            #    below is the one that releases R-10's per-conversation lock
+            #    and dispatches R-30's queue, so a wedged conversation would
+            #    answer nobody, forever, with no error anywhere. The `except`
+            #    is the second half: this block is inside the `finally`, so a
+            #    fault here is past the outer handler and would propagate
+            #    straight out of `run` — an outage far wider than one tag,
+            #    caused by a stage reviewing a turn that already finished.
+            try:
+                await self._debrief(trace=trace, platform=msg.platform)
+            except BaseException:
+                # ABSORBED, not re-raised, and `BaseException` rather than
+                # `Exception` for `debrief.run`'s own reason one level down:
+                # this is inside the `finally`, so a fault escaping here does
+                # not reach the outer `except BaseException` above (that block
+                # has already run) — it propagates straight out of `run`,
+                # crashing whatever awaited or spawned this tag. That is an
+                # outage far wider than one tag, and it would be caused by a
+                # stage reviewing a turn that already finished.
+                log.exception(
+                    "debrief stage faulted (tag=%s); the turn is unaffected",
+                    request.tag_id,
+                )
+            finally:
+                # R-10 released, and in the SAME synchronous step R-30 hands
+                # the conversation's next waiting tag into the slot this turn
+                # just vacated — re-acquiring the lock for it, with no await in
+                # the gap, so no incoming tag can race into RUN_NOW between the
+                # two. The dequeued turn's context is assembled fresh, so it
+                # sees this turn's reply. On an empty queue the dispatch half
+                # is a no-op and a drained conversation retains nothing. ONE
+                # call, not two statements: a release that skipped the dispatch
+                # would strand everyone queued behind this turn until the next
+                # tag arrived. This runs on EVERY exit path, so a turn that
+                # timed out or faulted still lets the people queued behind it
+                # be answered.
+                self._slots.release_and_dispatch(key)
             # Task 6 (spec §7.4 — "debrief runs on every completed turn"):
             # retain the raw `TagTrace`, unconditionally — deliberately NOT
             # gated on `if sent and ctx.tagger is not None` the way
@@ -741,7 +868,22 @@ class EngagementPipeline:
             # latency observation (right below).
             if trace is not None and self._tag_trace_store is not None:
                 self._spawn(self._tag_trace_store.save(trace))
-            total = time.perf_counter() - started
+                # 15-roadmap §6.2b's required-before-Phase-2 reading, and it
+                # is counted HERE — beside the spawn, not inside the store —
+                # for the same reason the spawn itself is not awaited: what
+                # this series answers is «did the recording layer get handed a
+                # trace for this turn», whose denominator is
+                # `nora_tag_latency_seconds`' own count (one per admitted tag),
+                # so the expected ratio is 1.0. A counter inside the store
+                # would answer a different question (did the INSERT succeed),
+                # which is worth having and is not this one — a store that
+                # silently stopped being called would leave both at zero and
+                # look identical to a quiet week.
+                self._metrics.inc(
+                    "nora_tagtrace_writes_total", outcome=trace.outcome)
+            # `total` was read BEFORE the debrief, above — see the comment
+            # there. Observed here so the two histograms below stay adjacent
+            # and keep reading off one number.
             self._metrics.observe("nora_tag_latency_seconds", total)
             self._metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))
             # One observation per ADMITTED tag, silent turns included as 0 —

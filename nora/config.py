@@ -21,6 +21,15 @@ from pydantic import (
     model_validator,
 )
 
+# `nora.config` may import `nora.domain` — the forbidden direction is the
+# other one (`nora.domain` may not read config). The ceiling is imported
+# rather than restated so `StandingConfig`'s startup refusal and the
+# database's own CHECK cannot come to disagree about the same number.
+from nora.domain.standing import (
+    DEFAULT_STANDING_MAX_CHARS,
+    STANDING_BODY_CEILING_CHARS,
+)
+
 
 class ConfigError(Exception):
     """Any condition that must stop the process at startup."""
@@ -1374,6 +1383,82 @@ class FactsConfig(BaseModel):
     retention_days: int = Field(default=180, ge=1)
 
 
+class StandingConfig(BaseModel):
+    """The debrief stage's gate and its four numbers
+    (`design/dreamer-agent-loop/26-standing`).
+
+    `FactsConfig`/`NotesConfig`'s shape above, for the same reasons: the whole
+    section is optional and every field defaults, so a `config.toml` written
+    before this section existed keeps loading under `extra="forbid"`; and
+    `enabled` defaults to **False**, because a new subsystem does not switch
+    itself on. This one has the strongest version of that argument in the
+    repo — it is the only background-ish tier whose work happens **inside the
+    live reply slot**, so switching it on lengthens a hold that real people
+    wait behind. Off, composition builds no `debrief.Wiring`, the stage returns
+    without awaiting, and `<standing>` never renders.
+
+    **`max_chars` is a knob AND the database has a ceiling, and they are two
+    different jobs rather than one duplicated** (operator decision,
+    2026-08-24; an earlier draft argued a storage cap is an invariant and
+    therefore must not be tunable, and was overruled). This value is the
+    operating cap the sink refuses at — tunable without a migration, because
+    the right size is a judgement about prompts and judgements about prompts
+    change. `standing_body_fits_the_ceiling_check` is the absolute bound no
+    writer can pass, config included; a constraint is DDL and cannot be a knob,
+    which is why the two layers exist. **A `max_chars` above the ceiling
+    refuses to START** — `policy.toml`'s own shape — rather than failing at the
+    first oversized fold, which would be a config error discovered by a
+    production turn.
+
+    **Why 1200.** Standing is injected on the volatile tail of EVERY turn, so
+    its size is a per-turn tax rather than a storage question: ~300 tokens in
+    English, but **approaching 1200 tokens in a CJK-heavy room**, and this room
+    is mixed by default — the cap has to be read against the denser case.
+
+    **`window = 12`, its own and not `[store] context_window`'s 40** (S3). The
+    debrief revises a position; it does not need the full reply context, and a
+    shared number here would be the inheritance error `design/05-transport`
+    records in another seam. Smaller also bounds the fold's input, which is one
+    of the two named causes of the token runaway that made this a plain
+    completion rather than an agent loop.
+
+    **`timeout_seconds = 20`, and the number that matters is the SUM.** The
+    debrief holds the conversation's slot, so the worst-case hold is
+    `[llm] timeout_seconds + [standing] timeout_seconds` — 60 + 20 with the
+    shipped defaults. The gate is not that sum, though: it is
+    `nora_debrief_seconds` p95 <= 5s, measured against the SECOND-QUEUED tag,
+    because the cost never lands on the person being reviewed (who already has
+    their reply) and always lands on whoever is behind them. Raise this only
+    against that reading.
+
+    `model` empty means `[llm] model` — the same defaulting
+    `[language] exchange_model` uses. A separate name is available because the
+    fold is a different job from replying (one structured output, no tools, no
+    audience) and may want a cheaper or a more literal model; leaving it empty
+    is the honest default rather than guessing one.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    max_chars: int = Field(default=DEFAULT_STANDING_MAX_CHARS, ge=1)
+    window: int = Field(default=12, ge=1)
+    timeout_seconds: float = Field(default=20.0, gt=0)
+    model: str = ""
+
+    @model_validator(mode="after")
+    def _max_chars_stays_under_the_database_ceiling(self) -> StandingConfig:
+        if self.max_chars > STANDING_BODY_CEILING_CHARS:
+            raise ValueError(
+                f"[standing] max_chars = {self.max_chars} is above the "
+                f"database ceiling of {STANDING_BODY_CEILING_CHARS} "
+                f"(standing_body_fits_the_ceiling_check). The ceiling is DDL "
+                f"and cannot be raised from config; every fold above it would "
+                f"be refused by Postgres at write time."
+            )
+        return self
+
+
 class NotesConfig(BaseModel):
     """The note tier's gate (the `2026-08-21-note-tier-design` spec under
     `docs/superpowers/specs/`).
@@ -1880,6 +1965,13 @@ class Config(BaseModel):
     # index is read from `SqlNoteStore` on every tag — nothing writes a note
     # yet, so it is empty until a curator lands.
     notes: NotesConfig = NotesConfig()
+    # Optional and defaulted — see `StandingConfig`. Ships INERT
+    # (`enabled = false`); off, composition builds no `debrief.Wiring`, the
+    # debrief stage returns without awaiting anything, and `<standing>` never
+    # renders. It is the one optional tier whose work runs INSIDE the live
+    # reply slot, so turning it on lengthens a hold real people wait behind —
+    # a measured decision, not a default.
+    standing: StandingConfig = StandingConfig()
     # Optional and defaulted — see `MusicConfig`. Ships INERT
     # (`enabled = false`); off, `AdapterRegistry.from_config` builds no
     # `MusicPlayerManager` and `DiscordAdapter` gets `music_manager=None`

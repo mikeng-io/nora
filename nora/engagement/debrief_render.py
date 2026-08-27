@@ -1,0 +1,222 @@
+"""What the debrief is actually SHOWN — the rendering contract from
+`design/dreamer-agent-loop/26-standing.md` §4.2, in its own module because the
+gap between "the type carries everything" and "something renders it" is how the
+fact tier failed: identity present on the row, dropped at the prompt, noticed
+months later (`21-substrate-contract.md` §7.1).
+
+**Six mappings, each one a defect another tier has already shipped.** They are
+tested individually rather than through the whole block, because a render that
+gets five right and drops the sixth still looks correct:
+
+- **`ts`** — local wall-clock time. Prevents the model reasoning about
+  `1756012345`; *"you are not even including the timestamp"* is the fact
+  tier's critique verbatim.
+- **`is_nora`** — always rendered, as a distinct speaker. Prevents the fact
+  tier's exact defect: a batch where nobody can tell who said what.
+- **`person_name`** — the DISPLAY name, never `person_id`. §4.3, and this one
+  is a leak rather than a legibility bug; see below.
+- **`quoted_ts`** — rendered as a reply relation. Without it *"yeah that one"*
+  is unresolvable and the debrief mis-reads what the turn was about.
+- **`outcome`** — always, including a silence. §2 makes silence the case most
+  worth reviewing; a render that omits it defeats the stage's own purpose.
+- **`prior`** — always present, **even when empty**. §4's non-negotiable: a
+  fold that cannot see the prior position cannot correct it.
+
+**Wall-clock, not `prefill._age`'s relative form, and the difference is not
+cosmetic.** The prefill renders "2h ago" because the question a reply needs
+answered is *is this still current?*. The debrief's question is different: it is
+reviewing a finished exchange against a position that may be days old, so it
+needs to place the turn on a clock — and an age rendered from a clock the fold
+reads at a different instant is a second source of truth about when the turn
+happened.
+
+**`person_id` never appears here** (§4.3, and this is the rule this module
+exists to hold). `Standing` is injected into every subsequent turn for as long
+as the row lives, so anything reaching the fold's prompt can persist **by
+design** rather than by attack. R-18/R-28 screen egress from a REPLY; Standing
+is an input. The identifier is available for the code-side join and has no
+reason to be in a prompt whose output persists indefinitely — so the label is
+`person_name`/`sender_name`, exactly as `prefill._label` resolves it, and the
+id is not carried at all.
+
+Everything group-authored is `escape`d, R-13: the transcript rendered here is
+the same group-written text the prefill escapes, one hop further along.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from datetime import datetime, tzinfo
+from typing import Any
+
+from nora.domain.models import TranscriptRow
+from nora.domain.prompt import escape, escape_attr
+from nora.domain.standing import Standing
+from nora.domain.tag_trace import TagTrace
+
+#: What each `outcome` MEANS, spelled out rather than left as a bare token.
+#: §2's whole argument is that a deliberate silence produced just as much
+#: reasoning as a reply and is the case most worth reviewing — a fold shown
+#: `outcome="silent"` and nothing else has to guess whether that was a choice,
+#: a veto or a crash, and those are three different reviews.
+_OUTCOME_GLOSS: Mapping[str, str] = {
+    "send_reply": "she replied, through the send_reply tool",
+    "recovered": "she wrote a reply as prose without calling send_reply; "
+                 "the pipeline delivered it for her",
+    "silent": "she chose to say nothing — no delivery was attempted (R-5)",
+    "vetoed": "she tried to reply and every attempt was refused by a guard",
+    "timeout": "the model call did not finish in time; nothing was sent",
+    "llm_error": "the model call failed; nothing was sent",
+}
+
+#: How much of one narration/tool-result block reaches the fold. The trace is
+#: already capped on the way into retention (`cap_messages`), so this is the
+#: SECOND bound and it exists for a different reason: retention's budget is
+#: about what is worth keeping, this one is about what fits beside a transcript
+#: and a prior position inside one bounded completion. Generous enough that a
+#: tool result stays readable, tight enough that one runaway result cannot
+#: crowd out the exchange it belongs to.
+_BLOCK_CHARS = 600
+
+
+def _clock(ts_ms: int, tz: tzinfo | None) -> str:
+    """`ts` as a local wall-clock time — the first of the six mappings.
+
+    `tz=None` means the host's own zone, matching every other clock in the
+    prompt (`prefill._now_line`); it is a parameter so a test can pin one and
+    so a deployment in another zone renders its own.
+    """
+    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime("%H:%M")
+
+
+def _speaker(row: TranscriptRow, display_name: str) -> str:
+    """Who said it — `is_nora` as a distinct speaker, and NEVER `person_id`.
+
+    Deliberately the same precedence `nora.agent.prefill._label` uses
+    (`person_name`, then the self-set profile name, then "unknown"), because
+    the debrief reads a transcript the reply path already rendered under those
+    names, and two renderers calling one person two things is how a fold
+    concludes two people were talking.
+    """
+    if row.is_nora:
+        return display_name
+    return row.person_name or row.sender_name or "unknown"
+
+
+def _transcript(
+    rows: Sequence[TranscriptRow], *, display_name: str, tz: tzinfo | None
+) -> str:
+    by_ts = {row.ts: row for row in rows}
+    lines = []
+    for row in rows:
+        who = escape(_speaker(row, display_name))
+        # The reply relation, by the parent's own rendered CLOCK rather than by
+        # its id — the fold has the clock on every line above, and has no id
+        # for anything. An out-of-window or self-referential pointer renders
+        # nothing at all rather than a "?" (`prefill._parent_of`'s rule: a
+        # symbol that can mean "unknown" invites the model to emit one).
+        parent = by_ts.get(row.quoted_ts) if row.quoted_ts is not None else None
+        if parent is not None and parent.id != row.id:
+            who += f" (replying to {_clock(parent.ts, tz)})"
+        lines.append(f"[{_clock(row.ts, tz)}] {who}: {escape(row.body or '')}")
+    return "\n".join(lines)
+
+
+def _clip(text: str) -> str:
+    text = text.strip()
+    return text if len(text) <= _BLOCK_CHARS else text[:_BLOCK_CHARS] + " …"
+
+
+def _reasoning(messages: Sequence[Mapping[str, Any]]) -> str:
+    """The model exchange, flattened to lines the fold can read.
+
+    **Defensive throughout, for `tag_trace_extract`'s reason**: the blocks are
+    Strands' own shapes and a renamed field must degrade to a thinner render,
+    never raise into a stage that runs after a turn already succeeded. Every
+    lookup below is a `.get` on something checked to be a mapping first.
+
+    Tool calls and results are rendered as such rather than as prose. A fold
+    shown `«I'll check where he is»` and then a paragraph cannot tell whether a
+    tool ran, and «did the tool actually run» is exactly what separates a
+    grounded turn from a plausible one.
+    """
+    lines: list[str] = []
+    for message in messages:
+        if not isinstance(message, Mapping):
+            continue
+        role = str(message.get("role") or "?")
+        content = message.get("content")
+        if not isinstance(content, Sequence) or isinstance(content, str | bytes):
+            continue
+        for block in content:
+            if not isinstance(block, Mapping):
+                continue
+            rendered = _block(block)
+            if rendered:
+                lines.append(f"{role}: {rendered}")
+    return "\n".join(lines)
+
+
+def _block(block: Mapping[str, Any]) -> str:
+    text = block.get("text")
+    if isinstance(text, str) and text.strip():
+        return escape(_clip(text))
+    reasoning = block.get("reasoningContent")
+    if isinstance(reasoning, Mapping):
+        inner = reasoning.get("reasoningText")
+        raw = inner.get("text") if isinstance(inner, Mapping) else None
+        if isinstance(raw, str) and raw.strip():
+            return f"(thinking) {escape(_clip(raw))}"
+    use = block.get("toolUse")
+    if isinstance(use, Mapping):
+        name = escape(str(use.get("name") or "?"))
+        return f"(called {name} with {escape(_clip(str(use.get('input'))))})"
+    result = block.get("toolResult")
+    if isinstance(result, Mapping):
+        return f"(tool result: {escape(_clip(str(result.get('content'))))})"
+    return ""
+
+
+def render_debrief_input(
+    *,
+    trace: TagTrace,
+    prior: Standing | None,
+    display_name: str,
+    window: int,
+    tz: tzinfo | None = None,
+) -> str:
+    """The whole of what the fold sees about this turn, as one block.
+
+    `window` is the debrief's OWN window and is deliberately smaller than
+    `[store] context_window` (S3): the debrief revises a position, it does not
+    need the full reply context, and inheriting the reply path's number here
+    would be `05-transport.md`'s inheritance error in another seam. The slice is
+    the TAIL — the rows nearest the turn being reviewed.
+
+    `<standing_prior>` is emitted **even when there is none**, carrying an
+    explicit "no position yet" rather than being omitted. §4.2 fixes that: an
+    absent block and a block the fold failed to read look identical from inside
+    the prompt, and the one thing this tier cannot afford is a fold that writes
+    a second position beside the first because it never saw the first.
+    """
+    body = prior.body.strip() if prior is not None and prior.body.strip() else ""
+    prior_block = (
+        f"<standing_prior>\n{escape(body)}\n</standing_prior>"
+        if body
+        else "<standing_prior>\n(no position yet — this is the first fold for "
+             "this conversation)\n</standing_prior>"
+    )
+    rows = tuple(trace.transcript)[-window:] if window > 0 else ()
+    gloss = _OUTCOME_GLOSS.get(trace.outcome, trace.outcome)
+    at = datetime.fromtimestamp(trace.created_at / 1000, tz=tz).strftime(
+        "%Y-%m-%d %H:%M %Z"
+    ).strip()
+    return (
+        f"{prior_block}\n\n"
+        f'<turn outcome="{escape_attr(trace.outcome)}" at="{escape_attr(at)}">\n'
+        f"  <what_happened>{escape(gloss)}</what_happened>\n"
+        f"  <transcript>\n{_transcript(rows, display_name=display_name, tz=tz)}\n"
+        f"  </transcript>\n"
+        f"  <reasoning>\n{_reasoning(trace.messages)}\n  </reasoning>\n"
+        f"</turn>"
+    )

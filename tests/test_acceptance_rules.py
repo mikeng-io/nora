@@ -400,6 +400,15 @@ RULE_TESTS = {
     # and the dead-voice teardown's session delete are both exception-safe
     # (Codex MAJOR-3/4).
     "R-68": "test_a_dead_voice_connection_tears_down_the_session",
+    # R-69 names the FIRST of four tests (the naming convention this dict
+    # follows), and it is the one whose failure is unrecoverable: an exception
+    # raised inside a `finally` skips the rest of that `finally`, and the
+    # statement immediately after the debrief call is the one that releases
+    # R-10's per-conversation lock and dispatches R-30's queue. The other
+    # three — the partial-reply false alarm, the latency-series separation,
+    # and the stage's own `BaseException` catch — are named in the decision
+    # index row.
+    "R-69": "test_a_debrief_that_blows_up_still_releases_the_lock",
 }
 
 

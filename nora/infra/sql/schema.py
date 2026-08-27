@@ -48,6 +48,17 @@ from __future__ import annotations
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 
+# The one domain import this module makes, and it is deliberate. `tag_trace`'s
+# own outcome CHECK spells its six values out as a literal beside a comment
+# saying the domain type says the same thing -- two copies, tied by a comment.
+# `standing_body_fits_the_ceiling_check` reads the constant instead, so a
+# change to the ceiling cannot leave the table and the type disagreeing
+# silently: `tests/infra/test_schema_parity.py` compares this metadata against
+# the migrations, which DO hardcode the number (a migration that read a live
+# constant would change meaning under a later edit), so moving the constant
+# fails the parity gate loudly instead of drifting.
+from nora.domain.standing import STANDING_BODY_CEILING_CHARS
+
 METADATA = sa.MetaData()
 
 MESSAGES = sa.Table(
@@ -1645,4 +1656,37 @@ MUSIC_SESSION = sa.Table(
     sa.Column("volume", sa.Float, nullable=False),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     sa.CheckConstraint("volume >= 0.0 AND volume <= 2.0", name="ck_music_session_volume_range"),
+)
+
+# ── standing (design/dreamer-agent-loop/26-standing.md) ────────────────────
+# Nora's own position in one conversation, revised IN PLACE by the debrief
+# stage — one row per `(platform, conversation_id)`, and the composite primary
+# key is that decision (S4): every lock, queue and slot already keys that way
+# and `messages` carries the platform column, so a `conversation_id`-only key
+# here would be a join nobody can make.
+#
+# **The CHECK is the CEILING, not the operating cap.** `[standing] max_chars`
+# (1200 by default) is what the sink refuses at; this is the absolute bound no
+# writer can pass, config included. Two layers doing two jobs rather than one
+# duplicated twice — a constraint is DDL and cannot be a knob, so the tunable
+# half has to live somewhere a migration is not required to move it, and the
+# untunable half has to live where no writer can route around it. Named for
+# the same reason `note_title_fits_the_index_check` is: the cap exists BECAUSE
+# the field is injected, on every turn, forever.
+STANDING = sa.Table(
+    "standing",
+    METADATA,
+    sa.Column("platform", sa.Text, primary_key=True),
+    sa.Column("conversation_id", sa.Text, primary_key=True),
+    sa.Column("body", sa.Text, nullable=False),
+    # Folds written onto this row since the last re-derivation — the ceiling
+    # half of S2's trigger. On the row rather than counted from `tag_trace`,
+    # which is retained for a bounded window and prunes out from under it.
+    sa.Column("fold_count", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("updated_at", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        f"length(btrim(body)) > 0 and length(body) <= {STANDING_BODY_CEILING_CHARS}",
+        name="standing_body_fits_the_ceiling_check",
+    ),
+    sa.CheckConstraint("fold_count >= 0", name="standing_fold_count_is_not_negative_check"),
 )

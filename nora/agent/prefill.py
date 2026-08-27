@@ -18,6 +18,7 @@ from ..language.fact_render import render_facts
 from ..language.note_render import render_notes
 from ..language.portrait_render import render_room_portrait
 from ..language.render import render_room_language
+from ..language.standing_render import render_standing
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 
@@ -558,6 +559,33 @@ def _notes_block(ctx: TagContext) -> str:
     return f"{block}\n" if block else ""
 
 
+
+def _standing_block(ctx: TagContext) -> str:
+    """Her own position in THIS conversation, as the debrief left it last turn
+    (`design/dreamer-agent-loop/26-standing.md`). Same volatile-tier placement
+    and trailing-newline convention as its five siblings above, `""` when there
+    is no position yet.
+
+    **It sits LAST, immediately before the transcript, and that breaks the
+    widening-scope order the blocks above it follow on purpose.** Every block
+    from `<self_card>` to `<notes>` widens — her past, then theirs, then the
+    room's slang, then the workspace's settled claims, then its open questions.
+    Standing is the narrowest thing in the prompt (one conversation, not even a
+    workspace), so on scope alone it would sit at the front. It sits at the back
+    because it is not on that axis at all: it is «where you had got to», and the
+    thing it is about is the transcript directly underneath it. Read in order
+    the pair says *here is where you were, here is what has been said since*,
+    which is the whole job of the tier. Put at the front it reads as one more
+    thing she has been told about, next to five blocks that genuinely are.
+
+    It is also, uniquely, the only block here that is HER OWN OUTPUT — and it
+    is still marked untrusted; see `render_standing`'s docstring for why that is
+    not a contradiction.
+    """
+    block = render_standing(ctx.standing)
+    return f"{block}\n" if block else ""
+
+
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
@@ -605,11 +633,16 @@ def build_prefill(
             # stays adjacent to the message it explains. The two
             # person blocks are adjacent because they are one person: who
             # they are, then what happened with them.
-            # `room_language`/`room_exchange`/`room_portrait`/`facts`/`notes`
-            # all sit here — the VOLATILE tier, after `_peer_history_block`
-            # and before `_transcript_block` — and deliberately not inside
-            # `_context_header` above; see `_room_language_block`'s and
-            # `_facts_block`'s own docstrings for why.
+            # `room_language`/`room_exchange`/`room_portrait`/`facts`/`notes`/
+            # `standing` all sit here — the VOLATILE tier, after
+            # `_peer_history_block` and before `_transcript_block` — and
+            # deliberately not inside `_context_header` above; see
+            # `_room_language_block`'s and `_facts_block`'s own docstrings for
+            # why. `<standing>` has a second, sharper reason of its own: it is
+            # revised on EVERY turn, so a row of it inside the cached prefix
+            # would invalidate that prefix every turn (26 §4).
+            # It is last of the six rather than in scope order —
+            # `_standing_block`'s own docstring argues that break.
             _now_line(now) + _where_line(ctx.message.platform)
             + _self_card_block(ctx) + _peer_card_block(ctx)
             + _peer_history_block(ctx)
@@ -618,6 +651,7 @@ def build_prefill(
             + _room_portrait_block(ctx)
             + _facts_block(ctx)
             + _notes_block(ctx)
+            + _standing_block(ctx)
             + _transcript_block(ctx, display_name, now or datetime.now().astimezone()),
         ),
         _message("assistant", _CLOSING_LINE),

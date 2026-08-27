@@ -2,7 +2,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-20-reflection-reasoning-continuity-design.md`
 **Date:** 2026-08-21
-**Status:** plan. No code yet.
+**Status:** Phase 1 COMPLETE and merged. **Phase 2 COMPLETE** — see "Phase 2 status" below. Phases 3-4 are still plan-only.
 **Priority:** ahead of the Dreamer runtime (Phases 2–3 of the substrate plan) — operator's call, 2026-08-21.
 
 ## Why this is first
@@ -273,6 +273,68 @@ that produces `Standing`/`TurnVerdict`/`Fact` — not a new stage.
 **second-queued-tag** case explicit, against p95 ≤ 5s
 (`design/05-evaluation.md:79`). The user-visible cost lands on the second person
 queued behind a busy conversation, not the first.
+
+## Phase 2 status (2026-08-27): COMPLETE for `Standing`
+
+Migration `0034_standing`, `uv run alembic heads` prints one line. DEC-140 and
+R-69 in `design/09-decision-index.md`; `R-69` in
+`tests/test_acceptance_rules.py::RULE_TESTS`. Ships OFF behind
+`[standing] enabled = false`.
+
+**Tasks 2.1–2.9 are done.** The stage is `nora/engagement/stages/debrief.py`,
+awaited from `EngagementPipeline._run_admitted`'s `finally` — before
+`release_and_dispatch`, so it holds the slot (2.1), after `completed` is
+already final (2.2), catching `BaseException` at both the stage and the call
+site (2.3), on every completed turn including silences, vetoes and timeouts
+(2.4). `Standing` + `SqlStandingStore`/`InMemoryStandingStore` + a shared
+contract suite (2.5). The window is `ctx.transcript`'s tail, `[standing]
+window = 12`, its own and smaller than `[store] context_window` (2.6, S3).
+`<standing>` renders in the volatile tail, escaped and `untrusted="true"`, last
+of the six blocks and immediately before the transcript it explains (2.7).
+`nora_debrief_seconds` is separate from `nora_tag_latency_seconds`, which is
+read BEFORE the debrief runs (2.8). Overflow refuses, hands the model back its
+own answer and asks it to consolidate; a second overflow writes nothing and the
+prior stands (2.9).
+
+**Also done, and it was §6.2b's stated precondition rather than a bonus:**
+`nora_tagtrace_writes_total{outcome}`, whose denominator is
+`nora_tag_latency_seconds`' own count — the written-versus-turns-taken ratio
+Phase 1 shipped without.
+
+**Blocker 1 (read the prior first)** is closed and MEASURED —
+`nora_debrief_prior_total{prior}`. **Blocker 2** is closed as specified: a plain
+`chat.completions.create` with `response_format=json_object` and an explicit
+`finish_reason` check mapping `"length"` to `unavailable`, never to a parse.
+**Blocker 3**'s `tool_choice` question does not reach this stage: the fold is a
+single structured-output call with no terminal delivery tool. The 24 live
+`tag_trace` rows read on 2026-08-27 also refute `16-open-items` §0's stronger
+claim — every trace that made a tool call got its result back, so the transport
+does honour tool calls; what 42% of turns failed to do is take the TERMINAL act
+after a music tool succeeded, which is a doctrine/tool-description defect and a
+separate one.
+
+### Task 2.10 (note proposals) is NOT done, and it is blocked rather than skipped
+
+Its own stated dependency: the sink is `DreamSink`-shaped, and `SqlNoteStore`
+has `create`/`append_revision`/`record_miss` — not `propose`/`supersede`. It is
+not joined to `tests/contract/test_dream_sink_contract.py::IMPLEMENTATIONS`
+(still `fake`/`sql`/`candidate` only), which this plan already names as
+another workstream's scope. §7's two sub-decisions stand as written and are
+what the payload should be built to when that join lands.
+
+`TurnVerdict` is Phase 3 and fact proposals are Phase 4; the fold's response
+schema is deliberately NOT widened for either in advance, because an optional
+field nothing validates is exactly the failure §7's
+two-shapes-with-a-discriminant decision was made to avoid.
+
+### One thing this phase could not do
+
+`design/dreamer-agent-loop/15-roadmap.md` §6 still says "Phases 2–4, drafted,
+zero code" and `26-standing.md`'s checkpoint still says Phase 2 "has zero
+code". Both are now false. That directory was under active remediation by
+another session on `worktree-knowledge-graphiti` while this branch was built,
+so it was read and not edited. **Those two lines need correcting after that
+branch lands.**
 
 ## Phase 3 — `TurnVerdict`
 

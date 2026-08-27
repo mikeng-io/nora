@@ -48,6 +48,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -97,6 +98,7 @@ ADD CONSTRAINT reminders_pkey PRIMARY KEY (id);
 ADD CONSTRAINT room_exchange_pkey PRIMARY KEY (scope_id, act, participants);
 ADD CONSTRAINT room_lexeme_pkey PRIMARY KEY (scope_id, canonical_form, sense);
 ADD CONSTRAINT room_portrait_pkey PRIMARY KEY (scope_id);
+ADD CONSTRAINT standing_pkey PRIMARY KEY (platform, conversation_id);
 ADD CONSTRAINT sticker_index_pkey PRIMARY KEY (platform, fetch_token);
 ADD CONSTRAINT tag_trace_pkey PRIMARY KEY (id);
 ADD CONSTRAINT tool_call_log_pkey PRIMARY KEY (id);
@@ -154,6 +156,7 @@ ALTER TABLE ONLY public.reminders
 ALTER TABLE ONLY public.room_exchange
 ALTER TABLE ONLY public.room_lexeme
 ALTER TABLE ONLY public.room_portrait
+ALTER TABLE ONLY public.standing
 ALTER TABLE ONLY public.sticker_index
 ALTER TABLE ONLY public.tag_trace
 ALTER TABLE ONLY public.tool_call_log
@@ -228,6 +231,8 @@ CONSTRAINT room_exchange_state_check CHECK ((state = ANY (ARRAY['live'::text, 'f
 CONSTRAINT room_lexeme_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT room_lexeme_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
 CONSTRAINT room_lexeme_state_check CHECK ((state = ANY (ARRAY['live'::text, 'fading'::text, 'stale'::text])))
+CONSTRAINT standing_body_fits_the_ceiling_check CHECK (((length(btrim(body)) > 0) AND (length(body) <= 4000))),
+CONSTRAINT standing_fold_count_is_not_negative_check CHECK ((fold_count >= 0))
 CONSTRAINT tag_trace_outcome_check CHECK ((outcome = ANY (ARRAY['send_reply'::text, 'recovered'::text, 'silent'::text, 'vetoed'::text, 'timeout'::text, 'llm_error'::text])))
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
@@ -286,6 +291,7 @@ CREATE TABLE public.reminders (
 CREATE TABLE public.room_exchange (
 CREATE TABLE public.room_lexeme (
 CREATE TABLE public.room_portrait (
+CREATE TABLE public.standing (
 CREATE TABLE public.sticker_index (
 CREATE TABLE public.tag_trace (
 CREATE TABLE public.tool_call_log (
@@ -352,6 +358,7 @@ avg_speed_kmh double precision NOT NULL,
 backend_job_id text NOT NULL,
 battery double precision,
 body text NOT NULL,
+body text NOT NULL,
 body text,
 canonical_form text NOT NULL,
 canonical_form text NOT NULL,
@@ -367,6 +374,7 @@ confidence double precision NOT NULL,
 consolidator_name text NOT NULL,
 context text NOT NULL,
 context_sha256 text DEFAULT ''::text NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
@@ -434,6 +442,7 @@ first_seen_ts bigint NOT NULL,
 first_seen_ts bigint NOT NULL,
 fix_count integer NOT NULL,
 fix_count integer NOT NULL,
+fold_count integer DEFAULT 0 NOT NULL,
 guild_id text NOT NULL,
 guild_id text NOT NULL,
 head_revision_id uuid NOT NULL,
@@ -557,6 +566,7 @@ platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
+platform text NOT NULL,
 predicate text NOT NULL,
 predicate text NOT NULL,
 premise_fact_id uuid NOT NULL,
@@ -658,6 +668,7 @@ transcript jsonb NOT NULL,
 ts bigint NOT NULL,
 ts bigint NOT NULL,
 uncertainty text NOT NULL,
+updated_at bigint NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone NOT NULL,

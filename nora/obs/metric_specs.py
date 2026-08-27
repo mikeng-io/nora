@@ -1045,6 +1045,78 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "TagTrace content dropped or cut before retention, by reason.",
         ("what",),
     ),
+    # 15-roadmap §6.2b, and it was named there as a PRECONDITION of Phase 2
+    # rather than a nice-to-have. Phase 1's whole justification is «record
+    # before you fold»: retention exists so that a lossy fold is recoverable,
+    # which means a recording layer that silently stops writing fails in the
+    # one way nobody notices — the discovery point is the first fold, and by
+    # then the missing traces cannot be reconstructed.
+    #
+    # The denominator is `nora_tag_latency_seconds`' own COUNT: that histogram
+    # observes exactly once per admitted tag, on every exit path, so
+    # `nora_tagtrace_writes_total / nora_tag_latency_seconds_count` is the
+    # written-versus-turns-taken ratio. `tag_trace` is written in a `finally`
+    # on every exit path too, so the expected value is 1.0 and any sustained
+    # departure is a defect rather than a judgement call.
+    #
+    # The `outcome` label is the cheap second reading §6.2b asks for: the
+    # column is already written, so counting it is a label on a counter that
+    # had to exist anyway — and it is the only way to see whether R-5 silences
+    # are being retained (and therefore reviewed) at all.
+    _CounterSpec(
+        "nora_tagtrace_writes_total",
+        "TagTrace rows handed to the retention store, by turn outcome. The "
+        "denominator is nora_tag_latency_seconds_count (one per admitted "
+        "tag); the expected ratio is 1.0.",
+        ("outcome",),
+    ),
+    # 26-standing §6. Every debrief lands on exactly one label, including the
+    # ones that wrote nothing:
+    #   written           — the position was revised
+    #   refused_overflow  — it would not fit even after consolidating; the
+    #                       prior stands (§4.0's refuse-never-truncate)
+    #   screened          — an identifier or coordinate reached the fold (§4.3)
+    #   malformed         — the model answered, in the wrong shape
+    #   unavailable       — the prior could not be read, or the call was cut
+    #                       off at the output ceiling. «I could not check» —
+    #                       never folded in with `malformed` (R-27)
+    #   timeout           — the fold did not finish inside its own budget
+    #   error             — anything else, including a cancellation
+    _CounterSpec(
+        "nora_debrief_total",
+        "Debrief folds by disposition: written, refused_overflow, screened, "
+        "malformed, unavailable, timeout, error.",
+        ("outcome",),
+    ),
+    # §4's non-negotiable, made OBSERVABLE rather than assumed. A fold that
+    # read nothing is the failure D19 exists to prevent — two contradictory
+    # positions coexisting, neither able to correct the other — and the live
+    # evidence is that it happened one tier over and nobody could see it.
+    # `prior="absent"` is legitimate exactly once per conversation (the first
+    # fold); a sustained absent rate is the tell that the read is broken.
+    _CounterSpec(
+        "nora_debrief_prior_total",
+        "Debrief folds by whether the current Standing was read first "
+        "(prior=read|absent). A sustained absent rate is a defect.",
+        ("prior",),
+    ),
+    # §4.0/§6: the refuse-and-consolidate path firing is HEALTHY. Never firing
+    # means the cap is not binding — the tier is meant to be lossy, so a cap
+    # that never binds means it stopped being lossy. Firing constantly means it
+    # is too small. Both are readings, which is why this is a counter and not a
+    # log line.
+    #
+    # `stage="first"` is the refusal the model then FIXED; `stage="final"` is
+    # the one that wrote nothing. Two very different healths wearing one name
+    # would make the series unreadable: a high `first` with a low `final` is
+    # the mechanism working.
+    _CounterSpec(
+        "nora_standing_overflow_refusals_total",
+        "Standing writes refused for exceeding [standing] max_chars, by "
+        "stage: first (the model was asked to consolidate) or final "
+        "(nothing was written and the prior position stands).",
+        ("stage",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -1224,6 +1296,27 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "Wall-clock duration of one Dreamer adaptor run, by adaptor.",
         (1, 5, 15, 30, 60, 120, 300),
         ("adaptor",),
+    ),
+    # 26-standing §5. **Deliberately NOT folded into
+    # `nora_tag_latency_seconds`**, and that is the decision this entry exists
+    # to record: the debrief holds the slot, so its cost IS user-visible, but
+    # adding it to an existing SLO series would change what that series
+    # measures — a broken gate wearing a passing number. Two series, two
+    # questions.
+    #
+    # The gate is **p95 <= 5s**, and the case it names explicitly is the
+    # SECOND-QUEUED tag rather than an average: the person whose turn is being
+    # reviewed already has their reply, so the cost lands entirely on whoever
+    # is queued behind a busy conversation.
+    #
+    # Observed on EVERY exit including the failures. A latency series that only
+    # records successes describes the path that already works — which is §2's
+    # own argument, applied to this stage's instrument instead of its input.
+    _HistogramSpec(
+        "nora_debrief_seconds",
+        "Wall-clock duration of one debrief fold, on every exit path. "
+        "Excluded from nora_tag_latency_seconds on purpose. Gate: p95 <= 5s.",
+        (0.5, 1, 2, 3, 5, 8, 13, 21),
     ),
     _HistogramSpec(
         "nora_sticker_describe_seconds",
