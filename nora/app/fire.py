@@ -381,6 +381,7 @@ class FirePath:
         room_exchange_max_entries: int = DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
+        standing_store_timeout_seconds: float = 5.0,
     ) -> None:
         # D5: `<standing>` renders on the fire path too. `build_prefill` is
         # shared and parameterised only by `header=`, so SUPPRESSING the block
@@ -400,6 +401,14 @@ class FirePath:
         # `AgentRunner.invoke` hands back, a Phase 1 deferral flagged in that
         # method — and there is nothing to fold without it.
         self._standing = standing
+        # BOUNDED, for the reason the debrief stage's own store calls are:
+        # the heartbeat holds this conversation's slot around the whole fire
+        # turn (`heartbeat.py` try_acquire -> release_and_dispatch), and
+        # `create_sql_engine` sets no `command_timeout`, so an unbounded read
+        # here wedges the conversation exactly as the unbounded read in
+        # `debrief.run` did. That defect was fixed and then RE-CREATED here in
+        # the same change; this is the second half of the same fix.
+        self._standing_store_timeout_seconds = standing_store_timeout_seconds
         self._persons = persons
         self._records = records
         self._memory = memory
@@ -579,9 +588,12 @@ class FirePath:
         if self._standing is None:
             return None
         try:
-            return await self._standing.read(
-                platform=occasion.platform,
-                conversation_id=occasion.conversation_id,
+            return await asyncio.wait_for(
+                self._standing.read(
+                    platform=occasion.platform,
+                    conversation_id=occasion.conversation_id,
+                ),
+                timeout=self._standing_store_timeout_seconds,
             )
         except Exception:
             log.exception("fire standing read failed; continuing without it")

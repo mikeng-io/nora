@@ -9,7 +9,8 @@
     "When she speaks into a room unprompted — a reminder firing — she is now shown where that conversation had got to. It was the one path where she had no other way to know, and the block was silently missing there.",
     "Two tests that could not fail were rewritten so they can, and the engagement layer is now type-checked, which closes a whole class of wiring mistake that would have looked identical to the feature being switched off.",
     "Asking for a wider review window than she actually has is now refused at startup instead of quietly doing nothing.",
-    "Shutting Nora down mid-turn no longer looks like a fault: a cancelled review is reported as cancelled rather than as an error, so the counter that means «something is wrong» stops firing on ordinary restarts."
+    "Shutting Nora down mid-turn no longer looks like a fault: a cancelled review is reported as cancelled rather than as an error, so the counter that means «something is wrong» stops firing on ordinary restarts.",
+    "The same hang was fixed twice: closing it in the reply path re-opened it on the reminder path, which holds the same conversation lock. Both are now bounded."
   ],
   "limitations": [
     "Standing remains switched off. This closes the review's findings; turning it back on is a separate decision.",

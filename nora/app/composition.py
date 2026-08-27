@@ -1792,6 +1792,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # the fire path writes no position, because S1 is blocked on it
             # retaining a `TagTrace` at all (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
+            standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
         )
     if lost_jobs and fire_path is not None:
         # Spawned, never awaited — a boot must not wait on a model call, and
