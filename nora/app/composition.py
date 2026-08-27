@@ -1740,6 +1740,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             window=cfg.standing.window,
             timeout_seconds=cfg.standing.timeout_seconds,
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
+            rebuild_after_folds=cfg.standing.rebuild_after_folds,
         )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the

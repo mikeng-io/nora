@@ -392,6 +392,7 @@ class EngagementPipeline:
                 window=wiring.window,
                 timeout_seconds=wiring.timeout_seconds,
                 store_timeout_seconds=wiring.store_timeout_seconds,
+            rebuild_after_folds=wiring.rebuild_after_folds,
                 now_ms=int(time.time() * 1000),
             )
 

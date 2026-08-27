@@ -420,6 +420,10 @@ RULE_TESTS = {
     # the SPLIT from `Standing` exists to prevent, and it is the one a future
     # writer reintroduces by adding a convenient upsert.
     "R-71": "test_a_second_verdict_for_one_turn_is_refused",
+    # R-72 names the PRECEDENCE test rather than either trigger: getting the
+    # order backwards is the failure that silently corrupts §6's own reading of
+    # whether the trigger has degraded into a clock.
+    "R-72": "test_ungrounded_wins_when_both_conditions_hold",
 }
 
 

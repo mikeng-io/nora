@@ -19,6 +19,7 @@ import pytest
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_verdict import TurnVerdict
 from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
 from nora.testing import InMemoryStandingStore, InMemoryTurnVerdictStore
@@ -73,7 +74,8 @@ def _trace(outcome: str = "send_reply") -> TagTrace:
 
 
 async def _run(*, store=None, store_verdict=None, client=None, metrics=None, max_chars=1200,
-               timeout_seconds=5.0, store_timeout_seconds=5.0, trace=None) -> tuple:
+               timeout_seconds=5.0, store_timeout_seconds=5.0,
+               rebuild_after_folds=20, trace=None) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
     store_verdict = (store_verdict if store_verdict is not None
                      else InMemoryTurnVerdictStore())
@@ -85,6 +87,7 @@ async def _run(*, store=None, store_verdict=None, client=None, metrics=None, max
         objective=_Objective(), metrics=metrics, display_name="Nora",
         max_chars=max_chars, window=40, timeout_seconds=timeout_seconds,
         store_timeout_seconds=store_timeout_seconds,
+        rebuild_after_folds=rebuild_after_folds,
         now_ms=1_756_000_931_000,
     )
     return store, metrics, store_verdict
@@ -527,3 +530,101 @@ async def test_the_verdict_comes_from_the_answer_that_was_kept():
     _, _, verdicts = await _run(client=client, max_chars=50)
     v = await verdicts.read(tag_id="tag-1")
     assert v is not None and v.unsupported == ("from the kept answer",)
+
+
+# --- S2's re-derivation trigger --------------------------------------------
+
+async def _with_prior(fold_count: int, *, body: str = "the carried position"):
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body=body,
+        fold_count=fold_count, updated_at=1))
+    return store
+
+
+async def _with_verdict(*, grounded: bool):
+    verdicts = InMemoryTurnVerdictStore()
+    await verdicts.save(verdict=TurnVerdict(
+        tag_id="earlier", conversation_id="g1", grounded=grounded,
+        unsupported=() if grounded else ("invented a price",), created_at=1))
+    return verdicts
+
+
+async def test_an_ungrounded_previous_turn_rebuilds_the_position():
+    """S2's stronger trigger. The prior is READ but withheld from the prompt,
+    so a drifted body cannot carry itself forward through the very fold meant
+    to correct it."""
+    client = _Client(_ok("a rebuilt position"))
+    _, metrics, _ = await _run(
+        store=await _with_prior(1), store_verdict=await _with_verdict(grounded=False),
+        client=client)
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1
+    assert "the carried position" not in client.prompts[0]
+    # 26 §4's non-negotiable: it still READ the prior.
+    assert _counter(metrics, "nora_debrief_prior_total", prior="read") == 1
+
+
+async def test_the_fold_count_ceiling_rebuilds_the_position():
+    _, metrics, _ = await _run(
+        store=await _with_prior(20), store_verdict=await _with_verdict(grounded=True),
+        rebuild_after_folds=20)
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ceiling") == 1
+
+
+async def test_ungrounded_wins_when_both_conditions_hold():
+    """**The measurement, not a preference.** 26 §6 reads the by-trigger split
+    to ask whether the trigger has degraded into a clock. Labelling a turn that
+    actually went wrong as `ceiling` manufactures exactly that false reading —
+    the ceiling would have fired eventually anyway."""
+    _, metrics, _ = await _run(
+        store=await _with_prior(99), store_verdict=await _with_verdict(grounded=False),
+        rebuild_after_folds=20)
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ceiling") == 0
+
+
+async def test_a_grounded_previous_turn_below_the_ceiling_does_not_rebuild():
+    client = _Client(_ok("a revised position"))
+    _, metrics, _ = await _run(
+        store=await _with_prior(3), store_verdict=await _with_verdict(grounded=True),
+        client=client, rebuild_after_folds=20)
+    assert _counter(metrics, "nora_standing_rederivations_total") == 0
+    assert "the carried position" in client.prompts[0]
+
+
+async def test_the_first_fold_of_a_conversation_is_not_a_rederivation():
+    """`prior is None` builds from the window regardless — there is nothing to
+    carry forward and nothing to correct. Counting it would drown the signal in
+    the one event every conversation has exactly once."""
+    _, metrics, _ = await _run()
+    assert _counter(metrics, "nora_standing_rederivations_total") == 0
+    assert _counter(metrics, "nora_debrief_prior_total", prior="absent") == 1
+
+
+async def test_a_rebuild_resets_the_fold_count():
+    """Or the ceiling fires on every turn forever after the first time — a
+    trigger that latches on is a clock with extra steps."""
+    store = await _with_prior(20)
+    await _run(store=store, store_verdict=await _with_verdict(grounded=True),
+               rebuild_after_folds=20)
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.fold_count == 1
+
+
+async def test_an_unreadable_verdict_store_does_not_rebuild():
+    """R-27: an unreadable verdict is «I could not check». Re-deriving on it
+    would throw a position away because an instrument was down — a worse
+    outcome than carrying a possibly-drifted one for one more turn."""
+    class _Broken(InMemoryTurnVerdictStore):
+        async def latest(self, **kw):
+            raise RuntimeError("verdict store down")
+
+    client = _Client(_ok("a revised position"))
+    _, metrics, _ = await _run(
+        store=await _with_prior(1), store_verdict=_Broken(), client=client)
+    assert _counter(metrics, "nora_standing_rederivations_total") == 0
+    assert "the carried position" in client.prompts[0]

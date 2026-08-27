@@ -56,3 +56,41 @@ class SqlTurnVerdictStore:
             unsupported=tuple(row.unsupported),
             created_at=row.created_at,
         )
+
+    async def latest(self, *, conversation_id: str) -> TurnVerdict | None:
+        """The newest verdict in one conversation.
+
+        **`idx_turn_verdict_ungrounded` does NOT serve this read**, and that is
+        worth stating rather than discovering: it is partial on
+        `grounded = false`, so it holds only the ungrounded rows, while this
+        asks for the latest verdict of EITHER kind. At the sizes this table
+        reaches — one row per turn, per conversation — the planner takes a scan
+        and that is correct. If it ever needs an index it is a new one on
+        `(conversation_id, created_at DESC)`, not a widening of that one:
+        making the partial index total would cost every grounded row for a read
+        the trigger does not do.
+        """
+        stmt = (
+            sa.select(TURN_VERDICT)
+            .where(TURN_VERDICT.c.conversation_id == conversation_id)
+            # `tag_id` breaks the tie, matching the double exactly. Two turns
+            # in one millisecond are reachable, and without this the two
+            # implementations answer DIFFERENT verdicts for the same rows —
+            # Postgres picks whatever the scan reaches first, the double
+            # picks by hash order. A contract suite cannot see that unless
+            # both sides are deterministic.
+            .order_by(TURN_VERDICT.c.created_at.desc(),
+                      TURN_VERDICT.c.tag_id.desc())
+            .limit(1)
+        )
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).one_or_none()
+        if row is None:
+            return None
+        return TurnVerdict(
+            tag_id=row.tag_id,
+            conversation_id=row.conversation_id,
+            grounded=row.grounded,
+            unsupported=tuple(row.unsupported),
+            created_at=row.created_at,
+        )

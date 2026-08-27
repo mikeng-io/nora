@@ -1948,3 +1948,17 @@ class TurnVerdictStore(Protocol):
     async def read(self, *, tag_id: str) -> TurnVerdict | None:
         """One turn's verdict, or `None`."""
         ...
+
+    async def latest(self, *, conversation_id: str) -> TurnVerdict | None:
+        """The most recent verdict in this conversation, or `None`.
+
+        The read S2's trigger needs, and it is a DIFFERENT question from
+        `read`: the trigger asks "how did the LAST turn here go", not "how did
+        this turn go". Keyed on `conversation_id` alone because `turn_verdict`
+        has no platform column — a `tag_id` is already globally unique, so the
+        row needs no second axis to be found by.
+
+        `None` when the conversation has no verdict yet, which is the ordinary
+        state before the first fold and is not a reason to re-derive.
+        """
+        ...

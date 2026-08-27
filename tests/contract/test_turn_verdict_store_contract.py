@@ -156,3 +156,41 @@ async def test_both_stores_refuse_too_many_claims(store):
         tuple(f"c{i}" for i in range(UNSUPPORTED_MAX_ITEMS + 1)))
     with pytest.raises(Exception):  # noqa: B017
         await store.save(verdict=smuggled)
+
+
+async def test_latest_answers_the_newest_verdict_in_the_conversation(store):
+    """The read S2's trigger needs, and a DIFFERENT question from `read`: how
+    did the LAST turn here go, not how did this turn go."""
+    await store.save(verdict=_v("tag-1", grounded=True))
+    await store.save(verdict=TurnVerdict(
+        tag_id="tag-2", conversation_id=CONV, grounded=False,
+        unsupported=("the newer one",), created_at=NOW + 1000))
+    got = await store.latest(conversation_id=CONV)
+    assert got is not None and got.tag_id == "tag-2" and got.grounded is False
+
+
+async def test_latest_is_deterministic_when_two_turns_share_a_millisecond(store):
+    """Both implementations must answer the SAME row, or the double is not a
+    stand-in. Postgres would otherwise return whatever the scan reached first
+    and the double whatever hashed first — a divergence a contract suite cannot
+    see unless both sides are ordered. `tag_id` descending breaks it."""
+    for tag in ("tag-a", "tag-b", "tag-c"):
+        await store.save(verdict=TurnVerdict(
+            tag_id=tag, conversation_id=CONV, grounded=True, created_at=NOW))
+    got = await store.latest(conversation_id=CONV)
+    assert got is not None and got.tag_id == "tag-c"
+
+
+async def test_latest_ignores_other_conversations(store):
+    await store.save(verdict=TurnVerdict(
+        tag_id="other", conversation_id="g2", grounded=False,
+        unsupported=("elsewhere",), created_at=NOW + 9999))
+    await store.save(verdict=_v("tag-1", grounded=True))
+    got = await store.latest(conversation_id=CONV)
+    assert got is not None and got.tag_id == "tag-1"
+
+
+async def test_latest_is_none_before_the_first_verdict(store):
+    """Not a reason to re-derive: the ordinary state before a conversation's
+    first fold."""
+    assert await store.latest(conversation_id=CONV) is None
