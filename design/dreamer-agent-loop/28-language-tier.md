@@ -21,8 +21,9 @@ lexeme rows, the tools-less completion, the missing supersession, the
 
 Meanwhile it is, in code, **the most complete tier in the repo**: three
 adaptors, four tables, a real scoring function, a three-state lifecycle, and
-**five metrics that are actually wired** — where the note tier declares ten and
-ships zero.
+**five metrics that are actually wired** — where the note tier declared ten and
+shipped zero until 2026-08-27, and now ships the three that have call sites
+([27](27-note-dreamer.md) §6.1).
 
 **Most built, least designed.** That is [04-designed-vs-shipped.md](04-designed-vs-shipped.md)'s
 pattern in its purest form: the thing everyone points at and nobody owns.

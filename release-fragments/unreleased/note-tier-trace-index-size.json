@@ -1,0 +1,1 @@
+{"type":"none","reason":"Operator-facing observability only: every Langfuse span in a turn now carries note_index_entries, the count of standing notes the turn was shown. Without it a turn that saw an empty notebook and a turn where the tier was never wired produce identical traces. Provenance only — a count, never note content."}

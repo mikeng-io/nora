@@ -124,9 +124,13 @@ not exist.** The only references to it in the codebase are docstrings describing
 what it *will* do. `config.toml` says so plainly: *"No curator yet — nothing
 merges, retires or promotes a note… The notebook only grows for now."*
 
-So a tier the design calls bounded is, in the deployment, unbounded. And the
-instrument that comment names as the tell — `nora_note_index_entries` — has
-**zero call sites**. The growth nobody bounded is also growth nobody counts.
+So a tier the design calls bounded is, in the deployment, unbounded. The
+instrument that comment names as the tell — `nora_note_index_entries` — had
+**zero call sites** when this was written; it gained one on 2026-08-27
+([27](27-note-dreamer.md) §6.1), labelled by workspace so two notebooks do not
+overwrite each other's reading. **The growth is now counted; it is still
+nobody's to bound until the curator exists**, which is what makes the threshold
+below readable rather than hypothetical.
 
 **Therefore adoption is a measured transition, not a design-time verdict:**
 

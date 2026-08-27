@@ -76,9 +76,28 @@ def _build_exporter(exporter: str, endpoint: str, headers_env: str) -> _SpanExpo
 
 
 def trace_attributes(ctx, doctrine) -> dict:
-    """Provenance only — never message content (see the dedicated test for this)."""
+    """Provenance only — never message content (see the dedicated test for this).
+
+    `note_index_entries` is a COUNT, which is why it belongs in a dict that
+    otherwise holds only hashes and ids: it says how many notes were in front
+    of her on this turn without saying what any of them is. The titles are
+    already in the GENERATION span's prompt for a turn that had any; this
+    number is the one fact a turn with NONE cannot otherwise report, and a
+    trace that cannot say «she was shown nothing» reads identically to one
+    where the tier was never wired.
+
+    It is the per-turn counterpart of `nora_note_index_entries`, and the two
+    answer different questions on purpose: the gauge says what the notebook
+    holds NOW, this says what THIS turn saw. They diverge exactly when a turn
+    matters — a reply written against an index that has since changed.
+
+    Stamped on every span in the turn (Strands applies these to the agent span
+    and each tool/model child), so filtering Langfuse to «turns that saw an
+    empty notebook» costs no new instrumentation at the call sites.
+    """
     return {
         "tag_id": ctx.tag_id,
         "conversation_id": ctx.message.conversation_id,
         "doctrine_sha256": doctrine.sha256,
+        "note_index_entries": len(ctx.notes),
     }

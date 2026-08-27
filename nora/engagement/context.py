@@ -602,9 +602,28 @@ class TranscriptInjection:
                 "nora_errors_total", stage="notes", platform=msg.platform)
             return ()
         try:
-            return await self._notes_store.standing(workspace=convo.workspace)
+            standing = await self._notes_store.standing(workspace=convo.workspace)
         except Exception:
             log.exception("note-index read failed; continuing without it")
             self._metrics.inc(
                 "nora_errors_total", stage="notes", platform=msg.platform)
             return ()
+        # `config.toml`'s [notes] section names this metric as "the tell": with
+        # no curator, nothing retires a note, so the reading that matters is
+        # whether the index grows faster than it earns.
+        #
+        # It is published HERE and not from a new `gather` leaf in `assemble`,
+        # because this read already happens and `assemble`'s nested gather has
+        # distinctly-typed overloads only to six positional awaitables — a
+        # seventh joins every return type down to `object` under mypy.
+        #
+        # And it is published on the SUCCESS path only. Both returns above are
+        # `()` as well, and a gauge written there would export `0` for «the
+        # tier is off» and for «I could not read the notebook» alike — the
+        # `unavailable`-as-`nothing_found` collapse R-27 exists to prevent, in
+        # the one series meant to answer «is the notebook empty?». The wiring
+        # gap already has `nora_errors_total{stage="notes"}`; absence here is
+        # what says the reading was not taken.
+        self._metrics.gauge(
+            "nora_note_index_entries", len(standing), workspace=convo.workspace)
+        return standing
