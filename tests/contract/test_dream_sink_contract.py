@@ -30,6 +30,29 @@ author nothing. Adding `SqlFactCandidateStore` as one entry and running it
 - **Three hard-coded `because` into a call this file assumed never reaches a
   reason check.** See the correction under point 2.
 
+**The fourth implementation predicted "one entry" too, and missed for a
+DIFFERENT reason — recorded because two misses with two causes is the point.**
+`SqlNoteStore` (2026-08-27) could not join by adding an entry at all, and no
+test count would have shown why, because the obstacle is in the FACTORY's
+signature rather than in any assertion:
+
+> **Every existing `propose` INSERTS. The note store's APPENDS.**
+
+`SqlFactStore.propose` mints an id and writes a free-standing row. `SqlNoteStore.
+propose` appends a revision to a note that must already exist, under a
+compare-and-swap against its current head. So a valid note `Proposal` cannot be
+built from nothing: it needs the workspace key the test is about to choose, an
+already-created note, and that note's head-revision id — the last two requiring
+an `await` against the store. `make_proposal()` was zero-arg, synchronous, and
+called at 17 sites where each test picks its key inline.
+
+**THE FACTORY'S SIGNATURE ENCODED AN ASSUMPTION NOBODY WROTE DOWN** — that a
+proposal can be built without knowing where it will be written. Facts and
+candidates both happen to satisfy it, so it never had to be stated; an append is
+meaningless without the thing it appends to. That is a shape which is
+accidentally true of every case seen so far, read as a property — and it is why
+`make_proposal` is now `async` and takes the key.
+
 **The rule that keeps this file shared rather than fact-shaped, found by
 building the second implementation and confirmed by the third:** anything the
 shared suite needs that is not on `DreamSink` itself must be supplied PER
@@ -165,11 +188,13 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.notes import NoteRevisionProposal, NoteSupersedeReason
 from nora.domain.ports import DreamSink, Proposal
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.notes import SqlNoteStore
 from nora.testing import fact_candidate_proposal_factory, fact_proposal_factory
 
 NOW = 1_755_000_000_000
@@ -389,6 +414,75 @@ def _build_candidate(engine: AsyncEngine | None) -> SqlFactCandidateStore:
     return SqlFactCandidateStore(engine)
 
 
+_note_seq = itertools.count(1)
+
+
+def _distinct_sha256(seed: str) -> str:
+    return hashlib.sha256(seed.encode()).hexdigest()
+
+
+# ---- proposal factories, adapted to the async key-aware signature ----------
+#
+# The three below IGNORE both arguments, and that is the correct amount of work
+# for a tier whose `propose` inserts: there is nothing to look up, so there is
+# nothing to await. They are thin adapters rather than changes to
+# `fact_proposal_factory`/`fact_candidate_proposal_factory` themselves, which
+# are production helpers used outside this file — widening their signature to
+# satisfy one suite would push this suite's shape back into `nora/testing/`.
+
+
+async def _fake_make_proposal(_sink: object, *, key: str, **overrides: object) -> Proposal:
+    return _fake_proposal_factory(**overrides)  # type: ignore[arg-type]
+
+
+async def _sql_make_proposal(_sink: object, *, key: str, **overrides: object) -> Proposal:
+    return fact_proposal_factory(**overrides)  # type: ignore[arg-type]
+
+
+async def _candidate_make_proposal(_sink: object, *, key: str, **overrides: object) -> Proposal:
+    return fact_candidate_proposal_factory(**overrides)  # type: ignore[arg-type]
+
+
+async def _note_make_proposal(
+    sink: SqlNoteStore, *, key: str, established_by: str | None = None,
+) -> Proposal:
+    """The one factory that TOUCHES THE STORE, and the reason the signature
+    changed.
+
+    A note revision is an APPEND. It is meaningless without the note it appends
+    to and the head it was written against, so this creates a note in `key` and
+    names its head — which cannot be done synchronously and cannot be done
+    without knowing the workspace. `create` rather than a fixture-level seed
+    because each call must yield a DISTINCT note: several tests propose three
+    times against one key and then pair the returned ids back to what they sent,
+    which three appends to one note could not support (the second would lose the
+    CAS against a head the first had just moved).
+    """
+    n = next(_note_seq)
+    note = await sink.create(
+        workspace=key,
+        title=f"contract note {n}",
+        description=f"one line about note {n}",
+        uncertainty=f"undecided thing {n}",
+        closing_condition=f"somebody decides {n}",
+        established_in=f"conversation-{n}",
+        body=f"the arrangement as it stands, {n}",
+        established_by=f"run-{n}",
+        now_ms=NOW,
+        anchor_date=20261011,
+    )
+    return Proposal(
+        payload=NoteRevisionProposal(
+            note_id=note.id,
+            body=f"the arrangement, revised by the curator, {n}",
+            parent_revision_id=note.head_revision_id,
+        ),
+        instruction_sha256=_distinct_sha256(f"note-instruction-{n}"),
+        model=f"note-contract-model-{n}",
+        established_by=established_by or f"note-run-{n}",
+    )
+
+
 @dataclass(frozen=True)
 class _Impl:
     """One implementation's entry. A dataclass rather than the tuple this
@@ -419,23 +513,92 @@ class _Impl:
 
     needs_engine: bool
     build: Callable[[AsyncEngine | None], object]
-    make_proposal: Callable[..., Proposal]
+    # ASYNC and KEY-AWARE since the note store joined (see the docstring's
+    # fourth-implementation note). It receives the sink and the key, because
+    # constructing a valid proposal is not necessarily pure: an APPEND needs the
+    # row it appends to, so the note factory creates a note under `key` and
+    # names its head. The fact factories ignore both arguments, which is the
+    # correct amount of work for a tier whose propose inserts.
+    make_proposal: Callable[..., Awaitable[Proposal]]
+    # A payload of THIS implementation's own type, built without touching any
+    # store — kept apart from `make_proposal` on purpose. The foreign-payload
+    # test needs another tier's payload to hand to THIS sink, and it has no
+    # instance of that tier's store to seed against; it also must not, because
+    # the refusal it asserts happens before any write. One callable serving both
+    # needs would force the foreign case to build a row it never uses.
+    sample_payload: Callable[[], object]
     make_because: Callable[[], str]
     read_row: Callable[..., Awaitable[_ReadBack]]
     successor: NullableAxis
     source: NullableAxis
 
 
+async def _note_read_row(
+    sink: SqlNoteStore, *, key: str, row_id: str,
+) -> _ReadBack:
+    """The note tier's row, normalised onto the shared view — and the mapping
+    is not one-to-one, which is the whole reason this callable is per
+    implementation.
+
+    `row_id` is a NOTE id — what this tier's `propose` returns, for the reason
+    `SqlNoteStore.propose` gives — so this reads the note and then its HEAD
+    revision, which is the revision that `propose` just wrote.
+
+    `source` is `None` unconditionally and that is a STATEMENT, not a gap —
+    `note` has no column for a supersession's citation, because what closed an
+    open question is its revision history rather than a URL. The axis below
+    records it as `REFUSED` so the suite asserts the refusal instead of
+    assuming the drop.
+    """
+    note = await sink.note_by_id(workspace=key, note_id=row_id)
+    assert note is not None, f"{row_id} was just written and must be readable"
+    revision = await sink.revision_by_id(revision_id=note.head_revision_id)
+    assert revision is not None, "a note's head revision must exist"
+    return _ReadBack(
+        proposal=Proposal(
+            payload=None,
+            # From the REVISION, not the note: this tier put DEC-125/126 on the
+            # revision because a note is created once and revised many times by
+            # different authors, so the note-level answer would attribute every
+            # revision to whatever wrote the first one. `0036`'s docstring is
+            # the argument.
+            instruction_sha256=revision.instruction_sha256 or "",
+            model=revision.model or "",
+            established_by=revision.established_by,
+        ),
+        because=note.retire_reason, source=None,
+        replaced_by=note.replaced_by, retired_at=note.retired_at,
+        written_at=revision.written_at,
+    )
+
+
+def _build_note(engine: AsyncEngine | None) -> SqlNoteStore:
+    assert engine is not None, "note's build needs a real engine"
+    return SqlNoteStore(engine)
+
+
+_note_because_cycle = itertools.cycle(NoteSupersedeReason.ALL)
+
+
+def _note_make_because() -> str:
+    """`SqlNoteStore.supersede` validates against `NoteSupersedeReason.ALL`;
+    any other string raises before it reaches a row."""
+    return next(_note_because_cycle)
+
+
 IMPLEMENTATIONS: dict[str, _Impl] = {
     "fake": _Impl(
         needs_engine=False, build=_build_fake,
-        make_proposal=_fake_proposal_factory, make_because=_fake_make_because,
+        make_proposal=_fake_make_proposal, sample_payload=lambda: "fake-payload",
+        make_because=_fake_make_because,
         read_row=_fake_read_row,
         successor=NullableAxis.OPTIONAL, source=NullableAxis.OPTIONAL,
     ),
     "sql": _Impl(
         needs_engine=True, build=_build_sql,
-        make_proposal=fact_proposal_factory, make_because=_sql_make_because,
+        make_proposal=_sql_make_proposal,
+        sample_payload=lambda: fact_proposal_factory().payload,
+        make_because=_sql_make_because,
         read_row=_sql_read_row,
         # `fact_supersession_is_timed_check` is a biconditional: a fact is
         # either standing or superseded-with-a-successor.
@@ -443,7 +606,8 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
     ),
     "candidate": _Impl(
         needs_engine=True, build=_build_candidate,
-        make_proposal=fact_candidate_proposal_factory,
+        make_proposal=_candidate_make_proposal,
+        sample_payload=lambda: fact_candidate_proposal_factory().payload,
         make_because=_candidate_make_because, read_row=_candidate_read_row,
         # No candidate ever succeeds another (an adjudicated one is succeeded
         # by a `fact`, in a different table) and a supersession's warrant
@@ -451,6 +615,30 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
         # neither, so both are refused rather than accepted and dropped —
         # see `SqlFactCandidateStore.supersede`'s three refusals.
         successor=NullableAxis.REFUSED, source=NullableAxis.REFUSED,
+    ),
+    "note": _Impl(
+        needs_engine=True, build=_build_note,
+        make_proposal=_note_make_proposal,
+        sample_payload=lambda: NoteRevisionProposal(
+            note_id="00000000-0000-0000-0000-000000000001",
+            body="a body no other tier would accept",
+            parent_revision_id="00000000-0000-0000-0000-000000000002",
+        ),
+        make_because=_note_make_because, read_row=_note_read_row,
+        # OPTIONAL, and this axis is the reason `DreamSink.supersede` types
+        # `replaced_by` as `str | None` at all. `note`'s CHECK is a
+        # one-directional implication — a replacement implies a retirement,
+        # never the converse — because a note may retire with NO successor: an
+        # anchor date passed and the dinner happened, and it is replaced by
+        # nothing. `fact`'s biconditional makes the same field REQUIRED one
+        # tier over. Permissive at the port, strict at each implementation.
+        successor=NullableAxis.OPTIONAL,
+        # REFUSED, and it is a statement rather than a gap: `note` has no
+        # column for a supersession's citation, because what closed an open
+        # question is its revision history and not a URL. A tier that cannot
+        # record a field says so through this axis instead of accepting it and
+        # dropping it silently.
+        source=NullableAxis.REFUSED,
     ),
 }
 
@@ -554,7 +742,22 @@ def sink(sink_ctx):
 
 @pytest.fixture
 def make_proposal(sink_ctx):
-    return sink_ctx[1].make_proposal
+    """`await make_proposal(key)` — bound to the sink under test.
+
+    The key is passed because a proposal is not always constructible without
+    it, and the sink because it is not always constructible without touching
+    the store. Both are true only of the note tier, and both are supplied to
+    every implementation rather than special-cased, because a factory that
+    takes different arguments per tier is the fact-shaped suite arriving back
+    through the fixture layer."""
+    async def _make(key: str, **overrides: object) -> Proposal:
+        # `**overrides` forwards the per-field pins some tests need
+        # (`established_by=` in `test_provenance_survives_the_write`). Kept as
+        # passthrough rather than named: which fields a tier lets a caller pin
+        # is that tier's business, and naming them here would put the fact
+        # tier's field list back into the shared fixture.
+        return await sink_ctx[1].make_proposal(sink_ctx[0], key=key, **overrides)
+    return _make
 
 
 @pytest.fixture
@@ -619,7 +822,11 @@ async def test_propose_returns_one_id_per_proposal_in_order(sink, make_proposal)
     to the proposals it sent."""
     ids = await sink.propose(
         key="room-1",
-        proposals=(make_proposal(), make_proposal(), make_proposal()),
+        proposals=(
+            await make_proposal("room-1"),
+            await make_proposal("room-1"),
+            await make_proposal("room-1"),
+        ),
         now_ms=NOW,
     )
 
@@ -667,8 +874,8 @@ async def test_keys_do_not_leak_into_each_other(
     """The key is the adaptor's own — `scope_id` for the room adaptors, a
     workspace for the fact adaptor (DEC-105). Whatever it means, two keys are
     two different units of work."""
-    a = await sink.propose(key="room-a", proposals=(make_proposal(),), now_ms=NOW)
-    b = await sink.propose(key="room-b", proposals=(make_proposal(),), now_ms=NOW)
+    a = await sink.propose(key="room-a", proposals=(await make_proposal("room-a"),), now_ms=NOW)
+    b = await sink.propose(key="room-b", proposals=(await make_proposal("room-b"),), now_ms=NOW)
 
     # Every argument but the key is one this store accepts — the successor
     # from the axis, the reason from `make_because` — so the ONLY reason this
@@ -691,10 +898,10 @@ async def test_supersede_retires_a_row_proposed_earlier(
     sink, make_proposal, make_because, successor, source_axis,
 ):
     ids = await sink.propose(
-        key="room-1", proposals=(make_proposal(),), now_ms=NOW,
+        key="room-1", proposals=(await make_proposal("room-1"),), now_ms=NOW,
     )
     new_ids = await sink.propose(
-        key="room-1", proposals=(make_proposal(),), now_ms=NOW,
+        key="room-1", proposals=(await make_proposal("room-1"),), now_ms=NOW,
     )
 
     affected = await sink.supersede(
@@ -715,7 +922,7 @@ async def test_superseding_an_unknown_row_reports_zero_rather_than_raising(
     # where one is recordable, a reason from `make_because` — so the unknown
     # target is the only variable. (The reason is no longer a descriptive
     # literal: see the module docstring's correction under point 2.)
-    real = await sink.propose(key="room-1", proposals=(make_proposal(),), now_ms=NOW)
+    real = await sink.propose(key="room-1", proposals=(await make_proposal("room-1"),), now_ms=NOW)
 
     affected = await sink.supersede(
         key="room-1", target="row-does-not-exist",
@@ -731,8 +938,10 @@ async def test_superseding_twice_affects_nothing_the_second_time(
 ):
     """Idempotent, because the Dreamer loop can legitimately re-fire over work
     it already did — the same property `RoomConsolidator`'s contract turns on."""
-    ids = await sink.propose(key="room-1", proposals=(make_proposal(),), now_ms=NOW)
-    new_ids = await sink.propose(key="room-1", proposals=(make_proposal(),), now_ms=NOW)
+    one = (await make_proposal("room-1"),)
+    two = (await make_proposal("room-1"),)
+    ids = await sink.propose(key="room-1", proposals=one, now_ms=NOW)
+    new_ids = await sink.propose(key="room-1", proposals=two, now_ms=NOW)
     reason = make_because()
     heir = successor.offer(new_ids[0])
     first = await sink.supersede(
@@ -758,8 +967,8 @@ async def test_a_supersession_records_why_and_optionally_from_where(
     not a fixed literal (`because`/`source` vocabulary is a tier's own —
     `contradicted` means nothing to the note tier — so the round trip is the
     portable property, not the string)."""
-    old = await sink.propose(key="room-1", proposals=(make_proposal(),), now_ms=NOW)
-    new = await sink.propose(key="room-1", proposals=(make_proposal(),), now_ms=NOW)
+    old = await sink.propose(key="room-1", proposals=(await make_proposal("room-1"),), now_ms=NOW)
+    new = await sink.propose(key="room-1", proposals=(await make_proposal("room-1"),), now_ms=NOW)
     reason = make_because()
 
     await sink.supersede(
@@ -788,7 +997,7 @@ async def test_provenance_survives_the_write(sink, make_proposal, read_row):
     constant here would be an assertion about the fake's defaults, not about
     provenance surviving the write.
     """
-    p = make_proposal(established_by="run-42")
+    p = await make_proposal("room-1", established_by="run-42")
 
     ids = await sink.propose(key="room-1", proposals=(p,), now_ms=NOW)
 
@@ -833,8 +1042,10 @@ async def test_a_supersession_can_name_its_successor(
     is measured in
     `test_a_field_the_store_cannot_record_is_refused_not_dropped` below.
     """
-    old = await sink.propose(key="room-1", proposals=(make_proposal(),), now_ms=NOW)
-    new = await sink.propose(key="room-1", proposals=(make_proposal(),), now_ms=NOW + 1)
+    one = (await make_proposal("room-1"),)
+    two = (await make_proposal("room-1"),)
+    old = await sink.propose(key="room-1", proposals=one, now_ms=NOW)
+    new = await sink.propose(key="room-1", proposals=two, now_ms=NOW + 1)
 
     affected = await sink.supersede(
         key="room-1", target=old[0], replaced_by=successor.offer(new[0]),
@@ -872,7 +1083,7 @@ async def test_a_supersession_with_no_successor_is_legal_or_refused_by_the_store
     only implementation it ever ran against was the fake, which accepts
     anything.
     """
-    ids = await sink.propose(key="room-1", proposals=(make_proposal(),), now_ms=NOW)
+    ids = await sink.propose(key="room-1", proposals=(await make_proposal("room-1"),), now_ms=NOW)
 
     if successor.null_is_legal:
         affected = await sink.supersede(
@@ -906,8 +1117,10 @@ async def test_source_and_replaced_by_are_kept_apart(
     goes. Hence the last assertion, which holds for every implementation
     including those that record nothing here.
     """
-    old = await sink.propose(key="room-1", proposals=(make_proposal(),), now_ms=NOW)
-    new = await sink.propose(key="room-1", proposals=(make_proposal(),), now_ms=NOW + 1)
+    one = (await make_proposal("room-1"),)
+    two = (await make_proposal("room-1"),)
+    old = await sink.propose(key="room-1", proposals=one, now_ms=NOW)
+    new = await sink.propose(key="room-1", proposals=two, now_ms=NOW + 1)
     citation = "https://keengamer.test/big-walk"
 
     await sink.supersede(
@@ -945,7 +1158,11 @@ async def test_a_field_the_store_cannot_record_is_refused_not_dropped(
     citation = "https://example.test/warrant"
     ids = await sink.propose(
         key="room-1",
-        proposals=(make_proposal(), make_proposal(), make_proposal()),
+        proposals=(
+            await make_proposal("room-1"),
+            await make_proposal("room-1"),
+            await make_proposal("room-1"),
+        ),
         now_ms=NOW,
     )
     heir, for_successor, for_source = ids
@@ -1010,7 +1227,14 @@ async def test_a_foreign_payload_is_refused_not_duck_typed(impl_name, request):
 
     async with _open_sink(impl_name, request) as (sink, _impl):
         foreign_name = next(n for n in IMPLEMENTATIONS if n != impl_name)
-        foreign_proposal = IMPLEMENTATIONS[foreign_name].make_proposal()
+        # A foreign PAYLOAD, not a foreign row: this asserts the refusal
+        # that happens before any write, and there is no instance of the
+        # foreign tier's store here to seed against.
+        foreign_proposal = Proposal(
+            payload=IMPLEMENTATIONS[foreign_name].sample_payload(),
+            instruction_sha256="b" * 64, model="contract-model",
+            established_by="run-foreign",
+        )
 
         with pytest.raises(TypeError):
             await sink.propose(

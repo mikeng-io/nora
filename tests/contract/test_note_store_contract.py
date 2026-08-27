@@ -46,7 +46,14 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.domain.notes import Note, NoteRevision, StaleNoteHeadError
+from nora.domain.notes import (
+    Note,
+    NoteRevision,
+    NoteRevisionProposal,
+    NoteSupersedeReason,
+    StaleNoteHeadError,
+)
+from nora.domain.ports import Proposal
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.notes import SqlNoteStore
@@ -693,3 +700,157 @@ async def test_record_miss_distinguishes_two_probes(notes: _Harness) -> None:
         workspace=WS, probe="where are we eating", conversation_id="conv-1",
         now_ms=NOW + 1,
     ) == 1
+
+
+# --- DreamSink: both implementations, and the refusals in particular --------
+#
+# `InMemoryNoteStore` does NOT join `tests/contract/test_dream_sink_contract.py`
+# — that file's own docstring records why the doubles mirroring SQL stores stay
+# out of `IMPLEMENTATIONS`. So this is where the double's `propose`/`supersede`
+# get exercised against the same assertions the real store faces, and the
+# emphasis is on the REFUSALS, because that is where a double drifts first: it
+# passes the happy path for free and refuses only what something else refuses
+# for it.
+
+
+async def test_propose_writes_a_revision_and_returns_the_note_id(
+    notes: _Harness,
+) -> None:
+    """The NOTE id, not the revision's — `supersede` is the only other verb and
+    it retires a note, so returning revision ids would hand the caller handles
+    its counterpart cannot accept."""
+    note = await _make(notes.store)
+    ids = await notes.store.propose(
+        key=WS,
+        proposals=(
+            Proposal(
+                payload=NoteRevisionProposal(
+                    note_id=note.id, body="the curator's tidier arrangement",
+                    parent_revision_id=note.head_revision_id,
+                ),
+                instruction_sha256="c" * 64, model="curator-model",
+                established_by="run-curator-1",
+            ),
+        ),
+        now_ms=NOW + 5,
+    )
+
+    assert ids == (note.id,)
+    found = await notes.store.read(workspace=WS, note_id=note.id)
+    assert found is not None
+    assert found[1].body == "the curator's tidier arrangement"
+    # The provenance the tag path cannot supply, on the one writer that can.
+    assert found[1].instruction_sha256 == "c" * 64
+    assert found[1].model == "curator-model"
+
+
+async def test_propose_refuses_a_foreign_payload_rather_than_duck_typing_it(
+    notes: _Harness,
+) -> None:
+    """`Proposal.payload` is `object` at the port so the runtime never names an
+    adaptor's value type. The price of that opacity is that a wrong value
+    travels a long way quietly, and `isinstance` at the sink is where it is
+    paid — for the DOUBLE as much as for the store, or the two are not
+    interchangeable."""
+    with pytest.raises(TypeError):
+        await notes.store.propose(
+            key=WS,
+            proposals=(
+                Proposal(
+                    payload="a string, which is the fact tier's shape",
+                    instruction_sha256="d" * 64, model="m",
+                    established_by="run-1",
+                ),
+            ),
+            now_ms=NOW,
+        )
+
+
+async def test_supersede_accepts_a_retirement_with_no_successor(
+    notes: _Harness,
+) -> None:
+    """The case `SqlFactStore.supersede` RAISES on, and the entire reason
+    `DreamSink.supersede` types `replaced_by` as `str | None`. An anchor date
+    passed and the dinner happened; it is replaced by nothing."""
+    note = await _make(notes.store)
+
+    affected = await notes.store.supersede(
+        key=WS, target=note.id, replaced_by=None,
+        because=NoteSupersedeReason.RETIRED_EXPIRED, source=None, now_ms=NOW + 9,
+    )
+
+    assert affected == 1
+    assert await notes.store.standing(workspace=WS) == ()
+
+
+async def test_supersede_records_the_successor_and_the_reason(
+    notes: _Harness,
+) -> None:
+    survivor = await _make(notes.store, title="Grant wedding")
+    duplicate = await _make(notes.store, title="Grant's wedding")
+
+    affected = await notes.store.supersede(
+        key=WS, target=duplicate.id, replaced_by=survivor.id,
+        because=NoteSupersedeReason.MERGED, source=None, now_ms=NOW + 9,
+    )
+
+    assert affected == 1
+    standing = await notes.store.standing(workspace=WS)
+    assert [n.id for n in standing] == [survivor.id]
+
+
+async def test_supersede_refuses_a_source_rather_than_dropping_it(
+    notes: _Harness,
+) -> None:
+    """`note` has no column for a supersession's citation, and answering `ok`
+    while discarding one is `unavailable` wearing `ok`'s clothes."""
+    note = await _make(notes.store)
+
+    with pytest.raises(ValueError):
+        await notes.store.supersede(
+            key=WS, target=note.id, replaced_by=None,
+            because=NoteSupersedeReason.RETIRED_CLOSED,
+            source="https://example.test/warrant", now_ms=NOW,
+        )
+
+
+async def test_supersede_refuses_a_reason_outside_the_tier_vocabulary(
+    notes: _Harness,
+) -> None:
+    """Free text would make "how many did the curator merge this week"
+    unanswerable, which is the reading that justifies the curator existing."""
+    note = await _make(notes.store)
+
+    with pytest.raises(ValueError):
+        await notes.store.supersede(
+            key=WS, target=note.id, replaced_by=None,
+            because="seemed stale", source=None, now_ms=NOW,
+        )
+
+
+async def test_superseding_an_unknown_note_reports_zero_rather_than_raising(
+    notes: _Harness,
+) -> None:
+    """A background pass that raises on a row it does not recognise takes the
+    whole tick down with it. Includes a malformed id, which is the same
+    situation with the same remedy."""
+    assert await notes.store.supersede(
+        key=WS, target="00000000-0000-0000-0000-00000000dead", replaced_by=None,
+        because=NoteSupersedeReason.RETIRED_EXPIRED, source=None, now_ms=NOW,
+    ) == 0
+    assert await notes.store.supersede(
+        key=WS, target="not-a-uuid", replaced_by=None,
+        because=NoteSupersedeReason.RETIRED_EXPIRED, source=None, now_ms=NOW,
+    ) == 0
+
+
+async def test_supersede_cannot_reach_another_workspaces_note(
+    notes: _Harness,
+) -> None:
+    note = await _make(notes.store)
+
+    assert await notes.store.supersede(
+        key="someone-elses-workspace", target=note.id, replaced_by=None,
+        because=NoteSupersedeReason.RETIRED_EXPIRED, source=None, now_ms=NOW,
+    ) == 0
+    assert [n.id for n in await notes.store.standing(workspace=WS)] == [note.id]

@@ -1369,6 +1369,30 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # workspace has written nothing». Those are the two states the tier has
     # been unable to tell apart since it was switched on, and publishing `0`
     # for both would preserve exactly the blindness this closes.
+    #
+    # **CORRECTION, 2026-08-27, found by reading this series on the first
+    # deployment that carried it: absence has a THIRD meaning, and it is the
+    # common one.** A prometheus series does not exist until something writes
+    # it, and this is written per TAG — so between a restart and the first
+    # tagged turn the series is absent on a perfectly healthy process. Observed
+    # directly: container up at 15:21:18Z, last tag 15:17:53Z, metric declared
+    # in the running image, series absent. Nothing was wrong.
+    #
+    # So **absence is not alertable on its own** — an alert on it pages on every
+    # deploy. It is readable only against a denominator that says whether this
+    # process has handled a tag at all (`nora_tags_total`), and the honest
+    # reading is:
+    #
+    #   absent + no tags yet      -> nothing has been asked of the tier
+    #   absent + tags handled     -> off, or the read failed (see
+    #                                `nora_errors_total{stage="notes"}`)
+    #   0                         -> wired, reached, and this workspace is empty
+    #
+    # Recorded here rather than fixed by publishing `0` at startup, which was
+    # the tempting fix and is wrong: a zero written before any read is a
+    # measurement of nothing, and it would collapse the first two rows above
+    # into the third — the exact `unavailable`-as-`nothing_found` failure this
+    # gauge was built to prevent, reintroduced by the attempt to tidy it.
     _GaugeSpec(
         "nora_note_index_entries",
         "Standing notes rendered into <notes> for a workspace on the last tag "

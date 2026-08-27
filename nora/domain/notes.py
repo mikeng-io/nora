@@ -94,6 +94,13 @@ class Note:
     anchor_entity_ids: tuple[str, ...] = ()
     retired_at: int | None = None
     replaced_by: str | None = None
+    # WHY it was retired — `NoteSupersedeReason`'s vocabulary, written by
+    # `DreamSink.supersede`. A closed vocabulary rather than free text because
+    # "how many notes did the curator merge this week" is the reading that
+    # justifies the curator existing, and prose does not aggregate. `None`
+    # until retired; the `retired_at is None` invariant below is what pairs
+    # them.
+    retire_reason: str | None = None
     revisit_at: int | None = None
     strikes: int = 0
     last_wake_revision_id: str | None = None
@@ -186,6 +193,16 @@ class NoteRevision:
     written_at: int
     established_by: str
     entity_ids: tuple[str, ...] = field(default_factory=tuple)
+    # DEC-125/DEC-126, and `None` is a REAL state rather than an absence: this
+    # table has two writers and only one of them is an adaptor. A curator
+    # revision arrives as a `Proposal` and carries both; a tag-path revision has
+    # no `Proposal` and no instruction digest to carry. `established_by` already
+    # tells the two apart (`tag:<person_id>` versus a run id) and is required
+    # for that reason, so these say only what it cannot: WHICH instruction
+    # produced an adaptor's revision. See `0036_note_revision_provenance` for
+    # why this is nullable where `fact_candidate`'s equivalent is not.
+    instruction_sha256: str | None = None
+    model: str | None = None
 
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():
@@ -196,6 +213,75 @@ class NoteRevision:
                 "distinguishes a tag-path revision from the revisitor's own, "
                 "and cannot without it"
             )
+
+
+@dataclass(frozen=True, slots=True)
+class NoteRevisionProposal:
+    """What the curator hands `DreamSink.propose` — a revision to append, named
+    against the head it was written from.
+
+    **This type exists so the note sink has something to `isinstance` against.**
+    `Proposal.payload` is `object` at the port, deliberately: the runtime never
+    names an adaptor's own value type, which is what keeps `FactVerdict` out of
+    `nora/domain/ports.py` and makes "one runtime, many adaptors" true. The cost
+    of an opaque field is that a wrong value travels a long way quietly, and the
+    rule that pays it is that **the sink refuses anything else by `isinstance`
+    and never duck-types** (spec §15.4). A sink that accepts whatever arrives is
+    `unavailable` reported as `ok` at the storage boundary.
+
+    It is NOT `NoteRevision`. A `NoteRevision` is a row that exists — it has an
+    `id` and a `written_at`, both of which the STORE assigns. A proposal is a
+    request that one be written, so it carries neither, and using the row type
+    here would force the curator to mint an id the store then ignores or
+    honours, and neither answer is good. `written_at` in particular belongs to
+    `propose`'s `now_ms`, on the verb rather than the payload, because one tick
+    writes many proposals at a single instant and a per-proposal clock invites a
+    batch whose rows disagree about when the batch happened.
+
+    `parent_revision_id` is REQUIRED here, unlike on `NoteRevision` where `None`
+    means the first revision. The curator never writes a note's first revision —
+    it acts ACROSS notes that already exist (§2), so it always has a head to
+    name, and §6.3's compare-and-swap is the only thing standing between a
+    background pass and the tag path silently overwriting each other. Typing it
+    optional would make the one case that must never happen expressible.
+    """
+
+    note_id: str
+    body: str
+    parent_revision_id: str
+    entity_ids: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if not self.body or not self.body.strip():
+            raise ValueError("a proposed revision needs a body")
+        if not self.note_id or not self.note_id.strip():
+            raise ValueError("a proposed revision needs the note it revises")
+        if not self.parent_revision_id or not self.parent_revision_id.strip():
+            raise ValueError(
+                "a proposed revision needs parent_revision_id: the curator "
+                "acts across notes that already exist, so it always has a head "
+                "to name, and the CAS in §6.3 is what stops a background pass "
+                "and the tag path overwriting each other"
+            )
+
+
+class NoteSupersedeReason:
+    """The `because` values `SqlNoteStore.supersede` accepts, and the shape of
+    the tier's retirement vocabulary.
+
+    A class of constants rather than an enum on the port: `DreamSink.supersede`
+    types `because` as `str` on purpose, because the fact tier's reasons
+    (`contradicted`) and this tier's have nothing in common, and a shared enum
+    would make the port fact-shaped or note-shaped depending on who wrote it
+    last. The contract suite's normalised row view keeps `because` opaque for
+    the same reason.
+    """
+
+    MERGED = "merged"
+    RETIRED_EXPIRED = "retired-expired"
+    RETIRED_CLOSED = "retired-closed"
+
+    ALL: tuple[str, ...] = (MERGED, RETIRED_EXPIRED, RETIRED_CLOSED)
 
 
 class StaleNoteHeadError(Exception):
