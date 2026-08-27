@@ -325,39 +325,83 @@ async def _run_briefly_and_record_dream_wiring(env, monkeypatch) -> list[dict]:
     return calls
 
 
-async def test_the_dream_loop_is_not_spawned_when_the_flag_is_off(env, monkeypatch):
-    """`config.example.toml` ships `[language] enabled = false` (documented,
-    not merely absent — Task 11 is the Dreamer's first deployment, so it
-    stays off until its extraction quality has been watched for a while).
-    Either way, the fixture's own `enabled` must be false, and that must be
-    what stops `App.run` from spawning the Dreamer's clock — a new subsystem
-    does not switch itself on."""
+async def test_the_dream_loop_is_not_spawned_when_neither_flag_is_on(env, monkeypatch):
+    """A new subsystem does not switch itself on.
+
+    **This test used to assert `language.enabled = false must not spawn
+    dream_loop`, and that sentence was the defect written down as a
+    requirement.** The clock belongs to the runtime; `[language]` selects one
+    tier's adaptors. Asserting the tier flag alone made the coupling look
+    intended, and it is why `[dreamer] enabled = true` could ship inert with a
+    green suite behind it — the runtime was merged as "on", never ticked for
+    five days, and nothing here noticed because nothing here asked.
+
+    So the condition is BOTH flags, and the assertion names both."""
     import tomllib
 
     cfg = tomllib.loads(env.read_text())
     assert cfg["language"]["enabled"] is False, (
         "this test's point is the DEFAULT; the fixture must not enable it"
     )
+    assert cfg.get("dreamer", {}).get("enabled", False) is False, (
+        "this test's point is the DEFAULT; the fixture must not enable it"
+    )
 
     assert await _run_briefly_and_record_dream_wiring(env, monkeypatch) == [], (
-        "language.enabled = false must not spawn dream_loop"
+        "with neither [dreamer] nor [language] on, nothing may spawn the clock"
     )
 
 
-async def test_the_dream_loop_is_spawned_when_the_flag_is_on(env, monkeypatch):
-    """The control for the test above — without it, deleting the spawn
-    entirely would leave that one green and this file would assert nothing
-    about the Dreamer ever running."""
+async def test_the_dream_loop_is_spawned_by_the_dreamer_flag_with_language_off(
+    env, monkeypatch,
+):
+    """**The case that was silently false, and the reason this branch exists.**
+
+    `[dreamer] enabled = true` with `[language] enabled = false` is the live
+    production configuration, and until 2026-08-27 it spawned nothing: the
+    runtime, its adaptors, budgets and instructions were all built and the
+    clock was gated on the language tier. The only evidence was one ERROR line
+    in `nora.log`, and the last real `dream tick` was five days old.
+
+    It is also the configuration the note and fact adaptors REQUIRE. `[language]`
+    cannot be turned on to obtain a clock — room-language's MEASURE verb does
+    not exist yet (28 §4.1, D34), so it would resume the single-sighting lexeme
+    writes that produced two contradictory "big walk" rows. A tier that must not
+    run cannot be the price of a runtime that must."""
+    import tomllib
+
+    import tomli_w
+
+    cfg = tomllib.loads(env.read_text())
+    cfg.setdefault("dreamer", {})["enabled"] = True
+    cfg["language"] = {"enabled": False}
+    env.write_text(tomli_w.dumps(cfg))
+
+    calls = await _run_briefly_and_record_dream_wiring(env, monkeypatch)
+    assert calls, (
+        "[dreamer] enabled = true must spawn the clock on its own — this "
+        "asserting nothing is what let an inert runtime ship as 'on'"
+    )
+
+
+async def test_the_dream_loop_is_still_spawned_by_the_language_flag_alone(
+    env, monkeypatch,
+):
+    """The `or` goes both ways, and this is the regression guard on the half
+    that already worked: the fix must not trade one flag's coupling for the
+    other's. A deployment running the language tier with `[dreamer]` off still
+    gets its clock."""
     import tomllib
 
     import tomli_w
 
     cfg = tomllib.loads(env.read_text())
     cfg["language"] = {"enabled": True}
+    cfg.setdefault("dreamer", {})["enabled"] = False
     env.write_text(tomli_w.dumps(cfg))
 
     calls = await _run_briefly_and_record_dream_wiring(env, monkeypatch)
-    assert calls, "language.enabled = true must spawn dream_loop"
+    assert calls, "language.enabled = true must still spawn dream_loop"
     # The config values actually reached the spawn, not just the flag.
     assert calls[0]["tick_seconds"] == 300.0
     assert calls[0]["safety_lag"] == 300
