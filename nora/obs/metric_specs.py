@@ -1305,9 +1305,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_note_revisit_refused_total",
         "Verdicts the revisitor REFUSED, by reason — every one of these leaves "
-        "the note standing. reason=\"unknown_note\": a note id outside the "
-        "set this tick asked about; retiring an unrelated note is the worst "
-        "thing this pass can do and it is one hallucinated identifier away. "
+        "the note standing. reason=\"unknown_note\": the item named a handle "
+        "outside the set this tick asked about. The handle is a per-tick "
+        "ORDINAL, never the note id — a note id in an envelope item is "
+        "dropped wholesale by dream_screen before accept ever runs. "
+        "Retiring an unrelated note is the worst thing this pass can do. "
         "reason=\"unmeasured\": the verdict was absent or outside the three "
         "states, i.e. the question was not answered. reason=\"no_evidence\": "
         "a retirement was proposed for a note with nothing to judge it "

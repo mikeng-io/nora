@@ -550,6 +550,17 @@ store's contract, so the whole file agreed with the bug. That is the
 double-diverges-from-the-real-store family again, and the first instance where
 the double was derived from the code it was testing.
 
+**And the first fix did not close it.** Reverting the adaptor alone reddened;
+reverting the double alone reddened; reverting BOTH — which is exactly how the
+bug shipped — passed. A test that pins two things against each other pins
+nothing. That local double was also a FOURTH implementation of `recent` covered
+by no contract suite, against the rule that a port never gains one without one.
+It is deleted: the suite now uses `nora.testing.fakes.FakeRecordStore`, which
+`tests/contract/test_audit_store_contract.py` already holds to the same
+ordering as `SqlRecordStore`. **The coordinated revert now reddens the CONTRACT
+suite** rather than this tier's own file — which is the right place for the
+guard, because that is where the shared property lives.
+
 **Nora's own words are not evidence.** `recent` does not exclude `is_nora`
 rows; `since` does, in the query, and its docstring says why. Her saying *"I'll
 book Yardbird for the 9th"* is an intention she stated, not the group settling
