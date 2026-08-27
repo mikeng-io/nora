@@ -932,7 +932,7 @@ store_timeout_seconds = 5.0
 # If that is too long, the lever is store_timeout_seconds (4 x 5 = 20s
 # of the total, for four single-row keyed queries against a local
 # database) or [llm] timeout_seconds, not this number.
-max_slot_hold_seconds = 160.0
+max_slot_hold_seconds = 165.0
 # Empty means [llm] model. A separate name is available because the fold is a
 # different job from replying — one structured output, no tools, no audience —
 # and may want a cheaper or a more literal model.

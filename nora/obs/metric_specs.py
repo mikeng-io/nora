@@ -1143,6 +1143,31 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the kind that rots unnoticed until the feature it serves arrives and
     # quietly does nothing. A moving counter proves the set is threaded; a flat
     # one at zero while notes are being read means it is not.
+    # 26 §3's fourth output. Every proposal lands on exactly one label, and
+    # the refusals are the interesting half:
+    #
+    #   proposed     — reached the sink
+    #   already_read — §7: the turn READ that note and chose not to touch it.
+    #                  A sustained rate means the two paths are arguing, which
+    #                  is the failure §7 exists to prevent, caught rather than
+    #                  suffered
+    #   refused      — the domain type refused it (over-long title, blank
+    #                  closing condition, no anchor). The boundary WORKING, not
+    #                  a fault — but a high rate is a reading about the
+    #                  objective text, not about the store
+    #   over_cap     — notes discarded past MAX_NOTES_PER_FOLD. A fold that
+    #                  wants to raise six has started narrating; the note index
+    #                  is uncapped, so those would cost every later prompt
+    #   malformed    — an entry that was not even a mapping
+    #   unwritten    — the sink refused the whole batch (TypeError,
+    #                  StaleNoteHeadError, ValueError). Never folded in with
+    #                  `refused`: one is our boundary, the other is the store's
+    _CounterSpec(
+        "nora_debrief_note_proposals_total",
+        "Notes the debrief raised, by disposition: proposed, already_read, "
+        "refused, over_cap, malformed, unwritten.",
+        ("outcome",),
+    ),
     _CounterSpec(
         "nora_debrief_notes_read_total",
         "Notes the tag path READ this turn, as seen by the debrief (R-55's "

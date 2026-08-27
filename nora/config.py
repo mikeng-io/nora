@@ -1554,7 +1554,8 @@ class StandingConfig(BaseModel):
     # it `reload = "startup"` for this reader, or moving it off the slot, is a
     # separate change with its own measurement.
     #
-    # 160s is the REAL worst case at the shipped timeouts (120 + 20 + 4x5).
+    # 165s is the REAL worst case at the shipped timeouts (120 + 20 + 5x5),
+    # the fifth store call being the note-proposal sink.
     # It was 150, reverse-engineered from a sum that counted two store calls
     # when the stage makes four — never an operator judgement about an
     # acceptable hold, just the arithmetic agreeing with itself. Chosen to
@@ -1563,7 +1564,7 @@ class StandingConfig(BaseModel):
     # impossible to get wrong silently, not to relitigate `[llm]`'s own timeout,
     # which was raised to 120 deliberately on 2026-08-08. Lower it and the
     # startup refusal tells the operator exactly which numbers no longer fit.
-    max_slot_hold_seconds: float = Field(default=160.0, gt=0)
+    max_slot_hold_seconds: float = Field(default=165.0, gt=0)
 
     @model_validator(mode="after")
     def _max_chars_stays_under_the_database_ceiling(self) -> StandingConfig:

@@ -312,6 +312,40 @@ test and the design disagree, that a double's docstring describes behaviour the
 double no longer has, or that a field is written by two implementations and
 asserted for one.
 
+## The never-re-mutated test — when the gate never measured anything
+
+The other half of the family above. A bug-pinning test **defends** a defect; this
+one never **measured** one. Both are green, both are cited as evidence, and
+neither is.
+
+**Four instances in one session, all in one author's own work, all found by
+someone else or by re-mutating.**
+
+| test | what it asserted | what it missed |
+|---|---|---|
+| `test_the_first_fold_of_a_conversation_is_not_a_rederivation` | `rederivations == 0` and `prior="absent" == 1` | both are true of a **crash** — remove the guard and the stage raises, writes nothing, and the test passes |
+| the first latch test | one rebuild after an ungrounded verdict | the helper defaulted `grounded=true`, so the fold wrote a **fresh** verdict and masked the latch it was testing |
+| `test_the_accessor_hands_out_a_copy_not_the_live_set` | that `notes_read` is a `property` | passed while the accessor returned the live set |
+| two slot-hold config tests | that a bad budget refuses to start | replaced the literal `150.0` after it had been changed to `160.0` — a **silent no-op**, so they tested an unmodified config and reported DID NOT RAISE |
+
+**The shape is always the same: a green test written after a change the author
+made, never re-mutated.** Writing the test is not the check. Breaking the code
+again is.
+
+Three of the four were caught only because an independent reviewer mutated a
+clause the author had not, or because the author re-mutated on a later pass. The
+author had truthfully reported falsifying three properties of the same feature —
+and had, and the fourth clause was the one that shipped the defect. **Reporting
+"falsified by mutation" is not a property of a change; it is a property of each
+individual clause**, and the clauses nobody thinks to break are exactly the ones
+whose tests are decorative.
+
+**What actually works**, and it is cheap: after a test goes green, break the
+production line it names and watch it go red. The two instances the author caught
+alone were both caught that way, within a minute of writing the test. One of them
+— the store-call count — then caught a *later* miscount by the same author, which
+is the difference between fixing an instance and closing a family.
+
 ## What follows from this
 
 **Every fix in this bundle ships its own measurement, or it is not done**

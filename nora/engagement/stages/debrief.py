@@ -128,12 +128,16 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import tzinfo
-from typing import Protocol
+from typing import Any, Protocol
 
 from nora.agent.dream_screen import screen
-from nora.domain.ports import StandingStore, TurnVerdictStore
+from nora.agent.tools import note_handle
+from nora.domain.notes import NoteCreationProposal
+from nora.domain.ports import DreamSink, Proposal, StandingStore, TurnVerdictStore
+from nora.domain.provenance import instruction_sha256
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
 from nora.domain.turn_verdict import TurnVerdict
@@ -216,10 +220,14 @@ OBJECTIVE = "standing-debrief"
 #: validator was the instrument built to catch exactly that arithmetic and it
 #: was carrying the stale figure itself.
 #:
+#: It went 4 -> 5 when note proposals added `notes_sink.propose`, and the
+#: test below caught that within seconds of the call being written — which
+#: is the whole point of having it rather than a number in two places.
+#:
 #: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
 #: `asyncio.wait_for` calls in `run` and asserts this matches, so adding a
 #: fifth store call fails a test instead of silently widening the hold.
-STORE_CALLS_PER_FOLD = 4
+STORE_CALLS_PER_FOLD = 5
 
 
 def _prompt(*, instructions: str, rendered: str, max_chars: int) -> str:
@@ -359,6 +367,17 @@ class Wiring:
     # pass does not exist yet, so a deployment may legitimately
     # revise positions without recording verdicts.
     store_verdict: TurnVerdictStore | None
+    # The note tier's DreamSink (26 §3's fourth output). `None` on any
+    # deployment that has not wired the note store — the debrief then
+    # parses no proposals and raises none, the same inert shape
+    # `store_verdict` uses.
+    notes_sink: DreamSink | None
+    # WORKSPACE resolver, not a constant: `propose`'s key is the workspace
+    # (§3/DEC-105) and this deployment has two that policy.toml says are
+    # never paired, so a fixed string would file one room's notes in the
+    # other's notebook. `None` for a room policy cannot name — which is a
+    # refusal to propose, never a guessed workspace.
+    workspace_of: Callable[[str, str], str | None]
     client: ModelClient
     objective: ObjectiveSource
     max_chars: int
@@ -366,6 +385,108 @@ class Wiring:
     timeout_seconds: float
     store_timeout_seconds: float
     rebuild_after_folds: int
+
+
+#: How many notes one fold may raise. The objective asks for at most two and
+#: says most turns raise none; this is the code half of that, because an
+#: objective is a request and a cap is a guarantee. A fold emitting six notes
+#: has not found six uncertainties — it has started narrating — and the note
+#: index is UNCAPPED by design (a note missing from it is invisible), so the
+#: cost of a chatty fold is paid on every subsequent turn's prompt forever.
+MAX_NOTES_PER_FOLD = 2
+
+
+def _note_proposals(
+    raw: str, *, conversation_id: str, tag_id: str, notes_read: frozenset[str],
+    metrics: Metrics,
+) -> list[Any]:
+    """The note creations out of the model's JSON — its OWN validated shape.
+
+    **Two shapes with a discriminant, never one with optional fields** (§7). A
+    creation needs title/description/uncertainty/closing_condition/anchor; a
+    revision needs body and a parent revision id. One type covering both makes
+    every field optional, so neither is validated and the sink can refuse
+    nothing. The debrief raises CREATIONS only — revising a note it read is the
+    tag path's job in-turn (R-55) and the curator's across notes (§2), and
+    `NoteRevisionProposal`'s own docstring says the curator is its caller.
+
+    **Refused, never truncated.** `NoteCreationProposal.__post_init__` raises on
+    an over-long title rather than trimming, because the tier rests on the index
+    being complete and a silent trim loses content. A 61-character title is the
+    likely model output, so it is caught HERE and the note dropped — one bad
+    note costs that note, not the batch and not the fold.
+
+    **§7's read-set refusal.** A note whose title matches one the turn already
+    READ is refused: the tag path may have opened that note and deliberately
+    decided against touching it, and the debrief reviewing the same transcript
+    would raise it again. Without this the two paths argue once per turn,
+    forever. Matched through `note_handle`, the same normalisation R-55's latch
+    uses — two spellings of one title must not read as two notes.
+
+    Returns a list, never raises. Every failure is a REFUSED PROPOSAL, not a
+    failed fold: the position is what the next turn reads, and a note the model
+    got wrong must not cost it.
+    """
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(parsed, dict):
+        return []
+    entries = parsed.get("notes") or []
+    if not isinstance(entries, list):
+        return []
+
+    out: list[Any] = []
+    for entry in entries[:MAX_NOTES_PER_FOLD]:
+        if not isinstance(entry, Mapping):
+            metrics.inc("nora_debrief_note_proposals_total", outcome="malformed")
+            continue
+        title = str(entry.get("title") or "").strip()
+        if title and note_handle(title) in notes_read:
+            # §7: the turn already read this note and chose not to touch it.
+            metrics.inc("nora_debrief_note_proposals_total", outcome="already_read")
+            continue
+        try:
+            out.append(NoteCreationProposal(
+                title=title,
+                description=str(entry.get("description") or "").strip(),
+                uncertainty=str(entry.get("uncertainty") or "").strip(),
+                closing_condition=str(entry.get("closing_condition") or "").strip(),
+                established_in=conversation_id,
+                body=str(entry.get("body") or "").strip(),
+                anchor_date=_anchor_date(entry.get("anchor_date")),
+            ))
+        except (ValueError, TypeError) as exc:
+            # The domain type refusing is the boundary working, not a fault:
+            # an over-long title, a blank closing condition, no anchor.
+            log.info(
+                "debrief: a proposed note was refused by the domain type "
+                "(tag=%s): %s", tag_id, exc,
+            )
+            metrics.inc("nora_debrief_note_proposals_total", outcome="refused")
+    if len(entries) > MAX_NOTES_PER_FOLD:
+        metrics.inc(
+            "nora_debrief_note_proposals_total", outcome="over_cap",
+            value=len(entries) - MAX_NOTES_PER_FOLD,
+        )
+    return out
+
+
+def _anchor_date(value: object) -> int | None:
+    """A YYYYMMDD anchor, or `None` — never a guess.
+
+    `None` reaches `__post_init__`, which refuses a note anchored to nothing, so
+    an unparseable date becomes a refused note rather than one anchored to
+    today. Anchoring to a default would put a note in the index under a day
+    nobody named, and mechanical retirement reads that day.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | str):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 async def _should_rebuild(
@@ -461,6 +582,8 @@ async def run(
     platform: str,
     store: StandingStore,
     store_verdict: TurnVerdictStore | None,
+    notes_sink: DreamSink | None,
+    workspace_of: Callable[[str, str], str | None],
     client: ModelClient,
     objective: ObjectiveSource,
     metrics: Metrics,
@@ -610,6 +733,20 @@ async def run(
             raw, tag_id=trace.tag_id, conversation_id=trace.conversation_id,
             now_ms=now_ms,
         )
+
+        # Parsed here beside the verdict — one call, three outputs — each on its
+        # own terms. `workspace_of` returning None is a refusal to propose, not
+        # a guessed notebook: filing one social unit's notes into another's is
+        # not recoverable by looking at the index.
+        workspace = workspace_of(platform, trace.conversation_id)
+        proposals = _note_proposals(
+            raw, conversation_id=trace.conversation_id, tag_id=trace.tag_id,
+            notes_read=notes_read, metrics=metrics,
+        ) if (notes_sink is not None and workspace) else []
+        # DEC-128: the digest of what was ACTUALLY SENT, read per run and never
+        # cached — the objective hot-reloads on mtime, so a digest captured at
+        # construction would stop naming the text the model saw.
+        sent_sha256 = instruction_sha256(instructions)
         if len(body) > max_chars:
             # The second refusal. Nothing is written and the PRIOR position
             # stands — a coherent stale position beats a sentence cut in half,
@@ -737,6 +874,45 @@ async def run(
             # reading, not a failure — a sustained rate here means the
             # objective is not asking for one clearly enough.
             metrics.inc("nora_turn_verdict_total", grounded="absent")
+
+        # 26 §3's FOURTH output, and last of the three that ride after the
+        # position. Same rule as the verdict, one output over: written AFTER
+        # the position, nothing below changes `outcome`, and its disposition
+        # rides on its own counter. The position is what the NEXT TURN reads; a
+        # note the model got wrong must never cost it.
+        #
+        # **ONE refusal path, not a did-they-all-land check.** `propose`
+        # validates the whole batch before any write and is atomic, and every
+        # failure ESCAPES as an exception — TypeError on a foreign payload,
+        # StaleNoteHeadError on a lost compare-and-swap, ValueError from the
+        # domain types. None is swallowed into a short id list, so there is no
+        # partial result to reconcile: either every proposal landed or none did.
+        if notes_sink is not None and proposals and workspace:
+            try:
+                written = await asyncio.wait_for(
+                    notes_sink.propose(
+                        key=workspace, proposals=[
+                            Proposal(
+                                payload=payload,
+                                instruction_sha256=sent_sha256,
+                                model=client.model,
+                                established_by=trace.tag_id,
+                            )
+                            for payload in proposals
+                        ],
+                        now_ms=now_ms,
+                    ),
+                    timeout=store_timeout_seconds,
+                )
+                metrics.inc("nora_debrief_note_proposals_total",
+                            outcome="proposed", value=len(written))
+            except Exception:
+                log.exception(
+                    "debrief: the note proposals did not land (tag=%s); the "
+                    "revised position stands", trace.tag_id,
+                )
+                metrics.inc("nora_debrief_note_proposals_total",
+                            outcome="unwritten", value=len(proposals))
     except TimeoutError:
         # Its own label rather than `error`, and its own branch rather than an
         # `isinstance` inside the one below: the debrief holds the slot, so a

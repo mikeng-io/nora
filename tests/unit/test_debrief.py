@@ -48,6 +48,24 @@ class _Client:
         return item
 
 
+class _FakeSink:
+    """Records batches. `propose` is all-or-nothing and every failure ESCAPES —
+    no short id list — so a raising variant is how the refusal path is tested."""
+
+    def __init__(self, *, raises: BaseException | None = None) -> None:
+        self.batches: list[list] = []
+        self._raises = raises
+
+    async def propose(self, *, key: str, proposals, now_ms: int):
+        if self._raises is not None:
+            raise self._raises
+        self.batches.append(list(proposals))
+        return [f"note-{i}" for i, _ in enumerate(proposals)]
+
+    async def supersede(self, **kw) -> int:
+        return 0
+
+
 class _Objective:
     def objective_body(self, name: str) -> str:
         assert name == debrief.OBJECTIVE
@@ -79,7 +97,8 @@ _UNSET = object()
 async def _run(*, store=None, store_verdict=_UNSET, client=None, metrics=None, max_chars=1200,
                timeout_seconds=5.0, store_timeout_seconds=5.0,
                rebuild_after_folds=20, notes_read=frozenset(),
-               now_ms_override=None, trace=None) -> tuple:
+               now_ms_override=None, notes_sink=_UNSET,
+               workspace_of=None, trace=None) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
     # `_UNSET`, not `None`: `None` is a REAL state the stage documents as
     # "the ordinary state on any deployment that has not wired one", and a
@@ -95,6 +114,8 @@ async def _run(*, store=None, store_verdict=_UNSET, client=None, metrics=None, m
         max_chars=max_chars, window=40, timeout_seconds=timeout_seconds,
         store_timeout_seconds=store_timeout_seconds,
         rebuild_after_folds=rebuild_after_folds, notes_read=notes_read,
+        notes_sink=(_FakeSink() if notes_sink is _UNSET else notes_sink),
+        workspace_of=workspace_of or (lambda p, c: "ws"),
         now_ms=now_ms_override if now_ms_override is not None else 1_756_000_931_000,
     )
     return store, metrics, store_verdict
@@ -789,3 +810,131 @@ async def test_an_unreadable_verdict_store_still_honours_the_ceiling():
         rebuild_after_folds=20)
     assert _counter(metrics, "nora_standing_rederivations_total",
                     trigger="ceiling") == 1
+
+
+# --- 26 §3's fourth output: note proposals ---------------------------------
+
+_NOTE = {
+    "title": "Where dinner is on the 9th",
+    "description": "Three venues named, nobody has picked one",
+    "uncertainty": "which venue",
+    "closing_condition": "someone names the place",
+    "anchor_date": 20260909,
+    "body": "Miles, Grant and Tyler weighed three options and stopped",
+}
+
+
+def _with_notes(*notes, body: str = "a position") -> debrief.Completion:
+    return debrief.Completion(json.dumps({
+        "standing": body, "grounded": True, "unsupported": [],
+        "notes": list(notes),
+    }), "stop")
+
+
+async def test_a_fold_raises_a_note_through_the_sink():
+    sink = _FakeSink()
+    store, metrics, _ = await _run(client=_Client(_with_notes(_NOTE)), notes_sink=sink)
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert len(sink.batches) == 1 and len(sink.batches[0]) == 1
+    proposal = sink.batches[0][0]
+    assert proposal.payload.title == _NOTE["title"]
+    assert proposal.payload.established_in == "g1"
+    assert proposal.established_by == "tag-1"
+    assert len(proposal.instruction_sha256) == 64
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="proposed") == 1
+
+
+async def test_a_note_the_turn_already_read_is_refused():
+    """**§7's second sub-decision.** The tag path may have opened that note and
+    deliberately decided against touching it; the debrief reviewing the same
+    transcript would raise it again, and the two would argue once per turn
+    forever. Matched through `note_handle`, the same normalisation R-55's latch
+    uses, so two spellings of one title are not two notes."""
+    from nora.agent.tools import note_handle
+
+    sink = _FakeSink()
+    _, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE)), notes_sink=sink,
+        notes_read=frozenset({note_handle(_NOTE["title"])}))
+    assert sink.batches == []
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="already_read") == 1
+
+
+async def test_an_over_long_title_is_refused_not_truncated():
+    """The domain type raises rather than trimming, because the note index is
+    uncapped and rests on being complete — a silent trim loses content nobody
+    can see is gone. A 61-character title is the likely model output, so it
+    costs that note and nothing else."""
+    sink = _FakeSink()
+    store, metrics, _ = await _run(
+        client=_Client(_with_notes({**_NOTE, "title": "x" * 61})), notes_sink=sink)
+    assert sink.batches == []
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="refused") == 1
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+
+
+async def test_a_note_with_no_anchor_is_refused_never_defaulted():
+    """`None` reaches `__post_init__`, which refuses. Anchoring to today would
+    file the note under a day nobody named — and mechanical retirement reads
+    that day."""
+    sink = _FakeSink()
+    _, metrics, _ = await _run(
+        client=_Client(_with_notes({k: v for k, v in _NOTE.items()
+                                    if k != "anchor_date"})), notes_sink=sink)
+    assert sink.batches == []
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="refused") == 1
+
+
+async def test_more_notes_than_the_cap_are_dropped_and_counted():
+    """A fold wanting six notes has started narrating. The index is uncapped by
+    design, so those would cost every later prompt forever."""
+    sink = _FakeSink()
+    _, metrics, _ = await _run(
+        client=_Client(_with_notes(
+            _NOTE, {**_NOTE, "title": "b"}, {**_NOTE, "title": "c"})),
+        notes_sink=sink)
+    assert len(sink.batches[0]) == debrief.MAX_NOTES_PER_FOLD
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="over_cap") == 1
+
+
+async def test_a_sink_failure_never_costs_the_position():
+    """The rule, a third output over. `propose` is atomic and every failure
+    ESCAPES — no partial batch to reconcile — so there is ONE refusal path and
+    it must not touch `outcome`."""
+    from nora.domain.notes import StaleNoteHeadError
+
+    store, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE)),
+        notes_sink=_FakeSink(raises=StaleNoteHeadError(
+            "lost the CAS", observed_head="other-revision")))
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="unwritten") == 1
+
+
+async def test_no_workspace_means_no_proposal_never_a_guessed_one():
+    """`workspace_of` answers None when policy.toml cannot name the room's
+    workspace. Filing one social unit's notes into another's is not recoverable
+    by looking at the index, so this refuses rather than guessing."""
+    sink = _FakeSink()
+    store, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE)), notes_sink=sink,
+        workspace_of=lambda p, c: None)
+    assert sink.batches == []
+    # and the position still lands — a room policy cannot name is not a fold
+    # failure, it is a refusal to propose.
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+
+
+async def test_no_notes_sink_is_inert():
+    store, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE)), notes_sink=None)
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert _counter(metrics, "nora_debrief_note_proposals_total") == 0
