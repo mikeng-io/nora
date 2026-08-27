@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Design-only: records in 02-instrument-blindness the class behind four defects found on 2026-08-27 \u2014 an unguarded copy of an operator-owned value is a fork with a delayed fuse. The two copies with parity guards were caught; the two without rotted for weeks and failed elsewhere, blaming something else."}
