@@ -16,6 +16,16 @@ CLAUDE.md carries this rule:
 > measure the thing** — state what a positive result would look like before
 > concluding from a null one.
 
+**It now carries eight more, and this node is what they were derived from.**
+CLAUDE.md's *Instruments and spans* section states them one line each and
+`docs/CONVENTIONS.md`'s *Instruments and spans — the war-stories* carries the
+measurement behind each; neither repeats the catalogue below, and this node
+stays the place the instances live. The rules, by shape: one root span per entry
+point; spawned work does not inherit the caller's span; a span with only a name;
+measure the cost, not the answer; R-27's three states on the instrument; a
+declared metric with no call site; derived label vocabularies; and a positive
+control beside every zero-assertion.
+
 It is violated at six independent layers. They were found by six separate
 investigations that were not looking for the same thing — and Layer 6 is not in
 the Dreamer at all, which is what settles this as a repo-wide discipline gap
@@ -390,6 +400,19 @@ to state it as a repo-wide discipline rather than a Dreamer fix: a tier written
 by a different session, at a different time, reproduced it exactly.
 
 ## Status / Checkpoint
+
+2026-08-28 — **the discipline left this node and became a rule set.** Eight
+rules, one line each in CLAUDE.md's *Instruments and spans* section with the
+measurement in `docs/CONVENTIONS.md`. Every one was verified against the code
+before it was written — which turned up one correction worth recording here,
+because it is the family's own shape: **`asyncio.create_task` DOES copy the
+current context**, so the rule is not «context is lost at a spawn». It copies
+the context of the task that CALLS it, and the queued-tag path calls it from the
+*previous* turn's `finally` (`nora/engagement/slots.py`
+`release_and_dispatch`) — so a QUEUED tag inherits a real context that is the
+wrong one, which is strictly harder to see than inheriting none. Measured with a
+three-case probe rather than reasoned from the signature, which is [25](25-knowledge-pipeline.md)
+§2.1's correction applied to this node's own writing.
 
 2026-08-27 — **the bug-pinning test added as its own family**, distinct from the
 silent-match one: a silent match FAILS to see something, a bug-pinning test
