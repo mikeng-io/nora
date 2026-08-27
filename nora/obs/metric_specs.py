@@ -1137,6 +1137,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #
     # Never firing at all is also a reading: it means positions are never being
     # rebuilt, so a bad fold carries itself forward indefinitely.
+    # 26 §7's read-set, reaching the debrief. Counted before anything consumes
+    # it ON PURPOSE: the note-proposal output is still blocked on the store's
+    # create-shaped payload, and a wiring that is built but unread is exactly
+    # the kind that rots unnoticed until the feature it serves arrives and
+    # quietly does nothing. A moving counter proves the set is threaded; a flat
+    # one at zero while notes are being read means it is not.
+    _CounterSpec(
+        "nora_debrief_notes_read_total",
+        "Notes the tag path READ this turn, as seen by the debrief (R-55's "
+        "latch). A proposal naming one of these is refused at the sink, so "
+        "the two paths cannot argue over the same note every turn.",
+    ),
     _CounterSpec(
         "nora_standing_rederivations_total",
         "Positions rebuilt rather than revised, by trigger: ungrounded (the "
