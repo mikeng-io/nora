@@ -90,6 +90,7 @@ from nora.infra.sql.room_portrait import SqlRoomPortraitStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
+from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
 from nora.infra.vision import StickerInterpreter, VisionClient, derive_vision_timeout
@@ -656,6 +657,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # writer, forgot the reader" mistake. What the flag gates is the FOLD,
     # which is the part that spends a model call inside the reply slot.
     standing_store = SqlStandingStore(engine)
+    # The per-turn verdict's store (26 §3). Built unconditionally beside
+    # `standing_store` for the same reason: it costs one attribute with
+    # the tier off, and the debrief's own `store_verdict is None` guard
+    # is what makes it inert rather than a second flag to forget.
+    turn_verdict_store = SqlTurnVerdictStore(engine)
     # The Dreamer's store (Task 11), REUSING `engine` for the same reason
     # `reminders`/`compute_jobs`/`tool_call_log_store` do above. UNLIKE those,
     # this one IS gated on the feature flag — `[route]`/`[search]`-shaped,
@@ -1712,6 +1718,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     if cfg.standing.enabled:
         debrief_wiring = DebriefWiring(
             store=standing_store,
+            store_verdict=turn_verdict_store,
             client=_DebriefModelClient(
                 client=client,
                 model=cfg.standing.model or cfg.llm.model,

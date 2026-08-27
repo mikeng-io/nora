@@ -131,9 +131,10 @@ from datetime import tzinfo
 from typing import Protocol
 
 from nora.agent.dream_screen import screen
-from nora.domain.ports import StandingStore
+from nora.domain.ports import StandingStore, TurnVerdictStore
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_verdict import TurnVerdict
 from nora.obs.metrics import Metrics
 
 from ..debrief_render import render_debrief_input
@@ -252,6 +253,58 @@ def _body(raw: str) -> str | None:
     return body.strip()
 
 
+def _verdict(
+    raw: str, *, tag_id: str, conversation_id: str, now_ms: int,
+) -> TurnVerdict | None:
+    """The `TurnVerdict` out of the model's JSON, or `None`.
+
+    **Its own validated shape, parsed separately from `standing`** (§7). The
+    response schema is deliberately NOT one object with optional fields: a type
+    covering both outputs makes every field optional, which means neither shape
+    is validated and the sink can refuse nothing. Two shapes, each checked on
+    its own terms.
+
+    **A missing or malformed verdict does not cost the position.** They are
+    different outputs of one call and the debrief's whole posture is that a
+    partial result beats none — so a fold that revised the position but wrote a
+    junk verdict still saves the position. That asymmetry is deliberate and is
+    why this returns `None` rather than raising: `None` means "no verdict this
+    turn", not "the fold failed".
+
+    The construction can still raise — `TurnVerdict.__post_init__` refuses a
+    grounded turn carrying unsupported claims, an over-long claim, or too many
+    of them — so it is caught here and degraded to `None` rather than being
+    allowed to take down a turn that already delivered its reply.
+    """
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    grounded = parsed.get("grounded")
+    if not isinstance(grounded, bool):
+        return None
+    raw_unsupported = parsed.get("unsupported") or []
+    if not isinstance(raw_unsupported, list):
+        return None
+    claims = tuple(
+        c.strip() for c in raw_unsupported
+        if isinstance(c, str) and c.strip()
+    )
+    try:
+        return TurnVerdict(
+            tag_id=tag_id, conversation_id=conversation_id,
+            grounded=grounded, unsupported=claims, created_at=now_ms,
+        )
+    except ValueError:
+        log.warning(
+            "debrief: the model's verdict was refused by the domain type "
+            "(tag=%s); keeping the position, dropping the verdict", tag_id,
+        )
+        return None
+
+
 @dataclass(frozen=True)
 class Wiring:
     """Everything the stage needs, as ONE object that is either present or
@@ -277,6 +330,15 @@ class Wiring:
     """
 
     store: StandingStore
+    # The per-turn verdict's store (26 §3). OPTIONAL and separate
+    # from `store` above, because the two outputs have opposite
+    # cardinalities and opposite lifetimes: one row per
+    # conversation revised in place, one row per turn never
+    # rewritten. `None` is a real state — the verdict is written
+    # and forgotten until a re-derivation pass reads it, and that
+    # pass does not exist yet, so a deployment may legitimately
+    # revise positions without recording verdicts.
+    store_verdict: TurnVerdictStore | None
     client: ModelClient
     objective: ObjectiveSource
     max_chars: int
@@ -290,6 +352,7 @@ async def run(
     trace: TagTrace,
     platform: str,
     store: StandingStore,
+    store_verdict: TurnVerdictStore | None,
     client: ModelClient,
     objective: ObjectiveSource,
     metrics: Metrics,
@@ -348,26 +411,40 @@ async def run(
         # ONE `wait_for` around BOTH calls, not one around each: the budget the
         # slot can afford is a total, and two independently-bounded calls add
         # up to twice it on exactly the turn that was already slow.
-        async def _fold() -> tuple[str | None, str]:
-            first = _check(
-                await client.complete(prompt=_prompt(
-                    instructions=instructions, rendered=rendered,
-                    max_chars=max_chars,
-                )),
-                trace.tag_id,
-            )
-            if first[0] is None or len(first[0]) <= max_chars:
-                return first
-            metrics.inc("nora_standing_overflow_refusals_total", stage="first")
-            return _check(
-                await client.complete(prompt=_consolidate_prompt(
-                    instructions=instructions, rendered=rendered,
-                    max_chars=max_chars, over=first[0],
-                )),
-                trace.tag_id,
-            )
+        async def _fold() -> tuple[str | None, str, str]:
+            """`(body, refusal_label, raw)`.
 
-        body, refusal = await asyncio.wait_for(_fold(), timeout=timeout_seconds)
+            `raw` rides along so the VERDICT parses from the same completion
+            the position came from — one call, two outputs (§3). On the
+            consolidate retry it is the SECOND response, which is correct:
+            that is the answer that was actually accepted, and taking the
+            verdict off the refused one would pair a position with a judgement
+            of a draft nobody kept.
+            """
+            reply = await client.complete(prompt=_prompt(
+                instructions=instructions, rendered=rendered,
+                max_chars=max_chars,
+            ))
+            first = _check(reply, trace.tag_id)
+            if first[0] is None or len(first[0]) <= max_chars:
+                return first[0], first[1], reply.content
+            metrics.inc("nora_standing_overflow_refusals_total", stage="first")
+            retry = await client.complete(prompt=_consolidate_prompt(
+                instructions=instructions, rendered=rendered,
+                max_chars=max_chars, over=first[0],
+            ))
+            second = _check(retry, trace.tag_id)
+            return second[0], second[1], retry.content
+
+        body, refusal, raw = await asyncio.wait_for(
+            _fold(), timeout=timeout_seconds)
+        # Parsed from the SAME completion the position came from — one call,
+        # two outputs (§3) — but with its own validated shape and its own
+        # failure mode, never a widened schema with optional fields (§7).
+        verdict = _verdict(
+            raw, tag_id=trace.tag_id, conversation_id=trace.conversation_id,
+            now_ms=now_ms,
+        )
         if body is None:
             outcome = refusal
             return
@@ -453,6 +530,45 @@ async def run(
             outcome = "unavailable"
             return
         outcome = "written"
+
+        # THE PER-TURN VERDICT, written AFTER the position and never allowed to
+        # cost it. Two outputs of one call (26 §3) with opposite cardinalities:
+        # `standing` is one row per conversation revised in place, this is one
+        # row per turn NEVER rewritten. The split was found by a bug — per-turn
+        # fields on the per-conversation row meant the re-derivation trigger
+        # read a `grounded` flag the next turn had already overwritten.
+        #
+        # ORDER IS DELIBERATE. The position is the output the next turn
+        # actually reads; the verdict is read by a re-derivation pass that does
+        # not exist yet. So a verdict failure must never undo a position that
+        # was written successfully — `outcome` is already "written" above and
+        # nothing below changes it. The verdict's own disposition rides on its
+        # own counter instead.
+        #
+        # `store_verdict is None` is the ordinary state on any deployment that
+        # has not wired one, and in every offline/eval composition — the same
+        # optional-collaborator shape the rest of this stage uses.
+        if store_verdict is not None and verdict is not None:
+            try:
+                await asyncio.wait_for(
+                    store_verdict.save(verdict=verdict), timeout=store_timeout_seconds)
+                metrics.inc("nora_turn_verdict_total",
+                            grounded=str(verdict.grounded).lower())
+            except Exception:
+                # Including the duplicate-key error that IS the never-rewritten
+                # property: a second verdict for one turn means the turn was
+                # debriefed twice, which is worth a loud log and a counter and
+                # is NOT worth undoing a good position over.
+                log.exception(
+                    "debrief: the turn verdict did not save (tag=%s); the "
+                    "revised position stands", trace.tag_id,
+                )
+                metrics.inc("nora_turn_verdict_total", grounded="unwritten")
+        elif store_verdict is not None:
+            # The model revised the position but gave no usable verdict. A
+            # reading, not a failure — a sustained rate here means the
+            # objective is not asking for one clearly enough.
+            metrics.inc("nora_turn_verdict_total", grounded="absent")
     except TimeoutError:
         # Its own label rather than `error`, and its own branch rather than an
         # `isinstance` inside the one below: the debrief holds the slot, so a

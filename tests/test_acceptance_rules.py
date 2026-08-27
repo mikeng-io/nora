@@ -415,6 +415,11 @@ RULE_TESTS = {
     # store calls entirely), and this is the gate that now refuses exactly that
     # arithmetic. The hang tests and the window pair are named in the index row.
     "R-70": "test_the_standing_slot_hold_is_checked_against_the_real_llm_timeout",
+    # R-71 names the never-rewritten test rather than the position-survives
+    # one: both are in the index row, but a rewritten verdict is the failure
+    # the SPLIT from `Standing` exists to prevent, and it is the one a future
+    # writer reintroduces by adding a convenient upsert.
+    "R-71": "test_a_second_verdict_for_one_turn_is_refused",
 }
 
 

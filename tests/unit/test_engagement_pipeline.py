@@ -2117,7 +2117,8 @@ def _wiring() -> object:
     own suite."""
     from nora.engagement.stages.debrief import Wiring
 
-    return Wiring(store=object(), client=object(), objective=object(),
+    return Wiring(store=object(), store_verdict=object(), client=object(),
+                  objective=object(),
                   max_chars=1200, window=40, timeout_seconds=5.0,
                   store_timeout_seconds=5.0)
 

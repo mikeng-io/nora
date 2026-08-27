@@ -1690,3 +1690,55 @@ STANDING = sa.Table(
     ),
     sa.CheckConstraint("fold_count >= 0", name="standing_fold_count_is_not_negative_check"),
 )
+
+# ── turn_verdict (design/dreamer-agent-loop/26-standing.md §3) ─────────────
+# The debrief's per-TURN judgement, written once and NEVER rewritten — the
+# opposite cardinality to `standing` beside it, and the split is structural
+# rather than stylistic. It was found by a bug: the first draft put these
+# fields on the per-conversation row, so the re-derivation trigger read a
+# `grounded` flag the NEXT TURN had already overwritten. A per-turn fact on a
+# row revised every turn is a fact with a lifetime of one turn.
+#
+# **`tag_id` is the PRIMARY KEY, and that IS the never-rewritten guarantee.**
+# Exactly one verdict exists per turn by definition, so a surrogate id would
+# make "two verdicts for one turn" representable. With the natural key, a
+# second write for the same turn is a duplicate-key error from Postgres rather
+# than a convention a future writer has to have read. `SqlTurnVerdictStore.save`
+# uses a plain INSERT with no ON CONFLICT clause for the same reason: there is
+# no update path to take.
+TURN_VERDICT = sa.Table(
+    "turn_verdict",
+    METADATA,
+    sa.Column("tag_id", sa.Text, primary_key=True),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("grounded", sa.Boolean, nullable=False),
+    # Model-authored, and capped in BOTH places like every other injected or
+    # re-read model text in this schema: the domain type refuses before the
+    # sink, the CHECK refuses whatever bypasses the type.
+    sa.Column("unsupported", pg.ARRAY(sa.Text), nullable=False,
+              server_default=sa.text("'{}'")),
+    sa.Column("created_at", sa.BigInteger, nullable=False),
+    # The contradiction the domain type also refuses: a turn cannot be both
+    # grounded and carrying unsupported claims. Enforced here too because this
+    # is the column S2's re-derivation trigger reads, and a trigger firing off
+    # a self-contradictory row is worse than one that never fires.
+    sa.CheckConstraint(
+        "not (grounded and cardinality(unsupported) > 0)",
+        name="turn_verdict_grounded_has_no_unsupported_check",
+    ),
+    sa.CheckConstraint(
+        "cardinality(unsupported) <= 10",
+        name="turn_verdict_unsupported_fits_the_list_check",
+    ),
+)
+
+#: The read S2's re-derivation trigger needs: ungrounded turns within one
+#: conversation, newest first. Partial on `grounded = false` because that is
+#: the only side the trigger asks about — a grounded turn is never a reason to
+#: re-derive — so the index carries the minority of rows rather than all of
+#: them, the same shape as `idx_note_standing`'s `retired_at is null`.
+IDX_TURN_VERDICT_UNGROUNDED = sa.Index(
+    "idx_turn_verdict_ungrounded",
+    TURN_VERDICT.c.conversation_id, TURN_VERDICT.c.created_at,
+    postgresql_where=TURN_VERDICT.c.grounded.is_(False),
+)
