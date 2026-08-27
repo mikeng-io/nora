@@ -222,15 +222,15 @@ async def test_generate_empty_prompt_is_nothing_found(server_factory):
 
 async def test_reference_resolves_to_bytes_sends_edit(server_factory):
     """The custody contract's positive path: a resolver that finds the blob
-    yields a multipart edit to /v1/images/edits."""
+    yields a JSON edit to /v1/images/edits (xAI is JSON-only since
+    grok-imagine-2.0 — multipart gets 415)."""
     captured: dict = {}
 
     async def handler(request: web.Request) -> web.Response:
         captured["path"] = request.path
-        reader = await request.multipart()
-        async for part in reader:
-            if part.name == "prompt":
-                captured["prompt"] = (await part.read()).decode()
+        data = await request.json()
+        captured["prompt"] = data["prompt"]
+        captured["image"] = data["image"]
         return _json({"data": [{"b64_json": "aGVsbG8="}]})
 
     base = await server_factory(handler)
@@ -251,6 +251,43 @@ async def test_reference_resolves_to_bytes_sends_edit(server_factory):
     assert result.status == "ok"
     assert captured["path"] == "/v1/images/edits"
     assert captured["prompt"] == "make it a watercolour"
+    assert captured["image"] == {"url": "data:image/png;base64,iVBORw0KGgpmYWtl"}
+
+
+async def test_multi_reference_sends_images_array(server_factory):
+    """Multi-image editing: two references travel as `images` array + the
+    prompt gains <IMAGE_0>, <IMAGE_1> placeholders (xAI multi-image edit,
+    grok-imagine-2.0)."""
+    captured: dict = {}
+
+    async def handler(request: web.Request) -> web.Response:
+        data = await request.json()
+        captured["images"] = data["images"]
+        captured["prompt"] = data["prompt"]
+        return _json({"data": [{"b64_json": "aGVsbG8="}]})
+
+    base = await server_factory(handler)
+    gen = XaiImageGenerator(
+        oauth=_CannedOAuth(refresh_token="rt", state_file=Path("no-state")),  # noqa: S106
+        base_url=base, timeout_seconds=5.0,
+    )
+
+    async def resolver(marker: str) -> bytes | None:
+        return b"\x89PNG\r\n\x1a\nfake"
+
+    result = await gen.generate(
+        prompt="compose these together",
+        reference_images=[
+            ImageReference(marker_code="a3f2c1"),
+            ImageReference(marker_code="b4e5d6"),
+        ],
+        reference_resolver=resolver,
+    )
+    assert result.status == "ok"
+    assert len(captured["images"]) == 2
+    assert captured["images"][0] == {"url": "data:image/png;base64,iVBORw0KGgpmYWtl"}
+    assert "IMAGE_0" in captured["prompt"]
+    assert "IMAGE_1" in captured["prompt"]
 
 
 async def test_reference_not_in_custody_is_nothing_found(server_factory):
