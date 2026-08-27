@@ -1361,12 +1361,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # declares them.
     _CounterSpec(
         "nora_note_curator_total",
-        "Curator actions by what it did: merge, merge_refused (the survivor "
-        "moved under it — the tag path won, which is the CAS working), closed "
-        "(the question was answered) or moot (the occasion passed). "
-        "**merge_refused is not an error**: the group is still a group and the "
-        "next tick sees it again, because the selection read is live state "
-        "rather than a cursor.",
+        "Curator actions by what it did: merge, merge_refused, retire_failed, "
+        "retire_stale, closed, moot. **merge_refused and retire_stale are NOT "
+        "errors** — the survivor or the note moved under the pass, which is "
+        "the tag path winning a race the CAS exists to arbitrate, and the "
+        "work is re-selected next tick because the selection read is live "
+        "state rather than a cursor. retire_failed IS a fault. The vocabulary "
+        "is derived from nora.language.note_curator.CURATOR_ACTIONS and a test "
+        "asserts this text names exactly that set.",
         ("action",),
     ),
     # The tier's OWN named justification, finally readable: 27 §6 says the

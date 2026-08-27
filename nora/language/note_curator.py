@@ -30,9 +30,14 @@ import itertools
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
-from nora.domain.notes import Note, NoteSupersedeReason, StaleNoteHeadError
+from nora.domain.notes import (
+    BODY_MAX_CHARS,
+    Note,
+    NoteSupersedeReason,
+    StaleNoteHeadError,
+)
 from nora.domain.ports import Proposal
 from nora.obs.metrics import Metrics
 
@@ -41,6 +46,40 @@ log = logging.getLogger("nora.notes.curator")
 #: The verdicts the objective may return, and nothing else. A model writing
 #: anything outside this set is DROPPED and counted rather than guessed at.
 _VERDICTS = frozenset({"closed", "open", "moot"})
+
+#: Every value `nora_note_curator_total{action}` can carry, DERIVED rather than
+#: hand-copied into the metric's help text.
+#:
+#: A hand-written vocabulary drifts the moment a branch adds an action — this
+#: one already had, silently: `retire_failed` and `retire_stale` were emitted
+#: for a round before the help text knew about them. `tests/unit/
+#: test_note_curator.py` asserts the help text names exactly this set, and it
+#: is enforced at RUNTIME rather than by types because `nora/language` is
+#: outside `make gate`'s mypy scope (#61) — a `Literal` alone would be checked
+#: by nothing here.
+CURATOR_ACTIONS: frozenset[str] = frozenset({
+    "merge",           # a group was merged into its survivor
+    "merge_refused",   # the survivor moved, or the merge was refused — NOT an
+                       # error: the group is still a group next tick
+    "retire_failed",   # supersede raised; the tick continues
+    "retire_stale",    # the note moved between inputs and commit, so the
+                       # reading the model judged no longer describes it
+    "closed",          # retired: the question was answered
+    "moot",            # retired: the occasion passed
+})
+
+#: Every value `nora_note_curator_dropped_total{reason}` can carry.
+CURATOR_DROPS: frozenset[str] = frozenset({
+    "malformed",                # a field missing, wrong type, verdict outside
+                                # the three, or a body over the cap
+    "unknown_note",             # a handle this run did not render
+    "not_shown_in_group",       # a merge for a group SQL did not select
+    "conflicting_verdict",      # two contradictory answers about one note
+    "conflicting_merged_body",  # two different bodies for one survivor
+})
+
+#: Every value `nora_note_curator_groups_refused_total{reason}` can carry.
+CURATOR_GROUP_REFUSALS: frozenset[str] = frozenset({"no_entity_anchor"})
 
 
 class _NoteStore(Protocol):
@@ -181,7 +220,30 @@ class NoteCuratorAdaptor:
         self._metrics = metrics
         self._shown: dict[str, _Shown] = {}
 
+    #: metric name -> the vocabulary its label may take. Checked on every
+    #: increment, because a label typo produces a NEW SERIES rather than an
+    #: error, and a new series is invisible until somebody notices the old one
+    #: went flat.
+    _VOCABULARIES: ClassVar[dict[str, tuple[str, frozenset[str]]]] = {
+        "nora_note_curator_total": ("action", CURATOR_ACTIONS),
+        "nora_note_curator_dropped_total": ("reason", CURATOR_DROPS),
+        "nora_note_curator_groups_refused_total": (
+            "reason", CURATOR_GROUP_REFUSALS,
+        ),
+    }
+
     def _inc(self, name: str, value: float = 1.0, **labels: object) -> None:
+        vocab = self._VOCABULARIES.get(name)
+        if vocab is not None:
+            label, allowed = vocab
+            got = labels.get(label)
+            if got not in allowed:
+                raise ValueError(
+                    f"{name}{{{label}={got!r}}} is not in this metric's "
+                    f"vocabulary {sorted(allowed)}. A typo here creates a new "
+                    f"series rather than an error, and the old one silently "
+                    f"goes flat"
+                )
         if self._metrics is not None:
             self._metrics.inc(name, value, **labels)
 
@@ -369,17 +431,25 @@ class NoteCuratorAdaptor:
         survivors = {g[0] for g in shown.merge_groups}
         out: list[_MergedBody] = []
         for item in items:
-            body = item.get("merged_body")
-            if body is None:
+            if "merged_body" not in item:
                 continue
+            body = item.get("merged_body")
             note_id = item.get("note_id")
             if (
                 not isinstance(note_id, str)
                 or not isinstance(body, str)
                 or not body.strip()
+                or len(body) > BODY_MAX_CHARS
             ):
                 self._inc(
                     "nora_note_curator_dropped_total", reason="malformed")
+                # OVER-CAP IS COUNTED HERE, not raised at the store. It is
+                # the INSTRUCTED outcome: the objective says "keep every
+                # concrete thing, do not summarise" over two bodies of up to
+                # BODY_MAX_CHARS each and cannot honour both. Left to reach
+                # `merge`, it raises `ValueError` out of `commit`, discards an
+                # already-committed merge's count, and re-raises every tick —
+                # stalling that workspace's retirements permanently.
                 log.warning("note curator dropped a malformed merged_body")
                 continue
             if note_id not in survivors:
@@ -390,8 +460,25 @@ class NoteCuratorAdaptor:
                     "note curator proposed a merge for a group this run did "
                     "not select; dropped")
                 continue
-            out.append(
-                _MergedBody(note_id=shown.by_handle[note_id], body=body))
+            resolved = shown.by_handle[note_id]
+            seen = next((m for m in out if m.note_id == resolved), None)
+            if seen is not None:
+                # THE SAME RULE AS CONFLICTING VERDICTS, on the more
+                # destructive path. Two merged bodies for one survivor was
+                # silent last-write-wins ON CONTENT — the second overwrote the
+                # first and nothing counted it. "The model said both" is «I
+                # cannot tell», and the fail-closed answer on a merge is to
+                # leave the group alone.
+                if seen.body != body:
+                    out.remove(seen)
+                    self._inc(
+                        "nora_note_curator_dropped_total",
+                        reason="conflicting_merged_body")
+                    log.warning(
+                        "note curator returned two different merged bodies for "
+                        "one survivor; the group is left alone")
+                continue
+            out.append(_MergedBody(note_id=resolved, body=body))
         return out
 
     # -- commit -------------------------------------------------------------
@@ -473,13 +560,18 @@ class NoteCuratorAdaptor:
                     model=provenance.model if provenance else None,
                     now_ms=now_ms,
                 )
-            except StaleNoteHeadError:
+            except (StaleNoteHeadError, ValueError):
+                # ValueError as well as the CAS loss: `merge` builds a
+                # `NoteRevision`, whose `__post_init__` refuses a body over the
+                # cap. One group's bad body must not discard the tick — an
+                # earlier group's merge is already COMMITTED in Postgres, and
+                # letting this escape reports written=0 over rows that exist.
                 # A lost CAS means the tag path revised the survivor while this
                 # pass was thinking. That is the case the transaction exists
                 # for and it is not an error: the group is still a group, and
                 # the next tick sees it again because `merge_groups` reads live
                 # state rather than a cursor.
-                log.info("note merge refused; the survivor moved under it")
+                log.info("note merge refused; the survivor moved or was refused")
                 self._inc("nora_note_curator_total", action="merge_refused")
                 continue
             retired += count
@@ -519,6 +611,26 @@ class NoteCuratorAdaptor:
             # written=0 over notes that have left the index. That is `ok`
             # wearing `unavailable`'s clothes, which is the reporting failure
             # this tier refuses one layer down.
+            # THE HEAD CHECK, and it is the retirement half of the CAS the
+            # merge path has had all along. `supersede` takes an id and no
+            # parent, so a note whose body changed between `inputs` and
+            # `commit` was retired on a reading of a body that no longer
+            # exists — and the objective's ONE warning is that «we moved it to
+            # the 16th» leaves the question open. The model would have said
+            # `open` had it seen it. `replaced_by` is None for a retirement, so
+            # nothing points at what was lost.
+            #
+            # `_NoteStore.read` was declared for this and never called: the
+            # protocol member for a check that was not wired.
+            current = await self._notes.read(workspace=key, note_id=note_id)
+            if current is None or current[0].head_revision_id != shown.heads.get(
+                note_id
+            ):
+                log.info(
+                    "note moved under the curator between inputs and commit; "
+                    "not retiring on a stale reading")
+                self._inc("nora_note_curator_total", action="retire_stale")
+                continue
             try:
                 count = await self._notes.supersede(
                     key=key, target=note_id, replaced_by=None,

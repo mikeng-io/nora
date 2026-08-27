@@ -8,9 +8,16 @@ reaching past the question it was given.
 
 from __future__ import annotations
 
-from nora.domain.notes import NoteSupersedeReason
+import pytest
+
+from nora.domain.notes import BODY_MAX_CHARS, NoteSupersedeReason
 from nora.domain.ports import Proposal
-from nora.language.note_curator import NoteCuratorAdaptor
+from nora.language.note_curator import (
+    CURATOR_ACTIONS,
+    CURATOR_DROPS,
+    CURATOR_GROUP_REFUSALS,
+    NoteCuratorAdaptor,
+)
 from nora.obs.metrics import Metrics
 from nora.testing.note_store import InMemoryNoteStore
 
@@ -445,3 +452,159 @@ async def test_a_handle_this_run_did_not_render_is_dropped():
     ) == ()
     assert metrics.get(
         "nora_note_curator_dropped_total", reason="unknown_note") == 1
+
+
+# --- P2/P3/P4: the paths that lose or corrupt content ---------------------
+
+
+async def test_an_over_cap_merged_body_is_dropped_not_raised():
+    """P2. This is the INSTRUCTED outcome, not an edge case: the objective says
+    "keep every concrete thing, do not summarise" over two bodies of up to
+    BODY_MAX_CHARS each and cannot honour both.
+
+    Left to reach `merge`, it raises ValueError out of `commit` — discarding an
+    already-committed merge's count, reported as unavailable/written=0 over
+    rows that exist in Postgres — and it re-raises every tick, stalling that
+    workspace's retirements permanently."""
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20261011)
+    await _seed(store, title="Grant's wedding", anchor=20261011)
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "merged_body": "x" * (BODY_MAX_CHARS + 1)},
+    ))
+
+    assert written == 0
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="malformed") == 1
+    assert len(await store.standing(workspace=WS)) == 2, "nothing was merged"
+
+
+async def test_a_note_that_moved_since_inputs_is_not_retired():
+    """P3. `supersede` takes an id and no parent, so a note whose body changed
+    between `inputs` and `commit` was retired on a reading that no longer
+    exists — and the objective's one warning is that «we moved it to the 16th»
+    leaves the question OPEN. The model would have said `open` had it seen it,
+    and `replaced_by` is None so nothing points at what was lost."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner, 9 Sept", anchor=20260909,
+                       entities=("ada",), body="Nobody booked.")
+    metrics = Metrics()
+    curator = _curator(store, metrics)
+    await curator.inputs(key=WS, batch=())
+    kept = await curator.accept(key=WS, items=(
+        {"note_id": _h(curator, note), "verdict": "moot", "why": "date passed"},
+    ))
+
+    # The room speaks between inputs and commit.
+    moved = await store.append_revision(
+        workspace=WS, note_id=note.id,
+        body="Moved to the 16th. Still nobody has booked.",
+        parent_revision_id=note.head_revision_id,
+        established_by="tag:miles", now_ms=NOW + 1,
+    )
+
+    written = await curator.commit(
+        key=WS,
+        proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ),
+        now_ms=NOW + 5,
+    )
+
+    assert written == 0
+    assert [n.id for n in await store.standing(workspace=WS)] == [note.id]
+    assert metrics.get("nora_note_curator_total", action="retire_stale") == 1
+    assert moved.id  # the room's revision stands
+
+
+async def test_two_merged_bodies_for_one_survivor_leave_the_group_alone():
+    """P4. Silent last-write-wins ON CONTENT — the second body overwrote the
+    first and nothing counted it. Same rule as conflicting verdicts, on the
+    more destructive path."""
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20261011,
+                    body="Ada can't do Fridays.")
+    await _seed(store, title="Grant's wedding", anchor=20261011,
+                body="Ben found Sheung Wan.")
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "merged_body": "KEEPS BOTH: Fridays, Sheung Wan"},
+        {"note_id": _h(c, a), "merged_body": "lost it"},
+    ))
+
+    assert written == 0
+    assert metrics.get(
+        "nora_note_curator_dropped_total",
+        reason="conflicting_merged_body") == 1
+    head = await store.read(workspace=WS, note_id=a.id)
+    assert head is not None
+    assert head[1].body == "Ada can't do Fridays.", "the original stands"
+
+
+# --- the label vocabularies, derived rather than hand-copied ---------------
+
+
+def test_the_help_text_names_exactly_the_actions_the_code_emits():
+    """A hand-written vocabulary in help text drifts the moment a branch adds
+    an action — and this one already had: `retire_failed` and `retire_stale`
+    were emitted for a round before the help text knew about them.
+
+    Bound to the frozenset the code increments against, so the help text cannot
+    fall behind without this failing. Checked at runtime rather than by types
+    because `nora/language` is outside `make gate`'s mypy scope (#61)."""
+    from nora.obs.metric_specs import _COUNTERS
+
+    spec = next(
+        c for c in _COUNTERS if c.name == "nora_note_curator_total"
+    )
+    for action in CURATOR_ACTIONS:
+        assert action in spec.help_text, (
+            f"{action!r} is emitted and the help text does not name it"
+        )
+
+
+def test_an_action_outside_the_vocabulary_raises_rather_than_forking_a_series():
+    """A label typo produces a NEW SERIES rather than an error, and a new
+    series is invisible until somebody notices the old one went flat. This is
+    the one place that cannot be a silent drop."""
+    store = InMemoryNoteStore()
+    curator = _curator(store)
+
+    with pytest.raises(ValueError, match="vocabulary"):
+        curator._inc("nora_note_curator_total", action="typo")
+
+
+def test_every_drop_reason_the_code_emits_is_in_its_vocabulary():
+    """Asserts the SET, so a reason added without a vocabulary entry fails here
+    rather than at its first increment in production.
+
+    **Parsed with `ast`, not a regex.** The first version matched
+    `reason="..."` anywhere in the file and flagged a string inside a COMMENT
+    naming another metric's label — a matcher that matches too much, which is
+    the family this bundle documents, reproduced in the test written to prevent
+    drift. An AST walk sees calls only.
+    """
+    import ast
+    import pathlib
+
+    tree = ast.parse(
+        pathlib.Path("nora/language/note_curator.py").read_text()
+    )
+    emitted: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        target = node.func
+        if not (isinstance(target, ast.Attribute) and target.attr == "_inc"):
+            continue
+        for kw in node.keywords:
+            if kw.arg == "reason" and isinstance(kw.value, ast.Constant):
+                emitted.add(kw.value.value)
+
+    assert emitted, "the walk found no reasons at all — it is not measuring"
+    known = CURATOR_DROPS | CURATOR_GROUP_REFUSALS
+    assert emitted <= known, f"emitted but not in a vocabulary: {emitted - known}"
