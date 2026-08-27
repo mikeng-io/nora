@@ -1118,16 +1118,13 @@ def test_an_unknown_standing_key_is_a_startup_failure(toml_path):
         load(toml_path)
 
 
-def test_the_standing_slot_hold_is_checked_against_the_real_llm_timeout(toml_path):
-    """**The gate that would have caught the 2x error.**
+def test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_path):
+    """**The gate that catches an arity error in the one number deciding how
+    long a live conversation can stop answering.** It has been wrong four
+    times: 2x store calls when there were two, then four, then five, and then
+    an `[llm] timeout_seconds` term that bounds nothing here at all.
 
-    `debrief.py` argued its worst-case hold as `[llm] timeout_seconds +
-    [standing] timeout_seconds`, "60 + 20 with the shipped defaults".
-    `LlmConfig.timeout_seconds` is a REQUIRED field with no default, and this
-    deployment sets 120 — so the real bounded hold was 140s, and the two store
-    calls were unbounded on top of that. The one number deciding how long a
-    live conversation can stop answering was sized against a figure that does
-    not exist, and nothing cross-checked it. A comment cannot be wrong twice.
+    44 is one second under the real hold (20 + 5 x 5).
     """
     # `count=0` on `re.sub` means replace ALL, not none — so the line that used
     # to sit here flipped every `enabled = false` in the file (~18 sections:
@@ -1135,12 +1132,42 @@ def test_the_standing_slot_hold_is_checked_against_the_real_llm_timeout(toml_pat
     # it claimed the opposite, and made this test depend on every unrelated
     # subsystem tolerating being switched on. Removed; the targeted replace
     # below is the whole mechanism (review finding, 2026-08-27).
-    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "80.0")
+    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "44.0")
     i = text.index("[standing]")
     text = text[:i] + text[i:].replace("enabled = false", "enabled = true", 1)
     toml_path.write_text(text)
     with pytest.raises(ConfigError, match="hold a conversation's slot"):
         load(toml_path)
+
+
+def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
+    """**`[llm] timeout_seconds` bounds NOTHING in the debrief**, and counting
+    it made an operator-facing budget claim a 165-second hold where the real
+    one is 45.
+
+    The fold's model call is built with `[standing] timeout_seconds` in
+    `_DebriefModelClient` AND wrapped in an `asyncio.wait_for` on the same
+    value; the `[llm]` figure is never consulted on this path. So an enormous
+    reply timeout must not move this gate at all.
+
+    Falsification: put `self.llm.timeout_seconds` back in the sum and this
+    refuses to start.
+    """
+    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "45.0")
+    # `timeout_seconds` appears in ten sections, so this one is scoped to
+    # `[llm]` by hand — `_set_key` deliberately refuses an ambiguous key rather
+    # than silently editing the first or all of them.
+    start = text.index("[llm]")
+    end = text.index("\n[", start + 1)
+    section = _set_key(text[start:end], "timeout_seconds", "600.0")
+    text = text[:start] + section + text[end:]
+    i = text.index("[standing]")
+    text = text[:i] + text[i:].replace("enabled = false", "enabled = true", 1)
+    toml_path.write_text(text)
+
+    cfg = load(toml_path)
+    assert cfg.llm.timeout_seconds == 600.0, "the edit did not land"
+    assert cfg.standing.max_slot_hold_seconds == 45.0
 
 
 def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):

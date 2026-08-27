@@ -53,6 +53,7 @@ class SqlStandingStore:
             body=row.body,
             fold_count=row.fold_count,
             updated_at=row.updated_at,
+            consumed_verdict_ms=row.consumed_verdict_ms,
         )
 
     async def write(self, *, standing: Standing) -> None:
@@ -62,6 +63,7 @@ class SqlStandingStore:
             body=standing.body,
             fold_count=standing.fold_count,
             updated_at=standing.updated_at,
+            consumed_verdict_ms=standing.consumed_verdict_ms,
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[STANDING.c.platform, STANDING.c.conversation_id],
@@ -69,6 +71,14 @@ class SqlStandingStore:
                 "body": stmt.excluded.body,
                 "fold_count": stmt.excluded.fold_count,
                 "updated_at": stmt.excluded.updated_at,
+                # WRITTEN ON EVERY UPSERT, never left out of the `set_`. The
+                # caller carries the prior's watermark forward on a revise, so
+                # the value handed here is always the intended one — but an
+                # omitted key would make the column keep its old value by
+                # accident rather than by decision, and "correct because the
+                # writer happens to agree with the previous row" is exactly
+                # what stops being true the first time it does not.
+                "consumed_verdict_ms": stmt.excluded.consumed_verdict_ms,
             },
         )
         async with self._engine.begin() as conn:

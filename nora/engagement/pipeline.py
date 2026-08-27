@@ -837,14 +837,14 @@ class EngagementPipeline:
             #    than a background job, and it is why its cost lands on the
             #    SECOND person queued behind a busy conversation rather than
             #    on the person it is reviewing, who already has their reply.
-            #    The worst-case hold is `[llm] timeout_seconds` +
-            #    `[standing] timeout_seconds` + TWO x `store_timeout_seconds`
-            #    (the read of the prior position and the write of the next),
-            #    and it is asserted at STARTUP by
-            #    `Config._the_standing_slot_hold_fits_its_budget` rather than
-            #    stated here. This comment used to do the arithmetic itself and
-            #    omitted the store calls entirely, which is exactly how they
-            #    came to be unbounded.
+            #    The worst-case hold is asserted at STARTUP by
+            #    `Config._the_standing_slot_hold_fits_its_budget`, and this
+            #    comment deliberately does NOT restate the arithmetic. It has
+            #    done so twice and been wrong both times — once omitting the
+            #    store calls entirely, which is how they came to be unbounded,
+            #    and once naming two of them after there were five. The
+            #    validator and `STANDING_STORE_CALLS_PER_FOLD` are the single
+            #    place that number lives.
             #
             # 3. **`completed` is already final by the time this runs**, which
             #    is the same requirement as «mark the turn completed BEFORE

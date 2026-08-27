@@ -1064,35 +1064,40 @@ window = 40
 #
 # 20 is a starting point, not a measured value.
 rebuild_after_folds = 20
-# The fold's own timeout — the MODEL call only. The number that matters is the
-# SUM, and it is checked at startup by max_slot_hold_seconds below rather than
-# worked out here: [llm] timeout_seconds + this + 2 x store_timeout_seconds.
+# The fold's own timeout, and it bounds the MODEL CALL TWICE — the client is
+# built with it, and the fold is wrapped in it. The number that matters is the
+# SUM, checked at startup by max_slot_hold_seconds below rather than worked out
+# here: this + 5 x store_timeout_seconds.
 # This comment used to stop at «[llm] timeout_seconds + this», which is how the
-# two store calls came to be unbounded — they were not in anyone's sum.
+# store calls came to be unbounded — they were not in anyone's sum.
 timeout_seconds = 20.0
-# The bound on the stage's TWO STORE CALLS — reading the prior position and
-# writing the revised one. It exists because they had none: the engine sets no
-# command_timeout and both run while the conversation's slot is HELD, so a
-# connection hanging mid-query during the post-reply fold wedged that
+# The bound on the stage's FIVE STORE CALLS: the trigger's verdict read, the
+# prior position, the revised position, the turn verdict, and the note
+# proposals. It exists because they had none: the engine sets no
+# command_timeout and all of them run while the conversation's slot is HELD, so
+# a connection hanging mid-query during the post-reply fold wedged that
 # conversation indefinitely, on a turn that had already replied. Small on
-# purpose: this is a single-row keyed read and a single-row upsert, and if
-# either takes seconds the honest answer is «unavailable», not a longer wait
-# held in front of the next person in the room.
+# purpose: these are single-row keyed queries, and if one takes seconds the
+# honest answer is «unavailable», not a longer wait held in front of the next
+# person in the room.
 store_timeout_seconds = 5.0
 # The WHOLE hold this stage may add to a conversation's slot, checked at
-# STARTUP: [llm] timeout_seconds + timeout_seconds + 2 x store_timeout_seconds.
-# It is a gate and not a comment because the comment was wrong — the design
-# argued 60 + 20 = 80s while [llm] timeout_seconds is a required field this
-# deployment sets to 120. Raise it deliberately or lower a timeout; the startup
-# refusal names which numbers stopped fitting.
-# 160, not 150. The old figure was reverse-engineered from a sum that
-# counted TWO store calls when the stage makes FOUR — it was never an
-# operator judgement about an acceptable hold, it was the arithmetic
-# agreeing with itself. 160 is the real worst case at these timeouts.
-# If that is too long, the lever is store_timeout_seconds (4 x 5 = 20s
-# of the total, for four single-row keyed queries against a local
-# database) or [llm] timeout_seconds, not this number.
-max_slot_hold_seconds = 165.0
+# STARTUP: timeout_seconds + 5 x store_timeout_seconds.
+# It is a gate and not a comment because the comment kept being wrong — three
+# different arities for this one number have shipped, and the last of them was
+# in the validator built to catch exactly that.
+#
+# 45, and [llm] timeout_seconds IS NOT IN THE SUM. It bounds nothing in this
+# stage: the fold's model call is bounded by [standing] timeout_seconds in the
+# client AND by the wait_for around the fold, and never by the [llm] value at
+# all. Including it made this read «this conversation can be held 165 seconds»
+# when the real bounded hold is 45 — a number that lies about the deployment
+# is wrong on the page even when it errs safe.
+#
+# If 45 is too long, the lever is store_timeout_seconds (25s of the total, for
+# five single-row keyed queries against a local database) or timeout_seconds,
+# not this number.
+max_slot_hold_seconds = 45.0
 # Empty means `[llm] model`.
 model = ""
 # The fold's reasoning budget. Empty means inherit [llm] reasoning_effort.

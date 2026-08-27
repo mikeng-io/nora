@@ -92,6 +92,34 @@ Shipping it twice would be a choice.
 catches the turn that actually went wrong, and the ceiling bounds accumulated
 drift.
 
+**AS BUILT: the ungrounded half is keyed on an ACTED-ON WATERMARK, not on a
+timestamp comparison** (`standing.consumed_verdict_ms`, migration 0037,
+2026-08-28). `TurnVerdictStore.latest` answers the newest verdict of ANY age and
+a verdict is written only when a fold fully succeeds, so verdict-less turns are
+the ordinary state and the read has to cope with them. With no guard, one
+ungrounded verdict latched the trigger on forever. Two comparisons were then
+tried as the remedy and **both were wrong, in opposite directions**:
+
+- `created_at > prior.updated_at` — one `now_ms` per turn stamps the position
+  and the verdict identically, so `>` refused the only sequence it existed for.
+  The counter read flat zero, which §6 reads as the trigger having degraded into
+  a clock — the same false reading the defect produced, from the other side.
+- `created_at >= prior.updated_at` — correct on that sequence and still a
+  **proxy**: `updated_at` stands in for "a rebuild consumed this verdict", and a
+  proxy is falsifiable by a path that moves it without doing the thing. If the
+  verdict read fails for ONE turn the trigger correctly declines (R-27), the
+  fold revises anyway and advances `updated_at` past the verdict, and the
+  comparison is false from then on. The verdict is not deferred, it is **gone**.
+
+So the property is recorded rather than inferred. The row carries the
+`created_at` of the verdict a re-derivation acted on; it advances only when the
+rebuild is WRITTEN — never on a refusal, so the retry survives, and never on a
+`ceiling` rebuild, which read no verdict and must not claim to have consumed
+one. **`nora_standing_rederivations_total` counts the trigger firing and
+`nora_standing_rederivations_written_total` counts it landing**: on the first
+alone, a fold that keeps failing is indistinguishable from a latched trigger,
+which is how the original defect read as health.
+
 **Overflow is a model-resolvable error, never silent eviction.** When the row
 will not fit, the write is **refused**, the inventory is returned, and the model
 is told to consolidate now. Silently dropping the oldest position is how a
@@ -355,8 +383,23 @@ being a gate.
 may have read a note and decided against touching it; the debrief, reviewing the
 same transcript, would propose it again. **The turn's note-read set is part of
 what the debrief is given**, and a proposal against a note in that set is
-refused at the sink. Without it the two paths argue with each other once per
-turn, forever.
+refused. Without it the two paths argue with each other once per turn, forever.
+
+**As built, that refusal is PRODUCER-SIDE, not at the sink** — this section said
+"at the sink" and the code does it in the debrief, before `propose` is called.
+`DreamSink.propose` takes no read set, so it could not enforce this if it wanted
+to. Same behaviour for the one producer that exists; a **convention rather than
+a guarantee** for the curator or any second producer, and moving it to the port
+is what would make it a rule (built 2026-08-28).
+
+**The read set also fails OPEN.** It is lifted off the turn's guard in the
+pipeline's `finally`, past the outer handler, so any failure of that read
+degrades to an empty set rather than raising and taking down a turn that has
+already replied. An empty set refuses nothing, so the failure mode is a
+re-proposed note — `unavailable` behaving as `nothing_found`, in the tier whose
+discipline is refusing exactly that. Accepted because the blast radius is capped
+by the note store's unique index and the alternative is a lost turn; recorded
+here rather than argued away.
 
 ## 8. Where Standing sits against the other tiers
 

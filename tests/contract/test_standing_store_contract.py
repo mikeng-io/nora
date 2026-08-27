@@ -105,9 +105,11 @@ async def store(request: Any) -> AsyncIterator[_StandingStore]:
 
 def _standing(body: str = "They are picking a restaurant.", *,
               platform: str = PLATFORM, conversation_id: str = CONV,
-              fold_count: int = 1, updated_at: int = NOW) -> Standing:
+              fold_count: int = 1, updated_at: int = NOW,
+              consumed_verdict_ms: int | None = None) -> Standing:
     return Standing(platform=platform, conversation_id=conversation_id,
-                    body=body, fold_count=fold_count, updated_at=updated_at)
+                    body=body, fold_count=fold_count, updated_at=updated_at,
+                    consumed_verdict_ms=consumed_verdict_ms)
 
 
 async def test_a_conversation_with_no_position_reads_as_none(store):
@@ -137,6 +139,34 @@ async def test_a_second_write_revises_rather_than_adding_a_second_row(store):
     assert row.body == "the corrected position"
     assert row.fold_count == 2
     assert row.updated_at == NOW + 1000
+
+
+async def test_the_watermark_round_trips_including_its_null(store):
+    """S2's acted-on watermark, both states. `None` is not `0` and the two must
+    not be interchangeable at the store boundary: a null that read back as zero
+    would compare equal to no real verdict but WOULD compare equal to another
+    zero, which is a watermark satisfiable by accident.
+
+    A store that dropped the column entirely would still pass the write/read
+    tests above — it round-trips everything else — and the trigger would then
+    re-derive from the same verdict every turn against a watermark that is
+    always `None`. That is the latch, restored below the type.
+    """
+    await store.write(standing=_standing(consumed_verdict_ms=None))
+    row = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert row is not None and row.consumed_verdict_ms is None
+
+    await store.write(standing=_standing(consumed_verdict_ms=NOW - 5_000))
+    row = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert row is not None and row.consumed_verdict_ms == NOW - 5_000
+
+    # And BACK to null. The upsert names the column in its `set_`, so a
+    # revision that consumed nothing clears it rather than silently keeping
+    # the previous row's value — "correct because the writer happens to agree
+    # with what is there" is what stops being true the first time it does not.
+    await store.write(standing=_standing(consumed_verdict_ms=None))
+    row = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert row is not None and row.consumed_verdict_ms is None
 
 
 async def test_the_key_is_platform_and_conversation(store):

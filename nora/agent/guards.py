@@ -724,14 +724,35 @@ class ReplyGuard(HookProvider):
         **Why the debrief needs it** (§7): the tag path may have read a note
         and deliberately decided against touching it. The debrief, reviewing
         the same transcript a second later, would propose exactly that note
-        again — so a proposal against anything in this set is refused at the
-        sink. Without it the two paths argue with each other once per turn,
-        forever.
+        again — so a proposal against anything in this set is refused. Without
+        it the two paths argue with each other once per turn, forever.
 
-        Empty is the ordinary state: most turns read no notes at all. It is
-        never `None`, so a caller has nothing to branch on and cannot mistake
-        "read nothing" for "could not check" — those are the same thing here
-        and both mean "refuse nothing".
+        **Refused BY THE PRODUCER, not by the sink.** `_note_proposals` drops
+        the entry before `propose` is ever called, and `DreamSink.propose`
+        takes no read set, so it could not refuse on this basis if it wanted
+        to. The effect is right for the one producer that exists today and the
+        RULE IS UNENFORCEABLE for the curator or any second one; §7 said "at
+        the sink", which is where it would have to move to become a guarantee
+        rather than a convention.
+
+        Empty is the ordinary state: most turns read no notes at all.
+
+        **AND IT FAILS OPEN, deliberately and not for free.** `notes_read` is
+        never `None`, so a caller cannot distinguish "read nothing" from "could
+        not read the set" — and `pipeline._notes_read_of` degrades any failure
+        to an empty frozenset, because it runs past the turn's outer handler
+        where a raise would take down a turn that already replied. An earlier
+        version of this docstring argued the two states "are the same thing
+        here". They are not: an empty set REFUSES NOTHING, so a note the turn
+        read and declined gets re-proposed. That is `unavailable` reported as
+        `nothing_found`, in the tier whose whole discipline is refusing that
+        substitution.
+
+        It stays open because the alternative is worse and the blast radius is
+        capped: the note store's unique index rejects a genuine duplicate, so
+        the cost is a wasted proposal and a log line, never a corrupted index —
+        against a lost turn if this raised. Recorded as a known asymmetry
+        rather than argued away (cold review, 2026-08-28).
         """
         return frozenset(self._notes_read)
 

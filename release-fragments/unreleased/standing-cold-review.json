@@ -1,0 +1,15 @@
+{
+  "type": "fix",
+  "summary": "A round of cold-review fixes to Nora's conversation memory, mostly about a secondary failure being allowed to cost or hide the primary one.",
+  "details": [
+    "A broken room-to-notebook lookup could throw away the conversation position it had nothing to do with — including on deployments with notes switched off, where the lookup could not have been used for anything. The position is now written first and nothing after it can undo it.",
+    "A room that policy no longer names silently stopped producing note suggestions, with no signal anywhere. It is now reported, and reported separately from a lookup that is simply broken — a fault and a deliberate policy decision are different things.",
+    "A suggested note whose title came back as a list rather than text was turned into text and filed under a title nobody would recognise. Wrong-shaped fields are now discarded whole, which is what the instructions already promised.",
+    "A turn cancelled after its position had been saved was reported as though nothing had been written.",
+    "When the position must be shortened, what the room actually said now outranks what Nora concluded about it. Only the keep-the-newest rule had been written down, and the newest thing is often her own judgement — so shortening quietly dropped people's own words first."
+  ],
+  "limitations": [
+    "The rule that stops Nora re-suggesting a note the same turn already read and declined is enforced by the part that makes the suggestions, not by the store that accepts them. It holds for the only thing making suggestions today; a second one would not inherit it.",
+    "If the turn's record of which notes it read cannot be retrieved, that check passes rather than blocks — at worst a duplicate suggestion, which the store then rejects. The alternative would risk losing a turn."
+  ]
+}

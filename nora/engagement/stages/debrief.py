@@ -109,17 +109,22 @@ content class changes, and that is the write.
 
 ## What this stage does NOT do yet, and why
 
-The design's §3 names four outputs of one call. This stage produces **two**:
-`Standing` and `TurnVerdict`, each parsed from the same completion with its own
-validated shape. It said "one" long after the verdict path landed forty lines
-below in this same file (cold review, 2026-08-28).
-fact proposals are Phase 4; and the note proposal (plan task 2.10) needs
-`SqlNoteStore` to satisfy `DreamSink` — it has `create`/`append_revision`, not
-`propose`/`supersede`, and joining it to
-`tests/contract/test_dream_sink_contract.py` is another workstream's scope. The
-response schema below is deliberately not widened in advance for any of them:
-an optional field nothing validates is exactly the failure §7's
-two-shapes-with-a-discriminant decision was made to avoid.
+The design's §3 names four outputs of one call. This stage produces **three**:
+`Standing`, `TurnVerdict` and note proposals, each parsed from the same
+completion with its own validated shape.
+
+The count has been wrong twice in this docstring — it said "one" long after the
+verdict landed forty lines below, and "two" in the same commit that added the
+`notes_sink.propose` call, with a sentence left broken mid-edit. It is written
+out rather than derived because there is nothing to derive it from, which is
+exactly why it rots; the tests that count the store awaits are what actually
+catch a fourth appearing.
+
+**FACT PROPOSALS ARE THE ONE THAT IS MISSING**, and they are Phase 4 in the
+roadmap rather than an oversight here. The response schema below is
+deliberately not widened in advance for them: an optional field nothing
+validates is exactly the failure §7's two-shapes-with-a-discriminant decision
+was made to avoid.
 """
 
 from __future__ import annotations
@@ -131,14 +136,14 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import tzinfo
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 from nora.agent.dream_screen import screen
 from nora.agent.tools import note_handle
 from nora.domain.notes import NoteCreationProposal
 from nora.domain.ports import DreamSink, Proposal, StandingStore, TurnVerdictStore
 from nora.domain.provenance import instruction_sha256
-from nora.domain.standing import Standing
+from nora.domain.standing import STANDING_STORE_CALLS_PER_FOLD, Standing
 from nora.domain.tag_trace import TagTrace
 from nora.domain.turn_verdict import TurnVerdict
 from nora.obs.metrics import Metrics
@@ -227,7 +232,9 @@ OBJECTIVE = "standing-debrief"
 #: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
 #: `asyncio.wait_for` calls in `run` and asserts this matches, so adding a
 #: fifth store call fails a test instead of silently widening the hold.
-STORE_CALLS_PER_FOLD = 5
+#: Re-exported from `nora.domain.standing`, where it lives so `nora.config`
+#: can read it without importing this package (see its own comment there).
+STORE_CALLS_PER_FOLD = STANDING_STORE_CALLS_PER_FOLD
 
 
 def _prompt(*, instructions: str, rendered: str, max_chars: int) -> str:
@@ -247,6 +254,20 @@ def _consolidate_prompt(
     is what makes the failure model-resolvable: it can decide what to drop.
     Nothing here decides that for it — the moment this module picks, the tier
     has silently become a recency slice.
+
+    **TWO ordering rules, and the second one was missing.** §4.0.1 states an
+    asymmetry — when Standing must shrink, what the room SAID outranks what
+    Nora concluded about it — and only the recency rule was ever written down.
+    They conflict, which is why the instruction has to say which governs: the
+    most recent thing in a position is often something SHE concluded, and the
+    oldest is often something the room said. Recency alone therefore drops the
+    room's own words first, which is the exact inversion §4.0.1 exists to
+    prevent. So the room rule is stated as the OVERRIDE and recency is scoped
+    to a tie between two things of the same kind.
+
+    The trace-side half of §4.0.1 — `cap_messages` pinning human turns — has
+    been in `tag_trace_sanitize` all along; this is the half that did not
+    follow it into the fold (cold review, 2026-08-28).
     """
     return (
         f"{instructions}\n\n"
@@ -255,7 +276,12 @@ def _consolidate_prompt(
         f"Your previous answer was {len(over)} characters, which is over the "
         f"{max_chars}-character limit, so it was NOT saved. Consolidate it now "
         f"and answer again, within the limit. Drop the oldest and least "
-        f"consequential thing in it, never the most recent.\n\n"
+        f"consequential thing in it, never the most recent. "
+        f"What the room SAID outranks what you concluded about it: if the "
+        f"choice is between dropping something someone actually said and "
+        f"dropping a judgement of your own, drop your judgement — even when "
+        f"yours is the more recent of the two. Recency decides only between "
+        f"two things of the same kind.\n\n"
         f"Your previous answer was:\n{over}"
     )
 
@@ -442,7 +468,13 @@ def _note_proposals(
         if not isinstance(entry, Mapping):
             metrics.inc("nora_debrief_note_proposals_total", outcome="malformed")
             continue
-        title = str(entry.get("title") or "").strip()
+        fields = _text_fields(entry)
+        if fields is None:
+            # A non-string where a string belongs is MALFORMED, not something
+            # to render. See `_text_fields`.
+            metrics.inc("nora_debrief_note_proposals_total", outcome="malformed")
+            continue
+        title = fields["title"]
         if title and note_handle(title) in notes_read:
             # §7: the turn already read this note and chose not to touch it.
             metrics.inc("nora_debrief_note_proposals_total", outcome="already_read")
@@ -450,11 +482,11 @@ def _note_proposals(
         try:
             out.append(NoteCreationProposal(
                 title=title,
-                description=str(entry.get("description") or "").strip(),
-                uncertainty=str(entry.get("uncertainty") or "").strip(),
-                closing_condition=str(entry.get("closing_condition") or "").strip(),
+                description=fields["description"],
+                uncertainty=fields["uncertainty"],
+                closing_condition=fields["closing_condition"],
                 established_in=conversation_id,
-                body=str(entry.get("body") or "").strip(),
+                body=fields["body"],
                 anchor_date=_anchor_date(entry.get("anchor_date")),
             ))
         except (ValueError, TypeError) as exc:
@@ -470,6 +502,45 @@ def _note_proposals(
             "nora_debrief_note_proposals_total", outcome="over_cap",
             value=len(entries) - MAX_NOTES_PER_FOLD,
         )
+    return out
+
+
+#: The note fields that must arrive as TEXT. `anchor_date` is not among them —
+#: it has its own parser, which refuses rather than guesses for the same reason.
+_TEXT_FIELDS = ("title", "description", "uncertainty", "closing_condition", "body")
+
+
+def _text_fields(entry: Mapping[str, Any]) -> dict[str, str] | None:
+    """The five text fields, or `None` if any of them is not text.
+
+    **`str(...)` was the bug this replaces, and it is the same class of error
+    as anchoring an unparseable date to today.** A model emitting
+    `"title": ["dinner", "9th"]` produced a note LITERALLY TITLED
+    `['dinner', '9th']` — stringifying a list is a guess about what the model
+    meant, dressed as parsing. It then went into the notes index, which is
+    uncapped and injected into every later prompt, where nothing downstream
+    could tell it from a title a person would recognise.
+
+    The objective promises "an entry missing any of them is discarded whole
+    rather than guessed at", and the verdict parser one function away refuses a
+    non-bool `grounded` outright. This is that same rule, applied where it was
+    missing.
+
+    A MISSING field is not the same as a wrong-typed one: absent (or null)
+    becomes `""` and is then refused by `NoteCreationProposal.__post_init__`
+    with the domain's own message, which is where that judgement belongs. Only
+    a value of the wrong SHAPE — a list, a dict, a number — is refused here,
+    because there is no honest string to hand on (cold review, 2026-08-28).
+    """
+    out: dict[str, str] = {}
+    for name in _TEXT_FIELDS:
+        value = entry.get(name)
+        if value is None:
+            out[name] = ""
+        elif isinstance(value, str):
+            out[name] = value.strip()
+        else:
+            return None
     return out
 
 
@@ -489,6 +560,25 @@ def _anchor_date(value: object) -> int | None:
         return None
 
 
+class _Rebuild(NamedTuple):
+    """Why the position is being re-derived, and — for `"ungrounded"` only —
+    WHICH verdict caused it.
+
+    `consumed_verdict_ms` exists so the caller can advance the watermark to the
+    exact verdict this rebuild acted on, rather than to "now". Those differ:
+    a verdict written at T and consumed by a rebuild at T+2 must mark T as
+    consumed, or a second ungrounded verdict arriving between them is
+    swallowed by a watermark that claims more than the rebuild read.
+
+    `None` on a `"ceiling"` rebuild, and that is load-bearing rather than
+    incidental: the ceiling has not looked at any verdict, so it must not
+    claim to have consumed one.
+    """
+
+    trigger: str
+    consumed_verdict_ms: int | None = None
+
+
 async def _should_rebuild(
     *,
     prior: Standing | None,
@@ -497,7 +587,7 @@ async def _should_rebuild(
     ceiling: int,
     store_timeout_seconds: float,
     tag_id: str,
-) -> str | None:
+) -> _Rebuild | None:
     """S2's trigger: `"ungrounded"`, `"ceiling"`, or `None` for neither.
 
     **`prior is None` is never a re-derivation.** The first fold of a
@@ -537,8 +627,8 @@ async def _should_rebuild(
                 "re-deriving on an instrument that is down", tag_id,
             )
             last = None
-        # **`created_at > prior.updated_at` is the whole fix for the latch**,
-        # and it is a guard on the READ rather than a change to the write.
+        # **The trigger is a WATERMARK, not a timestamp comparison**, and the
+        # guard is on the READ rather than on the write.
         #
         # `latest` answers the newest verdict of ANY AGE, not the previous
         # turn's. A verdict is only written when the fold fully succeeded, so a
@@ -561,18 +651,45 @@ async def _should_rebuild(
         # `unavailable` (R-27). Sparse verdicts are the CORRECT state; the read
         # has to cope with them.
         #
-        # `prior.updated_at` is the position's own last write, so this asks
-        # exactly "was there an ungrounded verdict SINCE the position was last
-        # revised" — which is the question S2 actually poses.
+        # **Two comparisons were tried here first and BOTH were wrong**, and
+        # the reason they were wrong is the reason this is a column.
+        #
+        # `created_at > prior.updated_at` — dead on arrival.
+        # `pipeline._debrief` stamps ONE `int(time.time() * 1000)` per turn and
+        # hands it to `run`, which writes the position with `updated_at=now_ms`
+        # and the verdict with `created_at=now_ms`. A fully-successful fold
+        # leaves the two EXACTLY EQUAL, deterministically, every turn, so a
+        # strict `>` refused the only sequence the guard existed for. The
+        # counter read flat zero — which §6 interprets as the trigger having
+        # degraded into a clock, the same false reading the original defect
+        # manufactured, reached from the other side.
+        #
+        # `created_at >= prior.updated_at` — closer, still a proxy. It uses the
+        # position's own last write to stand in for "a rebuild consumed this
+        # verdict", and any proxy is falsifiable by a path that moves it
+        # WITHOUT doing the thing. That path is ordinary: `latest` fails for
+        # one turn, the trigger correctly declines to fire (an unreadable
+        # instrument is R-27's «I could not check», never «there was
+        # nothing»), the fold then revises normally and advances `updated_at`
+        # past the verdict — and from that turn on the comparison is false
+        # FOREVER. The ungrounded verdict is not deferred, it is gone. Driven
+        # through the real stage over three turns before this column existed:
+        # the verdict was dropped and the counter read zero.
+        #
+        # So the property is recorded. `consumed_verdict_ms` is the verdict a
+        # re-derivation ACTED ON, advanced only when the rebuild is WRITTEN.
+        # `!=` rather than `>`: any verdict this position has not consumed is
+        # unconsumed, and a clock that went backwards is not a reason to skip
+        # one (cold review, 2026-08-28).
         if (
             last is not None
             and not last.grounded
-            and last.created_at > prior.updated_at
+            and last.created_at != prior.consumed_verdict_ms
         ):
-            return "ungrounded"
+            return _Rebuild("ungrounded", last.created_at)
 
     if prior.fold_count >= ceiling:
-        return "ceiling"
+        return _Rebuild("ceiling")
     return None
 
 
@@ -650,19 +767,36 @@ async def run(
             tag_id=trace.tag_id,
         )
         if rebuild is not None:
-            metrics.inc("nora_standing_rederivations_total", trigger=rebuild)
+            # **This counts the trigger FIRING, not the re-derivation
+            # landing**, and the two are different questions. A fold that
+            # refuses writes no position and advances no watermark, so the
+            # trigger fires again next turn — correctly, the verdict genuinely
+            # has not been acted on — and on this counter alone a permanently
+            # failing fold is indistinguishable from a latched trigger. That
+            # ambiguity is what made the original defect readable as health.
+            # `nora_standing_rederivations_written_total` below is the other
+            # half; the gap between them is the failing-fold rate.
+            metrics.inc("nora_standing_rederivations_total",
+                        trigger=rebuild.trigger)
             log.info(
                 "debrief: re-deriving the position (tag=%s trigger=%s); the "
                 "prior is read but not carried forward",
-                trace.tag_id, rebuild,
+                trace.tag_id, rebuild.trigger,
             )
 
-        # R-55's latch, for 26 §7. Nothing CONSUMES it yet — the note-proposal
-        # output is blocked on the store gaining a create-shaped payload — so
-        # it is counted rather than used, deliberately: the wiring is the part
-        # that rots silently, and a counter that moves proves the set is
-        # reaching this stage before anything depends on it. When proposals
-        # land, the sink refuses any proposal naming a note in here.
+        # R-55's latch, for 26 §7 — counted here and CONSUMED below, where
+        # `_note_proposals` drops any proposal naming a note in this set.
+        #
+        # The counter predates the consumer and is kept now that it has one:
+        # it is the only thing that distinguishes "the turn read nothing" from
+        # "the set never arrived", and `_notes_read_of` degrades a failure to
+        # an empty set rather than raising, so those two look identical
+        # everywhere else.
+        #
+        # §7 places this refusal AT THE SINK and it is not there: `propose`
+        # takes no read set and could not enforce it. Producer-side is the
+        # same behaviour for the one producer that exists and is a convention
+        # rather than a guarantee for the curator or a second one.
         if notes_read:
             metrics.inc("nora_debrief_notes_read_total", value=len(notes_read))
 
@@ -675,7 +809,7 @@ async def run(
         # re-derived turn indistinguishable from a fold that could not read,
         # which is the one thing that counter exists to tell apart.
         rendered = render_debrief_input(
-            trace=trace, prior=None if rebuild else prior,
+            trace=trace, prior=None if rebuild is not None else prior,
             display_name=display_name, window=window, tz=tz,
         )
 
@@ -734,19 +868,6 @@ async def run(
             now_ms=now_ms,
         )
 
-        # Parsed here beside the verdict — one call, three outputs — each on its
-        # own terms. `workspace_of` returning None is a refusal to propose, not
-        # a guessed notebook: filing one social unit's notes into another's is
-        # not recoverable by looking at the index.
-        workspace = workspace_of(platform, trace.conversation_id)
-        proposals = _note_proposals(
-            raw, conversation_id=trace.conversation_id, tag_id=trace.tag_id,
-            notes_read=notes_read, metrics=metrics,
-        ) if (notes_sink is not None and workspace) else []
-        # DEC-128: the digest of what was ACTUALLY SENT, read per run and never
-        # cached — the objective hot-reloads on mtime, so a digest captured at
-        # construction would stop naming the text the model saw.
-        sent_sha256 = instruction_sha256(instructions)
         if len(body) > max_chars:
             # The second refusal. Nothing is written and the PRIOR position
             # stands — a coherent stale position beats a sentence cut in half,
@@ -809,9 +930,29 @@ async def run(
             # clock with extra steps. Otherwise counted from the prior the
             # fold actually read, so the ceiling counts folds-since-rebuild
             # rather than folds-ever.
-            fold_count=1 if rebuild else (
+            fold_count=1 if rebuild is not None else (
                 (prior.fold_count + 1) if prior is not None else 1),
             updated_at=now_ms,
+            # S2's WATERMARK, and it advances on exactly one condition: an
+            # `ungrounded` rebuild that reaches this write. Carried forward
+            # unchanged otherwise — on a revise, on a `ceiling` rebuild (which
+            # has read no verdict and must not claim to have consumed one),
+            # and on a first fold, where there is nothing to carry.
+            #
+            # It is NOT set to `now_ms`. The verdict this rebuild acted on was
+            # written on an earlier turn, and marking "now" as consumed would
+            # swallow any verdict that arrived in between — a watermark that
+            # claims more than the rebuild actually read.
+            #
+            # Never advanced on a refusal path, because this whole expression
+            # sits below the guards that return early. That is what makes the
+            # retry survive: a rebuild that could not complete leaves the
+            # verdict unconsumed and the next turn tries again.
+            consumed_verdict_ms=(
+                rebuild.consumed_verdict_ms
+                if rebuild is not None and rebuild.consumed_verdict_ms is not None
+                else (prior.consumed_verdict_ms if prior is not None else None)
+            ),
         )
         try:
             await asyncio.wait_for(
@@ -835,6 +976,17 @@ async def run(
             outcome = "unavailable"
             return
         outcome = "written"
+        if rebuild is not None:
+            # The re-derivation LANDED — the position is written and, for an
+            # `ungrounded` trigger, the watermark went with it. Paired with
+            # `nora_standing_rederivations_total` above, which counts the
+            # trigger firing: equal series mean every re-derivation completes,
+            # and a persistent gap is a fold that keeps failing rather than a
+            # trigger that has latched. Those two look identical on the fired
+            # counter alone, and reading one as the other is how the original
+            # latch stayed invisible.
+            metrics.inc("nora_standing_rederivations_written_total",
+                        trigger=rebuild.trigger)
 
         # THE PER-TURN VERDICT, written AFTER the position and never allowed to
         # cost it. Two outputs of one call (26 §3) with opposite cardinalities:
@@ -887,6 +1039,80 @@ async def run(
         # StaleNoteHeadError on a lost compare-and-swap, ValueError from the
         # domain types. None is swallowed into a short id list, so there is no
         # partial result to reconcile: either every proposal landed or none did.
+        # **EVERYTHING about the proposals happens HERE, below the position
+        # write, and the placement is the fix for three findings at once.**
+        #
+        # It used to sit up beside the verdict parse, above the overflow gate
+        # and the screen. Three consequences, none of them intended:
+        #
+        # 1. `workspace_of` is an INJECTED callable and it ran on the
+        #    position's critical path — before the gates, before `store.write`,
+        #    outside any `try` of its own, and even when `notes_sink is None`
+        #    and no proposal could happen at all. A raise from someone else's
+        #    function became `outcome="error"` and THE POSITION WAS NEVER
+        #    WRITTEN. This stage says twice that a proposal failure must never
+        #    cost the position, and then put a foreign function in front of it
+        #    — on every deployment, including the majority that have notes off.
+        # 2. `_note_proposals` counts its refusals as it goes, so folds that
+        #    were about to be refused for overflow or screened out still
+        #    incremented `already_read` and `over_cap`. Those series then
+        #    describe proposals that could never have been made.
+        # 3. The no-workspace refusal was SILENT — no counter, no log. A
+        #    `policy.toml` edit that stops naming a room disables note
+        #    proposals with zero signal, and a flat `proposed` series is
+        #    indistinguishable from a model that simply had nothing to raise.
+        #
+        # Below the write, all three go away: the position is already durable,
+        # so nothing here can cost it; the counters only describe folds that
+        # actually reached this point; and the refusal is named (cold review,
+        # 2026-08-28).
+        workspace: str | None = None
+        proposals: list[NoteCreationProposal] = []
+        if notes_sink is not None:
+            # **NEVER RAISES**, for the reason above: the resolver belongs to
+            # the caller and this sits downstream of a write that has already
+            # committed.
+            #
+            # Three outcomes, three labels, and the split is the point. `None`
+            # is a room policy deliberately does not name — a refusal. A raise
+            # is a resolver that needs fixing — a fault. Counting both as
+            # `no_workspace` would report a broken resolver as a policy
+            # decision on the one series an operator reads to tell them apart,
+            # which is the R-27 substitution this file argues against
+            # everywhere else.
+            try:
+                workspace = workspace_of(platform, trace.conversation_id)
+            except Exception:
+                log.exception(
+                    "debrief: the workspace resolver failed (tag=%s); no "
+                    "proposals this turn, the position is unaffected",
+                    trace.tag_id,
+                )
+                metrics.inc("nora_debrief_note_proposals_total",
+                            outcome="no_workspace_unavailable")
+                workspace = None
+            else:
+                if workspace:
+                    proposals = _note_proposals(
+                        raw, conversation_id=trace.conversation_id,
+                        tag_id=trace.tag_id, notes_read=notes_read,
+                        metrics=metrics,
+                    )
+                else:
+                    # A refusal to propose, never a guessed notebook: filing
+                    # one social unit's notes into another's is not
+                    # recoverable by looking at the index. COUNTED, because an
+                    # unmapped room is otherwise completely invisible — a
+                    # `policy.toml` edit could disable note proposals with no
+                    # signal at all.
+                    metrics.inc("nora_debrief_note_proposals_total",
+                                outcome="no_workspace")
+
+        # DEC-128: the digest of what was ACTUALLY SENT, read per run and never
+        # cached — the objective hot-reloads on mtime, so a digest captured at
+        # construction would stop naming the text the model saw.
+        sent_sha256 = instruction_sha256(instructions)
+
         if notes_sink is not None and proposals and workspace:
             try:
                 written = await asyncio.wait_for(
@@ -907,9 +1133,21 @@ async def run(
                 metrics.inc("nora_debrief_note_proposals_total",
                             outcome="proposed", value=len(written))
             except Exception:
+                # **Says what it KNOWS.** This used to say the proposals
+                # "did not land", which is a claim about store state made
+                # without reading it back — and on a `wait_for` timeout the
+                # propose is cancelled MID-STATEMENT, so whether the batch
+                # committed is not knowable from here. The position write two
+                # blocks up was corrected for exactly this once already; the
+                # same sentence had been copied down here.
+                #
+                # The LABEL stays `unwritten`, which is honestly «I could not
+                # confirm a write», and the position is genuinely unaffected
+                # either way.
                 log.exception(
-                    "debrief: the note proposals did not land (tag=%s); the "
-                    "revised position stands", trace.tag_id,
+                    "debrief: the note proposals did not complete (tag=%s); "
+                    "whether they committed is unknown from here, and the "
+                    "revised position stands either way", trace.tag_id,
                 )
                 metrics.inc("nora_debrief_note_proposals_total",
                             outcome="unwritten", value=len(proposals))
@@ -941,17 +1179,34 @@ async def run(
         # A cancellation is not a fault: the process is going away and the
         # position simply is not revised this turn. INFO, and a label that
         # says so.
-        log.info(
-            "debrief cancelled (tag=%s); keeping the prior position",
-            trace.tag_id,
-        )
-        outcome = "cancelled"
+        # **NEVER DOWNGRADES A WRITTEN POSITION.** The verdict save and the
+        # note propose both run AFTER `outcome = "written"` and both guard only
+        # `except Exception`, so a `CancelledError` in either escapes to here —
+        # and relabelling that turn `cancelled` would report a position that IS
+        # in the database as one that was not revised. `written` is a claim
+        # about a committed row; the two riders below it are explicitly not
+        # allowed to change it, and neither is a cancellation arriving during
+        # one of them (cold review, 2026-08-28).
+        if outcome == "written":
+            log.info(
+                "debrief cancelled after the position was written (tag=%s); "
+                "the position stands and a rider did not finish", trace.tag_id,
+            )
+        else:
+            log.info(
+                "debrief cancelled (tag=%s); keeping the prior position",
+                trace.tag_id,
+            )
+            outcome = "cancelled"
     except BaseException:
         # `BaseException`, and it is not defensive breadth — see the module
         # docstring's (1). `CancelledError` is not an `Exception`, and letting
         # one out of here reports a silent failure on a turn that delivered.
         # It is caught ABOVE rather than here so shutdown does not masquerade
         # as a defect; this branch is now genuinely «something unexpected».
+        #
+        # Same rule as the cancel branch above: `outcome` is not touched here
+        # at all, so a fault in a rider cannot unsay a written position.
         log.exception("debrief failed (tag=%s); keeping the prior position",
                       trace.tag_id)
     finally:

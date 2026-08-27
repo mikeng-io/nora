@@ -1698,6 +1698,13 @@ STANDING = sa.Table(
     # which is retained for a bounded window and prunes out from under it.
     sa.Column("fold_count", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_at", sa.BigInteger, nullable=False),
+    # S2's ACTED-ON WATERMARK: the `created_at` of the ungrounded `TurnVerdict`
+    # a re-derivation consumed. NULLABLE, and null is not zero — a sentinel
+    # that compares equal to a real `created_at` is a watermark satisfiable by
+    # accident. It replaces a comparison against `updated_at`, which was a
+    # PROXY for "a rebuild consumed this verdict" and was falsifiable by one
+    # transient failure of the verdict read (migration 0037).
+    sa.Column("consumed_verdict_ms", sa.BigInteger, nullable=True),
     sa.CheckConstraint(
         f"length(btrim(body)) > 0 and length(body) <= {STANDING_BODY_CEILING_CHARS}",
         name="standing_body_fits_the_ceiling_check",

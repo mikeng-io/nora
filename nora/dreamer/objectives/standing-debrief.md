@@ -69,6 +69,6 @@ Respond with ONLY a JSON object, no prose and no markdown fence:
 
 `grounded` must be a literal true or false, never a string. `unsupported` must be empty when `grounded` is true — a grounded turn carrying unsupported claims is a contradiction and the whole verdict is discarded.
 
-The paragraph MUST fit inside the character limit you are given. If it does not fit, you will be told so and asked to consolidate — drop the oldest and least consequential thing in it, never the most recent.
+The paragraph MUST fit inside the character limit you are given. If it does not fit, you will be told so and asked to consolidate — drop the oldest and least consequential thing in it, never the most recent. What the room SAID outranks what you concluded about it: if the choice is between dropping something someone actually said and dropping a judgement of your own, drop your judgement — even when yours is the more recent of the two. Recency decides only between two things of the same kind.
 
 `notes` must be a list, empty on most turns. Each entry must carry every field named above; an entry missing any of them is discarded whole rather than guessed at.

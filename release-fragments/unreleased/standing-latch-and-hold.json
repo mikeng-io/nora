@@ -1,12 +1,10 @@
 {
   "type": "fix",
-  "summary": "Two defects in Nora's conversation memory, both live. One made her quietly stop keeping a running sense of a conversation and fall back to summarising only the last few messages — while the measurement said the opposite. The other let a turn hold a room's queue ten seconds longer than the declared limit.",
+  "summary": "Two defects in Nora's conversation memory, both live. One made her quietly stop keeping a running sense of a conversation and fall back to summarising only the last few messages — while the measurement said the opposite. The other let a turn hold a room's queue far longer than the declared limit, and then declared a limit that was not true.",
   "details": [
-    "The rebuild trigger latched on. After one turn judged unsupported, every later turn rebuilt from scratch rather than building on what came before, because the check looked at the most recent judgement of any age instead of asking whether one had been made since. Judgements are only recorded for turns that fully succeed, so a single one could hold the trigger open indefinitely. It now compares timestamps.",
-    "The counter meant to reveal that failure reported it as healthy, which is why it went unnoticed — the reading a person would use to check was the reading that was wrong.",
-    "The declared limit on how long a turn may hold a room's queue counted two database calls when there are four. Two features each added one without updating the sum. The count now lives in the code that makes the calls, and a test fails if a fifth is ever added without the limit following."
-  ],
-  "limitations": [
-    "The limit was raised to match reality rather than the timeouts being lowered to fit it. The old number was never a judgement about an acceptable wait — it was the arithmetic agreeing with itself — so someone still needs to decide what that wait should actually be."
+    "The rebuild trigger latched on. After one turn judged unsupported, every later turn rebuilt from scratch rather than building on what came before, because the check looked at the most recent judgement of any age instead of asking whether one had been acted on. Judgements are only recorded for turns that fully succeed, so a single one could hold the trigger open indefinitely.",
+    "The counter meant to reveal that failure reported it as healthy, which is why it went unnoticed — the reading a person would use to check was the reading that was wrong. There are now two counters: one for the rebuild being triggered and one for it completing, because a rebuild that keeps failing and a trigger stuck on look identical on either alone.",
+    "The fix is now a record rather than a comparison. Two timestamp comparisons were tried first and both were wrong — the second one silently DISCARDED a judgement for good if the database was briefly unreadable on the following turn. The conversation's record now names the judgement a rebuild acted on, so nothing is lost to a momentary failure and nothing is acted on twice.",
+    "The declared limit on how long a turn may hold a room's queue counted two database calls when there are five, and included a timeout that does not apply to this work at all — so it advertised 165 seconds where the real bound is 45. The count now lives in one place, and a test finds every database call and fails if one is added without the limit following, or if one is left with no timeout around it."
   ]
 }

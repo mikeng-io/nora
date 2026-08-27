@@ -59,6 +59,25 @@ DEFAULT_STANDING_MAX_CHARS = 1200
 #: finding, 2026-08-27).
 DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 
+#: How many bounded store awaits ONE fold makes, and therefore how many
+#: `store_timeout_seconds` the slot hold has to budget for: the trigger's
+#: verdict read, the prior position, the revised position, the turn verdict,
+#: and the note proposals.
+#:
+#: **It lives HERE and not in the stage**, even though the stage is what makes
+#: the calls. `Config._the_standing_slot_hold_fits_its_budget` needs it, and a
+#: module-scope `from nora.engagement.stages.debrief import ...` in
+#: `nora.config` violates that file's own documented rule — `nora.config` is
+#: imported by everything, so it would drag `nora.engagement` (and through it
+#: `nora.agent.tools`) into every process that merely reads config.
+#: `nora.domain` is already imported at module scope on the line above, and it
+#: is where a number two packages must agree on belongs.
+#:
+#: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
+#: `asyncio.wait_for` calls in the stage and asserts they match, so adding a
+#: sixth fails a test instead of silently widening the hold.
+STANDING_STORE_CALLS_PER_FOLD = 5
+
 
 @dataclass(frozen=True, slots=True)
 class Standing:
@@ -80,6 +99,32 @@ class Standing:
     re-derivation trigger then read a flag the NEXT turn had already
     overwritten. A per-turn fact on a row revised every turn is a fact with a
     lifetime of one turn. `TurnVerdict` is where those go.
+
+    `consumed_verdict_ms` is the `created_at` of the ungrounded `TurnVerdict`
+    that a re-derivation ACTED ON — S2's watermark, and **the reason it is
+    state rather than a timestamp comparison.**
+
+    The first implementation asked "is the latest ungrounded verdict newer than
+    the position's last write", which uses `updated_at` as a PROXY for "a
+    rebuild consumed this verdict". Any proxy is falsifiable by a path that
+    moves it without doing the thing, and this one has such a path: if
+    `TurnVerdictStore.latest` fails for a single turn, the trigger correctly
+    declines to fire (R-27 — an unreadable instrument is «I could not check»),
+    the fold then REVISES normally and advances `updated_at` past the verdict,
+    and the next turn's comparison is false forever. One transient read failure
+    and an ungrounded verdict is not deferred but GONE — «I could not check»
+    silently converted into «there was nothing», which is the exact
+    substitution the debrief's own handler exists to prevent. Driven through
+    the real stage over three turns; the verdict was dropped and the counter
+    read zero (cold review, 2026-08-28).
+
+    So the row records what was consumed. `None` means no re-derivation has
+    ever acted on a verdict here, which is why it is nullable rather than `0`:
+    a sentinel that compares equal to a real `created_at` is a watermark that
+    can be satisfied by accident. It advances ONLY when an ungrounded-triggered
+    rebuild is WRITTEN — never on a refusal (so the retry survives), and never
+    on a `ceiling` rebuild, which has not looked at the verdict and must not
+    claim to have consumed it.
     """
 
     platform: str
@@ -87,6 +132,7 @@ class Standing:
     body: str
     fold_count: int
     updated_at: int
+    consumed_verdict_ms: int | None = None
 
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():
@@ -98,3 +144,5 @@ class Standing:
             )
         if self.fold_count < 0:
             raise ValueError("fold_count is never negative")
+        if self.consumed_verdict_ms is not None and self.consumed_verdict_ms < 0:
+            raise ValueError("consumed_verdict_ms is never negative")
