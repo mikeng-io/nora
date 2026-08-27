@@ -351,11 +351,16 @@ series that both exist.
 `curator_bodies_read`, `revisit_total{outcome}` — and so does
 `strikes_total{result}`: `note.strikes` is a column with a CHECK constraint and
 no writer, because the strike is the revisitor's wake pass (§9.6 of the spec).
-**Declaring a name with no call site is precisely
-[02-instrument-blindness.md](02-instrument-blindness.md)'s Layer 7**, so
-shipping all ten would have closed Layer 6 by manufacturing a fresh instance of
-Layer 7 one line below it. A flat zero on a dashboard is worse than an absent
-series: it reads as a measurement.
+**Declaring a name with no call site is its own entry in
+[02-instrument-blindness.md](02-instrument-blindness.md)** —
+`nora_fact_entity_unresolved_total`'s class — so shipping all ten would have
+closed that bundle's note-tier layer by manufacturing a fresh instance of the
+layer beside it. A flat zero on a dashboard is worse than an absent series: it
+reads as a measurement.
+
+(Named by shape rather than by layer number on purpose: the number was 7 when
+this was drafted and belonged to something else an hour later, because two
+branches were appending to the same numbered list.)
 
 **So three shipped, each with a live path:**
 

@@ -111,7 +111,10 @@ credited with.
 > four were already counted by `nora_tool_calls_total` and a second series would
 > double any dashboard summing tool volume; three more measure an adaptor that
 > does not exist, and declaring those would have manufactured a fresh instance of
-> **Layer 7 below** — a name with no call site. See
+> **the declared-name-with-no-call-site failure** — `nora_fact_entity_unresolved_
+> total`'s class ([21](21-substrate-contract.md) §6.4), named here by shape
+> rather than by layer number because the numbering moved under this line once
+> already. See
 > [27](27-note-dreamer.md) §6.1. The layer's finding stands; the fix was to
 > decide which ten were real, not to build ten.
 
@@ -272,6 +275,8 @@ five times it reproduced 3/5 and once false-merged the control. CLAUDE.md alread
 carried both rules; the node diagnosing instrument blindness broke them while
 investigating a library.
 
-2026-08-27 — **Layer 6 resolved**, and the shape of the fix is the finding. The note tier ships THREE counters, not ten ([27](27-note-dreamer.md) §6.1): four were already carried by `nora_tool_calls_total`, and four measure adaptors that do not exist — so shipping all ten would have closed Layer 6 by manufacturing a fresh **Layer 7** one line below it. Closing an instrument gap is a decision about which instruments are real, not a build order. Layer 7 (`nora_fact_entity_unresolved_total`) stands open.
+2026-08-27 — **Layer 6 resolved**, and the shape of the fix is the finding. The note tier ships THREE counters, not ten ([27](27-note-dreamer.md) §6.1): four were already carried by `nora_tool_calls_total`, and four measure adaptors that do not exist — so shipping all ten would have closed Layer 6 by **manufacturing a declared name with no call site**, which is the very next failure in this family. Closing an instrument gap is a decision about which instruments are real, not a build order. `nora_fact_entity_unresolved_total` ([21](21-substrate-contract.md) §6.4) is that failure and stands open.
+
+**This entry originally said "Layer 7" and was wrong within the hour** — it was written against a file where the next free number was 7, and a parallel branch took 7 for the spans gap. Two sessions appending to one numbered list is the DEC-number collision one file over, and git merged both cleanly because they touched different lines. **Cross-reference a layer by its shape, not its ordinal**; the ordinal is only stable inside the commit that reads it.
 
 2026-08-24 — Six layers when written. **Now eight**: `nora_fact_entity_unresolved_total` has no call site ([21](21-substrate-contract.md) §6.4), and the note tier declares ten metrics and ships zero ([27](27-note-dreamer.md) §6). The pattern kept finding new instances as later nodes were written, which is the finding.
