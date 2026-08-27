@@ -100,6 +100,14 @@ _MAY_DIFFER = {
     # and §5.1 says there must not be, because a capped index can hide a note
     # and an invisible note is indistinguishable from one that does not exist.
     "notes.enabled",
+    # `standing.enabled` joins them 2026-08-27, and it is the sharpest case in
+    # this list: the debrief spends a model call INSIDE the reply slot, so a
+    # copied config that switched itself on would lengthen a hold real people
+    # wait behind. Template inert, deployment opted in. NOT `max_chars` /
+    # `window` / `timeout_seconds` — those are the same known-good numbers in
+    # both files, and a template disagreeing with them is exactly the F11 drift
+    # this test exists for.
+    "standing.enabled",
     # The one flag that runs the OTHER direction: the template ships the
     # trigger phrase ON (the code default, `TriggerConfig.enabled = True`,
     # matching every deployment's behaviour before this flag existed); this
