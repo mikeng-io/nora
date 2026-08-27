@@ -330,7 +330,7 @@ read back.
 | `[llm] timeout_seconds` | **120** | the tag turn's own bound, already required and set |
 | `[standing] timeout_seconds` | **20** | the debrief's model call |
 | `[standing] store_timeout_seconds` | **5**, counted **twice** | the fold reads the prior and writes the next; **both** are inside the bound |
-| `[standing] max_slot_hold_seconds` | **150** | `120 + 20 + 2×5`, and it is **checked at startup** |
+| `[standing] max_slot_hold_seconds` | **150** shipped, **45** in code | the real bound is `20 + 5×5`; `[llm] timeout_seconds` is NOT a term. The shipped files are HELD at 150 for one deploy cycle because this file is bind-mounted while the validator ships in the image — see R-70. The old formula `120 + 20 + 2×5` also reached 150, and agreeing on the value by coincidence of a wrong formula is how it went unnoticed. **Checked at startup** |
 
 **The store calls are inside the bound, and that is the correction this section
 most needed.** An implementation shipped with one `asyncio.wait_for` around the

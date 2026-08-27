@@ -564,11 +564,16 @@ class _Rebuild(NamedTuple):
     """Why the position is being re-derived, and — for `"ungrounded"` only —
     WHICH verdict caused it.
 
-    `consumed_verdict_ms` exists so the caller can advance the watermark to the
-    exact verdict this rebuild acted on, rather than to "now". Those differ:
-    a verdict written at T and consumed by a rebuild at T+2 must mark T as
-    consumed, or a second ungrounded verdict arriving between them is
-    swallowed by a watermark that claims more than the rebuild read.
+    `consumed_verdict_tag` exists so the caller can advance the watermark to the
+    exact verdict this rebuild acted on, rather than to "the newest" or to
+    "now". Those differ: a verdict consumed two turns after it was written must
+    be marked by NAME, or a second ungrounded verdict arriving in between is
+    swallowed by a watermark claiming more than the rebuild actually read.
+
+    It is the `tag_id` and not the `created_at` because a timestamp merely
+    describes a verdict — two can share a millisecond, which both
+    `latest_ungrounded` implementations already assert when they justify their
+    tie-break.
 
     `None` on a `"ceiling"` rebuild, and that is load-bearing rather than
     incidental: the ceiling has not looked at any verdict, so it must not
@@ -576,7 +581,7 @@ class _Rebuild(NamedTuple):
     """
 
     trigger: str
-    consumed_verdict_ms: int | None = None
+    consumed_verdict_tag: str | None = None
 
 
 async def _should_rebuild(
@@ -677,11 +682,15 @@ async def _should_rebuild(
         # through the real stage over three turns before this column existed:
         # the verdict was dropped and the counter read zero.
         #
-        # So the property is recorded. `consumed_verdict_ms` is the verdict a
-        # re-derivation ACTED ON, advanced only when the rebuild is WRITTEN.
-        # `!=` rather than `>`: any verdict this position has not consumed is
-        # unconsumed, and a clock that went backwards is not a reason to skip
-        # one (cold review, 2026-08-28).
+        # So the property is recorded. `consumed_verdict_tag` NAMES the
+        # verdict a re-derivation acted on, advanced only when the rebuild is
+        # WRITTEN. `!=` rather than an ordering: any verdict this position has
+        # not consumed is unconsumed, and no clock is involved.
+        #
+        # The tag rather than the `created_at` because a third proxy was hiding
+        # here too — two ungrounded verdicts in one millisecond collapse to a
+        # single watermark value and the second is never acted on (cold review,
+        # 2026-08-28).
         # `last` is already ungrounded BY THE READ — see
         # `TurnVerdictStore.latest_ungrounded`. This used to ask `latest` for
         # the newest verdict of either kind and then test `not last.grounded`
@@ -691,9 +700,9 @@ async def _should_rebuild(
         # shape of a successful turn following one where this read failed.
         if (
             last is not None
-            and last.created_at != prior.consumed_verdict_ms
+            and last.tag_id != prior.consumed_verdict_tag
         ):
-            return _Rebuild("ungrounded", last.created_at)
+            return _Rebuild("ungrounded", last.tag_id)
 
     if prior.fold_count >= ceiling:
         return _Rebuild("ceiling")
@@ -946,19 +955,20 @@ async def run(
             # has read no verdict and must not claim to have consumed one),
             # and on a first fold, where there is nothing to carry.
             #
-            # It is NOT set to `now_ms`. The verdict this rebuild acted on was
-            # written on an earlier turn, and marking "now" as consumed would
-            # swallow any verdict that arrived in between — a watermark that
-            # claims more than the rebuild actually read.
+            # It NAMES the verdict, rather than recording when the rebuild
+            # happened. The verdict acted on was written on an earlier turn,
+            # so marking "now" would swallow anything that arrived in
+            # between — a watermark claiming more than the rebuild read.
             #
             # Never advanced on a refusal path, because this whole expression
             # sits below the guards that return early. That is what makes the
             # retry survive: a rebuild that could not complete leaves the
             # verdict unconsumed and the next turn tries again.
-            consumed_verdict_ms=(
-                rebuild.consumed_verdict_ms
-                if rebuild is not None and rebuild.consumed_verdict_ms is not None
-                else (prior.consumed_verdict_ms if prior is not None else None)
+            consumed_verdict_tag=(
+                rebuild.consumed_verdict_tag
+                if rebuild is not None
+                and rebuild.consumed_verdict_tag is not None
+                else (prior.consumed_verdict_tag if prior is not None else None)
             ),
         )
         try:

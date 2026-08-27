@@ -100,7 +100,7 @@ class Standing:
     overwritten. A per-turn fact on a row revised every turn is a fact with a
     lifetime of one turn. `TurnVerdict` is where those go.
 
-    `consumed_verdict_ms` is the `created_at` of the ungrounded `TurnVerdict`
+    `consumed_verdict_tag` is the `tag_id` of the ungrounded `TurnVerdict`
     that a re-derivation ACTED ON — S2's watermark, and **the reason it is
     state rather than a timestamp comparison.**
 
@@ -119,12 +119,21 @@ class Standing:
     read zero (cold review, 2026-08-28).
 
     So the row records what was consumed. `None` means no re-derivation has
-    ever acted on a verdict here, which is why it is nullable rather than `0`:
-    a sentinel that compares equal to a real `created_at` is a watermark that
-    can be satisfied by accident. It advances ONLY when an ungrounded-triggered
-    rebuild is WRITTEN — never on a refusal (so the retry survives), and never
-    on a `ceiling` rebuild, which has not looked at the verdict and must not
-    claim to have consumed it.
+    ever acted on a verdict here, which is why it is nullable rather than a
+    sentinel value: anything that could compare equal to a real tag is a
+    watermark satisfiable by accident. It advances ONLY when an
+    ungrounded-triggered rebuild is WRITTEN — never on a refusal (so the retry
+    survives), and never on a `ceiling` rebuild, which has not looked at the
+    verdict and must not claim to have consumed it.
+
+    **It holds `tag_id`, not `created_at`, and the first version held the
+    millisecond.** That was the same substitution one turn later: a timestamp
+    DESCRIBES a verdict, `tag_id` IS one, and two ungrounded verdicts sharing a
+    millisecond collapse to one watermark value so the second is never acted
+    on. The codebase already asserts that premise twice — both
+    `latest_ungrounded` implementations justify their tie-break with "two turns
+    in one millisecond are reachable" — so the hole is real or those tie-breaks
+    are decoration, and it cannot be both (cold review, 2026-08-28).
     """
 
     platform: str
@@ -132,7 +141,7 @@ class Standing:
     body: str
     fold_count: int
     updated_at: int
-    consumed_verdict_ms: int | None = None
+    consumed_verdict_tag: str | None = None
 
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():
@@ -144,5 +153,9 @@ class Standing:
             )
         if self.fold_count < 0:
             raise ValueError("fold_count is never negative")
-        if self.consumed_verdict_ms is not None and self.consumed_verdict_ms < 0:
-            raise ValueError("consumed_verdict_ms is never negative")
+        if (self.consumed_verdict_tag is not None
+                and not self.consumed_verdict_tag.strip()):
+            # `None` means "nothing consumed"; a blank string would be a second
+            # spelling of the same state that compares unequal to it, which is
+            # how a watermark starts having two null values.
+            raise ValueError("consumed_verdict_tag is a tag_id or None")

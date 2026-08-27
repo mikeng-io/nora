@@ -78,7 +78,26 @@ class SqlTurnVerdictStore:
         stmt = (
             sa.select(TURN_VERDICT)
             .where(TURN_VERDICT.c.conversation_id == conversation_id,
-                   TURN_VERDICT.c.grounded.is_(False))
+                   # **`== sa.false()`, NOT `.is_(False)`, and the two are
+                   # not interchangeable here.** `.is_(False)` renders
+                   # `grounded IS false`; `idx_turn_verdict_ungrounded` is
+                   # declared `WHERE (grounded = false)`, and Postgres's
+                   # predicate prover cannot prove a BooleanTest implies an
+                   # OpExpr — so the partial index becomes UNUSABLE and this
+                   # falls back to a sequential scan of every verdict row.
+                   # Measured on postgres:18-alpine at 63k rows: 507 buffers
+                   # and 3.3ms scanning, against 1 buffer and 0.06ms on the
+                   # index. Only exact-spelling pairs match (plus `NOT
+                   # grounded` against `= false`).
+                   #
+                   # This is the read the stage makes on EVERY fold inside the
+                   # held lock, and the one most likely to reach its timeout —
+                   # which `_should_rebuild` swallows as R-27's «I could not
+                   # check», step one of the verdict-dropping path this method
+                   # exists to close. An index that silently does not apply is
+                   # worse than no index, because the docstring claims
+                   # otherwise (cold review, 2026-08-28).
+                   TURN_VERDICT.c.grounded == sa.false())
             # `tag_id` breaks the tie, matching the double exactly. Two turns
             # in one millisecond are reachable, and without this the two
             # implementations answer DIFFERENT verdicts for the same rows —

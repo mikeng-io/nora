@@ -617,12 +617,12 @@ async def test_the_verdict_comes_from_the_answer_that_was_kept():
 # was last revised. Both used to default to 1, so `created_at > updated_at` was
 # false and the tests could not tell a fresh verdict from a stale one.
 async def _with_prior(fold_count: int, *, body: str = "the carried position",
-                      updated_at: int = 100, consumed_verdict_ms: int | None = None):
+                      updated_at: int = 100, consumed_verdict_tag: str | None = None):
     store = InMemoryStandingStore()
     await store.write(standing=Standing(
         platform="signal", conversation_id="g1", body=body,
         fold_count=fold_count, updated_at=updated_at,
-        consumed_verdict_ms=consumed_verdict_ms))
+        consumed_verdict_tag=consumed_verdict_tag))
     return store
 
 
@@ -763,7 +763,12 @@ async def test_the_notes_the_turn_read_reach_the_debrief():
 async def test_a_turn_that_read_no_notes_counts_nothing():
     """The ordinary case — most turns read no notes — and it must not look like
     a wiring failure."""
-    _, metrics, _ = await _run()
+    store, metrics, _ = await _run()
+    # POSITIVE CONTROL. `== 0` is also true of a fold that never ran, and this
+    # test had none — the same shape as the three the cold review found in the
+    # new work, missed in the same file (cold review, 2026-08-28).
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert await store.read(platform="signal", conversation_id="g1") is not None
     assert _counter(metrics, "nora_debrief_notes_read_total") == 0
 
 
@@ -912,7 +917,7 @@ async def test_a_verdict_the_watermark_names_has_been_acted_on():
     consumed does not trigger a second one. Keyed on the WATERMARK, not on
     which row is newer — see the next test for why that distinction is the
     whole reason this column exists."""
-    store = await _with_prior(1, updated_at=500, consumed_verdict_ms=200)
+    store = await _with_prior(1, updated_at=500, consumed_verdict_tag="earlier")
     _, metrics, _ = await _run(
         store=store,
         store_verdict=await _with_verdict(grounded=False, created_at=200))
@@ -1047,9 +1052,51 @@ async def test_a_grounded_verdict_cannot_bury_an_unconsumed_ungrounded_one():
         "a later grounded verdict buried the unconsumed ungrounded one"
     )
     row = await store.read(platform="signal", conversation_id="g1")
-    assert row is not None and row.consumed_verdict_ms == 1000, (
+    assert row is not None and row.consumed_verdict_tag == "tag-1", (
         "the rebuild consumed something other than the verdict that caused it"
     )
+
+
+async def test_two_ungrounded_verdicts_in_one_millisecond_are_both_acted_on():
+    """**The watermark's own proxy, found one turn after the one it replaced.**
+
+    It first held the consumed verdict's `created_at`. A millisecond DESCRIBES a
+    verdict; `tag_id` IS one — so two ungrounded verdicts sharing a millisecond
+    collapsed to a single watermark value and the second was never acted on, in
+    either tag order.
+
+    The premise is not hypothetical in this codebase: both `latest_ungrounded`
+    implementations justify their `tag_id` tie-break with "two turns in one
+    millisecond are reachable". If that is true this hole was real; if it is
+    false those tie-breaks are decoration. It cannot be both.
+
+    Falsification: key the watermark on `created_at` again and the second
+    verdict is never consumed.
+    """
+    store = InMemoryStandingStore()
+    verdicts = InMemoryTurnVerdictStore()
+    metrics = Metrics()
+
+    # A position that has already consumed ONE of two verdicts stamped in the
+    # same millisecond.
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="carried",
+        fold_count=1, updated_at=100, consumed_verdict_tag="tag-a"))
+    for tag in ("tag-a", "tag-b"):
+        await verdicts.save(verdict=TurnVerdict(
+            tag_id=tag, conversation_id="g1", grounded=False,
+            unsupported=("same millisecond",), created_at=500))
+
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               now_ms_override=2000, trace=_trace_with_tag("tag-next"))
+
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1, (
+        "the second verdict of the pair was swallowed by a watermark that "
+        "named a millisecond instead of a verdict"
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.consumed_verdict_tag == "tag-b"
 
 
 async def test_a_refusing_rebuild_leaves_the_verdict_unconsumed():
@@ -1078,7 +1125,7 @@ async def test_a_refusing_rebuild_leaves_the_verdict_unconsumed():
         "a re-derivation that wrote nothing was counted as landed"
     )
     row = await store.read(platform="signal", conversation_id="g1")
-    assert row is not None and row.consumed_verdict_ms is None, (
+    assert row is not None and row.consumed_verdict_tag is None, (
         "a refusing fold marked the verdict consumed"
     )
 
@@ -1095,27 +1142,27 @@ async def test_a_ceiling_rebuild_does_not_claim_to_have_consumed_a_verdict():
     assert _counter(metrics, "nora_standing_rederivations_written_total",
                     trigger="ceiling") == 1
     row = await store.read(platform="signal", conversation_id="g1")
-    assert row is not None and row.consumed_verdict_ms is None
+    assert row is not None and row.consumed_verdict_tag is None
 
 
 async def test_the_watermark_is_carried_forward_by_an_ordinary_revise():
     """A revise consumes nothing and must not FORGET what a past rebuild
     consumed either. Dropping it would make the next turn re-derive from a
     verdict already acted on — the latch, arrived at by omission."""
-    store = await _with_prior(1, updated_at=100, consumed_verdict_ms=200)
+    store = await _with_prior(1, updated_at=100, consumed_verdict_tag="earlier")
     await _run(store=store,
                store_verdict=await _with_verdict(grounded=True, created_at=300),
                now_ms_override=2000)
     row = await store.read(platform="signal", conversation_id="g1")
     assert row is not None
     # The ROW MUST HAVE BEEN REWRITTEN, asserted before the watermark is read.
-    # `consumed_verdict_ms == 200` is the value the fixture seeded, so on its
+    # `consumed_verdict_tag == "earlier"` is the value the fixture seeded, so on its
     # own it cannot tell "carried forward" from "never written at all" — which
     # is what this test asserted, and it would have passed against a fold that
     # did nothing.
     assert row.fold_count == 2, "the revise never happened"
     assert row.updated_at == 2000, "the row was not rewritten by this fold"
-    assert row.consumed_verdict_ms == 200
+    assert row.consumed_verdict_tag == "earlier"
 
 
 async def test_no_verdict_store_is_inert_not_a_failure():

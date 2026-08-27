@@ -35,6 +35,7 @@ import sqlalchemy as sa
 from nora.domain.turn_verdict import UNSUPPORTED_MAX_ITEMS, TurnVerdict
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.schema import TURN_VERDICT
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
 from nora.testing import InMemoryTurnVerdictStore
 
@@ -228,3 +229,74 @@ async def test_latest_is_none_before_the_first_verdict(store):
     """Not a reason to re-derive: the ordinary state before a conversation's
     first fold."""
     assert await store.latest_ungrounded(conversation_id=CONV) is None
+
+
+# --- the plan, not the spelling -------------------------------------------
+
+@pytest.mark.asyncio
+async def test_the_trigger_read_actually_uses_its_partial_index(_verdict_db: str):
+    """**Asserts the PLAN, because every other check here passes on the defect.**
+
+    `latest_ungrounded` shipped as `.is_(False)`, which renders `grounded IS
+    false`, while `idx_turn_verdict_ungrounded` is created `WHERE (grounded =
+    false)`. Postgres's predicate prover cannot show a `BooleanTest` implies an
+    `OpExpr`, so the partial index was unusable and every fold took a
+    sequential scan of the whole table — measured at 63k rows: 507 buffers and
+    3.3ms against 1 buffer and 0.06ms.
+
+    **The answer was CORRECT the whole time.** Right row, right order, contract
+    suite green, both implementations agreeing — the only difference was the
+    plan, and nothing looked at one. That is why it survived a green gate and
+    two reviews, and why a test over the SPELLING would be the wrong test: it
+    would pin today's fix rather than the property, and the next equivalent
+    rewrite would slip past it exactly as this did.
+
+    `test_schema_parity` cannot cover it either: it compares CHECK predicates
+    and index ordering, not partial-index predicates.
+
+    This is also the read the stage makes on EVERY fold inside the held
+    per-conversation lock, and the one most likely to reach its timeout — which
+    `_should_rebuild` swallows as R-27's «I could not check», step one of the
+    verdict-dropping path the watermark exists to close. Slow here is not slow
+    in the abstract (cold review, 2026-08-28).
+    """
+    engine = create_sql_engine(_verdict_db)
+    try:
+        async with engine.begin() as conn:
+            # Enough rows that a sequential scan is never the cheaper plan, and
+            # ungrounded kept RARE — which is the shape the partial index is
+            # for and the shape production has.
+            await conn.execute(sa.text(
+                "INSERT INTO turn_verdict "
+                "(tag_id, conversation_id, grounded, unsupported, created_at) "
+                "SELECT 'tag-'||i, 'conv-'||(i % 50), (i % 1000 <> 0), "
+                "'{}', 1000000+i FROM generate_series(1, 60000) i"
+            ))
+            await conn.execute(sa.text("ANALYZE turn_verdict"))
+
+            stmt = (
+                sa.select(TURN_VERDICT)
+                .where(TURN_VERDICT.c.conversation_id == "conv-0",
+                       TURN_VERDICT.c.grounded == sa.false())
+                .order_by(TURN_VERDICT.c.created_at.desc(),
+                          TURN_VERDICT.c.tag_id.desc())
+                .limit(1)
+            )
+            compiled = stmt.compile(
+                dialect=conn.sync_engine.dialect,
+                compile_kwargs={"literal_binds": True},
+            )
+            rows = (await conn.execute(
+                sa.text("EXPLAIN " + str(compiled)))).fetchall()
+        plan = "\n".join(r[0] for r in rows)
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("truncate turn_verdict cascade"))
+        await engine.dispose()
+
+    assert "idx_turn_verdict_ungrounded" in plan, (
+        "the trigger's read does not use its partial index — every fold "
+        "sequentially scans the whole verdict table inside the held lock.\n"
+        f"{plan}"
+    )
+    assert "Seq Scan" not in plan, f"planner chose a sequential scan:\n{plan}"
