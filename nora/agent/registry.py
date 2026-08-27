@@ -216,7 +216,7 @@ class ToolRegistry:
         # state (R-5). `nora.app.composition` passes the same `SqlReminderStore`
         # the heartbeat's tick reads from; two would be two queues.
         self._reminders = reminders
-        # `EventService`'s own collaborator (the Event module design spec),
+        # `GatheringService`'s own collaborator (the Event module design spec),
         # wired the identical honest way `reminders` is: NOT default-constructed
         # — there is no serviceless default — so every composition that has not
         # wired Events (offline, eval, and any test that does not care) leaves
