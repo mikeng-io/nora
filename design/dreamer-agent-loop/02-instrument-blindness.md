@@ -541,6 +541,61 @@ asks for it.
 on a dirty tree, at which point the discipline is mechanical rather than
 remembered.
 
+## The consistent pair — two things that agree with each other and not with the requirement
+
+The two families above are about one thing being wrong. This one is about **two
+things being wrong together, consistently**, which is why none of them looked
+wrong:
+
+> **A consistent pair that is jointly wrong.** The reason none of them looked
+> wrong is that the usual check is *"do these two agree"* — and they did. The
+> check that finds it is different: **does either agree with the REQUIREMENT** —
+> which needs a third thing in the room.
+
+A test and its code are two things. A docstring and its function are two things.
+A store method and its renderer are two things. **Neither pair can check
+itself**, and a suite comparing one against the other reports agreement, which
+is what a passing gate looks like.
+
+Three instances on 2026-08-27/28, in three different tiers, none found by
+running anything:
+
+| the pair | how they agreed | the third thing that would have caught it |
+|---|---|---|
+| **`merge_groups` and `_render`** — the store dropped note bodies, the renderer dropped them again | Consistently. The curator was shown titles and closing conditions, and the prompt looked complete because nothing downstream expected a body | **The requirement**, [27](27-note-dreamer.md) §9.2's read table, which lists the body as what merge execution reads. `anchored_before` beside it already returned `(Note, body)` — the divergence was between the two halves of ONE store |
+| **A test and the code it pins** — `test_two_proposals_…refuse_the_second` asserted the first proposal is not rolled back | Perfectly. The code did exactly what the test said | **The docstring three files away**, which required the batch to be atomic. Neither half is falsifiable without reading the other |
+| **The evidence ordering in the language tier** (nora-a7's) | The producer and the consumer used the same order, so every round-trip matched | The spec's own statement of which end is authoritative |
+
+**The self-directed version, which is the sharpest one and is why this is its
+own section.** Fixing a finding is itself a pair — the fix and the finding — and
+they agree by construction. On 2026-08-28 finding 2 corrected what
+`nora_note_curator_bodies_read` COUNTS; finding 4's fix, applied an hour later,
+changed what the store READS, so `merge_groups` began fetching every standing
+note's body while the gauge still reported the handful shown to the model. **The
+budget instrument was made to lie by the fix to the thing it measures**, and
+neither finding mentioned the other:
+
+> **Those are two halves of one sentence, and only one half was in the review.**
+
+So the rule generalises to the person applying it: **verify a fix against the
+PROPERTY, not against the finding.** The finding is one half of a pair with the
+fix, and the pair agrees.
+
+### What to go looking for
+
+Not "is this tested" and not "do these agree". The questions that find this
+shape:
+
+- **Does either half agree with the spec?** — not with each other. Read the
+  requirement first and both halves second.
+- **Where is the third thing?** — if a claim is checked only by something that
+  was written alongside it, there is no third thing and the pair is unchecked.
+  A cold reader IS the third thing, which is why every instance here was found
+  by one.
+- **What else moved?** — after a fix, ask what property it touched rather than
+  what finding it closed. The instrument that measures the fixed thing is the
+  first place to look.
+
 ## What follows from this
 
 **Every fix in this bundle ships its own measurement, or it is not done**
@@ -577,6 +632,14 @@ the context of the task that CALLS it, and the queued-tag path calls it from the
 wrong one, which is strictly harder to see than inheriting none. Measured with a
 three-case probe rather than reasoned from the signature, which is [25](25-knowledge-pipeline.md)
 §2.1's correction applied to this node's own writing.
+
+2026-08-28 — **the consistent pair added**, the third family and the one that
+explains the other two's discovery pattern: every instance in this node was
+found by a cold reader and none by running anything, because a pair that agrees
+with itself is what a green gate looks like. Includes the self-directed case —
+a fix and its finding are a pair too, so a fix must be verified against the
+property rather than against the finding.
+
 
 2026-08-27 — **the bug-pinning test added as its own family**, distinct from the
 silent-match one: a silent match FAILS to see something, a bug-pinning test
