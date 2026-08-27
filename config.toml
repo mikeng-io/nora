@@ -340,14 +340,19 @@ strict = true
 # [language]/[analytics]/[facts] all shipped inert too. Off, no DreamerRuntime
 # is constructed and the existing consolidators run exactly as they do today.
 #
-# TEMPORARILY OFF (2026-08-21, operator instruction): fact-candidates is stuck
-# in a permanent MaxTokensReachedException retry loop on scope
-# 100000000000000201/100000000000000202 (watermark held at 1180, room's
-# language watermark at 1300 and climbing) while the fact tier's architecture
-# — no read/search/cross-compare tools during reasoning, Phase A pre-fetches
-# nothing — is being rebuilt on fact-tier-agentic-tools. Re-enable once that
-# lands, or once the stuck scope is otherwise resolved.
-enabled = false
+# ON (operator, 2026-08-27). It was switched off on 2026-08-21 because
+# fact-candidates sat in a permanent MaxTokensReachedException retry loop on one
+# scope. That condition is GONE, verified before flipping rather than assumed:
+# `fact_candidate` holds 0 rows and the watermark tables that comment referred to
+# do not exist in this database. The loop cannot resume from state that is not
+# there.
+#
+# What this starts: the DreamerRuntime and every adaptor whose own [section] is
+# enabled. `[facts]` and `[language]` are still false, so the runtime comes up
+# with those adaptors inert — this flag alone does not restart the loop that
+# caused the outage. It is what the note tier's curator and revisitor need in
+# order to run at all.
+enabled = true
 # The same model Nora runs. OPERATOR DECISION (2026-08-21), NOT a measurement
 # — and the distinction is stated because the earlier version of this comment
 # claimed the opposite while carrying a value nobody had measured.
