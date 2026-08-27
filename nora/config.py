@@ -1694,6 +1694,21 @@ class NotesConfig(BaseModel):
     #: level, which is why the gauge exists and why the cap is generous.
     max_expired_per_tick: int = Field(default=20, ge=1, le=200)
 
+    #: 27 §5.2. The OPERATING cap on a note body, in characters. The database
+    #: carries a separate ceiling of 32000 and the gap is the point: this says
+    #: «no writer should produce that», the CHECK says «this row is corrupt».
+    #: A body between the two means something bypassed the domain type, which
+    #: is a bug to find rather than a row to reject on read.
+    #:
+    #: It is a cap because the body is NOT injected — it is read on demand —
+    #: so the exposure is the curator, whose per-tick budget is counted in
+    #: ROWS. A row budget is only a budget if a row has a bounded size.
+    #:
+    #: `le` is the database ceiling: a configured value above it would be
+    #: unenforceable, refused by Postgres rather than by the domain, and the
+    #: operator would find out from a failed write.
+    max_body_chars: int = Field(default=8000, ge=1000, le=32000)
+
 
 class XaiImageGenConfig(BaseModel):
     """`[image_gen.xai]` — the xAI adapter's own knobs (DEC-137).

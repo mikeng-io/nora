@@ -884,6 +884,18 @@ curator_enabled = false
 # pass is reporting "nothing to do" about notes it never reached.
 # max_groups_per_tick = 3
 # max_expired_per_tick = 20
+
+# The OPERATING cap on a note body, in characters (27 §5.2). The database
+# carries a SEPARATE ceiling of 32000 and the gap is deliberate: this one says
+# "no writer should produce that", the database CHECK says "this row is
+# corrupt". A body between the two means something bypassed the domain type —
+# a bug to go and find, rather than a row to reject when somebody reads it.
+#
+# It is capped at all because the body is NOT injected into the prompt; it is
+# read on demand, so the exposure is the CURATOR, whose per-tick budget is
+# counted in ROWS. A row budget is only a budget if a row has a bounded size.
+# 8000 is roughly a long page — enough for an arrangement with its history.
+# max_body_chars = 8000
 # No render cap here, unlike [facts]' max_rendered_facts, and that is a
 # decision rather than an omission: §5.1 makes the index uncapped, because a
 # note silently missing from it is invisible to her and invisible is

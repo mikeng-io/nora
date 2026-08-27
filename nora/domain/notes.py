@@ -47,6 +47,9 @@ from dataclasses import dataclass, field
 #: index being a complete listing of what exists.
 TITLE_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 200
+#: 27 §5.2's OPERATING value. The database ceiling is 32000 and is a different
+#: number on purpose — see `NoteRevision.__post_init__` for why there are two.
+BODY_MAX_CHARS = 8000
 
 #: Anchor dates are `YYYYMMDD` integers, not epoch milliseconds. The anchor is
 #: compared for EQUALITY when deciding merge eligibility (§7.1) and against
@@ -208,6 +211,27 @@ class NoteRevision:
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():
             raise ValueError("a revision needs a body")
+        # 27 §5.2, and the reason it is a cap at all: the body is NOT injected
+        # — it is read on demand — so the exposure is the CURATOR, which reads
+        # bodies per tick against a budget counted in ROWS. A row budget is
+        # only a budget if a row has a bounded size; one unbounded body can
+        # consume a whole tick's allowance, and the pass then reports «nothing
+        # to do» about the notes it never reached.
+        #
+        # TWO NUMBERS, deliberately. This is the operating value (8000, roughly
+        # a long page); the database CHECK is 32000. The gap is not slack — it
+        # is the difference between «this writer should not do that» and «this
+        # row is corrupt». A body between them means a writer bypassed this
+        # type, which is a bug to find rather than a row to reject at read
+        # time, and a database that refused at 8000 would make the two
+        # indistinguishable.
+        if len(self.body) > BODY_MAX_CHARS:
+            raise ValueError(
+                f"a note body is at most {BODY_MAX_CHARS} characters (got "
+                f"{len(self.body)}). Bodies are read whole by the curator "
+                f"against a per-tick budget counted in rows, so an unbounded "
+                f"one silently eats the allowance"
+            )
         if not self.established_by or not self.established_by.strip():
             raise ValueError(
                 "a revision needs established_by: the strike reset in §9.6 "
@@ -327,6 +351,11 @@ class NoteRevisionProposal:
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():
             raise ValueError("a proposed revision needs a body")
+        if len(self.body) > BODY_MAX_CHARS:
+            raise ValueError(
+                f"a proposed revision's body is at most {BODY_MAX_CHARS} "
+                f"characters (got {len(self.body)})"
+            )
         if not self.note_id or not self.note_id.strip():
             raise ValueError("a proposed revision needs the note it revises")
         if not self.parent_revision_id or not self.parent_revision_id.strip():
@@ -401,6 +430,11 @@ class NoteCreationProposal:
         ):
             if not value or not value.strip():
                 raise ValueError(f"a proposed note needs {what}")
+        if len(self.body) > BODY_MAX_CHARS:
+            raise ValueError(
+                f"a proposed note's body is at most {BODY_MAX_CHARS} "
+                f"characters (got {len(self.body)})"
+            )
         # THE SAME CAPS `Note` ENFORCES, mirrored here on purpose. This type's
         # docstring argues that a refusal at the boundary is reviewable while a
         # raise inside a tick is a log line nobody reads — and until 2026-08-27

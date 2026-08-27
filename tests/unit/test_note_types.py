@@ -34,10 +34,13 @@ from __future__ import annotations
 import pytest
 
 from nora.domain.notes import (
+    BODY_MAX_CHARS,
     DESCRIPTION_MAX_CHARS,
     TITLE_MAX_CHARS,
     Note,
+    NoteCreationProposal,
     NoteRevision,
+    NoteRevisionProposal,
 )
 
 NOW = 1_755_100_000_000
@@ -255,3 +258,46 @@ def test_a_revision_is_frozen():
     )
     with pytest.raises((AttributeError, TypeError)):
         rev.body = "y"  # type: ignore[misc]
+
+
+# --- the body cap (27 §5.2), and why there are TWO numbers ------------------
+
+
+def test_a_body_over_the_operating_cap_is_refused():
+    """The body is NOT injected — it is read on demand — so the exposure is the
+    CURATOR, whose per-tick budget is counted in ROWS. A row budget is only a
+    budget if a row has a bounded size: one unbounded body eats a whole tick's
+    allowance, and the pass then reports «nothing to do» about the notes it
+    never reached."""
+    with pytest.raises(ValueError, match="at most 8000"):
+        NoteRevision(
+            id="r1", note_id="n1", body="x" * (BODY_MAX_CHARS + 1),
+            parent_revision_id=None, written_at=1, established_by="tag:miles",
+        )
+
+
+def test_a_body_exactly_at_the_cap_is_accepted():
+    """The cap is inclusive. An off-by-one here would refuse the longest
+    legitimate arrangement, which is the case the number was chosen for."""
+    revision = NoteRevision(
+        id="r1", note_id="n1", body="x" * BODY_MAX_CHARS,
+        parent_revision_id=None, written_at=1, established_by="tag:miles",
+    )
+
+    assert len(revision.body) == BODY_MAX_CHARS
+
+
+def test_both_proposal_shapes_carry_the_same_cap():
+    """A cap the tag path honours and a background pass does not is not a cap.
+    Both payload types reach the same table through the same store."""
+    with pytest.raises(ValueError, match="at most 8000"):
+        NoteRevisionProposal(
+            note_id="n1", body="x" * (BODY_MAX_CHARS + 1),
+            parent_revision_id="r1",
+        )
+    with pytest.raises(ValueError, match="at most 8000"):
+        NoteCreationProposal(
+            title="t", description="d", uncertainty="u",
+            closing_condition="c", established_in="conv-1",
+            body="x" * (BODY_MAX_CHARS + 1), anchor_date=20261011,
+        )
