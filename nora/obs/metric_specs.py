@@ -1361,8 +1361,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # declares them.
     _CounterSpec(
         "nora_note_curator_total",
-        "Curator actions by what it did: merge, merge_refused, retire_failed, "
-        "retire_stale, closed, moot. **merge_refused and retire_stale are NOT "
+        "Curator actions by what it did: merge, merge_refused, "
+        "merge_failed, retire_failed, retire_stale, closed, moot. **merge_refused "
+        "and retire_stale are NOT "
         "errors** — the survivor or the note moved under the pass, which is "
         "the tag path winning a race the CAS exists to arbitrate, and the "
         "work is re-selected next tick because the selection read is live "
@@ -1394,7 +1395,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_note_curator_dropped_total",
         "Model verdicts the curator refused, by reason: malformed (a field "
         "missing or a verdict outside the three the objective defines), or "
-        "unknown_note (it named a note this run did not show it), "
+        "unknown_note (a handle this run did not render), body_too_long (a "
+        "merged body over the cap — the objective asked for more than it "
+        "allows, which is fixed in the INSTRUCTION not the model), "
         "not_shown_in_group (a merge for a group this run did not select), or "
         "conflicting_verdict (two contradictory answers about one note — not a "
         "tie to break but «I cannot tell», so the note stays standing). A drop is "

@@ -122,6 +122,21 @@ class InMemoryNoteStore:
     candidates: dict[tuple[str, str], NoteCandidate] = field(default_factory=dict)
     _ids: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
 
+    #: **UUID-SHAPED, like the real store's.** This double minted `note-1` and
+    #: `rev-2` until 2026-08-28, and that one divergence hid the defect that
+    #: made the whole curator inert: the Dreamer screens every adaptor item
+    #: against R-18/R-28 and `scan_identifiers` matches any hyphenated uuid, so
+    #: production rejected every item while this double's ids sailed through.
+    #: Eighteen tests passed over it.
+    #:
+    #: Deterministic rather than random — `uuid4` would make a failure
+    #: unreproducible — but SHAPED like the thing it stands in for, because the
+    #: shape is what the screen reads. A double may be simpler than the real
+    #: store; it may not differ on a property something downstream branches on.
+    @staticmethod
+    def _shaped_id(n: int, kind: str) -> str:
+        return f"{n:08x}-0000-4000-8000-{ord(kind[0]):012x}"
+
     async def create(
         self,
         *,
@@ -145,8 +160,8 @@ class InMemoryNoteStore:
     ) -> Note:
         """See the module docstring's (3): both objects are built before either
         is stored, so a refused note leaves no half-written revision behind."""
-        note_id = f"note-{next(self._ids)}"
-        revision_id = f"rev-{next(self._ids)}"
+        note_id = self._shaped_id(next(self._ids), "note")
+        revision_id = self._shaped_id(next(self._ids), "rev")
         note = Note(
             id=note_id, workspace=workspace, title=title, description=description,
             uncertainty=uncertainty, closing_condition=closing_condition,
@@ -221,7 +236,7 @@ class InMemoryNoteStore:
                 observed_head=note.head_revision_id,
             )
         revision = NoteRevision(
-            id=f"rev-{next(self._ids)}", note_id=note_id, body=body,
+            id=self._shaped_id(next(self._ids), "rev"), note_id=note_id, body=body,
             parent_revision_id=parent_revision_id, written_at=now_ms,
             established_by=established_by,
             instruction_sha256=instruction_sha256, model=model,
@@ -282,7 +297,7 @@ class InMemoryNoteStore:
                 ),
             )
         revision = NoteRevision(
-            id=f"rev-{next(self._ids)}", note_id=survivor, body=merged_body,
+            id=self._shaped_id(next(self._ids), "rev"), note_id=survivor, body=merged_body,
             parent_revision_id=survivor_parent, written_at=now_ms,
             established_by=established_by,
             instruction_sha256=instruction_sha256, model=model,
@@ -407,8 +422,8 @@ class InMemoryNoteStore:
         declared: dict[str, str] = {}
         for p, payload in typed:
             if isinstance(payload, NoteCreationProposal):
-                note_id = f"note-{next(self._ids)}"
-                revision_id = f"rev-{next(self._ids)}"
+                note_id = self._shaped_id(next(self._ids), "note")
+                revision_id = self._shaped_id(next(self._ids), "rev")
                 note = Note(
                     id=note_id, workspace=key, title=payload.title,
                     description=payload.description,
@@ -463,7 +478,7 @@ class InMemoryNoteStore:
                     observed_head=head_now if reachable else None,
                 )
             revision = NoteRevision(
-                id=f"rev-{next(self._ids)}", note_id=payload.note_id,
+                id=self._shaped_id(next(self._ids), "rev"), note_id=payload.note_id,
                 body=payload.body,
                 parent_revision_id=heads.get(
                     payload.note_id, payload.parent_revision_id,

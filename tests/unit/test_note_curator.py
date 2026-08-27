@@ -477,7 +477,7 @@ async def test_an_over_cap_merged_body_is_dropped_not_raised():
 
     assert written == 0
     assert metrics.get(
-        "nora_note_curator_dropped_total", reason="malformed") == 1
+        "nora_note_curator_dropped_total", reason="body_too_long") == 1
     assert len(await store.standing(workspace=WS)) == 2, "nothing was merged"
 
 
@@ -608,3 +608,133 @@ def test_every_drop_reason_the_code_emits_is_in_its_vocabulary():
     assert emitted, "the walk found no reasons at all — it is not measuring"
     known = CURATOR_DROPS | CURATOR_GROUP_REFUSALS
     assert emitted <= known, f"emitted but not in a vocabulary: {emitted - known}"
+
+
+class _MergeRaises(InMemoryNoteStore):
+    """A store whose `merge` refuses one named survivor with a domain error.
+
+    Subclassed rather than mocked so every other verb behaves exactly as the
+    double does — the point is a tick in which one group merges and another
+    fails, and a mock would make the successful half unreal too.
+    """
+
+    def __init__(self, doomed: str = "") -> None:
+        super().__init__()
+        self.doomed = doomed
+
+    async def merge(self, **kw):  # type: ignore[override]
+        if kw["survivor"] == self.doomed:
+            raise ValueError("a note body is at most 8000 characters")
+        return await super().merge(**kw)
+
+
+async def test_one_groups_domain_failure_does_not_discard_the_ticks_merges():
+    """**The path P2's first test did not reach.** `_merged_bodies` refuses an
+    over-cap body before the store sees it, so the ValueError catch is the
+    BRACES — reachable when the store refuses for a reason this module does not
+    enumerate.
+
+    It matters because the earlier group's merge is ALREADY COMMITTED in
+    Postgres. Letting the exception escape reports written=0 over rows that
+    exist, and re-raises every tick, stalling that workspace's retirements
+    permanently."""
+    store = _MergeRaises()
+    good = await _seed(store, title="Grant wedding", anchor=20261011,
+                       entities=("grant",))
+    await _seed(store, title="Grant's wedding", anchor=20261011,
+                entities=("grant",))
+    bad = await _seed(store, title="Ada wedding", anchor=20270301,
+                      entities=("ada",))
+    await _seed(store, title="Ada's wedding", anchor=20270301,
+                entities=("ada",))
+    store.doomed = bad.id
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, good), "merged_body": "both wedding shortlists"},
+        {"note_id": _h(c, bad), "merged_body": "both Ada shortlists"},
+    ))
+
+    assert written == 1, "the good merge survives the bad one"
+    assert metrics.get("nora_note_curator_total", action="merge") == 1
+    assert metrics.get("nora_note_curator_total", action="merge_failed") == 1
+    head = await store.read(workspace=WS, note_id=good.id)
+    assert head is not None
+    assert head[1].body == "both wedding shortlists"
+
+
+async def test_an_over_cap_body_is_refused_before_the_store_sees_it():
+    """The BELT. Its own reason, because the remedy differs from a missing
+    field: an over-cap body means the model answered the RIGHT shape and the
+    objective asked for something it cannot honour."""
+    store = _MergeRaises()
+    a = await _seed(store, title="Grant wedding", anchor=20261011)
+    await _seed(store, title="Grant's wedding", anchor=20261011)
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "merged_body": "x" * (BODY_MAX_CHARS + 1)},
+    ))
+
+    assert written == 0
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="body_too_long") == 1
+    assert metrics.get("nora_note_curator_total", action="merge_failed") == 0, (
+        "refused at the belt, so the braces never engage"
+    )
+
+
+# --- through the REAL screen, in the runtime's order ------------------------
+
+
+async def test_items_survive_the_real_dream_screen_in_the_runtimes_order():
+    """**The test that would have caught P1**, and the reason it is written
+    this way: every adaptor suite in this repo called `accept()` directly, so
+    the real screen never ran and three tiers shipped inert.
+
+    `DreamerRuntime` does `screen(...)` and hands the KEPT items to `accept`
+    (`nora/agent/dreamer.py:582-587`). A test that skips that step is testing a
+    path production cannot take — which is exactly how a curator asking about
+    uuid4 note ids passed 18 tests while every real item was rejected.
+
+    So this drives the real `screen`, in the real order, and asserts the items
+    SURVIVE it. Not that the handles look right — that nothing is dropped."""
+    from nora.agent.dream_screen import screen
+
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20261011)
+    b = await _seed(store, title="Grant's wedding", anchor=20261011)
+    expired = await _seed(store, title="Dinner, 9 Sept", anchor=20260909,
+                          entities=("ada",))
+    metrics = Metrics()
+    curator = _curator(store, metrics)
+    await curator.inputs(key=WS, batch=())
+
+    items = [
+        {"note_id": _h(curator, a), "merged_body": "both shortlists"},
+        {"note_id": _h(curator, expired), "verdict": "moot", "why": "passed"},
+    ]
+
+    kept, rejected = screen(
+        adaptor="note-curation", items=items, metrics=metrics,
+    )
+
+    assert not rejected, f"the screen rejected real curator items: {rejected}"
+    assert len(kept) == 2
+
+    # …and the kept items still resolve, which is the half a screen test alone
+    # would miss: surviving the screen is worthless if the handles no longer
+    # name anything.
+    payloads = await curator.accept(key=WS, items=kept)
+    assert len(payloads) == 2
+    written = await curator.commit(
+        key=WS,
+        proposals=tuple(
+            Proposal(payload=p, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for p in payloads
+        ),
+        now_ms=NOW + 5,
+    )
+    assert written == 2, "one merge, one retirement"
+    assert [n.id for n in await store.standing(workspace=WS)] == [a.id]
+    assert b.id not in {n.id for n in await store.standing(workspace=WS)}

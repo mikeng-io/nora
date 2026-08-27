@@ -61,6 +61,8 @@ CURATOR_ACTIONS: frozenset[str] = frozenset({
     "merge",           # a group was merged into its survivor
     "merge_refused",   # the survivor moved, or the merge was refused — NOT an
                        # error: the group is still a group next tick
+    "merge_failed",    # the store refused the merge for a domain reason; the
+                       # tick continues and earlier merges stand
     "retire_failed",   # supersede raised; the tick continues
     "retire_stale",    # the note moved between inputs and commit, so the
                        # reading the model judged no longer describes it
@@ -76,6 +78,8 @@ CURATOR_DROPS: frozenset[str] = frozenset({
     "not_shown_in_group",       # a merge for a group SQL did not select
     "conflicting_verdict",      # two contradictory answers about one note
     "conflicting_merged_body",  # two different bodies for one survivor
+    "body_too_long",            # a merged body over BODY_MAX_CHARS — the
+                                # objective asked for more than the cap allows
 })
 
 #: Every value `nora_note_curator_groups_refused_total{reason}` can carry.
@@ -435,11 +439,25 @@ class NoteCuratorAdaptor:
                 continue
             body = item.get("merged_body")
             note_id = item.get("note_id")
+            if isinstance(body, str) and len(body) > BODY_MAX_CHARS:
+                # ITS OWN REASON, not `malformed`. The remedies differ: a
+                # missing field means the model answered the wrong shape, and
+                # an over-cap body means it answered the RIGHT shape and the
+                # objective asked for something it cannot honour — "keep every
+                # concrete thing, do not summarise" over two bodies of up to
+                # BODY_MAX_CHARS each. One is fixed in the model, the other in
+                # the instruction, and a shared label cannot tell an operator
+                # which.
+                self._inc(
+                    "nora_note_curator_dropped_total", reason="body_too_long")
+                log.warning(
+                    "note curator returned a merged body over the cap; the "
+                    "group is left alone")
+                continue
             if (
                 not isinstance(note_id, str)
                 or not isinstance(body, str)
                 or not body.strip()
-                or len(body) > BODY_MAX_CHARS
             ):
                 self._inc(
                     "nora_note_curator_dropped_total", reason="malformed")
@@ -560,7 +578,14 @@ class NoteCuratorAdaptor:
                     model=provenance.model if provenance else None,
                     now_ms=now_ms,
                 )
-            except (StaleNoteHeadError, ValueError):
+            except StaleNoteHeadError:
+                # The survivor moved. NOT an error: the group is still a group
+                # and the next tick sees it again, because the selection read
+                # is live state rather than a cursor.
+                log.info("note merge refused; the survivor moved under it")
+                self._inc("nora_note_curator_total", action="merge_refused")
+                continue
+            except ValueError:
                 # ValueError as well as the CAS loss: `merge` builds a
                 # `NoteRevision`, whose `__post_init__` refuses a body over the
                 # cap. One group's bad body must not discard the tick — an
@@ -571,8 +596,15 @@ class NoteCuratorAdaptor:
                 # for and it is not an error: the group is still a group, and
                 # the next tick sees it again because `merge_groups` reads live
                 # state rather than a cursor.
-                log.info("note merge refused; the survivor moved or was refused")
-                self._inc("nora_note_curator_total", action="merge_refused")
+                # THE BRACES. `_merged_bodies` refuses an over-cap body before
+                # it reaches here, so this is unreachable by that route — and
+                # it is kept because the store builds a `NoteRevision` whose
+                # `__post_init__` can refuse for reasons this module does not
+                # enumerate, and one group's domain refusal must not discard a
+                # tick in which an earlier group ALREADY COMMITTED. Letting it
+                # escape reports written=0 over rows that exist in Postgres.
+                log.exception("note merge failed; continuing with the tick")
+                self._inc("nora_note_curator_total", action="merge_failed")
                 continue
             retired += count
             merged_groups.append(
