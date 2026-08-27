@@ -143,7 +143,31 @@ so the loop closes without a research loop — see §12.1.
 
 **12.1 — the option this bundle did not take: close the loop socially.**
 
-Recorded as an **option requiring an operator decision**, not as a decision.
+> **DEMOTED 2026-08-27, and kept for the reason it is wrong.** Two objections,
+> both from the operator, and both fatal:
+>
+> **It breaks the passivity the tier is built on.** [30](30-review-response.md)
+> §2.1.1 refuses a tag-path rewrite because that would be *"deciding truth under
+> social pressure"*. Asking the room puts adjudication on the tag path, in the
+> moment, in front of everybody — the same conditions, one step removed.
+>
+> **Asking manufactures the answer.** The cheapest reply to *"it's a game?"* in a
+> group chat is **"yeah"**. That samples the room's willingness to agree, not its
+> knowledge. Generalised: **a work-based agent can treat a human confirmation as
+> ground truth because it is an accountable act by someone with a role; a
+> community-based agent cannot, because a reply is conversation** — unaccountable,
+> often performative, and in this room frequently a joke. The proposal imports
+> human-in-the-loop-equals-truth from work agents into a context where the
+> premise does not hold.
+>
+> And the case it was designed for turned out not to exist: `big walk` was a
+> write-time defect, not an unadjudicable correction
+> ([28](28-language-tier.md) §4.1). **The passive answer is
+> suppress-and-re-derive**: a disputed row stays suppressed (R-5 — silence beats
+> a wrong answer), and usage over time re-derives it under the `observation`
+> warrant, which samples behaviour instead of agreeableness.
+
+Recorded below as it was proposed, so the refutation stays legible next to it.
 
 On dispute, Nora asks the room — *"I had it as X — it's Y?"* — and a member's
 confirmation mints `stated` with that member as asserter. No Dreamer, no web

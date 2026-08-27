@@ -131,6 +131,33 @@ loop has **never closed once** in production. A counter at each step is how
 anyone knows it did — and [09](09-measurement.md)'s rule says a change whose
 effect cannot be read back is not done.
 
+> **THE FIXTURE WAS MISDIAGNOSED (2026-08-27).** This node chose the two live
+> lexeme rows as the acceptance fixture and built a correction loop around them.
+> Reading the rows themselves shows they are **not a correction failure**:
+>
+> ```
+> Big Walk  | "...this group plays, where they hunt for gourds"  n=1 spk=1
+> big walk  | "群內約定俗成嘅散步/行路活動..."                      n=1 spk=1
+> ```
+>
+> Both are **one sighting by one speaker**, one of them a compositional
+> restatement of what the English words already mean. Nothing corrected anything
+> and nothing needed superseding — **the tier wrote two guesses and rendered
+> both**, because it has no measure step and the render has no score floor
+> ([28](28-language-tier.md) §4.1, §6.1). A score floor removes them today.
+>
+> **The correction loop is still right — for the KNOWLEDGE tier**, where a claim
+> about the world genuinely can be wrong, genuinely needs research, and
+> genuinely needs supersession with a recorded reason. It was never the right
+> instrument for a row that should not have been written.
+>
+> **So §2.1.1's step-by-step remains the design, and its fixture must change.**
+> The acceptance test needs a claim that was *correctly* written, *later* turned
+> out wrong, and *must* change on the record. `big walk` is a write-time defect
+> wearing a correction-loop costume, and building the loop against it would have
+> produced a loop that passes its test while never exercising research,
+> supersession, or warrant precedence.
+
 **Why this is the acceptance test for everything else.** Every other mechanism
 in these 31 nodes — adjudication, warrant precedence, Standing folds, note
 closing conditions, supersession in all four tiers — is a variation on one loop:
@@ -370,6 +397,14 @@ stated reversal conditions — all confirmed as correct by the architecture
 reviewer, which is also what makes §2 and §3 worth taking seriously.
 
 ## Status / Checkpoint
+
+2026-08-27 — **the acceptance fixture was misdiagnosed**, found by reading the
+live rows rather than the design: the two lexeme rows are one sighting each and
+were never corrected by anybody, so they are a write-time defect
+([28](28-language-tier.md) §4.1), not a correction failure. The loop stands for
+the knowledge tier; the fixture must change. This also demotes
+[16](16-open-items.md) §12.1 — the social loop was answering a question this
+tier never asked.
 
 2026-08-27 — a third external review (Kimi, cold, whole bundle) found the two
 joints the acceptance test exercises are the two least specified: **step 3 has no

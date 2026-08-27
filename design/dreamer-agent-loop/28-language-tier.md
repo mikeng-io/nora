@@ -76,6 +76,94 @@ and **a stale entry stops rendering entirely.** The docstring is careful that
 this is *"rendering state, NOT a permission to use the word — there is no
 per-word generation gate."*
 
+## 4.1 D34 — the tier has no MEASURE, and that is what produced the two live rows
+
+**Decided 2026-08-27**, from the live rows rather than from the design.
+
+The pass in §4 runs **comprehend → serialize**: read a batch, produce a gloss,
+write a row. There is no **measure** between them — no grounded, fail-closed
+signal that decides whether this term is worth storing at all. That missing verb
+is the whole defect, and the store shows it:
+
+```
+Big Walk  | "a specific long walking activity/event this group plays,
+          |  where they hunt for gourds"          n=1  spk=1  score 2.233
+big walk  | "群內約定俗成嘅散步/行路活動，可能係夜晚出去行街"   n=1  spk=1  score 2.216
+```
+
+**Both are one sighting by one speaker.** Neither has ever been corroborated.
+And they are not two competing glosses of one word — they are two *different
+kinds of thing*: the second is a **compositional restatement** of what the
+English words already mean, which any model would infer unaided, and the first is
+a **reference** to a specific object in the world (*"this group plays"*,
+*"gourds"*) wearing a gloss's clothes.
+
+### 4.1.1 The tier's job is the DELTA, not the meaning
+
+> **Every model already knows what a word means. This tier exists to record where
+> this room's usage DIVERGES from what a model would assume.**
+
+A row whose sense matches the baseline is not neutral, it is **negative value**:
+it spends prompt budget on every turn to tell the model something it already
+knew, and hands it a chance to be wrong. `打風` needs no row. `big walk` needs
+one only because the room means something a model would not guess.
+
+### 4.1.2 The measure is a SELECTIONAL VIOLATION, and one sentence can carry it
+
+The operator's example is the mechanism:
+
+```
+今晚玩唔玩 Big Walk?   →  standard reading: "今晚玩唔玩行路呀?"
+                          nobody says this. The sentence does not cohere.
+```
+
+**玩** selects for games and things-played; it does not take 行路 as an ordinary
+object. The anomaly is **not in the term** — it is in the mismatch between the
+verb's selectional frame and the term's default sense, and that is decidable from
+the sentence's own structure by a model that already holds the selectional
+knowledge.
+
+**This supersedes an earlier reading in this bundle** that divergence needs
+recurrence across speakers. It does not. Recurrence is a slow proxy for something
+the grammar states directly in a single sentence.
+
+**And the violated frame TYPES the result** — which is what makes this more than
+an anomaly flag:
+
+| frame | forces the term to be |
+|---|---|
+| **玩** X | a game / something played |
+| **去** X | a place |
+| **食** X | food |
+| **睇** X | something watched |
+
+So the detector does not merely say *"this is odd"*; it says *"the only coherent
+reading is X-as-a-game."* That routes the write: a term whose only coherent
+reading is **a specific thing** is a **name**, and a name belongs in
+`fact_entity` (§5.2), never in a `sense` column. **The name-versus-meaning
+category error resolves itself from the frame.**
+
+### 4.1.3 The three-state result, and why one row was written from an ambiguous sentence
+
+```
+anomaly, frame resolves    -> write, TYPED by the frame
+anomaly, frame ambiguous   -> HOLD as a candidate; wait for a decisive sentence
+no anomaly                 -> write NOTHING
+```
+
+The last line carries most of the value, and the middle line explains the live
+data. Compare the two sentences:
+
+```
+今晚去 big walk?      -> 去 IS compatible with a walking activity. NO anomaly.
+今晚玩唔玩 Big Walk?  -> 玩 is not.                                ANOMALY.
+```
+
+The tier glossed from the **ambiguous** sentence and wrote a confident row. The
+rule is therefore not only *detect anomalies* but **do not write from a sentence
+that carries no discriminating evidence** — which is what fail-closed means for
+this tier.
+
 ## 5. Caps
 
 | cap | value | where |
@@ -148,6 +236,21 @@ rows remain readable for the transaction-time question, and **only standing rows
 render**. The compound key keeps them distinct; supersession decides which one
 speaks.
 
+## 6.1 The render has no floor — verified
+
+`SqlLanguageStore.room_language` applies a plain
+`ORDER BY recognition_score DESC LIMIT :limit`, and **there is no minimum score
+anywhere in the codebase** — grepped 2026-08-27, no `min_score`, no floor, no
+threshold predicate.
+
+**In a near-empty store, ordering without a floor means the worst row is still
+the best row.** The two rows above score 2.233 and 2.216 and are the entire
+lexicon, so both render, at n=1 and one speaker each.
+
+**A score floor removes both live wrong rows today** — no supersession, no
+correction loop, nothing asked of anybody. It is the cheapest fix in this bundle
+and it is passive, which §4.1 argues is the correct shape for this tier.
+
 ## 7. Tools — none, and that is the finding not the design
 
 The tier holds **no tools at all**, in either direction:
@@ -204,6 +307,13 @@ gap was that nothing in the design owned it**, so its rules lived only in code
 and its defects were quoted as anecdotes about other tiers.
 
 ## Status / Checkpoint
+
+2026-08-27 — **D34 (§4.1): this tier had no MEASURE verb**, and that — not the
+absence of supersession — is what produced the two contradictory live rows. Its
+job is the *delta* from what a model already assumes, the measure is a
+**selectional violation** decidable from one sentence, and the violated frame
+**types** the result and routes names to `fact_entity`. §6.1 records that the
+render has no score floor, verified: a floor alone removes both live rows.
 
 2026-08-24 — written after a coverage audit against the operator's own list
 (caps, mechanism, measurement, transit, storage, tools) found three tiers
