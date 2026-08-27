@@ -470,6 +470,43 @@ cannot establish that a question went unanswered — it establishes that nobody
 spoke. **Silence is not an answer**, so `retired-expired` is deliberately NOT
 reachable from a passed anchor date alone.
 
+### 11.1.1 The envelope carries an OPAQUE HANDLE — found by cold review
+
+**The first revision of this adaptor could not retire anything at all**, and
+nothing in the tier said so. `DreamerRuntime` runs
+`nora.agent.dream_screen.screen` over the model's raw envelope items **before**
+`accept`, and that screen drops the WHOLE item on any identifier reachable in
+it. A note id is `str(uuid4())`, `egress._UUID` matches any hyphenated UUID,
+and the objective asked the model to echo `note_id` back — so **100% of items
+were screened, every tick, forever.**
+
+The only trace was `nora_dream_screened_total{adaptor="note-revisit",
+reason="identifier"}`, a generic Dreamer counter. All five of the tier's own
+counters behaved as if the model had stopped answering: candidates climbing,
+verdicts and refusals and retirements flat. **An operator reading the tier's
+own instruments would have concluded the wrong thing**, which is this bundle's
+Layer-5 shape one level down.
+
+Twenty-seven passing tests could not see it, because every one of them called
+`accept` directly. This adaptor was the **first to put a UUID in an envelope
+item**, so no earlier tier had tripped the screen and nothing in the runtime's
+own suite covered the combination.
+
+**The fix is a per-tick ordinal** — `### note 1` — mapped back through the
+asked-set, which had to exist anyway. It removes the UUIDs from the prompt as
+well. **Widening `dream_screen` was rejected**: it is a shared security rule,
+and widening it for one caller is how such a rule dies.
+
+**And the schema is minimal for the same reason.** Every model-authored string
+in an item is a chance for the screen to drop a correct verdict — a free-text
+`why` quoting a phone number out of the evidence would silently kill the
+retirement it was explaining. The citation is the explanation; there is no
+prose field.
+
+**The generalisable rule:** an adaptor's tests must drive at least one item
+through the real screen, in the order the runtime does. A test that calls
+`accept` directly is testing half a pipeline.
+
 ### 11.2 What the model decides, and what it does not
 
 The verdict is semantic and belongs to a model. The grounding is not:
@@ -499,10 +536,67 @@ note — a closing condition cannot have been met before the note existed.
 boundary (DEC-105/R-49), so reading the room a note was born in to judge that
 note stays inside the boundary the note already sits in.
 
+**The evidence is rendered OLDEST-FIRST, and that is load-bearing.**
+`RecordStore.recent` returns the newest `limit` rows oldest-first — its own
+docstring says so and the audit-store contract suite pins it on both
+implementations. The first revision reversed them, putting the prompt in
+newest-first order under a header reading *"evidence, newest last"*. The
+failure that causes is not cosmetic: the model reads the OLDEST line as the
+latest word, and can close a note by citing a booking that a later message
+already cancelled — **a citation that passes every grounding check in the
+module**, retiring a note in the unrecoverable direction. The double in the
+adaptor's own suite had been written to match the code's belief rather than the
+store's contract, so the whole file agreed with the bug. That is the
+double-diverges-from-the-real-store family again, and the first instance where
+the double was derived from the code it was testing.
+
+**Nora's own words are not evidence.** `recent` does not exclude `is_nora`
+rows; `since` does, in the query, and its docstring says why. Her saying *"I'll
+book Yardbird for the 9th"* is an intention she stated, not the group settling
+anything — closing a note on it is self-attestation deciding a retirement,
+which is the one thing no measure in this repo may rest on.
+
 **A failed record read leaves the note standing**, counted apart from an
 honestly quiet room. Both render identically to the model — its job is the same
 either way, decide nothing — but they are different states for the operator, and
 one counter for both is `unavailable` wearing `nothing_found`.
+
+### 11.3.1 The asked-set is keyed by KEY, not a bare attribute
+
+`dream_loop` dispatches one task per `(adaptor, key)` and its `running` lock is
+**per-unit**: one key's `inputs`/`accept` pair is non-overlapping, and nothing
+makes two DIFFERENT keys' pairs non-overlapping. The live `policy.toml` has two
+workspaces, so this is a deployed configuration.
+
+With a bare attribute, workspace B's `inputs` wipes workspace A's map, and A's
+grounded, correct verdict is dropped and counted `reason="unknown_note"` — the
+label whose own spec text reads *"one hallucinated identifier away"*. **A
+wiring gap reported as a model fault**, inside the instrument built to refuse
+exactly that collapse. `nora.language.fact_adaptor`'s `_message_ids` is the
+standing precedent and states the rule verbatim.
+
+### 11.3.2 The clock is injected
+
+`inputs` has no `now_ms` parameter (only `commit` does), and *"has this note's
+moment passed"* is one of the two grounds for an irreversible action — so it
+has to be testable **on** the boundary. Without an injected clock the fixtures
+are dated against the wall clock, a boundary case cannot be written at all, and
+a date chosen to be safely in the future silently stops testing anything the
+day it arrives — by rendering nothing, which reads as passing.
+
+Two separate comparisons use it, and only one was covered until a mutation
+found the gap: `_is_due` and `anchor_passed` both test the same end-of-day
+instant, and the second is the one that PERMITS a retirement. A note sitting
+exactly on its anchor's last instant is not due, so it reaches `accept` only
+via `revisit_at` — which is what makes the state reachable and the guard
+testable.
+
+**`_anchor_end_ms` computes end-of-day in UTC while the deployment runs in
+HKT**, so a note anchored to the 9th only reads as passed at 08:00 local on the
+10th. Recorded rather than fixed: it fails in the conservative direction (later,
+never earlier), and choosing a timezone is a decision about what a note's date
+MEANS to the people writing it. *The reading that would settle it:* a note whose
+anchor day matters to within a few hours.
 
 ### 11.4 What is deliberately NOT built
 

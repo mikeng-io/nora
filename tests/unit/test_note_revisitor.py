@@ -55,11 +55,12 @@ def _note(
     )
 
 
-def _msg(id: int, body: str, ts: int = 10) -> TranscriptRow:
+def _msg(id: int, body: str, ts: int = 10, *, is_nora: bool = False,
+         person_name: str | None = None) -> TranscriptRow:
     return TranscriptRow(
         id=id, sender_id="+852111", sender_name="Miles", ts=ts, body=body,
-        is_nora=False, delivery_status=DeliveryStatus.SENT, raw_json=None,
-        person_id="miles",
+        is_nora=is_nora, delivery_status=DeliveryStatus.SENT, raw_json=None,
+        person_id="miles", person_name=person_name,
     )
 
 
@@ -103,9 +104,24 @@ class _FakeNoteStore:
 
 
 class _FakeRecord:
-    """`RecordStore.recent`, newest-first, per conversation. `fail=True` makes
-    the read raise — the shape a real record outage takes, and the one that
-    must NOT be able to cause a retirement."""
+    """`RecordStore.recent`, per conversation.
+
+    **Returns the newest `limit` rows OLDEST-FIRST — `rows[-limit:]` — because
+    that is what the real store does**, per `SqlRecordStore.recent`'s own
+    docstring and `tests/contract/test_audit_store_contract.py::
+    test_recent_returns_rows_oldest_first`, which pins it on both
+    implementations.
+
+    An earlier version of this double returned `list(reversed(rows))[:limit]`,
+    reproducing the ADAPTOR's mistaken belief rather than the collaborator's
+    contract — so the whole file agreed with the bug and every test passed
+    either way. A double written from the code it is testing cannot falsify
+    that code. `is_nora` rows are NOT filtered here, also matching `recent`
+    (`since` is the read that filters, in the query) — the adaptor owes that
+    filter and this double is what makes its absence visible.
+
+    `fail=True` raises, the shape a real record outage takes, and the one that
+    must never be able to cause a retirement."""
 
     def __init__(self, by_conversation: dict[str, list[TranscriptRow]] | None = None,
                  *, fail: bool = False):
@@ -116,14 +132,21 @@ class _FakeRecord:
         if self._fail:
             raise ConnectionError("record unreachable")
         rows = self._by.get(conversation_id, [])
-        return list(reversed(rows))[:limit]
+        return rows[-limit:] if limit > 0 else []
 
 
-def _revisitor(notes=(), messages=None, *, fail=False, metrics=None, **kwargs):
+# A fixed instant every test reasons from, so a boundary case can be written
+# ON the boundary rather than near it. 2026-08-28T00:00:00Z.
+NOW_MS = 1_787_961_600_000
+
+
+def _revisitor(notes=(), messages=None, *, fail=False, metrics=None,
+               now_ms=NOW_MS, **kwargs):
     store = _FakeNoteStore(notes)
     record = _FakeRecord({"g1": messages or []}, fail=fail)
     adaptor = NoteRevisitor(
-        notes=store, record=record, metrics=metrics, **kwargs,
+        notes=store, record=record, metrics=metrics,
+        clock=lambda: now_ms, **kwargs,
     )
     return adaptor, store
 
@@ -168,7 +191,7 @@ async def test_a_revisit_at_in_the_past_makes_a_note_due_without_an_anchor():
         (_note(anchor_date=None, anchor_entity_ids=("tyler",), revisit_at=1),),
         [_msg(1, "hi")],
     )
-    assert "note 0191f2c4" in await adaptor.inputs(key=WORKSPACE, batch=[])
+    assert "### note 1" in await adaptor.inputs(key=WORKSPACE, batch=[])
 
 
 async def test_an_unreadable_anchor_date_leaves_the_note_alone():
@@ -254,7 +277,7 @@ async def test_a_grounded_closed_verdict_retires_the_note():
                             metrics=metrics)
     await adaptor.inputs(key=WORKSPACE, batch=[])
     [out] = await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "closed", "cited_message_id": 7},
+        {"note": "1", "verdict": "closed", "cited_message_id": 7},
     ])
     assert out.because == NoteSupersedeReason.RETIRED_CLOSED
     assert out.cited_message_id == 7
@@ -265,7 +288,7 @@ async def test_an_expired_verdict_retires_a_note_whose_moment_has_passed():
     adaptor, _ = _revisitor((_note(),), [_msg(7, "anyway, different subject")])
     await adaptor.inputs(key=WORKSPACE, batch=[])
     [out] = await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "expired", "cited_message_id": None},
+        {"note": "1", "verdict": "expired", "cited_message_id": None},
     ])
     assert out.because == NoteSupersedeReason.RETIRED_EXPIRED
     assert out.cited_message_id is None
@@ -279,7 +302,7 @@ async def test_a_note_this_tick_never_asked_about_is_refused():
     adaptor, _ = _revisitor((_note(),), [_msg(7, "booked it")], metrics=metrics)
     await adaptor.inputs(key=WORKSPACE, batch=[])
     assert await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": "some-other-note", "verdict": "closed", "cited_message_id": 7},
+        {"note": "9", "verdict": "closed", "cited_message_id": 7},
     ]) == ()
     assert metrics.get("nora_note_revisit_refused_total", reason="unknown_note") == 1
 
@@ -295,7 +318,7 @@ async def test_the_asked_set_does_not_survive_into_the_next_tick():
     adaptor._notes = _FakeNoteStore(())
     await adaptor.inputs(key=WORKSPACE, batch=[])
     assert await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "closed", "cited_message_id": 7},
+        {"note": "1", "verdict": "closed", "cited_message_id": 7},
     ]) == ()
 
 
@@ -307,7 +330,7 @@ async def test_a_closed_verdict_citing_a_message_it_was_never_shown_is_refused()
     adaptor, _ = _revisitor((_note(),), [_msg(7, "booked it")], metrics=metrics)
     await adaptor.inputs(key=WORKSPACE, batch=[])
     assert await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "closed", "cited_message_id": 999},
+        {"note": "1", "verdict": "closed", "cited_message_id": 999},
     ]) == ()
     assert metrics.get(
         "nora_note_revisit_refused_total", reason="citation_ungrounded") == 1
@@ -318,7 +341,7 @@ async def test_a_closed_verdict_with_no_citation_is_refused():
     adaptor, _ = _revisitor((_note(),), [_msg(7, "booked it")], metrics=metrics)
     await adaptor.inputs(key=WORKSPACE, batch=[])
     assert await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "closed", "cited_message_id": None},
+        {"note": "1", "verdict": "closed", "cited_message_id": None},
     ]) == ()
     assert metrics.get(
         "nora_note_revisit_refused_total", reason="citation_missing") == 1
@@ -334,7 +357,7 @@ async def test_an_expired_verdict_on_a_note_whose_moment_has_not_passed_is_refus
     )
     await adaptor.inputs(key=WORKSPACE, batch=[])
     assert await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "expired", "cited_message_id": None},
+        {"note": "1", "verdict": "expired", "cited_message_id": None},
     ]) == ()
     assert metrics.get(
         "nora_note_revisit_refused_total", reason="anchor_not_passed") == 1
@@ -351,7 +374,7 @@ async def test_no_retirement_is_reachable_without_evidence():
         adaptor, _ = _revisitor((_note(),), [], metrics=metrics)
         await adaptor.inputs(key=WORKSPACE, batch=[])
         assert await adaptor.accept(key=WORKSPACE, items=[
-            {"note_id": _note().id, "verdict": verdict, "cited_message_id": cited},
+            {"note": "1", "verdict": verdict, "cited_message_id": cited},
         ]) == (), verdict
         assert metrics.get(
             "nora_note_revisit_refused_total", reason="no_evidence") == 1, verdict
@@ -365,7 +388,7 @@ async def test_unresolved_is_a_real_answer_and_is_counted_apart_from_a_refusal()
     adaptor, _ = _revisitor((_note(),), [_msg(7, "hmm")], metrics=metrics)
     await adaptor.inputs(key=WORKSPACE, batch=[])
     assert await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "unresolved", "cited_message_id": None},
+        {"note": "1", "verdict": "unresolved", "cited_message_id": None},
     ]) == ()
     assert metrics.get("nora_note_revisit_verdicts_total", verdict="unresolved") == 1
     assert metrics.get("nora_note_revisit_refused_total", reason="unmeasured") == 0
@@ -379,7 +402,7 @@ async def test_a_verdict_outside_the_three_states_is_unmeasured():
     adaptor, _ = _revisitor((_note(),), [_msg(7, "booked it")], metrics=metrics)
     await adaptor.inputs(key=WORKSPACE, batch=[])
     assert await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "probably-done", "cited_message_id": 7},
+        {"note": "1", "verdict": "probably-done", "cited_message_id": 7},
     ]) == ()
     assert metrics.get("nora_note_revisit_refused_total", reason="unmeasured") == 1
 
@@ -391,7 +414,7 @@ async def test_the_merged_reason_is_never_this_adaptors_to_write():
     adaptor, _ = _revisitor((_note(),), [_msg(7, "booked it")])
     await adaptor.inputs(key=WORKSPACE, batch=[])
     assert await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "merged", "cited_message_id": 7},
+        {"note": "1", "verdict": "merged", "cited_message_id": 7},
     ]) == ()
 
 
@@ -459,7 +482,15 @@ async def test_commit_never_calls_propose():
     `_FakeNoteStore.propose` raises, so a call would fail loudly rather than be
     argued about."""
     adaptor, _ = _revisitor((_note(),), [_msg(7, "booked it")])
-    assert await adaptor.commit(key=WORKSPACE, proposals=[], now_ms=1) == 0
+    # A REAL retirement, not an empty list: with [] the loop runs zero times
+    # and this test cannot fail no matter what commit does.
+    assert await adaptor.commit(
+        key=WORKSPACE, now_ms=1,
+        proposals=_proposals([NoteRetirement(
+            note_id=_note().id, because=NoteSupersedeReason.RETIRED_CLOSED,
+            cited_message_id=7,
+        )]),
+    ) == 1
 
 
 async def test_a_foreign_payload_is_refused_rather_than_retired():
@@ -486,7 +517,7 @@ async def test_a_boolean_citation_cannot_become_a_citation_of_message_one():
     adaptor, _ = _revisitor((_note(),), [_msg(1, "booked it")], metrics=metrics)
     await adaptor.inputs(key=WORKSPACE, batch=[])
     assert await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "closed", "cited_message_id": True},
+        {"note": "1", "verdict": "closed", "cited_message_id": True},
     ]) == ()
     assert metrics.get(
         "nora_note_revisit_refused_total", reason="citation_missing") == 1
@@ -500,7 +531,7 @@ async def test_a_numeric_string_citation_is_accepted():
     adaptor, _ = _revisitor((_note(),), [_msg(7, "booked Yardbird")])
     await adaptor.inputs(key=WORKSPACE, batch=[])
     [out] = await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "closed", "cited_message_id": "7"},
+        {"note": "1", "verdict": "closed", "cited_message_id": "7"},
     ])
     assert out.cited_message_id == 7
 
@@ -509,7 +540,7 @@ async def test_a_non_numeric_citation_is_refused():
     adaptor, _ = _revisitor((_note(),), [_msg(7, "booked it")])
     await adaptor.inputs(key=WORKSPACE, batch=[])
     assert await adaptor.accept(key=WORKSPACE, items=[
-        {"note_id": _note().id, "verdict": "closed", "cited_message_id": "the last one"},
+        {"note": "1", "verdict": "closed", "cited_message_id": "the last one"},
     ]) == ()
 
 
@@ -522,3 +553,223 @@ async def test_the_render_never_tells_the_model_why_the_evidence_is_missing():
     broken, _ = _revisitor((_note(),), [_msg(1, "hi")], fail=True)
     assert await quiet.inputs(key=WORKSPACE, batch=[]) == await broken.inputs(
         key=WORKSPACE, batch=[])
+
+
+# ---------------------------------------------------------------------------
+# The Dreamer's egress screen — the hop every test above skips
+# ---------------------------------------------------------------------------
+
+
+async def test_a_verdict_survives_the_dreamers_egress_screen():
+    """**The test that was missing, and its absence made the whole tier
+    inert.**
+
+    `DreamerRuntime` runs `nora.agent.dream_screen.screen` over the model's raw
+    envelope items BEFORE `accept` is called, and the screen drops the WHOLE
+    item on any identifier reachable in it. An earlier revision asked the model
+    to echo the note's `str(uuid4())` id back; `egress._UUID` matches any
+    hyphenated UUID, so 100% of items were screened, forever — and the only
+    trace was a generic `nora_dream_screened_total{reason="identifier"}`. The
+    tier's own counters showed candidates climbing and verdicts flat, which
+    reads as a model that stopped answering.
+
+    Every other test in this file calls `accept` directly and therefore cannot
+    see it. This one drives the item through the real screen first, in the
+    order the runtime does.
+    """
+    from nora.agent.dream_screen import screen
+
+    adaptor, _ = _revisitor((_note(),), [_msg(7, "booked Yardbird for the 9th")])
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    items = [{"note": "1", "verdict": "closed", "cited_message_id": 7}]
+
+    kept, rejected = screen(adaptor="note-revisit", items=items, metrics=Metrics())
+    assert rejected == (), "the screen dropped a well-formed verdict"
+    [out] = await adaptor.accept(key=WORKSPACE, items=kept)
+    assert out.because == NoteSupersedeReason.RETIRED_CLOSED
+
+
+async def test_the_prompt_carries_no_note_id():
+    """The other half, stated as a property rather than as a screen outcome:
+    the UUID must not reach the prompt at all. It buys nothing the ordinal does
+    not, and every identifier rendered is one the model can echo back into an
+    item the screen will then drop."""
+    note = _note()
+    adaptor, _ = _revisitor((note,), [_msg(7, "booked it")])
+    assert note.id not in await adaptor.inputs(key=WORKSPACE, batch=[])
+
+
+# ---------------------------------------------------------------------------
+# Evidence ORDER — a wrong order retires notes in the unrecoverable direction
+# ---------------------------------------------------------------------------
+
+
+async def test_the_evidence_is_rendered_oldest_first_as_its_header_claims():
+    """`recent` returns the newest rows OLDEST-FIRST. An earlier revision
+    reversed them, so the prompt read newest-first under a header saying
+    "newest last" — and the failure that causes is not cosmetic:
+
+        evidence, newest last:
+        [3] so we are back to nothing
+        [2] actually Yardbird cancelled on us
+        [1] booked Yardbird for the 9th
+
+    The model reads the last line as the latest word, answers `closed` citing
+    message 1, and that citation passes every grounding check in this module —
+    because the message IS in the evidence. A note about a cancelled dinner
+    gets retired, and nothing afterwards can tell it apart from one that was
+    genuinely settled.
+
+    Asserted on POSITION, not on membership: every message is present either
+    way, so a set assertion could not fail."""
+    adaptor, _ = _revisitor((_note(),), [
+        _msg(1, "booked Yardbird for the 9th", ts=11),
+        _msg(2, "actually Yardbird cancelled on us", ts=12),
+        _msg(3, "so we are back to nothing", ts=13),
+    ])
+    rendered = await adaptor.inputs(key=WORKSPACE, batch=[])
+    assert rendered.index("[1] ") < rendered.index("[2] ") < rendered.index("[3] ")
+
+
+async def test_noras_own_words_are_not_evidence():
+    """`recent` does NOT exclude `is_nora` rows — `since` does, in the query,
+    and its docstring says why. Her saying «I'll book Yardbird» is an intention
+    she stated, not the group settling anything, and closing a note on it is
+    self-attestation deciding a retirement.
+
+    Asserts the refusal too, not just the absence from the prompt: a model that
+    cited her anyway must fail the grounding check rather than merely be
+    unlikely to."""
+    adaptor, _ = _revisitor((_note(),), [
+        _msg(7, "I'll book Yardbird for the 9th", is_nora=True),
+        _msg(8, "sounds good", ts=11),
+    ])
+    rendered = await adaptor.inputs(key=WORKSPACE, batch=[])
+    assert "I'll book Yardbird" not in rendered
+    assert await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "closed", "cited_message_id": 7},
+    ]) == ()
+
+
+async def test_the_speaker_is_the_roster_name_when_there_is_one():
+    """`observer._build_prompt`'s order: `person_name` is operator-authored and
+    is what the roster knows somebody by; `sender_name` is whatever display
+    name the platform is carrying today."""
+    adaptor, _ = _revisitor(
+        (_note(),), [_msg(7, "booked it", person_name="Tyler")],
+    )
+    rendered = await adaptor.inputs(key=WORKSPACE, batch=[])
+    assert "[7] Tyler:" in rendered
+
+
+# ---------------------------------------------------------------------------
+# Two workspaces, one instance — the concurrency the loop actually runs
+# ---------------------------------------------------------------------------
+
+
+async def test_a_sibling_workspace_cannot_wipe_what_this_one_asked():
+    """`dream_loop` dispatches one task per (adaptor, key) and its `running`
+    lock is PER-UNIT: one key's inputs/accept pair is non-overlapping, and
+    nothing makes two DIFFERENT keys' pairs non-overlapping. The live
+    `policy.toml` has two workspaces, so this is a deployed configuration, not
+    a hypothetical.
+
+    With a bare `_asked` attribute, workspace B's `inputs` wipes workspace A's
+    map, and A's grounded, correct verdict is dropped and counted
+    `reason="unknown_note"` — the label whose own spec text says «one
+    hallucinated identifier away». A WIRING GAP reported as a MODEL FAULT,
+    inside the instrument built to refuse exactly that collapse.
+
+    Interleaved in the order the loop can actually produce: A.inputs,
+    B.inputs, A.accept, B.accept."""
+    metrics = Metrics()
+    note_a, note_b = _note("note-a"), _note("note-b")
+    store = _FakeNoteStore((note_a, note_b))
+
+    class _PerWorkspace(_FakeNoteStore):
+        async def standing(self, *, workspace):
+            return (note_a,) if workspace == "ws-a" else (note_b,)
+
+    per_ws = _PerWorkspace((note_a, note_b))
+    adaptor = NoteRevisitor(
+        notes=per_ws, record=_FakeRecord({"g1": [_msg(7, "booked it")]}),
+        metrics=metrics, clock=lambda: NOW_MS,
+    )
+
+    await adaptor.inputs(key="ws-a", batch=[])
+    await adaptor.inputs(key="ws-b", batch=[])
+    a_out = await adaptor.accept(key="ws-a", items=[
+        {"note": "1", "verdict": "closed", "cited_message_id": 7},
+    ])
+    b_out = await adaptor.accept(key="ws-b", items=[
+        {"note": "1", "verdict": "closed", "cited_message_id": 7},
+    ])
+
+    assert [r.note_id for r in a_out] == ["note-a"], "workspace A's verdict was lost"
+    assert [r.note_id for r in b_out] == ["note-b"]
+    assert metrics.get("nora_note_revisit_refused_total", reason="unknown_note") == 0
+    assert store.calls == []
+
+
+# ---------------------------------------------------------------------------
+# The boundary the injected clock exists to make writable
+# ---------------------------------------------------------------------------
+
+
+async def test_a_note_is_not_due_on_the_last_instant_of_its_own_anchor_day():
+    """END of the day, not the start: a note anchored to the 9th is not stale
+    at 00:00 on the 9th, and it is still not stale at 23:59:59.999. One
+    millisecond later it is. Writable only because the clock is injected —
+    with a wall-clock fixture this boundary cannot be expressed at all."""
+    # 2026-09-09T00:00:00Z + one day - 1ms
+    last_instant = 1_788_912_000_000 + DAY_MS - 1
+    note = (_note(anchor_date=20260909),)
+    on_boundary, _ = _revisitor(note, [_msg(1, "hi")], now_ms=last_instant)
+    just_after, _ = _revisitor(note, [_msg(1, "hi")], now_ms=last_instant + 1)
+
+    assert await on_boundary.inputs(key=WORKSPACE, batch=[]) == ""
+    assert "### note 1" in await just_after.inputs(key=WORKSPACE, batch=[])
+
+
+# ---------------------------------------------------------------------------
+# Two verdicts, one note
+# ---------------------------------------------------------------------------
+
+
+async def test_two_verdicts_for_one_note_produce_one_retirement():
+    """Superseding twice would fire this module's own `result="no_rows"` alarm
+    on the second call — a false positive on the counter built to make a real
+    silent no-op visible."""
+    adaptor, _ = _revisitor((_note(),), [_msg(7, "booked it")])
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    out = await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "closed", "cited_message_id": 7},
+        {"note": "1", "verdict": "closed", "cited_message_id": 7},
+    ])
+    assert len(out) == 1
+
+
+async def test_expiry_is_refused_on_the_last_instant_of_the_anchor_day():
+    """The OTHER boundary, and the one that actually permits a retirement.
+
+    `_is_due` and `anchor_passed` are two separate comparisons against the same
+    end-of-day instant, and only the first is exercised by the due-ness test
+    above — a note sitting exactly on its anchor's last instant is not due, so
+    it never reaches `accept` by that route. `revisit_at` is what makes the
+    state reachable: the note IS due, and its moment has still not gone by.
+
+    Mutating `now_ms > anchor_end` to `>=` left the whole file green before
+    this existed, which is exactly the shape of an untested guard on a
+    destructive path."""
+    last_instant = 1_788_912_000_000 + DAY_MS - 1
+    metrics = Metrics()
+    adaptor, _ = _revisitor(
+        (_note(anchor_date=20260909, revisit_at=1),),
+        [_msg(7, "nothing settled")], metrics=metrics, now_ms=last_instant,
+    )
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    assert await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "expired", "cited_message_id": None},
+    ]) == ()
+    assert metrics.get(
+        "nora_note_revisit_refused_total", reason="anchor_not_passed") == 1

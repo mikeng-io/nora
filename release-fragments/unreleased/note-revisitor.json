@@ -5,11 +5,13 @@
     "A note is only looked at once its moment arrives: either the date it was about has passed, or it was explicitly marked to be revisited then. A note with no date attached is never swept.",
     "To close a note as settled, she has to point at the specific message that settled it, and that message has to be one she was actually shown. A note she cannot point at stays open.",
     "A note is only marked as having gone by unanswered when the date really has passed AND there was conversation to judge it against. If the group has said nothing since the note was written, that is not an answer and the note stays.",
-    "Merging related notes is the curator's job and this pass will not do it."
+    "Merging related notes is the curator's job and this pass will not do it.",
+    "She judges a note against what the group said, never against her own messages: her saying she will book somewhere is an intention, not the group settling it."
   ],
   "limitations": [
     "This is the retirement half only. The revisitor cannot yet reach a person about a note whose moment has come — that needs a background pass to be allowed to schedule a reminder, which is a change to a shared rule about what background work may do, and is deliberately not made here.",
     "Ships off. It runs only when both the research loop and the note tier are switched on, and nothing writes a note yet, so today it has nothing to read.",
-    "It judges a note against the conversation the note was born in, capped at the most recent messages. A note settled somewhere else in the same workspace will read as unresolved and stay open."
+    "It judges a note against the conversation the note was born in, capped at the most recent messages. A note settled somewhere else in the same workspace will read as unresolved and stay open.",
+    "A note's date is read as ending at midnight UTC while the deployment runs in Hong Kong time, so a note anchored to the 9th is only treated as past at 08:00 local on the 10th. It errs late rather than early, so it cannot close out a note whose evening has not happened yet."
   ]
 }

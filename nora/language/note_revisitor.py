@@ -40,6 +40,32 @@ establishes that nobody has spoken. Treating silence as an answer is the exact
 substitution this tier's whole design refuses, and it is why `retired-expired`
 is not reachable from a passed anchor date alone.
 
+## The envelope carries an OPAQUE HANDLE, never a note id
+
+**This is the defect that made the whole tier inert, and it is worth stating
+before the design.** `DreamerRuntime` runs `nora.agent.dream_screen.screen`
+over the model's raw envelope items **before** `accept` is called, and that
+screen walks every string reachable in an item and drops the WHOLE item on a
+match. A note id is `str(uuid4())`, `egress._UUID` matches any hyphenated UUID,
+and an earlier revision of this module asked the model to echo `note_id` back —
+so **every item was screened, always**, and the only trace was a generic
+`nora_dream_screened_total{reason="identifier"}`. The tier's own five counters
+showed candidates climbing and verdicts, refusals and retirements flat, which
+reads as a model that stopped answering. This adaptor was the first to put a
+UUID in an envelope item, so no earlier tier had tripped it.
+
+So the prompt renders a **per-tick ordinal** — `1`, `2`, `3` — and `_accept_one`
+maps it back through the asked-set. The map had to exist anyway (see below), so
+this costs nothing, and it takes the UUIDs out of the prompt as a second win.
+
+**The schema is deliberately minimal for the same reason.** Every
+model-authored string in an item is a chance for the screen to drop a correct
+verdict — a `why` field quoting a phone number out of the evidence would
+silently kill the retirement it was explaining. The citation IS the
+explanation, so there is no free-text field. **Widening the screen for this
+tier was rejected**: it is a shared security rule, and widening it for one
+caller is how such a rule dies.
+
 ## Why the model does not get to decide alone
 
 The verdict is semantic and belongs to a model. The GROUNDING is not, and this
@@ -134,7 +160,7 @@ sits in.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -170,6 +196,16 @@ _BECAUSE = {
 }
 
 _MS_PER_DAY = 86_400_000
+
+
+def _now_ms() -> int:
+    """The default `clock` collaborator. Defined here, above the class, because
+    it is a default ARGUMENT rather than a call — a module-level function is
+    the smallest thing that satisfies `Callable[[], int]` without a
+    module-level mutable singleton, which DEC-13 forbids."""
+    import time
+
+    return int(time.time() * 1000)
 
 
 class _NoteStore(DreamSink, Protocol):
@@ -231,6 +267,10 @@ class _Candidate:
     """One note this tick will ask about, with the evidence it will be judged
     against. Built entirely in code — the model chooses nothing here."""
 
+    # The per-tick ordinal the prompt renders and a verdict echoes back. NOT
+    # the note id: a UUID in an envelope item is dropped by the Dreamer's
+    # egress screen before `accept` ever runs — see the module docstring.
+    handle: str
     note: Note
     evidence: tuple[TranscriptRow, ...]
     anchor_passed: bool
@@ -260,6 +300,16 @@ def _anchor_end_ms(anchor_date: int) -> int | None:
     Returns `None` rather than raising on a malformed value, and the caller
     treats `None` as «not decidable» — an unreadable anchor must leave the note
     standing, not expire it.
+
+    **UTC, while the deployment runs in HKT — stated rather than fixed.** A
+    note anchored to the 9th therefore only reads as passed at 08:00 local on
+    the 10th. That is the CONSERVATIVE direction (it retires later, never
+    earlier, so it cannot expire a note whose evening has not happened yet) and
+    it is why this is recorded instead of changed: picking a timezone is a
+    decision about what a note's DATE MEANS to the people writing it, and that
+    is the operator's, not this module's. *The reading that would settle it:*
+    a note whose anchor day matters to within a few hours — a same-day
+    deadline rather than a dinner.
     """
     import datetime as _dt
 
@@ -289,7 +339,7 @@ def _render_note(candidate: _Candidate) -> str:
     reasoned about; one that is omitted cannot.
     """
     lines = [
-        f"### note {candidate.note.id}",
+        f"### note {candidate.handle}",
         f"title: {candidate.note.title}",
         f"uncertain: {candidate.note.uncertainty}",
         f"closing condition: {candidate.note.closing_condition}",
@@ -311,7 +361,11 @@ def _render_note(candidate: _Candidate) -> str:
         return "\n".join(lines)
     lines.append("evidence, newest last:")
     for row in candidate.evidence:
-        speaker = row.sender_name or row.sender_id
+        # `person_name` first, matching `nora.language.observer._build_prompt`:
+        # it is the operator-authored name the roster knows somebody by, and
+        # falling straight to the platform's `sender_name` renders whatever
+        # display name they happen to be using today.
+        speaker = row.person_name or row.sender_name or row.sender_id
         lines.append(f"[{row.id}] {speaker}: {row.body or ''}")
     return "\n".join(lines)
 
@@ -345,17 +399,42 @@ class NoteRevisitor:
         max_revisits_per_tick: int = DEFAULT_MAX_REVISITS_PER_TICK,
         evidence_messages_per_note: int = DEFAULT_EVIDENCE_MESSAGES_PER_NOTE,
         metrics: Metrics | None = None,
+        clock: Callable[[], int] = _now_ms,
     ) -> None:
         self._notes = notes
         self._record = record
         self._max_revisits = max_revisits_per_tick
         self._evidence_limit = evidence_messages_per_note
         self._metrics = metrics
-        # What this tick ASKED about, keyed by note id — the join a verdict is
-        # checked against in `accept`. Rebuilt by every `inputs` call and never
-        # merged across ticks: a note id from a previous tick is exactly as
-        # unaskable as one the model invented.
-        self._asked: dict[str, _Candidate] = {}
+        # A COLLABORATOR, not a test hook. `inputs` has no `now_ms` parameter
+        # (`commit` does), and «has this note's moment passed» is one of the two
+        # grounds for an irreversible action — so it has to be testable ON the
+        # boundary, not merely near it. Without this, fixtures are dated against
+        # the wall clock and a boundary case cannot be written at all; worse,
+        # a date chosen to be safely in the future silently stops testing
+        # anything the day it arrives, and it stops by rendering nothing, which
+        # reads as passing.
+        self._clock = clock
+        # What this tick ASKED about: `key -> handle -> candidate`, the join a
+        # verdict is checked against in `accept`.
+        #
+        # **Keyed by `key` and not a bare attribute**, following
+        # `nora.language.fact_adaptor`'s `_message_ids` and its stated reason:
+        # `dream_loop` dispatches each key as its own task and its per-(adaptor,
+        # key) `running` lock makes ONE key's inputs/accept pair
+        # non-overlapping, while nothing makes two DIFFERENT keys' pairs
+        # non-overlapping. A bare attribute is wiped by a sibling workspace
+        # mid-flight, and the live `policy.toml` has two — so workspace A's
+        # grounded verdict would be dropped and counted `unknown_note`, a
+        # WIRING GAP reported as a model fault, inside the instrument built to
+        # refuse exactly that. Bounded by the number of workspaces, which
+        # `policy.toml` fixes at startup.
+        #
+        # One key's entry is REPLACED wholesale by its own `inputs` call, never
+        # merged: a handle from a previous tick is exactly as unaskable as one
+        # the model invented, because the evidence that justified asking is
+        # gone and the ordinals have been reused.
+        self._asked: dict[str, dict[str, _Candidate]] = {}
 
     # -- inputs -------------------------------------------------------------
 
@@ -371,10 +450,10 @@ class NoteRevisitor:
         with no moment attached, and asking a model to decide whether an
         undated question has gone stale is asking it to invent a deadline.
         """
-        self._asked = {}
+        asked: dict[str, _Candidate] = {}
         standing = await self._notes.standing(workspace=key)
         self._gauge("nora_note_revisit_standing", float(len(standing)), workspace=key)
-        now_ms = _now_ms()
+        now_ms = self._clock()
         due = [n for n in standing if _is_due(n, now_ms=now_ms)]
         if len(due) > self._max_revisits:
             # NAMED, not silent. A tick that judged ten of forty due notes and
@@ -388,18 +467,27 @@ class NoteRevisitor:
             due = due[: self._max_revisits]
 
         rendered: list[str] = []
-        for note in due:
-            candidate = await self._candidate(note, now_ms=now_ms)
-            self._asked[note.id] = candidate
+        for ordinal, note in enumerate(due, start=1):
+            candidate = await self._candidate(
+                note, now_ms=now_ms, handle=str(ordinal),
+            )
+            asked[candidate.handle] = candidate
             # ONCE per candidate, from the single value that decided it.
             self._inc(
                 "nora_note_revisit_candidates_total",
                 evidence=candidate.evidence_state,
             )
             rendered.append(_render_note(candidate))
+        # Assigned at the END, as one replacement rather than mutated in place,
+        # so a concurrent `accept` for this key either sees the whole previous
+        # tick or the whole new one — never a half-built map missing the note it
+        # is being asked about.
+        self._asked[key] = asked
         return "\n\n".join(rendered)
 
-    async def _candidate(self, note: Note, *, now_ms: int) -> _Candidate:
+    async def _candidate(
+        self, note: Note, *, now_ms: int, handle: str,
+    ) -> _Candidate:
         """One note plus the evidence it will be judged against.
 
         Filtered to messages that POSTDATE the note: a closing condition cannot
@@ -425,8 +513,28 @@ class NoteRevisitor:
             )
             rows = []
             state = "unavailable"
+        # `RecordStore.recent` returns the newest `limit` rows **OLDEST-FIRST**
+        # — its own docstring says so and
+        # `tests/contract/test_audit_store_contract.py::
+        # test_recent_returns_rows_oldest_first` pins it on both
+        # implementations. An earlier revision reversed them here, which put
+        # the prompt in newest-first order under a header reading "newest
+        # last": the model then read the OLDEST message as the latest word and
+        # could close a note by citing a booking that a later message had
+        # already cancelled — a citation that passes every grounding check,
+        # retiring a note in the unrecoverable direction. Do not reorder.
+        #
+        # `is_nora` rows are excluded HERE because `recent` does not exclude
+        # them (`since` does, in the query, and its docstring says why: "so a
+        # caller can never forget to filter Nora's own words out of the
+        # evidence the Dreamer derives from"). Her saying «I'll book Yardbird
+        # for the 9th» is an intention she stated, not the group settling
+        # anything — closing a note on it is self-attestation deciding a
+        # retirement, which is the one thing no measure in this repo may rest
+        # on.
         evidence = tuple(
-            row for row in reversed(rows) if row.ts > note.created_at
+            row for row in rows
+            if row.ts > note.created_at and not row.is_nora
         )
         if state != "unavailable" and not evidence:
             state = "absent"
@@ -434,6 +542,7 @@ class NoteRevisitor:
             _anchor_end_ms(note.anchor_date) if note.anchor_date is not None else None
         )
         return _Candidate(
+            handle=handle,
             note=note,
             evidence=evidence,
             anchor_passed=anchor_end is not None and now_ms > anchor_end,
@@ -452,14 +561,24 @@ class NoteRevisitor:
         that note, which leaves it standing. There is no path here that retires
         a note on a doubt.
         """
+        asked = self._asked.get(key, {})
         out: list[NoteRetirement] = []
+        # One retirement per NOTE. Two `closed` items naming the same note are
+        # one decision stated twice, and superseding twice would fire this
+        # module's own `result="no_rows"` alarm on the second call — a false
+        # positive on the counter built to make a real silent no-op visible.
+        seen: set[str] = set()
         for item in items:
-            retirement = self._accept_one(item)
-            if retirement is not None:
-                out.append(retirement)
+            retirement = self._accept_one(item, asked=asked)
+            if retirement is None or retirement.note_id in seen:
+                continue
+            seen.add(retirement.note_id)
+            out.append(retirement)
         return tuple(out)
 
-    def _accept_one(self, item: Mapping[str, object]) -> NoteRetirement | None:
+    def _accept_one(
+        self, item: Mapping[str, object], *, asked: Mapping[str, _Candidate],
+    ) -> NoteRetirement | None:
         """One verdict, or `None` with a counted reason.
 
         The order is deliberate and each step is a different question:
@@ -475,11 +594,21 @@ class NoteRevisitor:
            the clock for `expired`. This is where a plausible answer stops being
            enough.
         """
-        note_id = item.get("note_id")
-        if not isinstance(note_id, str) or note_id not in self._asked:
+        handle = item.get("note")
+        # Accepted as `int` too: the handle is an ordinal rendered into the
+        # prompt, and a model answering 1 rather than "1" has pointed at the
+        # same note. `bool` is excluded for the reason the citation check gives
+        # below — `isinstance(True, int)` is True, and `str(True)` is not a
+        # handle anyone rendered, but relying on that is relying on an
+        # accident.
+        if isinstance(handle, bool) or not isinstance(handle, (str, int)):
             self._refuse("unknown_note")
             return None
-        candidate = self._asked[note_id]
+        candidate = asked.get(str(handle).strip())
+        if candidate is None:
+            self._refuse("unknown_note")
+            return None
+        note_id = candidate.note.id
 
         verdict = item.get("verdict")
         if not isinstance(verdict, str) or verdict.strip().lower() not in _VERDICTS:
@@ -639,8 +768,3 @@ def _is_due(note: Note, *, now_ms: int) -> bool:
     end = _anchor_end_ms(note.anchor_date)
     return end is not None and now_ms > end
 
-
-def _now_ms() -> int:
-    import time
-
-    return int(time.time() * 1000)

@@ -884,6 +884,14 @@ async def test_the_revisitor_is_wired_and_is_not_silently_inert(cfg):
     assert revisitor.uses_watermark is False
     assert revisitor.tools == frozenset()
     assert revisitor.objective == "note-revisit"
+    # The envelope key the runtime parses, and the field name inside an item,
+    # are BOTH load-bearing against the Dreamer's egress screen: an item
+    # carrying a note's `str(uuid4())` id is dropped wholesale before `accept`
+    # ever runs, which is what made an earlier revision of this adaptor 100%
+    # inert with no counter of its own moving. `tests/unit/test_note_revisitor
+    # .py::test_a_verdict_survives_the_dreamers_egress_screen` is the real
+    # guard; this pins the envelope key it is asserted against.
+    assert revisitor.envelope_key == "revisits"
 
 
 async def test_the_revisitor_is_additive_to_the_fact_tiers_adaptors(cfg):

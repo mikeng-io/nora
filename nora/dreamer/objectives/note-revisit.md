@@ -63,7 +63,11 @@ if either is missing, the answer you want is **unresolved**.
 Respond with ONLY a JSON object of this exact shape, nothing else — no prose, no markdown
 fence:
 
-{"revisits": [{"note_id": "<the id from the entry heading>", "verdict": "closed|expired|unresolved", "cited_message_id": <int, required when verdict is closed, otherwise null>, "why": "<one sentence, what in the evidence decided it>"}]}
+{"revisits": [{"note": "<the number from the entry heading>", "verdict": "closed|expired|unresolved", "cited_message_id": <int, required when verdict is closed, otherwise null>}]}
+
+`note` is the number in the entry's own heading — `### note 3` is `"3"`. Use that and
+nothing else; any other identifier will be refused.
 
 Report an entry for every note you were given, including the ones you are leaving
-unresolved. If there are no notes, respond with exactly: {"revisits": []}
+unresolved. Report nothing else — no explanation field, no extra keys. If there are no
+notes, respond with exactly: {"revisits": []}
