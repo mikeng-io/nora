@@ -462,6 +462,96 @@ class SqlNoteStore:
             rows = (await conn.execute(stmt)).all()
         return tuple((_row_to_note(r), r.body) for r in rows)
 
+    # ---- merge: the one cross-note write, in one transaction ---------------
+
+    async def merge(
+        self,
+        *,
+        workspace: str,
+        survivor: str,
+        survivor_parent: str,
+        merged_body: str,
+        retire: Sequence[str],
+        established_by: str,
+        instruction_sha256: str | None,
+        model: str | None,
+        now_ms: int,
+    ) -> int:
+        """Append `merged_body` to `survivor` AND retire `retire`, atomically.
+        Returns notes retired.
+
+        **THIS VERB EXISTS BECAUSE OF A REVIEW FINDING, and the finding was
+        that my own justification did not hold.** `propose` was made atomic on
+        the argument that «a merge appends the merged body to the survivor,
+        then retires the originals, and a half-applied merge is the one outcome
+        worse than not running». True — and `supersede` is a SEPARATE verb
+        opening its own transaction, so the named scenario stayed fully
+        reachable: survivor carrying merged text beside a duplicate nobody
+        retired, caller told nothing happened.
+
+        **The alternative was to keep two transactions and argue it is safe**,
+        and that argument can actually be made: `merge_groups` is a `GROUP BY`
+        over LIVE rows rather than a watermark, so an unretired duplicate is
+        still a duplicate next tick and the pass would retry. The ordering is
+        also deliberately fail-safe — appending first means a crash duplicates
+        content, where retiring first would LOSE it.
+
+        **It was rejected because it is reasoning a future reader has to
+        reconstruct.** Both halves are true today and both are properties of
+        code somewhere else: the selection read staying derived rather than
+        cursored, and the order of two calls in a caller this store does not
+        own. A transaction is checkable by looking at one function. The
+        retry argument also has a real cost even when it works — re-merging a
+        survivor that already holds the content grows the body every tick, and
+        §5.2 has no upper bound on body size.
+
+        **Not on `DreamSink`.** That port has two verbs and deliberately no
+        third; this is a store method the note curator's `commit` calls
+        directly, which is where a tier's own write SEQUENCE belongs
+        (`FactAdaptor.commit` does propose-then-supersede-then-retire for the
+        same reason).
+
+        The CAS on the survivor is unchanged and unweakened: if the tag path
+        revised it while the curator was thinking, the whole merge is refused
+        and nothing is retired.
+        """
+        revision = NoteRevision(
+            id=str(uuid4()), note_id=survivor, body=merged_body,
+            parent_revision_id=survivor_parent, written_at=now_ms,
+            established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
+        )
+        if not _is_uuid(survivor) or not _is_uuid(survivor_parent):
+            raise StaleNoteHeadError(
+                f"survivor {survivor!r} is not a note id this store could look "
+                f"up — read it again",
+                observed_head=None,
+            )
+        targets = [n for n in retire if _is_uuid(n) and n != survivor]
+        async with self._engine.begin() as conn:
+            # The append FIRST, so a lost CAS refuses before anything is
+            # retired. Inside one transaction the order cannot matter for
+            # atomicity — it matters for which failure the caller sees, and «I
+            # could not revise the survivor» is the honest one.
+            await self._append_on_conn(
+                conn, workspace=workspace, revision=revision,
+            )
+            if not targets:
+                return 0
+            result = await conn.execute(
+                sa.update(NOTE)
+                .where(
+                    NOTE.c.id.in_(targets),
+                    NOTE.c.workspace == workspace,
+                    NOTE.c.retired_at.is_(None),
+                )
+                .values(
+                    retired_at=now_ms, replaced_by=survivor,
+                    retire_reason=NoteSupersedeReason.MERGED,
+                )
+            )
+            return int(result.rowcount)
+
     # ---- the curator's selection reads (§9.2) ------------------------------
     #
     # Both are SQL-ONLY and cost zero tokens. That is the payoff of anchoring

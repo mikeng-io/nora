@@ -1262,3 +1262,106 @@ async def test_a_second_proposal_may_not_redeclare_a_different_parent(
     assert found[1].body not in {"first", "second"}, (
         "the refusal is decided before anything is written"
     )
+
+
+# --- merge: the one cross-note write, and it is atomic ---------------------
+
+
+async def test_merge_appends_to_the_survivor_and_retires_the_rest(
+    notes: _Harness,
+) -> None:
+    survivor = await _make(notes.store, title="Grant wedding", anchor_date=20261011)
+    dup = await _make(notes.store, title="Grant's wedding", anchor_date=20261011)
+
+    retired = await notes.store.merge(
+        workspace=WS, survivor=survivor.id,
+        survivor_parent=survivor.head_revision_id,
+        merged_body="Both shortlists, and the disagreement about the date.",
+        retire=(dup.id,), established_by="run-curator-1",
+        instruction_sha256="a" * 64, model="curator-model", now_ms=NOW + 9,
+    )
+
+    assert retired == 1
+    assert [n.id for n in await notes.store.standing(workspace=WS)] == [survivor.id]
+    head = await notes.store.read(workspace=WS, note_id=survivor.id)
+    assert head is not None
+    assert head[1].body == "Both shortlists, and the disagreement about the date."
+    gone = await notes.store.read(workspace=WS, note_id=dup.id)
+    assert gone is not None
+    assert gone[0].replaced_by == survivor.id
+    assert gone[0].retire_reason == NoteSupersedeReason.MERGED
+
+
+async def test_a_merge_that_loses_the_cas_retires_nothing(
+    notes: _Harness,
+) -> None:
+    """**The finding this verb exists for.** `propose` was made atomic on the
+    argument that a merge must not proceed on the half that landed — and
+    `supersede` opened its own transaction, so the named scenario stayed fully
+    reachable. If the tag path revised the survivor while the curator was
+    thinking, the whole merge is refused and the duplicate stays standing."""
+    survivor = await _make(notes.store, title="Grant wedding", anchor_date=20261011)
+    dup = await _make(notes.store, title="Grant's wedding", anchor_date=20261011)
+    # The tag path gets there first.
+    await notes.store.append_revision(
+        workspace=WS, note_id=survivor.id, body="Miles says the 12th now.",
+        parent_revision_id=survivor.head_revision_id,
+        established_by="tag:miles", now_ms=NOW + 1,
+    )
+
+    with pytest.raises(StaleNoteHeadError):
+        await notes.store.merge(
+            workspace=WS, survivor=survivor.id,
+            survivor_parent=survivor.head_revision_id,
+            merged_body="a merge written against a body that moved",
+            retire=(dup.id,), established_by="run-curator-1",
+            instruction_sha256="a" * 64, model="curator-model", now_ms=NOW + 9,
+        )
+
+    standing = {n.id for n in await notes.store.standing(workspace=WS)}
+    assert dup.id in standing, "a refused merge retires nothing"
+    head = await notes.store.read(workspace=WS, note_id=survivor.id)
+    assert head is not None
+    assert head[1].body == "Miles says the 12th now.", (
+        "the tag path's revision stands; the curator's is not applied over it"
+    )
+
+
+async def test_merge_never_retires_the_survivor_itself(notes: _Harness) -> None:
+    """A model naming the survivor among the duplicates would otherwise retire
+    the note it just wrote into, leaving a workspace whose merged content is
+    only reachable through a retired row."""
+    survivor = await _make(notes.store, anchor_date=20261011)
+    dup = await _make(notes.store, anchor_date=20261011)
+
+    retired = await notes.store.merge(
+        workspace=WS, survivor=survivor.id,
+        survivor_parent=survivor.head_revision_id, merged_body="everything",
+        retire=(survivor.id, dup.id), established_by="run-curator-1",
+        instruction_sha256="a" * 64, model="m", now_ms=NOW + 9,
+    )
+
+    assert retired == 1
+    assert [n.id for n in await notes.store.standing(workspace=WS)] == [survivor.id]
+
+
+async def test_merge_cannot_retire_another_workspaces_note(
+    notes: _Harness,
+) -> None:
+    survivor = await _make(notes.store, anchor_date=20261011)
+    theirs = await _make(
+        notes.store, workspace="another-workspace", anchor_date=20261011,
+    )
+
+    retired = await notes.store.merge(
+        workspace=WS, survivor=survivor.id,
+        survivor_parent=survivor.head_revision_id, merged_body="everything",
+        retire=(theirs.id,), established_by="run-curator-1",
+        instruction_sha256="a" * 64, model="m", now_ms=NOW + 9,
+    )
+
+    assert retired == 0
+    still = await notes.store.read(
+        workspace="another-workspace", note_id=theirs.id,
+    )
+    assert still is not None and still[0].retired_at is None

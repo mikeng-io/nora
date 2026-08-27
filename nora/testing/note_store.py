@@ -249,6 +249,59 @@ class InMemoryNoteStore:
                 hits.append((note, body))
         return tuple(hits[:limit])
 
+    async def merge(
+        self,
+        *,
+        workspace: str,
+        survivor: str,
+        survivor_parent: str,
+        merged_body: str,
+        retire: Sequence[str],
+        established_by: str,
+        instruction_sha256: str | None,
+        model: str | None,
+        now_ms: int,
+    ) -> int:
+        """`SqlNoteStore.merge`. Resolve-then-apply, like `propose`: the CAS is
+        decided before anything is retired, so a lost CAS leaves the notebook
+        untouched here as well as in Postgres."""
+        note = self.notes.get(survivor)
+        if (
+            note is None
+            or note.workspace != workspace
+            or note.head_revision_id != survivor_parent
+        ):
+            raise StaleNoteHeadError(
+                f"survivor {survivor} changed under you or is not in "
+                f"workspace {workspace!r} — read it again",
+                observed_head=(
+                    note.head_revision_id
+                    if note is not None and note.workspace == workspace
+                    else None
+                ),
+            )
+        revision = NoteRevision(
+            id=f"rev-{next(self._ids)}", note_id=survivor, body=merged_body,
+            parent_revision_id=survivor_parent, written_at=now_ms,
+            established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
+        )
+        targets = [
+            n for n in retire
+            if n != survivor
+            and (t := self.notes.get(n)) is not None
+            and t.workspace == workspace
+            and t.retired_at is None
+        ]
+        self.revisions[revision.id] = revision
+        self.notes[survivor] = replace(note, head_revision_id=revision.id)
+        for target in targets:
+            self.notes[target] = replace(
+                self.notes[target], retired_at=now_ms, replaced_by=survivor,
+                retire_reason=NoteSupersedeReason.MERGED,
+            )
+        return len(targets)
+
     async def merge_groups(
         self, *, workspace: str, limit: int,
     ) -> tuple[tuple[Note, ...], ...]:
