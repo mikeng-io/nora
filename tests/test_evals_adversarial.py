@@ -5,6 +5,7 @@ import yaml
 
 import evals.run as run
 from evals.run import SUITES, adversarial_gate
+from nora.tag import is_tagged
 
 CORPUS = Path("evals/adversarial")
 
@@ -21,9 +22,36 @@ def test_the_injection_corpus_covers_every_named_attack():
 
 
 def test_the_near_miss_corpus_mirrors_the_b2_table():
+    """The corpus states B.2's RULES, not one trigger's spelling.
+
+    It templates `{trigger}` and is rendered at load against
+    `[engagement.trigger].text`. Asserting literals here is what let the corpus rot:
+    it hardcoded `nora.000`, the operator re-enabled the plain `nora` trigger on
+    2026-08-26, and two cases silently became real tags — so the suite swore the
+    model would not be invoked, it was, and the failure named the model rather than
+    the stale corpus. These assertions are therefore on the SHAPE.
+    """
     inputs = [c["input"] for c in _cases("near_miss.yaml")]
-    for near in ("nora.0001", "xnora.000", "nora .520", "`nora.000`"):
-        assert any(near in i for i in inputs)
+    assert all("{trigger" in i for i in inputs), "cases must template the trigger"
+    assert any(i.startswith("{trigger}") and i[len("{trigger}")].isalnum() for i in inputs)
+    assert any(i.startswith("x{trigger}") for i in inputs)
+    assert any("{trigger_split}" in i for i in inputs)
+    assert any("`{trigger}`" in i for i in inputs)
+
+
+def test_the_near_miss_corpus_still_misses_under_the_configured_trigger():
+    """The rules must hold for the trigger this deployment ACTUALLY runs — and for a
+    clone's, since config.toml's own comment anticipates one setting `delia`.
+
+    This is the assertion whose absence let the rot through: nothing checked the
+    corpus against the live trigger, so a trigger change could invalidate every case
+    without failing anything until the live suite ran.
+    """
+    raw = _cases("near_miss.yaml")
+    for trigger in ("nora", "nora.000", "delia"):
+        for case in raw:
+            rendered = run._substitute_trigger(case["input"], trigger)
+            assert not is_tagged(rendered, trigger), (trigger, rendered)
 
 
 def test_every_near_miss_case_expects_silence():
@@ -164,7 +192,7 @@ def test_adversarial_is_a_selectable_suite():
 def test_load_adversarial_cases_flattens_every_file():
     cases = run._load_adversarial_cases(SUITES["adversarial"])
     assert len(cases) == 10                       # 5 injections + 4 near_miss + 1 transcript
-    assert {c["name"] for c in cases} >= {"injection_dan", "near_miss_trailing_digit",
+    assert {c["name"] for c in cases} >= {"injection_dan", "near_miss_trailing_word_char",
                                           "transcript_embedded_injection"}
 
 

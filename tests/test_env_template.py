@@ -82,6 +82,16 @@ _MAY_DIFFER = {
     "image_gen.enabled",
     # Env-var NAMES are the operator's choice of what to call a secret.
     "media.encryption_key_env",
+    # Three live opt-ins, added 2026-08-27. Each is the deployment spending
+    # something the template must not spend on a fresh operator's behalf, which
+    # is the same rule `image_gen.enabled` sits under above — NOT drift.
+    #
+    # `allow_reference_images`: sending an existing image to the provider is a
+    # data-egress decision, so the template ships it off.
+    "image_gen.allow_reference_images",
+    # `autoplay_prewarm_seconds`: prewarming fetches a track nobody asked for
+    # yet. 0.0 is inert; the deployment opted in at 12s (R-64).
+    "music.autoplay_prewarm_seconds",
     # RustFS's own address, live here since 2026-08-23 (DEC-136 cutover) --
     # topology, the same bucket `llm.base_url` is in above, not an opt-in
     # flag (that one's a few lines down).

@@ -259,15 +259,40 @@ def _save_reply_cache(path: Path | None, cache: dict[str, str] | None) -> None:
         path.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
 
 
-def _load_adversarial_cases(paths: tuple[Path, ...]) -> list[dict]:
+def _substitute_trigger(text: str, trigger: str) -> str:
+    """Render a corpus case's `{trigger}` placeholders against the CONFIGURED trigger.
+
+    The near-miss corpus asserts that trigger-SHAPED text does not fire, so its cases
+    are rules about `nora.tag.is_tagged`'s boundaries, not literals. Hardcoding one
+    trigger couples the corpus to a value the operator owns: when the plain `nora`
+    trigger was re-enabled on 2026-08-26, two hardcoded `nora.000` cases became real
+    tags, the model was invoked where the corpus swore it would not be, and the gate
+    failed pointing at the model instead of at the stale corpus. Substituting here
+    means a trigger change — or a clone using `delia` — can never silently invalidate
+    the rules being tested.
+
+    `{trigger_split}` is the same trigger with a space after its first character, which
+    is how "broken by whitespace" is expressed for an arbitrary trigger string.
+    """
+    split = f"{trigger[:1]} {trigger[1:]}" if len(trigger) > 1 else trigger
+    return text.replace("{trigger_split}", split).replace("{trigger}", trigger)
+
+
+def _load_adversarial_cases(paths: tuple[Path, ...], trigger: str | None = None) -> list[dict]:
     """Flatten the `cases:`-wrapped adversarial yaml files into raw case dicts —
     unlike `evals.cases`' plain-list files, each `evals/adversarial/*.yaml` file wraps
     its list under a top-level `cases:` key (see `tests/test_evals_adversarial.py`).
+
+    When `trigger` is given, every case's `input` has its `{trigger}` placeholders
+    rendered against it (`_substitute_trigger`).
     """
     cases = []
     for path in paths:
         data = yaml.safe_load(path.read_text()) or {}
-        cases.extend(data.get("cases", []))
+        for case in data.get("cases", []):
+            if trigger is not None and isinstance(case.get("input"), str):
+                case = {**case, "input": _substitute_trigger(case["input"], trigger)}
+            cases.append(case)
     return cases
 
 
@@ -389,7 +414,7 @@ async def _run_adversarial_live(
         verdict_cache = _load_verdict_cache(verdict_cache_path)
 
         results = []
-        for case in _load_adversarial_cases(paths):
+        for case in _load_adversarial_cases(paths, cfg.engagement.trigger.text):
             key = _cache_key(
                 case, doctrine_sha256=doctrine.sha256, reply_model=cfg.llm.model,
                 judge_model=judge_model_id, judge_samples=cfg.evals.judge_samples,

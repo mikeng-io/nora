@@ -206,7 +206,7 @@ timeout_seconds = 120
 
 [llm.limits]
 turns = 20
-total_tokens = 128000
+total_tokens = 256000
 # The loop's OUTPUT budget across every call of the turn, deliberately not
 # `llm.max_tokens` (which is one call's ceiling). It was literally that number
 # until 2026-08-06, so the whole loop could emit what one call could — and
