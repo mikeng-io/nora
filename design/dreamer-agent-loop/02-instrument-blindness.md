@@ -195,7 +195,7 @@ a working tracing setup. **A partially-instrumented system reads exactly like an
 instrumented one from the outside**, which is Layer 5's argument applied to the
 tracer itself.
 
-## The silent-match family — five instances in one day
+## The silent-match family — six instances, and the sixth is ours
 
 Every layer above is an instrument that cannot see the thing it is credited
 with. **This section is one layer down**: the instruments we use to FIND those
@@ -212,6 +212,10 @@ never engaged with the thing it was pointed at. Every one of these was found by
 accident while looking for something else, which is the property that makes them
 worth naming as a family rather than fixing one at a time.
 
+**A sixth landed on 2026-08-28, and it is the one where the instrument was
+OURS rather than the code's** — see below the table for why it is not a
+duplicate of #3.
+
 | # | the matcher | what it returned | why it read as success |
 |---|---|---|---|
 | 1 | `LIKE '%note_%'` over `tag_trace` | 7 rows | `_` is a LIKE wildcard, so it matched `note` + any character. Seven *hits* is far more convincing than zero. The precise regex returns 0 |
@@ -219,9 +223,26 @@ worth naming as a family rather than fixing one at a time.
 | 3 | `str.replace(old, new)` anchored on `## 7.` | no exception | the file's next section was `## 6.`. The replace silently no-opped, the section was never written, and a RESOLVED banner was published pointing at it |
 | 4 | `version: 13` beside a changed body | green gate, clean merge | `sha256` is computed over the body and moved on its own, so the machine-checked half stayed correct while the human-readable half rotted |
 | 5 | a per-test `trace.set_tracer_provider` | passing fixture | it is **one-shot per process**: every later test silently reads the FIRST exporter, and the un-torn-down global then failed two timing tests elsewhere that passed in isolation |
+| 6 | an edit script whose `assert s.count(old) == 1` failed | `All checks passed!` · `47 passed` | the script raised and wrote NOTHING, but it ran beside `ruff` and `pytest` whose output was healthy **for the file it had not changed**. A metric label existed in code and never reached its spec; the endpoint emitted four values while the documentation described three, for two review rounds |
 
-**Three of these are matchers and two are globals, and that is not a second
-family.** #1–#3 fail to match; #4 and #5 fail to *reset*. Both hand back a value
+**#6 is the one instance where the tool did NOT lie, and that is what makes it
+worth its own paragraph.** #1–#3 returned a positive-looking answer to the
+question they were asked. #6's script asserted, raised, and reported the
+failure correctly — the silence was one layer out: **the adjacent instruments
+were green, and they were green about a file the script had never touched.**
+The rule this breaks is the bundle's own — *never read an instrument's output
+as evidence without first checking it can measure the thing* — inverted. The
+instrument was working; it was measuring something else, and «something else
+passed» was read as «this passed».
+
+That makes the family's remedy broader than «make it fail on purpose». For a
+multi-step edit, the check has to be **the edit's own effect** — grep for the
+text you just wrote — because a test suite passing after a no-op edit is
+exactly what a test suite does.
+
+**Three of these are matchers, two are globals, and one is a reading error,
+and that is still not three families.** #1–#3 fail to match; #4 and #5 fail to
+*reset*; #6 fails to be *read*. Both hand back a value
 indistinguishable from the value a correct run produces, and in both the
 verification step is the same one: **make it fail on purpose.** A test that has
 never been seen red is a claim, not a measurement — which is the bundle's own
@@ -287,6 +308,14 @@ in the one line nobody edits. Fixed by removing the number rather than
 correcting it to seven: a count in a title is a copy of something the document
 already states, and this node has now recorded that class twice in its own
 checkpoint while carrying an instance of it in its own heading.
+
+2026-08-28 — **a sixth silent-match instance**, and the first where the
+instrument was one of ours rather than one of the code's: an edit script raised,
+wrote nothing, and the `ruff`/`pytest` output beside it was green about the file
+it had not changed. A metric label lived in code and never reached its spec for
+two review rounds. It shifts the family's remedy: for a multi-step edit, verify
+the edit's OWN effect, because a suite passing after a no-op is what a suite
+does.
 
 2026-08-27 — **the silent-match family added**, five instances in one day across
 two sessions. It sits one level below the layers: the layers are instruments
