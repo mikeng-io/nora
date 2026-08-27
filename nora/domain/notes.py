@@ -328,6 +328,31 @@ class NoteCreationProposal:
         ):
             if not value or not value.strip():
                 raise ValueError(f"a proposed note needs {what}")
+        # THE SAME CAPS `Note` ENFORCES, mirrored here on purpose. This type's
+        # docstring argues that a refusal at the boundary is reviewable while a
+        # raise inside a tick is a log line nobody reads — and until 2026-08-27
+        # it copied only the anchor rule, so a 61-character title constructed
+        # fine and blew up at `_new_note` INSIDE `engine.begin()`, on the
+        # background clock, discarding the whole batch. That is exactly the
+        # failure this type exists to prevent, and the type did not implement
+        # it. A debrief model emitting a slightly long title is the likely
+        # case, not an exotic one.
+        if len(self.title) > TITLE_MAX_CHARS:
+            raise ValueError(
+                f"a note title is at most {TITLE_MAX_CHARS} characters (got "
+                f"{len(self.title)}) — the index is injected on EVERY tag, so "
+                f"this is a prompt-budget cap and not a style rule"
+            )
+        if len(self.description) > DESCRIPTION_MAX_CHARS:
+            raise ValueError(
+                f"a note description is at most {DESCRIPTION_MAX_CHARS} "
+                f"characters (got {len(self.description)})"
+            )
+        if self.anchor_date is not None and self.anchor_date < 10000000:
+            raise ValueError(
+                f"anchor_date is a YYYYMMDD calendar day, not epoch ms or a "
+                f"bare year (got {self.anchor_date})"
+            )
         if self.anchor_date is None and not self.anchor_entity_ids:
             raise ValueError(
                 "a proposed note needs an anchor — a date, entities, or both. "

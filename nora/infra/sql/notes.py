@@ -99,7 +99,7 @@ from uuid import UUID, uuid4
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Row
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.notes import (
     Note,
@@ -247,7 +247,7 @@ class SqlNoteStore:
 
     @staticmethod
     async def _create_on_conn(
-        conn: Any, *, note: Note, revision: NoteRevision,
+        conn: AsyncConnection, *, note: Note, revision: NoteRevision,
     ) -> None:
         """The two inserts, on a connection the CALLER owns — the `create`
         sibling of `_append_on_conn`, extracted for the same reason: which
@@ -369,7 +369,9 @@ class SqlNoteStore:
         return revision
 
     @staticmethod
-    async def _append_on_conn(conn: Any, *, workspace: str, revision: NoteRevision) -> None:
+    async def _append_on_conn(
+        conn: AsyncConnection, *, workspace: str, revision: NoteRevision,
+    ) -> None:
         """The CAS and the insert, on a connection the CALLER owns.
 
         Extracted so `propose` can run a whole batch in ONE transaction. It is a
@@ -454,6 +456,105 @@ class SqlNoteStore:
                 NOTE_REVISION.c.body.icontains(query, autoescape=True),
             )
             .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return tuple((_row_to_note(r), r.body) for r in rows)
+
+    # ---- the curator's selection reads (§9.2) ------------------------------
+    #
+    # Both are SQL-ONLY and cost zero tokens. That is the payoff of anchoring
+    # merge on `(anchor_date, entity_set)` rather than on topical similarity
+    # (§7.1): candidate detection is a `GROUP BY … HAVING count(*) > 1`, not a
+    # judgement, so **the model is never asked whether two notes should merge.**
+    # It is asked only what a body SAYS, which is the one thing SQL cannot read.
+
+    async def merge_groups(
+        self, *, workspace: str, limit: int,
+    ) -> tuple[tuple[Note, ...], ...]:
+        """Standing notes that share an anchor, grouped, most-collided first.
+
+        **The anchor is `(anchor_date, anchor_entity_ids)` and both halves
+        matter.** Two weddings on different dates are two notes; two notes
+        about the same date and the same people are one occasion written twice.
+        Topical similarity would merge the first pair — same vocabulary, same
+        shape, same kind of uncertainty — and that merge is unrecoverable in
+        the direction that matters, because two notes wrongly merged have
+        already lost which revision belonged to which occasion.
+
+        Notes with NO date anchor are excluded even when their entity sets
+        match. An entity-only anchor is not an occasion — «Grant» is not a
+        thing that happens once — and `note_entity` is empty in production
+        anyway, so an entity-only group today would be a group of notes
+        anchored to `{}`, which is every dateless note in the workspace.
+
+        `limit` bounds GROUPS, not notes: the caller's budget is bodies read
+        per tick, and a group is the unit it reads.
+        """
+        if limit <= 0:
+            return ()
+        grouped = (
+            sa.select(NOTE.c.anchor_date, NOTE.c.anchor_entity_ids)
+            .where(
+                NOTE.c.workspace == workspace,
+                NOTE.c.retired_at.is_(None),
+                NOTE.c.anchor_date.is_not(None),
+            )
+            .group_by(NOTE.c.anchor_date, NOTE.c.anchor_entity_ids)
+            .having(sa.func.count() > 1)
+            .order_by(sa.func.count().desc(), NOTE.c.anchor_date.asc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            keys = (await conn.execute(grouped)).all()
+            groups: list[tuple[Note, ...]] = []
+            for key in keys:
+                rows = (await conn.execute(
+                    self._head_join().where(
+                        NOTE.c.workspace == workspace,
+                        NOTE.c.retired_at.is_(None),
+                        NOTE.c.anchor_date == key.anchor_date,
+                        NOTE.c.anchor_entity_ids == key.anchor_entity_ids,
+                    ).order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
+                )).all()
+                groups.append(tuple(_row_to_note(r) for r in rows))
+        return tuple(groups)
+
+    async def anchored_before(
+        self, *, workspace: str, day: int, limit: int,
+    ) -> tuple[tuple[Note, str], ...]:
+        """Standing notes whose anchor date is strictly before `day`, oldest
+        first, with their head bodies.
+
+        **Retirement is TIME-driven, not evidence-driven**, which is why this
+        read exists and why the curator's third fire condition matters more
+        here than it does for language: a note whose anchor has passed needs
+        retiring even if nobody has touched the notebook in a month. Expiry is
+        this tier's decay.
+
+        The body comes back with the note because the model has to read it —
+        an anchor passing makes a note ELIGIBLE for retirement, never retired.
+        «We moved it to the 16th» leaves the question open, now about the 16th,
+        and only the body says so. SQL decides who is asked; the model decides
+        what the body means; code writes.
+
+        `day` is a YYYYMMDD calendar day, matching `anchor_date`'s own shape —
+        not epoch ms. Passing a timestamp here compares an integer in the
+        billions against one in the tens of millions and quietly matches
+        everything.
+        """
+        if limit <= 0:
+            return ()
+        stmt = (
+            self._head_join()
+            .where(
+                NOTE.c.workspace == workspace,
+                NOTE.c.retired_at.is_(None),
+                NOTE.c.anchor_date.is_not(None),
+                NOTE.c.anchor_date < day,
+            )
+            .order_by(NOTE.c.anchor_date.asc(), NOTE.c.id.asc())
             .limit(limit)
         )
         async with self._engine.connect() as conn:
@@ -596,6 +697,10 @@ class SqlNoteStore:
         # against the same note CASes against what the first one wrote rather
         # than against a head that is already stale by construction.
         heads: dict[str, str] = {}
+        # What each note's FIRST proposal in this batch claimed to be written
+        # against. Distinct from `heads`, which is what the batch has since
+        # written — see the check below.
+        declared: dict[str, str] = {}
         async with self._engine.begin() as conn:
             for p, payload in typed:
                 if isinstance(payload, NoteCreationProposal):
@@ -607,6 +712,34 @@ class SqlNoteStore:
                     heads[note.id] = first.id
                     ids.append(note.id)
                     continue
+                # THE DECLARED PARENT IS CHECKED, NOT OVERRIDDEN. Until
+                # 2026-08-27 the tracked head was used as a silent override, so
+                # a second proposal declaring ANY parent — including a bogus
+                # one — landed as long as the batch had already touched that
+                # note. The scenario that makes it real is the likely one: a
+                # curator emitting two proposals both parented on the head it
+                # READ, with different bodies, which is what a model
+                # duplicating its own output produces. Before chaining that was
+                # a StaleNoteHeadError; with a silent override both land, the
+                # second body wins, the first is buried, and the caller is told
+                # both succeeded — a silent overwrite on the one verb whose
+                # docstring is about not half-applying.
+                #
+                # A caller cannot name the intermediate revision (it does not
+                # exist until this batch writes it), so re-declaring the SAME
+                # parent is the only legitimate thing a second proposal can do.
+                # Anything else is a stale read and is refused as one.
+                if payload.note_id in declared:
+                    if payload.parent_revision_id != declared[payload.note_id]:
+                        raise StaleNoteHeadError(
+                            f"note {payload.note_id} was already revised in "
+                            f"this batch against "
+                            f"{declared[payload.note_id]}; this proposal names "
+                            f"{payload.parent_revision_id} — read it again",
+                            observed_head=heads.get(payload.note_id),
+                        )
+                else:
+                    declared[payload.note_id] = payload.parent_revision_id
                 revision = NoteRevision(
                     id=str(uuid4()), note_id=payload.note_id,
                     body=payload.body,

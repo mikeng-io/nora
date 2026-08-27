@@ -927,10 +927,14 @@ async def test_a_stale_head_writes_nothing_at_all(notes: _Harness) -> None:
     the one outcome worse than not running**, because it is invisible: no
     error, no count, and an index that looks ordinary.
 
-    The in-memory double cannot roll back, so it is exempt from the final
-    assertion and says so rather than pretending — the SQL store is where the
-    transaction is, and this is one of the places the two are honestly
-    different."""
+    **The exemption that used to be here is gone, and it was the tell.** This
+    test read `if isinstance(notes.store, SqlNoteStore)` before the final
+    assertion, on the reasoning that a double cannot roll back — which is true
+    and was the wrong conclusion. A double cannot roll back, but it CAN decide
+    every refusal before mutating anything, and that is the same observable
+    behaviour from outside. While the exemption stood, the two implementations
+    were not being compared on the one case the transaction exists for; the
+    double wrote the first proposal and kept it."""
     good = await _make(notes.store, title="Dinner, 9 Sept")
     stale = await _make(notes.store, title="Grant wedding")
 
@@ -958,12 +962,12 @@ async def test_a_stale_head_writes_nothing_at_all(notes: _Harness) -> None:
             now_ms=NOW + 5,
         )
 
-    if isinstance(notes.store, SqlNoteStore):
-        found = await notes.store.read(workspace=WS, note_id=good.id)
-        assert found is not None
-        assert found[1].body != "a revision that must not survive", (
-            "the first proposal must be rolled back with the batch"
-        )
+    found = await notes.store.read(workspace=WS, note_id=good.id)
+    assert found is not None
+    assert found[1].body != "a revision that must not survive", (
+        "a failed batch leaves nothing behind — Postgres by rollback, the "
+        "double by refusing before it writes"
+    )
 
 
 async def test_a_foreign_payload_is_refused_before_anything_is_written(
@@ -1109,3 +1113,152 @@ async def test_a_creation_with_no_anchor_is_refused_at_the_type(
             title="t", description="d", uncertainty="u",
             closing_condition="c", established_in="conv-1", body="b",
         )
+
+
+# --- the curator's selection reads (§9.2), SQL-only and token-free ----------
+
+
+async def test_merge_groups_finds_notes_sharing_an_anchor(
+    notes: _Harness,
+) -> None:
+    """§7.1: merge is keyed on the ANCHOR, never on topical similarity, so two
+    weddings stay two notes. This read is what makes that structural — the
+    model is never asked whether two notes belong together, because SQL
+    already decided and it decided on the date and the people."""
+    a = await _make(notes.store, title="Grant wedding", anchor_date=20261011)
+    b = await _make(notes.store, title="Grant's wedding", anchor_date=20261011)
+    await _make(notes.store, title="Ada wedding", anchor_date=20270301)
+
+    groups = await notes.store.merge_groups(workspace=WS, limit=10)
+
+    assert len(groups) == 1, "only the two sharing an anchor collide"
+    assert {n.id for n in groups[0]} == {a.id, b.id}
+
+
+async def test_two_weddings_on_different_days_are_never_one_group(
+    notes: _Harness,
+) -> None:
+    """The negative half, and the reason the rule exists. These two are as
+    topically alike as two notes can be — same words, same shape, same kind of
+    uncertainty — and merging them would lose which revision belonged to which
+    occasion, permanently and silently."""
+    await _make(notes.store, title="Wedding venue", anchor_date=20261011)
+    await _make(notes.store, title="Wedding venue", anchor_date=20270301)
+
+    assert await notes.store.merge_groups(workspace=WS, limit=10) == ()
+
+
+async def test_dateless_notes_never_collide_with_each_other(
+    notes: _Harness,
+) -> None:
+    """An entity-only anchor is not an OCCASION — «Grant» is not a thing that
+    happens once. And `note_entity` is empty in production, so a dateless group
+    would be every dateless note in the workspace anchored to `{}`."""
+    await _make(
+        notes.store, title="Someone's flat", anchor_date=None,
+        anchor_entity_ids=("person-1",),
+    )
+    await _make(
+        notes.store, title="Someone's car", anchor_date=None,
+        anchor_entity_ids=("person-1",),
+    )
+
+    assert await notes.store.merge_groups(workspace=WS, limit=10) == ()
+
+
+async def test_a_retired_note_never_joins_a_merge_group(
+    notes: _Harness,
+) -> None:
+    survivor = await _make(notes.store, anchor_date=20261011)
+    duplicate = await _make(notes.store, anchor_date=20261011)
+    await notes.store.supersede(
+        key=WS, target=duplicate.id, replaced_by=survivor.id,
+        because=NoteSupersedeReason.MERGED, source=None, now_ms=NOW + 1,
+    )
+
+    assert await notes.store.merge_groups(workspace=WS, limit=10) == (), (
+        "a merge that already happened must not be found again next tick"
+    )
+
+
+async def test_anchored_before_selects_expired_notes_with_their_bodies(
+    notes: _Harness,
+) -> None:
+    """Retirement is TIME-driven: a note whose anchor has passed needs looking
+    at even if nobody has touched the notebook in a month. The body comes back
+    because the anchor passing makes a note ELIGIBLE, never retired — «we moved
+    it to the 16th» leaves the question open, and only the body says so."""
+    past = await _make(
+        notes.store, title="Dinner, 9 Sept", anchor_date=20260909,
+        body="Nobody booked anything.",
+    )
+    await _make(notes.store, title="Wedding", anchor_date=20271231)
+
+    hits = await notes.store.anchored_before(workspace=WS, day=20261001, limit=10)
+
+    assert [n.id for n, _ in hits] == [past.id]
+    assert hits[0][1] == "Nobody booked anything."
+
+
+async def test_anchored_before_is_strict_and_workspace_scoped(
+    notes: _Harness,
+) -> None:
+    """Strict: a note anchored to TODAY is not expired — the occasion has not
+    happened yet."""
+    await _make(notes.store, anchor_date=20260909)
+
+    assert await notes.store.anchored_before(
+        workspace=WS, day=20260909, limit=10,
+    ) == ()
+    assert await notes.store.anchored_before(
+        workspace="another-workspace", day=20270101, limit=10,
+    ) == ()
+
+
+async def test_a_second_proposal_may_not_redeclare_a_different_parent(
+    notes: _Harness,
+) -> None:
+    """The tracked head is a CHECK, not a silent override.
+
+    Head chaining made two proposals against one note legal. It also made the
+    declared `parent_revision_id` of the second one ignorable — until
+    2026-08-27 a bogus parent landed as long as the batch had already touched
+    that note.
+
+    The scenario is the likely one, not an exotic one: a curator emitting two
+    proposals BOTH parented on the head it read, with different bodies, which
+    is what a model duplicating its own output produces. Silently chained, both
+    land, the second body wins, the first is buried, and the caller is told
+    both succeeded — a silent overwrite on the one verb whose docstring is
+    about not half-applying.
+
+    A caller cannot name the intermediate revision, because it does not exist
+    until this batch writes it. So re-declaring the SAME parent is the only
+    legitimate thing a second proposal can do, and anything else is a stale
+    read."""
+    note = await _make(notes.store)
+
+    def _p(body: str, parent: str) -> Proposal:
+        return Proposal(
+            payload=NoteRevisionProposal(
+                note_id=note.id, body=body, parent_revision_id=parent,
+            ),
+            instruction_sha256="e" * 64, model="curator-model",
+            established_by="run-curator-1",
+        )
+
+    with pytest.raises(StaleNoteHeadError):
+        await notes.store.propose(
+            key=WS,
+            proposals=(
+                _p("first", note.head_revision_id),
+                _p("second", "00000000-0000-0000-0000-0000000000ff"),
+            ),
+            now_ms=NOW + 5,
+        )
+
+    found = await notes.store.read(workspace=WS, note_id=note.id)
+    assert found is not None
+    assert found[1].body not in {"first", "second"}, (
+        "the refusal is decided before anything is written"
+    )
