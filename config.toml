@@ -978,6 +978,11 @@ enabled = true
 # No curator yet — nothing merges, retires or promotes a note, because that is
 # a Dreamer adaptor and the runtime is unbuilt. The notebook only grows for
 # now; `nora_note_index_entries` is the tell if it grows faster than it earns.
+# That tell is REAL as of 2026-08-27 — labelled by workspace, published per tag
+# from the index read, ABSENT when this flag is off and `0` when the notebook is
+# wired and empty. Those two were the same reading for the tier's first eight
+# days, which is how it sat at zero notes without anyone being able to say
+# whether that was a quiet group or a broken create path (design 27 §5.4/§6.1).
 enabled = true
 
 [standing]

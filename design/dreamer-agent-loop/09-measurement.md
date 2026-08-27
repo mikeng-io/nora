@@ -60,9 +60,21 @@ reconstruction in [01-live-state.md](01-live-state.md) §4 had to be rebuilt by
 joining log timestamps against message arrival times, because the instrument
 that should have recorded it had already been reset.
 
-**A tier that declares metrics must ship them.** One tier declares ten and ships
-none, so its own stated failure-detection is unreadable and a deferred piece of
-work waits on evidence that structurally cannot be collected.
+**A tier that declares metrics must ship them.** One tier declared ten and
+shipped none, so its own stated failure-detection was unreadable and a deferred
+piece of work waited on evidence that structurally could not be collected.
+
+**Resolved 2026-08-27, and the resolution sharpens the rule rather than
+satisfying it.** The note tier ships **three**
+([27](27-note-dreamer.md) §6.1): four of the ten were already carried by
+`nora_tool_calls_total` and a second series would have double-counted, and four
+measure adaptors that do not exist — where a declared name with no call site is
+the NEXT failure in this same family, not a partial fix. So the rule is not
+*"ship every metric you declare"*; it is:
+
+> **Ship the metric that has a call site, and delete the declaration that does
+> not.** A name without a site exports a flat zero, and a flat zero reads as a
+> measurement.
 
 ## 3.1 One tier already wrote the rule down
 

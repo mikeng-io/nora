@@ -259,25 +259,181 @@ went on the log holds **18 `send_reply` calls**. Eighteen authored turns with no
 block and no doctrine line is a much weaker indictment than eight days implies,
 and it is the honest number to reason from.
 
+## 5.5 The fix: doctrine, and NOT an empty-state block
+
+Two surfaces could carry recognition and only one should. **Doctrine gains a
+section; `render_notes` is left returning `""`.**
+
+The framing that suggests itself is a budget trade — a doctrine line costs
+always-present prompt, an empty-state `<notes>` block costs a line every turn
+saying nothing is written down. Budget does not decide it, because the block is
+strictly worse on that axis anyway: per room, every room, forever.
+
+**What decides it is that the two surfaces answer different questions.**
+
+| surface | answers | its correct empty value |
+|---|---|---|
+| `<notes>` | *what notes exist* | **silence.** Listing nothing is not a fact about the room; it is the absence of facts. A block that speaks when it has nothing to list has stopped being an index |
+| doctrine | *who you are* | n/a — «you carry what this group leaves undecided» is true at zero notes and at two hundred |
+
+So putting recognition in the block would make **a stable property of Nora
+conditional on volatile state** — which is the same error `_notes_block` already
+makes one layer down. Adding a second conditional surface repeats the error
+rather than closing it.
+
+**And §5.3's objection resolves against itself.** That section argued for
+doctrine over a *skill*; the index block is a different surface, so the argument
+does not transfer by analogy. But the REASON §5.3 gives is about
+**reachability**, not about skills — *a thing you must already know you need
+cannot teach you the need* — and that property belongs to any conditionally
+present surface. The index block is conditionally present. The argument
+transfers on its own terms.
+
+**The constraint on how the line is written is the part most likely to go
+wrong.** Doctrine is a portrait, not a rule list, and every concrete example in
+it becomes a CLOSED SET: a line reading *"note down dinners, weddings, trips"*
+produces notes about dinners, weddings and trips and nothing else — which would
+read as the fix working while shipping a narrower tier than the one that exists.
+So the section states a **property and a test** — does the thing outlive this
+turn, and is nobody keeping track of it — with one drift illustrated as a shape
+rather than a topic. Procedure stays where §5.3 put it: in the tool descriptions
+and in the latch's own veto.
+
+**It is falsifiable now, which it was not before §6.1.**
+`nora_note_index_entries{workspace}` leaving `0` is the fix working. Staying at
+`0` while `nora_note_candidates_total` climbs is *she recognises and does not
+act* — the inert-skill failure, visible for the first time. If the line does not
+move the gauge, the empty-state block becomes the SECOND experiment rather than
+the first guess, and that ordering only exists because the instruments landed
+first.
+
 ## 6. What each owes its instrument
 
-**The tier declares TEN metrics and ships ZERO.** Verified 2026-08-24: ten
-`nora_note_*` names appear in its spec, and `nora/obs/metric_specs.py` contains
-none of them. This is the tier [09-measurement.md](09-measurement.md) §3 means
-by *"one tier declares ten and ships none"* — now named.
-
-That is why the curator's own justification is currently unmeasurable: the
-notebook only grows, and `nora_note_index_entries` — the metric `config.toml`
-calls **"the tell"** — is not merely uncounted, it **does not exist**.
+**The tier declared TEN metrics and shipped ZERO** — verified 2026-08-24, and
+the state [09-measurement.md](09-measurement.md) §3 means by *"one tier declares
+ten and ships none"*. **Resolved 2026-08-27 by §6.1 below, and not by building
+ten.** The readings the two unbuilt adaptors owe are still owed; they are listed
+here and they ship with the adaptor that produces them, never before it.
 
 | reading | why |
 |---|---|
 | notes merged, **by anchor match kind** | §2's rule is only observed if a merge that fired on something other than an anchor is visible |
-| notes retired versus notes grown | the notebook only grows today, and `nora_note_index_entries` — named in config as *"the tell"* — **has no call site**. Without it the curator's whole justification is unmeasurable |
+| notes retired versus notes grown | the notebook only grows until a curator exists, so the curator's whole justification rests on `nora_note_index_entries` — which now has a call site (§6.1) |
 | reminders scheduled by the revisitor, and how many **fired** | scheduled-but-never-fired is the revisitor silently doing nothing, which looks identical to a quiet notebook |
 | revisits per person per window | §3's budget is the reminder caps, so the reading that matters is *how often background work nudged somebody*, not how often it ran |
 
+## 6.1 THREE counters, not ten — and why that is the fix
+
+**Built 2026-08-27.** The instinct on finding a tier that declares ten metrics
+and ships none is to ship ten. That would have been wrong twice over, and
+working out how is what the fix actually consisted of.
+
+**FOUR of the ten already had a home.** Every note tool calls `_record` in
+`nora.agent.tools`, so `nora_tool_calls_total{tool,status}` was carrying them
+all along:
+
+| declared | already carried by |
+|---|---|
+| `writes_total{kind}` | `nora_tool_calls_total{tool="note_create"\|"note_update",status="ok"}` — the tool name IS the kind |
+| `reads_total{result}` | `nora_tool_calls_total{tool="note_read",status}` |
+| `searches_total{result}` | `nora_tool_calls_total{tool="note_search",status}` |
+| `update_refused{reason="not_read"}` | `nora_guard_vetoes_total{rule="R-55"}` |
+
+Declaring these would be the **double-count** `_record_room` and `_record_media`
+both refuse in their own docstrings: a second series over the same calls
+silently doubles any dashboard summing tool volume. And the tier's own named
+diagnostic survives the omission — *a climbing candidate count against a flat
+write count* is `nora_note_candidates_total` against
+`nora_tool_calls_total{tool=~"note_create|note_update",status="ok"}`, in two
+series that both exist.
+
+**THREE more measure adaptors that do not exist** — `curator_total{action}`,
+`curator_bodies_read`, `revisit_total{outcome}` — and so does
+`strikes_total{result}`: `note.strikes` is a column with a CHECK constraint and
+no writer, because the strike is the revisitor's wake pass (§9.6 of the spec).
+**Declaring a name with no call site is precisely
+[02-instrument-blindness.md](02-instrument-blindness.md)'s Layer 7**, so
+shipping all ten would have closed Layer 6 by manufacturing a fresh instance of
+Layer 7 one line below it. A flat zero on a dashboard is worse than an absent
+series: it reads as a measurement.
+
+**So three shipped, each with a live path:**
+
+| metric | site |
+|---|---|
+| `nora_note_candidates_total{trigger}` | `nora.agent.tools`, inside `record_miss`'s `else` — it counts a miss that was **written**, so the series reconciles against `note_candidate`'s row count instead of attesting to itself |
+| `nora_note_update_refused_total{reason}` | `nora.agent.guards` (`not_read`) and `nora.agent.tools` (`title_moved`, `stale_head`) |
+| `nora_note_index_entries{workspace}` | `nora.engagement.context::TranscriptInjection._notes` |
+
+**Two things the spec named but did not decide.**
+
+**The gauge is labelled by WORKSPACE.** The spec's name is unlabelled, and on
+this deployment that makes it meaningless: `friends` and `ridgeline` are separate
+notebooks (§3/DEC-105), so whichever room tagged last would own the reading and
+the exported number would mean *"the size of whichever notebook was consulted
+most recently"*. Same argument as `nora_dream_evidence_lost_total{scope}`.
+
+**The refusal counter carries THREE reasons, not the two the spec implies,
+because `not_read` fires in two different places for two different reasons.**
+The guard's latch is keyed on the **title** — all a model-facing argument can
+carry. The tool-layer backstop is keyed on the **resolved note id**. They differ
+in exactly one case and it is the one worth counting: a title that resolved to a
+**different note** between the read and the write. So `not_read` is a
+model-discipline reading — she tried to rewrite a body she had not seen — while
+`title_moved` and `stale_head` are **contention** readings, a curator racing the
+tag path. Folding them would send somebody to fix the wrong thing.
+
+**And the gauge is published on the SUCCESS path only**, so it is ABSENT when
+the tier is off or the read failed and `0` when the notebook is wired and empty.
+Publishing `0` for all three would be the `unavailable`-as-`nothing_found`
+collapse R-27 exists to prevent, in the one series meant to answer *"is the
+notebook empty?"* — and it would have preserved exactly the blindness this
+closes.
+
+## 6.2 The trace half: a turn that saw nothing
+
+A counter says how often; it cannot say what a given turn saw. Read back from
+live trace `9bfba296` rather than assumed, Langfuse already carries the note
+tools as TOOL spans with their full input and output, and
+`nora.obs.tracing.trace_attributes` stamps `tag_id`/`conversation_id`/
+`doctrine_sha256` on every span in the turn.
+
+**What no trace could report is the fact §5.4 turns on.** A turn that saw an
+EMPTY notebook and a turn where the tier was never wired produce the same spans,
+the same tool catalogue and the same prompt shape. So `trace_attributes` gained
+**`note_index_entries`** — a COUNT, which is why it is admissible in a dict that
+otherwise holds only ids and hashes: it says how many notes were in front of her
+without saying what any of them is.
+
+It is the per-turn counterpart of the gauge and they answer different questions
+on purpose — the gauge says what the notebook holds NOW, the attribute says what
+THIS turn saw. They diverge exactly when it matters: a reply written against an
+index that has since moved.
+
+**Still not instrumented, recorded so it is not mistaken for done:**
+`record_miss` has no span of its own, so a trace shows `nothing_found` and never
+that a candidate row was written; and `title_moved` and the guard's `not_read`
+return the same status AND the same message string, so only the metric separates
+them. Neither blocks §5.4; both are real.
+
 ## Status / Checkpoint
+
+2026-08-27 (later) — **§6.1/§6.2 built.** The three counters and the
+`note_index_entries` trace attribute are in code, gate green. Every increment
+was verified by reverting it and watching a test go red; one test did NOT go red
+on the first pass, because `Metrics.get` answers `0.0` for a series that was
+never published, so *"the empty notebook reads zero"* passed against reverted
+code and now asserts membership in `snapshot()` first. **The tier can now
+distinguish an empty notebook from a broken one**, which is the precondition
+§5.4's fix needs to be judged against.
+
+**§5.4 closed the same day.** `nora/doctrine/conduct.md` gains one section,
+「未有結論嘅嘢」, and `render_notes` is UNCHANGED — the empty index still
+renders nothing. §5.5 argues why that split, and why the empty-state block was
+the wrong surface.
+
+**What remains, in order:** the curator (§2), then the revisitor (§3). The two
+unbuilt adaptors' four metrics ship with them.
 
 2026-08-27 — **§5.4: the cold start.** The log shows ONE note-tool call in the
 tier's life; the create path has never been invoked. With zero notes the
