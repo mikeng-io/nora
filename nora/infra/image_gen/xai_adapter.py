@@ -53,6 +53,15 @@ def _hex_handle(raw: str) -> str:
     return "".join(c for c in tail.lower() if c in "0123456789abcdef")
 
 
+def _as_data_uri(body: bytes) -> str:
+    """Base64 data URI for the JSON edits payload. xAI expects
+    `image: {"url": "<data URI>"}` (verified live 2026-08-27); a 415
+    multipart upload is rejected outright."""
+    import base64
+
+    return "data:image/png;base64," + base64.b64encode(body).decode("ascii")
+
+
 class XaiImageGenerator:
     """Satisfies `nora.domain.ports.ImageGenerator`.
 
@@ -111,7 +120,6 @@ class XaiImageGenerator:
         # fetch attempt (design §5.0/5.1).
         refs = reference_images or ()
         payload: dict[str, object] | None = None
-        form: aiohttp.FormData | None = None
         url: str
         if refs:
             if reference_resolver is None:
@@ -135,21 +143,27 @@ class XaiImageGenerator:
                     )
                 bodies.append(data)
 
-            form = aiohttp.FormData()
-            form.add_field("model", model)
-            form.add_field("prompt", prompt)
-            form.add_field("response_format", "b64_json")
-            if size is not None:
-                form.add_field("aspect_ratio", size.aspect_ratio)
-                # M7: same tier→resolution mapping as the generations path.
-                resolution = {"small": "1k", "medium": "1k", "large": "2k"}[size.tier]
-                form.add_field("resolution", resolution)
-            for i, body in enumerate(bodies):
-                form.add_field(
-                    "image[]",
-                    body,
-                    filename=f"reference-{i}.png",
-                    content_type="application/octet-stream",
+            # xAI's /v1/images/edits is JSON-only since grok-imagine-2.0 — a
+            # multipart FormData gets HTTP 415 («Expected request with
+            # Content-Type: application/json», verified live 2026-08-27), which
+            # the old code misread as `down`. The source image travels as a
+            # base64 data URI: single image in `image`, multiple in `images`
+            # with `<IMAGE_n>` placeholders in the prompt (docs.x.ai —
+            # model-capabilities/images/editing).
+            uris: list[str] = [_as_data_uri(body) for body in bodies]
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "response_format": "b64_json",
+            }
+            if len(uris) == 1:
+                payload["image"] = {"url": uris[0]}
+            else:
+                payload["images"] = [{"url": uri} for uri in uris]
+                ref_names = ", ".join(f"<IMAGE_{i}>" for i in range(len(uris)))
+                payload["prompt"] = (
+                    f"{prompt}\n\nUse the reference images {ref_names} "
+                    f"to compose the edit as described."
                 )
             url = self._edits_url
         else:
@@ -158,26 +172,26 @@ class XaiImageGenerator:
                 "prompt": prompt,
                 "response_format": "b64_json",
             }
-            if size is not None:
-                payload["aspect_ratio"] = size.aspect_ratio
-                # M7: honour the tier knob — xAI's API takes `resolution`
-                # 1k/2k. Without this the model-facing `size` word silently
-                # changed nothing (budget-2 re-roll with a "size tweak" that
-                # burned a generation). Map the tier word to xAI's values.
-                resolution = {"small": "1k", "medium": "1k", "large": "2k"}[size.tier]
-                payload["resolution"] = resolution
             url = self._generations_url
+
+        if size is not None and payload is not None:
+            payload["aspect_ratio"] = size.aspect_ratio
+            # M7: honour the tier knob — xAI's API takes `resolution`
+            # 1k/2k. Without this the model-facing `size` word silently
+            # changed nothing (budget-2 re-roll with a "size tweak" that
+            # burned a generation). Map the tier word to xAI's values.
+            resolution = {"small": "1k", "medium": "1k", "large": "2k"}[size.tier]
+            payload["resolution"] = resolution
 
         try:
             timeout = aiohttp.ClientTimeout(total=self._timeout.total)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 headers = {"Authorization": f"Bearer {auth.access_token}"}
-                if form is not None:
-                    async with session.post(url, headers=headers, data=form) as resp:
-                        body = await resp.json(content_type=None)
-                else:
+                if payload is not None:
                     async with session.post(url, headers=headers, json=payload) as resp:
                         body = await resp.json(content_type=None)
+                else:
+                    raise AssertionError("image generator payload was not built")
         except (aiohttp.ClientError, TimeoutError, ValueError):
             return ImageResult(status="unavailable", reason="down", provider="xai")
 

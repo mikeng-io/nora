@@ -204,7 +204,16 @@ turns = 20
 # tuned out of at turns=8). 20 reachable turns needs ~122k, so 128k. This is a
 # real ~2x ceiling on a heavy multi-tool turn; most turns are 1–2 calls and
 # never approach it, but a genuinely long chain now can run to 20.
-total_tokens = 128000
+# 128000 → 256000 (operator, 2026-08-27): the reference-image turn
+# (media_fetch → weather → generate_image → send_reply) measures 4–5 model
+# calls, each re-paying the full context (~50–60k input per call). The live
+# failure — "唔好意思, 我一時搞唔掂" from `limit_total_tokens` BEFORE
+# generate_image was ever called — was this cap binding at call 5 of a
+# 128k budget. 256k is the same 2x headroom philosophy applied to the new
+# multi-tool chain; ollamacloud is subscription, so the raise costs nothing
+# until the loop actually spends it. `turns = 20` stays the reachable
+# round-trip ceiling.
+total_tokens = 256000
 # The loop's OUTPUT budget across every call of the turn, deliberately not
 # `llm.max_tokens` (which is one call's ceiling). It was literally that number
 # until 2026-08-06, so the whole loop could emit what one call could — and
