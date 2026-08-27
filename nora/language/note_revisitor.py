@@ -195,6 +195,12 @@ _VERDICT_EXPIRED = "expired"
 _VERDICT_UNRESOLVED = "unresolved"
 _VERDICTS = (_VERDICT_CLOSED, _VERDICT_EXPIRED, _VERDICT_UNRESOLVED)
 
+# A claim about a note whose VERDICT could not be read. Deliberately outside
+# `_VERDICTS` — it is not a fourth answer, it is the absence of a readable one,
+# and it exists only so such an item can still COLLIDE with a readable verdict
+# for the same note. See `_accept_one`'s attribution split.
+_VERDICT_UNREADABLE = "unreadable"
+
 _BECAUSE = {
     _VERDICT_CLOSED: NoteSupersedeReason.RETIRED_CLOSED,
     _VERDICT_EXPIRED: NoteSupersedeReason.RETIRED_EXPIRED,
@@ -719,6 +725,12 @@ class NoteRevisitor:
             # alarm on the second call — a false positive on the counter built
             # to make a real silent no-op visible.
             resolved = proposed[0]
+            if resolved.verdict == _VERDICT_UNREADABLE:
+                # Every item for this note was unreadable. Already counted as
+                # `unmeasured`, and it is NOT a verdict — counting it on
+                # `verdicts_total` would put a non-answer in the series that
+                # measures answers.
+                continue
             # Counted HERE rather than in `_accept_one`, which runs per ITEM:
             # two items for one note incremented `verdicts_total` twice and
             # then produced one retirement, so the counters asserted two
@@ -739,7 +751,7 @@ class NoteRevisitor:
 
         The order is deliberate and each step is a different question:
 
-        1. **is this a note we asked about** — a note id outside `_asked` is
+        1. **is this a note we asked about** — a handle outside `asked` is
            refused before anything else is read. Retiring an unrelated note is
            the worst thing this adaptor can do and it is one hallucinated
            identifier away; nothing about the rest of the item can make that
@@ -749,6 +761,33 @@ class NoteRevisitor:
         3. **does the verdict's own ground hold** — the citation for `closed`,
            the clock for `expired`. This is where a plausible answer stops being
            enough.
+
+        **The split between 1 and 2 is ATTRIBUTION, and it is deliberate rather
+        than an accident of ordering.** To block a note's retirement an item has
+        to be a claim ABOUT THAT NOTE, and malformed items fall on both sides of
+        that:
+
+        - **unattributable** — the handle is unreadable, so the item names no
+          note. It cannot block anything BY CONSTRUCTION, not by policy: there
+          is nothing to attach it to. Returns `None`.
+        - **attributable, unreadable** — the handle resolves and the VERDICT
+          does not. That IS a claim about this note, and one we cannot read.
+          `{"note": "1", "verdict": "clsoed"}` beside a well-formed `closed` is
+          not one answer plus noise; it is one answer plus an answer we cannot
+          read, which is «cannot tell which». Returns `_VERDICT_UNREADABLE` so
+          it collides in `accept`, and the note stands.
+
+        **Unreadable is not absent**, which is the same reasoning as the settled
+        line one level up: grounding decides whether a claim may ACT, never
+        whether it was MADE — and parseability is the same kind of thing.
+
+        An earlier revision let the second case fall through to the first, on
+        the argument that one malformed item should not veto a grounded
+        decision. That argument is about COST, and «this would be inconvenient»
+        is exactly the shape of reasoning that produced the three-instance table
+        in `27` §11.3.4. The cost is real and it is accepted: a model emitting
+        noise beside good answers will hold notes open, and holding is the
+        recoverable direction.
         """
         handle = item.get(_KEY_NOTE)
         # Accepted as `int` too: the handle is an ordinal rendered into the
@@ -768,8 +807,14 @@ class NoteRevisitor:
 
         verdict = item.get(_KEY_VERDICT)
         if not isinstance(verdict, str) or verdict.strip().lower() not in _VERDICTS:
+            # ATTRIBUTABLE and unreadable — the handle resolved, so this is a
+            # claim about a known note that cannot be read. Counted exactly as
+            # before (`unmeasured` is unchanged for an operator) and RETURNED,
+            # so it collides with any readable verdict for the same note.
             self._refuse("unmeasured")
-            return None
+            return _Verdict(
+                note_id=note_id, verdict=_VERDICT_UNREADABLE, retirement=None,
+            )
         verdict = verdict.strip().lower()
 
         if verdict == _VERDICT_UNRESOLVED:

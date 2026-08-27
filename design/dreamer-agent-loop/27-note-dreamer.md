@@ -718,13 +718,34 @@ not the branch — was what needed testing:
 | 1 | de-duplicate first-come | `[closed, expired]` → whichever came first |
 | 2 | only RETIREMENTS can disagree | `[unresolved, closed]` → closed |
 | 3 | only SURVIVING verdicts can disagree | `[expired-refused, closed]` → closed |
+| 4 | only READABLE verdicts can disagree | `[unreadable, closed]` → closed |
 
 The settled line is that **a verdict that failed grounding is still a CLAIM**.
 Grounding decides whether a claim may act; it never decides whether it was
 made, and which of a model's two answers happens to survive a grounding check
-is not a tie-break between them. A non-answer — an unrecognised verdict — is
-NOT a claim, and does not block: treating it as one would let a single
-malformed item veto a grounded decision.
+is not a tie-break between them.
+
+**The fourth revision fixed the boundary underneath it, and the axis is
+ATTRIBUTION.** To block a note's retirement, an item must be a claim ABOUT THAT
+NOTE — and a malformed item can fall on either side of that:
+
+| | | |
+|---|---|---|
+| **unattributable** | the handle names no note this tick asked about | cannot block, **by construction** — there is nothing to attach the doubt to |
+| **attributable, unreadable** | the handle resolves, the verdict does not | **blocks** — a claim about this note that we cannot read |
+
+`{"note": "1", "verdict": "clsoed"}` beside a well-formed `closed` is not one
+answer plus noise. It is one answer plus an answer we cannot read, which is
+«cannot tell which». **Unreadable is not absent**, and that is the same
+reasoning as the settled line one level up: parseability, like grounding,
+decides whether a claim may act rather than whether it was made.
+
+The earlier rule let the second case fall through to the first, on the argument
+that one malformed item should not veto a grounded decision. **That argument is
+about cost**, and «this would be inconvenient» is the shape of reasoning that
+produced the three rows above — the same move, one level down, made while
+writing the fix for them. The cost is real and accepted: a model emitting noise
+beside good answers holds notes open, and holding is the recoverable direction.
 
 **And the first fix was blind to `unresolved`.** It grouped RETIREMENTS, and
 `unresolved` produces none — so it never entered the grouping and

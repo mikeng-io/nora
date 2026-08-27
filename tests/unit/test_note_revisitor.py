@@ -1262,21 +1262,68 @@ async def test_a_refused_verdict_still_contradicts_a_grounded_one():
             "nora_note_revisit_refused_total", reason="anchor_not_covered") == 1
 
 
-async def test_an_unreadable_item_does_not_block_a_grounded_verdict():
-    """The other side of that line, and the reason it is drawn at «did the
-    model make a claim» rather than «did something go wrong for this note».
-
-    An item that names no recognisable verdict is a NON-answer, not a competing
-    one. Treating it as a contradiction would let one malformed item veto a
-    grounded decision — and a model that emits noise beside a good answer would
-    silently stop the tier retiring anything."""
+async def test_an_unattributable_item_cannot_block_anything():
+    """The first half of the ATTRIBUTION split. A handle that names no note this
+    tick asked about attaches to nothing — it cannot block a retirement BY
+    CONSTRUCTION rather than by policy, because there is no note to attach the
+    doubt to. `"9"` here is not a note in this tick's set."""
     adaptor, _ = _revisitor((_note(),), [_row(7, "booked it")])
     await adaptor.inputs(key=WORKSPACE, batch=[])
     [out] = await adaptor.accept(key=WORKSPACE, items=[
-        {"note": "1", "verdict": "who knows", "cited_message_id": None},
+        {"note": "9", "verdict": "clsoed", "cited_message_id": None},
         {"note": "1", "verdict": "closed", "cited_message_id": 7},
     ])
     assert out.because == NoteSupersedeReason.RETIRED_CLOSED
+
+
+async def test_an_attributable_but_unreadable_verdict_blocks_the_note():
+    """The second half, and the one this file previously got wrong.
+
+    The handle resolves and the VERDICT does not. That IS a claim about this
+    note, and one we cannot read — `{"note": "1", "verdict": "clsoed"}` beside a
+    well-formed `closed` is not one answer plus noise, it is one answer plus an
+    answer we cannot read. Which is «cannot tell which».
+
+    **Unreadable is not absent**, which is the settled line one level down:
+    grounding decides whether a claim may ACT, never whether it was MADE, and
+    parseability is the same kind of thing. An earlier version of this test
+    asserted the opposite, on the argument that one malformed item should not
+    veto a grounded decision — an argument about COST, which is the shape of
+    reasoning that produced §11.3.4's three-instance table.
+
+    Both orders, and `unmeasured` is still counted under its own reason so an
+    operator's view of the malformed item does not change."""
+    for items in (
+        [{"note": "1", "verdict": "clsoed", "cited_message_id": None},
+         {"note": "1", "verdict": "closed", "cited_message_id": 7}],
+        [{"note": "1", "verdict": "closed", "cited_message_id": 7},
+         {"note": "1", "verdict": "clsoed", "cited_message_id": None}],
+    ):
+        metrics = Metrics()
+        adaptor, _ = _revisitor((_note(),), [_row(7, "booked it")], metrics=metrics)
+        await adaptor.inputs(key=WORKSPACE, batch=[])
+        assert await adaptor.accept(key=WORKSPACE, items=items) == (), items
+        assert metrics.get(
+            "nora_note_revisit_refused_total", reason="contradictory") == 1
+        assert metrics.get(
+            "nora_note_revisit_refused_total", reason="unmeasured") == 1
+
+
+async def test_a_note_whose_only_items_are_unreadable_counts_no_verdict():
+    """An unreadable item is NOT a fourth verdict. When every item for a note is
+    one, the note is held — already counted as `unmeasured` — and nothing is
+    added to `verdicts_total`, which is the series that measures ANSWERS. A
+    non-answer appearing there would overstate how often the model engaged."""
+    metrics = Metrics()
+    adaptor, _ = _revisitor((_note(),), [_row(7, "booked it")], metrics=metrics)
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    assert await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "clsoed", "cited_message_id": None},
+    ]) == ()
+    assert metrics.get("nora_note_revisit_refused_total", reason="unmeasured") == 1
+    for verdict in ("closed", "expired", "unresolved", "unreadable"):
+        assert metrics.get(
+            "nora_note_revisit_verdicts_total", verdict=verdict) == 0, verdict
 
 
 async def test_coverage_reads_the_raw_window_not_the_filtered_evidence():

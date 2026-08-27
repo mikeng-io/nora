@@ -7,7 +7,7 @@
     "A note is only marked as having gone by unanswered when the date really has passed AND there was conversation to judge it against. If the group has said nothing since the note was written, that is not an answer and the note stays.",
     "Merging related notes is the curator's job and this pass will not do it.",
     "She judges a note against what the group said, never against her own messages: her saying she will book somewhere is an intention, not the group settling it.",
-    "If she reaches two different conclusions about the same note in one pass — including when one of them is 'I cannot tell', or when one fails her own evidence check — she treats that as not knowing, and the note stays open."
+    "If she reaches two different conclusions about the same note in one pass — including when one of them is 'I cannot tell', when one fails her own evidence check, or when one of them is garbled and she cannot read what it said — she treats that as not knowing, and the note stays open."
   ],
   "limitations": [
     "This is the retirement half only. The revisitor cannot yet reach a person about a note whose moment has come — that needs a background pass to be allowed to schedule a reminder, which is a change to a shared rule about what background work may do, and is deliberately not made here.",
