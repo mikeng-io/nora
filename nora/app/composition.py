@@ -665,8 +665,31 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # there is no second caller left stranded the way `remind`/`make_artifact`
     # would be by gating `reminders`/`compute_jobs`. Off, `TranscriptInjection`
     # gets `language=None` — the exact "not yet wired" state Task 9 shipped.
+    #
+    # **AND under `[dreamer]`, which is not a widening of the language tier.**
+    # `SqlLanguageStore` owns `consolidation_watermark` — the DREAMER's cursor,
+    # `(consolidator_name, scope_id) -> how far this adaptor has read` — so the
+    # Dreamer's clock cannot persist a watermark for ANY adaptor without this
+    # object, including adaptors that have nothing to do with language. That is
+    # why `[dreamer] enabled = true` was inert on its own: `__main__` spawns the
+    # loop only where this store exists, so a tier flag was deciding whether the
+    # RUNTIME ran (2026-08-27; the runtime shipped "on" and had not ticked in
+    # five days, and only `nora.log` said so).
+    #
+    # Building it here starts NOTHING language-shaped. The consolidators stay
+    # gated on `cfg.language.enabled` below and are `()` when it is off, so the
+    # loop ticks with no language adaptor registered — which is the state the
+    # note and fact adaptors need and could not have.
+    #
+    # **The naming is the debt, and it is deliberate to leave it.** The
+    # watermark table belongs to the Dreamer and lives in a module called
+    # `language` for historical reasons; extracting it is its own port change
+    # with its own migration, and doing it inside a fix for an inert flag would
+    # put two unrelated risks in one deploy. Recorded rather than done.
     language_store: SqlLanguageStore | None = (
-        SqlLanguageStore(engine, metrics=metrics) if cfg.language.enabled else None
+        SqlLanguageStore(engine, metrics=metrics)
+        if (cfg.language.enabled or cfg.dreamer.enabled)
+        else None
     )
     # Dreamer Plan 2's store (2026-08-20 exchange-patterns design) — same
     # gate, same reasoning as `language_store` immediately above: exactly one

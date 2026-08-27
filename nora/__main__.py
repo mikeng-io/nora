@@ -142,7 +142,31 @@ class App:
         # (`deps.language_consolidators == ()`), so there is nothing this
         # loop could tick even if spawned; the flag is what decides whether
         # it starts, not a widened interval.
-        if self.cfg.language.enabled and deps.language_store is not None:
+        # **`[dreamer]` OR `[language]`, and the `or` is the fix.** The clock
+        # belongs to the RUNTIME; `[language]` selects one tier's adaptors. Until
+        # 2026-08-27 this read `language.enabled and ...`, so `[dreamer] enabled
+        # = true` was a switch that gated nothing: the runtime, its adaptors,
+        # budgets and instructions were all built and nothing ever ticked them.
+        # It shipped that way — merged as "the Dreamer runtime is on", five days
+        # with no `dream tick`, and the `elif` below logging the reason into a
+        # file nobody reads.
+        #
+        # Turning `[language]` on to obtain a clock was the available workaround
+        # and is the wrong fix: room-language's MEASURE verb does not exist yet
+        # (28 §4.1, D34), so it would resume writing single-sighting lexeme rows
+        # — the defect that produced two contradictory "big walk" rows. A tier
+        # that must not run cannot be the price of a runtime that must.
+        #
+        # `deps.language_store is not None` STAYS, and is no longer the same
+        # question: composition now builds that store under either flag because
+        # it owns `consolidation_watermark`, the Dreamer's own cursor. So this
+        # reads "the clock is wanted, and the thing that remembers where each
+        # adaptor got to exists" — two conditions rather than one wearing a
+        # tier's name.
+        if (
+            (self.cfg.dreamer.enabled or self.cfg.language.enabled)
+            and deps.language_store is not None
+        ):
             # BEFORE the loop starts, and awaited rather than spawned. An
             # adaptor with a new name has no watermark row, `watermark_for`
             # returns 0 for an unknown pair, and it would re-read every room
@@ -179,18 +203,26 @@ class App:
                 workspaces=deps.workspace_scopes,
             ))
         elif self.cfg.dreamer.enabled:
-            # The one combination that is a WIRING MISTAKE rather than a
-            # choice, and it was silent (2026-08-21 review). `[dreamer]`
-            # decides whether the runtime exists; `[language]` decides whether
-            # the CLOCK runs at all — so an operator who turned the Dreamer on
-            # and left `[language]` off has a fully built runtime, adaptors,
-            # budgets and instructions, and nothing ever ticks them. The line
-            # below is the difference between «I turned it on and it isn't
-            # working» taking five minutes or an afternoon.
+            # **This branch changed meaning on 2026-08-27 and was rewritten
+            # rather than deleted.** It used to catch `[dreamer] on, [language]
+            # off` — a combination that is now ordinary and supported, and the
+            # branch would have been dead if the condition above were the only
+            # thing guarding it. It is not: composition builds the watermark
+            # store under either flag, so reaching here with the Dreamer ON now
+            # means that store could not be built at all.
+            #
+            # Left in place, and NOT `pragma: no cover`d, because the old
+            # message is exactly what would mislead the next reader: it names a
+            # cause that has been fixed, and an operator who greps for it during
+            # an outage would go and turn `[language]` on — resuming the
+            # single-sighting lexeme writes for a reason that no longer applies.
+            # A stale diagnostic is worse than none; it aims the search.
             log.error(
-                "dreamer.enabled = true but language.enabled = false: the "
-                "Dreamer's CLOCK is the language loop, so nothing will tick "
-                "and no adaptor will ever run"
+                "dreamer.enabled = true but no watermark store was built, so "
+                "the Dreamer's clock cannot start and no adaptor will ever "
+                "run. This is NOT the old [language]-is-off case — that is "
+                "supported now; the store is built under either flag. Check "
+                "the database wiring."
             )
         else:
             log.info("dream loop disabled (language.enabled = false)")
