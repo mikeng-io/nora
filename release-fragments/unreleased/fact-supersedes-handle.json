@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "When Nora finds that something the group believes is wrong, she can now actually record the correction — until now every correction was silently thrown away before it was saved.",
+  "details": [
+    "To retire an outdated fact she has to point at the one she is replacing. She was pointing at it by its internal database id, and her own safety screen — which strips identifiers out of anything a background job produces — destroyed every such answer before it could be saved.",
+    "It failed quietly and selectively: findings that merely confirmed or failed to settle a claim went through fine, so the feature looked like it was working. Only corrections were lost.",
+    "She now refers to a fact by its position in the short list she was shown, so no identifier is involved and nothing is discarded.",
+    "The test proving this works now runs a correction through the same safety screen the live system uses and reads the result back from a store, rather than checking that the code was called."
+  ],
+  "limitations": [
+    "The fact tier is switched off in this deployment, so no correction was ever actually lost in production — the defect was latent."
+  ]
+}

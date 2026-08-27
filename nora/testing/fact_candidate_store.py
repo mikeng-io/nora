@@ -47,6 +47,7 @@ import itertools
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import cast
+from uuid import uuid4
 
 from nora.domain.facts import (
     CandidateClaim,
@@ -145,7 +146,11 @@ class InMemoryFactCandidateStore:
             if existing is None:
                 self._seq += 1
                 fresh = FactCandidate(
-                    id=f"candidate-{self._seq}",
+                    # `uuid4` for the reason `InMemoryFactStore.propose`
+                    # gives: `SqlFactCandidateStore` mints one, and a double
+                    # whose ids are a different SHAPE cannot reproduce a defect
+                    # that turns on the shape.
+                    id=str(uuid4()),
                     workspace=key,
                     subject_id=claim.subject,
                     predicate=claim.predicate,

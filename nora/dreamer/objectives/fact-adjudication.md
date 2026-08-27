@@ -72,7 +72,7 @@ entry per claim you were given, in any order.
    "addresses_claim": true,
    "source_url": "https://example.com/patch-2-4",
    "source_excerpt": "Patch 2.4 reduced the gourd requirement from five to three.",
-   "supersedes": "0f9c1b7e-3a44-4c0d-9d21-1e9b6f2a7c58"}
+   "supersedes": "2"}
 ]}
 
 Field by field:
@@ -86,9 +86,10 @@ Field by field:
   forbidden for `not_covered`.** The excerpt is the sentence that actually carries the claim,
   quoted from the page. Not a summary, not your paraphrase: it is what a later reader re-reads
   to ask whether this source really addressed this question.
-- `supersedes` — **only for `contradicted`**, and only ever the id of a standing fact you were
-  shown. It is the fact this verdict retires. Never invent an id, never put one on a
-  `supported` verdict, and never put one on a `not_covered` verdict.
+- `supersedes` — **only for `contradicted`**, and only ever the number in square brackets
+  beside a standing fact you were shown. It is the fact this verdict retires. Never invent a
+  number, never put one on a `supported` verdict, and never put one on a `not_covered`
+  verdict.
 
 If you could not check a claim at all — nothing loaded, nothing was about it — that is
 `not_covered`. Say so plainly rather than reaching for the most plausible answer. «I could not

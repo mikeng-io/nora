@@ -28,6 +28,7 @@ import itertools
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import cast
+from uuid import uuid4
 
 from nora.domain.facts import Fact, FactVerdict, SupersedeReason
 from nora.domain.ports import Proposal
@@ -104,7 +105,15 @@ class InMemoryFactStore:
             verdict = p.payload
             if verdict.status == "not_covered":
                 continue
-            fact_id = f"fact-{len(self._facts) + len(ids) + 1}"
+            # `uuid4`, not a readable counter, because `SqlFactStore.propose`
+            # mints `str(uuid4())` and THE SHAPE IS LOAD-BEARING. The Dreamer's
+            # egress screen drops any envelope item carrying a UUID
+            # (`nora.agent.dream_screen`), which is the defect #63 fixes — and a
+            # double minting `fact-1` cannot reproduce it, so the test written to
+            # prove that fix passed against the reverted code. A readable id is
+            # more pleasant in a failure message and is worth nothing if it makes
+            # the double disagree with the store about a property a test turns on.
+            fact_id = str(uuid4())
             fact = Fact(
                 id=fact_id,
                 workspace=key,

@@ -20,6 +20,7 @@ would make every assertion here vacuous.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 
 import pytest
@@ -282,9 +283,14 @@ def test_the_adjudicators_tools_stay_inside_the_workspace_safe_set():
     assert adaptor.tools
 
 
-async def test_inputs_shows_every_candidate_and_every_standing_fact_with_its_id():
-    """`supersedes` names a fact id and the model may only name one it was
-    shown, so a fact rendered without its id is a fact it cannot correct."""
+async def test_inputs_shows_a_handle_for_every_standing_fact_and_never_its_id():
+    """`supersedes` names a HANDLE and the model may only name one it was
+    shown, so a fact rendered without a handle is a fact it cannot correct —
+    and a fact rendered with its UUID is one whose correction is DESTROYED
+    before this adaptor sees it, because `dream_screen` drops any envelope item
+    carrying an identifier.
+
+    Both halves asserted: the handle is present, the id is absent."""
     facts, candidates = InMemoryFactStore(), InMemoryFactCandidateStore()
     standing = await _standing_fact(
         facts, subject="big walk", predicate="gourds_required", obj="five",
@@ -298,8 +304,40 @@ async def test_inputs_shows_every_candidate_and_every_standing_fact_with_its_id(
     rendered = await _adjudicator(facts, candidates).inputs(key=WS, batch=())
 
     assert candidate_id in rendered
-    assert standing.id in rendered
+    assert standing.id not in rendered, (
+        "the standing fact's UUID reached the prompt; a contradicted verdict "
+        "naming it is screened before accept"
+    )
+    assert _handle_for(rendered, standing) == "1"
     assert "the page that established five" in rendered
+
+
+def _handle_for(prompt: str, fact) -> str:
+    """The per-tick ordinal `inputs` rendered this fact under.
+
+    Read out of the PROMPT rather than out of `_shown`, because the prompt is
+    what the model actually sees and the handle is only meaningful as the thing
+    it reads. A test that reached into the adaptor's private map would still
+    pass if the renderer stopped emitting handles altogether.
+
+    The fact's UUID must NOT be in the prompt — an id there is one the model can
+    echo into an envelope item, and `dream_screen` destroys any item carrying
+    one. Asserted here so every caller gets the check for free.
+    """
+    assert fact.id not in prompt, (
+        "the standing fact's UUID reached the prompt; a verdict naming it "
+        "would be screened before accept ever saw it"
+    )
+    obj = fact.object_literal if fact.object_literal is not None else (
+        fact.object_entity_id or ""
+    )
+    pattern = (
+        rf"- \[(\d+)\] {re.escape(fact.subject_id)} \| "
+        rf"{re.escape(fact.predicate)} \| {re.escape(obj)}"
+    )
+    match = re.search(pattern, prompt)
+    assert match is not None, f"fact not rendered in the prompt: {pattern}"
+    return match.group(1)
 
 
 async def test_a_contradicted_verdict_supersedes_the_fact_it_named():
@@ -319,12 +357,12 @@ async def test_a_contradicted_verdict_supersedes_the_fact_it_named():
         candidates, subject="big walk", predicate="gourds_required", obj="three",
     )
     adaptor = _adjudicator(facts, candidates)
-    await adaptor.inputs(key=WS, batch=())
+    prompt = await adaptor.inputs(key=WS, batch=())
 
     payloads = await adaptor.accept(key=WS, items=(
         _verdict_item(
             "big walk", "gourds_required", "three", "contradicted",
-            supersedes=target.id,
+            supersedes=_handle_for(prompt, target),
         ),
     ))
     written = await adaptor.commit(
@@ -431,11 +469,15 @@ async def test_a_settled_verdict_retires_its_candidate_as_adjudicated():
     assert retired is not None and retired.status == "adjudicated"
 
 
-async def test_a_supersedes_naming_a_fact_this_run_never_showed_is_dropped():
-    """The model can hallucinate a uuid. A supersession of a row nobody showed
-    it is not a verdict, it is a guess with a delete attached — and it is
-    checked against what THIS RUN rendered, not against what exists, because a
-    real fact about another subject is still one nobody put in front of it."""
+async def test_a_supersedes_naming_a_handle_this_run_never_rendered_is_dropped():
+    """The model can invent a handle. A supersession of a row nobody showed it
+    is not a verdict, it is a guess with a delete attached — and it is checked
+    against what THIS RUN rendered, not against what exists, because a real
+    fact about another subject is still one nobody put in front of it.
+
+    `unshown` exists in the store and is deliberately NOT rendered, so `"99"`
+    is a handle no tick produced. Asserting the fact survives is what makes
+    this a test of the refusal rather than of the parse."""
     facts, candidates = InMemoryFactStore(), InMemoryFactCandidateStore()
     unshown = await _standing_fact(
         facts, subject="other thing", predicate="costs", obj="ten",
@@ -451,7 +493,7 @@ async def test_a_supersedes_naming_a_fact_this_run_never_showed_is_dropped():
     payloads = await adaptor.accept(key=WS, items=(
         _verdict_item(
             "big walk", "gourds_required", "three", "contradicted",
-            supersedes=unshown.id,
+            supersedes="99",
         ),
     ))
 
@@ -508,17 +550,17 @@ async def test_each_contradiction_supersedes_with_its_own_new_fact_id():
             candidates, subject="big walk", predicate=predicate, obj=obj,
         )
     adaptor = _adjudicator(facts, candidates)
-    await adaptor.inputs(key=WS, batch=())
+    prompt = await adaptor.inputs(key=WS, batch=())
 
     payloads = await adaptor.accept(key=WS, items=(
         _verdict_item("big walk", "contains", "a shop", "not_covered"),
         _verdict_item(
             "big walk", "gourds_required", "three", "contradicted",
-            supersedes=first.id,
+            supersedes=_handle_for(prompt, first),
         ),
         _verdict_item(
             "big walk", "unlocked_by", "four towers", "contradicted",
-            supersedes=second.id,
+            supersedes=_handle_for(prompt, second),
         ),
     ))
     written = await adaptor.commit(
@@ -574,12 +616,12 @@ async def test_a_sink_returning_the_wrong_number_of_ids_supersedes_nothing():
         facts=_LosesAnId(inner),  # type: ignore[arg-type]
         candidates=candidates, max_adjudications_per_tick=10, metrics=metrics,
     )
-    await adaptor.inputs(key=WS, batch=())
+    prompt = await adaptor.inputs(key=WS, batch=())
 
     payloads = await adaptor.accept(key=WS, items=(
         _verdict_item(
             "big walk", "gourds_required", "three", "contradicted",
-            supersedes=target.id,
+            supersedes=_handle_for(prompt, target),
         ),
     ))
     await adaptor.commit(
@@ -680,3 +722,96 @@ async def test_the_extractor_renders_nothing_for_an_empty_batch():
     )
 
     assert await adaptor.inputs(key="g1", batch=()) == ""
+
+
+async def test_a_contradicted_verdict_survives_the_dreamers_egress_screen():
+    """**The test whose absence is why this shipped**, and the third adaptor to
+    need it.
+
+    `DreamerRuntime` runs `nora.agent.dream_screen.screen` over the model's raw
+    envelope items BEFORE `accept`, and the screen drops the WHOLE item on any
+    reachable identifier. `supersedes` carried a `fact.id` — a UUID — so every
+    `contradicted` verdict was screened, always.
+
+    **And it failed SELECTIVELY, which is why it survived three reviews.** Only
+    `contradicted` carries `supersedes`; `supported` and `not_covered` flowed
+    untouched, so the tier wrote facts, moved counters and looked healthy while
+    never once recording a contradiction — never retiring a wrong standing
+    fact, and re-adjudicating the same candidate every tick forever because a
+    screened verdict never becomes a proposal and so never retires its
+    candidate.
+
+    Every other test in this file calls `accept` directly and therefore cannot
+    see it. This one drives both verdicts through the real screen first, in the
+    order the runtime does, then through `accept` and `commit`, and READS THE
+    ROW BACK — the wrong fact is retired and its successor stands. Asserting
+    that `accept` returned something would only prove the item was not dropped;
+    the property is that a correction lands.
+
+    **It takes the bracketed token out of the prompt verbatim rather than
+    through `_handle_for`.** `_handle_for` asserts the id is absent, so a test
+    built on it fails on THAT assertion when the renderer regresses — for the
+    right outcome and the wrong reason. Reading whatever token the prompt
+    actually carries makes this test fail at `rejected == ()`, which is the
+    screen refusing the item, which is the property. A `supported`-only
+    assertion would have passed against the bug entirely."""
+    from nora.agent.dream_screen import screen
+
+    facts, candidates = InMemoryFactStore(), InMemoryFactCandidateStore()
+    target = await _standing_fact(
+        facts, subject="big walk", predicate="gourds_required", obj="five",
+    )
+    candidates.facts = [target]
+    candidates.entities = [_entity("big walk")]
+    await _pending_candidate(
+        candidates, subject="big walk", predicate="gourds_required", obj="three",
+    )
+    await _pending_candidate(
+        candidates, subject="big walk", predicate="unlocked_by", obj="four towers",
+    )
+    adaptor = _adjudicator(facts, candidates)
+    prompt = await adaptor.inputs(key=WS, batch=())
+
+    # Whatever token the prompt renders for this fact — a handle now, a UUID if
+    # the renderer regresses. Deliberately NOT `_handle_for`: see the docstring.
+    # Anchored on the OBJECT as well, because a candidate and the standing
+    # fact it contradicts share a subject and a predicate by definition — they
+    # differ only in the object, and candidates render first. Without it this
+    # matched `- [candidate-1] big walk | gourds_required | three` and tested
+    # the wrong line.
+    token = re.search(
+        rf"- \[([^\]]+)\] {re.escape(target.subject_id)} \| "
+        rf"{re.escape(target.predicate)} \| {re.escape(target.object_literal or '')}",
+        prompt,
+    )
+    assert token is not None, "the standing fact was not rendered at all"
+
+    items = [
+        _verdict_item(
+            "big walk", "gourds_required", "three", "contradicted",
+            supersedes=token.group(1),
+        ),
+        _verdict_item("big walk", "unlocked_by", "four towers", "supported"),
+    ]
+    kept, rejected = screen(
+        adaptor="fact-adjudication", items=items, metrics=Metrics(),
+    )
+
+    assert rejected == (), (
+        "the screen dropped a verdict before accept — the fact tier cannot "
+        "record a correction"
+    )
+    payloads = await adaptor.accept(key=WS, items=kept)
+    written = await adaptor.commit(
+        key=WS, proposals=tuple(_proposal(p) for p in payloads), now_ms=NOW,
+    )
+
+    # READ THE ROWS BACK. That the code path ran is not the property; that the
+    # wrong fact is retired and the correction stands is.
+    assert written == 2
+    retired = await facts.fact_by_id(workspace=WS, fact_id=target.id)
+    assert retired is not None and not retired.is_standing
+    successor = await facts.fact_by_id(
+        workspace=WS, fact_id=retired.superseded_by or "",
+    )
+    assert successor is not None and successor.object_literal == "three"
