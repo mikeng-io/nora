@@ -59,9 +59,17 @@ test seam.
 from __future__ import annotations
 
 import itertools
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 
-from nora.domain.notes import Note, NoteRevision, StaleNoteHeadError
+from nora.domain.notes import (
+    Note,
+    NoteRevision,
+    NoteRevisionProposal,
+    NoteSupersedeReason,
+    StaleNoteHeadError,
+)
+from nora.domain.ports import Proposal
 
 
 @dataclass(frozen=True)
@@ -85,6 +93,19 @@ def _like_matches(body: str, query: str) -> bool:
     regex — the two are the same function, and pretending otherwise put a
     mechanism in a docstring that no test could hold to."""
     return query.lower() in body.lower()
+
+
+def _looks_like_an_id(value: str) -> bool:
+    """What this double calls malformed, and it is NOT what Postgres calls it.
+
+    `SqlNoteStore` refuses a `replaced_by` that is not a UUID, because the
+    column is `pg.UUID`. This store's ids are a counter, so it cannot apply that
+    rule without making every one of its own ids illegal. It refuses the cases
+    it CAN — empty, blank — and the contract suite must not read the two as
+    identical: a double that claims a refusal it does not implement is worse
+    than one that states the gap.
+    """
+    return bool(value and value.strip())
 
 
 @dataclass
@@ -166,6 +187,8 @@ class InMemoryNoteStore:
         parent_revision_id: str,
         established_by: str,
         now_ms: int,
+        instruction_sha256: str | None = None,
+        model: str | None = None,
     ) -> NoteRevision:
         """§6.3's compare-and-swap — the refusal in the module docstring's (1).
 
@@ -192,6 +215,7 @@ class InMemoryNoteStore:
             id=f"rev-{next(self._ids)}", note_id=note_id, body=body,
             parent_revision_id=parent_revision_id, written_at=now_ms,
             established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
         )
         self.revisions[revision.id] = revision
         self.notes[note_id] = replace(note, head_revision_id=revision.id)
@@ -216,6 +240,101 @@ class InMemoryNoteStore:
             if _like_matches(body, query):
                 hits.append((note, body))
         return tuple(hits[:limit])
+
+    # ---- DreamSink -------------------------------------------------------
+    #
+    # **This double must refuse what Postgres refuses, and it does not get that
+    # for free.** A double whose only refusals come from the domain constructor
+    # is more permissive than the store it stands in for the moment a caller
+    # reaches around the type — which is CLAUDE.md's "a fake that answers every
+    # request the same way", and a contract suite cannot see it unless a test
+    # constructs the illegal state directly. So the checks below are written
+    # HERE rather than relied upon from `NoteRevisionProposal.__post_init__`.
+
+    async def propose(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
+    ) -> Sequence[str]:
+        """`SqlNoteStore.propose`'s behaviour, including its refusals."""
+        ids: list[str] = []
+        for p in proposals:
+            if not isinstance(p.payload, NoteRevisionProposal):
+                raise TypeError(
+                    f"InMemoryNoteStore.propose only accepts a "
+                    f"NoteRevisionProposal payload, got "
+                    f"{type(p.payload).__name__}"
+                )
+            revision = await self.append_revision(
+                workspace=key,
+                note_id=p.payload.note_id,
+                body=p.payload.body,
+                parent_revision_id=p.payload.parent_revision_id,
+                established_by=p.established_by,
+                now_ms=now_ms,
+                instruction_sha256=p.instruction_sha256,
+                model=p.model,
+            )
+            _ = revision
+            ids.append(p.payload.note_id)
+        return tuple(ids)
+
+    async def supersede(
+        self,
+        *,
+        key: str,
+        target: str,
+        replaced_by: str | None,
+        because: str,
+        source: str | None,
+        now_ms: int,
+    ) -> int:
+        """`SqlNoteStore.supersede`'s behaviour.
+
+        **`source` is accepted and DROPPED, and that is not an oversight — it
+        is what the SQL store does too.** `note` has no column for a
+        supersession's citation: a note is an open question, and what closed it
+        is the revision history, not a URL. The port carries `source` because
+        the fact tier needs it (a contradicting source is the warrant for the
+        supersession), and a tier that cannot record it says so through the
+        contract suite's axis rather than by inventing a column.
+
+        The refusals below are deliberately NOT delegated to the domain type:
+        a double that refuses only because a constructor refused is more
+        permissive than the real store for any caller that bypasses the
+        constructor.
+        """
+        if source is not None:
+            # REFUSED, not accepted-and-dropped, and the shared suite has a
+            # test for exactly this distinction. `note` has no column for a
+            # supersession's citation because what closed an open question is
+            # its revision history, not a URL — so a caller passing one is
+            # asking for something this tier cannot do, and answering `ok`
+            # while discarding it is `unavailable` wearing `ok`'s clothes at
+            # the storage boundary. A tier that cannot record a field says so.
+            raise ValueError(
+                f"InMemoryNoteStore.supersede cannot record a supersession source "
+                f"({source!r}): `note` has no column for one. What closed a "
+                f"note is its revision history, not a citation — the fact tier "
+                f"needs `source` because a contradicting source IS the warrant "
+                f"there, and the port carries it for that tier, not this one."
+            )
+        if because not in NoteSupersedeReason.ALL:
+            raise ValueError(
+                f"InMemoryNoteStore.supersede got because={because!r}; the "
+                f"note tier's vocabulary is {NoteSupersedeReason.ALL}"
+            )
+        if replaced_by is not None and not _looks_like_an_id(replaced_by):
+            raise ValueError(
+                f"InMemoryNoteStore.supersede got a malformed replaced_by "
+                f"{replaced_by!r}. A caller bug, not an absent row."
+            )
+        note = self.notes.get(target)
+        if note is None or note.workspace != key or note.retired_at is not None:
+            return 0
+        self.notes[target] = replace(
+            note, retired_at=now_ms, replaced_by=replaced_by,
+            retire_reason=because,
+        )
+        return 1
 
     async def record_miss(
         self, *, workspace: str, probe: str, conversation_id: str, now_ms: int,

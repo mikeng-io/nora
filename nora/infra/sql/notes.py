@@ -92,6 +92,7 @@ writes `note_entity` itself, from ids it has actually resolved.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -100,7 +101,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.notes import Note, NoteRevision, StaleNoteHeadError
+from nora.domain.notes import (
+    Note,
+    NoteRevision,
+    NoteRevisionProposal,
+    NoteSupersedeReason,
+    StaleNoteHeadError,
+)
+from nora.domain.ports import Proposal
 from nora.infra.sql.schema import NOTE, NOTE_CANDIDATE, NOTE_REVISION
 
 
@@ -111,7 +119,8 @@ def _row_to_note(r: Row[Any]) -> Note:
         established_in=r.established_in, created_at=r.created_at,
         head_revision_id=r.head_revision_id, anchor_date=r.anchor_date,
         anchor_entity_ids=tuple(r.anchor_entity_ids), retired_at=r.retired_at,
-        replaced_by=r.replaced_by, revisit_at=r.revisit_at, strikes=r.strikes,
+        replaced_by=r.replaced_by, retire_reason=r.retire_reason,
+        revisit_at=r.revisit_at, strikes=r.strikes,
         last_wake_revision_id=r.last_wake_revision_id, event_id=r.event_id,
         reminder_id=r.reminder_id,
     )
@@ -122,6 +131,7 @@ def _row_to_revision(r: Row[Any]) -> NoteRevision:
         id=r.rev_id, note_id=r.rev_note_id, body=r.body,
         parent_revision_id=r.parent_revision_id, written_at=r.written_at,
         established_by=r.established_by,
+        instruction_sha256=r.instruction_sha256, model=r.model,
     )
 
 
@@ -204,6 +214,8 @@ class SqlNoteStore:
                 id=revision.id, note_id=revision.note_id, body=revision.body,
                 parent_revision_id=None, written_at=revision.written_at,
                 established_by=revision.established_by,
+                instruction_sha256=revision.instruction_sha256,
+                model=revision.model,
             ))
         return note
 
@@ -266,6 +278,8 @@ class SqlNoteStore:
         parent_revision_id: str,
         established_by: str,
         now_ms: int,
+        instruction_sha256: str | None = None,
+        model: str | None = None,
     ) -> NoteRevision:
         """§6.3's compare-and-swap. See the module docstring's (2): the
         comparison IS the `UPDATE`'s `WHERE`, so a `rowcount` of 0 is the
@@ -289,6 +303,7 @@ class SqlNoteStore:
             id=revision_id, note_id=note_id, body=body,
             parent_revision_id=parent_revision_id, written_at=now_ms,
             established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
         )
         if not _is_uuid(note_id) or not _is_uuid(parent_revision_id):
             raise StaleNoteHeadError(
@@ -330,6 +345,8 @@ class SqlNoteStore:
                 parent_revision_id=revision.parent_revision_id,
                 written_at=revision.written_at,
                 established_by=revision.established_by,
+                instruction_sha256=revision.instruction_sha256,
+                model=revision.model,
             ))
         return revision
 
@@ -373,6 +390,233 @@ class SqlNoteStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return tuple((_row_to_note(r), r.body) for r in rows)
+
+    # ---- read-back, for the shared contract suite --------------------------
+    #
+    # `DreamSink` has two verbs and DELIBERATELY no third, so there is no read
+    # verb on the port and the contract suite supplies a `read_row` adapter per
+    # implementation instead. These two are what that adapter is built from.
+    # They are NOT a widening of the port: `SqlFactStore.fact_by_id` exists for
+    # exactly the same reason and is not on `DreamSink` either.
+
+    async def revision_by_id(self, *, revision_id: str) -> NoteRevision | None:
+        """One revision by id, or `None`. **Not workspace-scoped, and that is
+        deliberate rather than an omission** — a revision is reached through the
+        note that owns it, so scoping happens at `note_by_id` below. Scoping
+        here too would mean joining `note` on every call to answer a question
+        the caller then asks again.
+        """
+        if not _is_uuid(revision_id):
+            return None
+        stmt = sa.select(
+            NOTE_REVISION.c.id.label("rev_id"),
+            NOTE_REVISION.c.note_id.label("rev_note_id"),
+            NOTE_REVISION.c.body,
+            NOTE_REVISION.c.parent_revision_id,
+            NOTE_REVISION.c.written_at,
+            NOTE_REVISION.c.established_by,
+            NOTE_REVISION.c.instruction_sha256,
+            NOTE_REVISION.c.model,
+        ).where(NOTE_REVISION.c.id == revision_id)
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).one_or_none()
+        return None if row is None else _row_to_revision(row)
+
+    async def note_by_id(self, *, workspace: str, note_id: str) -> Note | None:
+        """One note by id within a workspace, **retired or not**.
+
+        `read` above cannot serve this: it goes through `_head_join`, which is
+        the model-facing path, and a caller asking whether a note was retired
+        needs the row precisely BECAUSE it is retired. Workspace-scoped like
+        every other read here — a caller must not be able to confirm a note
+        exists in a workspace it may not read.
+        """
+        if not _is_uuid(note_id):
+            return None
+        stmt = sa.select(NOTE).where(
+            NOTE.c.id == note_id, NOTE.c.workspace == workspace,
+        )
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).one_or_none()
+        if row is None:
+            return None
+        return Note(
+            id=row.id, workspace=row.workspace, title=row.title,
+            description=row.description, uncertainty=row.uncertainty,
+            closing_condition=row.closing_condition,
+            established_in=row.established_in, created_at=row.created_at,
+            head_revision_id=row.head_revision_id,
+            anchor_date=row.anchor_date,
+            anchor_entity_ids=tuple(row.anchor_entity_ids or ()),
+            retired_at=row.retired_at, replaced_by=row.replaced_by,
+            retire_reason=row.retire_reason,
+            revisit_at=row.revisit_at, strikes=row.strikes,
+            last_wake_revision_id=row.last_wake_revision_id,
+            event_id=row.event_id, reminder_id=row.reminder_id,
+        )
+
+    # ---- DreamSink (the curator's write boundary) --------------------------
+
+    async def propose(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
+    ) -> Sequence[str]:
+        """`DreamSink.propose`. `key` is the WORKSPACE (§3/DEC-105), the same
+        scope `standing` and `read` take, not a conversation.
+
+        **Refuses a foreign payload by `isinstance`, never duck-typing it**
+        (spec §15.4). `Proposal.payload` is `object` at the port so the runtime
+        never names an adaptor's value type; the price of that opacity is that a
+        wrong value travels a long way quietly, and this check is where it is
+        paid. A `TypeError` rather than a skip: a sink that silently drops what
+        it does not recognise reports `ok` for a tick that wrote nothing, which
+        is `unavailable` wearing `ok`'s clothes at the storage boundary.
+
+        **Every proposal goes through `append_revision`, so the curator gets the
+        SAME compare-and-swap the tag path gets** — it is not a privileged
+        writer. A background pass that could overwrite a revision written while
+        it was thinking is precisely what §6.3 exists to prevent, and reusing
+        the verb rather than reimplementing the UPDATE is what keeps the two
+        paths from drifting into two different definitions of "the head moved".
+
+        **A stale head fails the whole call**, and the `StaleNoteHeadError`
+        propagates rather than being caught and counted. Two reasons. It is
+        R-27's `unavailable` — «I could not do it» — and swallowing it would
+        return a short id list that reads as a partial success. And the ids this
+        returns are what a later `supersede` NAMES: a merge that appended to the
+        survivor and then retired the originals must not proceed on the half
+        that landed. Partial application of a cross-note edit is the one outcome
+        worse than not running.
+        """
+        ids: list[str] = []
+        for p in proposals:
+            if not isinstance(p.payload, NoteRevisionProposal):
+                raise TypeError(
+                    f"SqlNoteStore.propose only accepts a NoteRevisionProposal "
+                    f"payload, got {type(p.payload).__name__}"
+                )
+            revision = await self.append_revision(
+                workspace=key,
+                note_id=p.payload.note_id,
+                body=p.payload.body,
+                parent_revision_id=p.payload.parent_revision_id,
+                established_by=p.established_by,
+                now_ms=now_ms,
+                # DEC-125/126. This is the ONLY writer that has them — the tag
+                # path has no `Proposal` — which is why the columns are
+                # nullable and why passing them here is what makes an adaptor's
+                # revision attributable at all.
+                instruction_sha256=p.instruction_sha256,
+                model=p.model,
+            )
+            # **THE NOTE's id, not the revision's**, and the port's own
+            # rationale is what decides it: *"`propose` returns ids, not a
+            # count, so `supersede` can NAME what a previous `propose`
+            # produced."* This tier's `supersede` retires a NOTE. Returning
+            # revision ids would satisfy the sentence's letter and break its
+            # purpose — the caller would hold handles its only other verb
+            # cannot accept.
+            #
+            # It also matches what was produced at the tier's own level of
+            # meaning: the curator revised a note. The revision is how, and is
+            # reachable from the note's head; nothing outside this store needs
+            # its id.
+            #
+            # Two proposals against ONE note therefore return that id twice.
+            # That is correct rather than a collision — they revised the same
+            # thing — and it is why the port says "in order" rather than
+            # "distinct".
+            _ = revision
+            ids.append(p.payload.note_id)
+        return tuple(ids)
+
+    async def supersede(
+        self,
+        *,
+        key: str,
+        target: str,
+        replaced_by: str | None,
+        because: str,
+        source: str | None,
+        now_ms: int,
+    ) -> int:
+        """`DreamSink.supersede` — retirement, which is a status change and
+        never a delete. Returns rows affected.
+
+        **A null `replaced_by` is LEGAL here, and that is the whole reason the
+        port is permissive.** `SqlFactStore.supersede` raises on it, because
+        `fact`'s `(superseded_by is null) = (superseded_at is null)` CHECK makes
+        a fact either standing or superseded-with-a-successor. A note is not: an
+        anchor date passed and the dinner happened, and it is replaced by
+        nothing. Copying the fact store's refusal here would force the curator
+        to mint a placeholder id to satisfy a signature — the "invent a value to
+        satisfy a schema" move this codebase forbids everywhere else.
+
+        **What IS refused is a successor with no retirement.** `note`'s
+        `note_replacement_implies_retirement_check` is a ONE-DIRECTIONAL
+        implication — a replacement implies a retirement, never the converse —
+        and this verb always sets `retired_at`, so the illegal state is
+        unreachable through it. The double must refuse it too, by reaching
+        around its own types, or the two implementations are not
+        interchangeable and the contract suite cannot see the difference.
+
+        `because` is stored in `retire_reason` and is validated against
+        `NoteSupersedeReason.ALL`. A free-text reason would make the retirement
+        vocabulary unqueryable — «how many notes did the curator merge this
+        week» is the reading that justifies the curator existing, and it cannot
+        be answered against prose.
+
+        A `target` that names no standing note in this workspace reports **0
+        rather than raising**, including a malformed id: a background pass that
+        raises on a row it does not recognise takes the whole tick down with it.
+        A malformed `replaced_by`, by contrast, RAISES — same split and same
+        reasoning as `SqlFactStore`: that is a caller bug, and reporting 0 would
+        make it indistinguishable from "already retired", an ERROR surfacing as
+        `nothing_found`.
+        """
+        if source is not None:
+            # REFUSED, not accepted-and-dropped, and the shared suite has a
+            # test for exactly this distinction. `note` has no column for a
+            # supersession's citation because what closed an open question is
+            # its revision history, not a URL — so a caller passing one is
+            # asking for something this tier cannot do, and answering `ok`
+            # while discarding it is `unavailable` wearing `ok`'s clothes at
+            # the storage boundary. A tier that cannot record a field says so.
+            raise ValueError(
+                f"SqlNoteStore.supersede cannot record a supersession source "
+                f"({source!r}): `note` has no column for one. What closed a "
+                f"note is its revision history, not a citation — the fact tier "
+                f"needs `source` because a contradicting source IS the warrant "
+                f"there, and the port carries it for that tier, not this one."
+            )
+        if because not in NoteSupersedeReason.ALL:
+            raise ValueError(
+                f"SqlNoteStore.supersede got because={because!r}; the note "
+                f"tier's retirement vocabulary is {NoteSupersedeReason.ALL} — "
+                f"free text would make 'how many were merged' unanswerable"
+            )
+        if replaced_by is not None and not _is_uuid(replaced_by):
+            raise ValueError(
+                f"SqlNoteStore.supersede got a malformed replaced_by "
+                f"{replaced_by!r}: not a UUID. A caller bug, not an absent row "
+                f"— reporting 0 here would be indistinguishable from the target "
+                f"not existing, the ERROR-as-nothing_found shape R-27 forbids."
+            )
+        if not _is_uuid(target):
+            return 0
+        stmt = (
+            sa.update(NOTE)
+            .where(
+                NOTE.c.id == target,
+                NOTE.c.workspace == key,
+                NOTE.c.retired_at.is_(None),
+            )
+            .values(
+                retired_at=now_ms, replaced_by=replaced_by, retire_reason=because,
+            )
+        )
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return int(result.rowcount)
 
     async def record_miss(
         self, *, workspace: str, probe: str, conversation_id: str, now_ms: int,
@@ -443,6 +687,14 @@ class SqlNoteStore:
             NOTE_REVISION.c.parent_revision_id,
             NOTE_REVISION.c.written_at,
             NOTE_REVISION.c.established_by,
+            # Projected even though nothing renders them: `_row_to_revision`
+            # builds the whole domain object from this row, and a mapper that
+            # silently omits a field returns an object whose provenance reads as
+            # absent for every caller rather than only for the rows that have
+            # none. `0036` made these nullable precisely so `None` MEANS
+            # something, which stops being true if the query can produce it too.
+            NOTE_REVISION.c.instruction_sha256,
+            NOTE_REVISION.c.model,
         ).join_from(
             NOTE, NOTE_REVISION, NOTE.c.head_revision_id == NOTE_REVISION.c.id,
         )

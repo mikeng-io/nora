@@ -1487,6 +1487,20 @@ NOTE_REVISION = sa.Table(
     # Load-bearing beyond provenance: the strike reset distinguishes a
     # TAG-PATH revision from the revisitor's own, and cannot without this.
     sa.Column("established_by", sa.Text, nullable=False),
+    # DEC-125/DEC-126, added by `0036_note_revision_provenance` — see that
+    # file for why they sit on the REVISION and not on `note` (the unit of
+    # provenance is the unit of authorship, and a note is created once and
+    # revised many times by different authors).
+    sa.Column("instruction_sha256", sa.Text),
+    sa.Column("model", sa.Text),
+    sa.CheckConstraint(
+        "instruction_sha256 is null or instruction_sha256 ~ '^[0-9a-f]{64}$'",
+        name="note_revision_instruction_sha256_check",
+    ),
+    sa.CheckConstraint(
+        "model is null or length(btrim(model)) > 0",
+        name="note_revision_model_is_named_check",
+    ),
     sa.CheckConstraint("length(btrim(body)) > 0", name="note_revision_has_a_body_check"),
     sa.CheckConstraint(
         "length(btrim(established_by)) > 0",
