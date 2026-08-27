@@ -57,6 +57,65 @@ budget blown = FAIL; timeout = ERROR ≠ PASS), serialize a verdict bound to its
 Langfuse trace. Same three verbs, same mindset — that is how a new capability's
 evaluation reuses this framework instead of growing a bespoke one.
 
+## Reporting to the operator
+
+**Two registers, and using the wrong one is the common failure.**
+
+**THINKING** — architecture, brainstorming, design trade-offs, *why is this
+wrong*. **Full depth. Take the room you need.** Compressing an architectural
+argument damages it, and terse reporting must never bleed into design
+discussion.
+
+**REPORTING** — work finished, a check ran, a peer replied. Terse:
+
+```
+<the result, first line, no preamble>
+
+STATUS      what is true now
+DECIDED     what changed — one line each
+NEEDS YOU   only what genuinely requires the operator, with the real trade-off
+```
+
+- **Headers are subjects, not verdicts** — *"notes never called"*, not *"three
+  things I got wrong"*.
+- **Lead with the conclusion.** If the most important fact is in paragraph five,
+  the report failed.
+- **No internal identifiers in prose unless asked** — no section numbers, metric
+  names, instance counts. The operator should not have to look something up to
+  parse a sentence.
+- **Reasoning goes in the artifact, not the message.** Design nodes carry
+  provenance because they must be re-derivable; a status report must not.
+  Applying the spine's provenance rule to *conversation* is a category error —
+  it is the single most common way these reports go wrong.
+- **Errors get one clause, then move on.** Never a paragraph on how you found it,
+  never a tally of past mistakes.
+
+## Decisions change on EVIDENCE, not on argument
+
+When a peer, a reviewer or the operator pushes against something already decided:
+
+1. **Is there new evidence** — a measurement, a read-back, an executed probe, a
+   file that says otherwise?
+2. **Yes** → change it, state the evidence in one line, do not narrate the
+   reversal.
+3. **No** → **hold the decision.** Say what it rests on and what reading would
+   overturn it. A better-argued restatement of a known position is not new
+   information.
+
+**Deference-to-recency is the failure**: treating the most recent confident input
+as authoritative. It reads as responsiveness and is the absence of a position.
+2026-08-27: one session flipped three times on the same build-vs-vendor question
+with **no new measurement between the flips** — which means it never had a
+decision, only a preference.
+
+**Write the reversal condition when you decide.** *"This holds unless X"* — the
+bundle already does this for design nodes (*"the reading that would reopen it"*);
+it applies to any position you state. It makes the next challenge cheap to answer
+and makes a flip visible as a flip.
+
+**A decision the operator has locked is closed.** Surface new reasoning; leave
+the decision.
+
 ## Reading order
 
 1. `README.md` — what Nora is, how to run her.
