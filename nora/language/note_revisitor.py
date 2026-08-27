@@ -897,6 +897,33 @@ def _is_due(note: Note, *, now_ms: int) -> bool:
     NOT due: asking a model whether an undated question has gone stale is
     asking it to invent a deadline, which is the judgement this whole module
     refuses to make.
+
+    **`revisit_at` HAS NO WRITER — this branch is unreachable in production
+    today, and that is a gap rather than a decision.** The column exists since
+    migration `0026` with a `CHECK`, `SqlNoteStore` reads it into `Note`, and
+    nothing anywhere sets it: not the tag-path tools, not the curator, not this
+    pass. So every note that reaches this function today is due by ANCHOR DATE
+    alone, and a note without one is never revisited at all.
+
+    The mechanism that should fill it is the note-tier spec's §9.6 wake pass,
+    and that spec names `NoteRevisitor` as its owner: on each wake, a note whose
+    head revision has not moved takes a strike and gets NO new `revisit_at`; a
+    note whose head moved **on the tag path** resets its strikes and gets the
+    next one; past K strikes it stops waking and becomes eligible for dateless
+    retirement. `strikes` and `last_wake_revision_id` are the other two columns
+    with no writer, for the same reason.
+
+    **It is not built here because it needs a store verb this tier does not
+    have.** `DreamSink` offers `propose` and `supersede`; neither writes
+    `revisit_at`, `strikes` or `last_wake_revision_id`, and `nora/infra/sql/
+    notes.py` is not this session's to change. Building the wake pass against
+    an invented write path would be worse than leaving the branch honest.
+
+    Kept rather than deleted because deleting it would make the revisitor
+    permanently anchor-only and quietly drop half the spec'd trigger set — and
+    because the strike loop is what stops an undated note being due forever,
+    which is the pressure valve `_covers` above defers to when it holds a note
+    that a quiet room can never settle.
     """
     if note.revisit_at is not None and now_ms >= note.revisit_at:
         return True

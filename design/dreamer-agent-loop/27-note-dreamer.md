@@ -667,6 +667,46 @@ and produced one retirement — the instrument disagreeing with the action it wa
 measuring. A verdict is accepted when it survives resolution, not when it
 parses.
 
+### 11.3.5 `revisit_at`, `strikes` and `last_wake_revision_id` have NO WRITER
+
+Found by a completeness audit against this node and [26](26-standing.md).
+
+All three columns exist since migration `0026`, `SqlNoteStore` reads them into
+`Note`, and **nothing anywhere sets any of them** — not the tag-path tools, not
+the curator, not this pass. So `_is_due`'s `revisit_at` branch is
+**structurally unreachable in production**: every note that reaches it today is
+due by anchor date alone, and a note without an anchor date is never revisited.
+§6.1 already recorded `strikes` as a column with a CHECK and no writer; this
+records that the same is true of the other two, and that this adaptor now READS
+one of them.
+
+**The owner is this adaptor.** The note-tier spec's §9.6 names `NoteRevisitor`
+as the first thing in the design that needs a no-progress breaker, and the
+reason is structural: its unit of work is one note that may never change, so
+nothing is consumed by working on it and a note can be due forever. The strike
+is the substitute for the cursor every other pass has.
+
+**Why it is not in this change:** the wake pass has to WRITE, and `DreamSink`'s
+two verbs do not reach those columns — `propose` writes new rows and
+`supersede` retires them. A store verb is needed, `nora/infra/sql/notes.py`
+belongs to another session, and the standing protocol is to ask rather than
+reach into it. Building it against an invented write path would be worse than
+leaving the branch honest.
+
+**The trap §9.6 states, carried here so it is not lost:** the reset must be
+«head moved BY THE TAG PATH», never «head moved». If the revisitor's own writes
+counted, a note it keeps rewriting resets its own strike forever and the breaker
+is decorative — a self-referential reset is not a reset. Every revision carries
+its writer, and strikes reset only on a tag-path revision: a human actually
+engaging with the uncertainty.
+
+This is also the pressure valve §11.3.3 defers to. `_covers` holds a note whose
+room went quiet before its moment, deliberately and possibly forever; the strike
+loop is what should eventually retire it as dateless. **Until the wake pass
+exists, that deferral has nothing to defer to** — which is the strongest reason
+to build it next, and it is stated here rather than left for the next reader to
+notice.
+
 ### 11.4 What is deliberately NOT built
 
 **`schedule_reminder`, and therefore the reaching-a-person half.** §3/D21
