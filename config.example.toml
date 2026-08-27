@@ -936,7 +936,15 @@ model = ""
 # So this key exists to make that spike runnable. Empty is the honest default:
 # it says "nobody has measured this yet" rather than inventing a number.
 # Legal: none, minimal, low, medium, high, xhigh, max — checked at startup.
-reasoning_effort = ""
+# "none" (operator, 2026-08-27). The fold is INTEGRATION — read the prior
+# position and the trace, write the revised one — not research, and this is
+# the operator choosing the starting point rather than inheriting [llm]'s
+# "low" by accident. It remains the thing 18-flows says to MEASURE: the
+# spike runs the same fold at several budgets over the retained traces and
+# scores whether the revised position preserves what the prior held and
+# integrates what the trace added. This is where that measurement starts,
+# not where it ended.
+reasoning_effort = "none"
 
 [music]
 # The Discord music bot's gate (design/discord-music/00-overview.md). ON,
