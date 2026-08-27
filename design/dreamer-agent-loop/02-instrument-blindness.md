@@ -156,6 +156,42 @@ by a different session, at a different time, reproduced it exactly.
 
 ## Status / Checkpoint
 
+2026-08-27 — **a TENTH instance, and a named class rather than an anecdote:
+a copy of an operator-owned value, with no parity guard, is a fork with a
+delayed fuse.**
+
+Four of these were found in one afternoon, and the shape is identical every
+time. A value the operator owns — a trigger phrase, a token budget, a timeout —
+gets *restated* somewhere: a test fixture, a corpus, a design paragraph. The
+restatement stays plausible after the original moves, so **nothing fails at the
+moment of divergence.** When it finally fails it fails somewhere else and blames
+something else.
+
+| the copy | how it failed |
+|---|---|
+| the near-miss eval corpus hardcoded `nora.000` | the operator re-enabled the plain `nora` trigger; two cases stopped being near-misses and became real TAGS. The corpus swore the model would not be invoked, it was, and the gate blamed **the model** |
+| four `tests/test_config.py` assertions on that same string | three were `str.replace` calls that had **silently become no-ops** — the tests loaded a perfectly valid config while asserting it fails to load. Invert the assertion and they pass while measuring nothing |
+| `config.example.toml` behind the deployment on three keys | caught, because this one **has** a parity guard |
+| [26](26-standing.md) §5 reasoning about `[llm] timeout_seconds = 60` | the value does not exist; the field is required and set to 120. **A design document is the same bug in prose** — and the only one here with no possible automated guard |
+
+**The two with guards were found; the two without rotted for weeks.** That is
+the whole finding, and it is the instrument-blindness thesis applied to
+configuration rather than to metrics: an unguarded copy is not "slightly stale",
+it is a second source of truth that nothing is watching.
+
+**The rule.** A test, corpus or design node that needs an operator-owned value
+**reads it** — from the config under test, from the rendered corpus, from the
+loaded object. Where a value is deliberately pinned as a tripwire (this repo
+pins the token budget on purpose, so a change forces review), the pin is only
+safe **beside a parity guard** that fails when the two diverge. A pin without a
+guard is the fork.
+
+**And a stale copy can hide a second one.** Raising the synced budget exposed
+`_OVER_BUDGET = 130_000`, a constant whose only job was to sit *past* the
+budget and which now sat below it — so the scenario designed to blow the budget
+would have quietly stopped blowing it, with two tests still green. Its own
+comment named the budget from **two generations earlier**.
+
 2026-08-27 — **a ninth instance, and it is this bundle's own authors.** The
 Graphiti investigation reversed its own conclusion four times, and every reversal
 had one cause: **a signature was read and a conclusion stated before the thing
