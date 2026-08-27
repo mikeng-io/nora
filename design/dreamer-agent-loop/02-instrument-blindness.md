@@ -377,6 +377,82 @@ alone were both caught that way, within a minute of writing the test. One of the
 — the store-call count — then caught a *later* miscount by the same author, which
 is the difference between fixing an instance and closing a family.
 
+## The screened-identifier family — three adaptors, one screen, no counter of its own
+
+**2026-08-28.** `DreamerRuntime` runs `nora.agent.dream_screen.screen` over the
+model's raw envelope items **before** `adaptor.accept`, and the screen drops the
+WHOLE item on any identifier reachable in it. `egress._UUID` matches any
+hyphenated UUID. So an adaptor whose objective asks the model to echo a row's id
+back has every such item destroyed, silently, forever.
+
+**Three adaptors hit it within hours of each other**, independently, and none of
+their test suites could see it:
+
+| adaptor | the field | how it failed |
+|---|---|---|
+| `note-revisit` | `note_id` | **loudly** — every item screened, tier 100% inert |
+| `note-curation` | `note_id` | loudly — *"the curator asked about UUIDs, so the screen rejected every answer"* (`e5c5bea`) |
+| `fact-adjudication` | `supersedes` | **selectively — and still open** ([#63](https://github.com/mikeng-io/nora/issues/63)) |
+
+**The third is the dangerous one, and the difference is the finding.** Only a
+`contradicted` verdict carries `supersedes`, so `supported` and `not_covered`
+flow normally: facts are written, counters move, the tier looks healthy. It has
+simply never been able to record a contradiction. Four consequences, each in the
+code:
+
+1. the correcting fact is never written;
+2. `_supersede_fact` never runs, so **the standing WRONG fact is never retired**
+   and keeps rendering into every tag;
+3. `_retire_candidates` iterates `proposals`, and a screened verdict never
+   becomes one, so its candidate stays pending;
+4. it is therefore **re-adjudicated every tick, forever**, at a `web_search`
+   plus a completion each time.
+
+Leg 4 was predicted verbatim by the code it happens in: `_retire_candidates`'
+own docstring warns that without retirement *"the same unprovable claim is
+re-extracted and re-adjudicated every tick forever, and it fails quietly because
+nobody is waiting on the Dreamer."* It was written about `not_covered` and
+describes the screened `contradicted` path exactly.
+
+### Why every grep missed it
+
+A sweep of every adaptor and objective:
+
+```
+fact-adjudication   supersedes         UUID   <- broken
+fact-candidates     message_id         int    safe — _UUID cannot match an int
+room-language       message_id         int    safe
+room-exchange       message_ids        int    safe
+note-revisit        cited_message_id   int    safe (the note itself is an ordinal)
+observer / exchange_observer                  not on the DreamAdaptor path at
+                                              all — no envelope_key, never screened
+```
+
+**`supersedes` is the only one not named `*_id`.** A grep for id-shaped keys —
+the obvious sweep, and the one that would have been run — does not find it. The
+field that carries an identifier without saying so is the field that survives
+every search for identifiers.
+
+### What the family costs, and the two rules it earns
+
+**The screen has no per-adaptor counter**, so all three failures rendered as
+`nora_dream_screened_total{reason="identifier"}` — a generic runtime series — and
+each tier's OWN instruments showed exactly what a model that had stopped
+answering looks like. The tier's counters are where an operator looks; the
+runtime's are not.
+
+> **An adaptor's tests must drive at least one item through the REAL screen, in
+> the order the runtime does.** A test that calls `accept` directly is testing
+> half a pipeline, and all three suites did.
+
+> **Nothing an adaptor asks a model to echo back may be a stored identifier.**
+> Render an ordinal handle and map it back; the model never sees the id. This is
+> now the convention in two adaptors and it should be the convention in all.
+
+**Widening the screen was rejected** in all three cases and should stay
+rejected: it is a shared security rule, and widening it for one caller is how
+such a rule dies.
+
 ## The gate measured the TREE — when a green run certifies content nobody can get
 
 **2026-08-28.** A branch was reported green and ready to merge. `make gate` had
@@ -475,6 +551,15 @@ in the one line nobody edits. Fixed by removing the number rather than
 correcting it to seven: a count in a title is a copy of something the document
 already states, and this node has now recorded that class twice in its own
 checkpoint while carrying an instance of it in its own heading.
+
+2026-08-28 — **the screened-identifier family**, three adaptors in one day.
+`dream_screen` drops a whole envelope item on any reachable UUID, so an adaptor
+asking the model to echo a row id back loses every item. Two failed loudly and
+were fixed; `fact-adjudication` fails SELECTIVELY — only `contradicted` carries
+`supersedes` — so the fact tier looks healthy and has never recorded a
+contradiction, never retired a wrong standing fact, and re-adjudicates the same
+candidate every tick forever. It escaped every sweep because `supersedes` is the
+only such field not named `*_id`.
 
 2026-08-28 — **the gate measured the TREE.** A branch reported green on a
 complete, accurate `make gate` run that had been performed against a working
