@@ -34,6 +34,37 @@ async def _seed(store: InMemoryNoteStore, *, title: str, anchor: int | None,
     )
 
 
+def _h(note) -> str:
+    """The HANDLE a curator run rendered for this note.
+
+    Tests must speak the model's language, not the store's: the model is shown
+    ordinals and never an id, so a test passing an id is testing a path
+    production cannot take. Resolved from  because the mapping is
+    per-run — which is also what makes a handle from a previous tick unaskable.
+    """
+    return next(
+        h for h, nid in _LAST_SHOWN[0].by_handle.items() if nid == note.id
+    )
+
+
+_LAST_SHOWN: list = []
+
+
+def _h(curator, note) -> str:
+    """The HANDLE this curator run rendered for `note`.
+
+    Tests must speak the MODEL's language, not the store's. The model is shown
+    ordinals and never an id, so a test that passes an id is exercising a path
+    production cannot take — which is exactly how every test in this file
+    passed while the Dreamer's screen rejected every real item.
+
+    Per-run by construction, which is also what makes a handle from a previous
+    tick unaskable.
+    """
+    shown = curator._shown[WS]
+    return next(h for h, nid in shown.by_handle.items() if nid == note.id)
+
+
 def _curator(store, metrics=None, today=TODAY):
     return NoteCuratorAdaptor(
         notes=store, today=lambda: today, max_groups_per_tick=3,
@@ -77,7 +108,7 @@ async def test_a_verdict_about_a_note_this_run_never_showed_is_dropped():
     await curator.inputs(key=WS, batch=())
 
     kept = await curator.accept(key=WS, items=(
-        {"note_id": "note-invented", "verdict": "moot", "why": "made up"},
+        {"note_id": "999", "verdict": "moot", "why": "made up"},
     ))
 
     assert kept == ()
@@ -95,7 +126,7 @@ async def test_a_verdict_outside_the_three_is_dropped_never_mapped():
     await curator.inputs(key=WS, batch=())
 
     kept = await curator.accept(key=WS, items=(
-        {"note_id": note.id, "verdict": "expired", "why": "the date passed"},
+        {"note_id": _h(curator, note), "verdict": "expired", "why": "the date passed"},
     ))
 
     assert kept == ()
@@ -109,7 +140,7 @@ async def test_open_is_the_common_answer_and_writes_nothing():
     curator = _curator(store)
     await curator.inputs(key=WS, batch=())
     kept = await curator.accept(key=WS, items=(
-        {"note_id": note.id, "verdict": "open", "why": "still nobody booked"},
+        {"note_id": _h(curator, note), "verdict": "open", "why": "still nobody booked"},
     ))
 
     written = await curator.commit(
@@ -130,7 +161,7 @@ async def test_a_closed_note_is_retired_with_the_closed_reason():
     curator = _curator(store, metrics)
     await curator.inputs(key=WS, batch=())
     kept = await curator.accept(key=WS, items=(
-        {"note_id": note.id, "verdict": "closed", "why": "Ada booked Sai Kung"},
+        {"note_id": _h(curator, note), "verdict": "closed", "why": "Ada booked Sai Kung"},
     ))
 
     written = await curator.commit(
@@ -181,9 +212,13 @@ async def test_nothing_is_read_and_nothing_published_when_there_is_no_work():
 
 
 async def _merge_round(store, metrics, items, today=TODAY):
+    """`items` may be a callable taking the curator, so a test can name handles
+    that only exist after `inputs` has run."""
     curator = _curator(store, metrics, today)
     rendered = await curator.inputs(key=WS, batch=())
-    kept = await curator.accept(key=WS, items=items)
+    kept = await curator.accept(
+        key=WS, items=items(curator) if callable(items) else items,
+    )
     written = await curator.commit(
         key=WS,
         proposals=tuple(
@@ -203,8 +238,8 @@ async def test_a_merge_actually_merges():
                 body="Ben found a place in Sheung Wan.")
     metrics = Metrics()
 
-    _, written = await _merge_round(store, metrics, (
-        {"note_id": a.id, "merged_body":
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "merged_body":
             "Ada can't do Fridays; Sai Kung ruled out. Ben found Sheung Wan."},
     ))
 
@@ -248,8 +283,8 @@ async def test_a_merged_body_for_a_group_this_run_did_not_select_is_refused():
                        entities=("ada",))
     metrics = Metrics()
 
-    _, written = await _merge_round(store, metrics, (
-        {"note_id": lone.id, "merged_body": "a merge nobody asked for"},
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, lone), "merged_body": "a merge nobody asked for"},
     ))
 
     assert written == 0
@@ -271,10 +306,10 @@ async def test_the_survivor_of_a_merge_is_never_retired_in_the_same_tick():
     b = await _seed(store, title="Grant's wedding", anchor=20260101)
     metrics = Metrics()
 
-    _, written = await _merge_round(store, metrics, (
-        {"note_id": a.id, "merged_body": "everything both knew"},
-        {"note_id": a.id, "verdict": "closed", "why": "they got married"},
-        {"note_id": b.id, "verdict": "closed", "why": "duplicate"},
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "merged_body": "everything both knew"},
+        {"note_id": _h(c, a), "verdict": "closed", "why": "they got married"},
+        {"note_id": _h(c, b), "verdict": "closed", "why": "duplicate"},
     ))
 
     standing = await store.standing(workspace=WS)
@@ -295,9 +330,9 @@ async def test_a_merge_that_never_ran_does_not_suppress_its_retirements():
     metrics = Metrics()
 
     # Verdicts only — no merged_body, so no merge runs for this group.
-    _, written = await _merge_round(store, metrics, (
-        {"note_id": a.id, "verdict": "moot", "why": "the day passed"},
-        {"note_id": b.id, "verdict": "moot", "why": "the day passed"},
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "verdict": "moot", "why": "the day passed"},
+        {"note_id": _h(c, b), "verdict": "moot", "why": "the day passed"},
     ))
 
     assert written == 2, "both retire; neither is suppressed by an absent merge"
@@ -353,12 +388,60 @@ async def test_contradictory_verdicts_leave_the_note_standing():
     note = await _seed(store, title="Dinner", anchor=20260909, entities=("ada",))
     metrics = Metrics()
 
-    _, written = await _merge_round(store, metrics, (
-        {"note_id": note.id, "verdict": "closed", "why": "Ada booked it"},
-        {"note_id": note.id, "verdict": "open", "why": "actually nobody did"},
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, note), "verdict": "closed", "why": "Ada booked it"},
+        {"note_id": _h(c, note), "verdict": "open", "why": "actually nobody did"},
     ))
 
     assert written == 0
     assert [n.id for n in await store.standing(workspace=WS)] == [note.id]
     assert metrics.get(
         "nora_note_curator_dropped_total", reason="conflicting_verdict") == 1
+
+
+# --- P1: the model is never shown a note id -------------------------------
+
+
+async def test_no_note_id_reaches_the_prompt():
+    """**The Dreamer screens every item an adaptor returns against R-18/R-28,
+    and `scan_identifiers` matches ANY hyphenated uuid.** Note ids are uuid4,
+    so a curator that asked the model about ids had every answer rejected at
+    the screen: the tick fired, spent a model call, `accept` received nothing,
+    `commit` wrote nothing, and the run reported OK because the envelope was
+    non-empty. Silent, forever.
+
+    **Every test in this file missed it**, because `InMemoryNoteStore` ids are
+    `note-1` and the screen passes those. The double said yes on exactly the
+    property that decides it — which is why this test asserts against the
+    SCREEN rather than against the double.
+
+    The screen is not exempted. It is the disclosure floor, and an adaptor
+    arguing its way around it is what R-18 exists to stop."""
+    from nora.agent.dream_screen import scan_identifiers
+
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20261011)
+    await _seed(store, title="Grant's wedding", anchor=20261011)
+    await _seed(store, title="Dinner", anchor=20260909, entities=("ada",))
+
+    rendered = await _curator(store).inputs(key=WS, batch=())
+
+    assert a.id not in rendered, "no note id may reach the prompt"
+    for line in rendered.splitlines():
+        assert scan_identifiers(line) is None, (
+            f"the disclosure screen would reject this line: {line!r}"
+        )
+
+
+async def test_a_handle_this_run_did_not_render_is_dropped():
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner", anchor=20260909, entities=("ada",))
+    metrics = Metrics()
+    curator = _curator(store, metrics)
+    await curator.inputs(key=WS, batch=())
+
+    assert await curator.accept(
+        key=WS, items=({"note_id": "9999", "verdict": "moot", "why": "x"},),
+    ) == ()
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="unknown_note") == 1

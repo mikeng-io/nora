@@ -26,6 +26,7 @@ port change with its own migration.
 
 from __future__ import annotations
 
+import itertools
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -106,7 +107,13 @@ class _Shown:
     permanent removal from an index the group cannot see the inside of.
     """
 
-    note_ids: frozenset[str]
+    #: handle -> note id, THE JOIN THIS TICK ASKED ABOUT. The model never sees
+    #: a note id and never returns one; it answers about ordinals this run
+    #: rendered, and `accept` resolves them here.
+    by_handle: Mapping[str, str]
+    #: group handles, survivor first — the same ordering `merge_groups`
+    #: returned, so `commit` can still name the survivor without an id ever
+    #: reaching the model.
     merge_groups: tuple[tuple[str, ...], ...]
     heads: Mapping[str, str]
 
@@ -209,12 +216,44 @@ class NoteCuratorAdaptor:
         expired = await self._notes.anchored_before(
             workspace=key, day=self._today(), limit=self._max_expired,
         )
+        # ORDINAL HANDLES, NOT IDS, and this is not a readability choice.
+        #
+        # The Dreamer screens every item an adaptor returns against R-18/R-28
+        # (`nora.agent.dream_screen`), and `scan_identifiers` matches ANY
+        # hyphenated uuid. Note ids are uuid4. So a curator that asked the
+        # model about ids got every answer rejected at the screen — the tick
+        # fired, spent a model call, `accept` received nothing, `commit` wrote
+        # nothing, and the run reported OK because the envelope was non-empty.
+        # Silent, forever, with `nora_dream_screened_total{reason="identifier"}`
+        # as the only tell.
+        #
+        # **Every unit test missed it because `InMemoryNoteStore` ids are
+        # `note-1`**, which the screen passes. The double said yes on exactly
+        # the property that decides it.
+        #
+        # The screen is NOT exempted — it is the disclosure floor and an
+        # adaptor arguing its way around it is the thing R-18 exists to stop.
+        # The handles also remove `unknown_note` by construction: a handle this
+        # run did not render is simply absent from the map.
+        by_handle: dict[str, str] = {}
+        group_handles: list[tuple[str, ...]] = []
+        ordinal = itertools.count(1)
+        for g in groups:
+            handles: list[str] = []
+            for note, _ in g:
+                handle = str(next(ordinal))
+                by_handle[handle] = note.id
+                handles.append(handle)
+            group_handles.append(tuple(handles))
+        expired_handles: list[tuple[str, Note, str]] = []
+        for note, body in expired:
+            handle = str(next(ordinal))
+            by_handle[handle] = note.id
+            expired_handles.append((handle, note, body))
+
         self._shown[key] = _Shown(
-            note_ids=frozenset(
-                [n.id for g in groups for n, _ in g]
-                + [n.id for n, _ in expired],
-            ),
-            merge_groups=tuple(tuple(n.id for n, _ in g) for g in groups),
+            by_handle=by_handle,
+            merge_groups=tuple(group_handles),
             heads={
                 n.id: n.head_revision_id
                 for n in [x for g in groups for x, _ in g]
@@ -231,7 +270,10 @@ class NoteCuratorAdaptor:
                 float(sum(len(g) for g in groups) + len(expired)),
                 workspace=key,
             )
-        return _render(groups, expired)
+        return _render(
+            list(zip(group_handles, groups, strict=True)),
+            expired_handles,
+        )
 
     # -- accept -------------------------------------------------------------
 
@@ -256,7 +298,7 @@ class NoteCuratorAdaptor:
           its own grouping is the one thing this design exists to prevent, so
           it is refused rather than merged.
         """
-        shown = self._shown.get(key, _Shown(frozenset(), (), {}))
+        shown = self._shown.get(key, _Shown({}, (), {}))
         # BOTH shapes. A model answering about a merge group returns a
         # `merged_body`; a model answering about an expired note returns a
         # `verdict`. One item may legitimately carry both — the survivor of a
@@ -281,13 +323,19 @@ class NoteCuratorAdaptor:
                     "nora_note_curator_dropped_total", reason="malformed")
                 log.warning("note curator dropped a malformed verdict")
                 continue
-            if note_id not in shown.note_ids:
+            resolved = shown.by_handle.get(note_id)
+            if resolved is None:
+                # A handle this run did not render. Impossible to reach by
+                # invention in the way a uuid was — an ordinal outside the
+                # rendered range simply is not in the map — but still counted,
+                # because "the model answered about something we did not ask"
+                # is a real reading and silence is not.
                 self._inc(
                     "nora_note_curator_dropped_total", reason="unknown_note")
                 log.warning(
-                    "note curator named a note this run did not show; dropped")
+                    "note curator named a handle this run did not render")
                 continue
-            out.append(_Verdict(note_id=note_id, verdict=verdict, why=why))
+            out.append(_Verdict(note_id=resolved, verdict=verdict, why=why))
         return tuple(out)
 
     def _merged_bodies(
@@ -317,7 +365,7 @@ class NoteCuratorAdaptor:
         proposing its own grouping is the one thing this design exists to
         prevent.
         """
-        shown = self._shown.get(key, _Shown(frozenset(), (), {}))
+        shown = self._shown.get(key, _Shown({}, (), {}))
         survivors = {g[0] for g in shown.merge_groups}
         out: list[_MergedBody] = []
         for item in items:
@@ -342,7 +390,8 @@ class NoteCuratorAdaptor:
                     "note curator proposed a merge for a group this run did "
                     "not select; dropped")
                 continue
-            out.append(_MergedBody(note_id=note_id, body=body))
+            out.append(
+                _MergedBody(note_id=shown.by_handle[note_id], body=body))
         return out
 
     # -- commit -------------------------------------------------------------
@@ -399,21 +448,22 @@ class NoteCuratorAdaptor:
             log.warning(
                 "note curator returned contradictory verdicts for one note; "
                 "leaving it standing")
-        shown = self._shown.get(key, _Shown(frozenset(), (), {}))
+        shown = self._shown.get(key, _Shown({}, (), {}))
         provenance = proposals[0] if proposals else None
         retired = 0
         merged_groups: list[tuple[str, ...]] = []
 
         for group in shown.merge_groups:
-            body = merged_bodies.get(group[0])
+            survivor = shown.by_handle[group[0]]
+            body = merged_bodies.get(survivor)
             if body is None:
                 continue
-            survivor = group[0]
             try:
                 count = await self._notes.merge(
                     workspace=key, survivor=survivor,
                     survivor_parent=shown.heads[survivor],
-                    merged_body=body.body, retire=group[1:],
+                    merged_body=body.body,
+                    retire=[shown.by_handle[h] for h in group[1:]],
                     established_by=(
                         provenance.established_by if provenance else "curator"
                     ),
@@ -433,7 +483,8 @@ class NoteCuratorAdaptor:
                 self._inc("nora_note_curator_total", action="merge_refused")
                 continue
             retired += count
-            merged_groups.append(group)
+            merged_groups.append(
+                tuple(shown.by_handle[h] for h in group))
             self._inc("nora_note_curator_total", action="merge")
 
         # ONLY the groups that actually merged, and the SURVIVOR is in here
@@ -485,8 +536,8 @@ class NoteCuratorAdaptor:
 
 
 def _render(
-    groups: Sequence[Sequence[tuple[Note, str]]],
-    expired: Sequence[tuple[Note, str]],
+    groups: Sequence[tuple[Sequence[str], Sequence[tuple[Note, str]]]],
+    expired: Sequence[tuple[str, Note, str]],
 ) -> str:
     """What the model is shown. Titles and bodies, no ids it did not need.
 
@@ -501,9 +552,9 @@ def _render(
     closed from a prefix of it.
     """
     parts: list[str] = []
-    for group in groups:
-        parts.append(f"<merge_group survivor=\"{group[0][0].id}\">")
-        for note, body in group:
+    for handles, group in groups:
+        parts.append(f"<merge_group survivor=\"{handles[0]}\">")
+        for handle, (note, body) in zip(handles, group, strict=True):
             # THE BODY, which this omitted until 2026-08-28 while the docstring
             # twelve lines above claimed otherwise. The model is asked to write
             # one body that keeps everything every note in the group knew — and
@@ -511,16 +562,16 @@ def _render(
             # synthesised from two titles, written over a survivor that had
             # accumulated real detail, is content loss produced BY the merge.
             parts.append(
-                f"  <note id=\"{note.id}\" title=\"{note.title}\">\n"
+                f"  <note id=\"{handle}\" title=\"{note.title}\">\n"
                 f"    uncertainty: {note.uncertainty}\n"
                 f"    closing condition: {note.closing_condition}\n"
                 f"    body: {body}\n"
                 f"  </note>"
             )
         parts.append("</merge_group>")
-    for note, body in expired:
+    for handle, note, body in expired:
         parts.append(
-            f"<note id=\"{note.id}\" title=\"{note.title}\" "
+            f"<note id=\"{handle}\" title=\"{note.title}\" "
             f"anchor=\"{note.anchor_date}\">\n"
             f"  uncertainty: {note.uncertainty}\n"
             f"  closing condition: {note.closing_condition}\n"
