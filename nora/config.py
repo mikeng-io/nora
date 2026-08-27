@@ -1619,6 +1619,26 @@ class NotesConfig(BaseModel):
 
     enabled: bool = False
 
+    # --- the REVISITOR (`nora.language.note_revisitor`) ------------------
+    #
+    # `max_revisits_per_tick = 10`: how many DUE notes one pass judges. A
+    # ceiling on the PROMPT as much as on the work — each candidate carries its
+    # own evidence block, so this multiplies with `revisit_evidence_messages`
+    # below into the size of one model call. A workspace with more due than
+    # this drains over several ticks, which is correct for a background pass
+    # nobody is waiting on, and the overflow is COUNTED
+    # (`nora_note_revisit_deferred_total`) rather than silently truncated.
+    #
+    # `revisit_evidence_messages = 40`: messages of a note's own
+    # `established_in` rendered as the evidence it is judged against. This is
+    # the only thing standing between the pass and a decision, and it fails in
+    # ONE direction: too few messages means a note that was answered looks
+    # unresolved and stays open, which is recoverable on the next tick. There
+    # is no setting of this that causes a wrong retirement, which is why it is
+    # a plain cap rather than a gated one.
+    max_revisits_per_tick: int = Field(default=10, ge=1)
+    revisit_evidence_messages: int = Field(default=40, ge=1)
+
 
 class XaiImageGenConfig(BaseModel):
     """`[image_gen.xai]` — the xAI adapter's own knobs (DEC-137).

@@ -429,6 +429,12 @@ RULE_TESTS = {
     # the exposure `nora.agent.egress` exists for, and the prompt side is the
     # half that carries the turn's raw tool results.
     "R-73": "test_an_identifier_never_reaches_the_collector",
+    # R-74 names the no-evidence refusal rather than the citation check,
+    # because it is the clause a future change is most likely to "simplify":
+    # a passed anchor date LOOKS sufficient for expiry, and treating it as
+    # sufficient is what turns a quiet room into a swept notebook. The other
+    # five grounds are named in the decision index row.
+    "R-74": "test_no_retirement_is_reachable_without_evidence",
 }
 
 

@@ -440,6 +440,116 @@ the wrong surface.
 **What remains, in order:** the curator (§2), then the revisitor (§3). The two
 unbuilt adaptors' four metrics ship with them.
 
+## 11. The revisitor, built — retirement half only
+
+**2026-08-28.** The adaptor is `nora.language.note_revisitor.NoteRevisitor`,
+workspace-keyed, watermark-free, and it holds **no tools at all**.
+
+### 11.1 The asymmetry the whole module is arranged around
+
+Retirement is irreversible in the direction that matters. A note swept away
+while its question is still open is a tracked uncertainty that silently stopped
+being tracked, and nothing downstream can tell that apart from a question that
+got answered. So the default everywhere is **the note survives**:
+
+**closing condition MET** → `retired-closed`. The model must cite a message,
+and that message must be in the evidence it was shown.
+
+**moment PASSED, nothing answered it** → `retired-expired`. The anchor date is
+behind the clock — arithmetic, not opinion — and there was real evidence for
+the question to have gone unanswered *in*.
+
+**anything else** → no `supersede` call is made and the note stands.
+
+`merged` is the curator's and is never written here: merging is a judgement
+across notes, and this adaptor sees one note at a time by construction.
+
+**Both retirements require evidence to EXIST**, and that is the ruling worth
+carrying forward. A room that has said nothing since the note was written
+cannot establish that a question went unanswered — it establishes that nobody
+spoke. **Silence is not an answer**, so `retired-expired` is deliberately NOT
+reachable from a passed anchor date alone.
+
+### 11.2 What the model decides, and what it does not
+
+The verdict is semantic and belongs to a model. The grounding is not:
+
+| checked against | not the model's word for it |
+|---|---|
+| the note id | must be one this tick actually asked about |
+| a `closed` citation | must be a message id rendered for THAT note |
+| an `expired` verdict | the clock, not the model's opinion of the clock |
+
+The asked-set is rebuilt every tick and never merged across them: a note id
+from a previous tick is exactly as unaskable as one the model invented, because
+the evidence that justified asking is gone.
+
+A boolean citation is refused explicitly. `isinstance(True, int)` is True in
+Python and `int(True) == 1`, so `cited_message_id: true` would otherwise read
+as citing message 1 — a real id, plausibly in the evidence, grounded enough to
+pass the membership check, and pointing at the wrong thing.
+
+### 11.3 Evidence is assembled in CODE, not fetched by a tool
+
+A workspace has no single room, so no room-scoped tool can be granted (§4.2,
+and `tool_subset_faults`' second axis). The evidence is therefore selected here:
+the note's own `established_in`, capped, filtered to messages that POSTDATE the
+note — a closing condition cannot have been met before the note existed.
+`established_in` is a routing key and the workspace is already the disclosure
+boundary (DEC-105/R-49), so reading the room a note was born in to judge that
+note stays inside the boundary the note already sits in.
+
+**A failed record read leaves the note standing**, counted apart from an
+honestly quiet room. Both render identically to the model — its job is the same
+either way, decide nothing — but they are different states for the operator, and
+one counter for both is `unavailable` wearing `nothing_found`.
+
+### 11.4 What is deliberately NOT built
+
+**`schedule_reminder`, and therefore the reaching-a-person half.** §3/D21
+resolved that an adaptor may hold a verb that ENQUEUES even though it may not
+hold one that DELIVERS — but **that amendment is in this document and not in
+`nora.agent.dreamer.tool_subset_faults`**, which still refuses every tool
+outside the read-only ceiling. Building it would mean widening what *every*
+background adaptor may hold: a security-relevant change to a shared rule, and
+not needed to retire a note. An empty tool set also makes the workspace-safe
+restriction moot rather than argued around.
+
+### 11.5 The instrument, and the gap it exists to close
+
+`supersede` returns 0 for an unknown target and **never raises**, so a
+retirement that silently did nothing looks exactly like one that was never
+attempted. `nora_note_retirements_total{because,result}` splits `applied` from
+`no_rows` for precisely that. The shape generalises: **any verb that returns a
+count instead of raising has this gap**, and the others have not been looked at.
+
+`unresolved` is counted as a VERDICT, not as a refusal — «asked and could not
+tell» is a real answer and often the right one, and collapsing it into the
+refusals would let a model that had stopped engaging hide among the honest
+holds.
+
+### 11.6 The objective CAN be reworded — and why that was checked first
+
+Checked on day one, before the adaptor was written, because the language tier
+had just been parked for the opposite reason
+([28](28-language-tier.md) §10.1).
+
+**The trap there is not "objectives are pinned".** It is that *three* lifted
+objectives — `room-language`, `room-language-verification`, `room-exchange` —
+are pinned byte-for-byte against `tests/fixtures/dreamer_objectives_pre_move/`
+until the instruction substrate's re-partition retires them. Anything touching
+those three hits it; nothing else does.
+
+A new objective has no pre-move fixture, so byte-identity is not a property it
+can have. The guard runs the other way: an objective with neither a fixture nor
+an entry in `NATIVELY_AUTHORED` is refused. `note-revisit` is declared there,
+and the operator can revise its wording freely, forever.
+
+**Generalised, because it will come up again:** when a tier's judgement depends
+on operator-owned instruction text, verify on day one that the text can be
+LANDED — not merely that it exists. A tier can be fail-closed by design and
+unfixable by accident.
+
 2026-08-27 — **§5.4: the cold start.** The log shows ONE note-tool call in the
 tier's life; the create path has never been invoked. With zero notes the
 `<notes>` block is absent from every prompt and doctrine carries no recognition
