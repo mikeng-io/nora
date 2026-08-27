@@ -377,6 +377,53 @@ alone were both caught that way, within a minute of writing the test. One of the
 — the store-call count — then caught a *later* miscount by the same author, which
 is the difference between fixing an instance and closing a family.
 
+## The gate measured the TREE — when a green run certifies content nobody can get
+
+**2026-08-28.** A branch was reported green and ready to merge. `make gate` had
+run to completion — 4955 passed, ruff, mypy and `lint-imports` all clean — and
+every one of those numbers was true. The coordinator ran `git status` in the
+worktree before merging rather than after, and found an uncommitted file: a
+rebase resolution moving a rule row in `09-decision-index.md`.
+
+> **The gate passing is not evidence the TIP is green — it is evidence the TREE
+> is.**
+
+Nobody in this repo had drawn that line, and five branches had been merged that
+night on gate reports.
+
+**It is not a silent match.** The gate did not fail to match, did not return a
+misleading value, and did not no-op. It ran correctly, measured accurately, and
+reported truthfully — **about a subject nobody else can reach.** A working tree
+is private to one worktree; a merge takes the tip. So the artefact that was
+certified and the artefact that would ship were different, and every instrument
+in the gate agreed about the wrong one.
+
+**The consequence lands on the file least able to absorb it.** What was
+uncommitted here was the decision index — the document CLAUDE.md puts FOURTH in
+the reading order and treats as current state. A row landing in the wrong place,
+or not at all, is exactly the failure that produced a wrong answer elsewhere the
+same night, from a stale row in that same file.
+
+**The remedy is one line and it belongs before the report, not after the
+merge:** a green claim about a branch must be made against a CLEAN tree, and
+`git status --porcelain` empty is the cheapest possible check. The stronger form
+— re-run the gate on the committed tip rather than reasoning that the content is
+identical — is the same discipline one level up, and it is the one this bundle
+already applies everywhere else: **no self-attestation.** «The commit contains
+exactly what I just tested» is a claim by the doer about the doer's own work,
+and it costs one command to replace with a measurement.
+
+**Why it generalises past a slip.** Every worktree in this repo is a place where
+a gate can be run and a tip can lag it, and the rule that keeps sessions out of
+each other's way — one agent per checkout, each with its own worktree — is
+exactly what makes the gap invisible: the person merging is not the person who
+ran the gate, and neither of them sees the other's `git status` unless somebody
+asks for it.
+
+*The reading that would retire this entry:* a gate that refuses to report green
+on a dirty tree, at which point the discipline is mechanical rather than
+remembered.
+
 ## What follows from this
 
 **Every fix in this bundle ships its own measurement, or it is not done**
@@ -428,6 +475,15 @@ in the one line nobody edits. Fixed by removing the number rather than
 correcting it to seven: a count in a title is a copy of something the document
 already states, and this node has now recorded that class twice in its own
 checkpoint while carrying an instance of it in its own heading.
+
+2026-08-28 — **the gate measured the TREE.** A branch reported green on a
+complete, accurate `make gate` run that had been performed against a working
+tree carrying an uncommitted file the branch tip did not have. Not a silent
+match — the instruments were right about a subject nobody else can reach. Found
+by running `git status` before a merge rather than after; the uncommitted file
+was the decision index. A green claim needs a clean tree, and the stronger form
+is to re-run on the committed tip rather than reason that the content is
+identical.
 
 2026-08-28 — **a sixth silent-match instance**, and the first where the
 instrument was one of ours rather than one of the code's: an edit script raised,
