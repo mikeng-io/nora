@@ -996,10 +996,23 @@ enabled = true
 # `nora_tag_latency_seconds`: folding it in would move an existing SLO series
 # by changing what it measures.
 #
-# Switched on globally rather than per room because there is no per-room gate —
-# `[standing] enabled` is one flag over every admitted conversation. If the
-# latency lands badly, this line is the whole rollback.
-enabled = true
+# SWITCHED BACK OFF, 2026-08-27, before a single fold ran — cross-provider
+# review (Kimi + a Claude reviewer, independently) found the stage's store I/O
+# sits OUTSIDE its own `asyncio.wait_for`: `store.read` and `store.write` are
+# unbounded, `create_sql_engine` sets no `command_timeout`, and both run while
+# the per-conversation slot is HELD. A Postgres connection that hangs mid-query
+# during the post-reply fold therefore wedges that conversation indefinitely —
+# on a turn that had already delivered its reply successfully. The stage's own
+# docstring claimed it was "bounded twice"; only the model half ever was.
+#
+# The same review found the slot-hold budget was argued against `[llm]
+# timeout_seconds = 60`, a value that does not exist — the field is REQUIRED
+# with no default and this deployment sets 120, so the bounded worst case was
+# 140s, not the 80s the design reasoned about.
+#
+# Turn this back on only when the store I/O is inside the bound and that budget
+# is re-argued against the real number.
+enabled = false
 # The OPERATING cap on the position. The database carries an absolute ceiling
 # of 4000 (`standing_body_fits_the_ceiling_check`) that no config may pass — a
 # value above it refuses to START. 1200 characters is ~300 tokens in English
