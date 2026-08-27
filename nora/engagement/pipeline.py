@@ -67,6 +67,7 @@ from nora.domain.ports import (
 from nora.domain.tag_trace import TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.obs.logging import bind_tag_id, clear_tag_id
+from nora.obs.tracing import span
 from nora.persons import Persons
 from nora.policy import Policy
 from nora.tag import Debounce
@@ -286,10 +287,11 @@ class EngagementPipeline:
         message = request.message
         identity = await self._adapter_for(message.platform).resolve_identity()
         key = (message.platform, message.conversation_id)
-        verdict = admission.run(
-            message=message, identity=identity, debounce=self._debounce,
-            slots=self._slots, metrics=self._metrics,
-        )
+        with span("engagement.admission"):
+            verdict = admission.run(
+                message=message, identity=identity, debounce=self._debounce,
+                slots=self._slots, metrics=self._metrics,
+            )
         if verdict is Admission.REJECTED or verdict is Admission.QUEUE_FULL:
             return
         indicator = self._begin_indicator(request)
@@ -368,20 +370,29 @@ class EngagementPipeline:
         wiring = self._debrief_wiring
         if wiring is None or trace is None:
             return
-        await debrief.run(
-            trace=trace,
-            platform=platform,
-            store=wiring.store,
-            client=wiring.client,
-            objective=wiring.objective,
-            metrics=self._metrics,
-            display_name=self._display_name,
-            max_chars=wiring.max_chars,
-            window=wiring.window,
-            timeout_seconds=wiring.timeout_seconds,
-            store_timeout_seconds=wiring.store_timeout_seconds,
-            now_ms=int(time.time() * 1000),
-        )
+        # The fold is otherwise COMPLETELY untraced: Strands instruments the
+        # agent loop, and the debrief's own model call is not in it. Standing
+        # writes a row injected into every later turn with no record of the
+        # prompt that produced it — counters say a fold took 3s, nothing says
+        # what it saw or wrote. Inside the guarded region by construction: this
+        # never wraps `release_and_dispatch`, and `span` cannot raise on entry
+        # or exit, which matters because this block runs in the `finally` AFTER
+        # the outer `except BaseException` has already run.
+        with span("engagement.debrief"):
+            await debrief.run(
+                trace=trace,
+                platform=platform,
+                store=wiring.store,
+                client=wiring.client,
+                objective=wiring.objective,
+                metrics=self._metrics,
+                display_name=self._display_name,
+                max_chars=wiring.max_chars,
+                window=wiring.window,
+                timeout_seconds=wiring.timeout_seconds,
+                store_timeout_seconds=wiring.store_timeout_seconds,
+                now_ms=int(time.time() * 1000),
+            )
 
     async def _run_admitted(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
@@ -570,12 +581,13 @@ class EngagementPipeline:
             # already carries the real outcome (`"timeout"`/`"llm_error"`,
             # `invoke.run`'s own `_blank_trace`), so there is nothing to
             # correct.
-            ok, llm_elapsed, stop_reason, final_text, trace = await invoke.run(
-                runner=self._runner, doctrine=doctrine, tools=tools, pre_fill=pre_fill,
-                guard=handle.guard, tool_call_log=handle.tool_call_log,
-                tag_message=tag_message, limits=self._limits, ctx=ctx,
-                timeout_seconds=self._timeout_seconds, metrics=self._metrics,
-            )
+            with span("engagement.invoke"):
+                ok, llm_elapsed, stop_reason, final_text, trace = await invoke.run(
+                    runner=self._runner, doctrine=doctrine, tools=tools, pre_fill=pre_fill,
+                    guard=handle.guard, tool_call_log=handle.tool_call_log,
+                    tag_message=tag_message, limits=self._limits, ctx=ctx,
+                    timeout_seconds=self._timeout_seconds, metrics=self._metrics,
+                )
             if not ok:
                 # A timeout or an `llm_error`. Messages may ALREADY have gone
                 # out — under multi-message that is the common shape, not an
