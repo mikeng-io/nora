@@ -342,3 +342,23 @@ async def test_entities_in_a_different_order_are_the_same_occasion():
     rendered = await _curator(store).inputs(key=WS, batch=())
 
     assert "<merge_group" in rendered
+
+
+async def test_contradictory_verdicts_leave_the_note_standing():
+    """Last-write-wins collapsed two contradictory answers to whichever came
+    second, uncounted, on an operation that RETIRES things. "The model said
+    both" is not a tie to break — it is «I cannot tell», and the fail-closed
+    answer is to leave the note alone."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=20260909, entities=("ada",))
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, (
+        {"note_id": note.id, "verdict": "closed", "why": "Ada booked it"},
+        {"note_id": note.id, "verdict": "open", "why": "actually nobody did"},
+    ))
+
+    assert written == 0
+    assert [n.id for n in await store.standing(workspace=WS)] == [note.id]
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="conflicting_verdict") == 1

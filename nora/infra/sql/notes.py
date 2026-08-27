@@ -626,8 +626,16 @@ class SqlNoteStore:
         # the grouping down. That is bounded by the same thing `standing`
         # already is — the index is uncapped by design (§5.1) — and correctness
         # on the key is worth more than a GROUP BY here.
-        rows_stmt = (
-            self._head_join()
+        # TWO QUERIES, and the split is the budget. Grouping needs the ANCHOR
+        # of every standing note; only the notes in a surviving group need
+        # their BODY. Fetching bodies for the grouping pass would read the
+        # whole workspace's prose every tick to answer a question about dates
+        # and entity sets — and `nora_note_curator_bodies_read` would report
+        # the handful it showed the model while the store had read all of them.
+        # The gauge is the tick's budget instrument; a query that makes it lie
+        # is worse than an extra round trip.
+        anchors_stmt = (
+            sa.select(NOTE)
             .where(
                 NOTE.c.workspace == workspace,
                 NOTE.c.retired_at.is_(None),
@@ -636,9 +644,27 @@ class SqlNoteStore:
             .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
         )
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(rows_stmt)).all()
-        return group_on_anchor_key(
-            [(_row_to_note(r), r.body) for r in rows], limit=limit,
+            anchors = (await conn.execute(anchors_stmt)).all()
+            # `""` as a placeholder body: `group_on_anchor_key` reads only the
+            # anchor, and the bodies are filled in below for the groups that
+            # survive. Typed as the same pair so one grouping function serves
+            # both callers rather than gaining a bodiless variant.
+            eligible, refused = group_on_anchor_key(
+                [(_row_to_note(r), "") for r in anchors], limit=limit,
+            )
+            wanted = [n.id for g in eligible for n, _ in g]
+            bodies: dict[str, str] = {}
+            if wanted:
+                rows = (await conn.execute(
+                    self._head_join().where(NOTE.c.id.in_(wanted))
+                )).all()
+                bodies = {r.id: r.body for r in rows}
+        return (
+            tuple(
+                tuple((n, bodies.get(n.id, "")) for n, _ in g)
+                for g in eligible
+            ),
+            refused,
         )
 
     async def anchored_before(

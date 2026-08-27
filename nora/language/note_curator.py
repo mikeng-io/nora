@@ -376,11 +376,29 @@ class NoteCuratorAdaptor:
             for p in proposals
             if isinstance(p.payload, _MergedBody)
         }
-        verdicts = {
-            p.payload.note_id: p.payload
-            for p in proposals
-            if isinstance(p.payload, _Verdict)
-        }
+        # CONFLICTING VERDICTS ARE DROPPED, NOT RESOLVED. A dict comprehension
+        # here was last-write-wins: two contradictory answers about one note
+        # collapsed to whichever came second, uncounted, on an operation that
+        # RETIRES things. "The model said both" is not a tie to break — it is
+        # «I cannot tell», and the fail-closed answer to that is to leave the
+        # note standing. Agreeing duplicates are fine and collapse silently.
+        verdicts: dict[str, _Verdict] = {}
+        conflicted: set[str] = set()
+        for p in proposals:
+            if not isinstance(p.payload, _Verdict):
+                continue
+            seen = verdicts.get(p.payload.note_id)
+            if seen is not None and seen.verdict != p.payload.verdict:
+                conflicted.add(p.payload.note_id)
+                continue
+            verdicts[p.payload.note_id] = p.payload
+        for note_id in conflicted:
+            verdicts.pop(note_id, None)
+            self._inc(
+                "nora_note_curator_dropped_total", reason="conflicting_verdict")
+            log.warning(
+                "note curator returned contradictory verdicts for one note; "
+                "leaving it standing")
         shown = self._shown.get(key, _Shown(frozenset(), (), {}))
         provenance = proposals[0] if proposals else None
         retired = 0

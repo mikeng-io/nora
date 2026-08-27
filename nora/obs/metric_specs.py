@@ -1392,7 +1392,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_note_curator_dropped_total",
         "Model verdicts the curator refused, by reason: malformed (a field "
         "missing or a verdict outside the three the objective defines), or "
-        "unknown_note (it named a note this run did not show it). A drop is "
+        "unknown_note (it named a note this run did not show it), "
+        "not_shown_in_group (a merge for a group this run did not select), or "
+        "conflicting_verdict (two contradictory answers about one note — not a "
+        "tie to break but «I cannot tell», so the note stays standing). A drop is "
         "never a guess — a retirement is a permanent removal from an index "
         "nobody can see the inside of.",
         ("reason",),
