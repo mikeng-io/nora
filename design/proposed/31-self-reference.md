@@ -2,7 +2,7 @@
 
 **Status:** Proposed (nothing built)
 **Date:** 2026-08-27
-**DEC:** 139 (indexed at the bottom of this document)
+**DEC:** 141 (indexed at the bottom of this document)
 **Branch:** `feat/self-reference-design` (worktree `~/workspace/nora-wt-self-ref`)
 
 ## 1. What this is
@@ -282,8 +282,8 @@ config.toml                                    # (none expected — asset handle
 - **No new schema.** `provenance` jsonb carries the role marker; no
   migration, no new enum value for `source`.
 
-## 8. DEC-139 (index row)
+## 8. DEC-141 (index row)
 
 | ID | Statement | Enforcing test |
 |---|---|---|
-| DEC-139 | **Nora has a canonical visual identity: a doctrine `appearance.md` (kind: identity) describing her look and the operator's avatar, plus two canonical assets in her media library (marked `provenance.role` = `self` and `operator`), which resolve as image references in ANY conversation (narrow custody exemption, operator-provided assets only) so she can reference her own design image when asked to draw herself and Miles's avatar when asked to draw him; when more than one user photo could be the requested subject she ASKS rather than guessing; doctrine text, not tool-level intent detection, decides when canonical assets are used.** | `tests/contract/test_image_generator_contract.py` (canonical-role resolves cross-conversation; a non-canonical row in another conversation is still refused; collision between conversation asset and canonical asset resolves to nothing; external URL still refused; doctrine-embedded handles resolve to canonical rows), `tests/test_doctrine_content.py` (appearance.md present, kind=identity, no constraint keywords), `tests/test_doctrine_assembly.py` (exact section lists include appearance), `tests/test_doctrine_audiences.py` (applies_to includes tag; appearance excluded from AUTHORED mirroring silence), vision-verified smoke: "draw yourself" with no user reference yields an image consistent with the canonical design |
+| DEC-141 | **Nora has a canonical visual identity: a doctrine `appearance.md` (kind: identity) describing her look and the operator's avatar, plus two canonical assets in her media library (marked `provenance.role` = `self` and `operator`), which resolve as image references in ANY conversation (narrow custody exemption, operator-provided assets only) so she can reference her own design image when asked to draw herself and Miles's avatar when asked to draw him; when more than one user photo could be the requested subject she ASKS rather than guessing; doctrine text, not tool-level intent detection, decides when canonical assets are used.** | `tests/contract/test_image_generator_contract.py` (canonical-role resolves cross-conversation; a non-canonical row in another conversation is still refused; collision between conversation asset and canonical asset resolves to nothing; external URL still refused; doctrine-embedded handles resolve to canonical rows), `tests/test_doctrine_content.py` (appearance.md present, kind=identity, no constraint keywords), `tests/test_doctrine_assembly.py` (exact section lists include appearance), `tests/test_doctrine_audiences.py` (applies_to includes tag; appearance excluded from AUTHORED mirroring silence), vision-verified smoke: "draw yourself" with no user reference yields an image consistent with the canonical design |
