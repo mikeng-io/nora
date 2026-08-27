@@ -278,6 +278,43 @@ second-queued-tag case explicitly rather than measuring an average.
 - The debrief gets **its own timeout**, and `tag_timeout + debrief_timeout` must
   fit inside the maximum acceptable slot hold.
 
+**The numbers, reconciled against what the code enforces (2026-08-27).** An
+earlier draft of this section reasoned about an 80-second worst case built on
+`[llm] timeout_seconds = 60` — **a value that does not exist.** That field is
+REQUIRED with no default and this deployment sets **120**, so the real bounded
+worst case was 140s, not 80s. The design was arguing against a number nobody had
+read back.
+
+| | value | why |
+|---|---|---|
+| `[llm] timeout_seconds` | **120** | the tag turn's own bound, already required and set |
+| `[standing] timeout_seconds` | **20** | the debrief's model call |
+| `[standing] store_timeout_seconds` | **5**, counted **twice** | the fold reads the prior and writes the next; **both** are inside the bound |
+| `[standing] max_slot_hold_seconds` | **150** | `120 + 20 + 2×5`, and it is **checked at startup** |
+
+**The store calls are inside the bound, and that is the correction this section
+most needed.** An implementation shipped with one `asyncio.wait_for` around the
+model call only, while `store.read` and `store.write` ran **outside it with the
+slot held** — so a Postgres connection hanging mid-query wedged that conversation
+indefinitely, on a turn that had already delivered its reply. Its own docstring
+claimed it was *"bounded twice"*; only the model half ever was. **A bound that
+does not cover the call that can hang is not a bound**, and a docstring asserting
+otherwise is the self-attestation this bundle refuses everywhere else.
+
+**A cross-section startup validator, not a comment.** The four values above are
+asserted against each other when config loads, so the arithmetic cannot drift
+back apart. Verified by falsification rather than by argument: fed the 80-second
+figure this section originally reasoned about, **the validator refuses to boot**
+— the 2× error that shipped would now be a startup failure rather than a
+production hang.
+
+**What this does NOT fix, and it is wider than Standing.** The tag path already
+makes unbounded database reads during context assembly, so a hung Postgres wedges
+the next turn whether or not the debrief runs. Standing bounded the hang point it
+*introduced*; the class-level fix is a `command_timeout` on the engine, which
+every store shares and which therefore needs its own decision and its own test.
+Tracked separately — it must not ride on a Standing change.
+
 **Two failure shapes the stage must not create**, both of which turn a working
 turn into a false alarm:
 
