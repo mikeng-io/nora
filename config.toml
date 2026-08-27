@@ -1050,6 +1050,20 @@ max_chars = 1200
 # EVERY reply's prompt, a per-turn cost on the live path and not a Standing
 # decision.
 window = 40
+# S2's ceiling: rebuild the position from the window instead of revising it,
+# once this many folds have accumulated SINCE THE LAST REBUILD. The other,
+# stronger trigger needs no key — it fires when the previous turn's verdict
+# says that turn was not grounded.
+#
+# This is the WEAKER one deliberately. "Time alone re-derives healthy
+# conversations for nothing": the ungrounded case catches the turn that
+# actually went wrong, and this only bounds how far drift accumulates when
+# nothing does. If nora_standing_rederivations_total comes back dominated by
+# trigger="ceiling", the trigger has degraded into a clock wearing a condition
+# — look at why the ungrounded case is not firing rather than raising this.
+#
+# 20 is a starting point, not a measured value.
+rebuild_after_folds = 20
 # The fold's own timeout — the MODEL call only. The number that matters is the
 # SUM, and it is checked at startup by max_slot_hold_seconds below rather than
 # worked out here: [llm] timeout_seconds + this + 2 x store_timeout_seconds.

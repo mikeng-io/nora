@@ -345,6 +345,63 @@ class Wiring:
     window: int
     timeout_seconds: float
     store_timeout_seconds: float
+    rebuild_after_folds: int
+
+
+async def _should_rebuild(
+    *,
+    prior: Standing | None,
+    store_verdict: TurnVerdictStore | None,
+    conversation_id: str,
+    ceiling: int,
+    store_timeout_seconds: float,
+    tag_id: str,
+) -> str | None:
+    """S2's trigger: `"ungrounded"`, `"ceiling"`, or `None` for neither.
+
+    **`prior is None` is never a re-derivation.** The first fold of a
+    conversation builds from the window regardless — there is nothing to carry
+    forward and nothing to correct — so counting it would drown the signal in
+    the one event that happens to every conversation exactly once.
+
+    **Ungrounded WINS when both hold**, and that ordering is the measurement
+    rather than a preference. 26 §6 reads the by-trigger split to ask whether
+    the trigger has degraded into "a clock wearing a condition": if `ceiling`
+    dominates, it has. Labelling a turn that actually went wrong as `ceiling`
+    manufactures exactly that false reading.
+
+    **A verdict store that cannot be read does NOT trigger a rebuild.** An
+    unreadable verdict is «I could not check» — R-27 — and re-deriving on it
+    would throw away a position because an instrument was down. The ceiling is
+    still evaluated, because `fold_count` is on the row already in hand and
+    needs no second store.
+    """
+    if prior is None:
+        return None
+
+    if store_verdict is not None:
+        try:
+            last = await asyncio.wait_for(
+                store_verdict.latest(conversation_id=conversation_id),
+                timeout=store_timeout_seconds,
+            )
+        except Exception:  # noqa: BLE001 — an unreadable verdict is R-27's
+            # «I could not check», and the ONLY safe answer is not to rebuild:
+            # throwing away a position because the instrument was down is a
+            # worse outcome than carrying a possibly-drifted one for one more
+            # turn. Deliberately blind, because every failure of that read has
+            # the same correct response.
+            log.warning(
+                "debrief: could not read the last verdict (tag=%s); not "
+                "re-deriving on an instrument that is down", tag_id,
+            )
+            last = None
+        if last is not None and not last.grounded:
+            return "ungrounded"
+
+    if prior.fold_count >= ceiling:
+        return "ceiling"
+    return None
 
 
 async def run(
@@ -361,6 +418,7 @@ async def run(
     window: int,
     timeout_seconds: float,
     store_timeout_seconds: float,
+    rebuild_after_folds: int,
     now_ms: int,
     tz: tzinfo | None = None,
 ) -> None:
@@ -402,10 +460,39 @@ async def run(
             prior="read" if prior is not None else "absent",
         )
 
+        # S2's TRIGGER. Two conditions, and the ORDER of the check is the
+        # measurement: when both hold, this is an `ungrounded` re-derivation,
+        # never a `ceiling` one. The ceiling would have fired eventually
+        # anyway; an ungrounded verdict names a turn that actually went wrong,
+        # and labelling it `ceiling` makes the clock look dominant — which is
+        # exactly the reading 26 §6 uses to conclude the trigger has degraded
+        # into a clock wearing a condition.
+        rebuild = await _should_rebuild(
+            prior=prior, store_verdict=store_verdict,
+            conversation_id=trace.conversation_id,
+            ceiling=rebuild_after_folds,
+            store_timeout_seconds=store_timeout_seconds,
+            tag_id=trace.tag_id,
+        )
+        if rebuild is not None:
+            metrics.inc("nora_standing_rederivations_total", trigger=rebuild)
+            log.info(
+                "debrief: re-deriving the position (tag=%s trigger=%s); the "
+                "prior is read but not carried forward",
+                trace.tag_id, rebuild,
+            )
+
         instructions = objective.objective_body(OBJECTIVE)
+        # **The prior is DISCARDED AT THE RENDER, never at the read** (26 §4's
+        # non-negotiable). The fold must still READ it — that is the whole
+        # requirement, and `nora_debrief_prior_total` has to stay honest about
+        # whether it did — so re-derivation withholds it from the PROMPT rather
+        # than skipping the store call. Skipping the read would make a
+        # re-derived turn indistinguishable from a fold that could not read,
+        # which is the one thing that counter exists to tell apart.
         rendered = render_debrief_input(
-            trace=trace, prior=prior, display_name=display_name,
-            window=window, tz=tz,
+            trace=trace, prior=None if rebuild else prior,
+            display_name=display_name, window=window, tz=tz,
         )
 
         # ONE `wait_for` around BOTH calls, not one around each: the budget the
@@ -505,7 +592,13 @@ async def run(
             # Counted from the prior the fold actually read, so the ceiling
             # half of S2's re-derivation trigger counts folds-since-rebuild
             # rather than folds-ever.
-            fold_count=(prior.fold_count + 1) if prior is not None else 1,
+            # RESETS to 1 on a rebuild, or the ceiling fires on every turn
+            # forever after the first time — a trigger that latches on is a
+            # clock with extra steps. Otherwise counted from the prior the
+            # fold actually read, so the ceiling counts folds-since-rebuild
+            # rather than folds-ever.
+            fold_count=1 if rebuild else (
+                (prior.fold_count + 1) if prior is not None else 1),
             updated_at=now_ms,
         )
         try:

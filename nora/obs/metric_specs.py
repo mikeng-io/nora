@@ -1129,6 +1129,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #               (a turn debriefed twice). Never folded in with `absent`:
     #               "the model gave nothing" and "the database refused" send
     #               the next investigation to different places (R-27)
+    # 26 §6's named reading, and the LABEL is the whole point: "forced-on-
+    # ungrounded versus ceiling. If the ceiling dominates, the trigger is a
+    # clock wearing a condition." So `ungrounded` wins whenever both conditions
+    # hold — labelling a turn that actually went wrong as `ceiling` manufactures
+    # the very degradation this series exists to detect.
+    #
+    # Never firing at all is also a reading: it means positions are never being
+    # rebuilt, so a bad fold carries itself forward indefinitely.
+    _CounterSpec(
+        "nora_standing_rederivations_total",
+        "Positions rebuilt rather than revised, by trigger: ungrounded (the "
+        "last turn's verdict said so) or ceiling (fold_count reached "
+        "[standing] rebuild_after_folds). Ungrounded wins when both hold.",
+        ("trigger",),
+    ),
     _CounterSpec(
         "nora_turn_verdict_total",
         "Per-turn debrief verdicts by grounding: true, false, absent (no "

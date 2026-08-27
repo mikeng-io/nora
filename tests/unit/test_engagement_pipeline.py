@@ -2120,7 +2120,7 @@ def _wiring() -> object:
     return Wiring(store=object(), store_verdict=object(), client=object(),
                   objective=object(),
                   max_chars=1200, window=40, timeout_seconds=5.0,
-                  store_timeout_seconds=5.0)
+                  store_timeout_seconds=5.0, rebuild_after_folds=20)
 
 
 def _patch_debrief(monkeypatch, spy) -> None:

@@ -52,3 +52,18 @@ class InMemoryTurnVerdictStore:
 
     async def read(self, *, tag_id: str) -> TurnVerdict | None:
         return self._rows.get(tag_id)
+
+    async def latest(self, *, conversation_id: str) -> TurnVerdict | None:
+        """Newest-first by `created_at`, with `tag_id` breaking a tie.
+
+        The tie-break is not decoration: two turns in one millisecond are
+        reachable, and `max()` over an unordered dict would pick whichever
+        Python happened to hash first — so the double would answer a different
+        verdict than Postgres for the same rows, which is the fake-diverges
+        failure this file already exists to avoid.
+        """
+        rows = [v for v in self._rows.values()
+                if v.conversation_id == conversation_id]
+        if not rows:
+            return None
+        return max(rows, key=lambda v: (v.created_at, v.tag_id))
