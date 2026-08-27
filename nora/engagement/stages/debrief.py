@@ -268,11 +268,12 @@ class Wiring:
     `max_chars` is the OPERATING cap and is config
     (`nora.domain.standing.DEFAULT_STANDING_MAX_CHARS` is its default);
     `standing_body_fits_the_ceiling_check` in the database is the absolute
-    ceiling underneath it that no config can pass. `window` is the debrief's
-    OWN transcript window (S3), deliberately smaller than `[store]
-    context_window`: the debrief revises a position and does not need the full
-    reply context, and inheriting the reply path's number would be
-    `05-transport.md`'s inheritance error in another seam.
+    ceiling underneath it that no config can pass. `window` is CAPPED at
+    `[store] context_window` and now equals it: the fold reads
+    `ctx.transcript`, the rows the reply path already assembled, so it can
+    never see more than she answered with. It WAS deliberately smaller (S3);
+    operator override 2026-08-27, because a fold reasoning from 12 rows judges
+    a turn it can only see a third of.
     """
 
     store: StandingStore
@@ -409,21 +410,45 @@ async def run(
         # the read path was already careful about; reading that off the
         # debrief-budget series would send the next investigation at the model
         # when the problem is Postgres.
+        # CONSTRUCTED OUTSIDE the `try` below, deliberately. `Standing(...)` is
+        # an argument expression, so leaving it inside meant a domain-invariant
+        # violation — `__post_init__` refusing a blank or over-ceiling body —
+        # was caught by that `except` and counted `unavailable`, i.e. «the
+        # store could not be written». "The model produced a body the domain
+        # refuses" and "Postgres was unreachable" are different readings, and
+        # conflating them is the R-27 substitution the `except` itself exists
+        # to avoid. Unreachable today (`max_chars` cannot exceed the ceiling,
+        # `_max_chars_stays_under_the_database_ceiling` sees to that) and
+        # hoisting costs nothing, which is exactly when to fix it rather than
+        # argue it is fine.
+        revised = Standing(
+            platform=platform,
+            conversation_id=trace.conversation_id,
+            body=body,
+            # Counted from the prior the fold actually read, so the ceiling
+            # half of S2's re-derivation trigger counts folds-since-rebuild
+            # rather than folds-ever.
+            fold_count=(prior.fold_count + 1) if prior is not None else 1,
+            updated_at=now_ms,
+        )
         try:
-            await asyncio.wait_for(store.write(standing=Standing(
-                platform=platform,
-                conversation_id=trace.conversation_id,
-                body=body,
-                # Counted from the prior the fold actually read, so the ceiling
-                # half of S2's re-derivation trigger counts folds-since-rebuild
-                # rather than folds-ever.
-                fold_count=(prior.fold_count + 1) if prior is not None else 1,
-                updated_at=now_ms,
-            )), timeout=store_timeout_seconds)
+            await asyncio.wait_for(
+                store.write(standing=revised), timeout=store_timeout_seconds)
         except Exception:
+            # **Says what it KNOWS, not what it assumes.** This used to log
+            # "the prior position stands", which is a claim about database
+            # state made without reading it back — on a `wait_for` timeout the
+            # upsert is cancelled MID-STATEMENT and asyncpg gives us no way to
+            # know from here whether it committed. If it did, the next fold
+            # reads the new `fold_count` and S2's ceiling counts a fold this
+            # log line called unwritten.
+            #
+            # The LABEL is still right: `unavailable` is precisely «I could not
+            # check». It is the sentence that was overclaiming.
             log.exception(
-                "debrief: could not write the revised position (tag=%s); "
-                "the prior position stands", trace.tag_id,
+                "debrief: the write of the revised position did not complete "
+                "(tag=%s); whether it committed is unknown from here",
+                trace.tag_id,
             )
             outcome = "unavailable"
             return

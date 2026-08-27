@@ -42,11 +42,26 @@ class InMemoryStandingStore:
         failure CLAUDE.md names, and it was live in this file until
         `test_the_store_itself_refuses_a_body_over_the_ceiling` went looking.
 
-        `btrim` vs `strip()` is the one deliberate difference: Postgres's
-        `btrim` strips ASCII whitespace and `str.strip()` strips Unicode
-        whitespace too, so this refuses a superset. Erring strict in a double is
-        the safe direction — it cannot let through anything the real store would
-        reject.
+        **`btrim` vs `strip()` is a REAL divergence, and the earlier version of
+        this docstring described it wrongly.** It claimed one-argument `btrim`
+        strips ASCII whitespace; it does not — it strips U+0020 SPACES ONLY.
+        Verified against the deployed Postgres 18: `length(btrim(E'\t')) = 1`
+        and `length(btrim(E'\n\n')) = 2`, where `length(btrim('   ')) = 0`.
+
+        So `standing_body_fits_the_ceiling_check` ACCEPTS a tab-only or
+        newline-only body and this double REFUSES it (`str.strip()` strips all
+        Unicode whitespace). The two are not interchangeable on that input.
+
+        Kept, because the direction is the safe one — a double that refuses a
+        superset can never let through something the real store would reject,
+        which is the failure mode that matters for a fake. And it is
+        unreachable through the type: `Standing.__post_init__` refuses a blank
+        body first, so only the `object.__setattr__` smuggling in
+        `test_the_store_itself_refuses_a_body_over_the_ceiling` can construct
+        it. Recorded rather than silently tolerated, because the claim that
+        these two refuse IDENTICALLY is what this file's contract suite rests
+        on, and it is true for length and for `fold_count` but not for
+        whitespace (review finding, 2026-08-27).
         """
         if (
             not standing.body.strip()

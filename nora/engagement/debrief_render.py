@@ -204,11 +204,13 @@ def render_debrief_input(
 ) -> str:
     """The whole of what the fold sees about this turn, as one block.
 
-    `window` is the debrief's OWN window and is deliberately smaller than
-    `[store] context_window` (S3): the debrief revises a position, it does not
-    need the full reply context, and inheriting the reply path's number here
-    would be `05-transport.md`'s inheritance error in another seam. The slice is
-    the TAIL — the rows nearest the turn being reviewed.
+    `window` is capped at `[store] context_window` and now equals it — the fold
+    reads the rows the REPLY path assembled, so it can never exceed them, and
+    `Config._the_standing_window_fits_the_transcript_it_folds` refuses a larger
+    value rather than letting the number lie. It WAS deliberately smaller (S3)
+    until the operator overrode it on 2026-08-27: a fold reasoning from 12 rows
+    judges a turn it can only see a third of. The slice is the TAIL — the rows
+    nearest the turn being reviewed.
 
     `<standing_prior>` is emitted **even when there is none**, carrying an
     explicit "no position yet" rather than being omitted. §4.2 fixes that: an

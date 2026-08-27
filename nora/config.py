@@ -27,6 +27,7 @@ from pydantic import (
 # database's own CHECK cannot come to disagree about the same number.
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
+    DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     STANDING_BODY_CEILING_CHARS,
 )
 
@@ -1415,21 +1416,33 @@ class StandingConfig(BaseModel):
     English, but **approaching 1200 tokens in a CJK-heavy room**, and this room
     is mixed by default — the cap has to be read against the denser case.
 
-    **`window = 12`, its own and not `[store] context_window`'s 40** (S3). The
-    debrief revises a position; it does not need the full reply context, and a
-    shared number here would be the inheritance error `design/05-transport`
-    records in another seam. Smaller also bounds the fold's input, which is one
-    of the two named causes of the token runaway that made this a plain
-    completion rather than an agent loop.
+    **`window = 40`, and 40 is the CEILING rather than a preference.** The
+    debrief folds `ctx.transcript` — the rows the REPLY path already assembled
+    under `[store] context_window` — so a larger value selects exactly the same
+    rows, and `_the_standing_window_fits_the_transcript_it_folds` refuses it
+    rather than letting the number lie.
 
-    **`timeout_seconds = 20`, and the number that matters is the SUM.** The
-    debrief holds the conversation's slot, so the worst-case hold is
-    `[llm] timeout_seconds + [standing] timeout_seconds` — 60 + 20 with the
-    shipped defaults. The gate is not that sum, though: it is
-    `nora_debrief_seconds` p95 <= 5s, measured against the SECOND-QUEUED tag,
-    because the cost never lands on the person being reviewed (who already has
-    their reply) and always lands on whoever is behind them. Raise this only
-    against that reading.
+    It was 12, on S3's argument that revising a position needs less than
+    composing a reply. Operator override 2026-08-27: she answers with 40 rows
+    in view, so a fold reasoning from 12 judges a turn it can only see a third
+    of. Going genuinely past 40 means raising `[store] context_window`, which
+    widens EVERY reply's prompt — a per-turn cost on the live path, and not a
+    Standing decision.
+
+    **`timeout_seconds = 20`, and the number that matters is the SUM** — which
+    is why the sum is a startup GATE (`max_slot_hold_seconds` below) and not a
+    sentence here. This paragraph used to do the arithmetic itself, against
+    `[llm] timeout_seconds = 60`, a value that does not exist: the field is
+    REQUIRED with no default and this deployment sets 120. It also omitted the
+    two store calls entirely. It was wrong by more than half and nothing
+    checked it, which is the whole argument for the validator.
+
+    The LATENCY gate is a different reading again: `nora_debrief_seconds`
+    p95 <= 5s, measured against the SECOND-QUEUED tag, because the cost never
+    lands on the person being reviewed (who already has their reply) and
+    always lands on whoever is behind them. `max_slot_hold_seconds` bounds the
+    worst case; this bounds the typical one. Raise either only against its own
+    reading.
 
     `model` empty means `[llm] model` — the same defaulting
     `[language] exchange_model` uses. A separate name is available because the
@@ -1464,7 +1477,8 @@ class StandingConfig(BaseModel):
     # upsert against a local Postgres; if either takes seconds the database is
     # in trouble and the honest answer is `unavailable`, not a longer wait held
     # in front of the next person in the room.
-    store_timeout_seconds: float = Field(default=5.0, gt=0)
+    store_timeout_seconds: float = Field(
+        default=DEFAULT_STANDING_STORE_TIMEOUT_SECONDS, gt=0)
     model: str = ""
 
     # The WHOLE hold this stage can add to a conversation's slot, asserted at
@@ -1477,6 +1491,17 @@ class StandingConfig(BaseModel):
     # and the two store calls on top of it were not bounded at all. The one
     # number that decides how long a live conversation can stop answering was
     # sized against a figure that does not exist, and nothing cross-checked it.
+    #
+    # **What this does NOT cover, stated because the field name overclaims.**
+    # It bounds every AWAIT the stage makes. `objective.objective_body(...)` is
+    # a SYNCHRONOUS call that stats the bind-mounted `nora/dreamer` tree on
+    # every fold (`[dreamer] reload = "mtime"`), so `asyncio.wait_for` cannot
+    # bound it and it is not in this sum — and because it blocks rather than
+    # awaits, it stalls the whole event loop rather than one conversation's
+    # slot. Unmeasured, and a `git checkout` on the host mid-fold is the
+    # trigger. Recorded rather than papered over (review, 2026-08-27); making
+    # it `reload = "startup"` for this reader, or moving it off the slot, is a
+    # separate change with its own measurement.
     #
     # 150s is chosen to ADMIT today's deployment (120 + 20 + 2x5 = 150) rather
     # than to reject it: this validator's job is to make the arithmetic
@@ -2225,11 +2250,22 @@ class Config(BaseModel):
         — the whole point is that `[standing]` alone cannot see the number that
         dominates its own budget.
 
-        Off, it asserts nothing: a deployment with the tier disabled holds the
-        slot for exactly as long as it did before this stage existed.
+        **NOT gated on `enabled` any more**, and the reason is its own
+        sibling's, applied consistently. `_the_standing_window_fits_the_
+        transcript_it_folds` above argues that a number which lies is wrong on
+        the page whether or not it is running, and that «the moment it IS
+        switched on is the worst time to discover it meant something else».
+        That argument is STRONGER here, not weaker: the window's failure is a
+        fold reading fewer rows, and this one's failure is a live conversation
+        that stops answering.
+
+        Gated, the trap was concrete: set `max_slot_hold_seconds = 60` while
+        the tier is off (boots fine), then flip `enabled = true` — and Nora now
+        refuses to start, at exactly the moment named as the worst one to find
+        out. Ungated, the same edit fails on the next restart, which is when
+        the operator is still holding the config file (review finding,
+        2026-08-27).
         """
-        if not self.standing.enabled:
-            return self
         hold = (
             self.llm.timeout_seconds
             + self.standing.timeout_seconds

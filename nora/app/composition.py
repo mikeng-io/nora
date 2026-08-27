@@ -1785,7 +1785,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "reminder": reminder_occasion,
                 "gathering": gathering_occasion,
             },
-            # D5 — `<standing>` renders on the fire path too. A fire turn
+            # S5 (15-roadmap §6.3) — `<standing>` renders on the fire path
+            # too. NOT "D5": that number is taken twice already (the identity
+            # config decision, and Phase A's tool grant), and this one was
+            # read off the PLAN's local operator-question table, which the
+            # roadmap relabelled S1-S6 when it closed them. A fire turn
             # speaks into a room UNPROMPTED, so «where had this conversation
             # got to» is the context she is least likely to have any other
             # way: there is no tagging message to infer it from. Reads only;

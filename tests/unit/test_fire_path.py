@@ -983,7 +983,7 @@ async def test_legacy_reminder_row_still_fires_after_the_kind_columns_land(
     assert adapter.texts == ["記得食藥"]
 
 
-# --- <standing> on the fire path (D5) --------------------------------------
+# --- <standing> on the fire path (S5) --------------------------------------
 
 async def _fire_path_with_standing(
     persons, record_store, memory_store, doctrine_store, metrics,
@@ -1006,7 +1006,9 @@ async def _fire_path_with_standing(
 async def test_the_fire_path_renders_the_conversations_position(
     persons, record_store, memory_store, doctrine_store, metrics,
 ) -> None:
-    """D5. `build_prefill` is shared and parameterised only by `header=`, so
+    """S5 (15-roadmap §6.3) — NOT D5, which is taken twice; see
+    `FirePath.__init__`. `build_prefill` is shared and parameterised only by
+    `header=`, so
     SUPPRESSING `<standing>` here is the special case needing justification —
     and it was suppressed silently, because `build_context` never passed
     `standing=` and the field defaults to `None`.

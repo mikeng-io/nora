@@ -1112,10 +1112,14 @@ def test_the_standing_slot_hold_is_checked_against_the_real_llm_timeout(toml_pat
     live conversation can stop answering was sized against a figure that does
     not exist, and nothing cross-checked it. A comment cannot be wrong twice.
     """
+    # `count=0` on `re.sub` means replace ALL, not none — so the line that used
+    # to sit here flipped every `enabled = false` in the file (~18 sections:
+    # heartbeat, dreamer, facts, notes, presence...) while the comment beneath
+    # it claimed the opposite, and made this test depend on every unrelated
+    # subsystem tolerating being switched on. Removed; the targeted replace
+    # below is the whole mechanism (review finding, 2026-08-27).
     text = toml_path.read_text().replace(
         "max_slot_hold_seconds = 150.0", "max_slot_hold_seconds = 80.0")
-    text = re.sub(r"(?m)^enabled = false$", "enabled = true", text, count=0)
-    # switch [standing] on without touching any other section's `enabled`
     i = text.index("[standing]")
     text = text[:i] + text[i:].replace("enabled = false", "enabled = true", 1)
     toml_path.write_text(text)
@@ -1123,13 +1127,21 @@ def test_the_standing_slot_hold_is_checked_against_the_real_llm_timeout(toml_pat
         load(toml_path)
 
 
-def test_the_slot_hold_check_is_inert_while_standing_is_off(toml_path):
-    """Off, it asserts nothing: a deployment with the tier disabled holds the
-    slot for exactly as long as it did before this stage existed, so an
-    impossible budget must not stop it booting."""
+def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):
+    """**Reversed after review, 2026-08-27.** This used to assert the check was
+    INERT while the tier was off, which set a trap: an operator could write an
+    impossible budget, boot fine, and only discover it on the restart that
+    switched Standing on — the exact moment the sibling window validator's
+    docstring names as the worst one to find out.
+
+    The window validator was already ungated on that reasoning. This one's
+    failure is worse (a live conversation that stops answering, versus a fold
+    reading fewer rows), so gating it was the inconsistency, not ungating it.
+    """
     toml_path.write_text(toml_path.read_text().replace(
         "max_slot_hold_seconds = 150.0", "max_slot_hold_seconds = 1.0"))
-    assert load(toml_path).standing.enabled is False
+    with pytest.raises(ConfigError, match="hold a conversation's slot"):
+        load(toml_path)
 
 
 def test_a_standing_window_larger_than_the_reply_window_refuses_to_start(toml_path):
@@ -1152,6 +1164,23 @@ def test_a_standing_window_larger_than_the_reply_window_refuses_to_start(toml_pa
 
 
 def test_the_standing_window_may_equal_the_reply_window(toml_path):
-    """The boundary from the accepting side: seeing everything she saw is the
-    maximum the fold can be given, and it must not be off-by-one refused."""
-    assert load(toml_path).standing.window == load(toml_path).store.context_window
+    """The boundary from the accepting side — the fold seeing everything she
+    saw must not be off-by-one refused.
+
+    **Rewritten after review:** the first version asserted only that two config
+    defaults were equal, which passes with the validator deleted and would even
+    pass with `window = 12` if `context_window` were also 12. It pinned
+    nothing. This drives the boundary explicitly: `window == context_window`
+    must LOAD, and one more must not, so a `>=`-instead-of-`>` slip goes red.
+    """
+    text = toml_path.read_text()
+    i = text.index("[standing]")
+    at_ceiling = text[:i] + text[i:].replace("window = 40", "window = 40", 1)
+    toml_path.write_text(at_ceiling)
+    cfg = load(toml_path)
+    assert cfg.standing.window == cfg.store.context_window == 40
+
+    over = text[:i] + text[i:].replace("window = 40", "window = 41", 1)
+    toml_path.write_text(over)
+    with pytest.raises(ConfigError, match="context_window"):
+        load(toml_path)

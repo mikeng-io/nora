@@ -1035,8 +1035,11 @@ max_chars = 1200
 # EVERY reply's prompt, a per-turn cost on the live path and not a Standing
 # decision.
 window = 40
-# The fold's own timeout. The number that matters is the SUM — the debrief
-# holds the slot, so the worst-case hold is `[llm] timeout_seconds` + this.
+# The fold's own timeout — the MODEL call only. The number that matters is the
+# SUM, and it is checked at startup by max_slot_hold_seconds below rather than
+# worked out here: [llm] timeout_seconds + this + 2 x store_timeout_seconds.
+# This comment used to stop at «[llm] timeout_seconds + this», which is how the
+# two store calls came to be unbounded — they were not in anyone's sum.
 timeout_seconds = 20.0
 # The bound on the stage's TWO STORE CALLS — reading the prior position and
 # writing the revised one. It exists because they had none: the engine sets no

@@ -51,6 +51,14 @@ STANDING_BODY_CEILING_CHARS = 4000
 #: becomes a recent summary (26 §4.0).
 DEFAULT_STANDING_MAX_CHARS = 1200
 
+#: The default bound on the debrief's TWO store calls — the read of the prior
+#: position and the write of the next. It lives here, beside the caps, rather
+#: than being written `5.0` in `StandingConfig` and again in `FirePath`: the
+#: branch's own argument is that a number asserted in two places without a
+#: cross-check drifts, and this file already holds the other two (review
+#: finding, 2026-08-27).
+DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
+
 
 @dataclass(frozen=True, slots=True)
 class Standing:

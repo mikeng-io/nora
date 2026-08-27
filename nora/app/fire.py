@@ -93,7 +93,10 @@ from nora.domain.ports import (
     StandingStore,
 )
 from nora.domain.reminders import Recurrence, Reminder, remaining_occurrences
-from nora.domain.standing import Standing
+from nora.domain.standing import (
+    DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
+    Standing,
+)
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.stages import deliver, feedback
@@ -381,9 +384,21 @@ class FirePath:
         room_exchange_max_entries: int = DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
-        standing_store_timeout_seconds: float = 5.0,
+        standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     ) -> None:
-        # D5: `<standing>` renders on the fire path too. `build_prefill` is
+        # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
+        #
+        # It was cited here as "D5" until 2026-08-27, which is the exact
+        # mistake CLAUDE.md keeps a war-story for: the number came off the
+        # PLAN's local `Decisions needed from the operator` table (D1-D6),
+        # and the roadmap relabelled those S1-S6 when it CLOSED them. The
+        # global D5 is `design/09-decision-index.md:36` (identity is config,
+        # never hardcoded) and, in this very bundle,
+        # `00-overview.md:134` (Phase A gains tools). Anyone following the
+        # old citation landed on a Dreamer extraction decision about tool
+        # grants. `S1` two paragraphs down was right; its sibling was not.
+        #
+        # `build_prefill` is
         # shared and parameterised only by `header=`, so SUPPRESSING the block
         # here is the special case that would need justifying — and it was
         # suppressed silently until 2026-08-27, simply because `build_context`
@@ -574,7 +589,7 @@ class FirePath:
         )
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
-        """This conversation's position, or `None` (D5).
+        """This conversation's position, or `None` (S5).
 
         Fail-SOFT and COUNTED, the same three states
         `TranscriptInjection._standing` distinguishes: no store is the dormant
