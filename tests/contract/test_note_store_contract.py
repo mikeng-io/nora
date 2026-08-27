@@ -48,6 +48,7 @@ import sqlalchemy as sa
 
 from nora.domain.notes import (
     Note,
+    NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
     NoteSupersedeReason,
@@ -897,3 +898,114 @@ async def test_two_proposals_against_one_note_in_one_tick_refuse_the_second(
     found = await notes.store.read(workspace=WS, note_id=note.id)
     assert found is not None
     assert found[1].body == "first"
+
+
+# --- the SECOND payload shape: create, for the debrief ----------------------
+
+
+def _creation(**over: object) -> Proposal:
+    kw: dict = {
+        "title": "Dinner, 9 Sept",
+        "description": "Three places proposed, nobody has picked one.",
+        "uncertainty": "where, and whether it is still the 9th",
+        "closing_condition": "somebody books a table",
+        "established_in": "conv-1",
+        "body": "Ada suggested Sai Kung. Ben wants the buffet. Nobody called.",
+        "anchor_date": 20260909,
+    }
+    kw.update(over)
+    return Proposal(
+        payload=NoteCreationProposal(**kw),
+        instruction_sha256="f" * 64, model="debrief-model",
+        established_by="run-debrief-1",
+    )
+
+
+async def test_propose_can_start_a_note_that_does_not_exist_yet(
+    notes: _Harness,
+) -> None:
+    """The debrief's half. Its value is an uncertainty NOBODY tracked, which is
+    by definition a note that is not there — the opposite of the curator's job,
+    which acts across notes that already exist."""
+    ids = await notes.store.propose(key=WS, proposals=(_creation(),), now_ms=NOW)
+
+    assert len(ids) == 1
+    found = await notes.store.read(workspace=WS, note_id=ids[0])
+    assert found is not None
+    note, head = found
+    assert note.title == "Dinner, 9 Sept"
+    assert note.anchor_date == 20260909
+    # Provenance reaches the FIRST revision, which the tag path cannot supply.
+    assert head.instruction_sha256 == "f" * 64
+    assert head.model == "debrief-model"
+
+
+async def test_the_two_payload_shapes_are_discriminated_not_coerced(
+    notes: _Harness,
+) -> None:
+    """§7: two shapes with a discriminant, never one with optional fields. One
+    call carrying both must do the right thing with each — if the sink
+    collapsed them it would either create twice or revise twice, and both read
+    as success."""
+    ids = await notes.store.propose(key=WS, proposals=(_creation(),), now_ms=NOW)
+    created = ids[0]
+    note = await notes.store.read(workspace=WS, note_id=created)
+    assert note is not None
+
+    both = await notes.store.propose(
+        key=WS,
+        proposals=(
+            _creation(title="Grant wedding", anchor_date=20261011),
+            Proposal(
+                payload=NoteRevisionProposal(
+                    note_id=created, body="Ada called Sai Kung. Still no table.",
+                    parent_revision_id=note[0].head_revision_id,
+                ),
+                instruction_sha256="a" * 64, model="curator-model",
+                established_by="run-curator-1",
+            ),
+        ),
+        now_ms=NOW + 1,
+    )
+
+    assert both[1] == created, "the revision must return the note it revised"
+    assert both[0] != created, "the creation must be a different note"
+    revised = await notes.store.read(workspace=WS, note_id=created)
+    assert revised is not None
+    assert revised[1].body == "Ada called Sai Kung. Still no table."
+
+
+async def test_a_creation_naming_an_existing_occasion_is_not_silently_merged(
+    notes: _Harness,
+) -> None:
+    """The decision, written down rather than discovered: the sink does not look
+    for a similar note and does not reinterpret a create as a revision.
+
+    Deduplication is anchor-keyed and belongs to the curator (§7.1), the only
+    thing permitted to act across notes. A sink matching on a plausible
+    collision would be doing cross-note reasoning at the storage boundary,
+    silently, on a guess. Two notes about one occasion is a state the curator
+    is built to resolve; one note silently absorbing another's content is not
+    recoverable in the direction that matters."""
+    first = await notes.store.propose(key=WS, proposals=(_creation(),), now_ms=NOW)
+    second = await notes.store.propose(
+        key=WS, proposals=(_creation(),), now_ms=NOW + 1,
+    )
+
+    assert first[0] != second[0]
+    assert len(await notes.store.standing(workspace=WS)) == 2
+
+
+async def test_a_creation_with_no_anchor_is_refused_at_the_type(
+    notes: _Harness,
+) -> None:
+    """`anchor_entity_ids` needs a populated entity registry and `note_entity`
+    is empty, so in practice a debrief note anchors on a DATE. A type accepting
+    only entity anchors would be a shape that cannot be satisfied in
+    production; a type accepting NEITHER would push the refusal into `Note`'s
+    constructor, inside a background tick, as a raise rather than a refusal."""
+    with pytest.raises(ValueError):
+        NoteCreationProposal(
+            title="t", description="d", uncertainty="u",
+            closing_condition="c", established_in="conv-1", body="b",
+        )

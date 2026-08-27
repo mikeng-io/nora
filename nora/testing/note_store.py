@@ -64,6 +64,7 @@ from dataclasses import dataclass, field, replace
 
 from nora.domain.notes import (
     Note,
+    NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
     NoteSupersedeReason,
@@ -134,6 +135,12 @@ class InMemoryNoteStore:
         now_ms: int,
         anchor_date: int | None = None,
         anchor_entity_ids: tuple[str, ...] = (),
+        # Passed through to the FIRST revision, and `None` from the tag path.
+        # `note_create` has no `Proposal` and no instruction digest; the
+        # debrief, arriving through `DreamSink.propose`, has both. See
+        # `0036_note_revision_provenance` for why the columns are nullable.
+        instruction_sha256: str | None = None,
+        model: str | None = None,
     ) -> Note:
         """See the module docstring's (3): both objects are built before either
         is stored, so a refused note leaves no half-written revision behind."""
@@ -149,6 +156,7 @@ class InMemoryNoteStore:
         revision = NoteRevision(
             id=revision_id, note_id=note_id, body=body, parent_revision_id=None,
             written_at=now_ms, established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
         )
         self.notes[note_id] = note
         self.revisions[revision_id] = revision
@@ -257,10 +265,28 @@ class InMemoryNoteStore:
         """`SqlNoteStore.propose`'s behaviour, including its refusals."""
         ids: list[str] = []
         for p in proposals:
+            if isinstance(p.payload, NoteCreationProposal):
+                created = await self.create(
+                    workspace=key,
+                    title=p.payload.title,
+                    description=p.payload.description,
+                    uncertainty=p.payload.uncertainty,
+                    closing_condition=p.payload.closing_condition,
+                    established_in=p.payload.established_in,
+                    body=p.payload.body,
+                    established_by=p.established_by,
+                    now_ms=now_ms,
+                    anchor_date=p.payload.anchor_date,
+                    anchor_entity_ids=p.payload.anchor_entity_ids,
+                    instruction_sha256=p.instruction_sha256,
+                    model=p.model,
+                )
+                ids.append(created.id)
+                continue
             if not isinstance(p.payload, NoteRevisionProposal):
                 raise TypeError(
-                    f"InMemoryNoteStore.propose only accepts a "
-                    f"NoteRevisionProposal payload, got "
+                    f"InMemoryNoteStore.propose accepts a "
+                    f"NoteRevisionProposal or a NoteCreationProposal, got "
                     f"{type(p.payload).__name__}"
                 )
             revision = await self.append_revision(

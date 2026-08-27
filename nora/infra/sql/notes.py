@@ -103,6 +103,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.notes import (
     Note,
+    NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
     NoteSupersedeReason,
@@ -175,6 +176,12 @@ class SqlNoteStore:
         now_ms: int,
         anchor_date: int | None = None,
         anchor_entity_ids: tuple[str, ...] = (),
+        # Passed through to the FIRST revision, and `None` from the tag path.
+        # `note_create` has no `Proposal` and no instruction digest; the
+        # debrief, arriving through `DreamSink.propose`, has both. See
+        # `0036_note_revision_provenance` for why the columns are nullable.
+        instruction_sha256: str | None = None,
+        model: str | None = None,
     ) -> Note:
         """The note row and its first revision, in ONE transaction (see the
         module docstring's (1)).
@@ -199,6 +206,7 @@ class SqlNoteStore:
         revision = NoteRevision(
             id=revision_id, note_id=note_id, body=body, parent_revision_id=None,
             written_at=now_ms, established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
         )
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(NOTE).values(
@@ -489,10 +497,44 @@ class SqlNoteStore:
         """
         ids: list[str] = []
         for p in proposals:
+            if isinstance(p.payload, NoteCreationProposal):
+                # THE SECOND SHAPE, and it is dispatched on rather than
+                # coerced. §7's discriminant: two types with disjoint required
+                # fields, so the sink can tell "start carrying this" from
+                # "revise that" without guessing. Collapsing them into one
+                # optional-field type would leave nothing to refuse.
+                #
+                # No check for an existing similar note. Deduplication is
+                # anchor-keyed and belongs to the curator (§7.1), the only
+                # thing permitted to act across notes — a sink that
+                # reinterpreted a create as a revision on a plausible match
+                # would be doing cross-note reasoning at the storage boundary,
+                # silently, on a guess. Two notes about one occasion is a state
+                # the curator resolves; one note silently absorbing another is
+                # not recoverable.
+                created = await self.create(
+                    workspace=key,
+                    title=p.payload.title,
+                    description=p.payload.description,
+                    uncertainty=p.payload.uncertainty,
+                    closing_condition=p.payload.closing_condition,
+                    established_in=p.payload.established_in,
+                    body=p.payload.body,
+                    established_by=p.established_by,
+                    now_ms=now_ms,
+                    anchor_date=p.payload.anchor_date,
+                    anchor_entity_ids=p.payload.anchor_entity_ids,
+                    instruction_sha256=p.instruction_sha256,
+                    model=p.model,
+                )
+                ids.append(created.id)
+                continue
             if not isinstance(p.payload, NoteRevisionProposal):
                 raise TypeError(
-                    f"SqlNoteStore.propose only accepts a NoteRevisionProposal "
-                    f"payload, got {type(p.payload).__name__}"
+                    f"SqlNoteStore.propose accepts a NoteRevisionProposal "
+                    f"(revise a note that exists) or a NoteCreationProposal "
+                    f"(start carrying a new one), got "
+                    f"{type(p.payload).__name__}"
                 )
             revision = await self.append_revision(
                 workspace=key,
