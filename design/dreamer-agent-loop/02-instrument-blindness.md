@@ -377,7 +377,7 @@ alone were both caught that way, within a minute of writing the test. One of the
 — the store-call count — then caught a *later* miscount by the same author, which
 is the difference between fixing an instance and closing a family.
 
-## The screened-identifier family — three adaptors, one screen, no counter of its own
+## The screened-identifier family — three adaptors, one screen, and an instrument nobody read
 
 **2026-08-28.** `DreamerRuntime` runs `nora.agent.dream_screen.screen` over the
 model's raw envelope items **before** `adaptor.accept`, and the screen drops the
@@ -433,13 +433,54 @@ the obvious sweep, and the one that would have been run — does not find it. Th
 field that carries an identifier without saying so is the field that survives
 every search for identifiers.
 
+### The test written to catch it could not see it
+
+**Worth its own subsection because it happened while fixing the third
+instance.** The test added to `test_fact_adaptor.py` drives a `contradicted`
+verdict through the real screen — the right test, the one whose absence let this
+ship. Under the decisive mutation (render the fact's UUID again, as the broken
+code did) **it passed.**
+
+`nora.testing.fact_store.InMemoryFactStore` minted `f"fact-{n}"`.
+`SqlFactStore.propose` mints `str(uuid4())`. The screen matches a UUID. So the
+double could not produce the shape the defect turns on, and a test written
+specifically to prove the fix was decorative against the exact revert it
+existed to catch.
+
+That is the double-diverging-from-the-real-store family again — and this
+instance is the sharpest, because the divergence was in a field nobody thought
+of as behaviour. An id is an id; its *format* looked like a readability choice.
+It was load-bearing. Both doubles now mint `uuid4()`, and the comment says why,
+because the next person will find a readable id more pleasant in a failure
+message and be right about everything except the one property a test turns on.
+
+**The general form:** a double may differ from the real thing in what is
+convenient, never in what something asserts on — and the shape of an
+identifier is not obviously either until a screen reads it.
+
 ### What the family costs, and the two rules it earns
 
-**The screen has no per-adaptor counter**, so all three failures rendered as
-`nora_dream_screened_total{reason="identifier"}` — a generic runtime series — and
-each tier's OWN instruments showed exactly what a model that had stopped
-answering looks like. The tier's counters are where an operator looks; the
-runtime's are not.
+**CORRECTION, 2026-08-28.** An earlier revision of this section said the screen
+has no per-adaptor counter. **That was false**, and it is corrected here rather
+than quietly edited because the claim shipped to master and someone would have
+built on it. `nora.agent.dream_screen.screen` increments
+`nora_dream_screened_total` with `adaptor=` AND `reason=`, and
+`metric_specs.py` declares both labels. The instrument exists, is correctly
+labelled, and would have named the broken adaptor exactly.
+
+**Which makes this the sharper finding, not the weaker one.** Not a missing
+instrument — an instrument that was RIGHT and that nobody read. Three adaptors
+failed the same way in one day while a correctly-labelled series sat on the
+endpoint waiting to be queried, because the series lives in the RUNTIME's
+namespace and every one of those failures was investigated through the TIER's
+own counters, which showed exactly what a model that had stopped answering looks
+like.
+
+A metric nobody queries is not evidence, and «we have a counter for that» is
+only true if something reads it. The remedy is not another counter. It is that a
+tier's own instruments should be able to say «the runtime dropped my output» —
+or that investigating a silent tier starts by asking the runtime what it threw
+away.
 
 > **An adaptor's tests must drive at least one item through the REAL screen, in
 > the order the runtime does.** A test that calls `accept` directly is testing
@@ -559,7 +600,8 @@ were fixed; `fact-adjudication` fails SELECTIVELY — only `contradicted` carrie
 `supersedes` — so the fact tier looks healthy and has never recorded a
 contradiction, never retired a wrong standing fact, and re-adjudicates the same
 candidate every tick forever. It escaped every sweep because `supersedes` is the
-only such field not named `*_id`.
+only such field not named `*_id`. **Latent rather than live**: `[facts]` is off
+in this deployment, so it has never fired in production.
 
 2026-08-28 — **the gate measured the TREE.** A branch reported green on a
 complete, accurate `make gate` run that had been performed against a working

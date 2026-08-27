@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from ..domain.facts import CandidateClaim, Fact, FactCandidate, FactVerdict
@@ -364,13 +364,29 @@ class _Shown:
       matched back"). It is what lets `commit` retire the CANDIDATE a verdict
       settled, which is §5.1's negative cache and the difference between a
       bounded cost and an unbounded one.
-    - `fact_ids` is the set of standing-fact ids rendered into the prompt, and
-      it is what `accept` checks `supersedes` against. A uuid the model
-      invented is not a verdict, it is a guess with a delete attached.
+    - `by_handle` maps the per-tick ORDINAL a standing fact was rendered under
+      to its real id. It is what `accept` checks `supersedes` against, and what
+      it translates through: a handle the model invented resolves to nothing,
+      which is the same refusal an unshown uuid used to get. A verdict naming
+      a row nobody put in front of it is not a verdict, it is a guess with a
+      delete attached.
+
+      **It is a handle and not the id because a uuid in an envelope item is
+      DESTROYED before this adaptor ever sees it.** `DreamerRuntime` runs
+      `nora.agent.dream_screen.screen` over the model's raw items before
+      `accept`, and the screen drops the whole item on any reachable
+      identifier. `supersedes` carried a `fact.id`, so **every `contradicted`
+      verdict was screened, always** — while `supported` and `not_covered`
+      flowed untouched, so the tier wrote facts, moved counters and looked
+      healthy without ever once recording a contradiction. Two other adaptors
+      hit the same screen the same day and failed loudly; this one failed
+      selectively, which is why it survived three reviews
+      (`design/dreamer-agent-loop/02-instrument-blindness.md`, the
+      screened-identifier family).
     """
 
     candidate_ids: Mapping[tuple[str, str, str], str]
-    fact_ids: frozenset[str]
+    by_handle: Mapping[str, str]
 
 
 class FactAdaptor:
@@ -464,7 +480,7 @@ class FactAdaptor:
             candidate_ids={
                 (c.subject_id, c.predicate, c.object): c.id for c in pending
             },
-            fact_ids=frozenset(f.id for f in standing),
+            by_handle={str(i): f.id for i, f in enumerate(standing, start=1)},
         )
         if not pending:
             # BLANK, not "(none)" — and the difference is a model call every
@@ -496,15 +512,22 @@ class FactAdaptor:
           domain type enforcing R-27's batch invariants BY RAISING, which is
           right for a constructor and fatal for a background tick, so it is
           caught here and the item is dropped like any other bad one.
-        - `unknown_supersedes` — the verdict names a fact id this run did not
-          show the model. The model can hallucinate a uuid; a supersession of
-          a row nobody showed it is not a verdict, it is a guess with a delete
-          attached. Checked against `_Shown.fact_ids` rather than against the
-          store, because "does this row exist" is the wrong question — a real
-          fact from a different subject is still one nobody put in front of
-          it. Skipped entirely when `inputs` did not run for this key (the
-          contract suite calling `accept` on its own), for the reason
-          `FactCandidateAdaptor.accept` states.
+        - `unknown_supersedes` — the verdict names a HANDLE this run did not
+          render. A supersession of a row nobody showed the model is not a
+          verdict, it is a guess with a delete attached. Checked against
+          `_Shown.by_handle` rather than against the store, because "does this
+          row exist" is the wrong question — a real fact from a different
+          subject is still one nobody put in front of it. Skipped entirely when
+          `inputs` did not run for this key (the contract suite calling
+          `accept` on its own), for the reason `FactCandidateAdaptor.accept`
+          states.
+
+        **`supersedes` arrives as a handle and leaves as a fact id.** The
+        translation happens here and nowhere else, so `commit` and
+        `_supersede_fact` go on seeing a real id and neither had to learn about
+        handles. The handle exists only between the prompt and this line —
+        which is the whole point, since an id in an envelope item is destroyed
+        by the runtime's screen before `accept` runs (`_Shown.by_handle`).
         """
         shown = self._shown.get(key)
         kept: list[object] = []
@@ -513,17 +536,19 @@ class FactAdaptor:
             if verdict is None:
                 self._skip(reason or "malformed")
                 continue
-            if (
-                shown is not None
-                and verdict.supersedes is not None
-                and verdict.supersedes not in shown.fact_ids
-            ):
-                log.warning(
-                    "fact verdict dropped: supersedes %r names a fact this run "
-                    "did not show (workspace=%s)", verdict.supersedes, key,
-                )
-                self._skip("unknown_supersedes")
-                continue
+            if shown is not None and verdict.supersedes is not None:
+                fact_id = shown.by_handle.get(verdict.supersedes.strip())
+                if fact_id is None:
+                    log.warning(
+                        "fact verdict dropped: supersedes %r names no handle "
+                        "this run rendered (workspace=%s)",
+                        verdict.supersedes, key,
+                    )
+                    self._skip("unknown_supersedes")
+                    continue
+                # Handle -> id, once, here. Everything downstream keeps taking
+                # a real fact id.
+                verdict = replace(verdict, supersedes=fact_id)
             self._inc("nora_fact_verdicts_total", status=verdict.status)
             kept.append(verdict)
         return tuple(kept)
@@ -760,13 +785,21 @@ def _render_adjudication(
     """The adjudication prompt: the claims to settle, then the facts already
     standing for their subjects.
 
-    **Every candidate carries its id and every fact carries ITS id**, and the
-    second is load-bearing: `supersedes` names a fact id, and the objective
-    tells the model it may only ever name "the id of a standing fact you were
-    shown". A fact rendered without its id is one the model cannot correct;
-    an id shown without its source excerpt is one it cannot judge whether it
-    has overturned, which is the check the objective spends its longest
-    paragraph on.
+    **Every standing fact carries a per-tick ORDINAL, never its id**, and that
+    is load-bearing twice over. `supersedes` names one, so a fact rendered
+    without a handle is one the model cannot correct — and a fact rendered with
+    its UUID is one whose correction is destroyed before this adaptor sees it,
+    because the runtime's egress screen drops any envelope item carrying an
+    identifier (see `_Shown.by_handle`). A handle shown without its source
+    excerpt is still one the model cannot judge as overturned, which is the
+    check the objective spends its longest paragraph on.
+
+    Candidates still render their id. It is NOT asked for and NOT read —
+    `_parse_verdict` never looks at one, and `_retire_candidates` maps a
+    verdict back to its candidate by the TRIPLE — so it reaches no envelope
+    item and trips no screen. Left alone here deliberately: removing it changes
+    what the model is shown with no defect behind it, and this change is a
+    format correction rather than a prompt rewrite.
     """
     lines = ["Claims to settle:"]
     if pending:
@@ -780,17 +813,26 @@ def _render_adjudication(
     lines.append("")
     lines.append("Facts already standing for these subjects:")
     if standing:
-        lines.extend(_render_standing(f) for f in standing)
+        lines.extend(
+            _render_standing(f, handle=str(i))
+            for i, f in enumerate(standing, start=1)
+        )
     else:
         lines.append("(none)")
     return "\n".join(lines)
 
 
-def _render_standing(fact: Fact) -> str:
+def _render_standing(fact: Fact, *, handle: str) -> str:
+    """One standing fact, under the per-tick handle `supersedes` names.
+
+    `handle`, never `fact.id`: see `_Shown.by_handle`. The id does not appear
+    in the prompt at all, which is the second half of the fix — a model cannot
+    echo back an identifier it was never shown.
+    """
     obj = fact.object_literal if fact.object_literal is not None else (
         fact.object_entity_id or ""
     )
-    parts = [f"- [{fact.id}] {fact.subject_id} | {fact.predicate} | {obj}"]
+    parts = [f"- [{handle}] {fact.subject_id} | {fact.predicate} | {obj}"]
     if fact.source_url:
         parts.append(f"  source: {fact.source_url}")
     if fact.source_excerpt:
