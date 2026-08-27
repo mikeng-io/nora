@@ -156,4 +156,18 @@ by a different session, at a different time, reproduced it exactly.
 
 ## Status / Checkpoint
 
+2026-08-27 — **a ninth instance, and it is this bundle's own authors.** The
+Graphiti investigation reversed its own conclusion four times, and every reversal
+had one cause: **a signature was read and a conclusion stated before the thing
+was run.** Twice the error was identical — reading a plural orchestrator that
+queries the graph and concluding the singular unit beside it was coupled too.
+The corrective is in [25](25-knowledge-pipeline.md) §2.1: probes replaced the
+driver, embedder and cross-encoder with stubs that **raise**, so "it never
+touches a database" became a claim that fails loudly instead of an inference from
+a type. **But running once was not enough either** — the predicate-collapse
+result was a single sample of a stochastic LLM call reported as a table; re-run
+five times it reproduced 3/5 and once false-merged the control. CLAUDE.md already
+carried both rules; the node diagnosing instrument blindness broke them while
+investigating a library.
+
 2026-08-24 — Six layers when written. **Now eight**: `nora_fact_entity_unresolved_total` has no call site ([21](21-substrate-contract.md) §6.4), and the note tier declares ten metrics and ships zero ([27](27-note-dreamer.md) §6). The pattern kept finding new instances as later nodes were written, which is the finding.

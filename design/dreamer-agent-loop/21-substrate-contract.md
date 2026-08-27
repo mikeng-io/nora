@@ -268,6 +268,16 @@ argument is written down:
 the *model* is shown — name the speakers and an extractor tuned to find claims
 starts finding them about the people named.
 
+**And it is now a reading rather than an argument.** A probe on 2026-08-27
+rendered `speaker: body` over a six-message batch, **with the roster supplied and
+a `Person` entity type declared**, and returned **five person-claims out of six
+edges** ([25](25-knowledge-pipeline.md) §2.4). Neither the roster nor the
+declared taxonomy prevented it. One consequence this paragraph could not have
+stated: the roster grant makes the boundary *checkable*
+([19](19-between-tiers.md) §3), and the measurement shows **checkable is not
+enforced** — so a claim whose subject resolves to a roster `person_id` is
+**refused at the sink with a counter**, never silently dropped.
+
 **Second, at promotion — and this one is argued nowhere.** A candidate carries
 `observed_in`, the message ids each claim came from; the objective's own words
 are *"which turn each came from"*, and `accept` validates a returned
@@ -293,7 +303,15 @@ unchanged, the model still never sees a name.** The omission argument is
 satisfied in full, because it was always about the prompt.
 
 This is why the answer is not "add a speaker to the batch render". That would
-trade a real safeguard for a fact the code can derive without asking.
+trade a real safeguard for a fact the code can derive without asking — and §7.1's
+measurement now prices that trade at five bad rows in six.
+
+**The derivation survives the two-call extractor**
+([25](25-knowledge-pipeline.md) §2.3): attribution comes back **positionally** —
+which episode a claim was drawn from — rather than from a name in the text. One
+arity note that must be settled in code: an episode is a *chunk*, so a claim
+resolves to `message_ids` (plural). §7.4's junction table is the shape that
+absorbs it; `CandidateClaim`'s singular `message_id` does not.
 
 ### 7.3 Why it cannot be derived later instead
 
@@ -527,6 +545,8 @@ answer that was expected going in: §6 dissolved the question rather than
 answering it, §7 found the loss point is promotion rather than the prompt, and §8
 found the decision turns on a property of *this* store rather than on the general
 argument.
+
+2026-08-27 — §7.1 is **confirmed by measurement, not amended** (5 person-claims of 6, roster supplied). §7.2's join survives via positional attribution, with one open arity point named above.
 
 `[dreamer] enabled = false`. No `design/09-decision-index.md` entry; D-numbers
 here are bundle-local.

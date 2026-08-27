@@ -90,6 +90,36 @@ None exists. Ten concurrent units today, eighteen after the migration, each
 potentially issuing several network calls, all on one client. The bound should
 be chosen before the migration lands, not discovered after.
 
+**11. There is no graded corpus, and every prompt decision below it is unfalsifiable.**
+
+Added 2026-08-27. This tier's quality rests entirely on prompts — extraction,
+adjudication, the vendored dedup prompt — and **nothing can currently tell a good
+prompt from a bad one.** [20](20-knowledge-tier.md) §6.1's finding: an upstream
+prompt is good because it was iterated against a corpus with graded evals, and
+the craft in it is residue from failures somebody measured. Writing ours without
+that apparatus is writing blind.
+
+> **A prompt tuned to the wrong corpus WITH an eval loop beats a prompt tuned to
+> the right corpus WITHOUT one, because the second has no way to know it is
+> wrong.**
+
+**It blocks in a specific, checkable way**, which is why it sits here rather than
+under *not yet measured*: three separate questions in this bundle reduce to it
+and cannot be answered without it —
+
+- whether the vendored entity prompt beats one we write ([25](25-knowledge-pipeline.md) §2.1)
+- what this room's **literal-object rate** actually is, which is the reading that
+  would have caught the shape mismatch in §2.1 on day one
+- whether the sink's person-refusal is a backstop or the primary mechanism (§10.1)
+
+**What it is:** 30–50 real turns from this room, hand-labelled with the entities
+and claims that *should* come out — including the slang, the code-switching and
+the corrections. `evals/` and the `strands-agents-evals` extra already exist and
+have never been pointed at extraction quality.
+
+**Why it is the asset.** It is the only thing in this tier that cannot be copied
+from anyone, and it outlives every prompt written against it.
+
 ## Closed here, with the reading that would reopen each
 
 **4. Cadence per adaptor.** Extraction is watermark-driven and suits a clock.
@@ -285,4 +315,6 @@ that contradicts from one that merely does not cover, that reopens the
 
 ## Status / Checkpoint
 
-2026-08-24 — **All ten items closed**, each with the reading that would reopen it. §4.1's semantic-index refusal was retracted for retrieval and confirmed for resolution, with the instrument finally named.
+2026-08-27 — item 11 added under *Blocking*: **there is no graded corpus**, so every prompt decision in this tier is unfalsifiable, and three open questions reduce to it. Items 0–3 remain blocking; items 5–9 are closed.
+
+2026-08-24 — **Items 5–9 closed**, each with the reading that would reopen it. §4.1's semantic-index refusal was retracted for retrieval and confirmed for resolution, with the instrument finally named.

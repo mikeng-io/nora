@@ -6,13 +6,13 @@ description: >
   each collapsed into something else: the transport inherited from the chat
   path, the trigger reduced to a side-effect of rendering a prompt, the loop
   absent for four of five participants, state pre-rendered by code, and
-  measurement blind at six independent layers. This bundle is a revision layer
+  measurement blind at nine independent layers. This bundle is a revision layer
   over the three 2026-08-20 specs and the four transfer documents: it records
   what is live, what was designed and never shipped, and the decisions that
   close the gap.
-status: proposed
+status: checkpoint
 governance: pre-governance-input
-timestamp: '2026-08-22'
+timestamp: '2026-08-27'
 origin: >
   Investigation session with miles, 2026-08-21/22, prompted by a repeating
   token-limit failure in the fact extractor. Six parallel read-only
@@ -135,17 +135,26 @@ scope:
     - "Loop: termination is a structured act whose absence fails closed; partial progress survives a bounded run"
     - "State: knowable-before is an input, discovered-during is a tool; a tier contributes read access through the existing registry seam"
     - "Measurement: every seam ships its instrument, this bundle's own change first"
-    - "Phase A gains tools, and must NOT deduplicate against existing candidates"
+    - "Phase A gains GROUNDING as an INPUT between the two extraction calls (D32 amends D5's mechanism), and must NOT deduplicate against existing candidates"
     - "Room access splits by key kind: scope-keyed proceeds, workspace-keyed is blocked"
     - "Doctrine becomes shape-aware; the audience field stops being decorative"
+    - "The language tier GETS supersession — D19 reverses D9's designed cost, which had already consumed 100% of the tier's output (16 §7)"
+    - "What <facts> renders is DECIDED: both a block and a verb, and the block stops being a recency slice (16 §8, 19 §6)"
+    - "Entity resolution HAS an owner: the matcher is vendored, the candidate query is ours (25 §4.1)"
     - "Migrate room-language and room-exchange onto the runtime (Phase 3)"
+    - "This pipeline is BUILT, not bought: no dependency on graphiti-core; exactly two files vendored (the dedup prompt + the pure matcher, 521 lines). The line is drawn by 21 §6 — the object is always a literal and their edge has no literal form (D30)"
+    - "No library solves this tier: it does recall for one user, this tier adjudicates in a group; warrants, three-state verdicts, asserters and the correction loop are ABSENT upstream, not merely different (20 §6.1)"
+    - "The eval corpus precedes the prompt work — without it no prompt decision here is falsifiable (D33)"
+    - "The batch renders body alone; 21 §7.1 confirmed by measurement (5 person-claims of 6, roster supplied), and the person-exclusion is REFUSED at the sink with a counter"
+    - "The episode is a conversational chunk (D31)"
   deferred:
     - "BLOCKED — everything, pending one measurement: does the transport honour tool calls and carry reasoning between turns, and which token ceiling actually binds"
     - "BLOCKED — workspace-keyed room access, pending a decision on R-49's second condition (answered twice, incompatibly)"
     - "BLOCKED — the migration landing, pending a chosen global concurrency bound"
-    - "Language-tier supersession (a designed cost; reversing it needs its own argument)"
-    - "Entity resolution (shared dependency of three tiers, owned by nobody)"
-    - "What <facts> renders at reply time"
+    - "BLOCKED — no graded eval corpus; three prompt questions reduce to it (16 §11)"
+    - "UNMEASURED — the room's literal-object rate, the reading that would have caught the shape mismatch on day one (16 §10)"
+    - "UNMEASURED — the person-claim rate with speakers ABSENT; decides whether the sink refusal is backstop or primary"
+    - "UNMEASURED — whether the vendored entity prompt beats one we write, on our corpus"
     - "Whether the instruction digest must cover the tool subset and budget"
     - "R-57's text and DEC-135's row, both reserved and undrafted"
     - "OUT OF SCOPE — the fact tier's store"

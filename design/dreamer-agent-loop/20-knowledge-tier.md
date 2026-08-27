@@ -128,6 +128,61 @@ that tells her the store's *extent* rather than a slice of its contents, and a
 verb to query it ([19-between-tiers.md](19-between-tiers.md) §5). Neither is
 possible while the graph is a set of strings.
 
+## 6.1 Why no library supplies this — the problem is not recall
+
+Written 2026-08-27, after a runtime investigation of `graphiti-core` 0.29.3 that
+ran for a session and reversed itself four times before this became visible. It
+is recorded here rather than in [25](25-knowledge-pipeline.md) because it is
+about **what this tier is**, not about how a pass runs.
+
+**Graphiti is agent memory for one user talking to one assistant.** Every design
+choice follows from that: an episode is one interaction, its scoping key is one
+tenant, the user is the authoritative narrator, and the job is **recall** —
+surface the right memory at the right moment.
+
+**This tier is a participant in a group that argues.** The dominant epistemic act
+is contestation — *"no, big walk is a video game"* — and the bundle's own
+acceptance test is a correction loop ([30](30-review-response.md) §2). The job is
+**adjudication**.
+
+The investigation found five defects, measured at runtime. They are not five
+defects. **They are one design centre showing through in five places**, and every
+one sits exactly where recall and adjudication diverge:
+
+| measured | why it is that way |
+|---|---|
+| the contradiction resolver invalidates only when both timestamps are non-`NULL` and strictly ordered — a tie falls through, with **zero** `logger`/`count`/`metric` | in single-user memory, contradictions are rare and time-ordered. In a room they are the *point*, and they are not time-ordered: someone corrects a claim from three weeks ago |
+| an edge connects two entity uuids; **a literal object has no edge form**, and one is dropped with a warning and no counter | recall wants *who works where*. Adjudication wants *does it support 4 players* — and §6 of [21](21-substrate-contract.md) makes the literal the **invariant** |
+| the LLM layer appends *"Only output non-English text when the user has written full sentences in that language. Otherwise, output English"* to every system message | the target user is English-speaking. The room's own words are noise for recall and are **the entire asset** for the language tier |
+| the entity prompt filters on *"Could this have its own Wikipedia article or database entry?"* | recall wants canonical entities. This room's value is `big walk`, `打風`, `食飯團` — exactly the non-canonical ones that filter rejects |
+| **no warrant vocabulary, no three-state verdict, no asserter** | recall does not need to know *who* said it. Adjudication cannot function without it — a friend, a page, and a prank are three different kinds of knowing |
+
+That last row is the one that settles it. Those are not implemented differently
+elsewhere; **they are absent**, because no library is built for *a bot in a
+friend group that must be correctable and must not repeat a prank as a fact*.
+
+**Decomposed by value rather than by feature list:**
+
+| | transfers | why |
+|---|---|---|
+| entity resolution | **~100%** | *is `NYC` the same as `New York City`* is corpus-independent. Genuinely solves our problem |
+| extraction craft | **~80%, needs retuning** | the rules transfer; the corpus assumptions do not |
+| temporal invalidation | **~0%, actively wrong** | their supersession is time-ordered; ours is research-adjudicated |
+| graph queries, saga, communities | **0%** | relational by decision ([25](25-knowledge-pipeline.md) §8) |
+| warrants, verdicts, asserters, the correction loop | **not present to transfer** | this is the tier's actual product |
+
+> **80% of that library is roughly 30% of this tier. We can buy the reading. We
+> cannot buy the judging.**
+
+**And the real dependency was never the library.** Their prompts are good because
+they were iterated against a corpus with graded evals; the craft in them is
+residue from failures somebody measured. Writing our own without that apparatus
+is writing blind — **a prompt tuned to the wrong corpus with an eval loop beats a
+prompt tuned to the right corpus without one, because the second has no way to
+know it is wrong.** That reorders the build ([00](00-overview.md) §7): the eval
+corpus comes first, and it is the one asset here that cannot be copied from
+anyone.
+
 ## 7. The decision
 
 **D11. This is the knowledge tier.** The schema already is one; the name
@@ -167,5 +222,10 @@ The design already committed to this column. It is cheaper to install now than
 it will ever be again.
 
 ## Status / Checkpoint
+
+2026-08-27 — §6.1 added: **no library solves this tier's problem**, because
+Graphiti solves recall for one user and this tier adjudicates in a group. Five
+runtime-measured defects reduce to one design centre. The consequence is a
+sequencing change, not a store change — §4's argument is untouched.
 
 2026-08-24 — D11, the reframe. Its four-problems-one-column argument is discharged by [21](21-substrate-contract.md); its retrieval half by [23](23-retrieval.md) and [25](25-knowledge-pipeline.md).
