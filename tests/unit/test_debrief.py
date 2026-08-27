@@ -21,7 +21,7 @@ from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
-from nora.testing import InMemoryStandingStore
+from nora.testing import InMemoryStandingStore, InMemoryTurnVerdictStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -53,8 +53,11 @@ class _Objective:
         return "OBJECTIVE-TEXT"
 
 
-def _ok(body: str) -> debrief.Completion:
-    return debrief.Completion(json.dumps({"standing": body}), "stop")
+def _ok(body: str, *, grounded: bool = True, unsupported=()) -> debrief.Completion:
+    return debrief.Completion(json.dumps({
+        "standing": body, "grounded": grounded,
+        "unsupported": list(unsupported),
+    }), "stop")
 
 
 def _trace(outcome: str = "send_reply") -> TagTrace:
@@ -69,20 +72,22 @@ def _trace(outcome: str = "send_reply") -> TagTrace:
     )
 
 
-async def _run(*, store=None, client=None, metrics=None, max_chars=1200,
+async def _run(*, store=None, store_verdict=None, client=None, metrics=None, max_chars=1200,
                timeout_seconds=5.0, store_timeout_seconds=5.0, trace=None) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
+    store_verdict = (store_verdict if store_verdict is not None
+                     else InMemoryTurnVerdictStore())
     metrics = metrics if metrics is not None else Metrics()
     await debrief.run(
         trace=trace if trace is not None else _trace(),
-        platform="signal", store=store,
+        platform="signal", store=store, store_verdict=store_verdict,
         client=client if client is not None else _Client(_ok("a position")),
         objective=_Objective(), metrics=metrics, display_name="Nora",
         max_chars=max_chars, window=40, timeout_seconds=timeout_seconds,
         store_timeout_seconds=store_timeout_seconds,
         now_ms=1_756_000_931_000,
     )
-    return store, metrics
+    return store, metrics, store_verdict
 
 
 def _counter(metrics: Metrics, name: str, **labels) -> float:
@@ -92,7 +97,7 @@ def _counter(metrics: Metrics, name: str, **labels) -> float:
 # --- the happy path and the non-negotiable ---------------------------------
 
 async def test_a_fold_writes_the_position_keyed_on_platform_and_conversation():
-    store, metrics = await _run()
+    store, metrics, _sv = await _run()
     row = await store.read(platform="signal", conversation_id="g1")
     assert row is not None and row.body == "a position"
     assert row.fold_count == 1
@@ -117,7 +122,7 @@ async def test_the_fold_reads_the_current_standing_before_writing_the_next():
         body="They are planning dinner for the 9th.", fold_count=4, updated_at=1,
     ))
     client = _Client(_ok("revised"))
-    _, metrics = await _run(store=store, client=client)
+    _, metrics, _sv = await _run(store=store, client=client)
     assert "They are planning dinner for the 9th." in client.prompts[0]
     assert _counter(metrics, "nora_debrief_prior_total", prior="read") == 1
     # Counted from the prior it read, not from zero — the ceiling half of S2's
@@ -127,7 +132,7 @@ async def test_the_fold_reads_the_current_standing_before_writing_the_next():
 
 
 async def test_a_first_fold_is_counted_as_absent_rather_than_read():
-    _, metrics = await _run()
+    _, metrics, _sv = await _run()
     assert _counter(metrics, "nora_debrief_prior_total", prior="absent") == 1
 
 
@@ -142,7 +147,7 @@ async def test_a_store_that_cannot_be_read_folds_nothing():
             raise RuntimeError("db down")
 
     store = _Broken()
-    _, metrics = await _run(store=store)
+    _, metrics, _sv = await _run(store=store)
     assert await InMemoryStandingStore.read(
         store, platform="signal", conversation_id="g1") is None
     assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
@@ -158,7 +163,7 @@ async def test_every_outcome_is_debriefed_including_the_silences(outcome):
     replied, and R-5 silence is the decision most likely to be wrong in a way
     nobody complains about. A debrief that only reviews successful replies
     measures the path that already works."""
-    store, metrics = await _run(trace=_trace(outcome))
+    store, metrics, _sv = await _run(trace=_trace(outcome))
     assert await store.read(platform="signal", conversation_id="g1") is not None
     assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
 
@@ -167,7 +172,7 @@ async def test_every_outcome_is_debriefed_including_the_silences(outcome):
 
 async def test_an_over_long_fold_is_refused_and_the_model_is_asked_to_consolidate():
     client = _Client(_ok("x" * 60), _ok("short"))
-    store, metrics = await _run(client=client, max_chars=50)
+    store, metrics, _sv = await _run(client=client, max_chars=50)
     row = await store.read(platform="signal", conversation_id="g1")
     assert row.body == "short"
     assert len(client.prompts) == 2
@@ -188,7 +193,7 @@ async def test_a_second_overflow_writes_nothing_and_the_prior_position_stands():
         fold_count=1, updated_at=1,
     ))
     client = _Client(_ok("x" * 60), _ok("y" * 60))
-    _, metrics = await _run(store=store, client=client, max_chars=50)
+    _, metrics, _sv = await _run(store=store, client=client, max_chars=50)
     row = await store.read(platform="signal", conversation_id="g1")
     assert row.body == "the old position"
     assert row.fold_count == 1
@@ -198,7 +203,7 @@ async def test_a_second_overflow_writes_nothing_and_the_prior_position_stands():
 
 
 async def test_a_fold_exactly_at_the_cap_is_written():
-    store, _ = await _run(client=_Client(_ok("x" * 50)), max_chars=50)
+    store, _, _ = await _run(client=_Client(_ok("x" * 50)), max_chars=50)
     row = await store.read(platform="signal", conversation_id="g1")
     assert row is not None and len(row.body) == 50
 
@@ -216,7 +221,7 @@ async def test_a_truncated_body_is_never_parsed():
     module that parsed first and checked `finish_reason` afterwards (or never)
     goes green on the parse and red on this test.
     """
-    store, metrics = await _run(client=_Client(
+    store, metrics, _sv = await _run(client=_Client(
         debrief.Completion(json.dumps({"standing": "half a th"}), "length")))
     assert await store.read(platform="signal", conversation_id="g1") is None
     assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
@@ -230,7 +235,7 @@ async def test_a_truncated_body_is_never_parsed():
     '["standing"]',
 ])
 async def test_a_malformed_answer_writes_nothing(content):
-    store, metrics = await _run(
+    store, metrics, _sv = await _run(
         client=_Client(debrief.Completion(content, "stop")))
     assert await store.read(platform="signal", conversation_id="g1") is None
     assert _counter(metrics, "nora_debrief_total", outcome="malformed") == 1
@@ -241,8 +246,8 @@ async def test_unavailable_and_malformed_are_different_readings():
     nothing, and collapsing them would leave the one instrument this stage has
     unable to tell «the call was cut off» (raise the ceiling, shrink the input)
     from «the model answered in the wrong shape» (fix the objective text)."""
-    _, cut = await _run(client=_Client(debrief.Completion('{"standing":"x"}', "length")))
-    _, bad = await _run(client=_Client(debrief.Completion("nonsense", "stop")))
+    _, cut, _ = await _run(client=_Client(debrief.Completion('{"standing":"x"}', "length")))
+    _, bad, _ = await _run(client=_Client(debrief.Completion("nonsense", "stop")))
     assert _counter(cut, "nora_debrief_total", outcome="unavailable") == 1
     assert _counter(cut, "nora_debrief_total", outcome="malformed") == 0
     assert _counter(bad, "nora_debrief_total", outcome="malformed") == 1
@@ -261,7 +266,7 @@ async def test_an_identifier_or_a_coordinate_never_reaches_the_row(body, reason)
     Standing is injected into every subsequent turn — so a coordinate that gets
     in persists **by design** rather than by attack. R-18/R-28 guard egress
     from a REPLY and see nothing here, because this is an input."""
-    store, metrics = await _run(client=_Client(_ok(body)))
+    store, metrics, _sv = await _run(client=_Client(_ok(body)))
     assert await store.read(platform="signal", conversation_id="g1") is None
     assert _counter(metrics, "nora_debrief_total", outcome="screened") == 1
     assert _counter(
@@ -280,7 +285,7 @@ async def test_a_cancellation_is_absorbed_and_never_re_raised():
 
     Narrow the `except` in `debrief.run` to `Exception` and this goes red.
     """
-    _, metrics = await _run(client=_Client(asyncio.CancelledError()))
+    _, metrics, _sv = await _run(client=_Client(asyncio.CancelledError()))
     # The property is ABSORBED — `_run` returned rather than propagating. The
     # label is `cancelled` rather than `error` (see
     # `test_a_cancellation_is_not_counted_as_an_error`); asserting the total
@@ -290,7 +295,7 @@ async def test_a_cancellation_is_absorbed_and_never_re_raised():
 
 
 async def test_an_arbitrary_failure_is_absorbed():
-    _, metrics = await _run(client=_Client(RuntimeError("boom")))
+    _, metrics, _sv = await _run(client=_Client(RuntimeError("boom")))
     assert _counter(metrics, "nora_debrief_total", outcome="error") == 1
 
 
@@ -303,7 +308,7 @@ async def test_a_slow_fold_is_cut_at_its_own_timeout():
             await asyncio.sleep(5)
             raise AssertionError("should have been cut off")
 
-    _, metrics = await _run(client=_Slow(), timeout_seconds=0.05)
+    _, metrics, _sv = await _run(client=_Slow(), timeout_seconds=0.05)
     assert _counter(metrics, "nora_debrief_total", outcome="timeout") == 1
 
 
@@ -335,7 +340,7 @@ async def test_the_two_calls_share_one_budget():
     # 0.06 + 0.06 = 0.12 > 0.10 shared. Under two INDEPENDENT 0.10s budgets both
     # calls fit and this writes "short" — so `timeout` here is only reachable
     # when the budget is genuinely shared.
-    store, metrics = await _run(
+    store, metrics, _sv = await _run(
         client=_SlowFirst(), max_chars=50, timeout_seconds=0.10)
     assert _counter(metrics, "nora_debrief_total", outcome="timeout") == 1, (
         "the two calls did not share one budget — each was bounded separately, "
@@ -355,7 +360,7 @@ async def test_latency_is_observed_on_every_exit_including_the_failures(client, 
     """§2's own argument applied to this stage's instrument instead of its
     input: a latency series that only records successes describes the path that
     already works, and the exits worth timing are the ones that went wrong."""
-    _, metrics = await _run(client=client())
+    _, metrics, _sv = await _run(client=client())
     assert _counter(metrics, "nora_debrief_total", outcome=expected) == 1
     assert metrics.observations("nora_debrief_seconds")
 
@@ -389,7 +394,7 @@ async def test_a_hanging_store_read_cannot_hold_the_slot_forever():
             await asyncio.sleep(30)
             raise AssertionError("should have been cut off")
 
-    _, metrics = await asyncio.wait_for(
+    _, metrics, _sv = await asyncio.wait_for(
         _run(store=_Hangs(), store_timeout_seconds=0.05), timeout=5,
     )
     assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
@@ -404,7 +409,7 @@ async def test_a_hanging_store_write_cannot_hold_the_slot_forever():
             await asyncio.sleep(30)
             raise AssertionError("should have been cut off")
 
-    _, metrics = await asyncio.wait_for(
+    _, metrics, _sv = await asyncio.wait_for(
         _run(store=_Hangs(), store_timeout_seconds=0.05), timeout=5,
     )
     assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
@@ -424,7 +429,7 @@ async def test_a_store_write_timeout_is_unavailable_and_never_timeout():
         async def write(self, **kw):
             await asyncio.sleep(30)
 
-    _, metrics = await asyncio.wait_for(
+    _, metrics, _sv = await asyncio.wait_for(
         _run(store=_Hangs(), store_timeout_seconds=0.05), timeout=5,
     )
     assert _counter(metrics, "nora_debrief_total", outcome="timeout") == 0, (
@@ -444,6 +449,81 @@ async def test_a_cancellation_is_not_counted_as_an_error():
     increment `outcome="error"`, so the series fired on healthy shutdowns and
     stopped being readable. A noisy gate is a disabled gate.
     """
-    _, metrics = await _run(client=_Client(asyncio.CancelledError()))
+    _, metrics, _sv = await _run(client=_Client(asyncio.CancelledError()))
     assert _counter(metrics, "nora_debrief_total", outcome="cancelled") == 1
     assert _counter(metrics, "nora_debrief_total", outcome="error") == 0
+
+
+# --- the per-turn verdict, 26 §3's second output ---------------------------
+
+async def test_a_fold_writes_the_turn_verdict_beside_the_position():
+    """Two outputs of ONE call, with opposite cardinalities: the position is
+    one row per conversation revised in place, the verdict is one row per turn
+    never rewritten."""
+    store, metrics, verdicts = await _run(client=_Client(
+        _ok("a position", grounded=False, unsupported=("claimed a closing time",))))
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    v = await verdicts.read(tag_id="tag-1")
+    assert v is not None and v.grounded is False
+    assert v.unsupported == ("claimed a closing time",)
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="false") == 1
+
+
+async def test_a_verdict_failure_never_costs_the_position():
+    """**The asymmetry, and it is deliberate.** The position is what the NEXT
+    TURN reads; the verdict is read by a re-derivation pass that does not exist
+    yet. So a verdict that cannot be written must not undo a position that was
+    written successfully — a partial result beats none.
+
+    Falsification: move the verdict save above the position write, or let its
+    failure set `outcome`, and this goes red.
+    """
+    class _Broken(InMemoryTurnVerdictStore):
+        async def save(self, *, verdict):
+            raise RuntimeError("verdict store down")
+
+    store, metrics, _ = await _run(
+        store_verdict=_Broken(),
+        client=_Client(_ok("a position", grounded=False, unsupported=("x",))))
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="unwritten") == 1
+
+
+async def test_a_missing_verdict_is_absent_not_a_failure():
+    """The fold revised the position and gave no usable verdict. A READING
+    about the objective text, not a fault — and never folded in with
+    `unwritten`, which is the database refusing (R-27: those two send the next
+    investigation to different places)."""
+    store, metrics, verdicts = await _run(client=_Client(
+        debrief.Completion(json.dumps({"standing": "a position"}), "stop")))
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert await verdicts.read(tag_id="tag-1") is None
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="absent") == 1
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="unwritten") == 0
+
+
+async def test_a_self_contradictory_verdict_is_dropped_not_written():
+    """`grounded=true` with unsupported claims is a contradiction. The domain
+    type refuses it, the stage degrades to no verdict rather than raising, and
+    the position still lands — because this column is what S2's re-derivation
+    trigger reads and a trigger firing off a contradictory row is worse than
+    one that never fires."""
+    store, metrics, verdicts = await _run(client=_Client(
+        _ok("a position", grounded=True, unsupported=("but also this",))))
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert await verdicts.read(tag_id="tag-1") is None
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="absent") == 1
+
+
+async def test_the_verdict_comes_from_the_answer_that_was_kept():
+    """On the consolidate retry the verdict must be parsed from the SECOND
+    completion — the one actually accepted. Taking it off the refused draft
+    would pair a position with a judgement of text nobody kept."""
+    client = _Client(
+        _ok("x" * 60, grounded=True),                      # refused: over cap
+        _ok("short", grounded=False, unsupported=("from the kept answer",)),
+    )
+    _, _, verdicts = await _run(client=client, max_chars=50)
+    v = await verdicts.read(tag_id="tag-1")
+    assert v is not None and v.unsupported == ("from the kept answer",)

@@ -383,6 +383,7 @@ class EngagementPipeline:
                 trace=trace,
                 platform=platform,
                 store=wiring.store,
+            store_verdict=wiring.store_verdict,
                 client=wiring.client,
                 objective=wiring.objective,
                 metrics=self._metrics,

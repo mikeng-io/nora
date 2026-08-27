@@ -1114,6 +1114,28 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the one that wrote nothing. Two very different healths wearing one name
     # would make the series unreadable: a high `first` with a low `final` is
     # the mechanism working.
+    # 26 §3's second output. The label is the VERDICT, not the write's success,
+    # because the reading that matters is the grounding mix — a room where
+    # every turn comes back `false` is telling you something about the doctrine
+    # or the tools, not about the store.
+    #
+    #   true      — the fold judged the turn grounded
+    #   false     — ungrounded; `unsupported` names which claims
+    #   absent    — the fold revised the position but produced no usable
+    #               verdict. A sustained rate means the objective is not
+    #               asking for one clearly enough — a reading about the PROMPT
+    #   unwritten — the verdict parsed but the save failed, including the
+    #               duplicate-key error that IS the never-rewritten property
+    #               (a turn debriefed twice). Never folded in with `absent`:
+    #               "the model gave nothing" and "the database refused" send
+    #               the next investigation to different places (R-27)
+    _CounterSpec(
+        "nora_turn_verdict_total",
+        "Per-turn debrief verdicts by grounding: true, false, absent (no "
+        "usable verdict from the fold), unwritten (parsed but the save "
+        "failed).",
+        ("grounded",),
+    ),
     _CounterSpec(
         "nora_standing_overflow_refusals_total",
         "Standing writes refused for exceeding [standing] max_chars, by "

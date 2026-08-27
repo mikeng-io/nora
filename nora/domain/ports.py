@@ -225,6 +225,7 @@ from nora.domain.models import (
     WeatherObservation,
 )
 from nora.domain.standing import Standing as Standing
+from nora.domain.turn_verdict import TurnVerdict as TurnVerdict
 from nora.domain.utf16 import utf16_len
 
 # `PlatformIdentity` is re-exported, not declared here — it moved next to
@@ -1913,4 +1914,37 @@ class StandingStore(Protocol):
         read-then-insert would race into a duplicate-key error on exactly the
         turn that already went unusually slowly.
         """
+        ...
+
+
+@runtime_checkable
+class TurnVerdictStore(Protocol):
+    """Where the debrief's per-turn judgement is written (26 §3).
+
+    **One verb, and the absent one is the point.** There is no `write`, no
+    upsert and no `supersede`: a `TurnVerdict` is written ONCE and never
+    rewritten, so the port offers no path that could rewrite it — the same
+    move `DreamSink` makes by having no delete. A rule expressed as a type
+    cannot be forgotten by either side; the same rule in a docstring is
+    remembered until the night someone is tired.
+
+    That matters more here than it looks, because the split between this and
+    `Standing` was found by a bug: per-turn fields lived on the
+    per-conversation row, and the re-derivation trigger read a `grounded` flag
+    the NEXT TURN had already overwritten. Making the rewrite unrepresentable
+    is what stops that returning.
+
+    `read` exists for the re-derivation path and for the contract suite.
+    Nothing on the reply path calls it — a verdict is written and forgotten
+    until something rebuilds a position from it.
+    """
+
+    async def save(self, *, verdict: TurnVerdict) -> None:
+        """Write this turn's verdict. Raises if the turn already has one —
+        that means it was debriefed twice, and silently overwriting would hide
+        it."""
+        ...
+
+    async def read(self, *, tag_id: str) -> TurnVerdict | None:
+        """One turn's verdict, or `None`."""
         ...

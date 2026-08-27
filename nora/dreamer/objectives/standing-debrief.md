@@ -35,8 +35,18 @@ A turn where the assistant deliberately said nothing is still worth reviewing, a
 
 Write in the language the room is actually using.
 
+SECOND, judge whether the turn was GROUNDED. A turn is grounded when every factual claim the assistant made is supported by what it actually had — a tool result in the reasoning, something someone said in the transcript, or the prior position. A turn is NOT grounded when it asserted something it had no source for, however plausible.
+
+This is about SOURCING, not about correctness or helpfulness. A short, unhelpful reply that claimed nothing is grounded. A fluent, useful reply that invented a detail is not. A turn where the assistant deliberately said nothing is grounded — it asserted nothing.
+
+If the turn was not grounded, name each unsupported claim in a few words: what was asserted, not why it was wrong. At most 10, each under 200 characters. If the turn was grounded, the list is empty.
+
 Respond with ONLY a JSON object, no prose and no markdown fence:
 
-{"standing": "<the revised position, as one short paragraph>"}
+{"standing": "<the revised position, as one short paragraph>",
+ "grounded": true,
+ "unsupported": []}
+
+`grounded` must be a literal true or false, never a string. `unsupported` must be empty when `grounded` is true — a grounded turn carrying unsupported claims is a contradiction and the whole verdict is discarded.
 
 The paragraph MUST fit inside the character limit you are given. If it does not fit, you will be told so and asked to consolidate — drop the oldest and least consequential thing in it, never the most recent.
