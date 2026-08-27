@@ -9,6 +9,7 @@ import asyncio
 from dataclasses import dataclass
 
 from nora.domain.models import NormalizedMessage, TagContext
+from nora.domain.notes import Note
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.stages import invoke
 from nora.obs.metrics import Metrics
@@ -19,13 +20,26 @@ class _Doctrine:
     sha256: str = "deadbeef"
 
 
-def _ctx(tag_id: str = "tag-1", conversation_id: str = "g1") -> TagContext:
+def _note(note_id: str) -> Note:
+    return Note(
+        id=note_id, workspace="ridgeline", title=f"note {note_id}",
+        description="one line about it", uncertainty="not settled",
+        closing_condition="somebody decides", established_in="g1",
+        created_at=1, head_revision_id=f"{note_id}-r1", anchor_date=20261011,
+    )
+
+
+def _ctx(
+    tag_id: str = "tag-1", conversation_id: str = "g1",
+    notes: tuple[Note, ...] = (),
+) -> TagContext:
     msg = NormalizedMessage(
         platform="signal", conversation_id=conversation_id, conversation_type="group",
         sender_id="+852111", sender_name="Miles", timestamp=1, body="nora.000 hi", raw={},
     )
     return TagContext(
         tag_id=tag_id, message=msg, tagger=None, transcript=(), peer_card=(), started_at=0.0,
+        notes=notes,
     )
 
 
@@ -152,7 +166,12 @@ async def test_the_runner_is_called_with_every_argument():
 async def test_trace_attributes_are_computed_from_ctx_and_doctrine():
     """Matches `Handler._invoke`'s `build_trace_attributes(ctx, doctrine)` call
     (`nora/handler.py:133`) — provenance only, tag_id/conversation_id/
-    doctrine_sha256, never message content."""
+    doctrine_sha256 and one COUNT, never message content.
+
+    Asserted as an EXACT dict rather than by key, and that is the point of the
+    test: it is the gate on what leaves this process for Langfuse, so a key
+    added anywhere has to be added here too and looked at once.
+    """
     runner = _FakeRunner()
     ctx = _ctx(tag_id="tag-42", conversation_id="g9")
     doctrine = _Doctrine(sha256="cafef00d")
@@ -162,7 +181,23 @@ async def test_trace_attributes_are_computed_from_ctx_and_doctrine():
     attrs = runner.calls[0]["trace_attributes"]
     assert attrs == {
         "tag_id": "tag-42", "conversation_id": "g9", "doctrine_sha256": "cafef00d",
+        "note_index_entries": 0,
     }
+
+
+async def test_the_trace_reports_how_many_notes_the_turn_was_shown():
+    """The cold start is invisible in a trace without this. A turn that saw an
+    empty notebook and a turn where the tier was never wired produce the same
+    spans, the same tools and the same prompt shape — and the tier spent its
+    first eight days in the first state while reading as the second."""
+    runner = _FakeRunner()
+    notes = tuple(
+        _note(f"n{i}") for i in range(3)
+    )
+
+    await _run(runner, ctx=_ctx(notes=notes))
+
+    assert runner.calls[0]["trace_attributes"]["note_index_entries"] == 3
 
 
 async def test_a_timeout_returns_not_ok_and_counts_invocation_timeout():
