@@ -35,7 +35,6 @@ import sqlalchemy as sa
 from nora.domain.turn_verdict import UNSUPPORTED_MAX_ITEMS, TurnVerdict
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.infra.sql.schema import TURN_VERDICT
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
 from nora.testing import InMemoryTurnVerdictStore
 
@@ -235,37 +234,40 @@ async def test_latest_is_none_before_the_first_verdict(store):
 
 @pytest.mark.asyncio
 async def test_the_trigger_read_actually_uses_its_partial_index(_verdict_db: str):
-    """**Asserts the PLAN, because every other check here passes on the defect.**
+    """**Asserts the plan of the SQL the STORE emits, captured off the engine.**
 
     `latest_ungrounded` shipped as `.is_(False)`, which renders `grounded IS
     false`, while `idx_turn_verdict_ungrounded` is created `WHERE (grounded =
-    false)`. Postgres's predicate prover cannot show a `BooleanTest` implies an
-    `OpExpr`, so the partial index was unusable and every fold took a
-    sequential scan of the whole table — measured at 63k rows: 507 buffers and
-    3.3ms against 1 buffer and 0.06ms.
+    false)`. Postgres cannot prove a `BooleanTest` implies an `OpExpr`, so the
+    partial index was unusable and every fold sequentially scanned the whole
+    table — 525 buffers and 3.1ms against 12 buffers and 0.11ms.
 
-    **The answer was CORRECT the whole time.** Right row, right order, contract
-    suite green, both implementations agreeing — the only difference was the
-    plan, and nothing looked at one. That is why it survived a green gate and
-    two reviews, and why a test over the SPELLING would be the wrong test: it
-    would pin today's fix rather than the property, and the next equivalent
-    rewrite would slip past it exactly as this did.
+    **The ANSWER was correct throughout.** Right row, right order, both
+    implementations agreeing, every other test green. The divergence lived only
+    in the plan, and nothing in this repo had ever looked at one.
 
-    `test_schema_parity` cannot cover it either: it compares CHECK predicates
-    and index ordering, not partial-index predicates.
+    **The first version of this test compiled its OWN statement** with the
+    correct spelling and EXPLAINed that — so it pinned a string literal in this
+    file and never touched the shipped method. Reverting the store's predicate
+    to the exact defect left it GREEN, measured. That is the compare-the-code-
+    to-a-copy-of-itself failure, in the test written to catch a defect of the
+    same family.
 
-    This is also the read the stage makes on EVERY fold inside the held
-    per-conversation lock, and the one most likely to reach its timeout — which
-    `_should_rebuild` swallows as R-27's «I could not check», step one of the
-    verdict-dropping path the watermark exists to close. Slow here is not slow
-    in the abstract (cold review, 2026-08-28).
+    So the SQL is CAPTURED off the engine as the method issues it. Nothing here
+    spells the predicate; if the store's spelling changes, the captured text
+    changes with it (cold review, 2026-08-28).
     """
     engine = create_sql_engine(_verdict_db)
+    captured: list[tuple[str, Any]] = []
+
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        captured.append((statement, parameters))
+
     try:
         async with engine.begin() as conn:
             # Enough rows that a sequential scan is never the cheaper plan, and
-            # ungrounded kept RARE — which is the shape the partial index is
-            # for and the shape production has.
+            # ungrounded kept RARE — the shape the partial index is for, and
+            # the shape production has.
             await conn.execute(sa.text(
                 "INSERT INTO turn_verdict "
                 "(tag_id, conversation_id, grounded, unsupported, created_at) "
@@ -274,20 +276,25 @@ async def test_the_trigger_read_actually_uses_its_partial_index(_verdict_db: str
             ))
             await conn.execute(sa.text("ANALYZE turn_verdict"))
 
-            stmt = (
-                sa.select(TURN_VERDICT)
-                .where(TURN_VERDICT.c.conversation_id == "conv-0",
-                       TURN_VERDICT.c.grounded == sa.false())
-                .order_by(TURN_VERDICT.c.created_at.desc(),
-                          TURN_VERDICT.c.tag_id.desc())
-                .limit(1)
-            )
-            compiled = stmt.compile(
-                dialect=conn.sync_engine.dialect,
-                compile_kwargs={"literal_binds": True},
-            )
-            rows = (await conn.execute(
-                sa.text("EXPLAIN " + str(compiled)))).fetchall()
+        sa.event.listen(engine.sync_engine, "before_cursor_execute", _capture)
+        try:
+            # THE PRODUCTION CALL. Its answer is asserted too — a capture of a
+            # statement that returned the wrong row would prove nothing.
+            got = await SqlTurnVerdictStore(engine).latest_ungrounded(
+                conversation_id="conv-0")
+        finally:
+            sa.event.remove(engine.sync_engine, "before_cursor_execute", _capture)
+
+        assert got is not None and got.grounded is False
+        assert captured, "no SQL was captured; the listener never fired"
+        statement, parameters = captured[-1]
+        assert "turn_verdict" in statement, (
+            f"captured the wrong statement: {statement}"
+        )
+
+        async with engine.connect() as conn:
+            rows = (await conn.exec_driver_sql(
+                "EXPLAIN " + statement, parameters)).fetchall()
         plan = "\n".join(r[0] for r in rows)
     finally:
         async with engine.begin() as conn:
@@ -296,7 +303,7 @@ async def test_the_trigger_read_actually_uses_its_partial_index(_verdict_db: str
 
     assert "idx_turn_verdict_ungrounded" in plan, (
         "the trigger's read does not use its partial index — every fold "
-        "sequentially scans the whole verdict table inside the held lock.\n"
-        f"{plan}"
+        "sequentially scans the whole verdict table inside the held "
+        f"per-conversation lock.\nSQL: {statement}\n{plan}"
     )
     assert "Seq Scan" not in plan, f"planner chose a sequential scan:\n{plan}"
