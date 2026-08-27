@@ -22,7 +22,7 @@ one regex predicate.
 `nora.agent.tools`'s `place_info` tool applied the FULL R-28 screen-call-screen
 sandwich (outbound identifier/coordinate/person screen, the actual call
 wrapped in `try/except`, and a return-path screen on Google's own `name`/
-`address`), but `EventService._resolve_place` only ever got the outbound
+`address`), but `GatheringService._resolve_place` only ever got the outbound
 half — no person-name check, no `try/except` around the call, and no
 return-path screen, so a Google-returned `name`/`address` that itself trips
 `scan_identifiers`/`looks_like_coordinate` was written straight into
@@ -116,7 +116,7 @@ async def screen_and_resolve_place(
          identifier or coordinate that comes BACK is exactly as much a leak
          as one that goes out.
 
-    `person_names` is optional: `EventService` has no per-tag `persons`/room
+    `person_names` is optional: `GatheringService` has no per-tag `persons`/room
     the way a tool closure does, so it cannot always build that set itself.
     A caller that has it should always pass it; one without it still gets
     the identifier/coordinate half of the screen, both ways.

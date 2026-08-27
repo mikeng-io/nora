@@ -141,8 +141,10 @@ Each registered factory validates its `kind`'s payload at fire time:
 `gathering_occasion` raises on a missing `payload["title"]` instead of
 `KeyError`-ing out of the blue. The raise is a wiring bug — an
 implementation fault, not a runtime maybe — and lands in the same
-fail-closed path as an unregistered kind (heartbeat error, row to
-FAILED via `recover()`), never rendered as a malformed sentence.
+fail-closed path as an unregistered kind (the heartbeat's `_run_turn`
+`_fire` guard resolves the row to FAILED immediately with `failed_error` —
+never left FIRING, so boot `recover()` never sees it), never rendered as
+a malformed sentence.
 
 ## Testing impact
 

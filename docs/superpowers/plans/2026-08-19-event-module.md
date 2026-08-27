@@ -15,7 +15,7 @@
 
 **Goal:** Build Nora's Event module — durable gatherings/RSVP state, chat-first tools that reuse the existing reminders fire path for notifications and the existing Places infra for venue data, and a read-only web surface — exactly as specified.
 
-**Architecture:** A `nora/domain/events.py` (types + `GatheringStore` port) and `nora/app/events.py` (`GatheringService`, the one use-case layer both the agent tools and the web read routes call) sit between a Postgres-backed store and two thin adapters. `GatheringService` reuses three things that already ship rather than rebuilding them: the reminders domain (for notifications), the `route_source`/`PlaceResolver` (for venue resolution), and Honcho's dialectic `chat()` (for preference-based suggestions).
+**Architecture:** A `nora/domain/gatherings.py` (types + `GatheringStore` port) and `nora/app/gatherings.py` (`GatheringService`, the one use-case layer both the agent tools and the web read routes call) sit between a Postgres-backed store and two thin adapters. `GatheringService` reuses three things that already ship rather than rebuilding them: the reminders domain (for notifications), the `route_source`/`PlaceResolver` (for venue resolution), and Honcho's dialectic `chat()` (for preference-based suggestions).
 
 **Tech Stack:** Python (SQLAlchemy Core, asyncpg, Alembic, pytest), TypeScript/Next.js (App Router, zod, NextAuth) for the web surface.
 
@@ -37,30 +37,30 @@
 ## File Structure
 
 ```
-nora/domain/events.py                 NEW — Event, RSVP, GatheringStatus, RSVPResponse,
+nora/domain/gatherings.py                 NEW — Event, RSVP, GatheringStatus, RSVPResponse,
                                        VenueCandidate, VenueSuggestions, GatheringStore
                                        (Protocol), DuplicateGatheringError, normalise_gathering
 nora/infra/sql/schema.py              MODIFY — add EVENTS, EVENT_RSVPS tables + indexes
 nora/infra/sql/migrations/versions/
   0015_events.py                      NEW — hand-written migration
-nora/infra/sql/events.py              NEW — SqlGatheringStore
-nora/testing/events.py                NEW — FakeGatheringStore
+nora/infra/sql/gatherings.py              NEW — SqlGatheringStore
+nora/testing/gatherings.py                NEW — FakeGatheringStore
 tests/contract/
   test_event_store_contract.py        NEW — sql+fake parametrized suite
 nora/agent/security.py                NEW — scan_identifiers/_looks_like_coordinate,
                                        relocated from nora/agent/tools.py so
                                        GatheringService can reuse them without
                                        duplicating the R-28 screen
-nora/app/events.py                    NEW — GatheringService
-tests/test_events_service.py          NEW — GatheringService unit tests (fakes only)
+nora/app/gatherings.py                    NEW — GatheringService
+tests/test_gatherings_service.py          NEW — GatheringService unit tests (fakes only)
 nora/app/composition.py               MODIFY — construct SqlGatheringStore + GatheringService
 nora/agent/tools.py                   MODIFY — 6 new tool closures + NATIVE_TOOLS
                                        entries + build_tool_specs param
 nora/agent/registry.py                MODIFY — ToolRegistry gains `events` param
-tests/test_event_tools.py             NEW — tool-level tests incl. open-event doctrine
+tests/test_gathering_tools.py             NEW — tool-level tests incl. open-event doctrine
 tests/test_acceptance_rules.py        MODIFY — add R-52 entry
 design/09-decision-index.md           MODIFY — add DEC-117 entry
-nora/web/events.py                    NEW — build_events_payload/build_event_payload
+nora/web/gatherings.py                    NEW — build_events_payload/build_event_payload
 nora/web/api.py                       MODIFY — register GET /app/v1/events(/{id})
 app/src/lib/events-proxy.ts           NEW — proxyEventsGet, mirrors games-proxy.ts
 app/src/app/api/events/route.ts       NEW
@@ -80,11 +80,11 @@ docs/superpowers/specs/
 
 ---
 
-### Task 1: Domain types — `nora/domain/events.py`
+### Task 1: Domain types — `nora/domain/gatherings.py`
 
 **Files:**
-- Create: `nora/domain/events.py`
-- Test: `tests/test_events_domain.py`
+- Create: `nora/domain/gatherings.py`
+- Test: `tests/test_gatherings_domain.py`
 
 **Interfaces:**
 - Produces: `GatheringStatus`, `RSVPResponse` (StrEnum); `Event`, `RSVP`, `VenueCandidate`, `VenueSuggestions` (frozen dataclasses); `GatheringStore` (Protocol); `DuplicateGatheringError`; `normalise_gathering(event: Event) -> Event`.
@@ -92,7 +92,7 @@ docs/superpowers/specs/
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/test_events_domain.py
+# tests/test_gatherings_domain.py
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -166,13 +166,13 @@ def test_rsvp_construction():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/test_events_domain.py -v`
+Run: `uv run pytest tests/test_gatherings_domain.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'nora.domain.gatherings'`
 
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# nora/domain/events.py
+# nora/domain/gatherings.py
 """Event/RSVP domain types and the `GatheringStore` port.
 
 Mirrors `nora.domain.reminders`'s split (types + port in one module, no
@@ -325,7 +325,7 @@ def normalise_gathering(event: Event) -> Event:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `uv run pytest tests/test_events_domain.py -v`
+Run: `uv run pytest tests/test_gatherings_domain.py -v`
 Expected: PASS (5 tests)
 
 - [ ] **Step 5: Type-check and commit**
@@ -334,7 +334,7 @@ Run: `uv run mypy nora/domain`
 Expected: no new errors.
 
 ```bash
-git add nora/domain/events.py tests/test_events_domain.py
+git add nora/domain/gatherings.py tests/test_gatherings_domain.py
 git commit -m "feat(nora): add Event/RSVP domain types and GatheringStore port"
 ```
 
@@ -520,10 +520,10 @@ git commit -m "feat(nora): add events/event_rsvps tables (migration 0015)"
 
 ---
 
-### Task 3: `SqlGatheringStore` — `nora/infra/sql/events.py`
+### Task 3: `SqlGatheringStore` — `nora/infra/sql/gatherings.py`
 
 **Files:**
-- Create: `nora/infra/sql/events.py`
+- Create: `nora/infra/sql/gatherings.py`
 
 **Interfaces:**
 - Consumes: `Event`, `RSVP`, `GatheringStatus`, `RSVPResponse`, `DuplicateGatheringError`, `normalise_gathering` from `nora.domain.gatherings`; `EVENTS`, `EVENT_RSVPS` from `nora.infra.sql.schema`.
@@ -534,14 +534,14 @@ git commit -m "feat(nora): add events/event_rsvps tables (migration 0015)"
 (No standalone unit test here — `SqlGatheringStore` is exercised entirely by Task 5's contract suite, exactly as `SqlReminderStore` has no test file of its own; the contract suite is the test, run against both implementations.)
 
 ```python
-# nora/infra/sql/events.py
+# nora/infra/sql/gatherings.py
 """`GatheringStore` over SQLAlchemy Core. Shaped like `nora.infra.sql.reminders`:
 the engine comes through `__init__`, every write is one statement inside
 `async with self._engine.begin()`, every read inside
 `async with self._engine.connect()`.
 
-`FakeGatheringStore` (`nora/testing/events.py`) is the second implementation;
-`tests/contract/test_event_store_contract.py` is the one suite both pass.
+`FakeGatheringStore` (`nora/testing/gatherings.py`) is the second implementation;
+`tests/contract/test_gathering_store_contract.py` is the one suite both pass.
 """
 
 from __future__ import annotations
@@ -713,22 +713,22 @@ Add `from sqlalchemy.dialects.postgresql import insert as pg_insert` to this fil
 
 - [ ] **Step 2: Type-check**
 
-Run: `uv run mypy nora/infra/sql/events.py`
+Run: `uv run mypy nora/infra/sql/gatherings.py`
 Expected: no new errors (Task 5 provides the actual behavioral test).
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add nora/infra/sql/events.py
+git add nora/infra/sql/gatherings.py
 git commit -m "feat(nora): add SqlGatheringStore"
 ```
 
 ---
 
-### Task 4: `FakeGatheringStore` — `nora/testing/events.py`
+### Task 4: `FakeGatheringStore` — `nora/testing/gatherings.py`
 
 **Files:**
-- Create: `nora/testing/events.py`
+- Create: `nora/testing/gatherings.py`
 
 **Interfaces:**
 - Consumes: same domain types as Task 3.
@@ -737,7 +737,7 @@ git commit -m "feat(nora): add SqlGatheringStore"
 - [ ] **Step 1: Write the implementation**
 
 ```python
-# nora/testing/events.py
+# nora/testing/gatherings.py
 """In-memory `GatheringStore` for tests. Must reproduce the REAL store's
 failure/edge shapes — a duplicate `create` raises `DuplicateGatheringError`
 exactly like `SqlGatheringStore` does, `update`/`add_rsvp` on the same
@@ -800,19 +800,19 @@ class FakeGatheringStore:
 
 - [ ] **Step 2: Type-check and commit**
 
-Run: `uv run mypy nora/testing/events.py`
+Run: `uv run mypy nora/testing/gatherings.py`
 
 ```bash
-git add nora/testing/events.py
+git add nora/testing/gatherings.py
 git commit -m "feat(nora): add FakeGatheringStore"
 ```
 
 ---
 
-### Task 5: Contract tests — `tests/contract/test_event_store_contract.py`
+### Task 5: Contract tests — `tests/contract/test_gathering_store_contract.py`
 
 **Files:**
-- Create: `tests/contract/test_event_store_contract.py`
+- Create: `tests/contract/test_gathering_store_contract.py`
 
 **Interfaces:**
 - Consumes: `SqlGatheringStore` (Task 3), `FakeGatheringStore` (Task 4), `Event`/`RSVP`/`GatheringStatus`/`RSVPResponse`/`DuplicateGatheringError` (Task 1).
@@ -822,7 +822,7 @@ git commit -m "feat(nora): add FakeGatheringStore"
 Mirror `tests/contract/test_reminder_store_contract.py`'s fixture exactly (read it first to confirm the `pg_url` fixture name and `run_migrations` signature haven't changed):
 
 ```python
-# tests/contract/test_event_store_contract.py
+# tests/contract/test_gathering_store_contract.py
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -987,18 +987,18 @@ async def test_rsvp_upserts_on_same_person(store):
 
 - [ ] **Step 2: Run against the fake first (no Postgres needed)**
 
-Run: `uv run pytest tests/contract/test_event_store_contract.py -k fake -v`
+Run: `uv run pytest tests/contract/test_gathering_store_contract.py -k fake -v`
 Expected: PASS (10 tests), including `test_rsvp_upserts_on_same_person` — the `FakeGatheringStore.add_rsvp` implementation from Task 4 already upserts by dict key.
 
 - [ ] **Step 3: Run against Postgres**
 
-Run: `uv run pytest tests/contract/test_event_store_contract.py -k sql -v`
+Run: `uv run pytest tests/contract/test_gathering_store_contract.py -k sql -v`
 Expected: PASS (10 tests) — this confirms Task 3's `pg_insert`-based upsert behaves identically to the fake.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add tests/contract/test_event_store_contract.py
+git add tests/contract/test_gathering_store_contract.py
 git commit -m "test(nora): add GatheringStore contract suite"
 ```
 
@@ -1006,7 +1006,7 @@ git commit -m "test(nora): add GatheringStore contract suite"
 
 ### Task 6: Relocate the R-28 identifier/coordinate screen to a shared module
 
-**Why this task exists:** `nora/agent/tools.py`'s `place_info` and `route` tools screen every place-name argument through `scan_identifiers(...)` and `_looks_like_coordinate(...)` before it reaches Google (R-28) — but `GatheringService` (Task 7) lives in `nora/app/events.py` and needs to apply the *exact same* screen before it resolves a venue, or a coordinate/identifier could reach Google through a second, unaudited path. These functions must be moved, not reimplemented — copying their logic by hand risks silently drifting from the audited original.
+**Why this task exists:** `nora/agent/tools.py`'s `place_info` and `route` tools screen every place-name argument through `scan_identifiers(...)` and `_looks_like_coordinate(...)` before it reaches Google (R-28) — but `GatheringService` (Task 7) lives in `nora/app/gatherings.py` and needs to apply the *exact same* screen before it resolves a venue, or a coordinate/identifier could reach Google through a second, unaudited path. These functions must be moved, not reimplemented — copying their logic by hand risks silently drifting from the audited original.
 
 **Files:**
 - Create: `nora/agent/security.py`
@@ -1061,11 +1061,11 @@ git commit -m "refactor(nora): relocate R-28 identifier/coordinate screen to nor
 
 ---
 
-### Task 7: `GatheringService` — `nora/app/events.py`
+### Task 7: `GatheringService` — `nora/app/gatherings.py`
 
 **Files:**
-- Create: `nora/app/events.py`
-- Test: `tests/test_events_service.py`
+- Create: `nora/app/gatherings.py`
+- Test: `tests/test_gatherings_service.py`
 
 **Interfaces:**
 - Consumes: `GatheringStore`, `Event`, `RSVP`, `GatheringStatus`, `RSVPResponse`, `VenueCandidate`, `VenueSuggestions`, `DuplicateGatheringError` (Task 1); `FakeGatheringStore` (Task 4); `scan_identifiers`, `looks_like_coordinate` (Task 6); `ReminderStore`, `Reminder`, `ReminderState`, `ReminderCaps`, `ensure_utc` from `nora.domain.reminders`; `FakeReminderStore` from `nora.testing.reminders` (existing); `MemoryStore` from `nora.domain.ports` (its `chat` method).
@@ -1074,7 +1074,7 @@ git commit -m "refactor(nora): relocate R-28 identifier/coordinate screen to nor
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# tests/test_events_service.py
+# tests/test_gatherings_service.py
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -1276,13 +1276,13 @@ async def test_suggest_venue_nothing_found_when_every_person_is_empty():
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `uv run pytest tests/test_events_service.py -v`
+Run: `uv run pytest tests/test_gatherings_service.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'nora.app.gatherings'`
 
 - [ ] **Step 3: Write the implementation**
 
 ```python
-# nora/app/events.py
+# nora/app/gatherings.py
 """`GatheringService` — the ONE use-case layer for Event business rules (spec
 §1: reminders only ever had one adapter, so its rules live inline in a
 tool closure; Event has two adapters from day one, so its rules live
@@ -1600,15 +1600,15 @@ class GatheringService:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `uv run pytest tests/test_events_service.py -v`
+Run: `uv run pytest tests/test_gatherings_service.py -v`
 Expected: PASS (10 tests)
 
 - [ ] **Step 5: Type-check and commit**
 
 ```bash
-uv run mypy nora/app/events.py
-uv run ruff check nora/app/events.py tests/test_events_service.py
-git add nora/app/events.py tests/test_events_service.py
+uv run mypy nora/app/gatherings.py
+uv run ruff check nora/app/gatherings.py tests/test_gatherings_service.py
+git add nora/app/gatherings.py tests/test_gatherings_service.py
 git commit -m "feat(nora): add GatheringService use-case layer"
 ```
 
@@ -1932,7 +1932,7 @@ Expected: no new errors.
 - [ ] **Step 7: Write a smoke test for one tool end-to-end through `build_tool_specs`**
 
 ```python
-# tests/test_event_tools.py (this file also gets the doctrine test in Task 10 — start it now)
+# tests/test_gathering_tools.py (this file also gets the doctrine test in Task 10 — start it now)
 from __future__ import annotations
 
 import pytest
@@ -1948,7 +1948,7 @@ def test_all_six_event_tools_are_registered():
         assert name in NATIVE_TOOLS, f"{name} missing from NATIVE_TOOLS"
 ```
 
-Run: `uv run pytest tests/test_event_tools.py -v`
+Run: `uv run pytest tests/test_gathering_tools.py -v`
 Expected: PASS
 
 - [ ] **Step 8: Full gate + commit**
@@ -1958,7 +1958,7 @@ uv run pytest -q
 uv run ruff check nora/ evals/ tests/
 uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence
 uv run lint-imports
-git add nora/agent/tools.py nora/agent/registry.py nora/app/composition.py tests/test_event_tools.py
+git add nora/agent/tools.py nora/agent/registry.py nora/app/composition.py tests/test_gathering_tools.py
 git commit -m "feat(nora): add create_event/update_event/rsvp_event/cancel_event/list_events/suggest_venue tools"
 ```
 
@@ -1967,7 +1967,7 @@ git commit -m "feat(nora): add create_event/update_event/rsvp_event/cancel_event
 ### Task 10: The open-event doctrine — acceptance rule, R-52, DEC-117
 
 **Files:**
-- Modify: `tests/test_event_tools.py`
+- Modify: `tests/test_gathering_tools.py`
 - Modify: `tests/test_acceptance_rules.py`
 - Modify: `design/09-decision-index.md`
 
@@ -1976,7 +1976,7 @@ git commit -m "feat(nora): add create_event/update_event/rsvp_event/cancel_event
 
 - [ ] **Step 1: Write the named acceptance test**
 
-Append to `tests/test_event_tools.py`:
+Append to `tests/test_gathering_tools.py`:
 
 ```python
 async def test_r52_two_open_events_refuses_a_third_rather_than_guessing():
@@ -2017,7 +2017,7 @@ async def test_r52_two_open_events_refuses_a_third_rather_than_guessing():
 
 - [ ] **Step 2: Run it**
 
-Run: `uv run pytest tests/test_event_tools.py::test_r52_two_open_events_refuses_a_third_rather_than_guessing -v`
+Run: `uv run pytest tests/test_gathering_tools.py::test_r52_two_open_events_refuses_a_third_rather_than_guessing -v`
 Expected: PASS (it should already pass, given Task 7's `create_event` — this step is confirming the rule is actually enforced, not just asserted in a docstring)
 
 - [ ] **Step 3: Add the `RULE_TESTS` entry**
@@ -2042,16 +2042,16 @@ In `design/09-decision-index.md`, add a new row (next free id `DEC-117`, per the
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/test_event_tools.py tests/test_acceptance_rules.py design/09-decision-index.md
+git add tests/test_gathering_tools.py tests/test_acceptance_rules.py design/09-decision-index.md
 git commit -m "test(nora): add R-52 open-event doctrine rule + DEC-117 entry"
 ```
 
 ---
 
-### Task 11: Web backend read routes — `nora/web/events.py` + `nora/web/api.py`
+### Task 11: Web backend read routes — `nora/web/gatherings.py` + `nora/web/api.py`
 
 **Files:**
-- Create: `nora/web/events.py`
+- Create: `nora/web/gatherings.py`
 - Modify: `nora/web/api.py`
 
 **Interfaces:**
@@ -2061,7 +2061,7 @@ git commit -m "test(nora): add R-52 open-event doctrine rule + DEC-117 entry"
 - [ ] **Step 1: Write the payload builders**
 
 ```python
-# nora/web/events.py
+# nora/web/gatherings.py
 """JSON payload builders for the read-only Event web surface. Plain async
 functions over typed collaborators, matching `nora.web.memory`'s shape
 (`build_memory_payload`) rather than `nora.web.games`'s remote-client-wrapper
@@ -2116,7 +2116,7 @@ async def build_event_payload(
     return payload
 ```
 
-**Note**: `build_event_payload` reaches into `events._store` directly for RSVPs because `GatheringService` has no public `rsvps_for` passthrough yet. Add one instead of reaching past the underscore — amend `nora/app/events.py` (Task 7) with:
+**Note**: `build_event_payload` reaches into `events._store` directly for RSVPs because `GatheringService` has no public `rsvps_for` passthrough yet. Add one instead of reaching past the underscore — amend `nora/app/gatherings.py` (Task 7) with:
 
 ```python
     async def rsvps_for(self, *, event_id: UUID) -> Sequence[RSVP]:
@@ -2176,7 +2176,7 @@ Find where `register_web_routes(...)` is actually called (likely `nora/app/compo
 - [ ] **Step 4: Write a route-level test**
 
 ```python
-# tests/test_web_events.py
+# tests/test_web_gatherings.py
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -2236,16 +2236,16 @@ async def test_build_event_payload_includes_rsvps():
     assert out["rsvps"] == [{"person_id": "daisy", "response": "yes"}]
 ```
 
-Run: `uv run pytest tests/test_web_events.py -v`
+Run: `uv run pytest tests/test_web_gatherings.py -v`
 Expected: PASS (3 tests)
 
 - [ ] **Step 5: Full gate + commit**
 
 ```bash
 uv run pytest -q
-uv run mypy nora/web/events.py nora/web/api.py nora/app/composition.py nora/app/events.py
+uv run mypy nora/web/gatherings.py nora/web/api.py nora/app/composition.py nora/app/gatherings.py
 uv run lint-imports
-git add nora/web/events.py nora/web/api.py nora/app/events.py tests/test_web_events.py
+git add nora/web/gatherings.py nora/web/api.py nora/app/gatherings.py tests/test_web_gatherings.py
 git commit -m "feat(nora): add read-only GET /app/v1/events(/{id})"
 ```
 
