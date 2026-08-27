@@ -140,6 +140,58 @@ deferred **behind an evidence gate naming two of these ten metrics**. The gate
 cannot be satisfied, because the instruments it requires do not exist.
 
 
+## Layer 7 — The trace is the bundle's provenance claim, and Nora emits no spans
+
+**Found 2026-08-27, by grep, and it is the widest layer here.**
+
+This bundle's spine says the Langfuse trace is *"the provenance every claim about
+a turn re-derives from."* Four nodes rest on it. The reality:
+
+```
+start_span / start_as_current_span sites in nora/ :  0
+```
+
+**Nora creates no spans anywhere.** `nora/obs/tracing.py` builds a real
+`TracerProvider` and an OTLP exporter to Langfuse, and then nothing in the
+application ever opens a span. Every span that reaches Langfuse is emitted by
+**Strands**, from inside the agent loop, because `factory.py` hands it
+`trace_attributes`.
+
+**So the trace covers the model call and nothing around it.** Dark today:
+
+| dark | consequence |
+|---|---|
+| ingest → normalize → policy → admission | a message refused before the agent exists leaves **no trace at all** |
+| prefill assembly | which blocks were built, from which reads, at what size — the thing every disclosure and budget argument reasons about |
+| store reads on the turn's critical path | the unbounded reads [26](26-standing.md) §5 names as the class defect are invisible |
+| delivery | the strict-silence boundary — the one authored surface — is untraced |
+| the debrief stage | a stage whose whole risk is holding a slot |
+| the Dreamer's loop around its adaptors | the loop this bundle exists to fix |
+
+**The asymmetry is the finding.** A turn that *reaches the model* is
+well-traced. A turn that fails *before* it — refused at admission, starved at
+prefill, blocked at a store read — produces **nothing**, which is
+indistinguishable from a turn that never happened. That is the exact shape of
+Layers 1–6, one level up: the instrument covers the healthy path and goes silent
+on the failing one.
+
+**And it undercuts a load-bearing claim rather than a nice-to-have.** "No
+self-attestation — re-derivable, so no actor is trusted" is the third of the
+three rules the spine says make it hold. Re-derivation currently stops at the
+model call.
+
+**What this does NOT need.** Not a span per function. The gap is that the
+turn has no *skeleton*: one span for the turn, children for the named stages the
+architecture already has — admit, comprehend, prefill, invoke, deliver, debrief —
+so a turn that ends early ends *visibly*, at a named stage. The stage boundaries
+already exist in code; nothing is traced against them.
+
+**Why it was invisible.** `[obs.tracing]` is configured, the exporter is real,
+and traces *do* arrive — so every check short of grepping for span sites reports
+a working tracing setup. **A partially-instrumented system reads exactly like an
+instrumented one from the outside**, which is Layer 5's argument applied to the
+tracer itself.
+
 ## What follows from this
 
 **Every fix in this bundle ships its own measurement, or it is not done**
@@ -163,6 +215,12 @@ to state it as a repo-wide discipline rather than a Dreamer fix: a tier written
 by a different session, at a different time, reproduced it exactly.
 
 ## Status / Checkpoint
+
+2026-08-27 — **Layer 7 added: Nora emits ZERO spans.** All tracing comes from
+Strands' agent-loop instrumentation, so the trace covers the model call and
+nothing around it — and a turn that fails before the model produces nothing at
+all. The bundle's provenance claim currently holds only for the half of the turn
+that already worked.
 
 2026-08-27 — **a TENTH instance, and a named class rather than an anecdote:
 a copy of an operator-owned value, with no parity guard, is a fork with a
