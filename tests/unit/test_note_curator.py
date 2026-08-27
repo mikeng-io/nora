@@ -20,12 +20,17 @@ TODAY = 20261001
 
 
 async def _seed(store: InMemoryNoteStore, *, title: str, anchor: int | None,
-                body: str = "as it stands"):
+                body: str = "as it stands",
+                entities: tuple[str, ...] = ("grant",)):
+    """`entities` defaults to a real anchor because a DATE-ONLY collision is
+    refused (finding 3): an anchor is `(date, entity_set)` and in production
+    the entity half is empty, so grouping on the date alone would merge
+    «Dinner, 9 Sept» with «Ada's flight to Tokyo»."""
     return await store.create(
         workspace=WS, title=title, description="one line",
         uncertainty="undecided", closing_condition="somebody decides",
         established_in="conv-1", body=body, established_by="tag:miles",
-        now_ms=NOW, anchor_date=anchor,
+        now_ms=NOW, anchor_date=anchor, anchor_entity_ids=entities,
     )
 
 
@@ -239,7 +244,8 @@ async def test_a_merged_body_for_a_group_this_run_did_not_select_is_refused():
     a = await _seed(store, title="Grant wedding", anchor=20261011)
     await _seed(store, title="Grant's wedding", anchor=20261011)
     # A note that is real and shown, but is not any group's survivor.
-    lone = await _seed(store, title="Dinner", anchor=20260909)
+    lone = await _seed(store, title="Dinner", anchor=20260909,
+                       entities=("ada",))
     metrics = Metrics()
 
     _, written = await _merge_round(store, metrics, (
@@ -296,3 +302,43 @@ async def test_a_merge_that_never_ran_does_not_suppress_its_retirements():
 
     assert written == 2, "both retire; neither is suppressed by an absent merge"
     assert await store.standing(workspace=WS) == ()
+
+
+async def test_a_date_only_collision_is_refused_and_counted():
+    """Finding 3. An anchor is `(date, entity_set)` and BOTH halves make it an
+    occasion. In production the entity half is empty — `note_entity` is
+    unpopulated and `note_create` passes the model's strings through unresolved
+    — so a date-only group is "everything happening on the 9th".
+
+    27 §2 already decided this: populating `note_entity` is "the curator's real
+    precondition, NOT its flag". Relying on the model to decline is not the
+    alternative; that is self-attestation on a destructive operation.
+
+    The COUNT is what makes this a reading rather than a silence — without it,
+    a year of a quiet curator cannot be told from a year of no duplicates."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner, 9 Sept", anchor=20260909, entities=())
+    await _seed(store, title="Ada's flight to Tokyo", anchor=20260909,
+                entities=())
+    metrics = Metrics()
+
+    rendered = await _curator(store, metrics).inputs(key=WS, batch=())
+
+    assert "<merge_group" not in rendered, "a date is not an occasion"
+    assert metrics.get(
+        "nora_note_curator_groups_refused_total",
+        reason="no_entity_anchor") == 1
+
+
+async def test_entities_in_a_different_order_are_the_same_occasion():
+    """Finding 4: `anchor_key` sorts and de-duplicates, so a group is not
+    missed for an artifact of the order somebody listed the people."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Grant wedding", anchor=20261011,
+                entities=("ada", "ben"))
+    await _seed(store, title="Grant's wedding", anchor=20261011,
+                entities=("ben", "ada"))
+
+    rendered = await _curator(store).inputs(key=WS, batch=())
+
+    assert "<merge_group" in rendered

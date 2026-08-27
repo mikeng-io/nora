@@ -1059,7 +1059,8 @@ async def test_the_two_payload_shapes_are_discriminated_not_coerced(
     both = await notes.store.propose(
         key=WS,
         proposals=(
-            _creation(title="Grant wedding", anchor_date=20261011),
+            _creation(title="Grant wedding", anchor_date=20261011,
+                            anchor_entity_ids=("grant",)),
             Proposal(
                 payload=NoteRevisionProposal(
                     note_id=created, body="Ada called Sai Kung. Still no table.",
@@ -1125,14 +1126,20 @@ async def test_merge_groups_finds_notes_sharing_an_anchor(
     weddings stay two notes. This read is what makes that structural — the
     model is never asked whether two notes belong together, because SQL
     already decided and it decided on the date and the people."""
-    a = await _make(notes.store, title="Grant wedding", anchor_date=20261011)
-    b = await _make(notes.store, title="Grant's wedding", anchor_date=20261011)
-    await _make(notes.store, title="Ada wedding", anchor_date=20270301)
+    a = await _make(notes.store, title="Grant wedding", anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
+    b = await _make(notes.store, title="Grant's wedding", anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
+    await _make(notes.store, title="Ada wedding", anchor_date=20270301,
+                          anchor_entity_ids=("ada",))
 
-    groups = await notes.store.merge_groups(workspace=WS, limit=10)
+    groups, _refused = await notes.store.merge_groups(workspace=WS, limit=10)
 
     assert len(groups) == 1, "only the two sharing an anchor collide"
-    assert {n.id for n in groups[0]} == {a.id, b.id}
+    assert {n.id for n, _ in groups[0]} == {a.id, b.id}
+    assert [body for _, body in groups[0]] == [
+        "Two venues on the shortlist. Nobody has called either.",
+    ] * 2, "the BODIES come back — the model must not merge what it cannot see"
 
 
 async def test_two_weddings_on_different_days_are_never_one_group(
@@ -1142,10 +1149,12 @@ async def test_two_weddings_on_different_days_are_never_one_group(
     topically alike as two notes can be — same words, same shape, same kind of
     uncertainty — and merging them would lose which revision belonged to which
     occasion, permanently and silently."""
-    await _make(notes.store, title="Wedding venue", anchor_date=20261011)
-    await _make(notes.store, title="Wedding venue", anchor_date=20270301)
+    await _make(notes.store, title="Wedding venue", anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
+    await _make(notes.store, title="Wedding venue", anchor_date=20270301,
+                          anchor_entity_ids=("ada",))
 
-    assert await notes.store.merge_groups(workspace=WS, limit=10) == ()
+    assert await notes.store.merge_groups(workspace=WS, limit=10) == ((), ())
 
 
 async def test_dateless_notes_never_collide_with_each_other(
@@ -1163,20 +1172,22 @@ async def test_dateless_notes_never_collide_with_each_other(
         anchor_entity_ids=("person-1",),
     )
 
-    assert await notes.store.merge_groups(workspace=WS, limit=10) == ()
+    assert await notes.store.merge_groups(workspace=WS, limit=10) == ((), ())
 
 
 async def test_a_retired_note_never_joins_a_merge_group(
     notes: _Harness,
 ) -> None:
-    survivor = await _make(notes.store, anchor_date=20261011)
-    duplicate = await _make(notes.store, anchor_date=20261011)
+    survivor = await _make(notes.store, anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
+    duplicate = await _make(notes.store, anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
     await notes.store.supersede(
         key=WS, target=duplicate.id, replaced_by=survivor.id,
         because=NoteSupersedeReason.MERGED, source=None, now_ms=NOW + 1,
     )
 
-    assert await notes.store.merge_groups(workspace=WS, limit=10) == (), (
+    assert await notes.store.merge_groups(workspace=WS, limit=10) == ((), ()), (
         "a merge that already happened must not be found again next tick"
     )
 
@@ -1270,8 +1281,10 @@ async def test_a_second_proposal_may_not_redeclare_a_different_parent(
 async def test_merge_appends_to_the_survivor_and_retires_the_rest(
     notes: _Harness,
 ) -> None:
-    survivor = await _make(notes.store, title="Grant wedding", anchor_date=20261011)
-    dup = await _make(notes.store, title="Grant's wedding", anchor_date=20261011)
+    survivor = await _make(notes.store, title="Grant wedding", anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
+    dup = await _make(notes.store, title="Grant's wedding", anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
 
     retired = await notes.store.merge(
         workspace=WS, survivor=survivor.id,
@@ -1300,8 +1313,10 @@ async def test_a_merge_that_loses_the_cas_retires_nothing(
     `supersede` opened its own transaction, so the named scenario stayed fully
     reachable. If the tag path revised the survivor while the curator was
     thinking, the whole merge is refused and the duplicate stays standing."""
-    survivor = await _make(notes.store, title="Grant wedding", anchor_date=20261011)
-    dup = await _make(notes.store, title="Grant's wedding", anchor_date=20261011)
+    survivor = await _make(notes.store, title="Grant wedding", anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
+    dup = await _make(notes.store, title="Grant's wedding", anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
     # The tag path gets there first.
     await notes.store.append_revision(
         workspace=WS, note_id=survivor.id, body="Miles says the 12th now.",
@@ -1331,8 +1346,10 @@ async def test_merge_never_retires_the_survivor_itself(notes: _Harness) -> None:
     """A model naming the survivor among the duplicates would otherwise retire
     the note it just wrote into, leaving a workspace whose merged content is
     only reachable through a retired row."""
-    survivor = await _make(notes.store, anchor_date=20261011)
-    dup = await _make(notes.store, anchor_date=20261011)
+    survivor = await _make(notes.store, anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
+    dup = await _make(notes.store, anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
 
     retired = await notes.store.merge(
         workspace=WS, survivor=survivor.id,
@@ -1348,7 +1365,8 @@ async def test_merge_never_retires_the_survivor_itself(notes: _Harness) -> None:
 async def test_merge_cannot_retire_another_workspaces_note(
     notes: _Harness,
 ) -> None:
-    survivor = await _make(notes.store, anchor_date=20261011)
+    survivor = await _make(notes.store, anchor_date=20261011,
+                            anchor_entity_ids=("grant",))
     theirs = await _make(
         notes.store, workspace="another-workspace", anchor_date=20261011,
     )

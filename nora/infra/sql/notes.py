@@ -569,7 +569,10 @@ class SqlNoteStore:
 
     async def merge_groups(
         self, *, workspace: str, limit: int,
-    ) -> tuple[tuple[tuple[Note, str], ...], ...]:
+    ) -> tuple[
+        tuple[tuple[tuple[Note, str], ...], ...],
+        tuple[tuple[tuple[Note, str], ...], ...],
+    ]:
         """Standing notes that share an anchor, grouped, most-collided first,
         **each with its head body**.
 
@@ -606,7 +609,7 @@ class SqlNoteStore:
         per tick, and a group is the unit it reads.
         """
         if limit <= 0:
-            return ()
+            return ((), ())
         # GROUPED IN PYTHON ON `Note.anchor_key`, not in SQL on the raw column.
         #
         # `GROUP BY anchor_entity_ids` is order- AND duplicate-sensitive in

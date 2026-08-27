@@ -1085,18 +1085,33 @@ async def test_the_curator_reads_the_day_from_the_operators_timezone(cfg):
     process's — a UTC boundary retires the 9th's note during the evening of the
     9th, local, while people are still deciding where to eat.
 
-    Read from `[reminders] timezone` rather than restated here: that value is
-    operator-owned and already carries the argument for being an IANA name, and
-    a second copy is the unguarded-copy class. Reminders and note expiry are
-    the same question, so they must not be able to disagree."""
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
-        "notes.enabled": True,
-        "notes.curator_enabled": True,
-        "reminders.timezone": "Pacific/Kiritimati",
-    }))
+    **This test was decorative until 2026-08-28**, proven by mutation:
+    replacing `ZoneInfo(cfg.reminders.timezone)` with `ZoneInfo("UTC")` left it
+    green, because it set a zone and then asserted only `_today() >= 20260101`
+    — true of any working clock. It NAMED the thing it did not measure, which
+    is the shape I documented in the bundle an hour before writing it.
 
-    curator = next(a for a in deps.dream_adaptors if a.name == "note-curation")
-    # +14, the earliest zone there is — so its calendar day is ahead of UTC's
-    # for most of the day, and a hardcoded UTC would disagree with it.
-    assert curator._today() >= 20260101
+    It now builds two curators whose zones are 25 hours apart. Kiritimati is
+    +14 and Niue is -11, so their calendar days differ at EVERY instant and no
+    clock-freezing is needed. Any hardcoded zone makes them equal — which is
+    the property under test, rather than a fact about today."""
+    async def _day(zone: str) -> int:
+        deps = await build_dependencies(override_config(cfg, {
+            "dreamer.enabled": True,
+            "notes.enabled": True,
+            "notes.curator_enabled": True,
+            "reminders.timezone": zone,
+        }))
+        curator = next(
+            a for a in deps.dream_adaptors if a.name == "note-curation"
+        )
+        return curator._today()
+
+    earliest = await _day("Pacific/Kiritimati")
+    latest = await _day("Pacific/Niue")
+
+    assert earliest != latest, (
+        "zones 25 hours apart always differ in calendar day; equal here means "
+        "the configured zone is being ignored"
+    )
+    assert earliest > latest, "Kiritimati is ahead of Niue, always"

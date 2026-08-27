@@ -45,7 +45,10 @@ _VERDICTS = frozenset({"closed", "open", "moot"})
 class _NoteStore(Protocol):
     async def merge_groups(
         self, *, workspace: str, limit: int,
-    ) -> tuple[tuple[tuple[Note, str], ...], ...]: ...
+    ) -> tuple[
+        tuple[tuple[tuple[Note, str], ...], ...],
+        tuple[tuple[tuple[Note, str], ...], ...],
+    ]: ...
 
     async def anchored_before(
         self, *, workspace: str, day: int, limit: int,
@@ -124,9 +127,20 @@ class NoteCuratorAdaptor:
     (§9.1). A watermark would make the pass stop noticing an expired note the
     moment the notebook went quiet, which is exactly when expiry matters.
 
-    That also makes the pass self-limiting without a strike: everything it does
-    REMOVES its own trigger. A merged group is no longer a group; a retired
-    note is no longer standing.
+    **The pass is self-limiting FOR THE ACTIONS IT TAKES, and not otherwise.**
+    A merge removes its group; a retirement removes its note. But a group the
+    model DECLINES to merge — or one refused for having no entity anchor — is
+    re-selected every tick, forever, and permanently occupies a
+    `max_groups_per_tick` slot. Observed: five consecutive ticks, model fired
+    each time, nothing written, the same two notes standing.
+
+    The general claim ("everything it does removes its own trigger") was in
+    this docstring and was FALSE, which is worth saying rather than quietly
+    narrowing: it is true of the write paths and says nothing about the paths
+    that write nothing, which are the common ones. `nora_note_curator_groups_
+    refused_total` and a flat `nora_note_curator_total{action="merge"}` are
+    what make that visible; a cooldown is the fix if the number says it hurts,
+    and is deliberately not built on a guess.
     """
 
     name = "note-curation"
@@ -180,9 +194,18 @@ class NoteCuratorAdaptor:
         2026-08-21. A curator will have nothing to do on the overwhelming
         majority of ticks, so this matters more here than anywhere.
         """
-        groups = await self._notes.merge_groups(
+        groups, refused = await self._notes.merge_groups(
             workspace=key, limit=self._max_groups,
         )
+        # A REFUSED group is a reading, not a silence. Without this, a year of
+        # a quiet curator cannot be told apart from a year of no duplicates —
+        # and this number is what says whether populating `note_entity` would
+        # unlock anything, measured against the real notebook.
+        for _ in refused:
+            self._inc(
+                "nora_note_curator_groups_refused_total",
+                reason="no_entity_anchor",
+            )
         expired = await self._notes.anchored_before(
             workspace=key, day=self._today(), limit=self._max_expired,
         )

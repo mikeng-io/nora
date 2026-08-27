@@ -308,13 +308,16 @@ class InMemoryNoteStore:
 
     async def merge_groups(
         self, *, workspace: str, limit: int,
-    ) -> tuple[tuple[tuple[Note, str], ...], ...]:
+    ) -> tuple[
+        tuple[tuple[tuple[Note, str], ...], ...],
+        tuple[tuple[tuple[Note, str], ...], ...],
+    ]:
         """`SqlNoteStore.merge_groups`. Dateless notes are excluded here too —
         the exclusion is the CONTRACT, not a SQL convenience, so a double that
         included them would be more permissive than the store and the suite
         would compare two different definitions of "same occasion"."""
         if limit <= 0:
-            return ()
+            return ((), ())
         # THE SAME FUNCTION the SQL store calls, imported rather than
         # reimplemented. This is the comparison that decides whether two notes
         # are merged; a double with its own copy would let the contract suite

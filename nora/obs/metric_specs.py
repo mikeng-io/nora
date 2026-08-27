@@ -1375,6 +1375,19 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # half — without it a flat index means either "nothing needed retiring" or
     # "the curator retired one and somebody wrote one", and those are opposite
     # healths.
+    # The measurement that turns "merge does nothing" from a silence into an
+    # answer. An anchor is (date, entity_set) and in production the entity half
+    # is empty, so a date-only group is "everything happening on the 9th" and
+    # is REFUSED rather than merged (27 §2: populating note_entity is the
+    # curator's real precondition, not its flag). This counts what that refusal
+    # costs, so the reversal condition is a number rather than an estimate.
+    _CounterSpec(
+        "nora_note_curator_groups_refused_total",
+        "Merge groups the curator refused to merge, by reason. Today one: "
+        "no_entity_anchor — the notes collide on a DATE alone, which is not "
+        "an occasion. A rising count is the case for populating note_entity.",
+        ("reason",),
+    ),
     _CounterSpec(
         "nora_note_curator_dropped_total",
         "Model verdicts the curator refused, by reason: malformed (a field "

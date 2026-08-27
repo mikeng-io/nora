@@ -218,8 +218,18 @@ class NoteRevision:
 
 def group_on_anchor_key(
     notes: Sequence[tuple[Note, str]], *, limit: int,
-) -> tuple[tuple[tuple[Note, str], ...], ...]:
+) -> tuple[
+    tuple[tuple[tuple[Note, str], ...], ...],
+    tuple[tuple[tuple[Note, str], ...], ...],
+]:
     """The grouping itself, shared by `SqlNoteStore` and its in-memory double.
+
+    Returns **(eligible, refused)** — groups that may merge, and groups that
+    collide on a date alone and therefore may not. Two return values rather
+    than one filtered list because the refused ones are the ONLY evidence of
+    what entity resolution would unlock, and a function that silently dropped
+    them would make "merge does nothing" indistinguishable from "there is
+    nothing to merge".
 
     **In the DOMAIN, and imported by both**, rather than the same rule written
     twice. This is the comparison that decides whether two notes get merged, so
@@ -238,7 +248,7 @@ def group_on_anchor_key(
     merge that picked a different survivor would produce two merged notes.
     """
     if limit <= 0:
-        return ()
+        return ((), ())
     buckets: dict[tuple[int | None, tuple[str, ...]], list[tuple[Note, str]]] = {}
     for note, body in notes:
         if note.anchor_date is None:
@@ -246,7 +256,36 @@ def group_on_anchor_key(
         buckets.setdefault(note.anchor_key, []).append((note, body))
     collided = [(k, v) for k, v in buckets.items() if len(v) > 1]
     collided.sort(key=lambda kv: (-len(kv[1]), kv[0][0] or 0))
-    return tuple(tuple(v) for _, v in collided[:limit])
+
+    # DATE-ONLY GROUPS ARE REFUSED, NOT MERGED — and counted, so that refusal
+    # is a reading rather than a silence.
+    #
+    # An anchor is `(anchor_date, entity_set)` and BOTH halves are what make it
+    # an occasion. In production the entity half is empty: `note_entity` is
+    # unpopulated and `note_create` passes the model's entity strings through
+    # unresolved, so almost every note anchors on `()` and a date-only group is
+    # "everything that happens on the 9th" — «Dinner, 9 Sept» beside «Ada's
+    # flight to Tokyo». Merging those is the two-weddings failure with a
+    # different label, and it is unrecoverable in the direction that matters.
+    #
+    # 27 §2 already decided this: populating `note_entity` is "the curator's
+    # real precondition, NOT its flag". So refusing is implementing the design;
+    # allowing it would be the deviation.
+    #
+    # **Relying on the model to decline is not the alternative.** Since the
+    # bodies are rendered it probably WOULD decline — and that is
+    # self-attestation on a destructive operation, which is exactly what
+    # keeping eligibility in SQL exists to avoid.
+    #
+    # THE REVERSAL CONDITION: this comes out when `note_entity` is populated and
+    # entities resolve. The refused count is what says whether that is worth
+    # doing, measured against the real notebook rather than estimated.
+    eligible = [(k, v) for k, v in collided if k[1]]
+    refused = [(k, v) for k, v in collided if not k[1]]
+    return (
+        tuple(tuple(v) for _, v in eligible[:limit]),
+        tuple(tuple(v) for _, v in refused),
+    )
 
 
 @dataclass(frozen=True, slots=True)
