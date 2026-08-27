@@ -798,6 +798,16 @@ async def test_supersede_records_the_successor_and_the_reason(
     assert affected == 1
     standing = await notes.store.standing(workspace=WS)
     assert [n.id for n in standing] == [survivor.id]
+    # READ THE REASON BACK. Until 2026-08-27 this test named the reason in its
+    # own title and never asserted it: `retire_reason` was read only by the
+    # sink suite's `_note_read_row`, which runs the SQL store alone, so
+    # deleting `retire_reason=because` from the double left the whole suite
+    # green. A field written by both implementations and asserted for one is
+    # not under contract.
+    retired = await notes.store.read(workspace=WS, note_id=duplicate.id)
+    assert retired is not None
+    assert retired[0].retire_reason == NoteSupersedeReason.MERGED
+    assert retired[0].replaced_by == survivor.id
 
 
 async def test_supersede_refuses_a_source_rather_than_dropping_it(
@@ -857,24 +867,24 @@ async def test_supersede_cannot_reach_another_workspaces_note(
     assert [n.id for n in await notes.store.standing(workspace=WS)] == [note.id]
 
 
-async def test_two_proposals_against_one_note_in_one_tick_refuse_the_second(
+async def test_two_proposals_against_one_note_chain_within_the_tick(
     notes: _Harness,
 ) -> None:
-    """The note tier's own determinism question, and it needs pinning for the
-    reason `TurnVerdictStore.latest` needed a tie-break: a contract suite cannot
-    see a divergence if BOTH sides are nondeterministic in the same place — it
-    compares two coin flips and passes.
+    """**This test asserted the opposite until 2026-08-27, and that is the
+    finding.** It pinned `propose` as non-atomic — "the FIRST one landed and is
+    not rolled back" — while `propose`'s own docstring required the reverse.
+    Both were mine. A test that encodes the defect as the spec is worse than no
+    test: it defends the behaviour and every later reader takes it as intent.
 
-    `DreamSink.propose` takes a SEQUENCE and one tick may write many, so two
-    proposals naming the same note with the same parent is reachable. The second
-    CASes against a head the first has already moved, so it MUST refuse, and the
-    whole call must fail rather than returning a short id list: the ids are what
-    a later `supersede` names, and a merge that appended to the survivor and
-    then retired the originals must not proceed on the half that landed.
+    What the tier actually needs: `DreamSink.propose` takes a SEQUENCE and one
+    tick may write many, so two proposals naming the same note is ordinary
+    rather than exceptional — the curator's merge is exactly «revise the
+    survivor, then retire the duplicate». The batch therefore carries the head
+    each proposal moved, and the next against that note compares against it.
 
-    Deterministic in both implementations by construction — the loop is ordered
-    and the CAS is the comparison — but "obviously deterministic" is what the
-    millisecond tie-break looked like too."""
+    The CAS is not weakened by this. It still refuses anything the batch did
+    not itself write, which is the case it exists for: the tag path revising
+    mid-tick."""
     note = await _make(notes.store)
 
     def _p(body: str) -> Proposal:
@@ -887,17 +897,107 @@ async def test_two_proposals_against_one_note_in_one_tick_refuse_the_second(
             established_by="run-curator-1",
         )
 
-    with pytest.raises(StaleNoteHeadError):
-        await notes.store.propose(
-            key=WS, proposals=(_p("first"), _p("second")), now_ms=NOW + 5,
-        )
+    ids = await notes.store.propose(
+        key=WS, proposals=(_p("first"), _p("second")), now_ms=NOW + 5,
+    )
 
-    # The FIRST one landed and is not rolled back — `propose` is not atomic
-    # across proposals and does not claim to be. What matters is that the caller
-    # is told, rather than handed one id where it sent two.
+    assert ids == (note.id, note.id), (
+        "both proposals revised the same note, so both return its id — the "
+        "port says 'in order', not 'distinct'"
+    )
     found = await notes.store.read(workspace=WS, note_id=note.id)
     assert found is not None
-    assert found[1].body == "first"
+    assert found[1].body == "second", "the second revision is the head"
+    assert found[1].parent_revision_id != note.head_revision_id, (
+        "the second must be parented on what the FIRST wrote, not on the head "
+        "the caller read — otherwise the chain is a lie and the CAS passed by "
+        "accident"
+    )
+
+
+async def test_a_stale_head_writes_nothing_at_all(notes: _Harness) -> None:
+    """The atomicity requirement, stated as the case it exists for.
+
+    A batch whose SECOND proposal loses the CAS — because the tag path revised
+    that note mid-tick — must leave the notebook untouched. The curator's merge
+    is «append the merged body to the survivor, then retire the originals»; if
+    the append commits and the retirement does not, the notebook holds a
+    survivor carrying merged text beside a duplicate nobody retired, and the
+    caller was told nothing happened. **A partially applied cross-note edit is
+    the one outcome worse than not running**, because it is invisible: no
+    error, no count, and an index that looks ordinary.
+
+    The in-memory double cannot roll back, so it is exempt from the final
+    assertion and says so rather than pretending — the SQL store is where the
+    transaction is, and this is one of the places the two are honestly
+    different."""
+    good = await _make(notes.store, title="Dinner, 9 Sept")
+    stale = await _make(notes.store, title="Grant wedding")
+
+    with pytest.raises(StaleNoteHeadError):
+        await notes.store.propose(
+            key=WS,
+            proposals=(
+                Proposal(
+                    payload=NoteRevisionProposal(
+                        note_id=good.id, body="a revision that must not survive",
+                        parent_revision_id=good.head_revision_id,
+                    ),
+                    instruction_sha256="e" * 64, model="m",
+                    established_by="run-1",
+                ),
+                Proposal(
+                    payload=NoteRevisionProposal(
+                        note_id=stale.id, body="doomed",
+                        parent_revision_id="00000000-0000-0000-0000-0000000000ff",
+                    ),
+                    instruction_sha256="e" * 64, model="m",
+                    established_by="run-1",
+                ),
+            ),
+            now_ms=NOW + 5,
+        )
+
+    if isinstance(notes.store, SqlNoteStore):
+        found = await notes.store.read(workspace=WS, note_id=good.id)
+        assert found is not None
+        assert found[1].body != "a revision that must not survive", (
+            "the first proposal must be rolled back with the batch"
+        )
+
+
+async def test_a_foreign_payload_is_refused_before_anything_is_written(
+    notes: _Harness,
+) -> None:
+    """Validation runs over the WHOLE batch before the first write. A bad
+    payload at index 1 used to land after index 0 had already committed, which
+    is the accept-and-discard failure one verb over: the call reports one thing
+    and the store holds another."""
+    note = await _make(notes.store)
+
+    with pytest.raises(TypeError):
+        await notes.store.propose(
+            key=WS,
+            proposals=(
+                Proposal(
+                    payload=NoteRevisionProposal(
+                        note_id=note.id, body="must not be written",
+                        parent_revision_id=note.head_revision_id,
+                    ),
+                    instruction_sha256="e" * 64, model="m",
+                    established_by="run-1",
+                ),
+                Proposal(
+                    payload="the fact tier's shape", instruction_sha256="e" * 64,
+                    model="m", established_by="run-1",
+                ),
+            ),
+            now_ms=NOW,
+        )
+
+    found = await notes.store.read(workspace=WS, note_id=note.id)
+    assert found is not None
+    assert found[1].body != "must not be written"
 
 
 # --- the SECOND payload shape: create, for the debrief ----------------------

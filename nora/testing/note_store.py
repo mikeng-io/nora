@@ -262,45 +262,66 @@ class InMemoryNoteStore:
     async def propose(
         self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
     ) -> Sequence[str]:
-        """`SqlNoteStore.propose`'s behaviour, including its refusals."""
-        ids: list[str] = []
+        """`SqlNoteStore.propose`'s behaviour, including its refusals and its
+        ORDER OF OPERATIONS.
+
+        **Validate-then-write, and heads chain within the batch**, matching the
+        SQL store. This double cannot have a transaction, so it cannot roll
+        back a partial batch — what it CAN do is refuse before writing
+        anything, which is where the SQL store's atomicity is observable from
+        the outside. A double that wrote first and refused second would agree
+        with the real store on every happy path and disagree on the one case
+        the transaction exists for.
+        """
+        typed: list[tuple[Proposal, NoteCreationProposal | NoteRevisionProposal]] = []
         for p in proposals:
-            if isinstance(p.payload, NoteCreationProposal):
-                created = await self.create(
-                    workspace=key,
-                    title=p.payload.title,
-                    description=p.payload.description,
-                    uncertainty=p.payload.uncertainty,
-                    closing_condition=p.payload.closing_condition,
-                    established_in=p.payload.established_in,
-                    body=p.payload.body,
-                    established_by=p.established_by,
-                    now_ms=now_ms,
-                    anchor_date=p.payload.anchor_date,
-                    anchor_entity_ids=p.payload.anchor_entity_ids,
-                    instruction_sha256=p.instruction_sha256,
-                    model=p.model,
-                )
-                ids.append(created.id)
-                continue
-            if not isinstance(p.payload, NoteRevisionProposal):
+            payload = p.payload
+            if not isinstance(
+                payload, NoteCreationProposal | NoteRevisionProposal
+            ):
                 raise TypeError(
                     f"InMemoryNoteStore.propose accepts a "
                     f"NoteRevisionProposal or a NoteCreationProposal, got "
-                    f"{type(p.payload).__name__}"
+                    f"{type(payload).__name__}"
                 )
+            typed.append((p, payload))
+
+        ids: list[str] = []
+        heads: dict[str, str] = {}
+        for p, payload in typed:
+            if isinstance(payload, NoteCreationProposal):
+                created = await self.create(
+                    workspace=key,
+                    title=payload.title,
+                    description=payload.description,
+                    uncertainty=payload.uncertainty,
+                    closing_condition=payload.closing_condition,
+                    established_in=payload.established_in,
+                    body=payload.body,
+                    established_by=p.established_by,
+                    now_ms=now_ms,
+                    anchor_date=payload.anchor_date,
+                    anchor_entity_ids=payload.anchor_entity_ids,
+                    instruction_sha256=p.instruction_sha256,
+                    model=p.model,
+                )
+                heads[created.id] = created.head_revision_id
+                ids.append(created.id)
+                continue
             revision = await self.append_revision(
                 workspace=key,
-                note_id=p.payload.note_id,
-                body=p.payload.body,
-                parent_revision_id=p.payload.parent_revision_id,
+                note_id=payload.note_id,
+                body=payload.body,
+                parent_revision_id=heads.get(
+                    payload.note_id, payload.parent_revision_id,
+                ),
                 established_by=p.established_by,
                 now_ms=now_ms,
                 instruction_sha256=p.instruction_sha256,
                 model=p.model,
             )
-            _ = revision
-            ids.append(p.payload.note_id)
+            heads[payload.note_id] = revision.id
+            ids.append(payload.note_id)
         return tuple(ids)
 
     async def supersede(
@@ -315,13 +336,20 @@ class InMemoryNoteStore:
     ) -> int:
         """`SqlNoteStore.supersede`'s behaviour.
 
-        **`source` is accepted and DROPPED, and that is not an oversight — it
-        is what the SQL store does too.** `note` has no column for a
-        supersession's citation: a note is an open question, and what closed it
-        is the revision history, not a URL. The port carries `source` because
-        the fact tier needs it (a contradicting source is the warrant for the
-        supersession), and a tier that cannot record it says so through the
-        contract suite's axis rather than by inventing a column.
+        **`source` is REFUSED, not accepted and dropped** — the same as
+        `SqlNoteStore`. `note` has no column for a supersession's citation: a
+        note is an open question, and what closed it is the revision history,
+        not a URL. The port carries `source` because the fact tier needs it (a
+        contradicting source IS the warrant there), and a tier that cannot
+        record a field says so by refusing rather than by discarding.
+
+        **This docstring said "accepted and DROPPED" until 2026-08-27**, twelve
+        lines above code that raises, because it was the un-updated half of the
+        fix that added the refusal. Recorded rather than quietly corrected: a
+        double's docstring is what the next person reads to learn what the REAL
+        store does, so a reader trusting it would have built against
+        drop-semantics and been refused at runtime. Same family as the day's
+        other findings — two things that must agree, one silently stale.
 
         The refusals below are deliberately NOT delegated to the domain type:
         a double that refuses only because a constructor refused is more
