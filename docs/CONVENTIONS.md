@@ -117,6 +117,213 @@ counting a module's responsibilities to counting its lines.
   `idx_messages_conv_ts`.** It is excluded from autogenerate on purpose; a
   revision that touches it must be hand-written.
 
+## Instruments and spans — the war-stories
+
+`design/dreamer-agent-loop/02-instrument-blindness.md` is the catalogue: eight
+layers where an instrument could not observe the thing it existed to observe,
+plus the silent-match family one level down — the instruments we use to FIND
+those layers returning a positive-looking answer without ever engaging.
+`design/dreamer-agent-loop/09-measurement.md` is where the bundle gives that
+discipline a home for its own change. Neither is repeated here. This section
+carries the eight rules and the measurement behind each.
+
+### One root span per entry point
+
+`nora/ingest/pipeline.py` is the pattern. `run()` opens `span("ingest")` around
+`await self._run(...)` (:146), and the six stage spans — `ingest.scope` (:163),
+`ingest.identity` (:177), `ingest.media` (:186), `ingest.audit` (:193),
+`ingest.memory_feed` (:200), `ingest.gate` (:206) — nest inside it. Splitting
+the body out of `run` is what makes the root wrap EVERY exit including the
+early returns, which is why `_outcome()` (:60) can stamp `nora.outcome` on a
+refusal instead of leaving a trace that simply stops.
+
+`nora/engagement/pipeline.py` does the opposite. `engagement.admission` (:315),
+`engagement.debrief` (:409) and `engagement.invoke` (:617) are three siblings
+with nothing above them, so one tagged message produced three separate traces
+plus the one from ingest. The operator's first reading of the new skeleton was
+«10+ separate trace but its empty», and both halves of that sentence are a
+different rule below.
+
+A rootless span is not a span with a missing parent. It IS a trace.
+
+### Spawned work does not inherit the caller's span
+
+`asyncio.create_task` **does** copy the current context — the repo already says
+so about `tag_id` at `nora/agent/tools.py:929`, and a three-case probe
+reproduces it. What it copies is the context of the task that CALLS
+`create_task`, at the moment it calls it, and that is not always the logical
+parent:
+
+| what was spawned | the context it ran under |
+|---|---|
+| a task created inline, inside the span | the caller's — nesting works |
+| a factory built here, INVOKED by another task | **that other task's** |
+| a task created before the context was set | none |
+
+The queued-tag path is row two, exactly. `EngagementPipeline.run` stores a
+zero-argument factory (`nora/engagement/pipeline.py:334`);
+`ConversationSlots.release_and_dispatch` calls `self._spawn(factory())`
+(`nora/engagement/slots.py:74-84`) from the PREVIOUS turn's task, in its
+`finally`; and `BackgroundTasks.spawn` is `asyncio.create_task`
+(`nora/app/runtime.py:64`). So a QUEUED tag's `invoke` and `debrief` run under
+the releasing turn's context, never under the dispatch call where its own
+`admission` ran — and the two halves of one tag land in two traces even once
+the root above exists.
+
+If work is spawned, capture the context you mean and attach it. Inheriting one
+by accident is not the same as propagating one on purpose.
+
+### A span with only a name is worse than no span
+
+Ten spans on master — seven in ingest, three in engagement — of which exactly
+ONE, the ingest root, passes attributes of its own (`nora.platform`,
+`nora.conversation_id`); `_outcome` adds a second on the early returns. Every
+other span carries a name and nothing else. That is what shipped on 2026-08-27
+(`d673a7a`), and the operator's report was that the traces were empty.
+
+Prefill sizes and which blocks were built, store-read counts on the critical
+path, the model's stop reason, the delivery outcome — none of it is on a span,
+and all of it is what the disclosure and budget arguments in this repo reason
+about. The span exists; the re-derivation it is credited with does not.
+
+An absence prompts the question. A page of named-but-empty traces answers it
+wrongly, is harder to work with than nothing, and reads as progress.
+
+### Instruments measure the result; something must measure the cost
+
+The sharpest instance this repo has recorded.
+`SqlTurnVerdictStore.latest_ungrounded` shipped with `.is_(False)`, which
+renders `grounded IS false`; `idx_turn_verdict_ungrounded` is declared `WHERE
+(grounded = false)`, and Postgres's predicate prover cannot show a
+`BooleanTest` implies an `OpExpr`. The partial index was unusable, so the one
+read the debrief stage makes on every fold, inside the held lock, sequentially
+scanned the whole verdict table.
+
+**Measured at 60k rows: 3.063 ms over 525 buffers against 0.109 ms over 12 on
+the index — with an IDENTICAL answer.** Right row, right order, both
+implementations agreeing, every test green, two reviews clean. The divergence
+lived only in the plan, and nothing in this repo had ever looked at one. The
+fix is `== sa.false()` (`nora/infra/sql/turn_verdicts.py:100`) and the check is
+`tests/contract/test_turn_verdict_store_contract.py::test_the_trigger_read_
+actually_uses_its_partial_index`.
+
+**And the first version of that test compiled its OWN statement** with the
+correct spelling and EXPLAINed that — so reverting the store's predicate to the
+exact defect left it green, measured. The SQL is now captured off the engine as
+the shipped method issues it. A test that spells the predicate pins today's
+fix; a test that captures it pins the property.
+
+A claim about cost — an index is used, a call is bounded, a read is scoped — is
+never checked by reading the answer, because the answer is what stays correct.
+
+### R-27's three states, pointed at the instrument
+
+R-27 governs what Nora says. It governs a counter identically, and three
+instances landed in one night, each inside code written to honour it:
+
+- **A wiring gap counted as a model fault.** The revisitor's `_asked` map was a
+  bare attribute; `dream_loop`'s running lock is per-`(adaptor, key)` and the
+  live `policy.toml` has two workspaces, so a sibling tick wiped the map
+  mid-flight and a grounded verdict was dropped as `reason="unknown_note"` — a
+  model answering about a note it was never shown. It was a lock scope.
+  (`b661f83` F3, branch `worktree-note-revisitor`.)
+- **`unavailable` counted as `absent` as well, on the same candidate.** A
+  failed record read left the evidence tuple empty, and the branch below read
+  an empty tuple as «the room has said nothing since the note» — so one
+  candidate incremented two states and the tick reported 2 for 1. Fixed by
+  carrying `evidence_state` as ONE value; the module's own comment records that
+  the defect was «committed inside its own instrument»
+  (`nora/language/note_revisitor.py`, `_Candidate.evidence_state`, `92eccc7`).
+- **A tick that wrote nothing reporting `ok`.** `dream_screen` matches any
+  hyphenated UUID (R-18/R-28) and note ids are `uuid4`, so every curator item
+  was rejected: the tick fired, spent a model call, `accept` received nothing,
+  `commit` wrote nothing, and the run reported `ok` because the ENVELOPE was
+  non-empty. Silent, and every test in the file missed it because the double's
+  ids are `note-1`. (`e5c5bea`.) The mirror image landed the same night — an
+  over-cap merged body raised out of `commit` and reported
+  `unavailable`/`written=0` over rows that exist in Postgres (`6d23a41` P2).
+
+A wiring gap is `unavailable`. Never `nothing_found`, never `ok`, and never two
+states for one event — the third is the one that is hard to see, because both
+series look plausible on their own.
+
+### A declared metric with no call site is a lie
+
+An UNdeclared metric is a `KeyError` at the first increment. A declared one
+with no increment renders its `# HELP`/`# TYPE` header and nothing else, which
+on a dashboard is a series that is genuinely always zero: the reading «this
+never happens», not «this is not wired».
+
+Two on master today — `nora_fact_candidates_total`
+(`nora/obs/metric_specs.py:963`) and `nora_fact_entity_unresolved_total`
+(:987). The second is named twenty lines away in the note tier's own block as
+«the exact defect this block was written to close» (:1236) — the argument for
+shipping three note counters instead of the ten that tier's spec names — while
+it sits unwired itself. `nora_store_busy_total` (:121) scans the same way and
+is NOT an instance: its call site was deliberately deleted with the SQLite WAL
+apparatus (DEC-51), and the name is retained because names are append-only.
+
+Issue #56 is the gate, and it is the ONE family from 2026-08-27 with a cheap,
+total, automatable check available: an AST walk over the declared names against
+`metrics.inc(`. Until it exists the scan is one loop over
+`grep -oE '"nora_[a-z0-9_]+"' nora/obs/metric_specs.py`.
+
+### Label vocabularies are derived, never hand-copied
+
+`EVIDENCE_STATES` was a hand-written tuple nothing referenced, while
+`_candidate` assigned bare string literals. **Emitting a fifth state left every
+test green** — so the parity test, written to catch «a value in the code the
+spec does not name», could only ever catch DELETION from the help text. The
+exact drift it existed to prevent went through it unseen: `self_only` was added
+to the code and never to the spec, so the endpoint emitted four values while
+the documentation described three, for two review rounds. The fix for a
+silent-failure finding had the silent failure's shape.
+
+It is now `EvidenceState = Literal[...]` with `EVIDENCE_STATES =
+get_args(EvidenceState)`, enforced TWICE — statically, and in
+`_Candidate.__post_init__` — because `nora/language/` is outside `make gate`'s
+mypy scope (issue #61) and **a static-only guard in an unchecked package is a
+claim rather than a check** (`443bbca` F3).
+
+Where mypy does reach, the derivation alone is enough: `nora/domain/facts.py:
+52-56` builds five frozensets with `get_args` off five `Literal`s. Where it
+does not, the vocabulary is a frozenset the code increments AGAINST and a value
+outside it raises — a label typo forks a NEW series rather than erroring, and
+the old one silently goes flat (`nora/language/note_curator.py`,
+`_VOCABULARIES`, `6d23a41`).
+
+A derivation check needs its own positive control, and the walk that reads the
+emitted labels out of the source asserts `emitted, "the walk found no reasons
+at all — it is not measuring"` before comparing sets. Its first version matched
+`reason="..."` with a regex and flagged a string inside a COMMENT — a matcher
+that matches too much, reproduced inside the test written to prevent drift.
+
+### Pair every zero-assertion with a positive control
+
+`assert metrics.get(x) == 0` is true of a stage that raised. `Metrics.get` also
+sums matching series and answers `0.0` when there are none, so on its own it
+cannot separate «published zero» from «never published» either.
+
+`tests/unit/test_debrief.py::test_the_first_fold_of_a_conversation_is_not_a_
+rederivation` asserted `nora_standing_rederivations_total == 0` and
+`nora_debrief_prior_total{prior="absent"} == 1`. Remove `if prior is None:
+return None` from `_should_rebuild` and the stage raises `AttributeError` on
+`NoneType.fold_count`, writes nothing, lands `outcome="error"` — and BOTH
+assertions still hold. R-72 names that test among the ones enforcing it, and it
+measured nothing. It was found by a reviewer mutating a clause the author had
+not.
+
+At least five tests in that one file had the shape. The fix in each is two
+lines — `outcome="written" == 1` and a read-back of the row that was actually
+written (:722-724, :767-772). Presence and magnitude are two different
+questions, and a test whose assertions are all true of a crash is not a test.
+
+The general form is the bundle's own: **a test that has never been seen red is
+a claim, not a measurement.** After a test goes green, break the production
+line it names and watch it go red — per CLAUSE, not per change. One author
+truthfully reported falsifying three properties of one feature, and the fourth
+clause was the one that shipped the defect.
+
 ## The five operational constraints (spec §2, verbatim)
 
 These came from `design/08-stack-refactor-brief.md` and are preserved here

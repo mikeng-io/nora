@@ -258,6 +258,34 @@ summary — update-in-place, separate from the Dreamer and Honcho).
   and backlogged by the session that found it, because the check that should
   have caught it cried wolf seven times. A noisy gate is a disabled gate.
 
+## Instruments and spans (one line each — war-stories in `docs/CONVENTIONS.md`)
+
+The catalogue of instances is
+`design/dreamer-agent-loop/02-instrument-blindness.md`; these are the rules it
+earned. They are the `measure` verb pointed at our own instruments.
+
+- **One root span per entry point, and stages are its CHILDREN.** Sibling spans
+  with no root are not one trace with gaps — they are N traces.
+- **Spawned work does not inherit the caller's span.** `create_task` copies the
+  context of the task that CALLS it, so work handed to a worker starts its own
+  trace unless the intended context is captured and attached explicitly.
+- **A span with only a name is worse than no span** — carry what makes the step
+  re-derivable. Empty traces read as progress; an absence at least asks.
+- **Instruments measure the RESULT; something must measure the COST.** An index
+  is used, a call is bounded, a read is scoped: check the PLAN or the bound.
+  Never the answer — a correct answer is compatible with any cost.
+- **R-27's three states on every instrument: `ok` / `nothing_found` /
+  `unavailable`.** A wiring gap is `unavailable` — never `nothing_found`, never
+  `ok`, and never two of them on one event.
+- **A declared metric with no call site is a lie** — it renders as a series that
+  is genuinely always zero. Ship the name with its increment, or not yet.
+- **Label vocabularies are DERIVED from the code, never hand-copied.** One named
+  constant the code increments against and the help text reads from: `get_args`
+  off a `Literal`, plus a RUNTIME check wherever `make gate`'s mypy does not
+  reach (issue #61) — a static-only guard in an unchecked package is a claim.
+- **Pair every zero-assertion with a positive control.** `== 0` is also true of
+  a stage that crashed; assert something only a run that RAN produces.
+
 ## The five operational constraints (one line each — full text in `docs/CONVENTIONS.md`)
 
 1. Container builds require `docker build --network=host` (BuildKit's bridge can't
