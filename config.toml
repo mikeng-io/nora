@@ -979,3 +979,43 @@ enabled = true
 # a Dreamer adaptor and the runtime is unbuilt. The notebook only grows for
 # now; `nora_note_index_entries` is the tell if it grows faster than it earns.
 enabled = true
+
+[standing]
+# ON (operator, 2026-08-27), and this is the one optional tier whose work runs
+# INSIDE the live reply slot rather than on a background clock. After every
+# completed turn — success, R-5 silence, veto, timeout alike — a SECOND model
+# reads the finished exchange and revises one paragraph: where this
+# conversation currently stands. That paragraph is injected as <standing> at
+# the top of the next turn.
+#
+# WHAT THIS COSTS AND WHO PAYS IT. One extra completion per tagged turn, held
+# inside the conversation's slot. The cost is NOT paid by the person whose turn
+# is being reviewed — they already have their reply — it lands on the SECOND
+# person queued behind a busy conversation. `nora_debrief_seconds` is the
+# reading, p95 <= 5s, and it is deliberately kept OUT of
+# `nora_tag_latency_seconds`: folding it in would move an existing SLO series
+# by changing what it measures.
+#
+# Switched on globally rather than per room because there is no per-room gate —
+# `[standing] enabled` is one flag over every admitted conversation. If the
+# latency lands badly, this line is the whole rollback.
+enabled = true
+# The OPERATING cap on the position. The database carries an absolute ceiling
+# of 4000 (`standing_body_fits_the_ceiling_check`) that no config may pass — a
+# value above it refuses to START. 1200 characters is ~300 tokens in English
+# but approaches 1200 tokens in a CJK-heavy room, and this room is mixed, so
+# the number is read against the denser case. A fold that will not fit is
+# REFUSED and the model asked to consolidate; nothing is ever truncated.
+# `nora_standing_overflow_refusals_total` is the tell: never firing means the
+# cap is not binding, constantly firing means it is too small.
+max_chars = 1200
+# The debrief's OWN transcript window, smaller than `[store] context_window`
+# (40) on purpose: it revises a position, it does not need the full reply
+# context, and a smaller input is one of the two levers against the token
+# runaway that made this a plain completion instead of an agent loop.
+window = 12
+# The fold's own timeout. The number that matters is the SUM — the debrief
+# holds the slot, so the worst-case hold is `[llm] timeout_seconds` + this.
+timeout_seconds = 20.0
+# Empty means `[llm] model`.
+model = ""

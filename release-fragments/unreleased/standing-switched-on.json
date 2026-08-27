@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "Standing is switched on. Nora now keeps a working position in each conversation — after every turn a second model revises one paragraph about where things stand, and she is shown it at the top of the next turn.",
+  "details": [
+    "It runs on every completed turn, including the ones where she deliberately said nothing. A silence produced just as much reasoning as a reply, and it is the decision most likely to be wrong without anyone complaining."
+  ],
+  "limitations": [
+    "The cost is one extra model call held inside the conversation's slot. It is never paid by the person she just answered — they already have their reply — it lands on the next person queued behind a busy conversation. The reading is nora_debrief_seconds against a p95 of 5s; if it lands badly, [standing] enabled = false is the whole rollback.",
+    "On for every admitted room at once. There is no per-room gate — it is one flag over the lot.",
+    "The paragraph is rewritten every turn and keeps nothing, so it is the wrong place for anything that has to survive. It is also the only thing in her prompt that persists across turns rather than being rebuilt each time, which is a known and unsolved exposure: a successful injection into it lasts until a later revision happens to drop it."
+  ]
+}
