@@ -29,9 +29,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from typing import Any
-
-from opentelemetry import trace
+from typing import Any, Literal, get_args
 
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import (
@@ -44,7 +42,7 @@ from nora.domain.ports import (
     Transcriber,
 )
 from nora.ingest.stickers import StickerReader
-from nora.obs.tracing import span
+from nora.obs.tracing import annotate, span
 from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
 from nora.policy import Policy
@@ -56,21 +54,58 @@ from .stages import media as media_stage
 from .stages import memory_feed as memory_feed_stage
 from .stages import scope as scope_stage
 
-
-def _outcome(value: str) -> None:
-    """Stamp the CURRENT span with why this message stopped here.
-
-    Without it an early return is a trace that simply ends, which reads exactly
-    like a crash — the asymmetry `02-instrument-blindness.md` Layer 7 names. Never
-    load-bearing: a tracer that cannot record must not stop an ingest.
-    """
-    try:
-        trace.get_current_span().set_attribute("nora.outcome", value)
-    except Exception:
-        log.debug("ingest outcome %r not recorded", value, exc_info=True)
-
-
 log = logging.getLogger("nora.ingest.pipeline")
+
+#: EVERY way an ingest can end, as a CLOSED set. It is a `Literal` rather than a
+#: loose string so the vocabulary is DERIVED from the code — the test that says
+#: "every exit stamps an outcome" reads `get_args` off this and never
+#: hand-copies a list that could drift from the call sites.
+#:
+#: Five names over three `return` statements: the two refusals stop early, and
+#: the third return covers the three dispositions a message that got all the way
+#: through can have. A SIXTH ending is not in here on purpose — an exception —
+#: because `nora.obs.tracing.span` already stamps `nora.outcome` with the
+#: exception's type name and sets the span status to ERROR, and a name this
+#: module also owned would let a crash be reported as one of these.
+IngestOutcome = Literal[
+    "scope_refused",        # the room is not allowlisted; nothing was recorded
+    "audit_refused",        # the audit write failed; the message was dropped
+    "sender_not_allowed",   # recorded, and deliberately not answered
+    "engaged",              # recorded, and handed to the engagement path
+    "recorded",             # recorded, and that is all — the ambient majority
+]
+
+_OUTCOMES: frozenset[str] = frozenset(get_args(IngestOutcome))
+
+
+def _outcome(value: IngestOutcome) -> None:
+    """Stamp the ROOT span with what this ingest actually did.
+
+    The root, not a child: at every call site the enclosing `with span(...)` for
+    the stage has already closed, so the current span is the one `run` opened —
+    which is the span an operator sees WITHOUT expanding anything. Verified by
+    export, not by reading (`test_ingest_pipeline.py`'s trace section asserts the
+    attribute lands on the span whose parent is `None`).
+
+    Without it an exit is a trace that simply ends, which reads exactly like a
+    crash — the asymmetry `02-instrument-blindness.md` Layer 7 names. **Never
+    load-bearing**: a tracer that cannot record must not stop an ingest, which is
+    why the recording goes through `annotate` (guarded there, once, rather than
+    at each call site) and why the vocabulary check below LOGS rather than
+    raising or withholding. An unknown outcome is still stamped: the whole defect
+    being fixed is a root that says nothing, and refusing to record an unexpected
+    value would reintroduce exactly that for the case least understood.
+
+    `make gate`'s mypy does not reach `nora/ingest`, so the `Literal` annotation
+    alone is a claim rather than a check — hence the runtime membership test.
+    """
+    if value not in _OUTCOMES:
+        log.warning(
+            "ingest outcome %r is not in the declared vocabulary %s — recording it "
+            "anyway; add it to IngestOutcome",
+            value, sorted(_OUTCOMES),
+        )
+    annotate(**{"nora.outcome": value})
 
 
 @dataclass(frozen=True)
@@ -143,10 +178,31 @@ class IngestPipeline:
         loop, via `nora.app.dispatch.Dispatcher.on_message`) never hands this a
         `None`. The `nora_messages_total` increment replaces what the deleted
         parse stage used to do right after a successful `adapter.parse()`."""
+        # THE ROOT, and what it carries is the point (issue #64's ingest half).
+        # It used to carry a platform and a room key and nothing else, so an
+        # ambient message — every ambient message — rendered in Langfuse as a
+        # trace with six named children and no statement of what the ingest DID.
+        # These four are what tell one ingest from another WITHOUT expanding a
+        # child, and `nora.outcome` joins them on the way out.
+        #
+        # R-73 — A TRACE IS AN EGRESS. Everything here is a room-scoped or
+        # structural fact: no sender id, no display name, no message body, no
+        # coordinate. `conversation_id` is the one borderline value and it is the
+        # repo's own definition that settles it (`scan_identifiers` returns None
+        # for both the Signal base64 and the Discord snowflake form); the test
+        # section asserts that of every attribute on every span this opens,
+        # rather than leaving it to review.
+        #
+        # `nora.attachments` is what the PLATFORM said arrived, read before
+        # custody runs — so a slow `ingest.media` child explains itself, and a
+        # trace where custody dropped everything is distinguishable from one that
+        # had nothing to fetch.
         with span(
             "ingest",
             **{"nora.platform": message.platform,
-               "nora.conversation_id": message.conversation_id},
+               "nora.conversation_id": message.conversation_id,
+               "nora.conversation_type": message.conversation_type,
+               "nora.attachments": len(message.media)},
         ):
             return await self._run(message=message)
 
@@ -154,7 +210,14 @@ class IngestPipeline:
         """The body, so the root span in `run` wraps EVERY exit including the
         early returns. Splitting it is what makes `nora.outcome` reachable from
         each `return` without a `try/finally` that would have to re-derive which
-        exit it was."""
+        exit it was.
+
+        Every `_outcome` and `annotate` below sits OUTSIDE the stage's own `with
+        span(...)`, so the span they land on is the root this method runs inside
+        — the one the operator reads first. A `finally` here would be the wrong
+        shape twice over: it could not name which of the three returns it was
+        without re-deriving it, and it would also swallow the exception ending
+        that `span` already records for itself."""
         m = self._metrics
         m.inc("nora_messages_total", platform=message.platform)
 
@@ -178,6 +241,12 @@ class IngestPipeline:
             person = await identity_stage.run(
                 message=message, persons=self._persons, metrics=m
             )
+        # A BOOL, never the person_id (R-73). Whether the sender is somebody
+        # `identity.toml` knows is the fact that explains the rest of the trace —
+        # an unmapped sender is never fed to Honcho (D6) and is refused by an
+        # explicit `persons` list — and it is the one thing `nora_unmapped_
+        # senders_total` cannot tell you about THIS message.
+        annotate(**{"nora.person_known": person is not None})
         # Custody BEFORE the record, not after it (A9, DEC-43). This is the one
         # stage that returns a new message: the body gains the durable handle
         # for every attachment whose bytes are now Nora's, so the row and the
@@ -207,6 +276,13 @@ class IngestPipeline:
             decision = await gate_stage.run(
                 message=message, policy=self._policy, metrics=m
             )
+        # The GATE'S OWN answer, kept apart from the outcome on purpose. The
+        # sender gate below REPLACES `decision`, so recording only the final
+        # disposition would lose which policy matched — and `policy_error` is the
+        # value that most needs to be visible: the gate degrades closed (R-5), so
+        # a classifier outage renders exactly like `no_trigger` unless the trace
+        # says otherwise.
+        annotate(**{"nora.engage_reason": decision.reason})
 
         # The SENDER gate. Only consulted once something would actually be
         # answered, so an unrecognised sender in an allowed room is still
@@ -224,5 +300,11 @@ class IngestPipeline:
                 person.person_id if person else "<unmapped>",
             )
             decision = EngageDecision(engage=False, reason="sender_not_allowed")
+            _outcome("sender_not_allowed")
+        else:
+            # The ambient majority ends `recorded`, and it is the ending that had
+            # NOTHING before this change — a message that passed cleanly produced
+            # a root with a room key and six children saying only that they ran.
+            _outcome("engaged" if decision.engage else "recorded")
 
         return IngestResult(message=message, decision=decision)
