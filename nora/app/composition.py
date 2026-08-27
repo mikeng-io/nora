@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
+from zoneinfo import ZoneInfo
 
 import boto3
 from openai import AsyncOpenAI
@@ -109,6 +110,7 @@ from nora.language.consolidator import LanguageConsolidator
 from nora.language.exchange_consolidator import ExchangeConsolidator
 from nora.language.exchange_observer import ExchangePatternObserver
 from nora.language.fact_adaptor import FactAdaptor, FactCandidateAdaptor
+from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.note_revisitor import NoteRevisitor
 from nora.language.observer import LexemeObserver
 from nora.language.portrait_synthesizer import PortraitSynthesizer
@@ -2062,6 +2064,41 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 evidence_messages_per_note=cfg.notes.revisit_evidence_messages,
                 metrics=metrics,
             ))
+        # The note tier's curator, on its OWN gate and behind the tier's.
+        # `[notes] enabled` decides whether the index is injected and the four
+        # tools reachable; `curator_enabled` decides whether a background pass
+        # MERGES AND RETIRES. Two switches for two risks: the tag path only
+        # reads, and this is the one thing in the tier that removes something
+        # from her index.
+        #
+        # THE GROUP'S calendar day, not UTC and not the store's clock. The
+        # curator compares against a YYYYMMDD day, and "has the 9th passed" is
+        # a question about the room's day rather than the process's: a UTC
+        # boundary retires the 9th's note during the evening of the 9th, local,
+        # while people are still deciding where to eat.
+        #
+        # Read from `[reminders] timezone` rather than written here. That value
+        # is operator-owned and already carries the argument for being an IANA
+        # NAME rather than an offset; a second copy in this file is the
+        # unguarded-copy class — it stays plausible after the original moves and
+        # fails somewhere else later. Reminders and note expiry are the same
+        # question («what day is it, for these people»), so they should not be
+        # able to disagree.
+        if cfg.notes.enabled and cfg.notes.curator_enabled and note_store is not None:
+            def _today_hk() -> int:
+                now = datetime.now(ZoneInfo(cfg.reminders.timezone))
+                return now.year * 10000 + now.month * 100 + now.day
+
+            dream_adaptors = (
+                *dream_adaptors,
+                NoteCuratorAdaptor(
+                    notes=note_store,
+                    today=_today_hk,
+                    max_groups_per_tick=cfg.notes.max_groups_per_tick,
+                    max_expired_per_tick=cfg.notes.max_expired_per_tick,
+                    metrics=metrics,
+                ),
+            )
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
         # `ModelSpec`, and the Dreamer needs `"auto"`: under `"required"` the
         # model must call something on every pass, and the only thing that ends

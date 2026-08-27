@@ -838,7 +838,52 @@ retention_days = 180
 # or promotes a settled note to an event, because that is a Dreamer adaptor and
 # the runtime it needs is not built. So a notebook turned on today grows and is
 # never tidied — fine at this scale, and the thing to watch before it is not.
+#
+# 2026-08-28: the curator's MERGE and RETIRE halves landed — see
+# curator_enabled below. Promote-to-event and fact-coherence rewriting are
+# still absent (they need the Events and knowledge tiers).
 enabled = false
+
+# The CURATOR, on its own gate and behind the tier's. Three flags have to be on
+# for a note ever to be merged or retired: [dreamer] (the runtime exists),
+# [notes] enabled (the tier is on), and this one.
+#
+# Three rather than two because this is a DIFFERENT RISK from the other two.
+# The tag path only reads and appends; the curator is the one thing in this
+# tier that REMOVES something from her index. An operator turning notes on has
+# not thereby asked for a background pass that reorganises them.
+#
+# What it does when on, every [language] tick, per workspace:
+#
+#   MERGE   — notes sharing an anchor (the same anchor_date AND the same entity
+#             set) are one occasion written twice. The merged body keeps
+#             everything both said, disagreements included; the oldest note
+#             survives and the rest are retired pointing at it. ELIGIBILITY IS
+#             DECIDED IN SQL, never by the model — merge keyed on topical
+#             similarity would merge two weddings, and that is unrecoverable.
+#   RETIRE  — a note whose anchor date has passed, where the model reading the
+#             body says the question is answered ("closed") or can no longer be
+#             answered ("moot"). "Open" is the common answer and writes nothing.
+#
+# Nothing is deleted. Retirement is a status change, so a retired note stays
+# readable and a lossy step can be re-derived.
+curator_enabled = false
+
+# Bodies per tick, as two caps, because the curator's only real cost is reading
+# whole note bodies and note_revision.body has no upper bound — ONE long body
+# can consume a tick's whole allowance.
+#
+# Groups is small: a collided anchor needs two notes about the same date AND
+# the same people, so three in one tick is already unusual and this is a bound
+# on a surprise rather than a throughput knob. Expired is larger because it is
+# the common case and arrives in bursts — after a quiet month every note whose
+# date has passed becomes eligible at once, and a cap of three would take a
+# fortnight of ticks to clear a backlog that appeared in a day.
+#
+# `nora_note_curator_bodies_read` is the reading. When it sits at the cap, the
+# pass is reporting "nothing to do" about notes it never reached.
+# max_groups_per_tick = 3
+# max_expired_per_tick = 20
 # No render cap here, unlike [facts]' max_rendered_facts, and that is a
 # decision rather than an omission: §5.1 makes the index uncapped, because a
 # note silently missing from it is invisible to her and invisible is
