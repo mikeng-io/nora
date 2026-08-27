@@ -59,6 +59,23 @@ from nora.domain.tag_trace import TagTrace
 #: reasoning as a reply and is the case most worth reviewing — a fold shown
 #: `outcome="silent"` and nothing else has to guess whether that was a choice,
 #: a veto or a crash, and those are three different reviews.
+# KNOWN GAP, recorded rather than papered over (review, 2026-08-27). A turn
+# where the never-silent fallback delivered `_EXHAUSTED_FALLBACK` is labelled
+# `send_reply` by `EngagementPipeline` — `recovered_delivered` is only set on
+# the DEC-93 prose-recovery branch, not on the fallback one — so the gloss
+# below tells the fold "she replied, through the send_reply tool" while the
+# rendered `<reasoning>` shows no such call. A self-contradictory input.
+#
+# NOT fixed here, deliberately. The honest fix is a SEVENTH outcome, and
+# `VALID_OUTCOMES` is a closed set backed by `tag_trace_outcome_check` — so it
+# needs a migration against a live table, which is Phase 1's territory and not
+# something a Phase 2 fix branch should carry (the same reasoning that kept the
+# engine-wide `command_timeout` out of this branch).
+#
+# Currently unreachable in practice: `nora_loop_exhausted_fallbacks_total` has
+# never fired in production, and all 29 retained traces are `recovered` (15) or
+# `send_reply` (14). Latent, not active — which is why it is a note and not a
+# migration.
 _OUTCOME_GLOSS: Mapping[str, str] = {
     "send_reply": "she replied, through the send_reply tool",
     "recovered": "she wrote a reply as prose without calling send_reply; "
@@ -187,11 +204,13 @@ def render_debrief_input(
 ) -> str:
     """The whole of what the fold sees about this turn, as one block.
 
-    `window` is the debrief's OWN window and is deliberately smaller than
-    `[store] context_window` (S3): the debrief revises a position, it does not
-    need the full reply context, and inheriting the reply path's number here
-    would be `05-transport.md`'s inheritance error in another seam. The slice is
-    the TAIL — the rows nearest the turn being reviewed.
+    `window` is capped at `[store] context_window` and now equals it — the fold
+    reads the rows the REPLY path assembled, so it can never exceed them, and
+    `Config._the_standing_window_fits_the_transcript_it_folds` refuses a larger
+    value rather than letting the number lie. It WAS deliberately smaller (S3)
+    until the operator overrode it on 2026-08-27: a fold reasoning from 12 rows
+    judges a turn it can only see a third of. The slice is the TAIL — the rows
+    nearest the turn being reviewed.
 
     `<standing_prior>` is emitted **even when there is none**, carrying an
     explicit "no position yet" rather than being omitted. §4.2 fixes that: an

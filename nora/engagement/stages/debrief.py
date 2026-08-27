@@ -42,9 +42,21 @@ prevents is invisible from either side alone: an escape after successful
 delivery would leave `completed` False, and `deliver.truncation_reason` would
 then report a partial reply on a turn that sent a whole one.
 
-**3. It holds the slot, so it is bounded twice.** Its own `asyncio.wait_for`,
-and `[standing] timeout_seconds` chosen so `tag_timeout + debrief_timeout` fits
-inside an acceptable hold. The cost is user-visible — **but not to the person
+**3. It holds the slot, so EVERY await in it is bounded — all four.** This
+docstring previously said "bounded twice" and named only the model call, and
+that was false in the way that matters: `store.read` and `store.write` sat
+OUTSIDE the `wait_for`, `create_sql_engine` sets no `command_timeout`, and both
+run while the per-conversation lock is held. A Postgres connection hanging
+mid-query during the post-reply fold wedged that conversation indefinitely — on
+a turn that had already delivered its reply successfully (found by independent
+review, 2026-08-27, before the tier had run a single fold). The model call is
+bounded by `[standing] timeout_seconds`; the two store calls by
+`[standing] store_timeout_seconds`; and the SUM is asserted at startup against
+`[standing] max_slot_hold_seconds` rather than argued in a comment — see
+`nora.config.Config._the_standing_slot_hold_fits_its_budget`, which exists
+because the comment here was wrong by 2x and nothing checked it.
+
+The cost is user-visible — **but not to the person
 being reviewed**, who already has their reply. It lands on the **second person
 queued behind a busy conversation**, which is why the gate is
 `nora_debrief_seconds` p95 ≤ 5s and why that series is deliberately **separate**
@@ -256,11 +268,12 @@ class Wiring:
     `max_chars` is the OPERATING cap and is config
     (`nora.domain.standing.DEFAULT_STANDING_MAX_CHARS` is its default);
     `standing_body_fits_the_ceiling_check` in the database is the absolute
-    ceiling underneath it that no config can pass. `window` is the debrief's
-    OWN transcript window (S3), deliberately smaller than `[store]
-    context_window`: the debrief revises a position and does not need the full
-    reply context, and inheriting the reply path's number would be
-    `05-transport.md`'s inheritance error in another seam.
+    ceiling underneath it that no config can pass. `window` is CAPPED at
+    `[store] context_window` and now equals it: the fold reads
+    `ctx.transcript`, the rows the reply path already assembled, so it can
+    never see more than she answered with. It WAS deliberately smaller (S3);
+    operator override 2026-08-27, because a fold reasoning from 12 rows judges
+    a turn it can only see a third of.
     """
 
     store: StandingStore
@@ -269,6 +282,7 @@ class Wiring:
     max_chars: int
     window: int
     timeout_seconds: float
+    store_timeout_seconds: float
 
 
 async def run(
@@ -283,6 +297,7 @@ async def run(
     max_chars: int,
     window: int,
     timeout_seconds: float,
+    store_timeout_seconds: float,
     now_ms: int,
     tz: tzinfo | None = None,
 ) -> None:
@@ -306,8 +321,11 @@ async def run(
         # prior is exactly the two-contradictory-rows failure this whole tier
         # exists to not repeat. An ERROR is never a PASS.
         try:
-            prior: Standing | None = await store.read(
-                platform=platform, conversation_id=trace.conversation_id,
+            prior: Standing | None = await asyncio.wait_for(
+                store.read(
+                    platform=platform, conversation_id=trace.conversation_id,
+                ),
+                timeout=store_timeout_seconds,
             )
         except Exception:
             log.exception(
@@ -382,7 +400,28 @@ async def run(
             outcome = "screened"
             return
 
-        await store.write(standing=Standing(
+        # Bounded and labelled `unavailable`, NOT `timeout`, exactly as the read
+        # above is. `asyncio.TimeoutError IS TimeoutError` on every Python this
+        # project supports (>= 3.11), so without this `except` a write that
+        # timed out would fall through to `except TimeoutError` below and be
+        # counted as «the fold did not finish inside its own budget» — on the
+        # very series `[standing] timeout_seconds` is tuned against. A store
+        # that could not be written is «I could not check», the same R-27 state
+        # the read path was already careful about; reading that off the
+        # debrief-budget series would send the next investigation at the model
+        # when the problem is Postgres.
+        # CONSTRUCTED OUTSIDE the `try` below, deliberately. `Standing(...)` is
+        # an argument expression, so leaving it inside meant a domain-invariant
+        # violation — `__post_init__` refusing a blank or over-ceiling body —
+        # was caught by that `except` and counted `unavailable`, i.e. «the
+        # store could not be written». "The model produced a body the domain
+        # refuses" and "Postgres was unreachable" are different readings, and
+        # conflating them is the R-27 substitution the `except` itself exists
+        # to avoid. Unreachable today (`max_chars` cannot exceed the ceiling,
+        # `_max_chars_stays_under_the_database_ceiling` sees to that) and
+        # hoisting costs nothing, which is exactly when to fix it rather than
+        # argue it is fine.
+        revised = Standing(
             platform=platform,
             conversation_id=trace.conversation_id,
             body=body,
@@ -391,7 +430,28 @@ async def run(
             # rather than folds-ever.
             fold_count=(prior.fold_count + 1) if prior is not None else 1,
             updated_at=now_ms,
-        ))
+        )
+        try:
+            await asyncio.wait_for(
+                store.write(standing=revised), timeout=store_timeout_seconds)
+        except Exception:
+            # **Says what it KNOWS, not what it assumes.** This used to log
+            # "the prior position stands", which is a claim about database
+            # state made without reading it back — on a `wait_for` timeout the
+            # upsert is cancelled MID-STATEMENT and asyncpg gives us no way to
+            # know from here whether it committed. If it did, the next fold
+            # reads the new `fold_count` and S2's ceiling counts a fold this
+            # log line called unwritten.
+            #
+            # The LABEL is still right: `unavailable` is precisely «I could not
+            # check». It is the sentence that was overclaiming.
+            log.exception(
+                "debrief: the write of the revised position did not complete "
+                "(tag=%s); whether it committed is unknown from here",
+                trace.tag_id,
+            )
+            outcome = "unavailable"
+            return
         outcome = "written"
     except TimeoutError:
         # Its own label rather than `error`, and its own branch rather than an
@@ -405,10 +465,33 @@ async def run(
             timeout_seconds, trace.tag_id,
         )
         outcome = "timeout"
+    except asyncio.CancelledError:
+        # Its own label and its own LOG LEVEL, and both are about alert
+        # fatigue rather than correctness.
+        #
+        # Swallowing this is design-mandated (26 §5: catch `BaseException`,
+        # never re-raise) and is handled correctly by the branch below — but
+        # every routine shutdown cancel of an in-flight tag then wrote an
+        # ERROR-level "debrief failed" traceback and counted
+        # `outcome="error"`, the one label that is supposed to mean SOMETHING
+        # IS WRONG. A counter that fires on ordinary shutdown is a counter
+        # nobody reads, which is this repo's own «a noisy gate is a disabled
+        # gate», one series over.
+        #
+        # A cancellation is not a fault: the process is going away and the
+        # position simply is not revised this turn. INFO, and a label that
+        # says so.
+        log.info(
+            "debrief cancelled (tag=%s); keeping the prior position",
+            trace.tag_id,
+        )
+        outcome = "cancelled"
     except BaseException:
         # `BaseException`, and it is not defensive breadth — see the module
         # docstring's (1). `CancelledError` is not an `Exception`, and letting
         # one out of here reports a silent failure on a turn that delivered.
+        # It is caught ABOVE rather than here so shutdown does not masquerade
+        # as a defect; this branch is now genuinely «something unexpected».
         log.exception("debrief failed (tag=%s); keeping the prior position",
                       trace.tag_id)
     finally:

@@ -914,7 +914,7 @@ async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg):
     assert wiring is not None
     assert wiring.store is deps.engagement._context._standing_store
     assert wiring.max_chars == 1200
-    assert wiring.window == 12
+    assert wiring.window == 40
 
 
 async def test_the_debrief_model_defaults_to_the_reply_model(cfg):
@@ -937,3 +937,28 @@ async def test_the_debrief_reads_its_objective_from_the_instruction_substrate(cf
     deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
     body = deps.engagement._debrief_wiring.objective.objective_body(OBJECTIVE)
     assert "revise ONE short paragraph" in body
+
+
+async def test_the_debrief_declares_a_reasoning_effort_rather_than_inheriting_silently(cfg):
+    """It passed none at all, so the fold ran at the provider's default — an
+    unchosen setting on a call that spends the conversation's slot, while the
+    tag path passes `[llm] reasoning_effort` explicitly.
+
+    Empty means inherit `[llm]`, which is the honest default while the spike
+    that would CHOOSE a value has not been run: `18-flows.md` calls the fold's
+    effort "a measurement, not a setting" and `09-measurement.md` forbids
+    asserting the plausible-sounding answer without it.
+    """
+    deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
+    client = deps.engagement._debrief_wiring.client
+    assert client._reasoning_effort == cfg.llm.reasoning_effort
+
+
+async def test_an_unusable_reasoning_effort_refuses_to_start(cfg):
+    """A typo currently reaches the provider and returns a 400 DURING a fold,
+    inside the slot, on a turn that had already replied. Narrowed at
+    composition so it is a boot failure instead — the same refuse-to-start
+    posture `max_chars`-above-the-ceiling and the slot-hold budget use."""
+    with pytest.raises(StartupError, match="reasoning effort"):
+        await build_dependencies(override_config(
+            cfg, {"standing.enabled": True, "llm.reasoning_effort": "hgh"}))

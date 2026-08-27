@@ -1066,7 +1066,7 @@ def test_the_standing_section_is_optional_and_ships_inert(toml_path):
     cfg = load(toml_path)
     assert cfg.standing.enabled is False
     assert cfg.standing.max_chars == 1200
-    assert cfg.standing.window == 12
+    assert cfg.standing.window == 40
     assert cfg.standing.model == ""
 
 
@@ -1093,9 +1093,94 @@ def test_a_standing_cap_exactly_at_the_ceiling_is_allowed(toml_path):
 
 
 def test_an_unknown_standing_key_is_a_startup_failure(toml_path):
-    """`extra="forbid"`, so `windwo = 12` is a boot failure rather than a
+    """`extra="forbid"`, so `windwo = 40` is a boot failure rather than a
     silently ignored line that leaves the debrief reading forty rows."""
     toml_path.write_text(
-        toml_path.read_text().replace("window = 12", "windwo = 12"))
+        toml_path.read_text().replace("window = 40", "windwo = 40"))
     with pytest.raises(ConfigError):
+        load(toml_path)
+
+
+def test_the_standing_slot_hold_is_checked_against_the_real_llm_timeout(toml_path):
+    """**The gate that would have caught the 2x error.**
+
+    `debrief.py` argued its worst-case hold as `[llm] timeout_seconds +
+    [standing] timeout_seconds`, "60 + 20 with the shipped defaults".
+    `LlmConfig.timeout_seconds` is a REQUIRED field with no default, and this
+    deployment sets 120 — so the real bounded hold was 140s, and the two store
+    calls were unbounded on top of that. The one number deciding how long a
+    live conversation can stop answering was sized against a figure that does
+    not exist, and nothing cross-checked it. A comment cannot be wrong twice.
+    """
+    # `count=0` on `re.sub` means replace ALL, not none — so the line that used
+    # to sit here flipped every `enabled = false` in the file (~18 sections:
+    # heartbeat, dreamer, facts, notes, presence...) while the comment beneath
+    # it claimed the opposite, and made this test depend on every unrelated
+    # subsystem tolerating being switched on. Removed; the targeted replace
+    # below is the whole mechanism (review finding, 2026-08-27).
+    text = toml_path.read_text().replace(
+        "max_slot_hold_seconds = 150.0", "max_slot_hold_seconds = 80.0")
+    i = text.index("[standing]")
+    text = text[:i] + text[i:].replace("enabled = false", "enabled = true", 1)
+    toml_path.write_text(text)
+    with pytest.raises(ConfigError, match="hold a conversation's slot"):
+        load(toml_path)
+
+
+def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):
+    """**Reversed after review, 2026-08-27.** This used to assert the check was
+    INERT while the tier was off, which set a trap: an operator could write an
+    impossible budget, boot fine, and only discover it on the restart that
+    switched Standing on — the exact moment the sibling window validator's
+    docstring names as the worst one to find out.
+
+    The window validator was already ungated on that reasoning. This one's
+    failure is worse (a live conversation that stops answering, versus a fold
+    reading fewer rows), so gating it was the inconsistency, not ungating it.
+    """
+    toml_path.write_text(toml_path.read_text().replace(
+        "max_slot_hold_seconds = 150.0", "max_slot_hold_seconds = 1.0"))
+    with pytest.raises(ConfigError, match="hold a conversation's slot"):
+        load(toml_path)
+
+
+def test_a_standing_window_larger_than_the_reply_window_refuses_to_start(toml_path):
+    """A knob that cannot do what it says is refused, not silently clamped.
+
+    The debrief folds `ctx.transcript` — the rows the REPLY path already
+    assembled under `[store] context_window` — so `[standing] window` above
+    that number selects exactly the same rows. Accepting it would let the
+    config claim a 60-row fold while producing a 40-row one, which is the
+    silent-no-op shape this repo refuses everywhere else (an uncapped index, a
+    cap mechanism with no cap). Operator asked for 60-80 on 2026-08-27; this is
+    what makes the real ceiling visible instead of letting the number lie.
+    """
+    text = toml_path.read_text()
+    i = text.index("[standing]")
+    toml_path.write_text(
+        text[:i] + text[i:].replace("window = 40", "window = 80", 1))
+    with pytest.raises(ConfigError, match="context_window"):
+        load(toml_path)
+
+
+def test_the_standing_window_may_equal_the_reply_window(toml_path):
+    """The boundary from the accepting side — the fold seeing everything she
+    saw must not be off-by-one refused.
+
+    **Rewritten after review:** the first version asserted only that two config
+    defaults were equal, which passes with the validator deleted and would even
+    pass with `window = 12` if `context_window` were also 12. It pinned
+    nothing. This drives the boundary explicitly: `window == context_window`
+    must LOAD, and one more must not, so a `>=`-instead-of-`>` slip goes red.
+    """
+    text = toml_path.read_text()
+    i = text.index("[standing]")
+    at_ceiling = text[:i] + text[i:].replace("window = 40", "window = 40", 1)
+    toml_path.write_text(at_ceiling)
+    cfg = load(toml_path)
+    assert cfg.standing.window == cfg.store.context_window == 40
+
+    over = text[:i] + text[i:].replace("window = 40", "window = 41", 1)
+    toml_path.write_text(over)
+    with pytest.raises(ConfigError, match="context_window"):
         load(toml_path)

@@ -283,8 +283,11 @@ def _fire_path(
     timeout_seconds: float = 5.0,
     room_language_max_entries: int | None = None,
     event_registry: dict | None = None,
+    standing=None,
+    standing_store_timeout_seconds: float = 5.0,
 ) -> FirePath:
-    extra = {}
+    extra = {"standing": standing,
+             "standing_store_timeout_seconds": standing_store_timeout_seconds}
     if room_language_max_entries is not None:
         extra["room_language_max_entries"] = room_language_max_entries
     if event_registry is not None:
@@ -978,3 +981,86 @@ async def test_legacy_reminder_row_still_fires_after_the_kind_columns_land(
 
     assert outcome == fire_module.SENT
     assert adapter.texts == ["記得食藥"]
+
+
+# --- <standing> on the fire path (S5) --------------------------------------
+
+async def _fire_path_with_standing(
+    persons, record_store, memory_store, doctrine_store, metrics,
+    standing, store_timeout: float = 5.0,
+) -> FirePath:
+    """`fire_path`'s own builder plus the standing collaborator — same
+    model-side-collaborators-are-None shape, for the same reason: these tests
+    call `build_context` only."""
+    return FirePath(
+        persons=persons, records=record_store, memory=memory_store,
+        doctrine_store=doctrine_store, metrics=metrics,
+        runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
+        canary="test-canary", display_name="Nora",
+        ai_peer="nora", context_window=40, limits={},
+        timeout_seconds=120.0, clock=lambda: T0,
+        standing=standing, standing_store_timeout_seconds=store_timeout,
+    )
+
+
+async def test_the_fire_path_renders_the_conversations_position(
+    persons, record_store, memory_store, doctrine_store, metrics,
+) -> None:
+    """S5 (15-roadmap §6.3) — NOT D5, which is taken twice; see
+    `FirePath.__init__`. `build_prefill` is shared and parameterised only by
+    `header=`, so
+    SUPPRESSING `<standing>` here is the special case needing justification —
+    and it was suppressed silently, because `build_context` never passed
+    `standing=` and the field defaults to `None`.
+
+    It matters most on this path: a fire turn speaks into a room UNPROMPTED, so
+    «where had this conversation got to» is the context she is least likely to
+    have any other way — there is no tagging message to infer it from.
+    """
+    from nora.domain.standing import Standing
+    from nora.testing import InMemoryStandingStore
+
+    store = InMemoryStandingStore()
+    fire = await _fire_path_with_standing(
+        persons, record_store, memory_store, doctrine_store, metrics, store)
+    occasion = reminder_occasion([_reminder()])
+    await store.write(standing=Standing(
+        platform=occasion.platform, conversation_id=occasion.conversation_id,
+        body="They settled on somewhere for the 9th; Grant is travelling.",
+        fold_count=2, updated_at=1,
+    ))
+
+    ctx = await fire.build_context(occasion)
+
+    assert ctx.standing is not None
+    assert "Grant is travelling" in ctx.standing.body
+
+
+async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
+    persons, record_store, memory_store, doctrine_store, metrics,
+) -> None:
+    """**The defect that was fixed in the debrief and then RE-CREATED here**,
+    in the same change, found by asking a re-reviewer the right question.
+
+    The heartbeat holds this conversation's slot around the whole fire turn
+    (`try_acquire` -> `release_and_dispatch`) and `create_sql_engine` sets no
+    `command_timeout`, so an unbounded read here wedges the conversation
+    exactly as the unbounded read in `debrief.run` did.
+
+    Falsification: drop the `asyncio.wait_for` in `_read_standing` and this
+    hangs instead of failing.
+    """
+    class _Hangs:
+        async def read(self, **kw):
+            await asyncio.sleep(30)
+            raise AssertionError("should have been cut off")
+
+    fire = await _fire_path_with_standing(
+        persons, record_store, memory_store, doctrine_store, metrics,
+        _Hangs(), store_timeout=0.05)
+
+    ctx = await asyncio.wait_for(
+        fire.build_context(reminder_occasion([_reminder()])), timeout=5)
+
+    assert ctx.standing is None
+    assert metrics.get("nora_errors_total", stage="fire_standing") == 1

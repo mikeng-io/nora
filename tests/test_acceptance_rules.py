@@ -409,6 +409,12 @@ RULE_TESTS = {
     # and the stage's own `BaseException` catch — are named in the decision
     # index row.
     "R-69": "test_a_debrief_that_blows_up_still_releases_the_lock",
+    # R-70 names the test that would have PREVENTED the defect rather than the
+    # one that detects a hang: the budget was wrong in prose (60+20 against an
+    # [llm] timeout that is 120 and required-with-no-default, omitting the two
+    # store calls entirely), and this is the gate that now refuses exactly that
+    # arithmetic. The hang tests and the window pair are named in the index row.
+    "R-70": "test_the_standing_slot_hold_is_checked_against_the_real_llm_timeout",
 }
 
 

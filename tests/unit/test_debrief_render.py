@@ -77,6 +77,15 @@ def test_the_person_id_never_reaches_the_prompt():
         _row(1, 1_756_000_920_000, "Miles", "hi", person_id="person-miles-uuid"),
     )))
     assert "person-miles-uuid" not in out
+    # `sender_id` too, and it is the WORSE one — review finding, 2026-08-27.
+    # §4.3 names `person_id`, so that is what this test pinned; the row carries
+    # a live E.164 in the adjacent field and nothing guarded it. `_speaker`
+    # falls back `person_name -> sender_name -> "unknown"` and `sender_name` is
+    # the self-set profile name, so this passes today — but a regression to
+    # `row.sender_id` would put a phone number into a prompt whose output
+    # PERSISTS across turns, and the assertion above would stay green because
+    # `person_id` still would not appear.
+    assert "+852111" not in out
     assert "Miles" in out
 
 

@@ -379,6 +379,7 @@ class EngagementPipeline:
             max_chars=wiring.max_chars,
             window=wiring.window,
             timeout_seconds=wiring.timeout_seconds,
+            store_timeout_seconds=wiring.store_timeout_seconds,
             now_ms=int(time.time() * 1000),
         )
 
@@ -791,8 +792,14 @@ class EngagementPipeline:
             #    than a background job, and it is why its cost lands on the
             #    SECOND person queued behind a busy conversation rather than
             #    on the person it is reviewing, who already has their reply.
-            #    `[llm] timeout_seconds + [standing] timeout_seconds` is the
-            #    worst-case hold, and both numbers are chosen against that sum.
+            #    The worst-case hold is `[llm] timeout_seconds` +
+            #    `[standing] timeout_seconds` + TWO x `store_timeout_seconds`
+            #    (the read of the prior position and the write of the next),
+            #    and it is asserted at STARTUP by
+            #    `Config._the_standing_slot_hold_fits_its_budget` rather than
+            #    stated here. This comment used to do the arithmetic itself and
+            #    omitted the store calls entirely, which is exactly how they
+            #    came to be unbounded.
             #
             # 3. **`completed` is already final by the time this runs**, which
             #    is the same requirement as «mark the turn completed BEFORE

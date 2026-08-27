@@ -1022,13 +1022,61 @@ enabled = false
 # `nora_standing_overflow_refusals_total` is the tell: never firing means the
 # cap is not binding, constantly firing means it is too small.
 max_chars = 1200
-# The debrief's OWN transcript window, smaller than `[store] context_window`
-# (40) on purpose: it revises a position, it does not need the full reply
-# context, and a smaller input is one of the two levers against the token
-# runaway that made this a plain completion instead of an agent loop.
-window = 12
-# The fold's own timeout. The number that matters is the SUM — the debrief
-# holds the slot, so the worst-case hold is `[llm] timeout_seconds` + this.
+# How many transcript rows the debrief sees. 40 is the CEILING, not a
+# preference: the debrief folds `ctx.transcript`, which the reply path already
+# capped at [store] context_window, so anything above that number is silently
+# the same as that number. Startup refuses a larger value rather than accepting
+# a knob that cannot do what it says.
+#
+# It was 12, on the argument that revising a position needs less than composing
+# a reply. Operator override 2026-08-27: she is answering with 40 rows in view,
+# so a fold reasoning from 12 is judging a turn it can only see a third of.
+# Going genuinely past 40 means raising [store] context_window — which widens
+# EVERY reply's prompt, a per-turn cost on the live path and not a Standing
+# decision.
+window = 40
+# The fold's own timeout — the MODEL call only. The number that matters is the
+# SUM, and it is checked at startup by max_slot_hold_seconds below rather than
+# worked out here: [llm] timeout_seconds + this + 2 x store_timeout_seconds.
+# This comment used to stop at «[llm] timeout_seconds + this», which is how the
+# two store calls came to be unbounded — they were not in anyone's sum.
 timeout_seconds = 20.0
+# The bound on the stage's TWO STORE CALLS — reading the prior position and
+# writing the revised one. It exists because they had none: the engine sets no
+# command_timeout and both run while the conversation's slot is HELD, so a
+# connection hanging mid-query during the post-reply fold wedged that
+# conversation indefinitely, on a turn that had already replied. Small on
+# purpose: this is a single-row keyed read and a single-row upsert, and if
+# either takes seconds the honest answer is «unavailable», not a longer wait
+# held in front of the next person in the room.
+store_timeout_seconds = 5.0
+# The WHOLE hold this stage may add to a conversation's slot, checked at
+# STARTUP: [llm] timeout_seconds + timeout_seconds + 2 x store_timeout_seconds.
+# It is a gate and not a comment because the comment was wrong — the design
+# argued 60 + 20 = 80s while [llm] timeout_seconds is a required field this
+# deployment sets to 120. Raise it deliberately or lower a timeout; the startup
+# refusal names which numbers stopped fitting.
+max_slot_hold_seconds = 150.0
 # Empty means `[llm] model`.
 model = ""
+# The fold's reasoning budget. Empty means inherit [llm] reasoning_effort.
+#
+# It is DECLARED here rather than inherited silently: the debrief's model
+# client never passed this at all, so the fold ran at whatever the provider
+# defaults to — an unchosen setting on a call that spends the conversation's
+# slot, while the tag path passes its own explicitly.
+#
+# THE VALUE IS DELIBERATELY NOT CHOSEN. design/dreamer-agent-loop/18-flows.md
+# is explicit that the fold's reasoning effort "is a MEASUREMENT, not a
+# setting": the fold is integration, not research, so a low budget is
+# PLAUSIBLE — and that is exactly the class of claim 09-measurement.md forbids
+# asserting. The design names a decidable spike instead: run the same fold at
+# several budgets over a fixed set of REAL retained traces and score whether
+# the revised position (a) preserves what the prior held and (b) integrates
+# what the trace added. Both are checkable by comparison; no judge needed.
+# tag_trace is retained precisely so that set exists.
+#
+# So this key exists to make that spike runnable. Empty is the honest default:
+# it says "nobody has measured this yet" rather than inventing a number.
+# Legal: none, minimal, low, medium, high, xhigh, max — checked at startup.
+reasoning_effort = ""

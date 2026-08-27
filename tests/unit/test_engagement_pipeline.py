@@ -2118,7 +2118,8 @@ def _wiring() -> object:
     from nora.engagement.stages.debrief import Wiring
 
     return Wiring(store=object(), client=object(), objective=object(),
-                  max_chars=1200, window=12, timeout_seconds=5.0)
+                  max_chars=1200, window=40, timeout_seconds=5.0,
+                  store_timeout_seconds=5.0)
 
 
 def _patch_debrief(monkeypatch, spy) -> None:

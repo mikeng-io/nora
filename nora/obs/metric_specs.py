@@ -1081,11 +1081,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #                       off at the output ceiling. «I could not check» —
     #                       never folded in with `malformed` (R-27)
     #   timeout           — the fold did not finish inside its own budget
-    #   error             — anything else, including a cancellation
+    #   cancelled         — the process is going away mid-fold. NOT a fault,
+    #                       and deliberately not `error`: shutdown cancels an
+    #                       in-flight tag routinely, and a counter that fires
+    #                       on ordinary shutdown is one nobody reads
+    #   error             — anything else, genuinely unexpected
     _CounterSpec(
         "nora_debrief_total",
         "Debrief folds by disposition: written, refused_overflow, screened, "
-        "malformed, unavailable, timeout, error.",
+        "malformed, unavailable, timeout, cancelled, error.",
         ("outcome",),
     ),
     # §4's non-negotiable, made OBSERVABLE rather than assumed. A fold that

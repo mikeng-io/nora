@@ -181,11 +181,50 @@ async def test_a_body_at_the_ceiling_is_accepted_by_both(store):
     )
 
 
-async def test_both_implementations_refuse_a_body_over_the_ceiling(store):
-    """Identically, and by the SAME mechanism: the domain constructor raises
-    before either store is reached, which is why `InMemoryStandingStore` holds
-    `Standing` objects rather than dicts. The database's own CHECK is the real
-    guarantee for anything that bypasses the type — that is asserted separately,
-    in `tests/infra/test_schema_parity.py`, against the migrated schema."""
+async def test_the_domain_type_refuses_an_over_long_body_before_any_store_is_reached(store):
+    """The constructor refusal — and it is named for what it actually proves.
+
+    **This test used to be called `test_both_implementations_refuse_...` and it
+    was decorative** (found by two independent reviewers, 2026-08-27).
+    `_standing(...)` is evaluated as an ARGUMENT, so `Standing.__post_init__`
+    raises before `store.write` is ever entered: it asserted a pure-domain fact
+    already covered by `tests/unit/test_standing.py`, while its name and the
+    module docstring claimed it proved something about the two STORES. Deleting
+    `standing_body_fits_the_ceiling_check` from the migration AND `schema.py`
+    left all sixteen tests in this file green.
+
+    It is kept, renamed, because the property is real and worth pinning — it is
+    what makes the two implementations refuse *identically* without either of
+    them containing a length check. It is simply not a STORE test, and the one
+    below is.
+    """
     with pytest.raises(ValueError, match="ceiling"):
         await store.write(standing=_standing("x" * (STANDING_BODY_CEILING_CHARS + 1)))
+
+
+async def test_the_store_itself_refuses_a_body_over_the_ceiling(store):
+    """The STORE's own refusal, reached by going AROUND the domain type.
+
+    This is the test the file was missing. The ceiling is enforced in two
+    places on purpose (26-standing §4.0) — `Standing.__post_init__` and
+    `standing_body_fits_the_ceiling_check` — and the database half is the one
+    that holds against *any writer*, config and future code included. Nothing
+    exercised it: the constructor always raised first.
+
+    `object.__setattr__` is the only way past a frozen dataclass's own
+    validation, which is precisely why it is right here: it manufactures the
+    state a writer that BYPASSED the type would produce, which is the only
+    state the DB CHECK exists for. The in-memory double must refuse too, or the
+    two implementations are not interchangeable — it holds `Standing` objects,
+    so it inherits nothing here and has to be checked, not assumed.
+
+    Falsification: delete the CHECK from `0034_standing.py` and this goes red
+    on the `sql` param. That was true of no test in this file before.
+    """
+    smuggled = _standing("x" * 10)
+    object.__setattr__(smuggled, "body", "x" * (STANDING_BODY_CEILING_CHARS + 1))
+    assert len(smuggled.body) > STANDING_BODY_CEILING_CHARS
+    with pytest.raises(Exception):  # noqa: B017 — IntegrityError (sql) vs ValueError (memory)
+        await store.write(standing=smuggled)
+    assert await store.read(
+        platform=PLATFORM, conversation_id=CONV) is None
