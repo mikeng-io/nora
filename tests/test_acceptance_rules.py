@@ -424,6 +424,11 @@ RULE_TESTS = {
     # order backwards is the failure that silently corrupts §6's own reading of
     # whether the trigger has degraded into a clock.
     "R-72": "test_ungrounded_wins_when_both_conditions_hold",
+    # R-73 names the IDENTIFIER test rather than the coordinate one: both are
+    # in the index row, but a phone number reaching a third-party collector is
+    # the exposure `nora.agent.egress` exists for, and the prompt side is the
+    # half that carries the turn's raw tool results.
+    "R-73": "test_an_identifier_never_reaches_the_collector",
 }
 
 

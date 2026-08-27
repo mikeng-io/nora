@@ -79,6 +79,43 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture
+def exported_spans(monkeypatch) -> Iterator[Any]:
+    """Every span `nora.obs.tracing.span` opens during this test, as EXPORTED
+    spans — names, attributes, parents and TRACE IDS.
+
+    Trace ids are the point. A rootless span IS a trace, so «is this one trace
+    or three» is a question only the exported ids can answer; asserting that a
+    helper was called cannot see the defect at all (issue #64).
+
+    **It patches `get_tracer` rather than installing a global
+    `TracerProvider`**, and that is not a style preference.
+    `trace.set_tracer_provider` is ONE-SHOT per process — a second call is
+    ignored with a warning — so a provider-based fixture silently hands every
+    file after the first the FIRST file's exporter, and a provider that has been
+    shut down exports nothing at all for the rest of the run.
+    `tests/test_span_skeleton.py` found both the hard way and says so. Patching
+    the lookup keeps the capture local to one test and leaves the global
+    provider untouched.
+    """
+    from opentelemetry.sdk.trace import TracerProvider as _TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    from nora.obs import tracing as _tracing
+
+    exporter = InMemorySpanExporter()
+    provider = _TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(_tracing.trace, "get_tracer", provider.get_tracer)
+    try:
+        yield exporter
+    finally:
+        provider.shutdown()
+
+
 @dataclass(frozen=True)
 class _PgAdmin:
     host: str

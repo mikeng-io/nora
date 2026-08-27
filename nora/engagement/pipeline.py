@@ -37,6 +37,40 @@ What DOES break: the fault is no longer absorbed — it propagates out of
 wider than one tag) — and `nora_silent_failures_total{reason="handler_error"}`
 is never incremented, an observability gap on top of the crash. See this
 module's test suite for the probe that proves both.
+
+ONE TRACE PER TAG, AND HOW IT CROSSES THE QUEUE
+-----------------------------------------------
+The three spans this module opens used to have no parent, and **a rootless span
+IS a trace** — so one tagged message produced three separate engagement traces
+plus ingest's, and a busy minute rendered as a page of near-empty traces
+(issue #64). `run` now opens a root, `engagement`, exactly as
+`nora.ingest.pipeline.run` does, and `_run_admitted` opens `engagement.turn`
+under it with `engagement.invoke` and `engagement.debrief` under that.
+
+**The root cannot simply wrap the work, because the work may not happen here.**
+A RUN_NOW tag is awaited inside `run`; a QUEUED tag is enqueued and runs later
+on a task `ConversationSlots.release_and_dispatch` spawns. So the tag's context
+is CAPTURED at admission (`capture_context`) and re-ATTACHED in `_run_queued`
+(`attached`), and the queued turn's spans land in the admission trace — parented
+to a root that has already ended, which OTel allows and which renders as the
+queue wait it actually was.
+
+**The alternative — letting the task inherit — is not neutral, it is wrong.**
+`asyncio.create_task` copies contextvars and OTel's context is a contextvar, so
+an un-attached queued tag inherits whatever span was current when it was
+spawned. That spawn happens in the PREVIOUS turn's `finally`, inside the
+previous turn's own span: the queued tag would be filed under the tag ahead of
+it in the queue, asserting a causal relation between two people's messages that
+does not exist. Measured 2026-08-28, not assumed. `attached` therefore REPLACES
+the inherited context rather than adding to it, and a capture that failed
+attaches an empty context — a trace of its own, never someone else's.
+
+**Nothing in the span layer may raise**, and that constraint is this module's
+rather than the tracer's: `release_and_dispatch` runs in a `finally` PAST the
+outer `except BaseException`, so an exception from an observation would skip the
+lock release and wedge the conversation forever with no error anywhere.
+`nora.obs.tracing`'s `span`, `annotate`, `capture_context` and `attached` are
+each guarded on acquisition AND on exit for exactly this call site.
 """
 
 from __future__ import annotations
@@ -67,7 +101,7 @@ from nora.domain.ports import (
 from nora.domain.tag_trace import TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.obs.logging import bind_tag_id, clear_tag_id
-from nora.obs.tracing import span
+from nora.obs.tracing import TraceCarrier, annotate, attached, capture_context, span
 from nora.persons import Persons
 from nora.policy import Policy
 from nora.tag import Debounce
@@ -312,33 +346,56 @@ class EngagementPipeline:
         message = request.message
         identity = await self._adapter_for(message.platform).resolve_identity()
         key = (message.platform, message.conversation_id)
-        with span("engagement.admission"):
-            verdict = admission.run(
-                message=message, identity=identity, debounce=self._debounce,
-                slots=self._slots, metrics=self._metrics,
-            )
-        if verdict is Admission.REJECTED or verdict is Admission.QUEUE_FULL:
-            return
-        indicator = self._begin_indicator(request)
-        if verdict is Admission.QUEUED:
-            # No await between admission's QUEUED verdict and this enqueue, so
-            # the depth admission checked cannot change underneath it and FIFO
-            # order is exactly arrival order. `identity` is not stored: it is
-            # re-resolved (memoized, in-process) when the tag is dequeued.
-            #
-            # A zero-argument FACTORY, not a coroutine and not a callback: the
-            # closure keeps this tag's request and 👀 handle here, in the
-            # pipeline, so `ConversationSlots` needs no reference back into it
-            # (see that module's docstring). Nothing is created until the slot
-            # actually frees, so a queued tag holds no coroutine object either.
-            self._slots.enqueue(key, lambda: self._run_queued(request, indicator))
-            return
-        # RUN_NOW. `identity` is threaded on rather than re-resolved: the
-        # room-scoped tools need Nora's own id forms to leave herself out of the
-        # group's member list, and `PlatformIdentity.aliases` is the same
-        # flattened set R-12 tests membership in (design/10 §5) — the one set
-        # that survives a member arriving as a phone number here and an ACI there.
-        await self._run_admitted(request, identity, indicator)
+        # THE ROOT (issue #64). Everything this tag opens hangs under it, so one
+        # tagged message is one Langfuse trace instead of three — see this
+        # module's docstring for why the queued half needs a captured context
+        # rather than just a wider `with`. It carries the three facts that make
+        # the trace findable without opening a child; a REJECTED tag then leaves
+        # a trace that SAYS it was rejected rather than an unexplained stub.
+        with span(
+            "engagement",
+            **{"nora.tag_id": request.tag_id, "nora.platform": message.platform,
+               "nora.conversation_id": message.conversation_id},
+        ):
+            with span("engagement.admission"):
+                verdict = admission.run(
+                    message=message, identity=identity, debounce=self._debounce,
+                    slots=self._slots, metrics=self._metrics,
+                )
+            annotate(**{"nora.admission": verdict.name})
+            if verdict is Admission.REJECTED or verdict is Admission.QUEUE_FULL:
+                return
+            indicator = self._begin_indicator(request)
+            if verdict is Admission.QUEUED:
+                # No await between admission's QUEUED verdict and this enqueue,
+                # so the depth admission checked cannot change underneath it and
+                # FIFO order is exactly arrival order. `identity` is not stored:
+                # it is re-resolved (memoized, in-process) when the tag is
+                # dequeued.
+                #
+                # A zero-argument FACTORY, not a coroutine and not a callback:
+                # the closure keeps this tag's request and 👀 handle here, in the
+                # pipeline, so `ConversationSlots` needs no reference back into
+                # it (see that module's docstring). Nothing is created until the
+                # slot actually frees, so a queued tag holds no coroutine object
+                # either.
+                #
+                # The trace context rides in that closure alongside them, for
+                # the reason the module docstring gives: the factory is invoked
+                # from the PREVIOUS turn's `finally`, so the context it would
+                # otherwise inherit belongs to a different person's tag.
+                carrier = capture_context()
+                self._slots.enqueue(
+                    key, lambda: self._run_queued(request, indicator, carrier),
+                )
+                return
+            # RUN_NOW. `identity` is threaded on rather than re-resolved: the
+            # room-scoped tools need Nora's own id forms to leave herself out of
+            # the group's member list, and `PlatformIdentity.aliases` is the
+            # same flattened set R-12 tests membership in (design/10 §5) — the
+            # one set that survives a member arriving as a phone number here and
+            # an ACI there.
+            await self._run_admitted(request, identity, indicator)
 
     def _begin_indicator(self, request: EngagementRequest) -> Indicator | None:
         """Spawn the 👀 on the tagging message, or None when reactions are off.
@@ -357,14 +414,30 @@ class EngagementPipeline:
             metrics=self._metrics, spawn=self._spawn,
         )
 
-    async def _run_queued(self, request: EngagementRequest, indicator: Indicator | None) -> None:
+    async def _run_queued(
+        self, request: EngagementRequest, indicator: Indicator | None,
+        carrier: TraceCarrier | None = None,
+    ) -> None:
         """Run a tag that waited in the FIFO queue. Its context is assembled
         fresh inside `_run_admitted`, at THIS point — so it sees the replies of
         every tag ahead of it in line, which is the correctness reason the queue
         serialises a conversation (see `nora.engagement.queue`). Identity is
-        re-resolved here (memoized) rather than carried through the queue."""
-        identity = await self._adapter_for(request.message.platform).resolve_identity()
-        await self._run_admitted(request, identity, indicator)
+        re-resolved here (memoized) rather than carried through the queue.
+
+        `carrier` is this tag's TRACE context, captured at its own admission and
+        re-attached here so its spans join the trace that admitted it. It is the
+        one thing that IS carried through the queue, and the module docstring
+        says why the alternative — inheriting whatever the dispatching task had
+        current — files this turn under the previous person's tag.
+
+        Defaulted to `None` so the queue can hold a factory built before this
+        parameter existed; `attached(None)` starts a fresh trace, which is the
+        fail-closed answer rather than a borrowed parent.
+        """
+        with attached(carrier):
+            identity = await self._adapter_for(
+                request.message.platform).resolve_identity()
+            await self._run_admitted(request, identity, indicator)
 
     async def _debrief(
         self, *, trace: TagTrace | None, platform: str,
@@ -406,7 +479,12 @@ class EngagementPipeline:
         # never wraps `release_and_dispatch`, and `span` cannot raise on entry
         # or exit, which matters because this block runs in the `finally` AFTER
         # the outer `except BaseException` has already run.
-        with span("engagement.debrief"):
+        with span(
+            "engagement.debrief",
+            **{"nora.tag_id": trace.tag_id,
+               "nora.conversation_id": trace.conversation_id,
+               "nora.outcome_reviewed": trace.outcome},
+        ):
             await debrief.run(
                 trace=trace,
                 platform=platform,
@@ -428,6 +506,31 @@ class EngagementPipeline:
             )
 
     async def _run_admitted(
+        self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
+    ) -> None:
+        """The turn's own span, wrapping the body — the same `run`/`_run` split
+        `nora.ingest.pipeline` uses, and for a reason this path has and ingest
+        does not.
+
+        The root opened in `run` is already CLOSED by the time a queued tag gets
+        here, and an attribute set on an ended span is silently dropped by the
+        OTel SDK (measured, 2026-08-28 — it logs and records nothing). So the
+        outcome, the stop reason and the latency this turn only learns in its
+        `finally` need a span that is still open, and this is it. Opening it
+        here rather than widening the root also makes the two admission paths
+        render identically: a RUN_NOW turn and a QUEUED turn have the same span
+        shape, so the only difference between them in Langfuse is the gap before
+        `engagement.turn` starts — which is exactly the queue wait.
+        """
+        with span(
+            "engagement.turn",
+            **{"nora.tag_id": request.tag_id,
+               "nora.platform": request.message.platform,
+               "nora.conversation_id": request.message.conversation_id},
+        ):
+            await self._run_turn(request, identity, indicator)
+
+    async def _run_turn(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
     ) -> None:
         msg = request.message
@@ -614,13 +717,23 @@ class EngagementPipeline:
             # already carries the real outcome (`"timeout"`/`"llm_error"`,
             # `invoke.run`'s own `_blank_trace`), so there is nothing to
             # correct.
-            with span("engagement.invoke"):
+            with span(
+                "engagement.invoke",
+                **{"nora.tag_id": request.tag_id,
+                   "nora.doctrine_sha256": doctrine.sha256,
+                   "nora.note_index_entries": len(ctx.notes)},
+            ):
                 ok, llm_elapsed, stop_reason, final_text, trace = await invoke.run(
                     runner=self._runner, doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                     guard=handle.guard, tool_call_log=handle.tool_call_log,
                     tag_message=tag_message, limits=self._limits, ctx=ctx,
                     timeout_seconds=self._timeout_seconds, metrics=self._metrics,
                 )
+                # Inside the `with`, so it lands on the invoke span rather than
+                # on the turn: `ok` and `stop_reason` are what this stage
+                # decided, and the turn's own copy is annotated separately in
+                # the `finally` below from the corrected trace.
+                annotate(**{"nora.invoke_ok": ok, "nora.stop_reason": stop_reason or ""})
             if not ok:
                 # A timeout or an `llm_error`. Messages may ALREADY have gone
                 # out — under multi-message that is the common shape, not an
@@ -952,6 +1065,28 @@ class EngagementPipeline:
             # baseline was recorded before DEC-40 made it able to move.
             messages = handle.deliverer.delivered_count if handle is not None else 0
             self._metrics.observe("nora_messages_per_tag", float(messages))
+            # THE TURN'S DISPOSITION, on the turn's own span (issue #64). Every
+            # one of these already exists as a metric, and a metric cannot
+            # answer «what happened on THIS tag» — the series say 3% of turns
+            # were silent, the span says this one was, beside the invoke and
+            # debrief children that show why. In the `finally` for the same
+            # reason every counter here is: it is the one point all five exit
+            # paths pass through.
+            #
+            # `"unattributed"` is not a sixth outcome — it is `trace is None`,
+            # which means either `invoke.run` never returned or the outer
+            # handler deliberately cleared a crashed turn's placeholder rather
+            # than retain a guessed label. Naming it keeps that state readable
+            # instead of rendering as an absent attribute, which is
+            # indistinguishable from the annotation never having run.
+            annotate(**{
+                "nora.outcome": trace.outcome if trace is not None else "unattributed",
+                "nora.delivered": delivered,
+                "nora.stop_reason": stop_reason or "",
+                "nora.messages": messages,
+                "nora.latency_seconds": total,
+                "nora.llm_seconds": llm_elapsed,
+            })
             # DEC-40's observable. A turn that sent SOME of its messages and
             # then stopped is not a silent turn — `delivered` is True, the
             # indicator resolves ✅ and Honcho is fed — so nothing R-23 built

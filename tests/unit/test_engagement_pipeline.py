@@ -2481,3 +2481,192 @@ def _guard_with_notes_read(handles: set[str]):
     guard = ReplyGuard.__new__(ReplyGuard)
     guard._notes_read = set(handles)
     return guard
+
+
+# ---------------------------------------------------------------------------
+# ONE TRACE PER TAG (issue #64). The three spans this pipeline opened had no
+# parent, and a rootless span IS a trace — so one tagged message rendered as
+# three near-empty Langfuse traces, and a busy minute as a page of them.
+#
+# These assert on EXPORTED spans (the `exported_spans` fixture), because the
+# defect lives entirely in the trace ids and the parent links. A test that
+# checked `span` had been CALLED would have stayed green throughout the bug.
+# ---------------------------------------------------------------------------
+
+
+def _by_name(exporter) -> dict[str, list]:
+    out: dict[str, list] = {}
+    for recorded in exporter.get_finished_spans():
+        out.setdefault(recorded.name, []).append(recorded)
+    return out
+
+
+async def test_one_tagged_message_produces_exactly_one_trace(exported_spans):
+    """The defect, stated as a property: every span a tag opens shares one trace
+    id, and there is exactly ONE root.
+
+    PROBE: delete the `with span("engagement", ...)` wrapper in `run` and the
+    admission and turn spans become roots of their own traces — three trace ids,
+    three roots, which is what the operator was looking at.
+    """
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    finished = exported_spans.get_finished_spans()
+    names = {s.name for s in finished}
+    assert {"engagement", "engagement.admission",
+            "engagement.turn", "engagement.invoke"} <= names
+    assert len({s.context.trace_id for s in finished}) == 1, \
+        "one tagged message must be one trace"
+    assert [s.name for s in finished if s.parent is None] == ["engagement"]
+
+
+async def test_every_stage_span_hangs_under_the_tag_root(exported_spans):
+    """Not just «one trace» — the right SHAPE. `admission` and `turn` are
+    children of the root and `invoke` is a child of `turn`, so a turn that ends
+    early ends at a NAMED stage inside a trace that says which tag it was.
+
+    PROBE: open the turn span around only part of `_run_turn`'s body, or hoist
+    `engagement.invoke` out of it, and a parent link breaks.
+    """
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    spans = _by_name(exported_spans)
+    root = spans["engagement"][0]
+    turn = spans["engagement.turn"][0]
+    assert spans["engagement.admission"][0].parent.span_id == root.context.span_id
+    assert turn.parent.span_id == root.context.span_id
+    assert spans["engagement.invoke"][0].parent.span_id == turn.context.span_id
+    assert root.attributes["nora.tag_id"] == "tag-1"
+    assert root.attributes["nora.conversation_id"] == "g1"
+
+
+async def test_the_turn_span_records_the_outcome_the_turn_actually_had(exported_spans):
+    """The other half of #64: the spans carried a name and nothing else, so
+    Langfuse rendered a trace with nothing in it. A turn's disposition is only
+    known in the `finally`, which is what `annotate` is for.
+
+    PROBE: delete the `annotate(...)` in `_run_turn`'s `finally`.
+    """
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+    await pipeline.run(_request())
+    await _drain(background)
+    turn = _by_name(exported_spans)["engagement.turn"][0]
+    assert turn.attributes["nora.outcome"] == "send_reply"
+    assert turn.attributes["nora.delivered"] is True
+
+
+async def test_a_turn_that_says_nothing_is_recorded_as_silent(exported_spans):
+    """The same attribute, a different value — so the assertion above is reading
+    the turn rather than a constant. R-5's deliberate silence is the case that
+    most needs a trace, because nothing else marks it as a decision."""
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        runner=ScriptedRunner([]),
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+    turn = _by_name(exported_spans)["engagement.turn"][0]
+    assert turn.attributes["nora.outcome"] == "silent"
+    assert turn.attributes["nora.delivered"] is False
+
+
+async def test_a_rejected_tag_leaves_a_trace_that_says_it_was_rejected(exported_spans):
+    """A self-tag is dropped at admission and never reaches a turn. It still
+    leaves a trace, and one that NAMES the verdict rather than the unexplained
+    one-span stub the skeleton left.
+
+    PROBE: drop `annotate(nora.admission=...)` in `run` and a refused tag is
+    indistinguishable from one that crashed before its first stage.
+    """
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        adapter=_FakeAdapter(account="+852111"),
+    )
+
+    await pipeline.run(_request(_msg(sender_id="+852111")))
+    await _drain(background)
+
+    spans = _by_name(exported_spans)
+    assert "engagement.turn" not in spans
+    assert spans["engagement"][0].attributes["nora.admission"] == "REJECTED"
+
+
+async def test_a_queued_tag_lands_in_the_trace_that_admitted_it(exported_spans):
+    """THE CONTEXT-PROPAGATION PROPERTY — the reason #64 is not a one-line wrap.
+
+    A queued tag runs on a task `ConversationSlots.release_and_dispatch` spawns
+    from the PREVIOUS turn's `finally`. `asyncio.create_task` COPIES contextvars
+    and OTel's context is a contextvar, so left alone that task inherits the
+    previous tag's span: tag 2's turn is filed under tag 1's trace, asserting a
+    causal relation between two people's messages that does not exist.
+
+    PROBE, and the two halves fail differently: delete `with attached(carrier)`
+    in `_run_queued` and tag 2's turn joins tag 1's trace — the second assertion
+    reddens. Enqueue without `capture_context()` and tag 2's turn is orphaned
+    from its own admission — the first reddens.
+    """
+    adapter = _FakeAdapter()
+    runner = _EchoRunner(delay=0.2)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter, runner=runner,
+    )
+
+    first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
+    await asyncio.sleep(0.02)                          # t1 admitted, mid-invoke
+    await pipeline.run(_req(body="q2", tag_id="t2"))   # QUEUED behind t1
+    await first
+    await _drain(background)
+
+    spans = exported_spans.get_finished_spans()
+    roots = {s.attributes["nora.tag_id"]: s for s in spans if s.name == "engagement"}
+    turns = {s.attributes["nora.tag_id"]: s
+             for s in spans if s.name == "engagement.turn"}
+    assert set(roots) == {"t1", "t2"} and set(turns) == {"t1", "t2"}
+
+    assert turns["t2"].context.trace_id == roots["t2"].context.trace_id, \
+        "a queued tag's turn belongs to the trace that admitted it"
+    assert turns["t2"].context.trace_id != roots["t1"].context.trace_id, \
+        "a queued tag must never be filed under the tag ahead of it in the queue"
+    assert turns["t2"].parent.span_id == roots["t2"].context.span_id
+
+
+async def test_a_queued_tag_with_no_carried_context_starts_its_own_trace(exported_spans):
+    """The fail-closed direction, driven through the real dispatch path.
+
+    `_run_queued`'s `carrier` defaults to `None` — the shape a factory built
+    before it existed would have — and `attached(None)` attaches an EMPTY
+    context. So the worst case of a lost capture is a turn that traces on its
+    own, never one silently adopted by whatever task happened to spawn it.
+
+    PROBE: make `attached` fall through without attaching when `carrier is None`
+    and this turn is parented to the in-flight tag's span instead.
+    """
+    adapter = _FakeAdapter()
+    runner = _EchoRunner(delay=0.2)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter, runner=runner,
+    )
+
+    first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
+    await asyncio.sleep(0.02)
+    # Enqueued WITHOUT a carrier, through the real `ConversationSlots` rather
+    # than by calling `_run_queued` directly — the dispatch is the thing under
+    # test, so it has to be the real one.
+    pipeline._slots.enqueue(
+        ("signal", "g1"),
+        lambda: pipeline._run_queued(_req(body="q2", tag_id="t2"), None),
+    )
+    await first
+    await _drain(background)
+
+    spans = exported_spans.get_finished_spans()
+    t1_root = next(s for s in spans if s.name == "engagement"
+                   and s.attributes["nora.tag_id"] == "t1")
+    t2_turn = next(s for s in spans if s.name == "engagement.turn"
+                   and s.attributes["nora.tag_id"] == "t2")
+    assert t2_turn.parent is None, "an un-carried queued tag is its own root"
+    assert t2_turn.context.trace_id != t1_root.context.trace_id
