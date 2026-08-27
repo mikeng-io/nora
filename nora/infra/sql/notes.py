@@ -108,6 +108,7 @@ from nora.domain.notes import (
     NoteRevisionProposal,
     NoteSupersedeReason,
     StaleNoteHeadError,
+    group_on_anchor_key,
 )
 from nora.domain.ports import Proposal
 from nora.infra.sql.schema import NOTE, NOTE_CANDIDATE, NOTE_REVISION
@@ -527,7 +528,13 @@ class SqlNoteStore:
                 f"up — read it again",
                 observed_head=None,
             )
-        targets = [n for n in retire if _is_uuid(n) and n != survivor]
+        # DE-DUPLICATED: `rowcount` from `WHERE id IN (...)` counts each row
+        # once, so a caller passing the same id twice gets 1 from Postgres
+        # and would have got 2 from a double counting its list. That count
+        # is `commit`'s return and becomes `nora_dream_written_total`.
+        targets = list(dict.fromkeys(
+            n for n in retire if _is_uuid(n) and n != survivor
+        ))
         async with self._engine.begin() as conn:
             # The append FIRST, so a lost CAS refuses before anything is
             # retired. Inside one transaction the order cannot matter for
@@ -562,8 +569,24 @@ class SqlNoteStore:
 
     async def merge_groups(
         self, *, workspace: str, limit: int,
-    ) -> tuple[tuple[Note, ...], ...]:
-        """Standing notes that share an anchor, grouped, most-collided first.
+    ) -> tuple[tuple[tuple[Note, str], ...], ...]:
+        """Standing notes that share an anchor, grouped, most-collided first,
+        **each with its head body**.
+
+        **The bodies are the whole point and this returned notes alone until
+        2026-08-28.** The curator's merge asks the model to write one body that
+        keeps everything every note in the group knew — and it was being shown
+        titles, uncertainties and closing conditions, never the content. A
+        merged body synthesised from two titles, written over a survivor that
+        had accumulated real detail, is content loss produced BY the merge
+        verb: «Ada can't do Fridays; Sai Kung ruled out» would survive only
+        inside a retired row's revision history, with nothing in the index
+        knowing it had existed.
+
+        `anchored_before` beside this one already returned `(Note, body)`. The
+        divergence was invisible because the renderer dropped bodies for groups
+        too, so the two halves agreed — the same shape as a docstring and a
+        test agreeing with each other and not with the requirement.
 
         **The anchor is `(anchor_date, anchor_entity_ids)` and both halves
         matter.** Two weddings on different dates are two notes; two notes
@@ -584,32 +607,36 @@ class SqlNoteStore:
         """
         if limit <= 0:
             return ()
-        grouped = (
-            sa.select(NOTE.c.anchor_date, NOTE.c.anchor_entity_ids)
+        # GROUPED IN PYTHON ON `Note.anchor_key`, not in SQL on the raw column.
+        #
+        # `GROUP BY anchor_entity_ids` is order- AND duplicate-sensitive in
+        # Postgres: `{ada,ben}` and `{ben,ada}` are different groups, so two
+        # notes about the same occasion are missed for an artifact of the order
+        # somebody happened to list the people. `anchor_key` exists precisely to
+        # say that — «entities are sorted and de-duplicated so the key is a
+        # property of WHICH entities rather than of the order» — and until
+        # 2026-08-28 it had ZERO call sites while both implementations
+        # reimplemented the comparison on the raw array. A property with no
+        # caller is a claim, not a rule.
+        #
+        # The cost is reading the workspace's standing notes rather than pushing
+        # the grouping down. That is bounded by the same thing `standing`
+        # already is — the index is uncapped by design (§5.1) — and correctness
+        # on the key is worth more than a GROUP BY here.
+        rows_stmt = (
+            self._head_join()
             .where(
                 NOTE.c.workspace == workspace,
                 NOTE.c.retired_at.is_(None),
                 NOTE.c.anchor_date.is_not(None),
             )
-            .group_by(NOTE.c.anchor_date, NOTE.c.anchor_entity_ids)
-            .having(sa.func.count() > 1)
-            .order_by(sa.func.count().desc(), NOTE.c.anchor_date.asc())
-            .limit(limit)
+            .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
         )
         async with self._engine.connect() as conn:
-            keys = (await conn.execute(grouped)).all()
-            groups: list[tuple[Note, ...]] = []
-            for key in keys:
-                rows = (await conn.execute(
-                    self._head_join().where(
-                        NOTE.c.workspace == workspace,
-                        NOTE.c.retired_at.is_(None),
-                        NOTE.c.anchor_date == key.anchor_date,
-                        NOTE.c.anchor_entity_ids == key.anchor_entity_ids,
-                    ).order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
-                )).all()
-                groups.append(tuple(_row_to_note(r) for r in rows))
-        return tuple(groups)
+            rows = (await conn.execute(rows_stmt)).all()
+        return group_on_anchor_key(
+            [(_row_to_note(r), r.body) for r in rows], limit=limit,
+        )
 
     async def anchored_before(
         self, *, workspace: str, day: int, limit: int,

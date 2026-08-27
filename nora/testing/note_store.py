@@ -69,6 +69,7 @@ from nora.domain.notes import (
     NoteRevisionProposal,
     NoteSupersedeReason,
     StaleNoteHeadError,
+    group_on_anchor_key,
 )
 from nora.domain.ports import Proposal
 
@@ -286,13 +287,16 @@ class InMemoryNoteStore:
             established_by=established_by,
             instruction_sha256=instruction_sha256, model=model,
         )
-        targets = [
+        # De-duplicated for the reason `SqlNoteStore.merge` states: Postgres
+        # counts each row once, so a repeated id must not inflate the count
+        # this double returns.
+        targets = list(dict.fromkeys(
             n for n in retire
             if n != survivor
             and (t := self.notes.get(n)) is not None
             and t.workspace == workspace
             and t.retired_at is None
-        ]
+        ))
         self.revisions[revision.id] = revision
         self.notes[survivor] = replace(note, head_revision_id=revision.id)
         for target in targets:
@@ -304,26 +308,24 @@ class InMemoryNoteStore:
 
     async def merge_groups(
         self, *, workspace: str, limit: int,
-    ) -> tuple[tuple[Note, ...], ...]:
+    ) -> tuple[tuple[tuple[Note, str], ...], ...]:
         """`SqlNoteStore.merge_groups`. Dateless notes are excluded here too —
         the exclusion is the CONTRACT, not a SQL convenience, so a double that
         included them would be more permissive than the store and the suite
         would compare two different definitions of "same occasion"."""
         if limit <= 0:
             return ()
-        buckets: dict[tuple[int, tuple[str, ...]], list[Note]] = {}
-        for note in await self.standing(workspace=workspace):
-            if note.anchor_date is None:
-                continue
-            buckets.setdefault(
-                (note.anchor_date, tuple(note.anchor_entity_ids)), [],
-            ).append(note)
-        collided = [(k, v) for k, v in buckets.items() if len(v) > 1]
-        # Most-collided first, then by anchor date — the SQL store's
-        # `ORDER BY count() DESC, anchor_date ASC`, written out so the two
-        # agree by construction rather than by coincidence.
-        collided.sort(key=lambda kv: (-len(kv[1]), kv[0][0]))
-        return tuple(tuple(v) for _, v in collided[:limit])
+        # THE SAME FUNCTION the SQL store calls, imported rather than
+        # reimplemented. This is the comparison that decides whether two notes
+        # are merged; a double with its own copy would let the contract suite
+        # compare two definitions of "same occasion" and pass.
+        return group_on_anchor_key(
+            [
+                (n, self.revisions[n.head_revision_id].body)
+                for n in await self.standing(workspace=workspace)
+            ],
+            limit=limit,
+        )
 
     async def anchored_before(
         self, *, workspace: str, day: int, limit: int,

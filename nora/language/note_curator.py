@@ -45,7 +45,7 @@ _VERDICTS = frozenset({"closed", "open", "moot"})
 class _NoteStore(Protocol):
     async def merge_groups(
         self, *, workspace: str, limit: int,
-    ) -> tuple[tuple[Note, ...], ...]: ...
+    ) -> tuple[tuple[tuple[Note, str], ...], ...]: ...
 
     async def anchored_before(
         self, *, workspace: str, day: int, limit: int,
@@ -188,12 +188,14 @@ class NoteCuratorAdaptor:
         )
         self._shown[key] = _Shown(
             note_ids=frozenset(
-                [n.id for g in groups for n in g] + [n.id for n, _ in expired],
+                [n.id for g in groups for n, _ in g]
+                + [n.id for n, _ in expired],
             ),
-            merge_groups=tuple(tuple(n.id for n in g) for g in groups),
+            merge_groups=tuple(tuple(n.id for n, _ in g) for g in groups),
             heads={
                 n.id: n.head_revision_id
-                for n in [x for g in groups for x in g] + [n for n, _ in expired]
+                for n in [x for g in groups for x, _ in g]
+                + [n for n, _ in expired]
             },
         )
         if not groups and not expired:
@@ -232,8 +234,17 @@ class NoteCuratorAdaptor:
           it is refused rather than merged.
         """
         shown = self._shown.get(key, _Shown(frozenset(), (), {}))
-        out: list[object] = []
+        # BOTH shapes. A model answering about a merge group returns a
+        # `merged_body`; a model answering about an expired note returns a
+        # `verdict`. One item may legitimately carry both — the survivor of a
+        # group whose occasion has also passed.
+        out: list[object] = list(self._merged_bodies(key=key, items=items))
         for item in items:
+            if "verdict" not in item:
+                # A merge-only answer is not malformed. Counting it as such
+                # would make `dropped_total{reason="malformed"}` fire on every
+                # correct merge.
+                continue
             note_id = item.get("note_id")
             verdict = item.get("verdict")
             why = item.get("why", "")
@@ -255,6 +266,61 @@ class NoteCuratorAdaptor:
                 continue
             out.append(_Verdict(note_id=note_id, verdict=verdict, why=why))
         return tuple(out)
+
+    def _merged_bodies(
+        self, *, key: str, items: Sequence[Mapping[str, object]]
+    ) -> list[_MergedBody]:
+        """The merge half of `accept`, and it exists because the first version
+        of this module HAD NO WAY TO PRODUCE ONE.
+
+        `_MergedBody` was defined, `commit` checked for it, and nothing ever
+        constructed it — so `SqlNoteStore.merge` was unreachable dead code and
+        two declared metrics had no reachable call site, in the same commit
+        that declared them. A model obeying the objective and returning
+        `{"note_id": survivor, "merged_body": "..."}` has no `verdict`
+        field, so it failed the verdict parse and was dropped as malformed:
+        there was NO INPUT the model could produce that resulted in a merge.
+
+        Split from the verdict parse rather than folded into it because the two
+        shapes have disjoint required fields — the same reason the payload
+        types one layer down are two types and not one with optional fields. A
+        single parser accepting either would have to treat every field as
+        optional and could refuse nothing.
+
+        `not_shown_in_group` is enforced HERE, which the docstring above
+        promised and the first version did not implement: merge eligibility is
+        SQL's decision, so a `merged_body` for a note that is not the survivor
+        of a group THIS RUN selected is refused rather than merged. A model
+        proposing its own grouping is the one thing this design exists to
+        prevent.
+        """
+        shown = self._shown.get(key, _Shown(frozenset(), (), {}))
+        survivors = {g[0] for g in shown.merge_groups}
+        out: list[_MergedBody] = []
+        for item in items:
+            body = item.get("merged_body")
+            if body is None:
+                continue
+            note_id = item.get("note_id")
+            if (
+                not isinstance(note_id, str)
+                or not isinstance(body, str)
+                or not body.strip()
+            ):
+                self._inc(
+                    "nora_note_curator_dropped_total", reason="malformed")
+                log.warning("note curator dropped a malformed merged_body")
+                continue
+            if note_id not in survivors:
+                self._inc(
+                    "nora_note_curator_dropped_total",
+                    reason="not_shown_in_group")
+                log.warning(
+                    "note curator proposed a merge for a group this run did "
+                    "not select; dropped")
+                continue
+            out.append(_MergedBody(note_id=note_id, body=body))
+        return out
 
     # -- commit -------------------------------------------------------------
 
@@ -295,6 +361,7 @@ class NoteCuratorAdaptor:
         shown = self._shown.get(key, _Shown(frozenset(), (), {}))
         provenance = proposals[0] if proposals else None
         retired = 0
+        merged_groups: list[tuple[str, ...]] = []
 
         for group in shown.merge_groups:
             body = merged_bodies.get(group[0])
@@ -325,21 +392,51 @@ class NoteCuratorAdaptor:
                 self._inc("nora_note_curator_total", action="merge_refused")
                 continue
             retired += count
+            merged_groups.append(group)
             self._inc("nora_note_curator_total", action="merge")
 
-        merged_away = {n for g in shown.merge_groups for n in g[1:]}
+        # ONLY the groups that actually merged, and the SURVIVOR is in here
+        # too. Two findings in one line:
+        #
+        #   - computing this from `shown.merge_groups` unconditionally skipped
+        #     retirements for groups whose merge never ran or was REFUSED on a
+        #     lost CAS, so a tick could end with the survivor retired and the
+        #     duplicate still standing — inverted, silently.
+        #   - `g[1:]` protected the duplicates and not the survivor, so a model
+        #     returning a merged body for a group AND `closed` for its survivor
+        #     merged into it and then retired it. The whole occasion leaves the
+        #     index, with the duplicate pointing at a retired row.
+        #
+        # The store's own `test_merge_never_retires_the_survivor_itself` cannot
+        # see that: the curator retires it through a SEPARATE `supersede` call
+        # the store has no way to associate with the merge.
+        untouchable = {n for g in merged_groups for n in g}
         for note_id, verdict in verdicts.items():
-            if verdict.verdict == "open" or note_id in merged_away:
+            if verdict.verdict == "open" or note_id in untouchable:
                 continue
             because = (
                 NoteSupersedeReason.RETIRED_CLOSED
                 if verdict.verdict == "closed"
                 else NoteSupersedeReason.RETIRED_EXPIRED
             )
-            count = await self._notes.supersede(
-                key=key, target=note_id, replaced_by=None, because=because,
-                source=None, now_ms=now_ms,
-            )
+            # GUARDED PER NOTE. Retirements are independent of one another in
+            # a way merge-and-retire is not, so one failing is N-of-M retired
+            # rather than a half-applied edit — but an exception escaping here
+            # would discard `retired`, INCLUDING a merge that already
+            # committed, and the runtime would report `unavailable` with
+            # written=0 over notes that have left the index. That is `ok`
+            # wearing `unavailable`'s clothes, which is the reporting failure
+            # this tier refuses one layer down.
+            try:
+                count = await self._notes.supersede(
+                    key=key, target=note_id, replaced_by=None,
+                    because=because, source=None, now_ms=now_ms,
+                )
+            except Exception:
+                log.exception("note retirement failed; continuing")
+                self._inc(
+                    "nora_note_curator_total", action="retire_failed")
+                continue
             retired += count
             if count:
                 self._inc("nora_note_curator_total", action=verdict.verdict)
@@ -347,7 +444,8 @@ class NoteCuratorAdaptor:
 
 
 def _render(
-    groups: Sequence[Sequence[Note]], expired: Sequence[tuple[Note, str]],
+    groups: Sequence[Sequence[tuple[Note, str]]],
+    expired: Sequence[tuple[Note, str]],
 ) -> str:
     """What the model is shown. Titles and bodies, no ids it did not need.
 
@@ -363,14 +461,19 @@ def _render(
     """
     parts: list[str] = []
     for group in groups:
-        parts.append(
-            f"<merge_group survivor=\"{group[0].id}\">"
-        )
-        for note in group:
+        parts.append(f"<merge_group survivor=\"{group[0][0].id}\">")
+        for note, body in group:
+            # THE BODY, which this omitted until 2026-08-28 while the docstring
+            # twelve lines above claimed otherwise. The model is asked to write
+            # one body that keeps everything every note in the group knew — and
+            # was being shown titles and closing conditions only. A merged body
+            # synthesised from two titles, written over a survivor that had
+            # accumulated real detail, is content loss produced BY the merge.
             parts.append(
                 f"  <note id=\"{note.id}\" title=\"{note.title}\">\n"
                 f"    uncertainty: {note.uncertainty}\n"
                 f"    closing condition: {note.closing_condition}\n"
+                f"    body: {body}\n"
                 f"  </note>"
             )
         parts.append("</merge_group>")

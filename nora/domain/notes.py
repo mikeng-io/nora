@@ -37,6 +37,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 #: The injected index carries one line per note on EVERY tag (§5.1), so these
@@ -213,6 +214,39 @@ class NoteRevision:
                 "distinguishes a tag-path revision from the revisitor's own, "
                 "and cannot without it"
             )
+
+
+def group_on_anchor_key(
+    notes: Sequence[tuple[Note, str]], *, limit: int,
+) -> tuple[tuple[tuple[Note, str], ...], ...]:
+    """The grouping itself, shared by `SqlNoteStore` and its in-memory double.
+
+    **In the DOMAIN, and imported by both**, rather than the same rule written
+    twice. This is the comparison that decides whether two notes get merged, so
+    a double that grouped differently from the store would make the contract
+    suite compare two definitions of "same occasion" and pass.
+
+    It lives here rather than in either store because `lint-imports` refused
+    the alternative and was right to: `nora.testing` and `nora.infra` are
+    siblings, so a helper shared by both belongs in the layer beneath them —
+    and "which notes are the same occasion" is a rule about notes, not about
+    Postgres. `anchor_key` is three functions up for the same reason.
+
+    Ordering matches what both stores promise elsewhere: most-collided first,
+    then by anchor date, and within a group by `(created_at, id)` — which is
+    what makes the SURVIVOR (the first entry) stable across ticks. A retried
+    merge that picked a different survivor would produce two merged notes.
+    """
+    if limit <= 0:
+        return ()
+    buckets: dict[tuple[int | None, tuple[str, ...]], list[tuple[Note, str]]] = {}
+    for note, body in notes:
+        if note.anchor_date is None:
+            continue
+        buckets.setdefault(note.anchor_key, []).append((note, body))
+    collided = [(k, v) for k, v in buckets.items() if len(v) > 1]
+    collided.sort(key=lambda kv: (-len(kv[1]), kv[0][0] or 0))
+    return tuple(tuple(v) for _, v in collided[:limit])
 
 
 @dataclass(frozen=True, slots=True)

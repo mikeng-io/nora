@@ -165,3 +165,134 @@ async def test_nothing_is_read_and_nothing_published_when_there_is_no_work():
 
     assert ("nora_note_curator_bodies_read", (("workspace", WS),)) \
         not in metrics.snapshot()
+
+
+# --- the merge half, which was UNREACHABLE until 2026-08-28 ---------------
+#
+# `_MergedBody` was defined, `commit` checked for it, and nothing constructed
+# it. Every test below fails against that version — which is the point: the
+# suite was green over a merge verb that could not run, and two declared
+# metrics with no reachable call site.
+
+
+async def _merge_round(store, metrics, items, today=TODAY):
+    curator = _curator(store, metrics, today)
+    rendered = await curator.inputs(key=WS, batch=())
+    kept = await curator.accept(key=WS, items=items)
+    written = await curator.commit(
+        key=WS,
+        proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ),
+        now_ms=NOW + 5,
+    )
+    return rendered, written
+
+
+async def test_a_merge_actually_merges():
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20261011,
+                    body="Ada can't do Fridays; Sai Kung ruled out.")
+    await _seed(store, title="Grant's wedding", anchor=20261011,
+                body="Ben found a place in Sheung Wan.")
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, (
+        {"note_id": a.id, "merged_body":
+            "Ada can't do Fridays; Sai Kung ruled out. Ben found Sheung Wan."},
+    ))
+
+    assert written == 1
+    standing = await store.standing(workspace=WS)
+    assert [n.id for n in standing] == [a.id], "one note survives"
+    head = await store.read(workspace=WS, note_id=a.id)
+    assert head is not None
+    assert "Sai Kung ruled out" in head[1].body
+    assert "Sheung Wan" in head[1].body
+    assert metrics.get("nora_note_curator_total", action="merge") == 1
+
+
+async def test_the_model_is_shown_the_bodies_it_must_preserve():
+    """The merge asks for one body that keeps everything every note knew. Until
+    2026-08-28 the group branch rendered titles and closing conditions and NOT
+    bodies, so the model was asked to preserve content it had never seen — and
+    the first live merge would have overwritten the survivor's accumulated
+    detail with text synthesised from two titles."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Grant wedding", anchor=20261011,
+                body="Ada can't do Fridays.")
+    await _seed(store, title="Grant's wedding", anchor=20261011,
+                body="Ben found Sheung Wan.")
+
+    rendered = await _curator(store).inputs(key=WS, batch=())
+
+    assert "Ada can't do Fridays." in rendered
+    assert "Ben found Sheung Wan." in rendered
+
+
+async def test_a_merged_body_for_a_group_this_run_did_not_select_is_refused():
+    """Merge eligibility is SQL's decision. A model proposing its own grouping
+    is the one thing this design exists to prevent, and `not_shown_in_group`
+    was documented and unimplemented until 2026-08-28."""
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20261011)
+    await _seed(store, title="Grant's wedding", anchor=20261011)
+    # A note that is real and shown, but is not any group's survivor.
+    lone = await _seed(store, title="Dinner", anchor=20260909)
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, (
+        {"note_id": lone.id, "merged_body": "a merge nobody asked for"},
+    ))
+
+    assert written == 0
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="not_shown_in_group") == 1
+    assert len(await store.standing(workspace=WS)) == 3
+    assert a.id in {n.id for n in await store.standing(workspace=WS)}
+
+
+async def test_the_survivor_of_a_merge_is_never_retired_in_the_same_tick():
+    """A model returning a merged body for a group AND `closed` for its
+    survivor used to merge into it and then retire it — the whole occasion
+    leaving the index, with the duplicate pointing at a retired row.
+
+    The store's own guard cannot see this: the curator retires through a
+    SEPARATE `supersede` the store has no way to associate with the merge."""
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20260101)
+    b = await _seed(store, title="Grant's wedding", anchor=20260101)
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, (
+        {"note_id": a.id, "merged_body": "everything both knew"},
+        {"note_id": a.id, "verdict": "closed", "why": "they got married"},
+        {"note_id": b.id, "verdict": "closed", "why": "duplicate"},
+    ))
+
+    standing = await store.standing(workspace=WS)
+    assert [n.id for n in standing] == [a.id], (
+        "the survivor stays standing; the occasion does not leave the index"
+    )
+    assert written == 1
+
+
+async def test_a_merge_that_never_ran_does_not_suppress_its_retirements():
+    """`merged_away` was computed from the SELECTED groups rather than the
+    merged ones, so a group whose merge never ran had its retirements skipped
+    too — a tick could end with the survivor retired and the duplicate still
+    standing, inverted, silently."""
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20260101)
+    b = await _seed(store, title="Grant's wedding", anchor=20260101)
+    metrics = Metrics()
+
+    # Verdicts only — no merged_body, so no merge runs for this group.
+    _, written = await _merge_round(store, metrics, (
+        {"note_id": a.id, "verdict": "moot", "why": "the day passed"},
+        {"note_id": b.id, "verdict": "moot", "why": "the day passed"},
+    ))
+
+    assert written == 2, "both retire; neither is suppressed by an absent merge"
+    assert await store.standing(workspace=WS) == ()
