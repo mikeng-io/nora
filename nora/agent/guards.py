@@ -881,6 +881,16 @@ class ReplyGuard(HookProvider):
         if tool_name == "note_update":
             title = (tool_input or {}).get("title") or ""
             if note_handle(title) not in self._notes_read:
+                # BESIDE `_veto`'s own `nora_guard_vetoes_total{rule="R-55"}`,
+                # not instead of it, and the two are not redundant. That series
+                # answers «which rule fired» across every guard; this one
+                # answers «why did a note_update not land», whose other two
+                # reasons are in the TOOL and never reach a veto at all. A
+                # single series carrying both questions could answer neither
+                # without the reader knowing which rules happen to be note
+                # rules.
+                self._metrics.inc(
+                    "nora_note_update_refused_total", reason="not_read")
                 return self._veto(
                     "R-55",
                     f"You have not read {title!r} this turn. Call note_read on it "

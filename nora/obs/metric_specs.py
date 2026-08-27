@@ -1121,6 +1121,73 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(nothing was written and the prior position stands).",
         ("stage",),
     ),
+    # ---- the note tier (2026-08-21 note-tier design §11) -------------------
+    #
+    # THREE SERIES, NOT THE TEN THE SPEC NAMES, and the count is the decision.
+    # Four of the ten already have a home: `note_read`/`note_search`/
+    # `note_create`/`note_update` all reach `_record` in `nora.agent.tools`, so
+    # `nora_tool_calls_total{tool,status}` already carries reads-by-result,
+    # searches-by-result and writes-by-kind (the tool name IS the kind). A
+    # second series over those same calls is the double-count `_record_room`
+    # and `_record_media` both refuse in their own docstrings. The tier's named
+    # diagnostic survives the omission: a climbing `nora_note_candidates_total`
+    # against a flat `nora_tool_calls_total{tool=~"note_create|note_update",
+    # status="ok"}` is «she recognises and does not act», in two series that
+    # both exist.
+    #
+    # The other three — `curator_total`, `curator_bodies_read`,
+    # `revisit_total` — plus `strikes_total` measure adaptors that are UNBUILT.
+    # `note.strikes` is a column with a CHECK constraint and no writer; the
+    # strike is the revisitor's wake pass (spec §9.6). Declaring them here
+    # would ship a name whose call site does not exist, which is
+    # `nora_fact_entity_unresolved_total` again — instance 7 in
+    # `design/dreamer-agent-loop/02-instrument-blindness.md`'s own tally, and
+    # the exact defect this block was written to close. They ship with their
+    # adaptor.
+    #
+    # `trigger` carries one value today (`miss`, the negative cache at
+    # `tools.py::note_search`). The label is here anyway: a second trigger is
+    # what §4.5 anticipates, and names are append-only while labels are not,
+    # so the axis has to be right the first time.
+    _CounterSpec(
+        "nora_note_candidates_total",
+        "Note candidates recorded by what raised them. trigger=\"miss\": a "
+        "note_search that matched nothing, written to the negative cache so "
+        "the SECOND ask on the same ground is evidence rather than a guess.",
+        ("trigger",),
+    ),
+    # A DELIBERATE second series over calls already counted, on
+    # `_record_created`'s precedent (`nora.agent.tools`) rather than against
+    # `_record_room`'s rule — and the difference is that the REASON is the
+    # whole reading, and today it survives only in a log line.
+    #
+    # THREE reasons, and they are two different diagnoses wearing one verb.
+    # `not_read` is a MODEL-DISCIPLINE reading — it tried to rewrite a body it
+    # had not seen, and a healthy rate means the latch is doing its job.
+    # `title_moved` and `stale_head` are CONTENTION readings — the note it
+    # reached was not the note it read, or the head moved under the call. A
+    # rising contention rate on a tier with no curator running is a defect
+    # report; the same rate once the curator ships is the cost of having one.
+    #
+    # No existing series can separate them, and today they are not even in the
+    # same one: the guard's `not_read` is `nora_guard_vetoes_total{rule=
+    # "R-55"}`, while `title_moved` and `stale_head` land in
+    # `nora_tool_calls_total{tool="note_update"}` under `refused` and
+    # `unavailable`, with the reason surviving only in a log line.
+    #
+    # `not_read` and `title_moved` are kept apart rather than folded, though
+    # both mean «no head recorded», because the tool-layer backstop is keyed on
+    # the resolved note ID and the guard on the title (see `note_update`'s own
+    # comment). The one case they differ in is the one worth counting: a title
+    # that resolved to a DIFFERENT note between the read and the write.
+    _CounterSpec(
+        "nora_note_update_refused_total",
+        "note_update calls refused, by reason: not_read (the R-55 latch — the "
+        "model had not read a note by that title this turn), title_moved (the "
+        "title resolved to a different note than the one read), or stale_head "
+        "(the compare-and-set lost; the note moved under the call).",
+        ("reason",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -1237,6 +1304,40 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "nora_heartbeat_last_tick_age_seconds",
         "Seconds since the heartbeat's last completed tick, computed at scrape "
         "time. Climbing past a few ticks means the loop has stopped.",
+    ),
+    # `config.toml`'s [notes] section calls this one "the tell" by name: with
+    # no curator, the notebook only grows, and this is the series that says
+    # whether it grows faster than it earns.
+    #
+    # LABELLED BY WORKSPACE, which the spec's own name is not, and the label is
+    # load-bearing rather than decoration. A note index is keyed on the
+    # WORKSPACE (§3/DEC-105) and this deployment has more than one — `friends`
+    # and `ridgeline` are separate notebooks that policy says are never paired.
+    # An unlabelled gauge is written by whichever room tagged last, so two
+    # notebooks would overwrite each other's reading and the exported number
+    # would mean «the size of whichever notebook was consulted most recently»,
+    # which is not a quantity anybody can alert on. Same argument as
+    # `nora_dream_evidence_lost_total{scope}` above: a specific unit's reading
+    # has to stay findable rather than merging into one process-wide number.
+    #
+    # Published from `TranscriptInjection._notes` on the read that already
+    # happens, NOT from a new `gather` leaf — `assemble`'s nested gather has
+    # distinctly-typed overloads only to six positional awaitables and both
+    # live branches sit at five, so a seventh joins every return type down to
+    # `object` under mypy.
+    #
+    # ABSENT rather than zero when the tier is off, and that distinction is the
+    # point: `_notes` returns `()` before this line when no store is wired, so
+    # a missing series means «not wired» while `0` means «wired, and this
+    # workspace has written nothing». Those are the two states the tier has
+    # been unable to tell apart since it was switched on, and publishing `0`
+    # for both would preserve exactly the blindness this closes.
+    _GaugeSpec(
+        "nora_note_index_entries",
+        "Standing notes rendered into <notes> for a workspace on the last tag "
+        "it handled. Absent when [notes] is off; 0 means the notebook is "
+        "wired and empty.",
+        ("workspace",),
     ),
 )
 

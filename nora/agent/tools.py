@@ -4964,6 +4964,14 @@ def build_tool_specs(
                 )
             except Exception:
                 log.exception("note_search could not record the miss")
+            else:
+                # INSIDE the `else`, so this counts a miss that was actually
+                # WRITTEN. Counting before the call would make the metric agree
+                # with itself while the cache stayed empty — and a candidate
+                # series that cannot be reconciled against `note_candidate`'s
+                # row count is the same self-attesting instrument this whole
+                # block exists to stop shipping.
+                metrics.inc("nora_note_candidates_total", trigger="miss")
             _record(metrics, "note_search", "nothing_found")
             return {
                 "status": "nothing_found",
@@ -5128,6 +5136,12 @@ def build_tool_specs(
             # seen; there is no head recorded for the note it actually reached,
             # so this refuses.
             _record(metrics, "note_update", "refused", reason="not_read")
+            # `title_moved`, not `not_read`: reaching this line means the guard
+            # ALREADY passed the call on a title it had seen read, so what the
+            # backstop caught is the title resolving to a different note. The
+            # tool-facing `reason` above stays `not_read` because that is the
+            # remedy the model is given; the metric records what happened.
+            metrics.inc("nora_note_update_refused_total", reason="title_moved")
             return {
                 "status": "refused",
                 "note": "You haven't read that note this turn. Call note_read on "
@@ -5147,6 +5161,7 @@ def build_tool_specs(
             # write against the value that just lost.
             note_heads.pop(note.id, None)
             _record(metrics, "note_update", "unavailable", reason="stale_head")
+            metrics.inc("nora_note_update_refused_total", reason="stale_head")
             return {
                 "status": "unavailable",
                 "note": "This note changed under you — read it again, then redo "

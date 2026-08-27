@@ -241,6 +241,40 @@ async def test_a_search_that_finds_something_records_no_miss():
     assert store.candidates == {}
 
 
+async def test_a_recorded_miss_is_counted_as_a_candidate():
+    """`nora_note_candidates_total{trigger="miss"}` is one half of the tier's
+    own named diagnostic — a climbing candidate count against a flat write
+    count is «she recognises and does not act», and for the tier's first eight
+    days neither half existed."""
+    store = InMemoryNoteStore()
+    metrics = Metrics()
+    await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    tools = _tools(notes=store, metrics=metrics)
+
+    await tools["note_search"](query="酒店")
+    await tools["note_search"](query="酒店")
+
+    # Reconciles against the STORE rather than against a literal: the count and
+    # the row it claims to describe have to agree, or the metric is attesting
+    # to itself.
+    assert metrics.get("nora_note_candidates_total", trigger="miss") == 2
+    assert store.candidates[(WORKSPACE, "酒店")].occurrence_count == 2
+
+
+async def test_a_search_that_hits_counts_no_candidate():
+    """The negative half, and it is not decorative: a counter incremented
+    before the `search` rather than after the `record_miss` would climb on
+    every search and read as a room full of gaps."""
+    store = InMemoryNoteStore()
+    metrics = Metrics()
+    await _seed(store, title="Dinner, 9 Sept", body="Ada suggested a hotel buffet.")
+    tools = _tools(notes=store, metrics=metrics)
+
+    await tools["note_search"](query="hotel")
+
+    assert metrics.get("nora_note_candidates_total", trigger="miss") == 0
+
+
 # ── note_create (§6.5) ───────────────────────────────────────────────────────
 
 async def test_note_create_writes_the_note_and_its_first_revision():
@@ -394,6 +428,70 @@ async def test_a_read_that_found_nothing_licenses_no_revision_at_the_tool_layer(
     assert out["status"] == "refused"
 
 
+# ── nora_note_update_refused_total: three reasons, two diagnoses ────────────
+#
+# `not_read` is a reading about the MODEL — it tried to rewrite a body it had
+# not seen. `title_moved` and `stale_head` are readings about CONTENTION — the
+# note it reached was not the note it read, or the head moved under the call.
+# The three used to live in two unrelated series (`nora_guard_vetoes_total`
+# and `nora_tool_calls_total`) with the reason surviving only in a log line,
+# so no query could separate «the latch is working» from «two writers are
+# fighting».
+
+
+async def test_a_stale_head_is_counted_as_a_refusal_with_its_own_reason():
+    store = InMemoryNoteStore()
+    metrics = Metrics()
+    note = await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    tools = _tools(notes=store, metrics=metrics)
+    await tools["note_read"](title="Dinner, 9 Sept")
+    await store.append_revision(
+        workspace=WORKSPACE, note_id=note.id, body="Ada booked it.",
+        parent_revision_id=note.head_revision_id, established_by="curator",
+        now_ms=NOW + 1,
+    )
+
+    out = await tools["note_update"](title="Dinner, 9 Sept", body="Nobody has booked.")
+
+    assert out["status"] == "unavailable"
+    assert metrics.get("nora_note_update_refused_total", reason="stale_head") == 1
+    # Not filed under either of the other two: a CAS loss is a curator racing
+    # the tag path, and reading it as a model that skipped its read would send
+    # somebody to fix the wrong thing.
+    assert metrics.get("nora_note_update_refused_total", reason="not_read") == 0
+    assert metrics.get("nora_note_update_refused_total", reason="title_moved") == 0
+
+
+async def test_a_title_that_resolved_to_another_note_is_counted_as_title_moved():
+    """The tool-layer backstop, which the guard cannot see: the guard's latch is
+    keyed on the TITLE and this one on the resolved note ID, so what reaches
+    here is a title that now answers to a different note than the one read."""
+    store = InMemoryNoteStore()
+    metrics = Metrics()
+    await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    tools = _tools(notes=store, metrics=metrics)
+    assert (await tools["note_read"](title="Grant's wedding"))["status"] == "nothing_found"
+
+    out = await tools["note_update"](title="Dinner, 9 Sept", body="Ada says 8pm.")
+
+    assert out["status"] == "refused"
+    assert metrics.get("nora_note_update_refused_total", reason="title_moved") == 1
+    assert metrics.get("nora_note_update_refused_total", reason="stale_head") == 0
+
+
+async def test_an_update_that_lands_counts_no_refusal():
+    store = InMemoryNoteStore()
+    metrics = Metrics()
+    await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
+    tools = _tools(notes=store, metrics=metrics)
+    await tools["note_read"](title="Dinner, 9 Sept")
+
+    out = await tools["note_update"](title="Dinner, 9 Sept", body="Ada says 8pm.")
+
+    assert out["status"] == "ok"
+    assert metrics.get("nora_note_update_refused_total") == 0
+
+
 # ── R-55: the latch, measured through the veto ───────────────────────────────
 #
 # Every test below asserts through `evaluate`'s refusal rather than by reading
@@ -405,9 +503,9 @@ BUDGETS = ToolRegistry().budgets()
 TERMINAL = ToolRegistry().terminal_tools()
 
 
-def _guard() -> ReplyGuard:
+def _guard(metrics: Metrics | None = None) -> ReplyGuard:
     return ReplyGuard(conversation_id=GROUP, budgets=BUDGETS, terminal=TERMINAL,
-                      metrics=Metrics())
+                      metrics=metrics or Metrics())
 
 
 class _AfterEvent:
@@ -441,6 +539,30 @@ def test_r55_a_revision_is_allowed_once_the_read_succeeded():
     guard = _guard()
     _read_happened(guard, "Dinner, 9 Sept")
     assert guard.evaluate("note_update", {"title": "Dinner, 9 Sept", "body": "x"}) is None
+
+
+def test_r55_the_veto_is_counted_under_its_own_reason_as_well_as_its_rule():
+    """Two series, two questions. `nora_guard_vetoes_total{rule}` answers «which
+    rule fired» across every guard; `nora_note_update_refused_total{reason}`
+    answers «why did a note_update not land», and its other two reasons live in
+    the tool and never reach a veto at all."""
+    metrics = Metrics()
+    guard = _guard(metrics)
+
+    assert guard.evaluate("note_update", {"title": "Dinner, 9 Sept", "body": "x"})
+
+    assert metrics.get("nora_note_update_refused_total", reason="not_read") == 1
+    assert metrics.get("nora_guard_vetoes_total", rule="R-55") == 1
+
+
+def test_r55_an_allowed_revision_counts_no_refusal():
+    metrics = Metrics()
+    guard = _guard(metrics)
+    _read_happened(guard, "Dinner, 9 Sept")
+
+    assert guard.evaluate("note_update", {"title": "Dinner, 9 Sept", "body": "x"}) is None
+
+    assert metrics.get("nora_note_update_refused_total") == 0
 
 
 def test_r55_reading_one_note_does_not_license_revising_another():
