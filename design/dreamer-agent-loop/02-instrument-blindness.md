@@ -1,6 +1,6 @@
 ---
 type: analysis
-title: "Instrument Blindness — Six Layers That Cannot Measure Themselves"
+title: "Instrument Blindness — The Layers That Cannot Measure Themselves"
 description: "Independently, at six layers — one of them in another tier entirely — an instrument cannot observe the thing it exists to observe. This is one missing discipline, not six bugs, and it is why these failures stayed invisible for weeks."
 tags: [nora, dreamer, observability, metrics, evidence, r-27]
 timestamp: '2026-08-22'
@@ -8,7 +8,7 @@ edges:
   - {dst: 01-live-state, rel: motivated_by, provenance: asserted}
 ---
 
-# Instrument Blindness — Six Layers That Cannot Measure Themselves
+# Instrument Blindness — The Layers That Cannot Measure Themselves
 
 CLAUDE.md carries this rule:
 
@@ -195,6 +195,68 @@ a working tracing setup. **A partially-instrumented system reads exactly like an
 instrumented one from the outside**, which is Layer 5's argument applied to the
 tracer itself.
 
+## The silent-match family — five instances in one day
+
+Every layer above is an instrument that cannot see the thing it is credited
+with. **This section is one layer down**: the instruments we use to FIND those
+layers have their own failure mode, and it produced five instances between two
+sessions on 2026-08-27.
+
+**The shape, stated once:**
+
+> **A matcher that fails to match, and returns something that reads as success.**
+
+Not an error. Not an empty result that looks empty. A *positive-looking* answer
+— a passing test, a clean merge, a zero, a `0` — produced by machinery that
+never engaged with the thing it was pointed at. Every one of these was found by
+accident while looking for something else, which is the property that makes them
+worth naming as a family rather than fixing one at a time.
+
+| # | the matcher | what it returned | why it read as success |
+|---|---|---|---|
+| 1 | `LIKE '%note_%'` over `tag_trace` | 7 rows | `_` is a LIKE wildcard, so it matched `note` + any character. Seven *hits* is far more convincing than zero. The precise regex returns 0 |
+| 2 | `metrics.get(name) == 0` in a new test | PASS | `get` sums matching series and answers `0.0` when there are none, so it cannot distinguish «published zero» from «never published». The test passed against reverted code |
+| 3 | `str.replace(old, new)` anchored on `## 7.` | no exception | the file's next section was `## 6.`. The replace silently no-opped, the section was never written, and a RESOLVED banner was published pointing at it |
+| 4 | `version: 13` beside a changed body | green gate, clean merge | `sha256` is computed over the body and moved on its own, so the machine-checked half stayed correct while the human-readable half rotted |
+| 5 | a per-test `trace.set_tracer_provider` | passing fixture | it is **one-shot per process**: every later test silently reads the FIRST exporter, and the un-torn-down global then failed two timing tests elsewhere that passed in isolation |
+
+**Three of these are matchers and two are globals, and that is not a second
+family.** #1–#3 fail to match; #4 and #5 fail to *reset*. Both hand back a value
+indistinguishable from the value a correct run produces, and in both the
+verification step is the same one: **make it fail on purpose.** A test that has
+never been seen red is a claim, not a measurement — which is the bundle's own
+no-self-attestation rule applied to the instrument rather than to the work.
+
+**#4 deserves its own sentence, because it is the tightest instance of the
+unguarded-copy class this bundle has recorded** ([21](21-substrate-contract.md)
+§6). Not two files drifting apart over weeks — one field drifting from the body
+three lines below it, in a document whose `change_policy` is `agent-may-edit`,
+so «nobody is watching the version» is the *common* case rather than the
+exception. And the reason it hid is the sharp part: **an invariant that
+self-maintains can mask a neighbouring one that does not.** `sha256` needs no
+discipline, so it stayed right; `version` needs discipline, so it went wrong;
+and the two sit in the same file describing the same document. It had a real
+victim — one live turn, 2026-08-27T14:23:22Z, served the changed body and logged
+`conduct: 13`, the same integer as every turn before the change existed.
+
+**What each one cost, and what closed it:**
+
+| # | closed by |
+|---|---|
+| 1 | `autoescape=True` — which `SqlNoteStore.search` already passes, one layer down, for exactly this reason. The lesson was in the codebase before it was learned again |
+| 2 | assert membership in `snapshot()` BEFORE asserting the value. Presence and magnitude are two questions |
+| 3 | assert `s.count(old) == 1` before every substitution. A `replace` whose count you never check is a write-side matcher with no result to inspect |
+| 4 | `tests/test_doctrine_version_parity.py` — a pin, not a rule. No test can know which version is *correct*; a test can refuse to let the body move while the version stands still |
+| 5 | one process-wide provider set once, with the exporter swapped per test — the thing that is genuinely global is configured globally |
+
+**The generalisation, and it is the point of writing this down:** every fix in
+the right column is *cheaper than the search that found the bug*, and none of
+them would have been prompted by the failure, because there was no failure.
+These are found by deliberately breaking the thing you just built and checking
+it notices. **That is the same discipline as [09-measurement.md](09-measurement.md)
+§3 one level up — an instrument you have never seen report a negative is not an
+instrument yet.**
+
 ## What follows from this
 
 **Every fix in this bundle ships its own measurement, or it is not done**
@@ -218,6 +280,21 @@ to state it as a repo-wide discipline rather than a Dreamer fix: a tier written
 by a different session, at a different time, reproduced it exactly.
 
 ## Status / Checkpoint
+
+2026-08-27 — **the title lost its count.** It read "Six Layers" while the file
+held seven, because Layer 7 was appended and the title was not — a stale ordinal
+in the one line nobody edits. Fixed by removing the number rather than
+correcting it to seven: a count in a title is a copy of something the document
+already states, and this node has now recorded that class twice in its own
+checkpoint while carrying an instance of it in its own heading.
+
+2026-08-27 — **the silent-match family added**, five instances in one day across
+two sessions. It sits one level below the layers: the layers are instruments
+that cannot see their subject, this is the machinery we use to find them
+returning a positive-looking answer without engaging. Recorded because all five
+were found by accident, and because each fix is cheaper than the search that
+found it.
+
 
 2026-08-27 — **Layer 7 added: Nora emits ZERO spans.** All tracing comes from
 Strands' agent-loop instrumentation, so the trace covers the model call and
