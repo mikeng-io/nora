@@ -38,15 +38,32 @@ def test_unknown_key_is_a_startup_failure(toml_path):
         load(toml_path)
 
 
+def _trigger_line(toml_path) -> str:
+    """The `text = "..."` line as the config under test ACTUALLY spells it.
+
+    Read, never hardcoded. These tests do string surgery on the real config to
+    build malformed variants, so a literal trigger couples them to a value the
+    operator owns: when the trigger changed from `nora.000` to `nora` on
+    2026-08-26 every `str.replace` below silently became a no-op, the "malformed"
+    config stayed valid, and the startup-failure tests failed for a reason that
+    had nothing to do with what they measure. A no-op replace is the dangerous
+    half — it leaves a test asserting against an input it never actually built.
+    """
+    for line in toml_path.read_text().splitlines():
+        if line.startswith("text = "):
+            return line
+    raise AssertionError("no `text = ` trigger line in the config under test")
+
+
 def test_unknown_nested_key_is_a_startup_failure(toml_path):
-    toml_path.write_text(toml_path.read_text().replace(
-        'text = "nora.000"', 'text = "nora.000"\ntriger = "oops"'))
+    line = _trigger_line(toml_path)
+    toml_path.write_text(toml_path.read_text().replace(line, line + '\ntriger = "oops"'))
     with pytest.raises(ConfigError, match="triger"):
         load(toml_path)
 
 
 def test_missing_required_key_is_a_startup_failure(toml_path):
-    toml_path.write_text(toml_path.read_text().replace('text = "nora.000"\n', ""))
+    toml_path.write_text(toml_path.read_text().replace(_trigger_line(toml_path) + "\n", ""))
     with pytest.raises(ConfigError, match="text"):
         load(toml_path)
 
@@ -121,7 +138,16 @@ def test_trigger_enabled_defaults_to_true_when_absent_from_the_toml(toml_path):
     the silent behaviour change, not defaulting it on (unlike `[speech]`/
     `[weather]`'s INERT-by-default shape, where the capability never existed
     before)."""
-    text = toml_path.read_text().replace("enabled = true\ntext = \"nora.000\"", 'text = "nora.000"')
+    # Drop the key from ITS OWN SECTION rather than by adjacency to another line.
+    # An earlier version matched "enabled = true\ntext = ...", which assumed the two
+    # sat next to each other; a comment was added between them and the replace
+    # silently became a no-op, so the test loaded a config that still HAD `enabled`
+    # and proved nothing about the default. Section-scoped surgery cannot rot that way.
+    head, rest = toml_path.read_text().split("[engagement.trigger]", 1)
+    section, tail = rest.split("[store]", 1)
+    stripped = "\n".join(ln for ln in section.splitlines()
+                         if not ln.strip().startswith("enabled"))
+    text = f"{head}[engagement.trigger]{stripped}\n[store]{tail}"
     assert "enabled" not in text.split("[engagement.trigger]")[1].split("[store]")[0]
     toml_path.write_text(text)
 
@@ -173,7 +199,11 @@ def test_config_uses_the_target_shape(toml_path):
     # engagement owns the trigger; policy is declared even though only one exists
     assert cfg.engagement.policy == "trigger_text"
     assert cfg.engagement.trigger.enabled is True
-    assert cfg.engagement.trigger.text == "nora.000"
+    # The trigger STRING is the operator's, not this test's — pinning it here is
+    # what kept the suite red from 2026-08-26, when `nora.000` was replaced by
+    # `nora` and this assertion started measuring the operator's choice rather
+    # than the config shape. Assert the shape.
+    assert cfg.engagement.trigger.text and not cfg.engagement.trigger.text.isspace()
     assert cfg.engagement.trigger.min_interval_seconds == 5
     # obs groups the three signals
     assert cfg.obs.metrics.port == 9100
@@ -183,7 +213,7 @@ def test_config_uses_the_target_shape(toml_path):
     # identity_file replaces persons_file
     assert cfg.identity_file.name == "identity.toml"
     # values dropped from the deleted test_loads_the_example_config, restored here
-    assert cfg.llm.limits.total_tokens == 128000
+    assert cfg.llm.limits.total_tokens == 256000
     assert cfg.llm.limits.output_tokens == 12000
     assert cfg.doctrine.strict is True
     assert cfg.doctrine.reload == "mtime"
@@ -663,7 +693,7 @@ def _llm_config(**kw) -> LLMConfig:
     return LLMConfig(
         base_url="http://x/v1", api_key_env="K", model="m", max_tokens=2000,
         temperature=0.7, timeout_seconds=120.0,
-        limits=LimitsConfig(turns=20, total_tokens=128000, output_tokens=12000),
+        limits=LimitsConfig(turns=20, total_tokens=256000, output_tokens=12000),
         **kw,
     )
 
