@@ -1949,16 +1949,36 @@ class TurnVerdictStore(Protocol):
         """One turn's verdict, or `None`."""
         ...
 
-    async def latest(self, *, conversation_id: str) -> TurnVerdict | None:
-        """The most recent verdict in this conversation, or `None`.
+    async def latest_ungrounded(
+        self, *, conversation_id: str
+    ) -> TurnVerdict | None:
+        """The newest UNGROUNDED verdict in this conversation, or `None`.
 
-        The read S2's trigger needs, and it is a DIFFERENT question from
-        `read`: the trigger asks "how did the LAST turn here go", not "how did
-        this turn go". Keyed on `conversation_id` alone because `turn_verdict`
-        has no platform column — a `tag_id` is already globally unique, so the
-        row needs no second axis to be found by.
+        The read S2's trigger needs, and a DIFFERENT question from `read`: the
+        trigger asks "is there an ungrounded verdict this position has not been
+        re-derived from", not "how did this turn go". Keyed on
+        `conversation_id` alone because `turn_verdict` has no platform column —
+        a `tag_id` is already globally unique, so the row needs no second axis.
 
-        `None` when the conversation has no verdict yet, which is the ordinary
-        state before the first fold and is not a reason to re-derive.
+        **Ungrounded-only, and a `latest` of EITHER kind is deliberately NOT on
+        this port** — this replaced one rather than joining it. That read
+        answers a question which coincides with the right one most of the time,
+        and the gap is the ORDINARY shape of a successful turn: an ungrounded
+        verdict goes unconsumed for a turn (the trigger declines because the
+        read failed — R-27's «I could not check»), that turn's own fold
+        succeeds and saves a GROUNDED verdict, and from then on the newest
+        verdict is grounded and the older ungrounded one is buried. Never acted
+        on, and the by-trigger counter reads zero — which §6 interprets as the
+        trigger having degraded into a clock. Measured over three turns before
+        this method existed.
+
+        So the wrong read is made UNREPRESENTABLE rather than documented — the
+        same move this port already makes by having no `write`. A rule
+        expressed as a type cannot be forgotten by either side; the same rule
+        in a docstring is remembered until the night someone is tired (cold
+        review, 2026-08-28).
+
+        `None` when nothing here has been judged ungrounded, which is the
+        ordinary state and is not a reason to re-derive.
         """
         ...

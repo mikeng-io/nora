@@ -111,6 +111,18 @@ tried as the remedy and **both were wrong, in opposite directions**:
   fold revises anyway and advances `updated_at` past the verdict, and the
   comparison is false from then on. The verdict is not deferred, it is **gone**.
 
+**The READ is ungrounded-only too, and the watermark alone did not close the
+drop.** `TurnVerdictStore.latest_ungrounded` REPLACED a `latest` of either kind
+rather than joining it. That read answers a question coinciding with the right
+one until a turn goes by without consuming an ungrounded verdict — and then a
+later GROUNDED verdict buries the older one and nothing looks past it again.
+The burying turn is the ordinary shape of a successful fold following one where
+this read failed, so it was reachable rather than theoretical: measured at 0
+re-derivations, watermark still null, the verdict still in the store, over three
+turns. `idx_turn_verdict_ungrounded` had existed for exactly this query and was
+serving nothing. The wrong read is now unrepresentable rather than documented,
+the same move the port already makes by having no `write`.
+
 So the property is recorded rather than inferred. The row carries the
 `created_at` of the verdict a re-derivation acted on; it advances only when the
 rebuild is WRITTEN — never on a refusal, so the retry survives, and never on a

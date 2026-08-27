@@ -638,10 +638,10 @@ class _BlindableVerdicts:
     def __init__(self, inner) -> None:
         self.inner, self.blind = inner, False
 
-    async def latest(self, *, conversation_id: str):
+    async def latest_ungrounded(self, *, conversation_id: str):
         if self.blind:
             raise RuntimeError("verdict store unavailable")
-        return await self.inner.latest(conversation_id=conversation_id)
+        return await self.inner.latest_ungrounded(conversation_id=conversation_id)
 
     async def save(self, *, verdict) -> None:
         await self.inner.save(verdict=verdict)
@@ -739,7 +739,7 @@ async def test_an_unreadable_verdict_store_does_not_rebuild():
     would throw a position away because an instrument was down — a worse
     outcome than carrying a possibly-drifted one for one more turn."""
     class _Broken(InMemoryTurnVerdictStore):
-        async def latest(self, **kw):
+        async def latest_ungrounded(self, **kw):
             raise RuntimeError("verdict store down")
 
     client = _Client(_ok("a revised position"))
@@ -845,7 +845,7 @@ async def test_the_trigger_fires_on_timestamps_a_real_turn_can_produce():
                                   unsupported=("invented a price",))),
                now_ms_override=1000)
     position = await store.read(platform="signal", conversation_id="g1")
-    written = await verdicts.latest(conversation_id="g1")
+    written = await verdicts.latest_ungrounded(conversation_id="g1")
     assert position is not None and written is not None
     assert written.created_at == position.updated_at, (
         "the premise: one turn stamps both clocks from one value"
@@ -912,10 +912,19 @@ async def test_a_verdict_the_watermark_names_has_been_acted_on():
     consumed does not trigger a second one. Keyed on the WATERMARK, not on
     which row is newer — see the next test for why that distinction is the
     whole reason this column exists."""
+    store = await _with_prior(1, updated_at=500, consumed_verdict_ms=200)
     _, metrics, _ = await _run(
-        store=await _with_prior(1, updated_at=500, consumed_verdict_ms=200),
+        store=store,
         store_verdict=await _with_verdict(grounded=False, created_at=200))
     assert _counter(metrics, "nora_standing_rederivations_total") == 0
+    # POSITIVE CONTROL. Every assertion above is also true of a fold that
+    # never ran, and this test had none — the same signature as the decorative
+    # ones this file already records. The fold must have happened AND revised.
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.fold_count == 2, (
+        "a revise did not happen, so nothing was proven about the trigger"
+    )
 
 
 async def test_an_older_unconsumed_verdict_still_rebuilds():
@@ -988,6 +997,61 @@ async def test_one_unreadable_verdict_does_not_lose_the_verdict_forever():
     )
 
 
+async def test_a_grounded_verdict_cannot_bury_an_unconsumed_ungrounded_one():
+    """**The read, not the watermark — and the watermark alone could not fix
+    this.** The trigger used to ask for the newest verdict of EITHER kind and
+    then test `not grounded` in Python. That answers a different question, and
+    it coincides with the right one until a turn goes by without consuming an
+    ungrounded verdict:
+
+        turn 1  ungrounded verdict at 1000
+        turn 2  the verdict read FAILS, so the trigger declines (R-27) — but
+                the fold itself SUCCEEDS and saves its own GROUNDED verdict
+        turn 3  the newest verdict is now grounded. The ungrounded one is
+                buried, and nothing will ever look past it.
+
+    Turn 2 there is the ORDINARY shape of a successful turn, not an exotic one,
+    which is why this was reachable rather than theoretical. Measured before the
+    fix: 0 re-derivations, watermark still None, the turn-1 verdict still
+    sitting in the store.
+
+    The previous test of this scenario was green by FIXTURE CHOICE — its turn 2
+    used a client that emitted no verdict, so nothing was ever written to bury
+    the ungrounded one. Swapping in an ordinary `_ok(...)` is the whole
+    difference (cold review, 2026-08-28).
+
+    Falsification: point the trigger back at a latest-of-either-kind read and
+    this returns to 0.
+    """
+    store = InMemoryStandingStore()
+    inner = InMemoryTurnVerdictStore()
+    verdicts = _BlindableVerdicts(inner)
+    metrics = Metrics()
+
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_ok("t1", grounded=False,
+                                  unsupported=("invented a price",))),
+               now_ms_override=1000)
+    verdicts.blind = True
+    # An ORDINARY successful turn: it writes a grounded verdict of its own.
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_ok("t2")), now_ms_override=2000,
+               trace=_trace_with_tag("tag-2"))
+    verdicts.blind = False
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_ok("t3")), now_ms_override=3000,
+               trace=_trace_with_tag("tag-3"))
+
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1, (
+        "a later grounded verdict buried the unconsumed ungrounded one"
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.consumed_verdict_ms == 1000, (
+        "the rebuild consumed something other than the verdict that caused it"
+    )
+
+
 async def test_a_refusing_rebuild_leaves_the_verdict_unconsumed():
     """The watermark advances only where the position is WRITTEN, so a fold
     that refuses retries next turn instead of marking a verdict it never acted
@@ -1043,7 +1107,15 @@ async def test_the_watermark_is_carried_forward_by_an_ordinary_revise():
                store_verdict=await _with_verdict(grounded=True, created_at=300),
                now_ms_override=2000)
     row = await store.read(platform="signal", conversation_id="g1")
-    assert row is not None and row.consumed_verdict_ms == 200
+    assert row is not None
+    # The ROW MUST HAVE BEEN REWRITTEN, asserted before the watermark is read.
+    # `consumed_verdict_ms == 200` is the value the fixture seeded, so on its
+    # own it cannot tell "carried forward" from "never written at all" — which
+    # is what this test asserted, and it would have passed against a fold that
+    # did nothing.
+    assert row.fold_count == 2, "the revise never happened"
+    assert row.updated_at == 2000, "the row was not rewritten by this fold"
+    assert row.consumed_verdict_ms == 200
 
 
 async def test_no_verdict_store_is_inert_not_a_failure():
@@ -1090,58 +1162,103 @@ async def test_a_cancel_before_the_write_is_still_a_cancel():
 
 
 def test_the_slot_hold_counts_every_store_await_the_stage_makes():
-    """**The arithmetic has been wrong three times; this is what stops a
-    fourth.**
+    """**The arithmetic has been wrong four times; this is what stops a fifth.**
 
-    `STORE_CALLS_PER_FOLD` feeds `Config._the_standing_slot_hold_fits_its_budget`,
-    which is the gate that decides whether the declared ceiling is honest. It
-    said 2 while the stage made 4 — `TurnVerdict` added `store_verdict.save`
-    and S2's trigger added `store_verdict.latest`, and neither updated the sum,
-    so the real worst case ran ten seconds over the declared one with the next
-    person in that room waiting for it.
+    `STANDING_STORE_CALLS_PER_FOLD` feeds
+    `Config._the_standing_slot_hold_fits_its_budget`, the gate that decides
+    whether the declared ceiling is honest. It said 2 while the stage made 4,
+    then 4 while it made 5.
 
-    **It counts the CALLS, not the `wait_for`s, and that reversal is the
-    point.** The first version counted `asyncio.wait_for` occurrences in two
-    named functions. Both halves were blind in the direction that matters: the
-    ORIGINAL defect was a store call with NO `wait_for` at all, which such a
-    count cannot see, and a call added to a third function is invisible to a
-    scan of two.
+    **It walks the AST, and the two earlier versions of this test were each
+    blind in the direction they advertised.**
 
-    So this finds every collaborator call in the whole module and asserts two
-    things about it — that there are exactly `STORE_CALLS_PER_FOLD` of them,
-    and that each one is bounded. Unbounded is the defect that wedged a
-    conversation; uncounted is the defect that understated the ceiling.
+    v1 counted `asyncio.wait_for` occurrences in two named functions. The
+    ORIGINAL defect was a store call with NO `wait_for` at all, which a count of
+    wrappers cannot see, and a call in a third function was invisible.
+
+    v2 claimed to find "every collaborator call in the module" and was a
+    hardcoded regex over three receiver names and five method names. It passed
+    with `notes_sink.supersede` unbounded (a real `DreamSink` method), with a
+    `facts_sink` the module's own docstring names as the next output, and with
+    an unbounded `store.write` sitting under an unrelated `wait_for` that
+    happened to fall inside its 160-character backwards text window.
+
+    So the receiver set is DERIVED from the stage's own parameter names rather
+    than written down: a collaborator this stage gains is caught the moment it
+    is awaited, without anyone remembering to extend a list. That derivation is
+    the half that matters — v2 caught exactly what it had been written against
+    and nothing else (cold review, 2026-08-28).
     """
+    import ast
     import inspect
-    import re
 
-    source = inspect.getsource(debrief)
-    calls = list(re.finditer(
-        r"\b(store|store_verdict|notes_sink)\.(read|write|latest|save|propose)\(",
-        source,
-    ))
-    named = [f"{m.group(1)}.{m.group(2)}" for m in calls]
+    tree = ast.parse(inspect.getsource(debrief))
+    parents = {c: n for n in ast.walk(tree) for c in ast.iter_child_nodes(n)}
+
+    # The collaborators are whatever `run` and `_should_rebuild` are HANDED.
+    receivers: set[str] = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.AsyncFunctionDef)
+                and node.name in {"run", "_should_rebuild"}):
+            a = node.args
+            receivers |= {p.arg for p in a.posonlyargs + a.args + a.kwonlyargs}
+
+    # `client` is the MODEL call, not a store call: it is bounded by the
+    # `wait_for` around `_fold()` rather than by one of its own, and
+    # `[standing] timeout_seconds` covers it separately in the sum. Named here
+    # so the exclusion is a decision rather than an oversight.
+    receivers.discard("client")
+
+    def _in_wait_for(node: ast.AST) -> bool:
+        cur = parents.get(node)
+        while cur is not None:
+            if isinstance(cur, ast.Call):
+                f = cur.func
+                if ((isinstance(f, ast.Attribute) and f.attr == "wait_for")
+                        or (isinstance(f, ast.Name) and f.id == "wait_for")):
+                    return True
+            if isinstance(cur, ast.AsyncFunctionDef | ast.FunctionDef):
+                return False
+            cur = parents.get(cur)
+        return False
+
+    # A collaborator call is one that is AWAITED — directly, or by being handed
+    # to `wait_for`. Both shapes have to be collected, because the bounded form
+    # `await wait_for(store.read(...))` makes `wait_for` the awaited call and
+    # `store.read` merely its argument. Collecting only the awaited node finds
+    # nothing at all; collecting every call on a collaborator would sweep up
+    # `metrics.inc` and `objective.objective_body`, which are neither awaited
+    # nor bounded and are not store calls.
+    calls: list[tuple[str, bool]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        f = node.func
+        if not (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)):
+            continue
+        if f.value.id not in receivers:
+            continue
+        parent = parents.get(node)
+        bounded = _in_wait_for(node)
+        if not (bounded or isinstance(parent, ast.Await)):
+            continue          # not awaited at all — not a store call
+        calls.append((f"{f.value.id}.{f.attr}", bounded))
+
+    named = [n for n, _ in calls]
     assert len(calls) == debrief.STORE_CALLS_PER_FOLD, (
-        f"the stage makes {len(calls)} store calls {named} but "
+        f"the stage awaits {len(calls)} collaborator calls {named} but "
         f"STORE_CALLS_PER_FOLD is {debrief.STORE_CALLS_PER_FOLD}. The "
         f"slot-hold validator computes the declared ceiling from that "
         f"constant, so disagreement means the ceiling is not the real worst "
         f"case — which is exactly how it came to be understated by 2x."
     )
-    for m in calls:
-        # The call is written as `asyncio.wait_for(\n    <collaborator>.x(...)`,
-        # so the wrapper is a short way back in the source. Looking BACKWARDS
-        # from each call is what catches an unbounded one; counting wrappers
-        # forwards never could.
-        window = source[max(0, m.start() - 160):m.start()]
-        assert "asyncio.wait_for(" in window, (
-            f"{named[calls.index(m)]} is awaited with no asyncio.wait_for "
-            f"around it. The engine sets no command_timeout and this runs "
-            f"while the conversation's slot is HELD, so a connection hanging "
-            f"mid-query wedges that conversation indefinitely — on a turn "
-            f"that has already replied."
-        )
-
+    unbounded = [n for n, ok in calls if not ok]
+    assert not unbounded, (
+        f"{unbounded} awaited with no asyncio.wait_for. The engine sets no "
+        f"command_timeout and this runs while the conversation's slot is HELD, "
+        f"so a connection hanging mid-query wedges that conversation "
+        f"indefinitely — on a turn that has already replied."
+    )
 
 async def test_an_unreadable_verdict_store_still_honours_the_ceiling():
     """R-72's row claimed, unqualified, that an unreadable verdict store does
@@ -1150,7 +1267,7 @@ async def test_an_unreadable_verdict_store_still_honours_the_ceiling():
     fold_count=1 against a ceiling of 20 and only ever exercised the
     below-ceiling half (cold review, 2026-08-28)."""
     class _Broken(InMemoryTurnVerdictStore):
-        async def latest(self, **kw):
+        async def latest_ungrounded(self, **kw):
             raise RuntimeError("verdict store down")
 
     _, metrics, _ = await _run(
@@ -1378,8 +1495,13 @@ async def test_the_resolver_is_not_called_at_all_when_notes_are_off():
         calls.append((platform, conversation_id))
         return "ws"
 
-    await _run(client=_Client(_with_notes(_NOTE)), notes_sink=None,
-               workspace_of=_counting)
+    store, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE)), notes_sink=None,
+        workspace_of=_counting)
+    # POSITIVE CONTROL: `calls == []` is also what a fold that never ran
+    # produces, so the fold has to be shown to have happened first.
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert await store.read(platform="signal", conversation_id="g1") is not None
     assert calls == [], (
         "the workspace resolver ran on a deployment that cannot propose"
     )

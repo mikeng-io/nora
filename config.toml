@@ -1087,17 +1087,34 @@ store_timeout_seconds = 5.0
 # different arities for this one number have shipped, and the last of them was
 # in the validator built to catch exactly that.
 #
-# 45, and [llm] timeout_seconds IS NOT IN THE SUM. It bounds nothing in this
-# stage: the fold's model call is bounded by [standing] timeout_seconds in the
-# client AND by the wait_for around the fold, and never by the [llm] value at
-# all. Including it made this read «this conversation can be held 165 seconds»
-# when the real bounded hold is 45 — a number that lies about the deployment
-# is wrong on the page even when it errs safe.
+# THE REAL BOUNDED HOLD IS 45 (20 + 5 x 5), and [llm] timeout_seconds is NOT a
+# term in it. That value bounds nothing in this stage: the fold's model call is
+# bounded by [standing] timeout_seconds in the client AND by the wait_for around
+# the fold, and never by the [llm] figure. Counting it made this read «this
+# conversation can be held 165 seconds» when the bound is 45.
+#
+# **HELD AT 150 FOR ONE DEPLOY, DELIBERATELY, then dropped to 45.** This file is
+# BIND-MOUNTED and read at startup; the validator that checks it lives in the
+# IMAGE. So between a merge to master and the image that ships with it, the NEW
+# config is read by the OLD validator — which still sums [llm] timeout_seconds
+# and computes 150. At 45 that combination REFUSES TO START, and the check is
+# ungated on `enabled`, so the container survives the merge and dies on its next
+# restart naming numbers that appear nowhere in this file.
+#
+# 150 is accepted by both validators (old: 120 + 20 + 2 x 5 = 150, not over;
+# new: 45, not over), which makes the merge safe in ANY order rather than only
+# in the intended one. It is a CEILING an operator sets, not a measurement — a
+# loose ceiling is true, and this comment is where the real bound is stated.
+# `StandingConfig`'s own default is already 45, so a config omitting this key
+# gets the tight value; only the shipped files are held.
+#
+# The follow-up that drops both files to 45 is safe once the image carrying the
+# new validator is deployed and read back (cold review, 2026-08-28).
 #
 # If 45 is too long, the lever is store_timeout_seconds (25s of the total, for
 # five single-row keyed queries against a local database) or timeout_seconds,
 # not this number.
-max_slot_hold_seconds = 45.0
+max_slot_hold_seconds = 150.0
 # Empty means `[llm] model`.
 model = ""
 # The fold's reasoning budget. Empty means inherit [llm] reasoning_effort.

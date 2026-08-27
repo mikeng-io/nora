@@ -57,22 +57,28 @@ class SqlTurnVerdictStore:
             created_at=row.created_at,
         )
 
-    async def latest(self, *, conversation_id: str) -> TurnVerdict | None:
-        """The newest verdict in one conversation.
+    async def latest_ungrounded(
+        self, *, conversation_id: str
+    ) -> TurnVerdict | None:
+        """The newest UNGROUNDED verdict in one conversation.
 
-        **`idx_turn_verdict_ungrounded` does NOT serve this read**, and that is
-        worth stating rather than discovering: it is partial on
-        `grounded = false`, so it holds only the ungrounded rows, while this
-        asks for the latest verdict of EITHER kind. At the sizes this table
-        reaches — one row per turn, per conversation — the planner takes a scan
-        and that is correct. If it ever needs an index it is a new one on
-        `(conversation_id, created_at DESC)`, not a widening of that one:
-        making the partial index total would cost every grounded row for a read
-        the trigger does not do.
+        **`idx_turn_verdict_ungrounded` serves exactly this**, and until now
+        served nothing. It is partial on `grounded = false`, which is precisely
+        the predicate here — so the one read the trigger makes on every fold is
+        also the only one of the stage's five store calls that had been an
+        unindexed scan. That mattered beyond tidiness: this is the read most
+        likely to hit its 5s timeout, `_should_rebuild` swallows that as R-27's
+        «I could not check», and the verdict-dropping path this method exists
+        to close begins with exactly that failure.
+
+        This REPLACED a `latest` that answered the newest verdict of either
+        kind. See `TurnVerdictStore.latest_ungrounded` for why that read is not
+        merely unindexed but wrong, and why it is gone rather than deprecated.
         """
         stmt = (
             sa.select(TURN_VERDICT)
-            .where(TURN_VERDICT.c.conversation_id == conversation_id)
+            .where(TURN_VERDICT.c.conversation_id == conversation_id,
+                   TURN_VERDICT.c.grounded.is_(False))
             # `tag_id` breaks the tie, matching the double exactly. Two turns
             # in one millisecond are reachable, and without this the two
             # implementations answer DIFFERENT verdicts for the same rows —

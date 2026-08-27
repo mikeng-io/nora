@@ -613,7 +613,8 @@ async def _should_rebuild(
     if store_verdict is not None:
         try:
             last = await asyncio.wait_for(
-                store_verdict.latest(conversation_id=conversation_id),
+                store_verdict.latest_ungrounded(
+                    conversation_id=conversation_id),
                 timeout=store_timeout_seconds,
             )
         except Exception:  # noqa: BLE001 — an unreadable verdict is R-27's
@@ -681,9 +682,15 @@ async def _should_rebuild(
         # `!=` rather than `>`: any verdict this position has not consumed is
         # unconsumed, and a clock that went backwards is not a reason to skip
         # one (cold review, 2026-08-28).
+        # `last` is already ungrounded BY THE READ — see
+        # `TurnVerdictStore.latest_ungrounded`. This used to ask `latest` for
+        # the newest verdict of either kind and then test `not last.grounded`
+        # here, which quietly answers a different question: a grounded verdict
+        # from a later turn BURIES an older unconsumed ungrounded one, and the
+        # trigger never sees it again. That is not exotic — it is the ordinary
+        # shape of a successful turn following one where this read failed.
         if (
             last is not None
-            and not last.grounded
             and last.created_at != prior.consumed_verdict_ms
         ):
             return _Rebuild("ungrounded", last.created_at)

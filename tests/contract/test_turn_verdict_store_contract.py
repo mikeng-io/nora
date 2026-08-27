@@ -158,39 +158,73 @@ async def test_both_stores_refuse_too_many_claims(store):
         await store.save(verdict=smuggled)
 
 
-async def test_latest_answers_the_newest_verdict_in_the_conversation(store):
-    """The read S2's trigger needs, and a DIFFERENT question from `read`: how
-    did the LAST turn here go, not how did this turn go."""
+async def test_latest_ungrounded_answers_the_newest_ungrounded_one(store):
+    """The read S2's trigger needs, and a DIFFERENT question from `read`: is
+    there an ungrounded verdict here, not how did this turn go."""
     await store.save(verdict=_v("tag-1", grounded=True))
     await store.save(verdict=TurnVerdict(
         tag_id="tag-2", conversation_id=CONV, grounded=False,
         unsupported=("the newer one",), created_at=NOW + 1000))
-    got = await store.latest(conversation_id=CONV)
+    got = await store.latest_ungrounded(conversation_id=CONV)
     assert got is not None and got.tag_id == "tag-2" and got.grounded is False
 
 
-async def test_latest_is_deterministic_when_two_turns_share_a_millisecond(store):
+async def test_a_newer_grounded_verdict_does_not_bury_an_ungrounded_one(store):
+    """**The defect this read replaced a `latest` to close, at the store
+    boundary.** A read that answers the newest verdict of EITHER kind returns
+    `tag-2` here, the trigger sees `grounded` and declines, and the ungrounded
+    `tag-1` is never acted on — permanently, because every later turn buries it
+    further. The sequence is ordinary: an ungrounded turn, then a successful one.
+
+    Both implementations must filter, or the double cannot stand in for the
+    store on the one input that matters."""
+    await store.save(verdict=TurnVerdict(
+        tag_id="tag-1", conversation_id=CONV, grounded=False,
+        unsupported=("invented a price",), created_at=NOW))
+    await store.save(verdict=TurnVerdict(
+        tag_id="tag-2", conversation_id=CONV, grounded=True,
+        created_at=NOW + 1000))
+    got = await store.latest_ungrounded(conversation_id=CONV)
+    assert got is not None and got.tag_id == "tag-1", (
+        "a later grounded verdict buried the unconsumed ungrounded one"
+    )
+
+
+async def test_latest_ungrounded_is_deterministic_when_two_share_a_millisecond(store):
     """Both implementations must answer the SAME row, or the double is not a
     stand-in. Postgres would otherwise return whatever the scan reached first
     and the double whatever hashed first — a divergence a contract suite cannot
     see unless both sides are ordered. `tag_id` descending breaks it."""
     for tag in ("tag-a", "tag-b", "tag-c"):
         await store.save(verdict=TurnVerdict(
-            tag_id=tag, conversation_id=CONV, grounded=True, created_at=NOW))
-    got = await store.latest(conversation_id=CONV)
+            tag_id=tag, conversation_id=CONV, grounded=False,
+            unsupported=("same ms",), created_at=NOW))
+    got = await store.latest_ungrounded(conversation_id=CONV)
     assert got is not None and got.tag_id == "tag-c"
 
 
-async def test_latest_ignores_other_conversations(store):
+async def test_latest_ungrounded_ignores_other_conversations(store):
     await store.save(verdict=TurnVerdict(
         tag_id="other", conversation_id="g2", grounded=False,
         unsupported=("elsewhere",), created_at=NOW + 9999))
-    await store.save(verdict=_v("tag-1", grounded=True))
-    got = await store.latest(conversation_id=CONV)
+    await store.save(verdict=TurnVerdict(
+        tag_id="tag-1", conversation_id=CONV, grounded=False,
+        unsupported=("here",), created_at=NOW))
+    got = await store.latest_ungrounded(conversation_id=CONV)
     assert got is not None and got.tag_id == "tag-1"
+
+
+async def test_latest_ungrounded_is_none_when_every_verdict_is_grounded(store):
+    """Not the same as an empty conversation, and both answer `None` — a
+    conversation whose turns all went fine has nothing to re-derive from."""
+    await store.save(verdict=_v("tag-1", grounded=True))
+    await store.save(verdict=TurnVerdict(
+        tag_id="tag-2", conversation_id=CONV, grounded=True,
+        created_at=NOW + 1000))
+    assert await store.latest_ungrounded(conversation_id=CONV) is None
 
 
 async def test_latest_is_none_before_the_first_verdict(store):
     """Not a reason to re-derive: the ordinary state before a conversation's
     first fold."""
-    assert await store.latest(conversation_id=CONV) is None
+    assert await store.latest_ungrounded(conversation_id=CONV) is None
