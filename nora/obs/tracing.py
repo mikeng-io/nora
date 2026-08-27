@@ -17,7 +17,9 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+from opentelemetry import context as otel_context
 from opentelemetry import trace
+from opentelemetry.context import Context
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
@@ -26,6 +28,13 @@ from opentelemetry.trace import Status, StatusCode
 from opentelemetry.util.re import parse_env_headers
 
 log = logging.getLogger("nora.tracing")
+
+#: What `capture_context` hands back and `attached` takes. Aliased here so a
+#: pipeline that carries one across a queue names THIS module rather than
+#: `opentelemetry` — the same reason `nora.app.agent_runner` types Strands'
+#: return as `Any`: a stage should not have to import a tracing vendor to hold
+#: an opaque handle it never inspects.
+TraceCarrier = Context
 
 
 def setup_tracing(
@@ -115,6 +124,89 @@ def span(name: str, **attributes: object) -> Iterator[None]:
             # Same reason: a failing exporter on span end must not surface as a
             # tag failure. See the acquisition guard above.
             log.debug("span %s did not close cleanly", name, exc_info=True)
+
+
+def annotate(**attributes: object) -> None:
+    """Add attributes to the span that is CURRENT right now, and never raise.
+
+    `span` takes its attributes at entry, which is the wrong end for anything a
+    stage only learns on the way out — an outcome, a stop reason, a latency. The
+    alternative was to make `span` yield its span object, and that pushes the
+    "a broken tracer must not break a turn" guard out to every call site; here
+    it stays in one place, exactly as it is for the attributes `span` itself
+    takes.
+
+    **A no-op on a span that has already ended**, and that is a real state
+    rather than a theoretical one: the tag path's root span is closed at the
+    moment a QUEUED tag is enqueued, so a worker annotating "the root" would be
+    writing into nothing. The OTel SDK logs «Setting attribute on ended span»
+    and records neither the value nor an error (measured, 2026-08-28), which is
+    exactly why `EngagementPipeline` annotates the per-turn span it opens
+    itself and never the dispatch root.
+    """
+    try:
+        sp = trace.get_current_span()
+        for key, value in attributes.items():
+            safe = value if isinstance(value, (str, bool, int, float)) else str(value)
+            sp.set_attribute(key, safe)
+    except Exception:  # a broken tracer must not break a turn
+        log.debug("span annotation not recorded", exc_info=True)
+
+
+def capture_context() -> Context:
+    """The current trace context, to be re-`attached` on whatever task picks the
+    work up later. Never raises; an empty `Context` is the degraded answer.
+
+    **This exists because `asyncio.create_task` DOES copy contextvars, not
+    because it doesn't.** OTel's context is a contextvar, so a task inherits
+    whatever span was current at `create_task` time — measured, 2026-08-28. On
+    the tag path that inheritance is actively wrong: a QUEUED tag is spawned by
+    `ConversationSlots.release_and_dispatch`, which runs in the PREVIOUS turn's
+    `finally`, inside that turn's own span. Left alone, the queued tag's spans
+    would nest under the tag before it in the queue — one trace containing two
+    unrelated conversations' turns, which is worse than the rootless spans this
+    replaces because it reads as a causal relation that does not exist.
+
+    So the context is captured where the tag was ADMITTED and attached where it
+    RUNS, and `attached` replaces the ambient context wholesale rather than
+    adding to it.
+    """
+    try:
+        return otel_context.get_current()
+    except Exception:
+        log.debug("trace context could not be captured", exc_info=True)
+        return Context()
+
+
+@contextmanager
+def attached(carrier: Context | None) -> Iterator[None]:
+    """Run the body under `carrier` instead of whatever context it inherited.
+
+    `None` — and a capture that degraded to an empty `Context` — attaches an
+    EMPTY context, which makes the body's spans roots of their own trace. That
+    is the fail-closed direction on purpose: a tag whose context was lost is a
+    trace on its own, never a tag silently filed under the previous tag's turn.
+
+    Never raises, on either half. `detach` is guarded separately from `attach`
+    because this wraps `_run_admitted`, whose `finally` is what releases R-10's
+    per-conversation lock — an exception escaping here would skip
+    `release_and_dispatch` and wedge the conversation forever, with no error
+    anywhere. The same rule `span` holds, for the same reason.
+    """
+    token = None
+    try:
+        token = otel_context.attach(carrier if carrier is not None else Context())
+    except Exception:
+        log.debug("trace context could not be attached; running as inherited",
+                  exc_info=True)
+    try:
+        yield
+    finally:
+        if token is not None:
+            try:
+                otel_context.detach(token)
+            except Exception:
+                log.debug("trace context could not be detached", exc_info=True)
 
 
 def _resolve_headers(headers_env: str) -> dict[str, str] | None:

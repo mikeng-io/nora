@@ -139,6 +139,8 @@ from datetime import tzinfo
 from typing import Any, NamedTuple, Protocol
 
 from nora.agent.dream_screen import screen
+from nora.agent.egress import scan_identifiers
+from nora.agent.security import looks_like_coordinate
 from nora.agent.tools import note_handle
 from nora.domain.notes import NoteCreationProposal
 from nora.domain.ports import DreamSink, Proposal, StandingStore, TurnVerdictStore
@@ -147,6 +149,7 @@ from nora.domain.standing import STANDING_STORE_CALLS_PER_FOLD, Standing
 from nora.domain.tag_trace import TagTrace
 from nora.domain.turn_verdict import TurnVerdict
 from nora.obs.metrics import Metrics
+from nora.obs.tracing import annotate, span
 
 from ..debrief_render import render_debrief_input
 
@@ -235,6 +238,107 @@ OBJECTIVE = "standing-debrief"
 #: Re-exported from `nora.domain.standing`, where it lives so `nora.config`
 #: can read it without importing this package (see its own comment there).
 STORE_CALLS_PER_FOLD = STANDING_STORE_CALLS_PER_FOLD
+
+
+#: What lands on the span in place of text the egress floor refuses. It NAMES
+#: the pattern that fired, because «the trace shows nothing» and «the trace
+#: refused to show it» are different readings and only one of them is a bug.
+_WITHHELD = "(withheld from the trace: {reason})"
+
+
+def _trace_safe(text: str) -> tuple[str, str]:
+    """`(what may go on the span, why the rest did not)`.
+
+    **A trace is an egress.** The collector is a third party over the network,
+    and `nora.agent.egress`'s own docstring says an identifier is «never safe to
+    emit **or transmit**, whatever the destination». The debrief's prompt
+    carries the turn's raw tool results — a `where_is` result is a live
+    coordinate — so the two floor predicates that already guard every other
+    write of that class run here too.
+
+    **Reused, not reinvented**, and deliberately the same pair
+    `nora.agent.dream_screen` calls rather than `screen` itself: `screen` counts
+    `nora_dream_screened_total{adaptor}`, and a trace decision incrementing a
+    Dreamer series would make that counter answer two questions at once.
+    `scan_identifiers` and not `scan_reply`, for `dream_screen`'s stated reason
+    — `scan_reply`'s model-name pattern matches nine ordinary English words and
+    is only ever right for text addressed to the group.
+
+    **Fails closed at whole-text granularity**, which is the known cost: one
+    coordinate anywhere in a fold's prompt withholds the whole prompt. The
+    provenance survives it — `nora.debrief.prompt_sha256` and `nora.tag_id` are
+    stamped either way, and the turn's own `TagTrace` is retained in Postgres,
+    so the fold is re-derivable by reference exactly when it is not readable
+    inline. Splitting the render into per-block redaction is the better answer
+    and is a larger change than this fix carries.
+    """
+    offence = scan_identifiers(text)
+    if offence is not None:
+        return _WITHHELD.format(reason=offence), offence
+    if looks_like_coordinate(text):
+        return _WITHHELD.format(reason="coordinate"), "coordinate"
+    return text, ""
+
+
+async def _complete(
+    client: ModelClient, *, prompt: str, call: str, trace: TagTrace,
+) -> Completion:
+    """The fold's model call, as a GENERATION span (issue #64).
+
+    Until this existed the Standing fold was the only model call in the process
+    with no instrumentation at all: Strands traces the tag path's agent loop
+    from the inside, and the debrief is deliberately NOT a Strands agent (this
+    module's docstring says why), so nothing wrote a span for it. Counters said
+    a fold took three seconds; nothing said what it read or what it answered —
+    on the one tier whose output is injected into every later turn.
+
+    **Hand-written rather than an OpenAI auto-instrumentor**, and the reason is
+    this function's own body. An instrumentor hooks the SDK, so it would trace
+    every `AsyncOpenAI` call in the process — the language observers, the media
+    describers — and it would put the raw prompt on the wire with no screen in
+    front of it. Both halves of that are wrong for this repo: the widening is
+    unasked for, and the egress floor above is not optional.
+
+    Both the OTel GenAI conventions and Langfuse's own attribute names are set.
+    They are two spellings of one fact and neither is guessed: the conventions
+    are what a future collector reads, `langfuse.observation.*` is what today's
+    one renders a generation from.
+
+    It is a CHILD of `engagement.debrief` by context, not by wiring — the
+    pipeline opens that span around `debrief.run`, and `asyncio.wait_for` keeps
+    the context whether it awaits in place or wraps a task.
+    """
+    body, withheld = _trace_safe(prompt)
+    with span(
+        f"engagement.debrief.{call}",
+        **{
+            "langfuse.observation.type": "generation",
+            "langfuse.observation.model.name": client.model,
+            "langfuse.observation.input": body,
+            "gen_ai.operation.name": "chat",
+            "gen_ai.request.model": client.model,
+            "nora.tag_id": trace.tag_id,
+            "nora.conversation_id": trace.conversation_id,
+            # The reference the withheld case still re-derives from: this digest
+            # plus the retained `TagTrace` for `nora.tag_id` reconstructs the
+            # exact prompt without the trace ever having carried it.
+            "nora.debrief.prompt_sha256": instruction_sha256(prompt),
+            "nora.debrief.prompt_withheld": withheld,
+        },
+    ):
+        reply = await client.complete(prompt=prompt)
+        out, out_withheld = _trace_safe(reply.content)
+        # `finish_reason` on the span rather than only in `_check`'s branch: a
+        # `"length"` finish is the R-27 substitution this stage exists to
+        # refuse, and reading it off the trace is how an operator tells «the
+        # model answered badly» from «the answer was cut off» without a log.
+        annotate(**{
+            "langfuse.observation.output": out,
+            "gen_ai.response.finish_reasons": reply.finish_reason,
+            "nora.debrief.output_sha256": instruction_sha256(reply.content),
+            "nora.debrief.output_withheld": out_withheld,
+        })
+        return reply
 
 
 def _prompt(*, instructions: str, rendered: str, max_chars: int) -> str:
@@ -842,7 +946,7 @@ async def run(
             verdict off the refused one would pair a position with a judgement
             of a draft nobody kept.
             """
-            reply = await client.complete(prompt=_prompt(
+            reply = await _complete(client, call="fold", trace=trace, prompt=_prompt(
                 instructions=instructions, rendered=rendered,
                 max_chars=max_chars,
             ))
@@ -850,10 +954,18 @@ async def run(
             if first[0] is None or len(first[0]) <= max_chars:
                 return first[0], first[1], reply.content
             metrics.inc("nora_standing_overflow_refusals_total", stage="first")
-            retry = await client.complete(prompt=_consolidate_prompt(
-                instructions=instructions, rendered=rendered,
-                max_chars=max_chars, over=first[0],
-            ))
+            # Its OWN span, not a second event on the first one. The retry is a
+            # different prompt producing a different answer, and a trace that
+            # folded them together would show one generation whose input does
+            # not explain its output — the shape §4.0's consolidate exists to
+            # make legible.
+            retry = await _complete(
+                client, call="consolidate", trace=trace,
+                prompt=_consolidate_prompt(
+                    instructions=instructions, rendered=rendered,
+                    max_chars=max_chars, over=first[0],
+                ),
+            )
             second = _check(retry, trace.tag_id)
             return second[0], second[1], retry.content
 
@@ -1229,6 +1341,20 @@ async def run(
     finally:
         metrics.observe("nora_debrief_seconds", time.perf_counter() - started)
         metrics.inc("nora_debrief_total", outcome=outcome)
+        # The fold's verdict on the span the pipeline opened around this call.
+        # `nora_debrief_total` already carries it as a series; the span is what
+        # makes «this fold, on this tag» answerable — and it sits beside the
+        # generation children, so a `refused_overflow` is one click from the
+        # over-long body that caused it. In the `finally` because every one of
+        # the eleven exits sets `outcome` and then leaves by a different door.
+        #
+        # `outcome` and nothing else: it is a local `str` that cannot raise on
+        # read. `client.model` is an injected property, and this `finally` sits
+        # past every handler in this function — a raise from someone else's
+        # getter here would escape `run`, which the module docstring promises
+        # can never happen. The model name is on the generation children, where
+        # a raise is inside the guarded region.
+        annotate(**{"nora.debrief.outcome": outcome})
 
 
 def _check(completion: Completion, tag_id: str) -> tuple[str | None, str]:

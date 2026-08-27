@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "One tagged message is now one Langfuse trace, and the Standing fold is traced for the first time.",
+  "details": [
+    "The tag path opened three spans with no parent, and a rootless span is its own trace — so a single tagged message produced three near-empty engagement traces beside ingest's. They now nest under one root per tag, with the turn's outcome, delivery, stop reason and latency recorded on it.",
+    "A queued tag joins the trace that admitted it. Its trace context is captured at admission and re-attached when the queue dispatches it, so it is never filed under the tag ahead of it in the queue.",
+    "The Standing debrief's model call — previously the only model call with no instrumentation at all — appears as a generation with its model, prompt, output and finish reason, as a child of the tag's trace. The consolidate retry gets its own generation.",
+    "Identifiers and coordinates are screened out of anything sent to the tracing collector, using the same egress predicates that already guard Nora's replies and her Dreamer writes."
+  ],
+  "limitations": [
+    "The trace-side screen is whole-text: one coordinate anywhere in a fold's prompt withholds the entire prompt from the trace. A digest of the real prompt and the tag id are still recorded, so the fold stays re-derivable against the retained trace, but it is not readable inline in that case."
+  ]
+}

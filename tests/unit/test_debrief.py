@@ -18,11 +18,13 @@ import json
 import pytest
 
 from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.provenance import instruction_sha256
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
 from nora.domain.turn_verdict import TurnVerdict
 from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
+from nora.obs.tracing import span
 from nora.testing import InMemoryStandingStore, InMemoryTurnVerdictStore
 
 pytestmark = pytest.mark.asyncio
@@ -1582,3 +1584,190 @@ async def test_no_notes_sink_is_inert():
         client=_Client(_with_notes(_NOTE)), notes_sink=None)
     assert (await store.read(platform="signal", conversation_id="g1")) is not None
     assert _counter(metrics, "nora_debrief_note_proposals_total") == 0
+
+
+# ---------------------------------------------------------------------------
+# THE FOLD IS TRACED (issue #64). Standing's model call was the only model call
+# in the process with no instrumentation of any kind: Strands traces the tag
+# path's agent loop from the inside, and this stage is deliberately not a
+# Strands agent, so nothing wrote a span for it. Counters said a fold took three
+# seconds; nothing said what it read or what it answered — on the one tier whose
+# output is injected into every later turn.
+#
+# `exported_spans` (tests/conftest.py) captures what is EXPORTED, so these
+# assert the trace a collector would actually receive rather than that a helper
+# was called.
+# ---------------------------------------------------------------------------
+
+
+def _spans(exporter) -> dict[str, object]:
+    return {s.name: s for s in exporter.get_finished_spans()}
+
+
+async def test_the_fold_is_traced_as_a_generation(exported_spans):
+    """Model, prompt, output, outcome — the four things a claim about a fold has
+    to re-derive from.
+
+    PROBE: remove the `with span(...)` from `_complete` and there is no
+    `engagement.debrief.fold` span at all.
+    """
+    client = _Client(_ok("a position"))
+    await _run(client=client)
+
+    gen = _spans(exported_spans)["engagement.debrief.fold"]
+    assert gen.attributes["langfuse.observation.type"] == "generation"
+    assert gen.attributes["langfuse.observation.model.name"] == "test-model"
+    assert gen.attributes["gen_ai.request.model"] == "test-model"
+    assert gen.attributes["gen_ai.response.finish_reasons"] == "stop"
+    assert gen.attributes["nora.tag_id"] == "tag-1"
+    assert gen.attributes["nora.conversation_id"] == "g1"
+    assert "OBJECTIVE-TEXT" in gen.attributes["langfuse.observation.input"]
+    assert "a position" in gen.attributes["langfuse.observation.output"]
+
+
+async def test_the_traced_prompt_is_the_prompt_the_model_was_actually_given(
+        exported_spans):
+    """The trace must be the fold, not a paraphrase of it. `_Client` records
+    every prompt it was handed, so this compares the span against the wire.
+
+    PROBE: trace `rendered` instead of the assembled prompt — the objective text
+    and the character cap disappear and the digest stops matching.
+    """
+    client = _Client(_ok("a position"))
+    await _run(client=client)
+
+    gen = _spans(exported_spans)["engagement.debrief.fold"]
+    assert gen.attributes["langfuse.observation.input"] == client.prompts[0]
+    assert gen.attributes["nora.debrief.prompt_sha256"] == instruction_sha256(
+        client.prompts[0])
+    assert gen.attributes["nora.debrief.prompt_withheld"] == ""
+
+
+async def test_the_consolidate_retry_gets_its_own_generation(exported_spans):
+    """§4.0's retry is a DIFFERENT prompt producing a different answer. Folded
+    onto one span it would render as a generation whose input does not explain
+    its output.
+
+    PROBE: reuse the `fold` span for the retry and the second prompt — the one
+    that names the cap and quotes the over-long body — is never traced.
+    """
+    client = _Client(_ok("x" * 60), _ok("short"))
+    await _run(client=client, max_chars=40)
+
+    spans = _spans(exported_spans)
+    assert "engagement.debrief.consolidate" in spans
+    consolidated = spans["engagement.debrief.consolidate"]
+    assert consolidated.attributes["langfuse.observation.input"] == client.prompts[1]
+    assert "Consolidate it now" in consolidated.attributes["langfuse.observation.input"]
+    assert "short" in consolidated.attributes["langfuse.observation.output"]
+
+
+async def test_a_truncated_answer_is_visible_on_the_trace(exported_spans):
+    """`finish_reason="length"` is the R-27 substitution this stage exists to
+    refuse — a silently truncated body that can still parse. Reading it off the
+    trace is how «the model answered badly» is told from «the answer was cut
+    off» without a log.
+
+    PROBE: drop `gen_ai.response.finish_reasons` from `_complete`'s annotation
+    and the two become indistinguishable in Langfuse.
+    """
+    client = _Client(debrief.Completion('{"standing": "half a p', "length"))
+    _store, metrics, _sv = await _run(client=client)
+
+    gen = _spans(exported_spans)["engagement.debrief.fold"]
+    assert gen.attributes["gen_ai.response.finish_reasons"] == "length"
+    assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
+
+
+async def test_an_identifier_never_reaches_the_collector(exported_spans):
+    """**A trace is an egress.** The collector is a third party over the
+    network, and `nora.agent.egress` says an identifier is never safe to emit OR
+    TRANSMIT, whatever the destination. The fold's prompt carries the turn's raw
+    tool results, so the floor predicate that guards every other write of that
+    class runs here too.
+
+    The provenance survives the refusal: the digest is of the REAL prompt, so
+    the fold is re-derivable by reference exactly when it is not readable
+    inline.
+
+    PROBE: hand `_complete` the raw prompt instead of `_trace_safe`'s output and
+    the number is on the span.
+    """
+    row = TranscriptRow(
+        id=1, sender_id="+852111", sender_name="Miles", ts=1_756_000_920_000,
+        body="打去 +85290000101 啦", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+    trace = dataclasses.replace(_trace(), transcript=(row,))
+    client = _Client(_ok("a position"))
+    store, _metrics, _sv = await _run(client=client, trace=trace)
+
+    gen = _spans(exported_spans)["engagement.debrief.fold"]
+    assert "+85290000101" not in gen.attributes["langfuse.observation.input"]
+    assert gen.attributes["nora.debrief.prompt_withheld"] == "phone"
+    assert gen.attributes["nora.debrief.prompt_sha256"] == instruction_sha256(
+        client.prompts[0]), "the digest is of the real prompt, not the marker"
+    # The FOLD still happened — the screen is on the trace, never on the call.
+    written = await store.read(platform="signal", conversation_id="g1")
+    assert written is not None and written.body == "a position"
+
+
+async def test_a_coordinate_in_the_answer_never_reaches_the_collector(exported_spans):
+    """R-28's half, on the output side. `dream_screen` already refuses to WRITE
+    a position carrying a coordinate; without this the same string still left
+    for the collector on the way past.
+
+    PROBE: annotate `reply.content` directly and the pair is on the span.
+    """
+    client = _Client(_ok("佢喺 22.4106,114.1245"))
+    _store, metrics, _sv = await _run(client=client)
+
+    gen = _spans(exported_spans)["engagement.debrief.fold"]
+    assert "22.4106,114.1245" not in gen.attributes["langfuse.observation.output"]
+    assert gen.attributes["nora.debrief.output_withheld"] == "coordinate"
+    assert _counter(metrics, "nora_debrief_total", outcome="screened") == 1
+
+
+async def test_the_generation_is_a_child_of_the_span_the_pipeline_opened(
+        exported_spans):
+    """The fold has to appear IN the tag's trace, not beside it. The pipeline
+    opens `engagement.debrief` around `run`, and nothing in this stage wires a
+    parent — it rides the context, across `asyncio.wait_for`'s task boundary and
+    all.
+
+    PROBE: run the fold in a bare `asyncio.create_task` with the context
+    detached and the generation becomes a root of its own trace.
+    """
+    client = _Client(_ok("a position"))
+    with span("engagement.debrief"):
+        await _run(client=client)
+
+    spans = _spans(exported_spans)
+    parent = spans["engagement.debrief"]
+    gen = spans["engagement.debrief.fold"]
+    assert gen.parent.span_id == parent.context.span_id
+    assert gen.context.trace_id == parent.context.trace_id
+
+
+async def test_the_folds_outcome_lands_on_the_span_the_pipeline_opened(
+        exported_spans):
+    """`nora_debrief_total{outcome}` is a series; it cannot answer «what
+    happened on THIS tag». The span can, and it sits beside the generation
+    children that show why.
+
+    PROBE: delete the `annotate(...)` in `run`'s `finally`.
+    """
+    with span("engagement.debrief"):
+        await _run(client=_Client(_ok("a position")))
+    assert _spans(exported_spans)["engagement.debrief"].attributes[
+        "nora.debrief.outcome"] == "written"
+
+
+async def test_a_refused_fold_says_so_on_the_span(exported_spans):
+    """The same attribute, a different value — so the assertion above reads the
+    fold rather than a constant. A fold that wrote nothing is exactly the one an
+    operator opens the trace for."""
+    with span("engagement.debrief"):
+        await _run(client=_Client(debrief.Completion("not json at all", "stop")))
+    assert _spans(exported_spans)["engagement.debrief"].attributes[
+        "nora.debrief.outcome"] == "malformed"
