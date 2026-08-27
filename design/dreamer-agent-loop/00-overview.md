@@ -176,6 +176,10 @@ never once closed in production.
    two wrong lexeme rows: `disputed` on contradiction, priority adjudication,
    supersession, and **a counter at every step**. This is the acceptance test
    for the whole bundle.
+   **Its recognition step has no mechanism** ([16](16-open-items.md) §12.a) and
+   **step 6 depends on the transport measured at step 3** — either these two
+   steps swap, or step 6 is descoped so the loop closes with the Dreamer off
+   ([16](16-open-items.md) §12.1). Both are open.
 3. **Measure the transport** ([16](16-open-items.md) §0/§1) via the eval harness
    on the real pipeline. It selects between [07](07-loop.md) §7's two designed
    branches, and step 2's adjudication is the first thing that needs the answer.
@@ -245,7 +249,12 @@ today — **that this pipeline is built rather than bought, with two vendored
 files** (D30) and **that the eval corpus precedes all of it** (D33).
 
 What is explicitly NOT settled, and is recorded rather than hidden:
-[16](16-open-items.md) items **0–4 remain blocking** (transport, token ceiling,
+[16](16-open-items.md) items **0–4, 11 and 12 remain blocking** — and §12 is the
+sharpest of them, because it sits under D25 at the centre of the acceptance
+test. A third external review (2026-08-27) found that the two joints the test
+actually exercises — recognition, and the adjudication runtime — are the two
+least specified parts of the system, which is recorded rather than resolved
+here. (transport, token ceiling,
 R-49's second condition, a concurrency bound, and the absent eval corpus), and
 [16](16-open-items.md) §10 holds three readings the extraction decision rests on
 and has not taken.

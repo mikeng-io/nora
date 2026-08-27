@@ -83,6 +83,40 @@ pranks.
 9  COUNT       a counter moved at every step above
 ```
 
+> **EXTERNAL REVIEW, 2026-08-27 — steps 3 and 6 are the two least specified
+> parts, and they are the two the acceptance test actually exercises.**
+>
+> **Step 3 has no mechanism.** `RECOGNISE` appears exactly once in this bundle —
+> the line above — and no node says *what does the recognising*. By elimination
+> it is the reply-path model choosing to raise a dispute, which builds the trust
+> loop on [02](02-instrument-blindness.md) §122's named pathology: *"she
+> recognises and does not act."* **Recognition must be deterministic first**:
+> quote-reply linkage (both platforms carry it), lexical overlap against the
+> rendered rows' surface strings (`pg_trgm` is already installed), and
+> addressed-to-Nora as a gate — with a model proposal as a *second* channel,
+> never the only one. And the **fan-out must be specified**: one correction
+> contradicts a lexeme row and a fact row simultaneously, so a dispute marks
+> every standing row about that entity in **both** tiers.
+>
+> **Step 6's dismissal is undefined for the motivating case.** The loop resolves
+> *"to a supersession or a dismissal"* and R-53 correctly holds that
+> `not_covered` is never a contradiction — but a member correcting a
+> *room-internal* claim (「打風 means X here」) produces a web search that returns
+> `not_covered`, and nothing says what happens next. If that dismisses, **the
+> disputed wrong row returns to rendering**, for exactly the class of claim the
+> open web cannot adjudicate and that motivated this bundle. **Rule: dismissal
+> requires an affirmative contradiction; a `stated` correction that is merely
+> unconfirmed stands**, rendered with its asserter (§2.3 already builds the
+> legibility half).
+>
+> **The `disputed` state machine is also unspecified where this loop creates the
+> second writer.** §4 gives CAS for supersession, but `disputed` is a separate
+> column written synchronously by the tag path while a background adjudication
+> may concurrently dismiss or supersede the same row. Undefined: a dispute
+> arriving on an already-superseded row; who clears `disputed` on dismissal and
+> whether that is CAS-guarded against a second member's dispute landing
+> mid-dismissal; a dispute on a row while promotion rewires its object.
+
 **Steps 4 and 6 are the design.** Step 4 is **synchronous, on the tag path, and
 a suppression only** — propose/dispose is untouched, because *stopping* a wrong
 answer requires no judgement about what is true. Step 6 is **the Dreamer, with
@@ -158,6 +192,13 @@ has no time-driven lifecycle at all.
 > A bitemporal schema with one of its two times unwired.
 
 ### 3.1 Decided: a sixth pass — revalidation
+
+> **UNSPECIFIED (external review, 2026-08-27).** This pass exists in this node
+> and in [00](00-overview.md) and **nowhere else** — no trigger shape, no
+> cadence key in [22](22-config.md), no metric in [09](09-measurement.md) — in a
+> bundle whose [06](06-trigger.md) §3.1 singles out time-driven work as the
+> shape that most needs a declared trigger. Spec it or defer it explicitly; a
+> pass with no trigger definition is a polling bug in embryo.
 
 Keyed on `valid_to` and on age, on the Dreamer's clock, mirroring the note
 revisitor's shape:
@@ -329,6 +370,15 @@ stated reversal conditions — all confirmed as correct by the architecture
 reviewer, which is also what makes §2 and §3 worth taking seriously.
 
 ## Status / Checkpoint
+
+2026-08-27 — a third external review (Kimi, cold, whole bundle) found the two
+joints the acceptance test exercises are the two least specified: **step 3 has no
+recognition mechanism** and **step 6's dismissal is undefined for room-internal
+claims**. Both are recorded in §2.1.1 with their fixes; the recognition gap is
+[16](16-open-items.md) §12. It also named an option this bundle came within one
+paragraph of and did not take — closing the loop **socially** rather than
+analytically ([16](16-open-items.md) §12.1), which would remove the transport
+dependency from the critical path entirely.
 
 2026-08-24 — written after two external reviews run cold against all 30 nodes.
 Four contradictions confirmed **in the files** before acceptance and fixed in

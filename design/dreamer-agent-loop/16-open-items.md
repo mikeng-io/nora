@@ -120,6 +120,55 @@ have never been pointed at extraction quality.
 **Why it is the asset.** It is the only thing in this tier that cannot be copied
 from anyone, and it outlives every prompt written against it.
 
+**12. The correction loop's recognition step has no mechanism, and its async half
+is sequenced ahead of the measurement it depends on.**
+
+Added 2026-08-27 from a third external review, verified in the files. Both sit at
+the centre of the bundle's own acceptance test.
+
+**12.a — nothing recognises a contradiction.** `RECOGNISE` occurs exactly once in
+31 nodes, as a line in [30](30-review-response.md) §2.1.1's diagram. By
+elimination the recogniser is the reply-path model, which rests the trust loop on
+[02](02-instrument-blindness.md)'s named pathology — *she recognises and does not
+act*. The fix is in §2.1.1: deterministic first (quote-link, lexical overlap,
+addressed-to-Nora), model proposal second, fan-out across both tiers specified.
+**Until this is designed, D25 is a decision with no mechanism under it.**
+
+**12.b — the loop is sequenced before its own dependency.** [00](00-overview.md)
+§7 puts the correction loop at step 2 and *measure the transport* at step 3,
+while items **0 and 1** above say that transport may not honour tool choice and
+may strip reasoning between turns. The loop's step 6 is a multi-turn research
+loop on exactly that transport. Either the two steps swap, or step 6 is descoped
+so the loop closes without a research loop — see §12.1.
+
+**12.1 — the option this bundle did not take: close the loop socially.**
+
+Recorded as an **option requiring an operator decision**, not as a decision.
+
+On dispute, Nora asks the room — *"I had it as X — it's Y?"* — and a member's
+confirmation mints `stated` with that member as asserter. No Dreamer, no web
+search, no new runtime dependency.
+
+| | analytic loop (as designed) | social loop |
+|---|---|---|
+| closes with `[dreamer] enabled = false` | **no** | **yes** — which is the actual production state |
+| depends on items 0/1 | **yes** | no |
+| works for room-internal claims | not without §2.1.1's dismissal rule | natively — the room *is* the authority |
+| works for world claims | yes | needs the analytic loop layered on later |
+
+This bundle comes within one paragraph of it: §2.3 already renders the asserter
+and `stated` already ranks first. What it keeps is the LLM adjudicator as a
+**mandatory** middle step. **Making that optional is the single change that most
+de-risks the acceptance test** — and it splits the loop honestly, since the
+room's claims divide into world-claims (web-verifiable) and room-claims (not),
+and only the first kind ever needed research.
+
+**What it costs, stated so the decision is real:** Nora asks a question on a turn
+where she would otherwise have stayed quiet, so R-5's silence-beats-a-wrong-answer
+budget is spent differently; and `stated` minted from a confirmation is only as
+good as the confirming member, which §2.3's asserter rendering is what makes
+legible rather than authoritative.
+
 ## Closed here, with the reading that would reopen each
 
 **4. Cadence per adaptor.** Extraction is watermark-driven and suits a clock.
@@ -315,6 +364,6 @@ that contradicts from one that merely does not cover, that reopens the
 
 ## Status / Checkpoint
 
-2026-08-27 — item 11 added under *Blocking*: **there is no graded corpus**, so every prompt decision in this tier is unfalsifiable, and three open questions reduce to it. Items 0–3 remain blocking; items 5–9 are closed.
+2026-08-27 — item 12 added under *Blocking* (the correction loop's recognition step has no mechanism, and its async half is sequenced before the transport measurement it depends on), with §12.1 recording the social-loop option as an OPERATOR decision rather than taking it. Item 11 added under *Blocking*: **there is no graded corpus**, so every prompt decision in this tier is unfalsifiable, and three open questions reduce to it. Items 0–3 remain blocking; items 5–9 are closed.
 
 2026-08-24 — **Items 5–9 closed**, each with the reading that would reopen it. §4.1's semantic-index refusal was retracted for retrieval and confirmed for resolution, with the instrument finally named.
