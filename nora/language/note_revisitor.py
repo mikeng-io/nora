@@ -68,6 +68,54 @@ background adaptor may hold, which is a security-relevant change to a shared
 rule and is not needed to retire a note. `tools` is therefore empty, which also
 makes the workspace-safe restriction moot rather than argued around.
 
+## Why a NOTE-tier module lives under `nora/language/`
+
+Raised in review, and the answer is a constraint rather than a preference — so
+it is written here rather than settled by moving the file.
+
+**`nora/dreamer/` is not a Python package and cannot hold this.** It has no
+`__init__.py`, nothing in the repo imports `nora.dreamer`, and it does not
+appear in `pyproject.toml`'s layered-architecture contract at all. It holds two
+directories of markdown — `doctrine/` and `objectives/` — and
+`docker-compose.yml:263` bind-mounts it **read-only** into the container:
+
+```
+- ./nora/dreamer:/app/nora/dreamer:ro
+```
+
+That mount is what makes an operator's instruction edit hot-reload without a
+rebuild, and it is exactly why code must not go there. A `.py` file baked into
+the image under that path is **replaced at runtime by whatever is in the host
+checkout** — so the running adaptor would be the working tree's, not the
+image's, and an image built from a known-good commit would silently execute
+code from a tree that has moved on. That reintroduces «never build from the
+live checkout» as a permanent runtime property instead of a build-time mistake.
+It would also place this module outside the import-boundary contract, which is
+a larger hole than the one the move was meant to close.
+
+**Both fact adaptors are here for the same reason**, with the argument stated
+in `nora.language.fact_adaptor`'s own docstring: the layer contract forbids
+`nora.agent` from holding tier logic and forbids `nora.language` from importing
+`nora.agent`/`nora.doctrine`/`nora.config`, so an adaptor declares tool NAMES
+and takes its caps through `__init__`. `nora.language` is where a tier's
+adaptors sit today, and this one is not an exception to that.
+
+**The concern behind the question is real and is not dismissed.** A note-tier
+module under `nora/language/` is findable by a sweep over «what does
+`[language]` own», and that is precisely the shape that hid the Dreamer clock's
+coupling to `[language]` for weeks. What makes this one safe is that the
+coupling is absent rather than merely documented: this adaptor's lifetime is
+gated on `cfg.notes.enabled and note_store is not None`
+(`nora.app.composition`), it reads no language config, and
+`tests/test_composition.py::test_the_revisitor_needs_both_the_dreamer_and_the_notes_gate`
+fails if that ever changes. **The directory name is not the enforcement; that
+test is.**
+
+If the adaptors should move out of `nora/language/`, all three should move
+together into a package that exists, with the layers contract updated in the
+same change. Moving this one alone would leave the fact adaptors behind and
+make the convention harder to read, not easier.
+
 ## Keyed on a WORKSPACE, and what that costs
 
 A note is workspace-scoped, so this adaptor is too — `uses_watermark = False`,
