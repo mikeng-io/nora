@@ -31,6 +31,8 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
+from opentelemetry import trace
+
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import (
     BlobStore,
@@ -42,6 +44,7 @@ from nora.domain.ports import (
     Transcriber,
 )
 from nora.ingest.stickers import StickerReader
+from nora.obs.tracing import span
 from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
 from nora.policy import Policy
@@ -52,6 +55,20 @@ from .stages import identity as identity_stage
 from .stages import media as media_stage
 from .stages import memory_feed as memory_feed_stage
 from .stages import scope as scope_stage
+
+
+def _outcome(value: str) -> None:
+    """Stamp the CURRENT span with why this message stopped here.
+
+    Without it an early return is a trace that simply ends, which reads exactly
+    like a crash — the asymmetry `02-instrument-blindness.md` Layer 7 names. Never
+    load-bearing: a tracer that cannot record must not stop an ingest.
+    """
+    try:
+        trace.get_current_span().set_attribute("nora.outcome", value)
+    except Exception:
+        log.debug("ingest outcome %r not recorded", value, exc_info=True)
+
 
 log = logging.getLogger("nora.ingest.pipeline")
 
@@ -126,44 +143,70 @@ class IngestPipeline:
         loop, via `nora.app.dispatch.Dispatcher.on_message`) never hands this a
         `None`. The `nora_messages_total` increment replaces what the deleted
         parse stage used to do right after a successful `adapter.parse()`."""
+        with span(
+            "ingest",
+            **{"nora.platform": message.platform,
+               "nora.conversation_id": message.conversation_id},
+        ):
+            return await self._run(message=message)
+
+    async def _run(self, *, message: NormalizedMessage) -> IngestResult:
+        """The body, so the root span in `run` wraps EVERY exit including the
+        early returns. Splitting it is what makes `nora.outcome` reachable from
+        each `return` without a `try/finally` that would have to re-derive which
+        exit it was."""
         m = self._metrics
         m.inc("nora_messages_total", platform=message.platform)
 
         # The ROOM gate, before anything is written: a conversation the
         # operator has not allowlisted is not recorded at all.
-        if not await scope_stage.run(
-            message=message, policy=self._allowlist, metrics=m
-        ):
+        with span("ingest.scope"):
+            admitted = await scope_stage.run(
+                message=message, policy=self._allowlist, metrics=m
+            )
+        if not admitted:
+            # Ends here, and ENDS VISIBLY: without the attribute an unallowlisted
+            # room is a trace that simply stops, indistinguishable from a crash.
+            _outcome("scope_refused")
             return IngestResult(message=None, decision=None)
 
         # Identity first, so the resolved person_id lands in the audit INSERT
         # instead of a second write. `Persons.resolve` is two dict lookups on a
         # startup-built frozen mapping — no I/O, so nothing fallible moved
         # ahead of the record.
-        person = await identity_stage.run(
-            message=message, persons=self._persons, metrics=m
-        )
+        with span("ingest.identity"):
+            person = await identity_stage.run(
+                message=message, persons=self._persons, metrics=m
+            )
         # Custody BEFORE the record, not after it (A9, DEC-43). This is the one
         # stage that returns a new message: the body gains the durable handle
         # for every attachment whose bytes are now Nora's, so the row and the
         # blob it names are committed by the same INSERT. See that module for
         # why it is inline rather than spawned like `memory_feed`.
-        message = await media_stage.run(
-            message=message, sources=self._media_sources, blobs=self._blobs,
-            media_store=self._media_store, metrics=m,
-            stickers=self._stickers, transcriber=self._transcriber,
-            language=self._language, max_description_chars=self._max_description_chars,
-        )
-        recorded = await audit_stage.run(
-            message=message, audit=self._audit, metrics=m, person=person
-        )
+        with span("ingest.media"):
+            message = await media_stage.run(
+                message=message, sources=self._media_sources, blobs=self._blobs,
+                media_store=self._media_store, metrics=m,
+                stickers=self._stickers, transcriber=self._transcriber,
+                language=self._language, max_description_chars=self._max_description_chars,
+            )
+        with span("ingest.audit"):
+            recorded = await audit_stage.run(
+                message=message, audit=self._audit, metrics=m, person=person
+            )
         if not recorded:
+            _outcome("audit_refused")
             return IngestResult(message=None, decision=None)
-        await memory_feed_stage.run(
-            message=message, person=person, memory=self._memory, metrics=m, spawn=self._spawn,
-        )
+        with span("ingest.memory_feed"):
+            await memory_feed_stage.run(
+                message=message, person=person, memory=self._memory, metrics=m,
+                spawn=self._spawn,
+            )
 
-        decision = await gate_stage.run(message=message, policy=self._policy, metrics=m)
+        with span("ingest.gate"):
+            decision = await gate_stage.run(
+                message=message, policy=self._policy, metrics=m
+            )
 
         # The SENDER gate. Only consulted once something would actually be
         # answered, so an unrecognised sender in an allowed room is still
