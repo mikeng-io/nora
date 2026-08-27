@@ -23,6 +23,7 @@ difference between the copy and the real thing observable.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 
 import pytest
@@ -2317,3 +2318,83 @@ async def test_every_retained_trace_is_counted_by_outcome(monkeypatch):
     assert metrics.get("nora_tagtrace_writes_total", outcome="send_reply") == 1
     assert metrics.get("nora_tagtrace_writes_total") == len(
         metrics.observations("nora_tag_latency_seconds"))
+
+
+async def test_the_turns_note_read_set_reaches_the_debrief(monkeypatch):
+    """26 §7's second sub-decision, wired. R-55 already maintains exactly this
+    set (`ReplyGuard._notes_read`) and nothing could see it, so a proposal
+    against a note the turn read and declined would have been accepted."""
+    spy = _RecordingDebrief()
+    _patch_debrief(monkeypatch, spy)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        debrief_wiring=_wiring(),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert len(spy.calls) == 1
+    assert isinstance(spy.calls[0]["notes_read"], frozenset)
+
+
+async def test_a_guard_that_cannot_report_its_read_set_never_costs_the_fold(monkeypatch):
+    """**The rule, one output over.** This runs in the `finally`, PAST the
+    outer `except BaseException`, so anything raised escapes `run()` and takes
+    down a turn that already replied. A read-set failure refuses NOTHING — the
+    worst case is a duplicate proposal, never a lost fold.
+
+    Falsification: drop the `try` in `_notes_read_of` and this raises instead
+    of passing an empty set.
+    """
+    from nora.engagement import pipeline as pipeline_module
+
+    class _Exploding:
+        @property
+        def notes_read(self):
+            raise RuntimeError("guard internals unavailable")
+
+    spy = _RecordingDebrief()
+    _patch_debrief(monkeypatch, spy)
+    assert pipeline_module._notes_read_of(
+        type("H", (), {"guard": _Exploding()})()) == frozenset()
+
+
+def test_the_accessor_hands_out_a_copy_not_the_live_set():
+    """The debrief runs AFTER the reply in the same slot. Handing it the live
+    set would let a later stage mutate what R-55's veto reads — and that veto
+    is the tag path's only protection against writing over a note it has not
+    read this turn. A guard whose state a later stage can edit is not a guard.
+
+    **The first version of this test asserted only that `notes_read` is a
+    `property`, and PASSED when the accessor returned the live set** — it
+    pinned the syntax and not the property. Found by mutation, which is the
+    only thing that finds it. This version does what a caller could do: take
+    the returned set and try to change what the guard sees.
+    """
+    from nora.agent.guards import ReplyGuard
+
+    guard = _guard_with_notes_read({"dinner-on-the-9th"})
+    handed = guard.notes_read
+    assert handed == {"dinner-on-the-9th"}
+
+    # A frozenset cannot be mutated at all, which is the guarantee. If the
+    # accessor ever hands back the live `set`, this line succeeds and the
+    # assertion below catches what it did to the guard.
+    with pytest.raises(AttributeError):
+        handed.add("big-walk")            # type: ignore[attr-defined]
+    assert guard.notes_read == {"dinner-on-the-9th"}
+    assert isinstance(handed, frozenset)
+    assert isinstance(
+        inspect.getattr_static(ReplyGuard, "notes_read"), property)
+
+
+def _guard_with_notes_read(handles: set[str]):
+    """A `ReplyGuard` with R-55's latch pre-populated, without driving a whole
+    turn through it. `_notes_read` is private and set in `__init__`; reaching
+    it directly is right here because the SUBJECT is what the accessor does
+    with that attribute, not how it comes to be filled."""
+    from nora.agent.guards import ReplyGuard
+
+    guard = ReplyGuard.__new__(ReplyGuard)
+    guard._notes_read = set(handles)
+    return guard

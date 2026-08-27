@@ -708,6 +708,33 @@ class ReplyGuard(HookProvider):
         # hands mid-turn — which is the case that must fail.
         self._notes_read: set[str] = set()
 
+    @property
+    def notes_read(self) -> frozenset[str]:
+        """The note handles `note_read` SUCCEEDED on this turn — R-55's latch,
+        exposed for 26 §7's second sub-decision.
+
+        **A FROZENSET, never the live set**, and that is the whole reason this
+        is a property rather than a public attribute. The consumer is the
+        debrief, which runs AFTER the reply in the same slot; handing it
+        `self._notes_read` would let a stage outside this class mutate what
+        R-55's veto reads, and that veto is the tag path's only protection
+        against writing over a note it has not read this turn. A guard whose
+        state a later stage can edit is not a guard.
+
+        **Why the debrief needs it** (§7): the tag path may have read a note
+        and deliberately decided against touching it. The debrief, reviewing
+        the same transcript a second later, would propose exactly that note
+        again — so a proposal against anything in this set is refused at the
+        sink. Without it the two paths argue with each other once per turn,
+        forever.
+
+        Empty is the ordinary state: most turns read no notes at all. It is
+        never `None`, so a caller has nothing to branch on and cannot mistake
+        "read nothing" for "could not check" — those are the same thing here
+        and both mean "refuse nothing".
+        """
+        return frozenset(self._notes_read)
+
     def _veto(self, rule: str, message: str) -> str:
         self._metrics.inc("nora_guard_vetoes_total", rule=rule)
         log.warning("guard veto %s: %s", rule, message)

@@ -73,12 +73,19 @@ def _trace(outcome: str = "send_reply") -> TagTrace:
     )
 
 
-async def _run(*, store=None, store_verdict=None, client=None, metrics=None, max_chars=1200,
+_UNSET = object()
+
+
+async def _run(*, store=None, store_verdict=_UNSET, client=None, metrics=None, max_chars=1200,
                timeout_seconds=5.0, store_timeout_seconds=5.0,
-               rebuild_after_folds=20, trace=None) -> tuple:
+               rebuild_after_folds=20, notes_read=frozenset(),
+               now_ms_override=None, trace=None) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
-    store_verdict = (store_verdict if store_verdict is not None
-                     else InMemoryTurnVerdictStore())
+    # `_UNSET`, not `None`: `None` is a REAL state the stage documents as
+    # "the ordinary state on any deployment that has not wired one", and a
+    # helper that substitutes a store for it makes that branch untestable.
+    store_verdict = (InMemoryTurnVerdictStore() if store_verdict is _UNSET
+                     else store_verdict)
     metrics = metrics if metrics is not None else Metrics()
     await debrief.run(
         trace=trace if trace is not None else _trace(),
@@ -87,8 +94,8 @@ async def _run(*, store=None, store_verdict=None, client=None, metrics=None, max
         objective=_Objective(), metrics=metrics, display_name="Nora",
         max_chars=max_chars, window=40, timeout_seconds=timeout_seconds,
         store_timeout_seconds=store_timeout_seconds,
-        rebuild_after_folds=rebuild_after_folds,
-        now_ms=1_756_000_931_000,
+        rebuild_after_folds=rebuild_after_folds, notes_read=notes_read,
+        now_ms=now_ms_override if now_ms_override is not None else 1_756_000_931_000,
     )
     return store, metrics, store_verdict
 
@@ -534,19 +541,26 @@ async def test_the_verdict_comes_from_the_answer_that_was_kept():
 
 # --- S2's re-derivation trigger --------------------------------------------
 
-async def _with_prior(fold_count: int, *, body: str = "the carried position"):
+# The two clocks are EXPLICIT in these helpers because their ORDER is the
+# subject: the trigger fires on an ungrounded verdict written SINCE the position
+# was last revised. Both used to default to 1, so `created_at > updated_at` was
+# false and the tests could not tell a fresh verdict from a stale one.
+async def _with_prior(fold_count: int, *, body: str = "the carried position",
+                      updated_at: int = 100):
     store = InMemoryStandingStore()
     await store.write(standing=Standing(
         platform="signal", conversation_id="g1", body=body,
-        fold_count=fold_count, updated_at=1))
+        fold_count=fold_count, updated_at=updated_at))
     return store
 
 
-async def _with_verdict(*, grounded: bool):
+async def _with_verdict(*, grounded: bool, created_at: int = 200,
+                        tag_id: str = "earlier"):
     verdicts = InMemoryTurnVerdictStore()
     await verdicts.save(verdict=TurnVerdict(
-        tag_id="earlier", conversation_id="g1", grounded=grounded,
-        unsupported=() if grounded else ("invented a price",), created_at=1))
+        tag_id=tag_id, conversation_id="g1", grounded=grounded,
+        unsupported=() if grounded else ("invented a price",),
+        created_at=created_at))
     return verdicts
 
 
@@ -600,9 +614,18 @@ async def test_the_first_fold_of_a_conversation_is_not_a_rederivation():
     """`prior is None` builds from the window regardless — there is nothing to
     carry forward and nothing to correct. Counting it would drown the signal in
     the one event every conversation has exactly once."""
-    _, metrics, _ = await _run()
+    store, metrics, _ = await _run()
+    # **These two assertions alone were satisfied by a CRASH** — remove
+    # `if prior is None: return None` from `_should_rebuild` and the stage
+    # raises AttributeError on NoneType.fold_count, writes nothing, lands
+    # outcome="error", and both still hold. Found by an independent reviewer
+    # mutating the clause; R-72 is pinned to this test and it measured nothing.
     assert _counter(metrics, "nora_standing_rederivations_total") == 0
     assert _counter(metrics, "nora_debrief_prior_total", prior="absent") == 1
+    # So assert the fold actually SUCCEEDED. A test whose assertions are all
+    # true of a crash is not a test.
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert await store.read(platform="signal", conversation_id="g1") is not None
 
 
 async def test_a_rebuild_resets_the_fold_count():
@@ -628,3 +651,141 @@ async def test_an_unreadable_verdict_store_does_not_rebuild():
         store=await _with_prior(1), store_verdict=_Broken(), client=client)
     assert _counter(metrics, "nora_standing_rederivations_total") == 0
     assert "the carried position" in client.prompts[0]
+
+
+# --- 26 §7's read-set, threaded from R-55's latch ---------------------------
+
+async def test_the_notes_the_turn_read_reach_the_debrief():
+    """§7: a proposal against a note the tag path already read and DECLINED to
+    touch must be refusable. Nothing consumes the set yet — the note-proposal
+    output is blocked on the store's create-shaped payload — so this pins that
+    it ARRIVES, which is the half that rots silently."""
+    _, metrics, _ = await _run(notes_read=frozenset({"dinner-on-the-9th", "big-walk"}))
+    assert _counter(metrics, "nora_debrief_notes_read_total") == 2
+
+
+async def test_a_turn_that_read_no_notes_counts_nothing():
+    """The ordinary case — most turns read no notes — and it must not look like
+    a wiring failure."""
+    _, metrics, _ = await _run()
+    assert _counter(metrics, "nora_debrief_notes_read_total") == 0
+
+
+async def test_one_ungrounded_verdict_causes_exactly_one_rebuild():
+    """**The latch.** Verified live by an independent reviewer before this
+    existed: one ungrounded verdict plus three verdict-less folds produced
+    THREE rebuilds, `fold_count` pinned at 1, and
+    `nora_standing_rederivations_total{trigger="ungrounded"}` climbing — which
+    26 §6 reads as the trigger being healthy. Standing silently stopped being a
+    rolling position and became a per-turn window summary.
+
+    A verdict is written only when the fold fully succeeds, so verdict-less
+    turns are the CORRECT state, not a fault — and the read has to cope with
+    them. Second fold here revises rather than rebuilds, because the verdict is
+    no longer newer than the position.
+
+    Falsification: drop `last.created_at > prior.updated_at` and the second
+    fold rebuilds too.
+    """
+    store = await _with_prior(1, updated_at=100)
+    verdicts = await _with_verdict(grounded=False, created_at=200)
+    metrics = Metrics()
+
+    # BOTH folds emit NO verdict — that is the scenario, and it is the
+    # ordinary one: a fold only writes a verdict when it fully succeeds, so a
+    # timeout, an overflow or a screen leaves none. `_ok()` defaults to
+    # grounded=true, which would write a FRESH verdict and mask the latch
+    # entirely — the first version of this test did exactly that and passed
+    # with the guard removed.
+    def _no_verdict(body: str) -> debrief.Completion:
+        return debrief.Completion(json.dumps({"standing": body}), "stop")
+
+    # Turn N+1: the ungrounded verdict is newer than the position -> rebuild.
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_no_verdict("rebuilt once")), now_ms_override=300)
+    # Turn N+2: still no verdict, and the position is now NEWER than the stale
+    # ungrounded one. Without the guard this rebuilds again, and again, forever.
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_no_verdict("revised after")), now_ms_override=400)
+
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1, (
+        "the stale verdict latched the trigger on"
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.fold_count == 2, (
+        "fold_count pinned at 1 means the position never accumulates"
+    )
+
+
+async def test_a_verdict_older_than_the_position_does_not_rebuild():
+    """The same guard from the other side: an ungrounded verdict that predates
+    the position's last revision has already been acted on."""
+    _, metrics, _ = await _run(
+        store=await _with_prior(1, updated_at=500),
+        store_verdict=await _with_verdict(grounded=False, created_at=200))
+    assert _counter(metrics, "nora_standing_rederivations_total") == 0
+
+
+async def test_no_verdict_store_is_inert_not_a_failure():
+    """`store_verdict=None` is what every deployment that has not wired one
+    runs, and the stage documents it as ordinary. It had NO test: the helper
+    substituted a real store for `None`, so the branch was unreachable."""
+    store, metrics, _ = await _run(
+        store_verdict=None,
+        client=_Client(_ok("a position", grounded=False, unsupported=("x",))))
+    assert await store.read(platform="signal", conversation_id="g1") is not None
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert _counter(metrics, "nora_turn_verdict_total") == 0
+
+
+def test_the_slot_hold_counts_every_store_await_the_stage_makes():
+    """**The arithmetic has been wrong three times; this is what stops a
+    fourth.**
+
+    `STORE_CALLS_PER_FOLD` feeds `Config._the_standing_slot_hold_fits_its_budget`,
+    which is the gate that decides whether the declared ceiling is honest. It
+    said 2 while the stage made 4 — `TurnVerdict` added `store_verdict.save`
+    and S2's trigger added `store_verdict.latest`, and neither updated the sum,
+    so the real worst case ran ten seconds over the declared one with the next
+    person in that room waiting for it.
+
+    This counts the bounded awaits in `run` from the source and asserts the
+    constant matches, so adding a fifth store call fails HERE rather than
+    silently widening the hold. One of the five `wait_for`s is the MODEL call,
+    which `[standing] timeout_seconds` bounds separately — hence the minus one.
+    """
+    import inspect
+
+    # BOTH functions: `_should_rebuild` holds the slot too — it is awaited from
+    # `run` before the fold — and its `store_verdict.latest` is one of the four.
+    # Counting only `run` misses it, which is the same shape as the miscount
+    # this test exists to prevent.
+    source = (inspect.getsource(debrief.run)
+              + inspect.getsource(debrief._should_rebuild))
+    waits = source.count("asyncio.wait_for")
+    store_waits = waits - 1          # one is the MODEL call, bounded separately
+    assert store_waits == debrief.STORE_CALLS_PER_FOLD, (
+        f"the stage makes {waits} bounded awaits ({store_waits} of them store "
+        f"calls) but STORE_CALLS_PER_FOLD is {debrief.STORE_CALLS_PER_FOLD}. "
+        f"The slot-hold validator computes the declared ceiling from that "
+        f"constant, so disagreement means the ceiling is not the real worst "
+        f"case — which is exactly how it came to be understated by 2x."
+    )
+
+
+async def test_an_unreadable_verdict_store_still_honours_the_ceiling():
+    """R-72's row claimed, unqualified, that an unreadable verdict store does
+    NOT rebuild. False: the ceiling reads `fold_count` off the row already in
+    hand and needs no second store, so it still fires. The named test used
+    fold_count=1 against a ceiling of 20 and only ever exercised the
+    below-ceiling half (cold review, 2026-08-28)."""
+    class _Broken(InMemoryTurnVerdictStore):
+        async def latest(self, **kw):
+            raise RuntimeError("verdict store down")
+
+    _, metrics, _ = await _run(
+        store=await _with_prior(20), store_verdict=_Broken(),
+        rebuild_after_folds=20)
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ceiling") == 1

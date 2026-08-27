@@ -8,6 +8,7 @@
   ],
   "limitations": [
     "Nothing reads these rows yet. The pass that would rebuild a drifted position from them is not built, so for now this accumulates a record and changes nothing she does.",
-    "The judgement is the model's own about the turn it just reviewed, not an independent check. It is evidence to look at, not a verdict to trust."
+    "The judgement is the model's own about the turn it just reviewed, not an independent check. It is evidence to look at, not a verdict to trust.",
+    "It is recorded only for turns whose review fully succeeded. A review that ran out of time, or whose answer was rejected, leaves no judgement for that turn — which is honest, since it never formed one, but it means the record is not one row per turn."
   ]
 }

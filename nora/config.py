@@ -21,15 +21,17 @@ from pydantic import (
     model_validator,
 )
 
-# `nora.config` may import `nora.domain` — the forbidden direction is the
-# other one (`nora.domain` may not read config). The ceiling is imported
-# rather than restated so `StandingConfig`'s startup refusal and the
-# database's own CHECK cannot come to disagree about the same number.
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     STANDING_BODY_CEILING_CHARS,
 )
+
+# `nora.config` may import `nora.domain` — the forbidden direction is the
+# other one (`nora.domain` may not read config). The ceiling is imported
+# rather than restated so `StandingConfig`'s startup refusal and the
+# database's own CHECK cannot come to disagree about the same number.
+from nora.engagement.stages.debrief import STORE_CALLS_PER_FOLD
 
 
 class ConfigError(Exception):
@@ -1552,12 +1554,16 @@ class StandingConfig(BaseModel):
     # it `reload = "startup"` for this reader, or moving it off the slot, is a
     # separate change with its own measurement.
     #
-    # 150s is chosen to ADMIT today's deployment (120 + 20 + 2x5 = 150) rather
+    # 160s is the REAL worst case at the shipped timeouts (120 + 20 + 4x5).
+    # It was 150, reverse-engineered from a sum that counted two store calls
+    # when the stage makes four — never an operator judgement about an
+    # acceptable hold, just the arithmetic agreeing with itself. Chosen to
+    # ADMIT today's deployment rather
     # than to reject it: this validator's job is to make the arithmetic
     # impossible to get wrong silently, not to relitigate `[llm]`'s own timeout,
     # which was raised to 120 deliberately on 2026-08-08. Lower it and the
     # startup refusal tells the operator exactly which numbers no longer fit.
-    max_slot_hold_seconds: float = Field(default=150.0, gt=0)
+    max_slot_hold_seconds: float = Field(default=160.0, gt=0)
 
     @model_validator(mode="after")
     def _max_chars_stays_under_the_database_ceiling(self) -> StandingConfig:
@@ -2318,14 +2324,24 @@ class Config(BaseModel):
         hold = (
             self.llm.timeout_seconds
             + self.standing.timeout_seconds
-            + 2 * self.standing.store_timeout_seconds
+            # FOUR, not two. The stage holds four bounded store awaits:
+            # `store_verdict.latest` (the S2 trigger's read), `store.read`
+            # (the prior), `store.write` (the revised position) and
+            # `store_verdict.save`. It was written as 2x when only the
+            # middle pair existed, and TurnVerdict and the trigger each
+            # added one without anyone updating the sum — so the real worst
+            # case was 160s against a declared 150s ceiling, ten seconds
+            # over, with the next person in that room waiting for all of it.
+            # Third time this arithmetic has been wrong; this validator is
+            # the instrument built to catch it and it was wrong itself.
+            + STORE_CALLS_PER_FOLD * self.standing.store_timeout_seconds
         )
         if hold > self.standing.max_slot_hold_seconds:
             raise ValueError(
                 f"[standing] would hold a conversation's slot for up to "
                 f"{hold:g}s — [llm] timeout_seconds ({self.llm.timeout_seconds:g})"
                 f" + [standing] timeout_seconds ({self.standing.timeout_seconds:g})"
-                f" + 2 x store_timeout_seconds "
+                f" + {STORE_CALLS_PER_FOLD} x store_timeout_seconds "
                 f"({self.standing.store_timeout_seconds:g}) — which is over "
                 f"[standing] max_slot_hold_seconds "
                 f"({self.standing.max_slot_hold_seconds:g}). Lower a timeout or "

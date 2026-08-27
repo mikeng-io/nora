@@ -925,7 +925,14 @@ store_timeout_seconds = 5.0
 # argued 60 + 20 = 80s while [llm] timeout_seconds is a required field this
 # deployment sets to 120. Raise it deliberately or lower a timeout; the startup
 # refusal names which numbers stopped fitting.
-max_slot_hold_seconds = 150.0
+# 160, not 150. The old figure was reverse-engineered from a sum that
+# counted TWO store calls when the stage makes FOUR — it was never an
+# operator judgement about an acceptable hold, it was the arithmetic
+# agreeing with itself. 160 is the real worst case at these timeouts.
+# If that is too long, the lever is store_timeout_seconds (4 x 5 = 20s
+# of the total, for four single-row keyed queries against a local
+# database) or [llm] timeout_seconds, not this number.
+max_slot_hold_seconds = 160.0
 # Empty means [llm] model. A separate name is available because the fold is a
 # different job from replying — one structured output, no tools, no audience —
 # and may want a cheaper or a more literal model.

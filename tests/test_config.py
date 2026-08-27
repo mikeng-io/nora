@@ -24,6 +24,23 @@ from nora.config import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _set_key(text: str, key: str, value: str) -> str:
+    """Rewrite `key = ...` and ASSERT the edit landed.
+
+    These tests used `str.replace("max_slot_hold_seconds = 150.0", ...)`. The
+    default changed to 160.0 and the replace became a SILENT NO-OP — the config
+    loaded unmodified and two refuse-to-start tests reported DID NOT RAISE.
+    A replace that does not match is the failure mode this repo has been bitten
+    by three times today, so this one refuses rather than returning the input
+    unchanged.
+    """
+    import re as _re
+
+    new, n = _re.subn(rf"(?m)^{_re.escape(key)} = .*$", f"{key} = {value}", text)
+    assert n == 1, f"{key} not found exactly once in the config ({n} matches)"
+    return new
+
+
 @pytest.fixture
 def toml_path(tmp_path, monkeypatch):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
@@ -1118,8 +1135,7 @@ def test_the_standing_slot_hold_is_checked_against_the_real_llm_timeout(toml_pat
     # it claimed the opposite, and made this test depend on every unrelated
     # subsystem tolerating being switched on. Removed; the targeted replace
     # below is the whole mechanism (review finding, 2026-08-27).
-    text = toml_path.read_text().replace(
-        "max_slot_hold_seconds = 150.0", "max_slot_hold_seconds = 80.0")
+    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "80.0")
     i = text.index("[standing]")
     text = text[:i] + text[i:].replace("enabled = false", "enabled = true", 1)
     toml_path.write_text(text)
@@ -1138,8 +1154,7 @@ def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):
     failure is worse (a live conversation that stops answering, versus a fold
     reading fewer rows), so gating it was the inconsistency, not ungating it.
     """
-    toml_path.write_text(toml_path.read_text().replace(
-        "max_slot_hold_seconds = 150.0", "max_slot_hold_seconds = 1.0"))
+    toml_path.write_text(_set_key(toml_path.read_text(), "max_slot_hold_seconds", "1.0"))
     with pytest.raises(ConfigError, match="hold a conversation's slot"):
         load(toml_path)
 

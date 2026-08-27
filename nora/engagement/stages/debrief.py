@@ -109,8 +109,10 @@ content class changes, and that is the write.
 
 ## What this stage does NOT do yet, and why
 
-The design's §3 names four outputs of one call. This stage produces **one**:
-`Standing`. `TurnVerdict` is Phase 3 and needs its own never-rewritten table;
+The design's §3 names four outputs of one call. This stage produces **two**:
+`Standing` and `TurnVerdict`, each parsed from the same completion with its own
+validated shape. It said "one" long after the verdict path landed forty lines
+below in this same file (cold review, 2026-08-28).
 fact proposals are Phase 4; and the note proposal (plan task 2.10) needs
 `SqlNoteStore` to satisfy `DreamSink` — it has `create`/`append_revision`, not
 `propose`/`supersede`, and joining it to
@@ -200,6 +202,24 @@ class ObjectiveSource(Protocol):
 #: causes of the 4096-token runaway that made this a plain completion in the
 #: first place.
 OBJECTIVE = "standing-debrief"
+
+#: How many BOUNDED STORE AWAITS one fold holds the conversation's slot for.
+#: `nora.config` imports this to compute the worst-case hold, so the number
+#: lives in the module that makes the calls rather than in the validator that
+#: checks them.
+#:
+#: **It has been wrong three times.** It was written as 2 when only
+#: `store.read` and `store.write` existed; `TurnVerdict` added
+#: `store_verdict.save` and S2's trigger added `store_verdict.latest`, and
+#: neither updated the sum — so the declared ceiling was under the real worst
+#: case by ten seconds, with the next person in that room waiting for it. The
+#: validator was the instrument built to catch exactly that arithmetic and it
+#: was carrying the stale figure itself.
+#:
+#: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
+#: `asyncio.wait_for` calls in `run` and asserts this matches, so adding a
+#: fifth store call fails a test instead of silently widening the hold.
+STORE_CALLS_PER_FOLD = 4
 
 
 def _prompt(*, instructions: str, rendered: str, max_chars: int) -> str:
@@ -396,7 +416,38 @@ async def _should_rebuild(
                 "re-deriving on an instrument that is down", tag_id,
             )
             last = None
-        if last is not None and not last.grounded:
+        # **`created_at > prior.updated_at` is the whole fix for the latch**,
+        # and it is a guard on the READ rather than a change to the write.
+        #
+        # `latest` answers the newest verdict of ANY AGE, not the previous
+        # turn's. A verdict is only written when the fold fully succeeded, so a
+        # fold that timed out, overflowed or was screened leaves none — and
+        # without this comparison the NEXT fold reads the same stale ungrounded
+        # verdict and rebuilds again, and the one after that, forever. Verified
+        # live by an independent reviewer: one ungrounded verdict plus three
+        # verdict-less folds produced three rebuilds with `fold_count` pinned
+        # at 1. Standing silently stopped being a rolling position and became a
+        # per-turn window summary — 26 §4.0's recency-slice failure reached
+        # from the other side — while
+        # `nora_standing_rederivations_total{trigger="ungrounded"}` climbed,
+        # which §6 reads as the trigger being HEALTHY. The metric reported the
+        # opposite of what was happening.
+        #
+        # **Why the guard and not "write the verdict on every path".** That was
+        # the first proposed fix and it is wrong: a fold that timed out has
+        # formed no judgement about groundedness, so writing one would make an
+        # instrument that could not measure report a value instead of
+        # `unavailable` (R-27). Sparse verdicts are the CORRECT state; the read
+        # has to cope with them.
+        #
+        # `prior.updated_at` is the position's own last write, so this asks
+        # exactly "was there an ungrounded verdict SINCE the position was last
+        # revised" — which is the question S2 actually poses.
+        if (
+            last is not None
+            and not last.grounded
+            and last.created_at > prior.updated_at
+        ):
             return "ungrounded"
 
     if prior.fold_count >= ceiling:
@@ -420,6 +471,7 @@ async def run(
     store_timeout_seconds: float,
     rebuild_after_folds: int,
     now_ms: int,
+    notes_read: frozenset[str] = frozenset(),
     tz: tzinfo | None = None,
 ) -> None:
     """Fold this finished turn into the conversation's position. **Never
@@ -482,6 +534,15 @@ async def run(
                 trace.tag_id, rebuild,
             )
 
+        # R-55's latch, for 26 §7. Nothing CONSUMES it yet — the note-proposal
+        # output is blocked on the store gaining a create-shaped payload — so
+        # it is counted rather than used, deliberately: the wiring is the part
+        # that rots silently, and a counter that moves proves the set is
+        # reaching this stage before anything depends on it. When proposals
+        # land, the sink refuses any proposal naming a note in here.
+        if notes_read:
+            metrics.inc("nora_debrief_notes_read_total", value=len(notes_read))
+
         instructions = objective.objective_body(OBJECTIVE)
         # **The prior is DISCARDED AT THE RENDER, never at the read** (26 §4's
         # non-negotiable). The fold must still READ it — that is the whole
@@ -525,16 +586,30 @@ async def run(
 
         body, refusal, raw = await asyncio.wait_for(
             _fold(), timeout=timeout_seconds)
+        if body is None:
+            outcome = refusal
+            return
+
         # Parsed from the SAME completion the position came from — one call,
-        # two outputs (§3) — but with its own validated shape and its own
-        # failure mode, never a widened schema with optional fields (§7).
+        # two outputs (§3) — with its own validated shape and its own failure
+        # mode, never a widened schema with optional fields (§7).
+        #
+        # **BELOW the `body is None` guard, deliberately.** `_check` refuses a
+        # `finish_reason == "length"` body BEFORE parsing, precisely because a
+        # truncated JSON document can parse into something — a shorter string,
+        # a dict missing its last key — and that «something» is an ERROR
+        # wearing a PASS. Parsing the verdict ABOVE the guard handed that same
+        # truncated text to `json.loads` anyway. It was harmless only because
+        # the result was discarded on every refusal path, which made it a
+        # loaded gun: the moment a verdict could be written on a path that did
+        # not fully succeed, a truncated body parsing to `{"grounded": true}`
+        # would become a NEVER-REWRITTEN row asserting a judgement the fold
+        # never formed. Below the guard, a refused body cannot reach the parser
+        # at all (cold review, 2026-08-28).
         verdict = _verdict(
             raw, tag_id=trace.tag_id, conversation_id=trace.conversation_id,
             now_ms=now_ms,
         )
-        if body is None:
-            outcome = refusal
-            return
         if len(body) > max_chars:
             # The second refusal. Nothing is written and the PRIOR position
             # stands — a coherent stale position beats a sentence cut in half,
