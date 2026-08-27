@@ -1059,3 +1059,24 @@ store_timeout_seconds = 5.0
 max_slot_hold_seconds = 150.0
 # Empty means `[llm] model`.
 model = ""
+# The fold's reasoning budget. Empty means inherit [llm] reasoning_effort.
+#
+# It is DECLARED here rather than inherited silently: the debrief's model
+# client never passed this at all, so the fold ran at whatever the provider
+# defaults to — an unchosen setting on a call that spends the conversation's
+# slot, while the tag path passes its own explicitly.
+#
+# THE VALUE IS DELIBERATELY NOT CHOSEN. design/dreamer-agent-loop/18-flows.md
+# is explicit that the fold's reasoning effort "is a MEASUREMENT, not a
+# setting": the fold is integration, not research, so a low budget is
+# PLAUSIBLE — and that is exactly the class of claim 09-measurement.md forbids
+# asserting. The design names a decidable spike instead: run the same fold at
+# several budgets over a fixed set of REAL retained traces and score whether
+# the revised position (a) preserves what the prior held and (b) integrates
+# what the trace added. Both are checkable by comparison; no judge needed.
+# tag_trace is retained precisely so that set exists.
+#
+# So this key exists to make that spike runnable. Empty is the honest default:
+# it says "nobody has measured this yet" rather than inventing a number.
+# Legal: none, minimal, low, medium, high, xhigh, max — checked at startup.
+reasoning_effort = ""

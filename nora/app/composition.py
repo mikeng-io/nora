@@ -24,10 +24,11 @@ from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import boto3
 from openai import AsyncOpenAI
+from openai.types.shared.reasoning_effort import ReasoningEffort
 
 from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
@@ -227,6 +228,34 @@ class _LanguageModelClient:
         return (response.choices[0].message.content or "").strip()
 
 
+_REASONING_EFFORTS: frozenset[str] = frozenset(
+    {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+)
+
+
+def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
+    """Narrow a config string to the provider's closed set, or refuse to start.
+
+    `[standing] reasoning_effort` is already typed as this set, so it cannot
+    arrive wrong. `[llm] reasoning_effort` — which it INHERITS when empty — is
+    a bare `str` and can: a typo there reaches the provider and comes back a
+    400 during a fold, inside the conversation's slot, on a turn that had
+    already replied.
+
+    Narrowed HERE rather than by retyping `LLMConfig`, which is the tag path's
+    own field with its own callers — a wider change should not ride on this
+    one. That retype is the better fix and is worth doing separately; this
+    gives the boot-failure property for the debrief's use of it today.
+    """
+    if value not in _REASONING_EFFORTS:
+        raise StartupError(
+            f"{source} = {value!r} is not a reasoning effort the provider "
+            f"accepts ({', '.join(sorted(_REASONING_EFFORTS))}) — refusing to "
+            f"start rather than failing on the first call that uses it"
+        )
+    return cast(ReasoningEffort, value)
+
+
 class _DebriefModelClient:
     """Satisfies `nora.engagement.stages.debrief.ModelClient` — the same raw
     one-shot completion `_LanguageModelClient` above makes, with ONE field
@@ -252,10 +281,21 @@ class _DebriefModelClient:
     is not a slow background job, it is a room that stops answering.
     """
 
-    def __init__(self, *, client: AsyncOpenAI, model: str, timeout_seconds: float) -> None:
+    def __init__(
+        self, *, client: AsyncOpenAI, model: str, timeout_seconds: float,
+        reasoning_effort: ReasoningEffort,
+    ) -> None:
         self._client = client
         self._model = model
         self._timeout_seconds = timeout_seconds
+        # DECLARED, not inherited from the provider's default. This class did
+        # not pass it at all, so the fold ran at whatever the route happened to
+        # do — an unchosen setting on a call that spends the conversation's
+        # slot, while the tag path passes `[llm] reasoning_effort` explicitly.
+        # The VALUE is not argued anywhere: `18-flows.md` calls the fold's
+        # effort "a measurement, not a setting" and specifies a spike over the
+        # retained traces. This makes that spike runnable.
+        self._reasoning_effort = reasoning_effort
 
     @property
     def model(self) -> str:
@@ -267,6 +307,7 @@ class _DebriefModelClient:
                 model=self._model,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
+                reasoning_effort=self._reasoning_effort,
             ),
             timeout=self._timeout_seconds,
         )
@@ -1652,6 +1693,17 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 client=client,
                 model=cfg.standing.model or cfg.llm.model,
                 timeout_seconds=cfg.standing.timeout_seconds,
+                # Empty means inherit `[llm] reasoning_effort` — the same
+                # defaulting `model` above uses, and the honest default while
+                # the spike that would choose a value has not been run.
+                reasoning_effort=_reasoning_effort(
+                    cfg.standing.reasoning_effort or cfg.llm.reasoning_effort,
+                    source=(
+                        "[standing] reasoning_effort"
+                        if cfg.standing.reasoning_effort
+                        else "[llm] reasoning_effort (inherited)"
+                    ),
+                ),
             ),
             objective=dreamer_instructions,
             max_chars=cfg.standing.max_chars,

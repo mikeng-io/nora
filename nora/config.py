@@ -1480,6 +1480,40 @@ class StandingConfig(BaseModel):
     store_timeout_seconds: float = Field(
         default=DEFAULT_STANDING_STORE_TIMEOUT_SECONDS, gt=0)
     model: str = ""
+    # The fold's reasoning budget, DECLARED rather than inherited.
+    #
+    # It had none: `_DebriefModelClient` never passed `reasoning_effort`, so
+    # the fold ran at whatever the provider defaults to — an undeclared setting
+    # on a call that spends the conversation's slot. The tag path passes
+    # `[llm] reasoning_effort` explicitly (`tier.reasoning_effort`); this one
+    # did not, and nobody had chosen the value it was actually using.
+    #
+    # **The value is deliberately NOT argued here.** `design/dreamer-agent-loop/18-flows` §Flow-D is
+    # explicit that the fold's reasoning effort "is a MEASUREMENT, not a
+    # setting": the fold is integration — read the prior position and the
+    # trace, write the revised one — not research, so a low or absent budget is
+    # *plausible*, and that is exactly the class of claim `design/dreamer-agent-loop/09-measurement`
+    # forbids asserting. The design specifies a decidable spike instead: run
+    # the same fold at several budgets over a FIXED SET OF REAL TRACES and
+    # score whether the revised position (a) preserves what the prior held and
+    # (b) integrates what the trace added — both checkable by comparison, no
+    # judge needed. `tag_trace` is retained precisely so that set exists.
+    #
+    # So this key exists to make the spike RUNNABLE, and the default only
+    # matches `[llm] reasoning_effort` so that switching the tier on changes
+    # one thing at a time. Empty means "inherit `[llm] reasoning_effort`",
+    # which is the honest default: it says «nobody has measured this yet»
+    # rather than inventing a number the design forbids inventing.
+    # A closed set, unlike `[llm] reasoning_effort`'s bare `str`. The OpenAI
+    # client types this parameter as exactly these values, so a typo here
+    # ("hgh") currently reaches the provider and comes back a 400 DURING a
+    # fold, inside the conversation's slot. Typed, it is a boot failure
+    # instead — the refuse-to-start posture the rest of this section uses.
+    # `""` is the seventh legal value and means "inherit `[llm]`".
+    reasoning_effort: Literal[
+        "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
+    ] = ""
+
 
     # The WHOLE hold this stage can add to a conversation's slot, asserted at
     # startup rather than reasoned about in prose.
