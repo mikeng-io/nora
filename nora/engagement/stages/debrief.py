@@ -440,10 +440,33 @@ async def run(
             timeout_seconds, trace.tag_id,
         )
         outcome = "timeout"
+    except asyncio.CancelledError:
+        # Its own label and its own LOG LEVEL, and both are about alert
+        # fatigue rather than correctness.
+        #
+        # Swallowing this is design-mandated (26 §5: catch `BaseException`,
+        # never re-raise) and is handled correctly by the branch below — but
+        # every routine shutdown cancel of an in-flight tag then wrote an
+        # ERROR-level "debrief failed" traceback and counted
+        # `outcome="error"`, the one label that is supposed to mean SOMETHING
+        # IS WRONG. A counter that fires on ordinary shutdown is a counter
+        # nobody reads, which is this repo's own «a noisy gate is a disabled
+        # gate», one series over.
+        #
+        # A cancellation is not a fault: the process is going away and the
+        # position simply is not revised this turn. INFO, and a label that
+        # says so.
+        log.info(
+            "debrief cancelled (tag=%s); keeping the prior position",
+            trace.tag_id,
+        )
+        outcome = "cancelled"
     except BaseException:
         # `BaseException`, and it is not defensive breadth — see the module
         # docstring's (1). `CancelledError` is not an `Exception`, and letting
         # one out of here reports a silent failure on a turn that delivered.
+        # It is caught ABOVE rather than here so shutdown does not masquerade
+        # as a defect; this branch is now genuinely «something unexpected».
         log.exception("debrief failed (tag=%s); keeping the prior position",
                       trace.tag_id)
     finally:

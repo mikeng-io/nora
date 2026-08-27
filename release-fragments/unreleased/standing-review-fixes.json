@@ -8,10 +8,12 @@
     "A database write that times out is now reported as «could not save» rather than counted against the stage's own thinking budget, so the next investigation is pointed at the database instead of the model.",
     "When she speaks into a room unprompted — a reminder firing — she is now shown where that conversation had got to. It was the one path where she had no other way to know, and the block was silently missing there.",
     "Two tests that could not fail were rewritten so they can, and the engagement layer is now type-checked, which closes a whole class of wiring mistake that would have looked identical to the feature being switched off.",
-    "Asking for a wider review window than she actually has is now refused at startup instead of quietly doing nothing."
+    "Asking for a wider review window than she actually has is now refused at startup instead of quietly doing nothing.",
+    "Shutting Nora down mid-turn no longer looks like a fault: a cancelled review is reported as cancelled rather than as an error, so the counter that means «something is wrong» stops firing on ordinary restarts."
   ],
   "limitations": [
     "Standing remains switched off. This closes the review's findings; turning it back on is a separate decision.",
-    "Reminder turns still do not produce a position of their own — that needs the reminder path to keep a record of its own reasoning first, which it does not yet do."
+    "Reminder turns still do not produce a position of their own — that needs the reminder path to keep a record of its own reasoning first, which it does not yet do.",
+    "One known gap is recorded rather than fixed: on a turn where the fallback line was sent because she ran out of budget, the review is told she replied through the tool. It has never happened in production, and fixing it properly needs a change to the turn record's own vocabulary rather than to this feature."
   ]
 }

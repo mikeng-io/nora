@@ -281,7 +281,12 @@ async def test_a_cancellation_is_absorbed_and_never_re_raised():
     Narrow the `except` in `debrief.run` to `Exception` and this goes red.
     """
     _, metrics = await _run(client=_Client(asyncio.CancelledError()))
-    assert _counter(metrics, "nora_debrief_total", outcome="error") == 1
+    # The property is ABSORBED — `_run` returned rather than propagating. The
+    # label is `cancelled` rather than `error` (see
+    # `test_a_cancellation_is_not_counted_as_an_error`); asserting the total
+    # here keeps this test about the escape, so narrowing the `except` still
+    # turns it red regardless of how the exit is labelled.
+    assert _counter(metrics, "nora_debrief_total") == 1
 
 
 async def test_an_arbitrary_failure_is_absorbed():
@@ -426,3 +431,19 @@ async def test_a_store_write_timeout_is_unavailable_and_never_timeout():
         "a store write timeout was counted on the debrief-budget series"
     )
     assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
+
+
+async def test_a_cancellation_is_not_counted_as_an_error():
+    """Alert fatigue, not correctness — but on the one counter meant to mean
+    «something is wrong».
+
+    Swallowing the cancellation is design-mandated (26 §5) and
+    `test_a_cancellation_is_absorbed_and_never_re_raised` above pins that. What
+    this pins is that ordinary shutdown does not look like a defect: every
+    routine cancel of an in-flight tag used to write an ERROR traceback and
+    increment `outcome="error"`, so the series fired on healthy shutdowns and
+    stopped being readable. A noisy gate is a disabled gate.
+    """
+    _, metrics = await _run(client=_Client(asyncio.CancelledError()))
+    assert _counter(metrics, "nora_debrief_total", outcome="cancelled") == 1
+    assert _counter(metrics, "nora_debrief_total", outcome="error") == 0
