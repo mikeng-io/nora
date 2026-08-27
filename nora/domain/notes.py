@@ -265,6 +265,104 @@ class NoteRevisionProposal:
             )
 
 
+@dataclass(frozen=True, slots=True)
+class NoteCreationProposal:
+    """A note that does not exist yet — the debrief's shape, and the OTHER half
+    of what `DreamSink.propose` accepts for this tier.
+
+    **Two shapes with a discriminant, never one shape with optional fields**
+    (spec §7). A single type covering create and revise would make every field
+    optional, and a sink whose payload has no required field can refuse
+    nothing: `isinstance` would pass on a half-built value and the store would
+    discover the gap at the INSERT, as a database error on a background clock
+    rather than a refusal at the boundary. Two frozen types with disjoint
+    required fields is what makes the refusal possible at all.
+
+    **Why the debrief needs its own shape rather than reusing
+    `NoteRevisionProposal`.** That type's docstring says it plainly: *the
+    curator never writes a note's first revision — it acts ACROSS notes that
+    already exist.* The debrief's job is the opposite one. It reviews a
+    finished turn, and the valuable thing it can see is an uncertainty NOBODY
+    tracked, which is by definition a note that is not there. Revising an
+    existing note is the tag path's job in-turn (R-55's latch) and the
+    curator's across notes (§2).
+
+    **The anchor is required, and in practice it is a DATE.** `Note`
+    `__post_init__` refuses a note anchored to nothing — without a referent
+    there is nothing to look it up by later, nothing to compare for a merge,
+    and no way to retire it mechanically. `anchor_entity_ids` needs a populated
+    entity registry, and `note_entity` is empty; a type that accepted only
+    entity anchors would be a shape that cannot be satisfied in production. So
+    both are offered and at least one is required, which is `Note`'s own rule
+    stated one layer earlier, where the proposal can be refused instead of
+    raising inside a background tick.
+
+    **A create proposal never names a note, so it cannot collide with one — and
+    the sink does NOT check whether a similar note already exists.** That is
+    deliberate. Deduplication is anchor-keyed and belongs to the curator (§7.1),
+    which is the only thing permitted to act across notes; a sink that
+    reinterpreted a create as a revision because it found a plausible match
+    would be doing cross-note reasoning at the storage boundary, silently, on
+    a guess. Two notes about the same occasion is a state the curator is built
+    to resolve. One note silently absorbing another's content is not
+    recoverable in the direction that matters.
+    """
+
+    title: str
+    description: str
+    uncertainty: str
+    closing_condition: str
+    established_in: str
+    body: str
+    anchor_date: int | None = None
+    anchor_entity_ids: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        for value, what in (
+            (self.title, "title"),
+            (self.description, "description"),
+            (self.uncertainty, "uncertainty"),
+            (self.closing_condition, "closing_condition"),
+            (self.established_in, "the conversation it was raised in"),
+            (self.body, "body"),
+        ):
+            if not value or not value.strip():
+                raise ValueError(f"a proposed note needs {what}")
+        # THE SAME CAPS `Note` ENFORCES, mirrored here on purpose. This type's
+        # docstring argues that a refusal at the boundary is reviewable while a
+        # raise inside a tick is a log line nobody reads — and until 2026-08-27
+        # it copied only the anchor rule, so a 61-character title constructed
+        # fine and blew up at `_new_note` INSIDE `engine.begin()`, on the
+        # background clock, discarding the whole batch. That is exactly the
+        # failure this type exists to prevent, and the type did not implement
+        # it. A debrief model emitting a slightly long title is the likely
+        # case, not an exotic one.
+        if len(self.title) > TITLE_MAX_CHARS:
+            raise ValueError(
+                f"a note title is at most {TITLE_MAX_CHARS} characters (got "
+                f"{len(self.title)}) — the index is injected on EVERY tag, so "
+                f"this is a prompt-budget cap and not a style rule"
+            )
+        if len(self.description) > DESCRIPTION_MAX_CHARS:
+            raise ValueError(
+                f"a note description is at most {DESCRIPTION_MAX_CHARS} "
+                f"characters (got {len(self.description)})"
+            )
+        if self.anchor_date is not None and self.anchor_date < 10000000:
+            raise ValueError(
+                f"anchor_date is a YYYYMMDD calendar day, not epoch ms or a "
+                f"bare year (got {self.anchor_date})"
+            )
+        if self.anchor_date is None and not self.anchor_entity_ids:
+            raise ValueError(
+                "a proposed note needs an anchor — a date, entities, or both. "
+                "Without one there is no referent to look it up by later, "
+                "nothing to compare for a merge, and no way to retire it "
+                "mechanically. In practice this is a date: the entity registry "
+                "is not populated yet"
+            )
+
+
 class NoteSupersedeReason:
     """The `because` values `SqlNoteStore.supersede` accepts, and the shape of
     the tier's retirement vocabulary.

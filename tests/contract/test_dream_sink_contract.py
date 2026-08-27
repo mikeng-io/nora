@@ -721,7 +721,16 @@ async def _open_sink(name: str, request) -> AsyncIterator[tuple[object, _Impl]]:
         # against the foreign keys is Postgres's problem rather than ours.
         async with engine.begin() as conn:
             await conn.execute(sa.text(
-                "TRUNCATE fact_premise, fact, fact_candidate, fact_entity "
+                # note_revision before note (FK), and all four listed explicitly: the
+                # note tables have no FK into the fact ones, so CASCADE does not
+                # reach them and notes accumulated across the whole module until
+                # 2026-08-27. Nothing failed — every assertion keyed on an id
+                # from `propose` — but the guarantee two lines up was false for
+                # one of four implementations, and the first shared test to
+                # assert a COUNT or call `standing()` would have got a poisoned
+                # pass.
+                "TRUNCATE note_revision, note, note_candidate, note_entity, "
+                "fact_premise, fact, fact_candidate, fact_entity "
                 "RESTART IDENTITY CASCADE"
             ))
         yield (impl.build(engine), impl)

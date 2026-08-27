@@ -355,7 +355,13 @@ def test_the_objective_file_is_the_pre_move_constant_byte_for_byte(objective):
 # nothing to notice — and a set difference alone cannot tell that apart from an
 # honest new file. Naming each one here makes adding a natively-authored
 # objective a one-line, deliberate act, and leaves the lifted three pinned.
-NATIVELY_AUTHORED = {"fact-candidates", "fact-adjudication", "standing-debrief"}
+NATIVELY_AUTHORED = {
+    "fact-candidates", "fact-adjudication", "standing-debrief",
+    # Written for the curator, never lifted: the note tier had no
+    # background pass before it, so there is no prior prompt to have
+    # moved and no fixture that could pin one.
+    "note-curation",
+}
 
 # `standing-debrief` is the odd one in that set and it is worth saying why
 # it lives in this directory at all: Standing is a TAG-PATH STAGE, not a
