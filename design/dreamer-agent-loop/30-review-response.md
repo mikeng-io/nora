@@ -83,6 +83,40 @@ pranks.
 9  COUNT       a counter moved at every step above
 ```
 
+> **EXTERNAL REVIEW, 2026-08-27 — steps 3 and 6 are the two least specified
+> parts, and they are the two the acceptance test actually exercises.**
+>
+> **Step 3 has no mechanism.** `RECOGNISE` appears exactly once in this bundle —
+> the line above — and no node says *what does the recognising*. By elimination
+> it is the reply-path model choosing to raise a dispute, which builds the trust
+> loop on [02](02-instrument-blindness.md) §122's named pathology: *"she
+> recognises and does not act."* **Recognition must be deterministic first**:
+> quote-reply linkage (both platforms carry it), lexical overlap against the
+> rendered rows' surface strings (`pg_trgm` is already installed), and
+> addressed-to-Nora as a gate — with a model proposal as a *second* channel,
+> never the only one. And the **fan-out must be specified**: one correction
+> contradicts a lexeme row and a fact row simultaneously, so a dispute marks
+> every standing row about that entity in **both** tiers.
+>
+> **Step 6's dismissal is undefined for the motivating case.** The loop resolves
+> *"to a supersession or a dismissal"* and R-53 correctly holds that
+> `not_covered` is never a contradiction — but a member correcting a
+> *room-internal* claim (「打風 means X here」) produces a web search that returns
+> `not_covered`, and nothing says what happens next. If that dismisses, **the
+> disputed wrong row returns to rendering**, for exactly the class of claim the
+> open web cannot adjudicate and that motivated this bundle. **Rule: dismissal
+> requires an affirmative contradiction; a `stated` correction that is merely
+> unconfirmed stands**, rendered with its asserter (§2.3 already builds the
+> legibility half).
+>
+> **The `disputed` state machine is also unspecified where this loop creates the
+> second writer.** §4 gives CAS for supersession, but `disputed` is a separate
+> column written synchronously by the tag path while a background adjudication
+> may concurrently dismiss or supersede the same row. Undefined: a dispute
+> arriving on an already-superseded row; who clears `disputed` on dismissal and
+> whether that is CAS-guarded against a second member's dispute landing
+> mid-dismissal; a dispute on a row while promotion rewires its object.
+
 **Steps 4 and 6 are the design.** Step 4 is **synchronous, on the tag path, and
 a suppression only** — propose/dispose is untouched, because *stopping* a wrong
 answer requires no judgement about what is true. Step 6 is **the Dreamer, with
@@ -96,6 +130,33 @@ deciding truth under social pressure — precisely what this bundle refuses
 loop has **never closed once** in production. A counter at each step is how
 anyone knows it did — and [09](09-measurement.md)'s rule says a change whose
 effect cannot be read back is not done.
+
+> **THE FIXTURE WAS MISDIAGNOSED (2026-08-27).** This node chose the two live
+> lexeme rows as the acceptance fixture and built a correction loop around them.
+> Reading the rows themselves shows they are **not a correction failure**:
+>
+> ```
+> Big Walk  | "...this group plays, where they hunt for gourds"  n=1 spk=1
+> big walk  | "群內約定俗成嘅散步/行路活動..."                      n=1 spk=1
+> ```
+>
+> Both are **one sighting by one speaker**, one of them a compositional
+> restatement of what the English words already mean. Nothing corrected anything
+> and nothing needed superseding — **the tier wrote two guesses and rendered
+> both**, because it has no measure step and the render has no score floor
+> ([28](28-language-tier.md) §4.1, §6.1). A score floor removes them today.
+>
+> **The correction loop is still right — for the KNOWLEDGE tier**, where a claim
+> about the world genuinely can be wrong, genuinely needs research, and
+> genuinely needs supersession with a recorded reason. It was never the right
+> instrument for a row that should not have been written.
+>
+> **So §2.1.1's step-by-step remains the design, and its fixture must change.**
+> The acceptance test needs a claim that was *correctly* written, *later* turned
+> out wrong, and *must* change on the record. `big walk` is a write-time defect
+> wearing a correction-loop costume, and building the loop against it would have
+> produced a loop that passes its test while never exercising research,
+> supersession, or warrant precedence.
 
 **Why this is the acceptance test for everything else.** Every other mechanism
 in these 31 nodes — adjudication, warrant precedence, Standing folds, note
@@ -158,6 +219,13 @@ has no time-driven lifecycle at all.
 > A bitemporal schema with one of its two times unwired.
 
 ### 3.1 Decided: a sixth pass — revalidation
+
+> **UNSPECIFIED (external review, 2026-08-27).** This pass exists in this node
+> and in [00](00-overview.md) and **nowhere else** — no trigger shape, no
+> cadence key in [22](22-config.md), no metric in [09](09-measurement.md) — in a
+> bundle whose [06](06-trigger.md) §3.1 singles out time-driven work as the
+> shape that most needs a declared trigger. Spec it or defer it explicitly; a
+> pass with no trigger definition is a polling bug in embryo.
 
 Keyed on `valid_to` and on age, on the Dreamer's clock, mirroring the note
 revisitor's shape:
@@ -329,6 +397,23 @@ stated reversal conditions — all confirmed as correct by the architecture
 reviewer, which is also what makes §2 and §3 worth taking seriously.
 
 ## Status / Checkpoint
+
+2026-08-27 — **the acceptance fixture was misdiagnosed**, found by reading the
+live rows rather than the design: the two lexeme rows are one sighting each and
+were never corrected by anybody, so they are a write-time defect
+([28](28-language-tier.md) §4.1), not a correction failure. The loop stands for
+the knowledge tier; the fixture must change. This also demotes
+[16](16-open-items.md) §12.1 — the social loop was answering a question this
+tier never asked.
+
+2026-08-27 — a third external review (Kimi, cold, whole bundle) found the two
+joints the acceptance test exercises are the two least specified: **step 3 has no
+recognition mechanism** and **step 6's dismissal is undefined for room-internal
+claims**. Both are recorded in §2.1.1 with their fixes; the recognition gap is
+[16](16-open-items.md) §12. It also named an option this bundle came within one
+paragraph of and did not take — closing the loop **socially** rather than
+analytically ([16](16-open-items.md) §12.1), which would remove the transport
+dependency from the critical path entirely.
 
 2026-08-24 — written after two external reviews run cold against all 30 nodes.
 Four contradictions confirmed **in the files** before acceptance and fixed in

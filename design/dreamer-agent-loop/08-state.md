@@ -171,6 +171,24 @@ and the classification test is the arbiter
 
 Three things to read off it:
 
+> **D32 (2026-08-27) amends the MECHANISM below; the need and the cost argument
+> stand.** Extraction is not a tool loop and cannot become one: the vendored
+> prompt is rendered by our own client, and the upstream library it comes from
+> has no tool-calling surface at all (`generate_response` takes no `tools`
+> parameter — verified). Extraction is **two calls**, so the grounding lookup
+> sits *between* them: call 1 names the entities, code looks every name up —
+> existing entity, existing gloss, negative-cache hit, open note — and the
+> findings are injected as **input** to call 2.
+>
+> **This strengthens D3 rather than weakening it.** D3 classifies *"what does
+> this room call this thing?"* as a tool because the batch has not been read yet.
+> After call 1 it has. **Splitting extraction in two converts a
+> discovered-during need into a knowable-before one**, and the lookup becomes
+> *exhaustive* rather than whatever the model thought to ask.
+>
+> The no-dedup constraint below is untouched and matters more, not less. The
+> `room` and `memory` columns survive as **inputs**, not as verbs.
+
 **Phase A gains tools, and its cost argument is answered rather than
 dismissed.** The fact-tier spec refused them because *"a research loop per
 message would be unbounded cost."* That remains true and this does not propose
@@ -367,3 +385,4 @@ Two riders, both load-bearing:
 ## Status / Checkpoint
 
 2026-08-24 — D3, D4, D5. Its two scope statements are decided-elsewhere pointers, not deferrals.
+2026-08-27 — **D32 amends D5's mechanism in §9**: Phase A's grounding is an input between two extraction calls, not a tool. D3 is strengthened; the no-dedup constraint stands; `room` and `memory` survive as inputs.

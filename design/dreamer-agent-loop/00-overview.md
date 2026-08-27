@@ -125,6 +125,10 @@ such rather than dressed as decisions.
 | **D26** | decision | **A sixth pass: revalidation.** `valid_to` was schema-deep and pipeline-absent — the tier where the world changes fastest had no time-driven lifecycle | [30](30-review-response.md) §3 |
 | **D27** | correction | **Validity outranks warrant**, and the warrant ranking is an adjudication *prior*, not a truth rule | [30](30-review-response.md) §3.2–3.3 |
 | **D28** | decision | **The language tier builds ON the knowledge substrate** — shared entity identity and one supersession pattern; it keeps its own store, lifecycle and scoring. Not a fold-in, not a peer | [30](30-review-response.md) §8, [28](28-language-tier.md) §5.2 |
+| **D30** | decision | **We build this pipeline. Exactly two files are vendored** — the dedup prompt and the pure matcher, 521 lines, Apache-2.0. No dependency. The line is drawn by [21](21-substrate-contract.md) §6 (the object is always a literal; their edge has no literal form), not by preference | [25](25-knowledge-pipeline.md) §2.1 |
+| **D31** | decision | **The episode is a conversational chunk** — per-message headers cost **+169%** and fragment one claim across three anchors; one episode per batch loses the message link §7.2 needs | [25](25-knowledge-pipeline.md) §2.3 |
+| **D32** | correction | **D5's mechanism is amended: Phase A's grounding is an INPUT, not a tool.** Splitting extraction into two calls converts a discovered-during need into a knowable-before one, and makes the lookup exhaustive | [08](08-state.md) §9 |
+| **D33** | sequencing | **The eval corpus comes before the prompt work.** Without a graded corpus no prompt decision in this tier is falsifiable — and it is the one asset here that cannot be copied | [16](16-open-items.md) §11, [20](20-knowledge-tier.md) §6.1 |
 | **D29** | decision | **The correction loop is not universal** — it applies to what is *asserted and persisted*: knowledge and language. Notes retire, Standing self-replaces, Honcho is not ours to correct | [30](30-review-response.md) §2.1.2 |
 
 **D5 is the one most easily got wrong.** It reads as "give Phase A tools", and
@@ -159,14 +163,23 @@ external review ([30](30-review-response.md) §8): the **correction loop** moves
 to the front, because every other mechanism here exists to feed a loop that has
 never once closed in production.
 
+0. **A graded eval corpus** ([16](16-open-items.md) §11, D33). 30–50 real turns,
+   hand-labelled. It moved to the front on 2026-08-27 because every step below
+   it is a prompt decision, and without this nothing can tell a good prompt from
+   a bad one. It is also the only asset here that cannot be copied.
 1. **Entity ids and the promotion pass** ([21](21-substrate-contract.md) §6,
-   [25](25-knowledge-pipeline.md) §4). First, because the loop **depends** on
-   it — `Big Walk` and `big walk` cannot correct each other until they resolve
+   [25](25-knowledge-pipeline.md) §4). The **matcher is vendored**, the
+   candidate query is ours ([25](25-knowledge-pipeline.md) §4.1). Because the
+   loop **depends** on it — `Big Walk` and `big walk` cannot correct each other until they resolve
    to one entity — and because it is free only while the tables are empty.
 2. **The correction loop** ([30](30-review-response.md) §2), end to end on the
    two wrong lexeme rows: `disputed` on contradiction, priority adjudication,
    supersession, and **a counter at every step**. This is the acceptance test
    for the whole bundle.
+   **Its recognition step has no mechanism** ([16](16-open-items.md) §12.a) and
+   **step 6 depends on the transport measured at step 3** — either these two
+   steps swap, or step 6 is descoped so the loop closes with the Dreamer off
+   ([16](16-open-items.md) §12.1). Both are open.
 3. **Measure the transport** ([16](16-open-items.md) §0/§1) via the eval harness
    on the real pipeline. It selects between [07](07-loop.md) §7's two designed
    branches, and step 2's adjudication is the first thing that needs the answer.
@@ -224,6 +237,37 @@ And three questions that were open earlier in this bundle's life and are now
   discharge condition in [05](05-transport.md) §4.
 
 ## Status / Checkpoint
+
+**2026-08-27 — CHECKPOINT. The bundle is closed as a coherent set, not as a
+finished one.**
+
+What is settled: the five seams, the substrate contract, the store
+(Postgres + `pg_trgm` + `pgvector`, no graph database), retrieval and multi-hop,
+Standing, the note dreamer, the language tier's ownership and its dependence on
+the shared substrate, authority-follows-warrant, the correction loop, and — as of
+today — **that this pipeline is built rather than bought, with two vendored
+files** (D30) and **that the eval corpus precedes all of it** (D33).
+
+What is explicitly NOT settled, and is recorded rather than hidden:
+[16](16-open-items.md) items **0–4, 11 and 12 remain blocking** — and §12 is the
+sharpest of them, because it sits under D25 at the centre of the acceptance
+test. A third external review (2026-08-27) found that the two joints the test
+actually exercises — recognition, and the adjudication runtime — are the two
+least specified parts of the system, which is recorded rather than resolved
+here. (transport, token ceiling,
+R-49's second condition, a concurrency bound, and the absent eval corpus), and
+[16](16-open-items.md) §10 holds three readings the extraction decision rests on
+and has not taken.
+
+**This checkpoint also records a failure of method.** The 2026-08-27
+investigation reversed its own conclusions four times, each time from reading a
+signature and asserting before running; and once from running a stochastic call
+a single time and reporting it as a table. Two claims reached this bundle before
+being measured and were refuted by external review — that
+`resolve_edge_contradictions` is never called, and a prompt-overhead figure that
+was one call's rather than the pair's. Both are corrected in place.
+[02](02-instrument-blindness.md) carries it as its ninth instance. The rules
+broken were already written down in CLAUDE.md before the session began.
 
 2026-08-22 — restructured around the five seams after four adversarial reviews
 (fact-check, coherence, design-quality, completeness) found ~8 refuted claims,
