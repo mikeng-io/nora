@@ -377,6 +377,129 @@ alone were both caught that way, within a minute of writing the test. One of the
 — the store-call count — then caught a *later* miscount by the same author, which
 is the difference between fixing an instance and closing a family.
 
+## The screened-identifier family — three adaptors, one screen, no counter of its own
+
+**2026-08-28.** `DreamerRuntime` runs `nora.agent.dream_screen.screen` over the
+model's raw envelope items **before** `adaptor.accept`, and the screen drops the
+WHOLE item on any identifier reachable in it. `egress._UUID` matches any
+hyphenated UUID. So an adaptor whose objective asks the model to echo a row's id
+back has every such item destroyed, silently, forever.
+
+**Three adaptors hit it within hours of each other**, independently, and none of
+their test suites could see it:
+
+| adaptor | the field | how it failed |
+|---|---|---|
+| `note-revisit` | `note_id` | **loudly** — every item screened, tier 100% inert |
+| `note-curation` | `note_id` | loudly — *"the curator asked about UUIDs, so the screen rejected every answer"* (`e5c5bea`) |
+| `fact-adjudication` | `supersedes` | **selectively — and still open** ([#63](https://github.com/mikeng-io/nora/issues/63)) |
+
+**The third is the dangerous one, and the difference is the finding.** Only a
+`contradicted` verdict carries `supersedes`, so `supported` and `not_covered`
+flow normally: facts are written, counters move, the tier looks healthy. It has
+simply never been able to record a contradiction. Four consequences, each in the
+code:
+
+1. the correcting fact is never written;
+2. `_supersede_fact` never runs, so **the standing WRONG fact is never retired**
+   and keeps rendering into every tag;
+3. `_retire_candidates` iterates `proposals`, and a screened verdict never
+   becomes one, so its candidate stays pending;
+4. it is therefore **re-adjudicated every tick, forever**, at a `web_search`
+   plus a completion each time.
+
+Leg 4 was predicted verbatim by the code it happens in: `_retire_candidates`'
+own docstring warns that without retirement *"the same unprovable claim is
+re-extracted and re-adjudicated every tick forever, and it fails quietly because
+nobody is waiting on the Dreamer."* It was written about `not_covered` and
+describes the screened `contradicted` path exactly.
+
+### Why every grep missed it
+
+A sweep of every adaptor and objective:
+
+```
+fact-adjudication   supersedes         UUID   <- broken
+fact-candidates     message_id         int    safe — _UUID cannot match an int
+room-language       message_id         int    safe
+room-exchange       message_ids        int    safe
+note-revisit        cited_message_id   int    safe (the note itself is an ordinal)
+observer / exchange_observer                  not on the DreamAdaptor path at
+                                              all — no envelope_key, never screened
+```
+
+**`supersedes` is the only one not named `*_id`.** A grep for id-shaped keys —
+the obvious sweep, and the one that would have been run — does not find it. The
+field that carries an identifier without saying so is the field that survives
+every search for identifiers.
+
+### What the family costs, and the two rules it earns
+
+**The screen has no per-adaptor counter**, so all three failures rendered as
+`nora_dream_screened_total{reason="identifier"}` — a generic runtime series — and
+each tier's OWN instruments showed exactly what a model that had stopped
+answering looks like. The tier's counters are where an operator looks; the
+runtime's are not.
+
+> **An adaptor's tests must drive at least one item through the REAL screen, in
+> the order the runtime does.** A test that calls `accept` directly is testing
+> half a pipeline, and all three suites did.
+
+> **Nothing an adaptor asks a model to echo back may be a stored identifier.**
+> Render an ordinal handle and map it back; the model never sees the id. This is
+> now the convention in two adaptors and it should be the convention in all.
+
+**Widening the screen was rejected** in all three cases and should stay
+rejected: it is a shared security rule, and widening it for one caller is how
+such a rule dies.
+
+## The gate measured the TREE — when a green run certifies content nobody can get
+
+**2026-08-28.** A branch was reported green and ready to merge. `make gate` had
+run to completion — 4955 passed, ruff, mypy and `lint-imports` all clean — and
+every one of those numbers was true. The coordinator ran `git status` in the
+worktree before merging rather than after, and found an uncommitted file: a
+rebase resolution moving a rule row in `09-decision-index.md`.
+
+> **The gate passing is not evidence the TIP is green — it is evidence the TREE
+> is.**
+
+Nobody in this repo had drawn that line, and five branches had been merged that
+night on gate reports.
+
+**It is not a silent match.** The gate did not fail to match, did not return a
+misleading value, and did not no-op. It ran correctly, measured accurately, and
+reported truthfully — **about a subject nobody else can reach.** A working tree
+is private to one worktree; a merge takes the tip. So the artefact that was
+certified and the artefact that would ship were different, and every instrument
+in the gate agreed about the wrong one.
+
+**The consequence lands on the file least able to absorb it.** What was
+uncommitted here was the decision index — the document CLAUDE.md puts FOURTH in
+the reading order and treats as current state. A row landing in the wrong place,
+or not at all, is exactly the failure that produced a wrong answer elsewhere the
+same night, from a stale row in that same file.
+
+**The remedy is one line and it belongs before the report, not after the
+merge:** a green claim about a branch must be made against a CLEAN tree, and
+`git status --porcelain` empty is the cheapest possible check. The stronger form
+— re-run the gate on the committed tip rather than reasoning that the content is
+identical — is the same discipline one level up, and it is the one this bundle
+already applies everywhere else: **no self-attestation.** «The commit contains
+exactly what I just tested» is a claim by the doer about the doer's own work,
+and it costs one command to replace with a measurement.
+
+**Why it generalises past a slip.** Every worktree in this repo is a place where
+a gate can be run and a tip can lag it, and the rule that keeps sessions out of
+each other's way — one agent per checkout, each with its own worktree — is
+exactly what makes the gap invisible: the person merging is not the person who
+ran the gate, and neither of them sees the other's `git status` unless somebody
+asks for it.
+
+*The reading that would retire this entry:* a gate that refuses to report green
+on a dirty tree, at which point the discipline is mechanical rather than
+remembered.
+
 ## What follows from this
 
 **Every fix in this bundle ships its own measurement, or it is not done**
@@ -428,6 +551,24 @@ in the one line nobody edits. Fixed by removing the number rather than
 correcting it to seven: a count in a title is a copy of something the document
 already states, and this node has now recorded that class twice in its own
 checkpoint while carrying an instance of it in its own heading.
+
+2026-08-28 — **the screened-identifier family**, three adaptors in one day.
+`dream_screen` drops a whole envelope item on any reachable UUID, so an adaptor
+asking the model to echo a row id back loses every item. Two failed loudly and
+were fixed; `fact-adjudication` fails SELECTIVELY — only `contradicted` carries
+`supersedes` — so the fact tier looks healthy and has never recorded a
+contradiction, never retired a wrong standing fact, and re-adjudicates the same
+candidate every tick forever. It escaped every sweep because `supersedes` is the
+only such field not named `*_id`.
+
+2026-08-28 — **the gate measured the TREE.** A branch reported green on a
+complete, accurate `make gate` run that had been performed against a working
+tree carrying an uncommitted file the branch tip did not have. Not a silent
+match — the instruments were right about a subject nobody else can reach. Found
+by running `git status` before a merge rather than after; the uncommitted file
+was the decision index. A green claim needs a clean tree, and the stronger form
+is to re-run on the committed tip rather than reason that the content is
+identical.
 
 2026-08-28 — **a sixth silent-match instance**, and the first where the
 instrument was one of ours rather than one of the code's: an edit script raised,

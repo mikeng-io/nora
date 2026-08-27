@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Design-only: adds an instance to 02-instrument-blindness recording that a complete, accurate `make gate` run certifies the WORKING TREE and not the branch tip, so a green report made with an uncommitted file describes content nobody else can reach. Found when a coordinator ran `git status` before merging rather than after; the uncommitted file was the decision index. Not a silent match — the instruments were correct about the wrong subject. No code change. Also adds the screened-identifier family: three Dreamer adaptors in one day whose objectives asked the model to echo a stored UUID back, every such item destroyed by the egress screen before the adaptor saw it. Two failed loudly and are fixed; fact-adjudication fails selectively and is open as #63 — the fact tier looks healthy and has never recorded a contradiction. Records the sweep, and why supersedes escaped it: it is the only such field not named *_id."
+}
