@@ -49,7 +49,7 @@ Three things this is not:
 
 ## What this change is, and is not
 
-**Is:** a new `nora/domain/events.py` (types + port), an `GatheringService`
+**Is:** a new `nora/domain/gatherings.py` (types + port), an `GatheringService`
 use-case layer used by exactly one writer (the agent tools) and read by two
 adapters (the agent tools, the web app), four write tools and two read
 tools, a migration for two tables, and read-only `/events` web pages.
@@ -61,16 +61,16 @@ request, not pre-computed).
 
 ## 1. Architecture
 
-    nora/domain/events.py        PURE: Event, RSVP, GatheringStatus, RSVPResponse,
+    nora/domain/gatherings.py        PURE: Event, RSVP, GatheringStatus, RSVPResponse,
                                   GatheringStore (Protocol port)
-    nora/app/events.py           GatheringService — the use-case layer. Owns
+    nora/app/gatherings.py           GatheringService — the use-case layer. Owns
                                   validation, the open-event lookup rule, and
                                   the RSVP/status state machine. The ONLY
                                   place event business rules are written.
                                   Takes the SAME route_source (PlaceResolver)
                                   nora/agent/tools.py's place_info/route
                                   already use — no second Google client.
-    nora/infra/sql/events.py     Postgres GatheringStore
+    nora/infra/sql/gatherings.py     Postgres GatheringStore
     nora/agent/tools.py          create_event / update_event / rsvp_event /
                                   cancel_event / list_events / suggest_venue —
                                   thin: parse LLM-facing args, call
@@ -90,7 +90,7 @@ except the agent tools, and this spec does not add a web write path.
 
 ### 1.1 Import boundaries
 
-`nora/domain/events.py` is an ordinary domain module — it is free to depend
+`nora/domain/gatherings.py` is an ordinary domain module — it is free to depend
 on `nora.domain.reminders` for the linked-series relationship. It is not
 under the `nora.analytics` neutrality contract (`design/proposed/27-presence-analytics.md`
 §1.1) and needs no import-linter carve-out.
