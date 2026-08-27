@@ -949,9 +949,18 @@ async def test_the_debrief_declares_a_reasoning_effort_rather_than_inheriting_si
     effort "a measurement, not a setting" and `09-measurement.md` forbids
     asserting the plausible-sounding answer without it.
     """
-    deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
-    client = deps.engagement._debrief_wiring.client
-    assert client._reasoning_effort == cfg.llm.reasoning_effort
+    # PRECEDENCE, not one branch of it: an explicit `[standing]` value wins,
+    # and empty falls back to `[llm]`. The first version asserted only the
+    # fallback and went red the moment the operator set a value — which is a
+    # test pinning today's config rather than the rule.
+    explicit = await build_dependencies(override_config(
+        cfg, {"standing.enabled": True, "standing.reasoning_effort": "none"}))
+    assert explicit.engagement._debrief_wiring.client._reasoning_effort == "none"
+
+    inherited = await build_dependencies(override_config(
+        cfg, {"standing.enabled": True, "standing.reasoning_effort": ""}))
+    assert (inherited.engagement._debrief_wiring.client._reasoning_effort
+            == cfg.llm.reasoning_effort)
 
 
 async def test_an_unusable_reasoning_effort_refuses_to_start(cfg):
@@ -959,6 +968,13 @@ async def test_an_unusable_reasoning_effort_refuses_to_start(cfg):
     inside the slot, on a turn that had already replied. Narrowed at
     composition so it is a boot failure instead — the same refuse-to-start
     posture `max_chars`-above-the-ceiling and the slot-hold budget use."""
+    # `standing.reasoning_effort` is a typed Literal, so pydantic refuses a typo
+    # there before composition ever runs. The reachable hole is the INHERITED
+    # `[llm]` value, which is a bare `str` — so this leaves standing's empty and
+    # corrupts the one it falls back to.
     with pytest.raises(StartupError, match="reasoning effort"):
-        await build_dependencies(override_config(
-            cfg, {"standing.enabled": True, "llm.reasoning_effort": "hgh"}))
+        await build_dependencies(override_config(cfg, {
+            "standing.enabled": True,
+            "standing.reasoning_effort": "",
+            "llm.reasoning_effort": "hgh",
+        }))

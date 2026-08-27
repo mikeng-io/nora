@@ -1001,23 +1001,28 @@ enabled = true
 # `nora_tag_latency_seconds`: folding it in would move an existing SLO series
 # by changing what it measures.
 #
-# SWITCHED BACK OFF, 2026-08-27, before a single fold ran — cross-provider
-# review (Kimi + a Claude reviewer, independently) found the stage's store I/O
-# sits OUTSIDE its own `asyncio.wait_for`: `store.read` and `store.write` are
-# unbounded, `create_sql_engine` sets no `command_timeout`, and both run while
-# the per-conversation slot is HELD. A Postgres connection that hangs mid-query
-# during the post-reply fold therefore wedges that conversation indefinitely —
-# on a turn that had already delivered its reply successfully. The stage's own
-# docstring claimed it was "bounded twice"; only the model half ever was.
+# ON (operator, 2026-08-27), after two adversarial review rounds closed the
+# defects that took it off. What was wrong and is now fixed: the stage's two
+# store calls sat OUTSIDE its own timeout and the engine sets no
+# command_timeout, so a hung Postgres wedged a conversation on a turn that had
+# already replied; the slot-hold budget was argued in prose against an [llm]
+# timeout_seconds of 60 that does not exist (it is 120 here) and omitted those
+# store calls entirely. Both are now bounded, and the SUM is asserted at
+# startup rather than in a comment.
 #
-# The same review found the slot-hold budget was argued against `[llm]
-# timeout_seconds = 60`, a value that does not exist — the field is REQUIRED
-# with no default and this deployment sets 120, so the bounded worst case was
-# 140s, not the 80s the design reasoned about.
+# WHAT TO WATCH, because no test can prove it and zero folds have ever run:
+#   nora_debrief_total{outcome}   — a series existing at all is the first
+#                                   evidence the stage EXECUTES
+#   nora_debrief_seconds          — p95 <= 5s, and it is the second-queued
+#                                   person who pays it, never the one just
+#                                   answered
+#   nora_debrief_prior_total{prior} — a sustained prior="absent" means the
+#                                   fold is not reading before it writes
+# The fold is NOT traced (raw completion; Strands instruments only the agent
+# loop), so these counters are the whole instrument until a span is added.
 #
-# Turn this back on only when the store I/O is inside the bound and that budget
-# is re-argued against the real number.
-enabled = false
+# Rollback is this line.
+enabled = true
 # The OPERATING cap on the position. The database carries an absolute ceiling
 # of 4000 (`standing_body_fits_the_ceiling_check`) that no config may pass — a
 # value above it refuses to START. 1200 characters is ~300 tokens in English
@@ -1084,4 +1089,12 @@ model = ""
 # So this key exists to make that spike runnable. Empty is the honest default:
 # it says "nobody has measured this yet" rather than inventing a number.
 # Legal: none, minimal, low, medium, high, xhigh, max — checked at startup.
-reasoning_effort = ""
+# "none" (operator, 2026-08-27). The fold is INTEGRATION — read the prior
+# position and the trace, write the revised one — not research, and this is
+# the operator choosing the starting point rather than inheriting [llm]'s
+# "low" by accident. It remains the thing 18-flows says to MEASURE: the
+# spike runs the same fold at several budgets over the retained traces and
+# scores whether the revised position preserves what the prior held and
+# integrates what the trace added. This is where that measurement starts,
+# not where it ended.
+reasoning_effort = "none"
