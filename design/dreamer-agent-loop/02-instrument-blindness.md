@@ -107,6 +107,14 @@ credited with.
 
 ## Layer 6 — A tier declares ten metrics and ships none of them
 
+> **RESOLVED 2026-08-27, and not by building ten.** The tier ships **three**;
+> four were already counted by `nora_tool_calls_total` and a second series would
+> double any dashboard summing tool volume; three more measure an adaptor that
+> does not exist, and declaring those would have manufactured a fresh instance of
+> **Layer 7 below** — a name with no call site. See
+> [27](27-note-dreamer.md) §6.1. The layer's finding stands; the fix was to
+> decide which ten were real, not to build ten.
+
 Not the Dreamer. The **note tier**, found by an independent investigation
 looking for something else.
 

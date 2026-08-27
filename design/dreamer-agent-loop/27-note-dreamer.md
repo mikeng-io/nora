@@ -212,6 +212,53 @@ What doctrine owes is therefore one or two lines of *recognition*, not a manual.
 [13-doctrine.md](13-doctrine.md)'s shape-awareness is what makes that affordable
 — the tag path's doctrine carries it; no adaptor pays for it.
 
+## 5.4 THE COLD START — the tier is inside the trap §5.3 names
+
+**Found 2026-08-27 by reading the log, not the design.** In the tier's entire
+life — enabled `ba661c9`, 2026-08-21 19:45 HKT — `/app/data/nora.log` holds
+**exactly one** note-tool line:
+
+```
+{"tool": "note_search", "status": "nothing_found", "ts": "2026-08-21T13:22:37Z"}
+```
+
+Zero `note_create`, zero `note_read`, zero `note_update`, ever. **The create path
+is not broken. It has never been called**, so the failure is upstream of the
+store and no store-side counter could have found it.
+
+**Why she never writes the first note:**
+
+- `render_notes` returns `""` when nothing is standing
+  (`nora/language/note_render.py:85-87`), so `_notes_block` emits nothing. With
+  zero notes **the `<notes>` block is absent from every prompt.**
+- `nora/doctrine/` contains **no note recognition at all** — verified by grep;
+  the only corpus match is the phrase "developer note" in `constraints.md`.
+- So she has four tools whose descriptions she would read only if she had already
+  gone looking.
+
+**§5.3 already made this argument and then left the tier inside it.** That section
+assigns recognition to doctrine, "always present", because *a skill you must know
+you need before you can load it cannot teach you to recognise the need.* **The
+same sentence is true of the index block:**
+
+> **A block that only appears once a note exists cannot teach her to write the
+> first one.**
+
+The lone `note_search` is the counter-evidence that matters: the tools ARE
+reachable and the workspace DOES resolve. She reached for one unprompted, once,
+and found nothing — which is the tier working exactly as built, and never
+starting.
+
+**So the cold start is the tier's first defect, ahead of the curator.** A curator
+that merges and retires notes has nothing to operate on until the first one
+exists, and building it first would measure nothing.
+
+**And the denominator was smaller than it looked.** An earlier framing of this —
+*"eight days enabled and zero notes"* — overstated the evidence. Since the tier
+went on the log holds **18 `send_reply` calls**. Eighteen authored turns with no
+block and no doctrine line is a much weaker indictment than eight days implies,
+and it is the honest number to reason from.
+
 ## 6. What each owes its instrument
 
 **The tier declares TEN metrics and ships ZERO.** Verified 2026-08-24: ten
@@ -231,6 +278,13 @@ calls **"the tell"** — is not merely uncounted, it **does not exist**.
 | revisits per person per window | §3's budget is the reminder caps, so the reading that matters is *how often background work nudged somebody*, not how often it ran |
 
 ## Status / Checkpoint
+
+2026-08-27 — **§5.4: the cold start.** The log shows ONE note-tool call in the
+tier's life; the create path has never been invoked. With zero notes the
+`<notes>` block is absent from every prompt and doctrine carries no recognition
+rule, so §5.3's own argument — a thing you must already know you need cannot
+teach you the need — applies to the index block itself. §6.1 records why the
+tier ships THREE counters rather than the ten it declares.
 
 2026-08-24 — written after the operator asked whether the note dreamer has a
 design, whether all dreamers should be skills, and whether the instruction
