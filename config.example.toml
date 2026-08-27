@@ -870,16 +870,39 @@ enabled = false
 # nora_standing_overflow_refusals_total is the reading: never firing means the
 # cap is not binding, constantly firing means it is too small.
 max_chars = 1200
-# How many transcript rows the debrief sees — its OWN window, deliberately
-# smaller than [store] context_window (40). The debrief revises a position; it
-# does not need the full reply context, and a smaller input is also one of the
-# two levers against the token runaway that made this a plain completion
-# instead of an agent loop.
-window = 12
+# How many transcript rows the debrief sees. 40 is the CEILING, not a
+# preference: the debrief folds `ctx.transcript`, which the reply path already
+# capped at [store] context_window, so anything above that number is silently
+# the same as that number. Startup refuses a larger value rather than accepting
+# a knob that cannot do what it says.
+#
+# It was 12, on the argument that revising a position needs less than composing
+# a reply. Operator override 2026-08-27: she is answering with 40 rows in view,
+# so a fold reasoning from 12 is judging a turn it can only see a third of.
+# Going genuinely past 40 means raising [store] context_window — which widens
+# EVERY reply's prompt, a per-turn cost on the live path and not a Standing
+# decision.
+window = 40
 # The fold's own timeout. The number that matters is the SUM: the debrief holds
 # the slot, so the worst-case hold is [llm] timeout_seconds + this. Raise it
 # only against nora_debrief_seconds, not against a hunch.
 timeout_seconds = 20.0
+# The bound on the stage's TWO STORE CALLS — reading the prior position and
+# writing the revised one. It exists because they had none: the engine sets no
+# command_timeout and both run while the conversation's slot is HELD, so a
+# connection hanging mid-query during the post-reply fold wedged that
+# conversation indefinitely, on a turn that had already replied. Small on
+# purpose: this is a single-row keyed read and a single-row upsert, and if
+# either takes seconds the honest answer is «unavailable», not a longer wait
+# held in front of the next person in the room.
+store_timeout_seconds = 5.0
+# The WHOLE hold this stage may add to a conversation's slot, checked at
+# STARTUP: [llm] timeout_seconds + timeout_seconds + 2 x store_timeout_seconds.
+# It is a gate and not a comment because the comment was wrong — the design
+# argued 60 + 20 = 80s while [llm] timeout_seconds is a required field this
+# deployment sets to 120. Raise it deliberately or lower a timeout; the startup
+# refusal names which numbers stopped fitting.
+max_slot_hold_seconds = 150.0
 # Empty means [llm] model. A separate name is available because the fold is a
 # different job from replying — one structured output, no tools, no audience —
 # and may want a cheaper or a more literal model.

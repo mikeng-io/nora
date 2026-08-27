@@ -1,0 +1,17 @@
+{
+  "type": "fix",
+  "summary": "Fixes found by an independent cross-provider review of Standing before it had run a single fold. The stage could hold a conversation's lock indefinitely if the database hung while saving her position — on a turn that had already answered successfully.",
+  "details": [
+    "The debrief now reviews the whole conversation she answered with, not a third of it. It was reading the last 12 messages while she replied with 40 in view; a fold judging a turn it can only partly see is judging something else.",
+    "Every wait the stage makes is now bounded, not just the model call. The two database calls had no limit at all, and the code claimed otherwise.",
+    "How long the stage may hold a conversation is now checked when Nora starts, against the timeout this deployment actually uses. It had been reasoned about in a comment, against a value that does not exist, and was wrong by more than half.",
+    "A database write that times out is now reported as «could not save» rather than counted against the stage's own thinking budget, so the next investigation is pointed at the database instead of the model.",
+    "When she speaks into a room unprompted — a reminder firing — she is now shown where that conversation had got to. It was the one path where she had no other way to know, and the block was silently missing there.",
+    "Two tests that could not fail were rewritten so they can, and the engagement layer is now type-checked, which closes a whole class of wiring mistake that would have looked identical to the feature being switched off.",
+    "Asking for a wider review window than she actually has is now refused at startup instead of quietly doing nothing."
+  ],
+  "limitations": [
+    "Standing remains switched off. This closes the review's findings; turning it back on is a separate decision.",
+    "Reminder turns still do not produce a position of their own — that needs the reminder path to keep a record of its own reasoning first, which it does not yet do."
+  ]
+}

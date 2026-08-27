@@ -1066,7 +1066,7 @@ def test_the_standing_section_is_optional_and_ships_inert(toml_path):
     cfg = load(toml_path)
     assert cfg.standing.enabled is False
     assert cfg.standing.max_chars == 1200
-    assert cfg.standing.window == 12
+    assert cfg.standing.window == 40
     assert cfg.standing.model == ""
 
 
@@ -1093,9 +1093,65 @@ def test_a_standing_cap_exactly_at_the_ceiling_is_allowed(toml_path):
 
 
 def test_an_unknown_standing_key_is_a_startup_failure(toml_path):
-    """`extra="forbid"`, so `windwo = 12` is a boot failure rather than a
+    """`extra="forbid"`, so `windwo = 40` is a boot failure rather than a
     silently ignored line that leaves the debrief reading forty rows."""
     toml_path.write_text(
-        toml_path.read_text().replace("window = 12", "windwo = 12"))
+        toml_path.read_text().replace("window = 40", "windwo = 40"))
     with pytest.raises(ConfigError):
         load(toml_path)
+
+
+def test_the_standing_slot_hold_is_checked_against_the_real_llm_timeout(toml_path):
+    """**The gate that would have caught the 2x error.**
+
+    `debrief.py` argued its worst-case hold as `[llm] timeout_seconds +
+    [standing] timeout_seconds`, "60 + 20 with the shipped defaults".
+    `LlmConfig.timeout_seconds` is a REQUIRED field with no default, and this
+    deployment sets 120 — so the real bounded hold was 140s, and the two store
+    calls were unbounded on top of that. The one number deciding how long a
+    live conversation can stop answering was sized against a figure that does
+    not exist, and nothing cross-checked it. A comment cannot be wrong twice.
+    """
+    text = toml_path.read_text().replace(
+        "max_slot_hold_seconds = 150.0", "max_slot_hold_seconds = 80.0")
+    text = re.sub(r"(?m)^enabled = false$", "enabled = true", text, count=0)
+    # switch [standing] on without touching any other section's `enabled`
+    i = text.index("[standing]")
+    text = text[:i] + text[i:].replace("enabled = false", "enabled = true", 1)
+    toml_path.write_text(text)
+    with pytest.raises(ConfigError, match="hold a conversation's slot"):
+        load(toml_path)
+
+
+def test_the_slot_hold_check_is_inert_while_standing_is_off(toml_path):
+    """Off, it asserts nothing: a deployment with the tier disabled holds the
+    slot for exactly as long as it did before this stage existed, so an
+    impossible budget must not stop it booting."""
+    toml_path.write_text(toml_path.read_text().replace(
+        "max_slot_hold_seconds = 150.0", "max_slot_hold_seconds = 1.0"))
+    assert load(toml_path).standing.enabled is False
+
+
+def test_a_standing_window_larger_than_the_reply_window_refuses_to_start(toml_path):
+    """A knob that cannot do what it says is refused, not silently clamped.
+
+    The debrief folds `ctx.transcript` — the rows the REPLY path already
+    assembled under `[store] context_window` — so `[standing] window` above
+    that number selects exactly the same rows. Accepting it would let the
+    config claim a 60-row fold while producing a 40-row one, which is the
+    silent-no-op shape this repo refuses everywhere else (an uncapped index, a
+    cap mechanism with no cap). Operator asked for 60-80 on 2026-08-27; this is
+    what makes the real ceiling visible instead of letting the number lie.
+    """
+    text = toml_path.read_text()
+    i = text.index("[standing]")
+    toml_path.write_text(
+        text[:i] + text[i:].replace("window = 40", "window = 80", 1))
+    with pytest.raises(ConfigError, match="context_window"):
+        load(toml_path)
+
+
+def test_the_standing_window_may_equal_the_reply_window(toml_path):
+    """The boundary from the accepting side: seeing everything she saw is the
+    maximum the fold can be given, and it must not be off-by-one refused."""
+    assert load(toml_path).standing.window == load(toml_path).store.context_window

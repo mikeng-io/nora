@@ -379,6 +379,7 @@ class EngagementPipeline:
             max_chars=wiring.max_chars,
             window=wiring.window,
             timeout_seconds=wiring.timeout_seconds,
+            store_timeout_seconds=wiring.store_timeout_seconds,
             now_ms=int(time.time() * 1000),
         )
 

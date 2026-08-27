@@ -70,7 +70,7 @@ def _trace(outcome: str = "send_reply") -> TagTrace:
 
 
 async def _run(*, store=None, client=None, metrics=None, max_chars=1200,
-               timeout_seconds=5.0, trace=None) -> tuple:
+               timeout_seconds=5.0, store_timeout_seconds=5.0, trace=None) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
     metrics = metrics if metrics is not None else Metrics()
     await debrief.run(
@@ -78,7 +78,8 @@ async def _run(*, store=None, client=None, metrics=None, max_chars=1200,
         platform="signal", store=store,
         client=client if client is not None else _Client(_ok("a position")),
         objective=_Objective(), metrics=metrics, display_name="Nora",
-        max_chars=max_chars, window=12, timeout_seconds=timeout_seconds,
+        max_chars=max_chars, window=40, timeout_seconds=timeout_seconds,
+        store_timeout_seconds=store_timeout_seconds,
         now_ms=1_756_000_931_000,
     )
     return store, metrics
@@ -302,20 +303,40 @@ async def test_a_slow_fold_is_cut_at_its_own_timeout():
 
 
 async def test_the_two_calls_share_one_budget():
-    """One `wait_for` around both calls rather than one around each: the budget
-    the slot can afford is a TOTAL, and two independently-bounded calls add up
-    to twice it on exactly the turn that was already slow enough to need the
-    retry."""
-    class _SlowSecond(_Client):
+    """One `wait_for` around BOTH calls, never one around each: the budget the
+    slot can afford is a TOTAL, and two independently-bounded calls add up to
+    twice it on exactly the turn that was already slow enough to need a retry.
+
+    **The first version of this test could not fail** (found by review,
+    2026-08-27). It made call 1 instant and call 2 sleep past the timeout, so
+    the two-independent-budgets implementation — the very defect it is named
+    for — still timed out on call 2 and still produced `outcome="timeout"`. The
+    assertion was identical either way.
+
+    The fix is to spend MOST of the budget on the FIRST call. Each call is under
+    the per-call timeout, so two independent budgets would let both through and
+    the fold would SUCCEED; only a shared budget is exhausted by their sum.
+    Asserting `written` rather than `timeout` is what makes the two
+    implementations disagree — which is the whole point of the test.
+    """
+    class _SlowFirst(_Client):
         async def complete(self, *, prompt: str):
             self.prompts.append(prompt)
+            await asyncio.sleep(0.06)          # under a 0.10s per-call bound...
             if len(self.prompts) == 1:
-                return _ok("x" * 60)
-            await asyncio.sleep(5)
-            raise AssertionError("should have been cut off")
+                return _ok("x" * 60)           # ...overflows, forcing the retry
+            return _ok("short")
 
-    _, metrics = await _run(client=_SlowSecond(), max_chars=50, timeout_seconds=0.05)
-    assert _counter(metrics, "nora_debrief_total", outcome="timeout") == 1
+    # 0.06 + 0.06 = 0.12 > 0.10 shared. Under two INDEPENDENT 0.10s budgets both
+    # calls fit and this writes "short" — so `timeout` here is only reachable
+    # when the budget is genuinely shared.
+    store, metrics = await _run(
+        client=_SlowFirst(), max_chars=50, timeout_seconds=0.10)
+    assert _counter(metrics, "nora_debrief_total", outcome="timeout") == 1, (
+        "the two calls did not share one budget — each was bounded separately, "
+        "so their SUM can reach twice the slot hold this stage is allowed"
+    )
+    assert await store.read(platform="signal", conversation_id="g1") is None
 
 
 # --- the instrument, on every exit path ------------------------------------
@@ -344,3 +365,64 @@ async def test_the_objective_text_reaches_the_prompt():
     await _run(client=client)
     assert client.prompts[0].startswith("OBJECTIVE-TEXT")
     assert "at most 1200 characters" in client.prompts[0]
+
+
+# --- the store calls are bounded too (review finding, 2026-08-27) -----------
+
+async def test_a_hanging_store_read_cannot_hold_the_slot_forever():
+    """The stage's docstring used to say it was "bounded twice" and named only
+    the model call. `store.read` sat OUTSIDE the `wait_for`, and
+    `create_sql_engine` sets no `command_timeout` — so a Postgres connection
+    hanging mid-query during the post-reply fold held the per-conversation lock
+    indefinitely, on a turn that had already delivered its reply.
+
+    Falsification: move `store.read` back outside `asyncio.wait_for` and this
+    hangs rather than failing.
+    """
+    class _Hangs(InMemoryStandingStore):
+        async def read(self, **kw):
+            await asyncio.sleep(30)
+            raise AssertionError("should have been cut off")
+
+    _, metrics = await asyncio.wait_for(
+        _run(store=_Hangs(), store_timeout_seconds=0.05), timeout=5,
+    )
+    assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
+
+
+async def test_a_hanging_store_write_cannot_hold_the_slot_forever():
+    """The write half of the same defect — and it is the worse one: it happens
+    AFTER the reply was delivered and after the model call succeeded, so the
+    turn is already a success by every measure the user can see."""
+    class _Hangs(InMemoryStandingStore):
+        async def write(self, **kw):
+            await asyncio.sleep(30)
+            raise AssertionError("should have been cut off")
+
+    _, metrics = await asyncio.wait_for(
+        _run(store=_Hangs(), store_timeout_seconds=0.05), timeout=5,
+    )
+    assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
+
+
+async def test_a_store_write_timeout_is_unavailable_and_never_timeout():
+    """R-27, on the one series `[standing] timeout_seconds` is tuned against.
+
+    `asyncio.TimeoutError IS TimeoutError` on every Python this project
+    supports, so without its own `except` a timed-out WRITE falls through to
+    `except TimeoutError` and is counted as «the fold did not finish inside its
+    own budget». That sends the next investigation at the model when the
+    problem is Postgres. A store that could not be written is «I could not
+    check», exactly as the read already was.
+    """
+    class _Hangs(InMemoryStandingStore):
+        async def write(self, **kw):
+            await asyncio.sleep(30)
+
+    _, metrics = await asyncio.wait_for(
+        _run(store=_Hangs(), store_timeout_seconds=0.05), timeout=5,
+    )
+    assert _counter(metrics, "nora_debrief_total", outcome="timeout") == 0, (
+        "a store write timeout was counted on the debrief-budget series"
+    )
+    assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1

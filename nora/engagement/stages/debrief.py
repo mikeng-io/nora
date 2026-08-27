@@ -42,9 +42,21 @@ prevents is invisible from either side alone: an escape after successful
 delivery would leave `completed` False, and `deliver.truncation_reason` would
 then report a partial reply on a turn that sent a whole one.
 
-**3. It holds the slot, so it is bounded twice.** Its own `asyncio.wait_for`,
-and `[standing] timeout_seconds` chosen so `tag_timeout + debrief_timeout` fits
-inside an acceptable hold. The cost is user-visible — **but not to the person
+**3. It holds the slot, so EVERY await in it is bounded — all four.** This
+docstring previously said "bounded twice" and named only the model call, and
+that was false in the way that matters: `store.read` and `store.write` sat
+OUTSIDE the `wait_for`, `create_sql_engine` sets no `command_timeout`, and both
+run while the per-conversation lock is held. A Postgres connection hanging
+mid-query during the post-reply fold wedged that conversation indefinitely — on
+a turn that had already delivered its reply successfully (found by independent
+review, 2026-08-27, before the tier had run a single fold). The model call is
+bounded by `[standing] timeout_seconds`; the two store calls by
+`[standing] store_timeout_seconds`; and the SUM is asserted at startup against
+`[standing] max_slot_hold_seconds` rather than argued in a comment — see
+`nora.config.Config._the_standing_slot_hold_fits_its_budget`, which exists
+because the comment here was wrong by 2x and nothing checked it.
+
+The cost is user-visible — **but not to the person
 being reviewed**, who already has their reply. It lands on the **second person
 queued behind a busy conversation**, which is why the gate is
 `nora_debrief_seconds` p95 ≤ 5s and why that series is deliberately **separate**
@@ -269,6 +281,7 @@ class Wiring:
     max_chars: int
     window: int
     timeout_seconds: float
+    store_timeout_seconds: float
 
 
 async def run(
@@ -283,6 +296,7 @@ async def run(
     max_chars: int,
     window: int,
     timeout_seconds: float,
+    store_timeout_seconds: float,
     now_ms: int,
     tz: tzinfo | None = None,
 ) -> None:
@@ -306,8 +320,11 @@ async def run(
         # prior is exactly the two-contradictory-rows failure this whole tier
         # exists to not repeat. An ERROR is never a PASS.
         try:
-            prior: Standing | None = await store.read(
-                platform=platform, conversation_id=trace.conversation_id,
+            prior: Standing | None = await asyncio.wait_for(
+                store.read(
+                    platform=platform, conversation_id=trace.conversation_id,
+                ),
+                timeout=store_timeout_seconds,
             )
         except Exception:
             log.exception(
@@ -382,16 +399,34 @@ async def run(
             outcome = "screened"
             return
 
-        await store.write(standing=Standing(
-            platform=platform,
-            conversation_id=trace.conversation_id,
-            body=body,
-            # Counted from the prior the fold actually read, so the ceiling
-            # half of S2's re-derivation trigger counts folds-since-rebuild
-            # rather than folds-ever.
-            fold_count=(prior.fold_count + 1) if prior is not None else 1,
-            updated_at=now_ms,
-        ))
+        # Bounded and labelled `unavailable`, NOT `timeout`, exactly as the read
+        # above is. `asyncio.TimeoutError IS TimeoutError` on every Python this
+        # project supports (>= 3.11), so without this `except` a write that
+        # timed out would fall through to `except TimeoutError` below and be
+        # counted as «the fold did not finish inside its own budget» — on the
+        # very series `[standing] timeout_seconds` is tuned against. A store
+        # that could not be written is «I could not check», the same R-27 state
+        # the read path was already careful about; reading that off the
+        # debrief-budget series would send the next investigation at the model
+        # when the problem is Postgres.
+        try:
+            await asyncio.wait_for(store.write(standing=Standing(
+                platform=platform,
+                conversation_id=trace.conversation_id,
+                body=body,
+                # Counted from the prior the fold actually read, so the ceiling
+                # half of S2's re-derivation trigger counts folds-since-rebuild
+                # rather than folds-ever.
+                fold_count=(prior.fold_count + 1) if prior is not None else 1,
+                updated_at=now_ms,
+            )), timeout=store_timeout_seconds)
+        except Exception:
+            log.exception(
+                "debrief: could not write the revised position (tag=%s); "
+                "the prior position stands", trace.tag_id,
+            )
+            outcome = "unavailable"
+            return
         outcome = "written"
     except TimeoutError:
         # Its own label rather than `error`, and its own branch rather than an

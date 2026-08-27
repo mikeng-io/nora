@@ -1657,6 +1657,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             max_chars=cfg.standing.max_chars,
             window=cfg.standing.window,
             timeout_seconds=cfg.standing.timeout_seconds,
+            store_timeout_seconds=cfg.standing.store_timeout_seconds,
         )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the
@@ -1784,6 +1785,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "reminder": reminder_occasion,
                 "gathering": gathering_occasion,
             },
+            # D5 — `<standing>` renders on the fire path too. A fire turn
+            # speaks into a room UNPROMPTED, so «where had this conversation
+            # got to» is the context she is least likely to have any other
+            # way: there is no tagging message to infer it from. Reads only;
+            # the fire path writes no position, because S1 is blocked on it
+            # retaining a `TagTrace` at all (see `FirePath.__init__`).
+            standing=standing_store if cfg.standing.enabled else None,
         )
     if lost_jobs and fire_path is not None:
         # Spawned, never awaited — a boot must not wait on a model call, and

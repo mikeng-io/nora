@@ -1442,9 +1442,48 @@ class StandingConfig(BaseModel):
 
     enabled: bool = False
     max_chars: int = Field(default=DEFAULT_STANDING_MAX_CHARS, ge=1)
-    window: int = Field(default=12, ge=1)
+    # 40, matching `[store] context_window` — the CEILING, not a preference.
+    # The debrief folds `ctx.transcript`, so it can never see more rows than the
+    # reply path assembled; `_the_standing_window_fits_the_transcript_it_folds`
+    # refuses a larger value rather than letting the number lie.
+    #
+    # It was 12, on S3's argument that revising a position needs less than
+    # composing a reply. Operator override 2026-08-27: she answers with 40 rows
+    # in view, so a fold reasoning from 12 judges a turn it can only see a
+    # third of.
+    window: int = Field(default=40, ge=1)
     timeout_seconds: float = Field(default=20.0, gt=0)
+    # The bound on the stage's TWO STORE CALLS — the read of the prior position
+    # and the write of the revised one. It exists because they had no bound at
+    # all: `create_sql_engine` is a bare `create_async_engine` with no
+    # `command_timeout`, and both calls run while the per-conversation lock is
+    # HELD, so a connection hanging mid-query during the post-reply fold wedged
+    # that conversation indefinitely — on a turn that had already replied.
+    #
+    # Small on purpose. This is a single-row primary-key read and a single-row
+    # upsert against a local Postgres; if either takes seconds the database is
+    # in trouble and the honest answer is `unavailable`, not a longer wait held
+    # in front of the next person in the room.
+    store_timeout_seconds: float = Field(default=5.0, gt=0)
     model: str = ""
+
+    # The WHOLE hold this stage can add to a conversation's slot, asserted at
+    # startup rather than reasoned about in prose.
+    #
+    # It exists because the prose was WRONG. `debrief.py` argued the worst case
+    # as «`[llm] timeout_seconds` + `[standing] timeout_seconds` = 60 + 20», and
+    # `[llm] timeout_seconds` is a REQUIRED field with no default that this
+    # deployment sets to 120 — so the real bounded worst case was 140s, not 80s,
+    # and the two store calls on top of it were not bounded at all. The one
+    # number that decides how long a live conversation can stop answering was
+    # sized against a figure that does not exist, and nothing cross-checked it.
+    #
+    # 150s is chosen to ADMIT today's deployment (120 + 20 + 2x5 = 150) rather
+    # than to reject it: this validator's job is to make the arithmetic
+    # impossible to get wrong silently, not to relitigate `[llm]`'s own timeout,
+    # which was raised to 120 deliberately on 2026-08-08. Lower it and the
+    # startup refusal tells the operator exactly which numbers no longer fit.
+    max_slot_hold_seconds: float = Field(default=150.0, gt=0)
 
     @model_validator(mode="after")
     def _max_chars_stays_under_the_database_ceiling(self) -> StandingConfig:
@@ -2137,6 +2176,78 @@ class Config(BaseModel):
                 "block."
             )
         return self
+
+    @model_validator(mode="after")
+    def _the_standing_window_fits_the_transcript_it_folds(self) -> Config:
+        """`[standing] window` can never exceed `[store] context_window`.
+
+        The debrief folds `ctx.transcript` — the rows the REPLY path already
+        assembled — so a larger value selects exactly the same rows and the
+        config would be claiming a fold it does not perform. Refused rather
+        than clamped, for the reason this repo refuses a cap with no cap and an
+        index with a hidden top-N: a knob that silently does nothing is worse
+        than no knob, because someone reads it and believes it.
+
+        **NOT gated on `enabled`**, unlike the slot-hold check below. A hold
+        that is too long costs nothing while the tier is off, but a window that
+        lies is wrong on the page whether or not it is running — and the moment
+        it IS switched on is the worst time to discover the number meant
+        something else.
+        """
+        if self.standing.window > self.store.context_window:
+            raise ValueError(
+                f"[standing] window = {self.standing.window} is larger than "
+                f"[store] context_window = {self.store.context_window}. The "
+                f"debrief folds the transcript the REPLY path assembled, so it "
+                f"can never see more rows than that — a larger value is "
+                f"silently the same number. Raise [store] context_window "
+                f"(which widens every reply's prompt) or lower this."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _the_standing_slot_hold_fits_its_budget(self) -> Config:
+        """The debrief HOLDS the conversation's slot, so the number that
+        matters is the SUM of every bound on that hold — not any one of them.
+
+        **This validator exists because the sum was got wrong in prose and
+        nothing checked it.** `nora.engagement.stages.debrief`'s docstring
+        argued the worst case as `[llm] timeout_seconds + [standing]
+        timeout_seconds`, "60 + 20", and `[llm] timeout_seconds` is a REQUIRED
+        field with no default that this deployment sets to **120**. The real
+        bounded hold was 140s, and the stage's two store calls were not bounded
+        at all — so a live conversation could stop answering indefinitely, on a
+        turn that had already delivered its reply.
+
+        A comment cannot be wrong twice: this is the same refuse-to-start
+        posture `policy.toml` and `max_chars`-above-the-ceiling already use.
+        Cross-section, so it lives on `Config` rather than on `StandingConfig`
+        — the whole point is that `[standing]` alone cannot see the number that
+        dominates its own budget.
+
+        Off, it asserts nothing: a deployment with the tier disabled holds the
+        slot for exactly as long as it did before this stage existed.
+        """
+        if not self.standing.enabled:
+            return self
+        hold = (
+            self.llm.timeout_seconds
+            + self.standing.timeout_seconds
+            + 2 * self.standing.store_timeout_seconds
+        )
+        if hold > self.standing.max_slot_hold_seconds:
+            raise ValueError(
+                f"[standing] would hold a conversation's slot for up to "
+                f"{hold:g}s — [llm] timeout_seconds ({self.llm.timeout_seconds:g})"
+                f" + [standing] timeout_seconds ({self.standing.timeout_seconds:g})"
+                f" + 2 x store_timeout_seconds "
+                f"({self.standing.store_timeout_seconds:g}) — which is over "
+                f"[standing] max_slot_hold_seconds "
+                f"({self.standing.max_slot_hold_seconds:g}). Lower a timeout or "
+                f"raise the budget deliberately; do not leave them disagreeing."
+            )
+        return self
+
 
 
 def load(path: Path, *, require_secrets: bool = True) -> Config:

@@ -90,8 +90,10 @@ from nora.domain.ports import (
     PlatformAdapter,
     RecordStore,
     RosterSource,
+    StandingStore,
 )
 from nora.domain.reminders import Recurrence, Reminder, remaining_occurrences
+from nora.domain.standing import Standing
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.stages import deliver, feedback
@@ -378,7 +380,26 @@ class FirePath:
         room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
         room_exchange_max_entries: int = DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
         event_registry: Mapping[str, EventFactory] | None = None,
+        standing: StandingStore | None = None,
     ) -> None:
+        # D5: `<standing>` renders on the fire path too. `build_prefill` is
+        # shared and parameterised only by `header=`, so SUPPRESSING the block
+        # here is the special case that would need justifying — and it was
+        # suppressed silently until 2026-08-27, simply because `build_context`
+        # below never passed `standing=` and the field defaults to `None`.
+        #
+        # It matters most on exactly this path: a fire turn speaks into a room
+        # UNPROMPTED, so «where had this conversation got to» is the context she
+        # is least likely to have any other way — there is no tagging message to
+        # infer it from. `None` when `[standing] enabled = false`, the shipped
+        # default, which renders no block at all.
+        #
+        # This path READS the position and never writes one. That asymmetry is
+        # not a choice: S1 (fire turns debrief too) is blocked on the fire path
+        # retaining a `TagTrace` at all — `speak` discards the one
+        # `AgentRunner.invoke` hands back, a Phase 1 deferral flagged in that
+        # method — and there is nothing to fold without it.
+        self._standing = standing
         self._persons = persons
         self._records = records
         self._memory = memory
@@ -540,7 +561,35 @@ class FirePath:
             transcript=transcript,
             peer_card=card,
             started_at=time.perf_counter(),
+            standing=await self._read_standing(occasion),
         )
+
+    async def _read_standing(self, occasion: Event) -> Standing | None:
+        """This conversation's position, or `None` (D5).
+
+        Fail-SOFT and COUNTED, the same three states
+        `TranscriptInjection._standing` distinguishes: no store is the dormant
+        default and is not an error; no row is a conversation never folded; a
+        FAILED read is neither, and is counted, because a position that exists
+        and could not be fetched reported as «there is none» is the
+        `unavailable`-as-`nothing_found` substitution R-27 exists to prevent.
+
+        A thinner prompt beats a reminder that does not fire.
+        """
+        if self._standing is None:
+            return None
+        try:
+            return await self._standing.read(
+                platform=occasion.platform,
+                conversation_id=occasion.conversation_id,
+            )
+        except Exception:
+            log.exception("fire standing read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_standing",
+                platform=occasion.platform,
+            )
+            return None
 
     async def run(self, rows: Sequence[Reminder]) -> str:
         """The heartbeat's `fire` collaborator: due rows in, §8.1 outcome out.
