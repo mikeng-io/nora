@@ -1137,11 +1137,67 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #
     # Never firing at all is also a reading: it means positions are never being
     # rebuilt, so a bad fold carries itself forward indefinitely.
+    # 26 §7's read-set, reaching the debrief. Counted before anything consumes
+    # it ON PURPOSE: the note-proposal output is still blocked on the store's
+    # create-shaped payload, and a wiring that is built but unread is exactly
+    # the kind that rots unnoticed until the feature it serves arrives and
+    # quietly does nothing. A moving counter proves the set is threaded; a flat
+    # one at zero while notes are being read means it is not.
+    # 26 §3's fourth output. Every proposal lands on exactly one label, and
+    # the refusals are the interesting half:
+    #
+    #   proposed     — reached the sink
+    #   already_read — §7: the turn READ that note and chose not to touch it.
+    #                  A sustained rate means the two paths are arguing, which
+    #                  is the failure §7 exists to prevent, caught rather than
+    #                  suffered
+    #   refused      — the domain type refused it (over-long title, blank
+    #                  closing condition, no anchor). The boundary WORKING, not
+    #                  a fault — but a high rate is a reading about the
+    #                  objective text, not about the store
+    #   over_cap     — notes discarded past MAX_NOTES_PER_FOLD. A fold that
+    #                  wants to raise six has started narrating; the note index
+    #                  is uncapped, so those would cost every later prompt
+    #   malformed    — an entry that was not even a mapping
+    #   unwritten    — the sink refused the whole batch (TypeError,
+    #                  StaleNoteHeadError, ValueError). Never folded in with
+    #                  `refused`: one is our boundary, the other is the store's
+    _CounterSpec(
+        "nora_debrief_note_proposals_total",
+        "Notes the debrief raised, by disposition: proposed, already_read, "
+        "refused, over_cap, malformed, unwritten (the propose did not "
+        "complete; whether it committed is unknown), no_workspace (policy "
+        "names no notebook for the room — a refusal, not a fault) and "
+        "no_workspace_unavailable (the resolver itself failed). The last two "
+        "are separate because an unmapped room and a broken resolver are "
+        "different readings, and one bucket for both is a fault reported as a "
+        "policy decision.",
+        ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_debrief_notes_read_total",
+        "Notes the tag path READ this turn, as seen by the debrief (R-55's "
+        "latch). A proposal naming one of these is dropped by the debrief "
+        "before it reaches the sink, so "
+        "the two paths cannot argue over the same note every turn.",
+    ),
     _CounterSpec(
         "nora_standing_rederivations_total",
-        "Positions rebuilt rather than revised, by trigger: ungrounded (the "
-        "last turn's verdict said so) or ceiling (fold_count reached "
-        "[standing] rebuild_after_folds). Ungrounded wins when both hold.",
+        "Re-derivations TRIGGERED, by trigger: ungrounded (an unconsumed "
+        "ungrounded verdict) or ceiling (fold_count reached [standing] "
+        "rebuild_after_folds). Ungrounded wins when both hold. Read against "
+        "nora_standing_rederivations_written_total: a fold that refuses "
+        "writes nothing and advances no watermark, so the trigger fires again "
+        "next turn, and on this series alone that is indistinguishable from a "
+        "trigger latched on.",
+        ("trigger",),
+    ),
+    _CounterSpec(
+        "nora_standing_rederivations_written_total",
+        "Re-derivations that LANDED — the rebuilt position was written and, "
+        "for an ungrounded trigger, the watermark advanced with it. Same "
+        "labels as nora_standing_rederivations_total; a persistent gap "
+        "between the two is a fold that keeps failing, not a latch.",
         ("trigger",),
     ),
     _CounterSpec(

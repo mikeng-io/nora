@@ -158,39 +158,152 @@ async def test_both_stores_refuse_too_many_claims(store):
         await store.save(verdict=smuggled)
 
 
-async def test_latest_answers_the_newest_verdict_in_the_conversation(store):
-    """The read S2's trigger needs, and a DIFFERENT question from `read`: how
-    did the LAST turn here go, not how did this turn go."""
+async def test_latest_ungrounded_answers_the_newest_ungrounded_one(store):
+    """The read S2's trigger needs, and a DIFFERENT question from `read`: is
+    there an ungrounded verdict here, not how did this turn go."""
     await store.save(verdict=_v("tag-1", grounded=True))
     await store.save(verdict=TurnVerdict(
         tag_id="tag-2", conversation_id=CONV, grounded=False,
         unsupported=("the newer one",), created_at=NOW + 1000))
-    got = await store.latest(conversation_id=CONV)
+    got = await store.latest_ungrounded(conversation_id=CONV)
     assert got is not None and got.tag_id == "tag-2" and got.grounded is False
 
 
-async def test_latest_is_deterministic_when_two_turns_share_a_millisecond(store):
+async def test_a_newer_grounded_verdict_does_not_bury_an_ungrounded_one(store):
+    """**The defect this read replaced a `latest` to close, at the store
+    boundary.** A read that answers the newest verdict of EITHER kind returns
+    `tag-2` here, the trigger sees `grounded` and declines, and the ungrounded
+    `tag-1` is never acted on — permanently, because every later turn buries it
+    further. The sequence is ordinary: an ungrounded turn, then a successful one.
+
+    Both implementations must filter, or the double cannot stand in for the
+    store on the one input that matters."""
+    await store.save(verdict=TurnVerdict(
+        tag_id="tag-1", conversation_id=CONV, grounded=False,
+        unsupported=("invented a price",), created_at=NOW))
+    await store.save(verdict=TurnVerdict(
+        tag_id="tag-2", conversation_id=CONV, grounded=True,
+        created_at=NOW + 1000))
+    got = await store.latest_ungrounded(conversation_id=CONV)
+    assert got is not None and got.tag_id == "tag-1", (
+        "a later grounded verdict buried the unconsumed ungrounded one"
+    )
+
+
+async def test_latest_ungrounded_is_deterministic_when_two_share_a_millisecond(store):
     """Both implementations must answer the SAME row, or the double is not a
     stand-in. Postgres would otherwise return whatever the scan reached first
     and the double whatever hashed first — a divergence a contract suite cannot
     see unless both sides are ordered. `tag_id` descending breaks it."""
     for tag in ("tag-a", "tag-b", "tag-c"):
         await store.save(verdict=TurnVerdict(
-            tag_id=tag, conversation_id=CONV, grounded=True, created_at=NOW))
-    got = await store.latest(conversation_id=CONV)
+            tag_id=tag, conversation_id=CONV, grounded=False,
+            unsupported=("same ms",), created_at=NOW))
+    got = await store.latest_ungrounded(conversation_id=CONV)
     assert got is not None and got.tag_id == "tag-c"
 
 
-async def test_latest_ignores_other_conversations(store):
+async def test_latest_ungrounded_ignores_other_conversations(store):
     await store.save(verdict=TurnVerdict(
         tag_id="other", conversation_id="g2", grounded=False,
         unsupported=("elsewhere",), created_at=NOW + 9999))
-    await store.save(verdict=_v("tag-1", grounded=True))
-    got = await store.latest(conversation_id=CONV)
+    await store.save(verdict=TurnVerdict(
+        tag_id="tag-1", conversation_id=CONV, grounded=False,
+        unsupported=("here",), created_at=NOW))
+    got = await store.latest_ungrounded(conversation_id=CONV)
     assert got is not None and got.tag_id == "tag-1"
+
+
+async def test_latest_ungrounded_is_none_when_every_verdict_is_grounded(store):
+    """Not the same as an empty conversation, and both answer `None` — a
+    conversation whose turns all went fine has nothing to re-derive from."""
+    await store.save(verdict=_v("tag-1", grounded=True))
+    await store.save(verdict=TurnVerdict(
+        tag_id="tag-2", conversation_id=CONV, grounded=True,
+        created_at=NOW + 1000))
+    assert await store.latest_ungrounded(conversation_id=CONV) is None
 
 
 async def test_latest_is_none_before_the_first_verdict(store):
     """Not a reason to re-derive: the ordinary state before a conversation's
     first fold."""
-    assert await store.latest(conversation_id=CONV) is None
+    assert await store.latest_ungrounded(conversation_id=CONV) is None
+
+
+# --- the plan, not the spelling -------------------------------------------
+
+@pytest.mark.asyncio
+async def test_the_trigger_read_actually_uses_its_partial_index(_verdict_db: str):
+    """**Asserts the plan of the SQL the STORE emits, captured off the engine.**
+
+    `latest_ungrounded` shipped as `.is_(False)`, which renders `grounded IS
+    false`, while `idx_turn_verdict_ungrounded` is created `WHERE (grounded =
+    false)`. Postgres cannot prove a `BooleanTest` implies an `OpExpr`, so the
+    partial index was unusable and every fold sequentially scanned the whole
+    table — 525 buffers and 3.1ms against 12 buffers and 0.11ms.
+
+    **The ANSWER was correct throughout.** Right row, right order, both
+    implementations agreeing, every other test green. The divergence lived only
+    in the plan, and nothing in this repo had ever looked at one.
+
+    **The first version of this test compiled its OWN statement** with the
+    correct spelling and EXPLAINed that — so it pinned a string literal in this
+    file and never touched the shipped method. Reverting the store's predicate
+    to the exact defect left it GREEN, measured. That is the compare-the-code-
+    to-a-copy-of-itself failure, in the test written to catch a defect of the
+    same family.
+
+    So the SQL is CAPTURED off the engine as the method issues it. Nothing here
+    spells the predicate; if the store's spelling changes, the captured text
+    changes with it (cold review, 2026-08-28).
+    """
+    engine = create_sql_engine(_verdict_db)
+    captured: list[tuple[str, Any]] = []
+
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        captured.append((statement, parameters))
+
+    try:
+        async with engine.begin() as conn:
+            # Enough rows that a sequential scan is never the cheaper plan, and
+            # ungrounded kept RARE — the shape the partial index is for, and
+            # the shape production has.
+            await conn.execute(sa.text(
+                "INSERT INTO turn_verdict "
+                "(tag_id, conversation_id, grounded, unsupported, created_at) "
+                "SELECT 'tag-'||i, 'conv-'||(i % 50), (i % 1000 <> 0), "
+                "'{}', 1000000+i FROM generate_series(1, 60000) i"
+            ))
+            await conn.execute(sa.text("ANALYZE turn_verdict"))
+
+        sa.event.listen(engine.sync_engine, "before_cursor_execute", _capture)
+        try:
+            # THE PRODUCTION CALL. Its answer is asserted too — a capture of a
+            # statement that returned the wrong row would prove nothing.
+            got = await SqlTurnVerdictStore(engine).latest_ungrounded(
+                conversation_id="conv-0")
+        finally:
+            sa.event.remove(engine.sync_engine, "before_cursor_execute", _capture)
+
+        assert got is not None and got.grounded is False
+        assert captured, "no SQL was captured; the listener never fired"
+        statement, parameters = captured[-1]
+        assert "turn_verdict" in statement, (
+            f"captured the wrong statement: {statement}"
+        )
+
+        async with engine.connect() as conn:
+            rows = (await conn.exec_driver_sql(
+                "EXPLAIN " + statement, parameters)).fetchall()
+        plan = "\n".join(r[0] for r in rows)
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("truncate turn_verdict cascade"))
+        await engine.dispose()
+
+    assert "idx_turn_verdict_ungrounded" in plan, (
+        "the trigger's read does not use its partial index — every fold "
+        "sequentially scans the whole verdict table inside the held "
+        f"per-conversation lock.\nSQL: {statement}\n{plan}"
+    )
+    assert "Seq Scan" not in plan, f"planner chose a sequential scan:\n{plan}"

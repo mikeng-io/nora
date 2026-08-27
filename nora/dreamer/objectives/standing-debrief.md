@@ -41,12 +41,34 @@ This is about SOURCING, not about correctness or helpfulness. A short, unhelpful
 
 If the turn was not grounded, name each unsupported claim in a few words: what was asserted, not why it was wrong. At most 10, each under 200 characters. If the turn was grounded, the list is empty.
 
+THIRD, if the turn revealed an OPEN UNCERTAINTY that nobody is tracking, raise a note for it. A note is a question that is still open and that something specific would settle — not a fact, not a task, and not a summary of what happened.
+
+Raise one only when all of these hold:
+- the turn left something genuinely unresolved — a decision not made, an answer not given, a plan without a detail;
+- you can say what would CLOSE it in one sentence: an event, an answer, a date passing;
+- it is tied to a specific day, so it can be found and retired later.
+
+Do NOT raise a note for: something already settled in the turn; something you can state as a fact; a general intention with no referent ("we should meet up sometime"); or anything you are only guessing is open.
+
+Most turns raise NOTHING. An empty list is the normal answer and is always acceptable. One note is a lot. Never more than two.
+
+Each note needs:
+- title: at most 60 characters. What the open question is.
+- description: at most 200 characters. Enough for someone to know whether to open it.
+- uncertainty: what specifically is unknown.
+- closing_condition: what would settle it.
+- anchor_date: the day it is about, as YYYYMMDD. Use the day the thing is expected to happen, or the day of the turn if that is the only date there is.
+- body: the detail — who is involved, what has been said so far.
+
 Respond with ONLY a JSON object, no prose and no markdown fence:
 
 {"standing": "<the revised position, as one short paragraph>",
  "grounded": true,
- "unsupported": []}
+ "unsupported": [],
+ "notes": []}
 
 `grounded` must be a literal true or false, never a string. `unsupported` must be empty when `grounded` is true — a grounded turn carrying unsupported claims is a contradiction and the whole verdict is discarded.
 
-The paragraph MUST fit inside the character limit you are given. If it does not fit, you will be told so and asked to consolidate — drop the oldest and least consequential thing in it, never the most recent.
+The paragraph MUST fit inside the character limit you are given. If it does not fit, you will be told so and asked to consolidate — drop the oldest and least consequential thing in it, never the most recent. What the room SAID outranks what you concluded about it: if the choice is between dropping something someone actually said and dropping a judgement of your own, drop your judgement — even when yours is the more recent of the two. Recency decides only between two things of the same kind.
+
+`notes` must be a list, empty on most turns. Each entry must carry every field named above; an entry missing any of them is discarded whole rather than guessed at.

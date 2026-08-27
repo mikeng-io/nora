@@ -278,6 +278,95 @@ it notices. **That is the same discipline as [09-measurement.md](09-measurement.
 §3 one level up — an instrument you have never seen report a negative is not an
 instrument yet.**
 
+## The bug-pinning test — when the gate is recruited to defend the defect
+
+The family above is about instruments that **fail to see**. This one is its
+opposite and is worse, because the machinery works perfectly:
+
+> **A missing test leaves a visible hole. A test that pins the bug DEFENDS it —
+> it goes green, it reads as intent, and the next person changing that code has
+> to argue with it first.**
+
+Two instances on 2026-08-27, from two different sessions, neither found by
+running anything:
+
+| the test | what it asserted | the defect it protected |
+|---|---|---|
+| `test_the_dream_loop_is_not_spawned_when_the_flag_is_off` | *"`language.enabled = false` must not spawn `dream_loop`"* | the Dreamer's clock being gated on a TIER flag. The runtime shipped as "on", never ticked for five days, and the suite was green throughout |
+| `test_two_proposals_against_one_note_in_one_tick_refuse_the_second` | *"the FIRST one landed and is not rolled back"* | `SqlNoteStore.propose` running each proposal in its own transaction, while `propose`'s own docstring required the batch to be atomic |
+
+**In both cases the gate was working exactly as designed.** It was asked whether
+the code does what the test says, and the answer was yes. Nothing in the gate's
+job description covers whether the test says the right thing — that is the
+no-self-attestation rule pointed at the specification instead of at the work, and
+it is the one place a suite structurally cannot help.
+
+### The recognition signal
+
+This is the part worth carrying, because both instances have the same findable
+shape:
+
+> **A test and a docstring, in different files, requiring opposite things —
+> where neither half fails on its own.**
+
+The docstring says atomic; the test says partial; the code satisfies the test; the
+suite is green. The docstring says the clock belongs to the runtime; the test says
+it belongs to the language tier; same result. **Neither half is falsifiable
+without reading the other**, which is why both survived every gate run and why
+both were found by a cold reader rather than by their author.
+
+So the check is not "is this tested?" but **"does anything else in the repo state
+the opposite?"** — and the search that answers it is a grep for the claim, not a
+test run.
+
+### Why this argues for review as a gate rather than a courtesy
+
+Six failure families were found on 2026-08-27. **Exactly one of them has a cheap,
+total, automatable gate available** — a declared metric with no call site, which
+an AST walk over `DECLARED_NAMES` versus `metrics.inc(` closes permanently
+(issue #56). The other five needed a human reading with fresh eyes.
+
+That is worth stating plainly, because the instinct after a day like this is
+that more gates would have caught more. **The evidence says the opposite for five
+of the six.** A gate can prove code matches its test. It cannot notice that the
+test and the design disagree, that a double's docstring describes behaviour the
+double no longer has, or that a field is written by two implementations and
+asserted for one.
+
+## The never-re-mutated test — when the gate never measured anything
+
+The other half of the family above. A bug-pinning test **defends** a defect; this
+one never **measured** one. Both are green, both are cited as evidence, and
+neither is.
+
+**Four instances in one session, all in one author's own work, all found by
+someone else or by re-mutating.**
+
+| test | what it asserted | what it missed |
+|---|---|---|
+| `test_the_first_fold_of_a_conversation_is_not_a_rederivation` | `rederivations == 0` and `prior="absent" == 1` | both are true of a **crash** — remove the guard and the stage raises, writes nothing, and the test passes |
+| the first latch test | one rebuild after an ungrounded verdict | the helper defaulted `grounded=true`, so the fold wrote a **fresh** verdict and masked the latch it was testing |
+| `test_the_accessor_hands_out_a_copy_not_the_live_set` | that `notes_read` is a `property` | passed while the accessor returned the live set |
+| two slot-hold config tests | that a bad budget refuses to start | replaced the literal `150.0` after it had been changed to `160.0` — a **silent no-op**, so they tested an unmodified config and reported DID NOT RAISE |
+
+**The shape is always the same: a green test written after a change the author
+made, never re-mutated.** Writing the test is not the check. Breaking the code
+again is.
+
+Three of the four were caught only because an independent reviewer mutated a
+clause the author had not, or because the author re-mutated on a later pass. The
+author had truthfully reported falsifying three properties of the same feature —
+and had, and the fourth clause was the one that shipped the defect. **Reporting
+"falsified by mutation" is not a property of a change; it is a property of each
+individual clause**, and the clauses nobody thinks to break are exactly the ones
+whose tests are decorative.
+
+**What actually works**, and it is cheap: after a test goes green, break the
+production line it names and watch it go red. The two instances the author caught
+alone were both caught that way, within a minute of writing the test. One of them
+— the store-call count — then caught a *later* miscount by the same author, which
+is the difference between fixing an instance and closing a family.
+
 ## What follows from this
 
 **Every fix in this bundle ships its own measurement, or it is not done**
@@ -301,6 +390,14 @@ to state it as a repo-wide discipline rather than a Dreamer fix: a tier written
 by a different session, at a different time, reproduced it exactly.
 
 ## Status / Checkpoint
+
+2026-08-27 — **the bug-pinning test added as its own family**, distinct from the
+silent-match one: a silent match FAILS to see something, a bug-pinning test
+actively protects it and recruits the gate to do so. Two instances, one from each
+of two sessions, both green for the whole life of the defect they defended. The
+recognition signal — a test and a docstring in different files requiring opposite
+things, neither failing alone — is the reusable half.
+
 
 2026-08-27 — **the title lost its count.** It read "Six Layers" while the file
 held seven, because Layer 7 was appended and the title was not — a stale ordinal

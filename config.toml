@@ -1064,27 +1064,56 @@ window = 40
 #
 # 20 is a starting point, not a measured value.
 rebuild_after_folds = 20
-# The fold's own timeout — the MODEL call only. The number that matters is the
-# SUM, and it is checked at startup by max_slot_hold_seconds below rather than
-# worked out here: [llm] timeout_seconds + this + 2 x store_timeout_seconds.
+# The fold's own timeout, and it bounds the MODEL CALL TWICE — the client is
+# built with it, and the fold is wrapped in it. The number that matters is the
+# SUM, checked at startup by max_slot_hold_seconds below rather than worked out
+# here: this + 5 x store_timeout_seconds.
 # This comment used to stop at «[llm] timeout_seconds + this», which is how the
-# two store calls came to be unbounded — they were not in anyone's sum.
+# store calls came to be unbounded — they were not in anyone's sum.
 timeout_seconds = 20.0
-# The bound on the stage's TWO STORE CALLS — reading the prior position and
-# writing the revised one. It exists because they had none: the engine sets no
-# command_timeout and both run while the conversation's slot is HELD, so a
-# connection hanging mid-query during the post-reply fold wedged that
+# The bound on the stage's FIVE STORE CALLS: the trigger's verdict read, the
+# prior position, the revised position, the turn verdict, and the note
+# proposals. It exists because they had none: the engine sets no
+# command_timeout and all of them run while the conversation's slot is HELD, so
+# a connection hanging mid-query during the post-reply fold wedged that
 # conversation indefinitely, on a turn that had already replied. Small on
-# purpose: this is a single-row keyed read and a single-row upsert, and if
-# either takes seconds the honest answer is «unavailable», not a longer wait
-# held in front of the next person in the room.
+# purpose: these are single-row keyed queries, and if one takes seconds the
+# honest answer is «unavailable», not a longer wait held in front of the next
+# person in the room.
 store_timeout_seconds = 5.0
 # The WHOLE hold this stage may add to a conversation's slot, checked at
-# STARTUP: [llm] timeout_seconds + timeout_seconds + 2 x store_timeout_seconds.
-# It is a gate and not a comment because the comment was wrong — the design
-# argued 60 + 20 = 80s while [llm] timeout_seconds is a required field this
-# deployment sets to 120. Raise it deliberately or lower a timeout; the startup
-# refusal names which numbers stopped fitting.
+# STARTUP: timeout_seconds + 5 x store_timeout_seconds.
+# It is a gate and not a comment because the comment kept being wrong — three
+# different arities for this one number have shipped, and the last of them was
+# in the validator built to catch exactly that.
+#
+# THE REAL BOUNDED HOLD IS 45 (20 + 5 x 5), and [llm] timeout_seconds is NOT a
+# term in it. That value bounds nothing in this stage: the fold's model call is
+# bounded by [standing] timeout_seconds in the client AND by the wait_for around
+# the fold, and never by the [llm] figure. Counting it made this read «this
+# conversation can be held 165 seconds» when the bound is 45.
+#
+# **HELD AT 150 FOR ONE DEPLOY, DELIBERATELY, then dropped to 45.** This file is
+# BIND-MOUNTED and read at startup; the validator that checks it lives in the
+# IMAGE. So between a merge to master and the image that ships with it, the NEW
+# config is read by the OLD validator — which still sums [llm] timeout_seconds
+# and computes 150. At 45 that combination REFUSES TO START, and the check is
+# ungated on `enabled`, so the container survives the merge and dies on its next
+# restart naming numbers that appear nowhere in this file.
+#
+# 150 is accepted by both validators (old: 120 + 20 + 2 x 5 = 150, not over;
+# new: 45, not over), which makes the merge safe in ANY order rather than only
+# in the intended one. It is a CEILING an operator sets, not a measurement — a
+# loose ceiling is true, and this comment is where the real bound is stated.
+# `StandingConfig`'s own default is already 45, so a config omitting this key
+# gets the tight value; only the shipped files are held.
+#
+# The follow-up that drops both files to 45 is safe once the image carrying the
+# new validator is deployed and read back (cold review, 2026-08-28).
+#
+# If 45 is too long, the lever is store_timeout_seconds (25s of the total, for
+# five single-row keyed queries against a local database) or timeout_seconds,
+# not this number.
 max_slot_hold_seconds = 150.0
 # Empty means `[llm] model`.
 model = ""

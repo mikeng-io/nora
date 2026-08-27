@@ -64,6 +64,7 @@ from dataclasses import dataclass, field, replace
 
 from nora.domain.notes import (
     Note,
+    NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
     NoteSupersedeReason,
@@ -134,6 +135,12 @@ class InMemoryNoteStore:
         now_ms: int,
         anchor_date: int | None = None,
         anchor_entity_ids: tuple[str, ...] = (),
+        # Passed through to the FIRST revision, and `None` from the tag path.
+        # `note_create` has no `Proposal` and no instruction digest; the
+        # debrief, arriving through `DreamSink.propose`, has both. See
+        # `0036_note_revision_provenance` for why the columns are nullable.
+        instruction_sha256: str | None = None,
+        model: str | None = None,
     ) -> Note:
         """See the module docstring's (3): both objects are built before either
         is stored, so a refused note leaves no half-written revision behind."""
@@ -149,6 +156,7 @@ class InMemoryNoteStore:
         revision = NoteRevision(
             id=revision_id, note_id=note_id, body=body, parent_revision_id=None,
             written_at=now_ms, established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
         )
         self.notes[note_id] = note
         self.revisions[revision_id] = revision
@@ -241,6 +249,44 @@ class InMemoryNoteStore:
                 hits.append((note, body))
         return tuple(hits[:limit])
 
+    async def merge_groups(
+        self, *, workspace: str, limit: int,
+    ) -> tuple[tuple[Note, ...], ...]:
+        """`SqlNoteStore.merge_groups`. Dateless notes are excluded here too —
+        the exclusion is the CONTRACT, not a SQL convenience, so a double that
+        included them would be more permissive than the store and the suite
+        would compare two different definitions of "same occasion"."""
+        if limit <= 0:
+            return ()
+        buckets: dict[tuple[int, tuple[str, ...]], list[Note]] = {}
+        for note in await self.standing(workspace=workspace):
+            if note.anchor_date is None:
+                continue
+            buckets.setdefault(
+                (note.anchor_date, tuple(note.anchor_entity_ids)), [],
+            ).append(note)
+        collided = [(k, v) for k, v in buckets.items() if len(v) > 1]
+        # Most-collided first, then by anchor date — the SQL store's
+        # `ORDER BY count() DESC, anchor_date ASC`, written out so the two
+        # agree by construction rather than by coincidence.
+        collided.sort(key=lambda kv: (-len(kv[1]), kv[0][0]))
+        return tuple(tuple(v) for _, v in collided[:limit])
+
+    async def anchored_before(
+        self, *, workspace: str, day: int, limit: int,
+    ) -> tuple[tuple[Note, str], ...]:
+        """`SqlNoteStore.anchored_before`."""
+        if limit <= 0:
+            return ()
+        hits = [
+            n for n in await self.standing(workspace=workspace)
+            if n.anchor_date is not None and n.anchor_date < day
+        ]
+        hits.sort(key=lambda n: (n.anchor_date or 0, n.id))
+        return tuple(
+            (n, self.revisions[n.head_revision_id].body) for n in hits[:limit]
+        )
+
     # ---- DreamSink -------------------------------------------------------
     #
     # **This double must refuse what Postgres refuses, and it does not get that
@@ -254,27 +300,132 @@ class InMemoryNoteStore:
     async def propose(
         self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
     ) -> Sequence[str]:
-        """`SqlNoteStore.propose`'s behaviour, including its refusals."""
-        ids: list[str] = []
+        """`SqlNoteStore.propose`'s behaviour, including its refusals and its
+        ORDER OF OPERATIONS.
+
+        **RESOLVE THE WHOLE BATCH, THEN APPLY IT.** This double has no
+        transaction, so it cannot roll back — what it CAN do is decide every
+        refusal before performing any mutation, which is where the SQL store's
+        atomicity is observable from outside.
+
+        **This docstring claimed exactly that on 2026-08-27 while the code did
+        not do it**, because only the `isinstance` loop had been hoisted:
+        `append_revision`'s CAS and `create`'s domain refusals still fired
+        inside the write loop, so a batch of (valid, stale) left the valid one
+        applied where Postgres rolls it back. Found by a reviewer executing it,
+        one fix after the same file's docstring was corrected for the same
+        class of mistake. Recorded rather than quietly repaired: **a claim
+        about a double is a claim about the real store**, and this one was
+        wrong twice in the same file in one day.
+
+        Resolving first also removes the SQL-only exemption the contract suite
+        needed for the rollback assertion — and that exemption was the tell
+        that the two implementations were never being compared on this.
+        """
+        typed: list[tuple[Proposal, NoteCreationProposal | NoteRevisionProposal]] = []
         for p in proposals:
-            if not isinstance(p.payload, NoteRevisionProposal):
+            payload = p.payload
+            if not isinstance(
+                payload, NoteCreationProposal | NoteRevisionProposal
+            ):
                 raise TypeError(
-                    f"InMemoryNoteStore.propose only accepts a "
-                    f"NoteRevisionProposal payload, got "
-                    f"{type(p.payload).__name__}"
+                    f"InMemoryNoteStore.propose accepts a "
+                    f"NoteRevisionProposal or a NoteCreationProposal, got "
+                    f"{type(payload).__name__}"
                 )
-            revision = await self.append_revision(
-                workspace=key,
-                note_id=p.payload.note_id,
-                body=p.payload.body,
-                parent_revision_id=p.payload.parent_revision_id,
-                established_by=p.established_by,
-                now_ms=now_ms,
-                instruction_sha256=p.instruction_sha256,
-                model=p.model,
+            typed.append((p, payload))
+
+        # --- resolve: build every object and check every CAS, writing nothing
+        #
+        # `heads` simulates the batch's effect on each note's head, seeded from
+        # the store as it stands. `declared` is what each note's FIRST proposal
+        # claimed to be written against — the same distinction the SQL store
+        # draws, and for the same reason: the tracked head must be a CHECK, not
+        # a silent override, or two proposals parented on one read both land
+        # and the second buries the first.
+        pending: list[tuple[Note | None, NoteRevision]] = []  # (new note | None, revision)
+        ids: list[str] = []
+        heads: dict[str, str] = {}
+        declared: dict[str, str] = {}
+        for p, payload in typed:
+            if isinstance(payload, NoteCreationProposal):
+                note_id = f"note-{next(self._ids)}"
+                revision_id = f"rev-{next(self._ids)}"
+                note = Note(
+                    id=note_id, workspace=key, title=payload.title,
+                    description=payload.description,
+                    uncertainty=payload.uncertainty,
+                    closing_condition=payload.closing_condition,
+                    established_in=payload.established_in, created_at=now_ms,
+                    head_revision_id=revision_id,
+                    anchor_date=payload.anchor_date,
+                    anchor_entity_ids=tuple(payload.anchor_entity_ids),
+                )
+                revision = NoteRevision(
+                    id=revision_id, note_id=note_id, body=payload.body,
+                    parent_revision_id=None, written_at=now_ms,
+                    established_by=p.established_by,
+                    instruction_sha256=p.instruction_sha256, model=p.model,
+                )
+                pending.append((note, revision))
+                heads[note_id] = revision_id
+                ids.append(note_id)
+                continue
+
+            if payload.note_id in declared:
+                if payload.parent_revision_id != declared[payload.note_id]:
+                    raise StaleNoteHeadError(
+                        f"note {payload.note_id} was already revised in this "
+                        f"batch against {declared[payload.note_id]}; this "
+                        f"proposal names {payload.parent_revision_id} — read "
+                        f"it again",
+                        observed_head=heads.get(payload.note_id),
+                    )
+            else:
+                declared[payload.note_id] = payload.parent_revision_id
+
+            existing = self.notes.get(payload.note_id)
+            reachable = existing is not None and existing.workspace == key
+            head_now = existing.head_revision_id if existing is not None else None
+            # The CAS runs only for a note this batch has NOT already revised.
+            # For a later proposal the declared-parent check above has already
+            # established that it names the same parent the first one did, and
+            # the chain below supplies the real predecessor — so re-running the
+            # comparison against the STORED head would refuse every legitimate
+            # chained write.
+            first_touch = payload.note_id not in heads
+            stale = first_touch and (
+                not reachable
+                or head_now != payload.parent_revision_id
             )
-            _ = revision
-            ids.append(p.payload.note_id)
+            if not reachable or stale:
+                raise StaleNoteHeadError(
+                    f"note {payload.note_id} changed under you or is not in "
+                    f"workspace {key!r} — read it again",
+                    observed_head=head_now if reachable else None,
+                )
+            revision = NoteRevision(
+                id=f"rev-{next(self._ids)}", note_id=payload.note_id,
+                body=payload.body,
+                parent_revision_id=heads.get(
+                    payload.note_id, payload.parent_revision_id,
+                ),
+                written_at=now_ms, established_by=p.established_by,
+                instruction_sha256=p.instruction_sha256, model=p.model,
+            )
+            pending.append((None, revision))
+            heads[payload.note_id] = revision.id
+            ids.append(payload.note_id)
+
+        # --- apply: nothing above this line mutated anything
+        for created, revision in pending:
+            if created is not None:
+                self.notes[created.id] = created
+            else:
+                self.notes[revision.note_id] = replace(
+                    self.notes[revision.note_id], head_revision_id=revision.id,
+                )
+            self.revisions[revision.id] = revision
         return tuple(ids)
 
     async def supersede(
@@ -289,13 +440,20 @@ class InMemoryNoteStore:
     ) -> int:
         """`SqlNoteStore.supersede`'s behaviour.
 
-        **`source` is accepted and DROPPED, and that is not an oversight — it
-        is what the SQL store does too.** `note` has no column for a
-        supersession's citation: a note is an open question, and what closed it
-        is the revision history, not a URL. The port carries `source` because
-        the fact tier needs it (a contradicting source is the warrant for the
-        supersession), and a tier that cannot record it says so through the
-        contract suite's axis rather than by inventing a column.
+        **`source` is REFUSED, not accepted and dropped** — the same as
+        `SqlNoteStore`. `note` has no column for a supersession's citation: a
+        note is an open question, and what closed it is the revision history,
+        not a URL. The port carries `source` because the fact tier needs it (a
+        contradicting source IS the warrant there), and a tier that cannot
+        record a field says so by refusing rather than by discarding.
+
+        **This docstring said "accepted and DROPPED" until 2026-08-27**, twelve
+        lines above code that raises, because it was the un-updated half of the
+        fix that added the refusal. Recorded rather than quietly corrected: a
+        double's docstring is what the next person reads to learn what the REAL
+        store does, so a reader trusting it would have built against
+        drop-semantics and been refused at runtime. Same family as the day's
+        other findings — two things that must agree, one silently stale.
 
         The refusals below are deliberately NOT delegated to the domain type:
         a double that refuses only because a constructor refused is more

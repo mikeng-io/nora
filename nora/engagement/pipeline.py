@@ -91,6 +91,31 @@ log = logging.getLogger("nora.engagement.pipeline")
 _EXHAUSTED_FALLBACK = "唔好意思，我一時搞唔掂，遲啲再問我啦 😅"  # noqa: RUF001 — Cantonese fullwidth punctuation is intended
 
 
+def _notes_read_of(handle: Any) -> frozenset[str]:
+    """R-55's latch off the turn's guard, or an empty set — NEVER a raise.
+
+    26 §7 needs the notes this turn read so the debrief cannot re-propose one
+    the tag path already considered and declined. But this runs in
+    `_run_admitted`'s `finally`, PAST the outer `except BaseException`, so
+    anything raised here escapes `run()` entirely and takes down a turn that
+    already delivered its reply.
+
+    So every failure degrades to `frozenset()`, and the consequence of that
+    default is deliberately the SAFE direction: an empty read set refuses
+    nothing, so the worst case is a duplicate note proposal — not a lost fold
+    and not a lost position. The rule is the verdict's, one output over: a
+    proposal failure must never cost the position.
+    """
+    try:
+        guard = getattr(handle, "guard", None)
+        return frozenset(getattr(guard, "notes_read", frozenset()))
+    except Exception:  # noqa: BLE001 — see the docstring: this sits past the
+        # outer handler, so a raise here escapes `run()`. Every failure of this
+        # read has the same correct answer.
+        log.warning("could not read the turn's note-read set; refusing nothing")
+        return frozenset()
+
+
 class EngagementPipeline:
     def __init__(
         self,
@@ -341,7 +366,10 @@ class EngagementPipeline:
         identity = await self._adapter_for(request.message.platform).resolve_identity()
         await self._run_admitted(request, identity, indicator)
 
-    async def _debrief(self, *, trace: TagTrace | None, platform: str) -> None:
+    async def _debrief(
+        self, *, trace: TagTrace | None, platform: str,
+        notes_read: frozenset[str] = frozenset(),
+    ) -> None:
         """Hand this finished turn to the debrief stage, or do nothing at all.
 
         Two guards, and they are different questions rather than one written
@@ -384,6 +412,8 @@ class EngagementPipeline:
                 platform=platform,
                 store=wiring.store,
             store_verdict=wiring.store_verdict,
+            notes_sink=wiring.notes_sink,
+            workspace_of=wiring.workspace_of,
                 client=wiring.client,
                 objective=wiring.objective,
                 metrics=self._metrics,
@@ -394,6 +424,7 @@ class EngagementPipeline:
                 store_timeout_seconds=wiring.store_timeout_seconds,
             rebuild_after_folds=wiring.rebuild_after_folds,
                 now_ms=int(time.time() * 1000),
+            notes_read=notes_read,
             )
 
     async def _run_admitted(
@@ -806,14 +837,14 @@ class EngagementPipeline:
             #    than a background job, and it is why its cost lands on the
             #    SECOND person queued behind a busy conversation rather than
             #    on the person it is reviewing, who already has their reply.
-            #    The worst-case hold is `[llm] timeout_seconds` +
-            #    `[standing] timeout_seconds` + TWO x `store_timeout_seconds`
-            #    (the read of the prior position and the write of the next),
-            #    and it is asserted at STARTUP by
-            #    `Config._the_standing_slot_hold_fits_its_budget` rather than
-            #    stated here. This comment used to do the arithmetic itself and
-            #    omitted the store calls entirely, which is exactly how they
-            #    came to be unbounded.
+            #    The worst-case hold is asserted at STARTUP by
+            #    `Config._the_standing_slot_hold_fits_its_budget`, and this
+            #    comment deliberately does NOT restate the arithmetic. It has
+            #    done so twice and been wrong both times — once omitting the
+            #    store calls entirely, which is how they came to be unbounded,
+            #    and once naming two of them after there were five. The
+            #    validator and `STANDING_STORE_CALLS_PER_FOLD` are the single
+            #    place that number lives.
             #
             # 3. **`completed` is already final by the time this runs**, which
             #    is the same requirement as «mark the turn completed BEFORE
@@ -839,7 +870,15 @@ class EngagementPipeline:
             #    straight out of `run` — an outage far wider than one tag,
             #    caused by a stage reviewing a turn that already finished.
             try:
-                await self._debrief(trace=trace, platform=msg.platform)
+                await self._debrief(
+                    trace=trace, platform=msg.platform,
+                    # R-55's latch, for 26 §7: the notes this turn actually
+                    # READ. `handle` is None only when the fault preceded
+                    # `deliver.build` — no guard existed, so no note was
+                    # read, and an empty set is the true answer rather than
+                    # a degraded one.
+                    notes_read=_notes_read_of(handle),
+                )
             except BaseException:
                 # ABSORBED, not re-raised, and `BaseException` rather than
                 # `Exception` for `debrief.run`'s own reason one level down:

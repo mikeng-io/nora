@@ -12,6 +12,7 @@ answer.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 
 import pytest
@@ -48,6 +49,24 @@ class _Client:
         return item
 
 
+class _FakeSink:
+    """Records batches. `propose` is all-or-nothing and every failure ESCAPES —
+    no short id list — so a raising variant is how the refusal path is tested."""
+
+    def __init__(self, *, raises: BaseException | None = None) -> None:
+        self.batches: list[list] = []
+        self._raises = raises
+
+    async def propose(self, *, key: str, proposals, now_ms: int):
+        if self._raises is not None:
+            raise self._raises
+        self.batches.append(list(proposals))
+        return [f"note-{i}" for i, _ in enumerate(proposals)]
+
+    async def supersede(self, **kw) -> int:
+        return 0
+
+
 class _Objective:
     def objective_body(self, name: str) -> str:
         assert name == debrief.OBJECTIVE
@@ -73,12 +92,28 @@ def _trace(outcome: str = "send_reply") -> TagTrace:
     )
 
 
-async def _run(*, store=None, store_verdict=None, client=None, metrics=None, max_chars=1200,
+def _trace_with_tag(tag_id: str) -> TagTrace:
+    """A distinct turn. `TurnVerdict` is keyed on `tag_id` and NEVER rewritten,
+    so re-using one across turns makes the second save a duplicate — caught and
+    counted, but it would leave a multi-turn test asserting on a verdict that
+    was never stored."""
+    return dataclasses.replace(_trace(), tag_id=tag_id)
+
+
+_UNSET = object()
+
+
+async def _run(*, store=None, store_verdict=_UNSET, client=None, metrics=None, max_chars=1200,
                timeout_seconds=5.0, store_timeout_seconds=5.0,
-               rebuild_after_folds=20, trace=None) -> tuple:
+               rebuild_after_folds=20, notes_read=frozenset(),
+               now_ms_override=None, notes_sink=_UNSET,
+               workspace_of=None, trace=None) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
-    store_verdict = (store_verdict if store_verdict is not None
-                     else InMemoryTurnVerdictStore())
+    # `_UNSET`, not `None`: `None` is a REAL state the stage documents as
+    # "the ordinary state on any deployment that has not wired one", and a
+    # helper that substitutes a store for it makes that branch untestable.
+    store_verdict = (InMemoryTurnVerdictStore() if store_verdict is _UNSET
+                     else store_verdict)
     metrics = metrics if metrics is not None else Metrics()
     await debrief.run(
         trace=trace if trace is not None else _trace(),
@@ -87,8 +122,10 @@ async def _run(*, store=None, store_verdict=None, client=None, metrics=None, max
         objective=_Objective(), metrics=metrics, display_name="Nora",
         max_chars=max_chars, window=40, timeout_seconds=timeout_seconds,
         store_timeout_seconds=store_timeout_seconds,
-        rebuild_after_folds=rebuild_after_folds,
-        now_ms=1_756_000_931_000,
+        rebuild_after_folds=rebuild_after_folds, notes_read=notes_read,
+        notes_sink=(_FakeSink() if notes_sink is _UNSET else notes_sink),
+        workspace_of=workspace_of or (lambda p, c: "ws"),
+        now_ms=now_ms_override if now_ms_override is not None else 1_756_000_931_000,
     )
     return store, metrics, store_verdict
 
@@ -183,6 +220,47 @@ async def test_an_over_long_fold_is_refused_and_the_model_is_asked_to_consolidat
     assert "50-character limit" in client.prompts[1]
     assert _counter(
         metrics, "nora_standing_overflow_refusals_total", stage="first") == 1
+
+
+async def test_the_shrink_asymmetry_reaches_the_consolidate_retry():
+    """**§4.0.1's ordering rule, which shipped with only half of itself.**
+
+    The design states an asymmetry — when Standing must shrink, what the room
+    SAID outranks what Nora concluded about it — and only the recency rule was
+    ever written into the retry. The two conflict: the most recent thing in a
+    position is often something she concluded and the oldest is often something
+    the room said, so recency ALONE drops the room's own words first. That is
+    the inversion the asymmetry exists to prevent, arrived at by omission.
+
+    So both rules have to be present AND ordered, which is what this asserts —
+    the room rule as the override, recency scoped to a tie between two things
+    of the same kind. The trace-side half (`cap_messages` pinning human turns)
+    was implemented all along; this is the half that did not follow.
+    """
+    client = _Client(_ok("x" * 60), _ok("short"))
+    await _run(client=client, max_chars=50)
+    retry = client.prompts[1]
+    assert "never the most recent" in retry, "the recency rule went missing"
+    assert "outranks what you concluded" in retry, (
+        "§4.0.1's asymmetry is not in the retry, so a shrink drops what the "
+        "room said before it drops Nora's own judgement"
+    )
+    assert "two things of the same kind" in retry, (
+        "recency is stated unqualified, so it still overrides the asymmetry "
+        "whenever the newer item is hers"
+    )
+
+
+def test_the_objective_states_the_shrink_asymmetry_too():
+    """The retry prompt and the objective are two texts the model sees and
+    they must not disagree about which rule governs. The objective is the one
+    that hot-reloads on mtime, so a drift between them is invisible until a
+    fold picks the wrong thing to drop."""
+    from pathlib import Path
+
+    body = Path("nora/dreamer/objectives/standing-debrief.md").read_text()
+    assert "outranks what you concluded" in body
+    assert "two things of the same kind" in body
 
 
 async def test_a_second_overflow_writes_nothing_and_the_prior_position_stands():
@@ -534,19 +612,51 @@ async def test_the_verdict_comes_from_the_answer_that_was_kept():
 
 # --- S2's re-derivation trigger --------------------------------------------
 
-async def _with_prior(fold_count: int, *, body: str = "the carried position"):
+# The two clocks are EXPLICIT in these helpers because their ORDER is the
+# subject: the trigger fires on an ungrounded verdict written SINCE the position
+# was last revised. Both used to default to 1, so `created_at > updated_at` was
+# false and the tests could not tell a fresh verdict from a stale one.
+async def _with_prior(fold_count: int, *, body: str = "the carried position",
+                      updated_at: int = 100, consumed_verdict_tag: str | None = None):
     store = InMemoryStandingStore()
     await store.write(standing=Standing(
         platform="signal", conversation_id="g1", body=body,
-        fold_count=fold_count, updated_at=1))
+        fold_count=fold_count, updated_at=updated_at,
+        consumed_verdict_tag=consumed_verdict_tag))
     return store
 
 
-async def _with_verdict(*, grounded: bool):
+class _BlindableVerdicts:
+    """`latest` raises while `blind` — R-27's «I could not check», the only
+    state that distinguishes a watermark from a timestamp comparison.
+
+    A double that could not fail this way is why the comparison shipped: every
+    test drove a verdict store that always answered, so the one path that
+    silently loses a verdict was unreachable through the suite.
+    """
+
+    def __init__(self, inner) -> None:
+        self.inner, self.blind = inner, False
+
+    async def latest_ungrounded(self, *, conversation_id: str):
+        if self.blind:
+            raise RuntimeError("verdict store unavailable")
+        return await self.inner.latest_ungrounded(conversation_id=conversation_id)
+
+    async def save(self, *, verdict) -> None:
+        await self.inner.save(verdict=verdict)
+
+    async def read(self, *, tag_id: str):
+        return await self.inner.read(tag_id=tag_id)
+
+
+async def _with_verdict(*, grounded: bool, created_at: int = 200,
+                        tag_id: str = "earlier"):
     verdicts = InMemoryTurnVerdictStore()
     await verdicts.save(verdict=TurnVerdict(
-        tag_id="earlier", conversation_id="g1", grounded=grounded,
-        unsupported=() if grounded else ("invented a price",), created_at=1))
+        tag_id=tag_id, conversation_id="g1", grounded=grounded,
+        unsupported=() if grounded else ("invented a price",),
+        created_at=created_at))
     return verdicts
 
 
@@ -600,9 +710,18 @@ async def test_the_first_fold_of_a_conversation_is_not_a_rederivation():
     """`prior is None` builds from the window regardless — there is nothing to
     carry forward and nothing to correct. Counting it would drown the signal in
     the one event every conversation has exactly once."""
-    _, metrics, _ = await _run()
+    store, metrics, _ = await _run()
+    # **These two assertions alone were satisfied by a CRASH** — remove
+    # `if prior is None: return None` from `_should_rebuild` and the stage
+    # raises AttributeError on NoneType.fold_count, writes nothing, lands
+    # outcome="error", and both still hold. Found by an independent reviewer
+    # mutating the clause; R-72 is pinned to this test and it measured nothing.
     assert _counter(metrics, "nora_standing_rederivations_total") == 0
     assert _counter(metrics, "nora_debrief_prior_total", prior="absent") == 1
+    # So assert the fold actually SUCCEEDED. A test whose assertions are all
+    # true of a crash is not a test.
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert await store.read(platform="signal", conversation_id="g1") is not None
 
 
 async def test_a_rebuild_resets_the_fold_count():
@@ -620,7 +739,7 @@ async def test_an_unreadable_verdict_store_does_not_rebuild():
     would throw a position away because an instrument was down — a worse
     outcome than carrying a possibly-drifted one for one more turn."""
     class _Broken(InMemoryTurnVerdictStore):
-        async def latest(self, **kw):
+        async def latest_ungrounded(self, **kw):
             raise RuntimeError("verdict store down")
 
     client = _Client(_ok("a revised position"))
@@ -628,3 +747,838 @@ async def test_an_unreadable_verdict_store_does_not_rebuild():
         store=await _with_prior(1), store_verdict=_Broken(), client=client)
     assert _counter(metrics, "nora_standing_rederivations_total") == 0
     assert "the carried position" in client.prompts[0]
+
+
+# --- 26 §7's read-set, threaded from R-55's latch ---------------------------
+
+async def test_the_notes_the_turn_read_reach_the_debrief():
+    """§7: a proposal against a note the tag path already read and DECLINED to
+    touch must be refusable. Nothing consumes the set yet — the note-proposal
+    output is blocked on the store's create-shaped payload — so this pins that
+    it ARRIVES, which is the half that rots silently."""
+    _, metrics, _ = await _run(notes_read=frozenset({"dinner-on-the-9th", "big-walk"}))
+    assert _counter(metrics, "nora_debrief_notes_read_total") == 2
+
+
+async def test_a_turn_that_read_no_notes_counts_nothing():
+    """The ordinary case — most turns read no notes — and it must not look like
+    a wiring failure."""
+    store, metrics, _ = await _run()
+    # POSITIVE CONTROL. `== 0` is also true of a fold that never ran, and this
+    # test had none — the same shape as the three the cold review found in the
+    # new work, missed in the same file (cold review, 2026-08-28).
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert await store.read(platform="signal", conversation_id="g1") is not None
+    assert _counter(metrics, "nora_debrief_notes_read_total") == 0
+
+
+async def test_one_ungrounded_verdict_causes_exactly_one_rebuild():
+    """**The latch.** Verified live by an independent reviewer before this
+    existed: one ungrounded verdict plus three verdict-less folds produced
+    THREE rebuilds, `fold_count` pinned at 1, and
+    `nora_standing_rederivations_total{trigger="ungrounded"}` climbing — which
+    26 §6 reads as the trigger being healthy. Standing silently stopped being a
+    rolling position and became a per-turn window summary.
+
+    A verdict is written only when the fold fully succeeds, so verdict-less
+    turns are the CORRECT state, not a fault — and the read has to cope with
+    them. Second fold here revises rather than rebuilds, because the verdict is
+    no longer newer than the position.
+
+    Falsification: drop `last.created_at > prior.updated_at` and the second
+    fold rebuilds too.
+    """
+    store = await _with_prior(1, updated_at=100)
+    verdicts = await _with_verdict(grounded=False, created_at=200)
+    metrics = Metrics()
+
+    # BOTH folds emit NO verdict — that is the scenario, and it is the
+    # ordinary one: a fold only writes a verdict when it fully succeeds, so a
+    # timeout, an overflow or a screen leaves none. `_ok()` defaults to
+    # grounded=true, which would write a FRESH verdict and mask the latch
+    # entirely — the first version of this test did exactly that and passed
+    # with the guard removed.
+    def _no_verdict(body: str) -> debrief.Completion:
+        return debrief.Completion(json.dumps({"standing": body}), "stop")
+
+    # Turn N+1: the ungrounded verdict is newer than the position -> rebuild.
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_no_verdict("rebuilt once")), now_ms_override=300)
+    # Turn N+2: still no verdict, and the position is now NEWER than the stale
+    # ungrounded one. Without the guard this rebuilds again, and again, forever.
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_no_verdict("revised after")), now_ms_override=400)
+
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1, (
+        "the stale verdict latched the trigger on"
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.fold_count == 2, (
+        "fold_count pinned at 1 means the position never accumulates"
+    )
+
+
+async def test_the_trigger_fires_on_timestamps_a_real_turn_can_produce():
+    """**The fixture that cannot occur.** Every other test of this trigger seeds
+    `updated_at=100` / `created_at=200` by hand — a pair NO production turn
+    reaches. `pipeline._debrief` stamps ONE `int(time.time() * 1000)` per turn
+    and hands it to `run`, which writes the position with `updated_at=now_ms`
+    and the verdict with `created_at=now_ms`, so on every fully-successful fold
+    the two are EXACTLY EQUAL. A strict `>` therefore refuses the one sequence
+    the guard exists for, and the ungrounded half of R-72 is unreachable — the
+    counter reads flat zero, which 26 §6 interprets as "the trigger has
+    degraded into a clock". The same false reading the original defect
+    manufactured, arrived at from the other side.
+
+    So this drives the REAL `run` twice and lets it stamp both clocks itself.
+    A hand-seeded pair proves nothing about a comparison whose whole subject is
+    where those numbers come from; a fixture that cannot occur is the same
+    family as a test that cannot fail (cold review, 2026-08-28).
+
+    Falsification: `>=` back to `>` and the second turn does not rebuild.
+    """
+    store = InMemoryStandingStore()
+    verdicts = InMemoryTurnVerdictStore()
+    metrics = Metrics()
+
+    # Turn 1 — no prior, so no trigger is evaluated. It fully succeeds and is
+    # UNGROUNDED, which is the only way a real ungrounded verdict is ever
+    # written: position and verdict, one call, one clock.
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_ok("turn one", grounded=False,
+                                  unsupported=("invented a price",))),
+               now_ms_override=1000)
+    position = await store.read(platform="signal", conversation_id="g1")
+    written = await verdicts.latest_ungrounded(conversation_id="g1")
+    assert position is not None and written is not None
+    assert written.created_at == position.updated_at, (
+        "the premise: one turn stamps both clocks from one value"
+    )
+    assert _counter(metrics, "nora_standing_rederivations_total") == 0
+
+    # Turn 2 — the position and the ungrounded verdict carry the SAME
+    # timestamp, and this is the turn the guard exists to catch.
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_ok("turn two")),
+               now_ms_override=2000, trace=_trace_with_tag("tag-2"))
+
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1, (
+        "an ungrounded verdict from the immediately preceding turn did not "
+        "trigger a rebuild — the guard refuses the equality every real turn "
+        "produces"
+    )
+    rebuilt = await store.read(platform="signal", conversation_id="g1")
+    assert rebuilt is not None and rebuilt.fold_count == 1, (
+        "a rebuild RESETS the fold count; 2 means it revised instead"
+    )
+
+
+async def test_the_rebuilt_turn_does_not_rebuild_again_on_the_next(
+):
+    """The other half, on production timestamps: `>=` must not reinstate the
+    latch. The shipped bug was position-written-verdict-not, which advances
+    `updated_at` PAST the stale verdict — so a third turn whose fold writes no
+    verdict must revise, not rebuild."""
+    store = InMemoryStandingStore()
+    verdicts = InMemoryTurnVerdictStore()
+    metrics = Metrics()
+
+    def _no_verdict(body: str) -> debrief.Completion:
+        return debrief.Completion(json.dumps({"standing": body}), "stop")
+
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_ok("turn one", grounded=False,
+                                  unsupported=("invented a price",))),
+               now_ms_override=1000)
+    # Turn 2 rebuilds (verdict is as new as the position) and emits NO verdict
+    # of its own, so the stale ungrounded one remains the newest there is.
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_no_verdict("turn two")),
+               now_ms_override=2000, trace=_trace_with_tag("tag-2"))
+    # Turn 3: the position was revised at 2000, the verdict still says 1000.
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_no_verdict("turn three")),
+               now_ms_override=3000, trace=_trace_with_tag("tag-3"))
+
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1, (
+        "the stale verdict latched the trigger on"
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.fold_count == 2, (
+        "fold_count pinned at 1 means the position never accumulates"
+    )
+
+
+async def test_a_verdict_the_watermark_names_has_been_acted_on():
+    """The guard from the other side: a verdict a re-derivation already
+    consumed does not trigger a second one. Keyed on the WATERMARK, not on
+    which row is newer — see the next test for why that distinction is the
+    whole reason this column exists."""
+    store = await _with_prior(1, updated_at=500, consumed_verdict_tag="earlier")
+    _, metrics, _ = await _run(
+        store=store,
+        store_verdict=await _with_verdict(grounded=False, created_at=200))
+    assert _counter(metrics, "nora_standing_rederivations_total") == 0
+    # POSITIVE CONTROL. Every assertion above is also true of a fold that
+    # never ran, and this test had none — the same signature as the decorative
+    # ones this file already records. The fold must have happened AND revised.
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.fold_count == 2, (
+        "a revise did not happen, so nothing was proven about the trigger"
+    )
+
+
+async def test_an_older_unconsumed_verdict_still_rebuilds():
+    """**The case a timestamp comparison gets wrong, stated directly.** An
+    ungrounded verdict that PREDATES the position's last write has still not
+    been acted on if no re-derivation ever consumed it, and it must fire.
+
+    The shipped comparison asserted the opposite — that older meant handled —
+    because it used the position's `updated_at` as a proxy for "a rebuild
+    consumed this verdict". The test that guarded it asserted the proxy rather
+    than the property, so it went green on the defect."""
+    _, metrics, _ = await _run(
+        store=await _with_prior(1, updated_at=500),          # watermark: None
+        store_verdict=await _with_verdict(grounded=False, created_at=200))
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1
+
+
+async def test_one_unreadable_verdict_does_not_lose_the_verdict_forever():
+    """**Case B — the defect that made this a column instead of an operator.**
+
+    `latest` raising is R-27's «I could not check», and the trigger is right to
+    decline: re-deriving on a down instrument throws away a position for no
+    reason. But the fold then REVISES normally and writes the position with a
+    newer `updated_at` — and under `created_at >= prior.updated_at` that made
+    the comparison false from then on, permanently. One transient read failure
+    and an ungrounded verdict was not deferred but GONE: «I could not check»
+    silently converted into «there was nothing», in the stage whose own handler
+    exists to keep those apart.
+
+    Measured on the shipped comparison before this column existed: the counter
+    read 0, the position sat at fold 3, and the ungrounded verdict was still
+    the newest one there was.
+
+    Falsification: swap the watermark back for any comparison against
+    `prior.updated_at` and turn 3 does not rebuild.
+    """
+    store = InMemoryStandingStore()
+    inner = InMemoryTurnVerdictStore()
+    verdicts = _BlindableVerdicts(inner)
+    metrics = Metrics()
+
+    def _no_verdict(body: str) -> debrief.Completion:
+        return debrief.Completion(json.dumps({"standing": body}), "stop")
+
+    # Turn 1 — a real ungrounded verdict, written the only way one ever is.
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_ok("t1", grounded=False,
+                                  unsupported=("invented a price",))),
+               now_ms_override=1000)
+    # Turn 2 — THE INSTRUMENT IS DOWN. No rebuild, correctly; but the fold
+    # succeeds and moves the position to 2000, past the verdict.
+    verdicts.blind = True
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_no_verdict("t2")), now_ms_override=2000,
+               trace=_trace_with_tag("tag-2"))
+    assert _counter(metrics, "nora_standing_rederivations_total") == 0, (
+        "re-derived on an instrument that was down"
+    )
+    # Turn 3 — the instrument is back and the verdict is STILL unconsumed.
+    verdicts.blind = False
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_no_verdict("t3")), now_ms_override=3000,
+               trace=_trace_with_tag("tag-3"))
+
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1, (
+        "one turn of an unreadable verdict store dropped the ungrounded "
+        "verdict permanently"
+    )
+
+
+async def test_a_grounded_verdict_cannot_bury_an_unconsumed_ungrounded_one():
+    """**The read, not the watermark — and the watermark alone could not fix
+    this.** The trigger used to ask for the newest verdict of EITHER kind and
+    then test `not grounded` in Python. That answers a different question, and
+    it coincides with the right one until a turn goes by without consuming an
+    ungrounded verdict:
+
+        turn 1  ungrounded verdict at 1000
+        turn 2  the verdict read FAILS, so the trigger declines (R-27) — but
+                the fold itself SUCCEEDS and saves its own GROUNDED verdict
+        turn 3  the newest verdict is now grounded. The ungrounded one is
+                buried, and nothing will ever look past it.
+
+    Turn 2 there is the ORDINARY shape of a successful turn, not an exotic one,
+    which is why this was reachable rather than theoretical. Measured before the
+    fix: 0 re-derivations, watermark still None, the turn-1 verdict still
+    sitting in the store.
+
+    The previous test of this scenario was green by FIXTURE CHOICE — its turn 2
+    used a client that emitted no verdict, so nothing was ever written to bury
+    the ungrounded one. Swapping in an ordinary `_ok(...)` is the whole
+    difference (cold review, 2026-08-28).
+
+    Falsification: point the trigger back at a latest-of-either-kind read and
+    this returns to 0.
+    """
+    store = InMemoryStandingStore()
+    inner = InMemoryTurnVerdictStore()
+    verdicts = _BlindableVerdicts(inner)
+    metrics = Metrics()
+
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_ok("t1", grounded=False,
+                                  unsupported=("invented a price",))),
+               now_ms_override=1000)
+    verdicts.blind = True
+    # An ORDINARY successful turn: it writes a grounded verdict of its own.
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_ok("t2")), now_ms_override=2000,
+               trace=_trace_with_tag("tag-2"))
+    verdicts.blind = False
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_ok("t3")), now_ms_override=3000,
+               trace=_trace_with_tag("tag-3"))
+
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1, (
+        "a later grounded verdict buried the unconsumed ungrounded one"
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.consumed_verdict_tag == "tag-1", (
+        "the rebuild consumed something other than the verdict that caused it"
+    )
+
+
+async def test_two_ungrounded_verdicts_in_one_millisecond_are_both_acted_on():
+    """**The watermark's own proxy, found one turn after the one it replaced.**
+
+    It first held the consumed verdict's `created_at`. A millisecond DESCRIBES a
+    verdict; `tag_id` IS one — so two ungrounded verdicts sharing a millisecond
+    collapsed to a single watermark value and the second was never acted on, in
+    either tag order.
+
+    The premise is not hypothetical in this codebase: both `latest_ungrounded`
+    implementations justify their `tag_id` tie-break with "two turns in one
+    millisecond are reachable". If that is true this hole was real; if it is
+    false those tie-breaks are decoration. It cannot be both.
+
+    Falsification: key the watermark on `created_at` again and the second
+    verdict is never consumed.
+    """
+    store = InMemoryStandingStore()
+    verdicts = InMemoryTurnVerdictStore()
+    metrics = Metrics()
+
+    # A position that has already consumed ONE of two verdicts stamped in the
+    # same millisecond.
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="carried",
+        fold_count=1, updated_at=100, consumed_verdict_tag="tag-a"))
+    for tag in ("tag-a", "tag-b"):
+        await verdicts.save(verdict=TurnVerdict(
+            tag_id=tag, conversation_id="g1", grounded=False,
+            unsupported=("same millisecond",), created_at=500))
+
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               now_ms_override=2000, trace=_trace_with_tag("tag-next"))
+
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 1, (
+        "the second verdict of the pair was swallowed by a watermark that "
+        "named a millisecond instead of a verdict"
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.consumed_verdict_tag == "tag-b"
+
+
+async def test_a_refusing_rebuild_leaves_the_verdict_unconsumed():
+    """The watermark advances only where the position is WRITTEN, so a fold
+    that refuses retries next turn instead of marking a verdict it never acted
+    on as handled. Three refusing folds, three triggers — and the trigger
+    counter alone cannot tell that from a latch, which is what the second
+    counter is for."""
+    store, verdicts, metrics = (
+        InMemoryStandingStore(), InMemoryTurnVerdictStore(), Metrics())
+    await _run(store=store, store_verdict=verdicts, metrics=metrics,
+               client=_Client(_ok("t1", grounded=False,
+                                  unsupported=("invented a price",))),
+               now_ms_override=1000)
+    for i, ts in enumerate((2000, 3000, 4000), start=2):
+        # `finish_reason="length"` — the fold is refused BEFORE anything is
+        # written, which is the state the watermark has to survive.
+        await _run(store=store, store_verdict=verdicts, metrics=metrics,
+                   client=_Client(debrief.Completion(
+                       json.dumps({"standing": "cut off"}), "length")),
+                   now_ms_override=ts, trace=_trace_with_tag(f"tag-{i}"))
+
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ungrounded") == 3
+    assert _counter(metrics, "nora_standing_rederivations_written_total") == 0, (
+        "a re-derivation that wrote nothing was counted as landed"
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.consumed_verdict_tag is None, (
+        "a refusing fold marked the verdict consumed"
+    )
+
+
+async def test_a_ceiling_rebuild_does_not_claim_to_have_consumed_a_verdict():
+    """A `ceiling` rebuild has read no verdict. If it advanced the watermark it
+    would silence an ungrounded verdict it never looked at — the same
+    swallow-by-proxy the column was added to remove, one trigger over."""
+    store = await _with_prior(20, updated_at=100)
+    _, metrics, _ = await _run(store=store, store_verdict=None,
+                               rebuild_after_folds=20, now_ms_override=2000)
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ceiling") == 1
+    assert _counter(metrics, "nora_standing_rederivations_written_total",
+                    trigger="ceiling") == 1
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.consumed_verdict_tag is None
+
+
+async def test_the_watermark_is_carried_forward_by_an_ordinary_revise():
+    """A revise consumes nothing and must not FORGET what a past rebuild
+    consumed either. Dropping it would make the next turn re-derive from a
+    verdict already acted on — the latch, arrived at by omission."""
+    store = await _with_prior(1, updated_at=100, consumed_verdict_tag="earlier")
+    await _run(store=store,
+               store_verdict=await _with_verdict(grounded=True, created_at=300),
+               now_ms_override=2000)
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None
+    # The ROW MUST HAVE BEEN REWRITTEN, asserted before the watermark is read.
+    # `consumed_verdict_tag == "earlier"` is the value the fixture seeded, so on its
+    # own it cannot tell "carried forward" from "never written at all" — which
+    # is what this test asserted, and it would have passed against a fold that
+    # did nothing.
+    assert row.fold_count == 2, "the revise never happened"
+    assert row.updated_at == 2000, "the row was not rewritten by this fold"
+    assert row.consumed_verdict_tag == "earlier"
+
+
+async def test_no_verdict_store_is_inert_not_a_failure():
+    """`store_verdict=None` is what every deployment that has not wired one
+    runs, and the stage documents it as ordinary. It had NO test: the helper
+    substituted a real store for `None`, so the branch was unreachable."""
+    store, metrics, _ = await _run(
+        store_verdict=None,
+        client=_Client(_ok("a position", grounded=False, unsupported=("x",))))
+    assert await store.read(platform="signal", conversation_id="g1") is not None
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert _counter(metrics, "nora_turn_verdict_total") == 0
+
+
+async def test_a_cancel_after_the_write_does_not_unsay_the_position():
+    """The verdict save and the note propose run AFTER the position is
+    durable, and both guard only `except Exception` — so a `CancelledError` in
+    either escapes to the stage's outer cancel branch.
+
+    That branch used to relabel the turn `cancelled`, which reports a position
+    that IS in the database as one that was never revised. `written` is a claim
+    about a committed row; a rider failing after it must not be able to unsay
+    it, which is the same rule the verdict and propose handlers already follow
+    one level down.
+    """
+    class _CancellingVerdicts(InMemoryTurnVerdictStore):
+        async def save(self, *, verdict):
+            raise asyncio.CancelledError
+
+    store, metrics, _ = await _run(store_verdict=_CancellingVerdicts())
+
+    assert await store.read(platform="signal", conversation_id="g1") is not None
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert _counter(metrics, "nora_debrief_total", outcome="cancelled") == 0, (
+        "a cancel in a rider relabelled a position that was written"
+    )
+
+
+async def test_a_cancel_before_the_write_is_still_a_cancel():
+    """The other side, so the guard above cannot be satisfied by simply never
+    labelling anything `cancelled` again."""
+    _, metrics, _ = await _run(client=_Client(asyncio.CancelledError()))
+    assert _counter(metrics, "nora_debrief_total", outcome="cancelled") == 1
+
+
+def test_the_slot_hold_counts_every_store_await_the_stage_makes():
+    """**The arithmetic has been wrong four times; this is what stops a fifth.**
+
+    `STANDING_STORE_CALLS_PER_FOLD` feeds
+    `Config._the_standing_slot_hold_fits_its_budget`, the gate that decides
+    whether the declared ceiling is honest. It said 2 while the stage made 4,
+    then 4 while it made 5.
+
+    **It walks the AST, and the two earlier versions of this test were each
+    blind in the direction they advertised.**
+
+    v1 counted `asyncio.wait_for` occurrences in two named functions. The
+    ORIGINAL defect was a store call with NO `wait_for` at all, which a count of
+    wrappers cannot see, and a call in a third function was invisible.
+
+    v2 claimed to find "every collaborator call in the module" and was a
+    hardcoded regex over three receiver names and five method names. It passed
+    with `notes_sink.supersede` unbounded (a real `DreamSink` method), with a
+    `facts_sink` the module's own docstring names as the next output, and with
+    an unbounded `store.write` sitting under an unrelated `wait_for` that
+    happened to fall inside its 160-character backwards text window.
+
+    So the receiver set is DERIVED from the stage's own parameter names rather
+    than written down: a collaborator this stage gains is caught the moment it
+    is awaited, without anyone remembering to extend a list. That derivation is
+    the half that matters — v2 caught exactly what it had been written against
+    and nothing else (cold review, 2026-08-28).
+    """
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(debrief))
+    parents = {c: n for n in ast.walk(tree) for c in ast.iter_child_nodes(n)}
+
+    # The collaborators are whatever `run` and `_should_rebuild` are HANDED.
+    receivers: set[str] = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.AsyncFunctionDef)
+                and node.name in {"run", "_should_rebuild"}):
+            a = node.args
+            receivers |= {p.arg for p in a.posonlyargs + a.args + a.kwonlyargs}
+
+    # `client` is the MODEL call, not a store call: it is bounded by the
+    # `wait_for` around `_fold()` rather than by one of its own, and
+    # `[standing] timeout_seconds` covers it separately in the sum. Named here
+    # so the exclusion is a decision rather than an oversight.
+    receivers.discard("client")
+
+    def _in_wait_for(node: ast.AST) -> bool:
+        cur = parents.get(node)
+        while cur is not None:
+            if isinstance(cur, ast.Call):
+                f = cur.func
+                if ((isinstance(f, ast.Attribute) and f.attr == "wait_for")
+                        or (isinstance(f, ast.Name) and f.id == "wait_for")):
+                    return True
+            if isinstance(cur, ast.AsyncFunctionDef | ast.FunctionDef):
+                return False
+            cur = parents.get(cur)
+        return False
+
+    # A collaborator call is one that is AWAITED — directly, or by being handed
+    # to `wait_for`. Both shapes have to be collected, because the bounded form
+    # `await wait_for(store.read(...))` makes `wait_for` the awaited call and
+    # `store.read` merely its argument. Collecting only the awaited node finds
+    # nothing at all; collecting every call on a collaborator would sweep up
+    # `metrics.inc` and `objective.objective_body`, which are neither awaited
+    # nor bounded and are not store calls.
+    calls: list[tuple[str, bool]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        f = node.func
+        if not (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)):
+            continue
+        if f.value.id not in receivers:
+            continue
+        parent = parents.get(node)
+        bounded = _in_wait_for(node)
+        if not (bounded or isinstance(parent, ast.Await)):
+            continue          # not awaited at all — not a store call
+        calls.append((f"{f.value.id}.{f.attr}", bounded))
+
+    named = [n for n, _ in calls]
+    assert len(calls) == debrief.STORE_CALLS_PER_FOLD, (
+        f"the stage awaits {len(calls)} collaborator calls {named} but "
+        f"STORE_CALLS_PER_FOLD is {debrief.STORE_CALLS_PER_FOLD}. The "
+        f"slot-hold validator computes the declared ceiling from that "
+        f"constant, so disagreement means the ceiling is not the real worst "
+        f"case — which is exactly how it came to be understated by 2x."
+    )
+    unbounded = [n for n, ok in calls if not ok]
+    assert not unbounded, (
+        f"{unbounded} awaited with no asyncio.wait_for. The engine sets no "
+        f"command_timeout and this runs while the conversation's slot is HELD, "
+        f"so a connection hanging mid-query wedges that conversation "
+        f"indefinitely — on a turn that has already replied."
+    )
+
+async def test_an_unreadable_verdict_store_still_honours_the_ceiling():
+    """R-72's row claimed, unqualified, that an unreadable verdict store does
+    NOT rebuild. False: the ceiling reads `fold_count` off the row already in
+    hand and needs no second store, so it still fires. The named test used
+    fold_count=1 against a ceiling of 20 and only ever exercised the
+    below-ceiling half (cold review, 2026-08-28)."""
+    class _Broken(InMemoryTurnVerdictStore):
+        async def latest_ungrounded(self, **kw):
+            raise RuntimeError("verdict store down")
+
+    _, metrics, _ = await _run(
+        store=await _with_prior(20), store_verdict=_Broken(),
+        rebuild_after_folds=20)
+    assert _counter(metrics, "nora_standing_rederivations_total",
+                    trigger="ceiling") == 1
+
+
+# --- 26 §3's fourth output: note proposals ---------------------------------
+
+_NOTE = {
+    "title": "Where dinner is on the 9th",
+    "description": "Three venues named, nobody has picked one",
+    "uncertainty": "which venue",
+    "closing_condition": "someone names the place",
+    "anchor_date": 20260909,
+    "body": "Miles, Grant and Tyler weighed three options and stopped",
+}
+
+
+def _with_notes(*notes, body: str = "a position") -> debrief.Completion:
+    return debrief.Completion(json.dumps({
+        "standing": body, "grounded": True, "unsupported": [],
+        "notes": list(notes),
+    }), "stop")
+
+
+async def test_a_fold_raises_a_note_through_the_sink():
+    sink = _FakeSink()
+    store, metrics, _ = await _run(client=_Client(_with_notes(_NOTE)), notes_sink=sink)
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert len(sink.batches) == 1 and len(sink.batches[0]) == 1
+    proposal = sink.batches[0][0]
+    assert proposal.payload.title == _NOTE["title"]
+    assert proposal.payload.established_in == "g1"
+    assert proposal.established_by == "tag-1"
+    assert len(proposal.instruction_sha256) == 64
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="proposed") == 1
+
+
+async def test_a_note_the_turn_already_read_is_refused():
+    """**§7's second sub-decision.** The tag path may have opened that note and
+    deliberately decided against touching it; the debrief reviewing the same
+    transcript would raise it again, and the two would argue once per turn
+    forever. Matched through `note_handle`, the same normalisation R-55's latch
+    uses, so two spellings of one title are not two notes."""
+    from nora.agent.tools import note_handle
+
+    sink = _FakeSink()
+    _, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE)), notes_sink=sink,
+        notes_read=frozenset({note_handle(_NOTE["title"])}))
+    assert sink.batches == []
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="already_read") == 1
+
+
+async def test_an_over_long_title_is_refused_not_truncated():
+    """The domain type raises rather than trimming, because the note index is
+    uncapped and rests on being complete — a silent trim loses content nobody
+    can see is gone. A 61-character title is the likely model output, so it
+    costs that note and nothing else."""
+    sink = _FakeSink()
+    store, metrics, _ = await _run(
+        client=_Client(_with_notes({**_NOTE, "title": "x" * 61})), notes_sink=sink)
+    assert sink.batches == []
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="refused") == 1
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+
+
+async def test_a_note_with_no_anchor_is_refused_never_defaulted():
+    """`None` reaches `__post_init__`, which refuses. Anchoring to today would
+    file the note under a day nobody named — and mechanical retirement reads
+    that day."""
+    sink = _FakeSink()
+    _, metrics, _ = await _run(
+        client=_Client(_with_notes({k: v for k, v in _NOTE.items()
+                                    if k != "anchor_date"})), notes_sink=sink)
+    assert sink.batches == []
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="refused") == 1
+
+
+async def test_more_notes_than_the_cap_are_dropped_and_counted():
+    """A fold wanting six notes has started narrating. The index is uncapped by
+    design, so those would cost every later prompt forever."""
+    sink = _FakeSink()
+    _, metrics, _ = await _run(
+        client=_Client(_with_notes(
+            _NOTE, {**_NOTE, "title": "b"}, {**_NOTE, "title": "c"})),
+        notes_sink=sink)
+    assert len(sink.batches[0]) == debrief.MAX_NOTES_PER_FOLD
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="over_cap") == 1
+
+
+async def test_a_sink_failure_never_costs_the_position():
+    """The rule, a third output over. `propose` is atomic and every failure
+    ESCAPES — no partial batch to reconcile — so there is ONE refusal path and
+    it must not touch `outcome`."""
+    from nora.domain.notes import StaleNoteHeadError
+
+    store, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE)),
+        notes_sink=_FakeSink(raises=StaleNoteHeadError(
+            "lost the CAS", observed_head="other-revision")))
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="unwritten") == 1
+
+
+async def test_a_note_field_of_the_wrong_shape_is_refused_not_stringified():
+    """**Stringifying is a guess wearing parsing.** `str(["dinner", "9th"])`
+    is `"['dinner', '9th']"`, and that went into the notes index as a TITLE —
+    uncapped, injected into every later prompt, indistinguishable downstream
+    from a title a person would recognise.
+
+    The objective promises an entry missing any required field is discarded
+    whole rather than guessed at, and the verdict parser one function away
+    refuses a non-bool `grounded` outright. Same rule, where it was missing.
+
+    Falsification: put `str(...)` back around the title and the batch is
+    proposed with a stringified list.
+    """
+    sink = _FakeSink()
+    bad = dict(_NOTE, title=["dinner", "9th"])
+    _, metrics, _ = await _run(client=_Client(_with_notes(bad)), notes_sink=sink)
+    assert sink.batches == []
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="malformed") == 1
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="proposed") == 0
+
+
+async def test_a_missing_note_field_is_still_the_domain_types_refusal():
+    """Absent is NOT the same as wrong-shaped, and only the second is refused
+    at the parse. A missing field becomes `""` and reaches
+    `NoteCreationProposal.__post_init__`, which refuses it with the domain's
+    own message — that judgement belongs to the type, not to the parser, and
+    the two land on different labels so an operator can tell a model that
+    omitted a field from one that emitted a list."""
+    sink = _FakeSink()
+    missing = {k: v for k, v in _NOTE.items() if k != "closing_condition"}
+    _, metrics, _ = await _run(
+        client=_Client(_with_notes(missing)), notes_sink=sink)
+    assert sink.batches == []
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="refused") == 1
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="malformed") == 0
+
+
+async def test_no_workspace_means_no_proposal_never_a_guessed_one():
+    """`workspace_of` answers None when policy.toml cannot name the room's
+    workspace. Filing one social unit's notes into another's is not recoverable
+    by looking at the index, so this refuses rather than guessing.
+
+    **`sink.batches == []` is not enough on its own and used to be the whole
+    test.** An empty list is equally what you get if the sink was never reached
+    for some unrelated reason — a fold that refused, a parse that found no
+    notes, a wiring change. So the refusal is NAMED on its own counter and
+    asserted here. That counter is also the operator-facing point: a
+    `policy.toml` edit that stops naming a room otherwise disables note
+    proposals with no signal at all, and a flat `proposed` series looks exactly
+    like a model that had nothing to raise.
+    """
+    sink = _FakeSink()
+    store, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE)), notes_sink=sink,
+        workspace_of=lambda p, c: None)
+    assert sink.batches == []
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="no_workspace") == 1, (
+        "an unmapped room disabled proposals silently"
+    )
+    # and the position still lands — a room policy cannot name is not a fold
+    # failure, it is a refusal to propose.
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+
+
+async def test_a_resolver_that_raises_never_costs_the_position():
+    """**`workspace_of` is an INJECTED callable and it was on the position's
+    critical path.** It ran before the overflow gate, before the screen, before
+    `store.write`, outside any `try` of its own — and even when `notes_sink is
+    None`, so a broken resolver cost the position on deployments that could not
+    propose at all. This stage states twice that a proposal failure must never
+    cost the position; the resolver was the exception nobody had written down.
+
+    Falsification: move the `workspace_of` call back above `store.write` and
+    the position is `None` here.
+    """
+    sink = _FakeSink()
+
+    def _explodes(platform: str, conversation_id: str) -> str | None:
+        raise RuntimeError("policy resolver is broken")
+
+    store, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE)), notes_sink=sink,
+        workspace_of=_explodes)
+
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None, "a broken workspace resolver cost the position"
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert sink.batches == []
+    # A FAULT, not a policy decision, and they get different labels: one is a
+    # room deliberately unmapped, the other is a resolver that needs fixing.
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="no_workspace_unavailable") == 1
+    assert _counter(metrics, "nora_debrief_note_proposals_total",
+                    outcome="no_workspace") == 0
+
+
+async def test_the_resolver_is_not_called_at_all_when_notes_are_off():
+    """Most deployments today run with `notes_sink is None`. The resolver used
+    to run on every one of them, on the position's critical path, to produce a
+    value nothing could consume."""
+    calls: list[tuple[str, str]] = []
+
+    def _counting(platform: str, conversation_id: str) -> str | None:
+        calls.append((platform, conversation_id))
+        return "ws"
+
+    store, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE)), notes_sink=None,
+        workspace_of=_counting)
+    # POSITIVE CONTROL: `calls == []` is also what a fold that never ran
+    # produces, so the fold has to be shown to have happened first.
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert await store.read(platform="signal", conversation_id="g1") is not None
+    assert calls == [], (
+        "the workspace resolver ran on a deployment that cannot propose"
+    )
+
+
+async def test_a_refused_fold_does_not_count_proposal_refusals():
+    """The refusal counters used to be incremented ABOVE the overflow gate and
+    the screen, so a fold about to be thrown away still described proposals it
+    could never have made. `already_read` and `over_cap` then measured intent
+    rather than events."""
+    sink = _FakeSink()
+    # A note naming something the turn already read AND a body over the cap:
+    # under the old order this counted `already_read` on the way to refusing
+    # the whole fold.
+    over = "x" * 200
+    from nora.agent.tools import note_handle
+    _, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE, body=over),
+                       _with_notes(_NOTE, body=over)), max_chars=100,
+        notes_sink=sink, notes_read=frozenset({note_handle(_NOTE["title"])}))
+    assert _counter(metrics, "nora_debrief_total",
+                    outcome="refused_overflow") == 1
+    assert _counter(metrics, "nora_debrief_note_proposals_total") == 0, (
+        "a fold that wrote nothing was counted as having refused proposals"
+    )
+    assert sink.batches == []
+
+
+async def test_no_notes_sink_is_inert():
+    store, metrics, _ = await _run(
+        client=_Client(_with_notes(_NOTE)), notes_sink=None)
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert _counter(metrics, "nora_debrief_note_proposals_total") == 0

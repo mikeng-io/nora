@@ -21,15 +21,17 @@ from pydantic import (
     model_validator,
 )
 
-# `nora.config` may import `nora.domain` — the forbidden direction is the
-# other one (`nora.domain` may not read config). The ceiling is imported
-# rather than restated so `StandingConfig`'s startup refusal and the
-# database's own CHECK cannot come to disagree about the same number.
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     STANDING_BODY_CEILING_CHARS,
+    STANDING_STORE_CALLS_PER_FOLD,
 )
+
+# `nora.config` may import `nora.domain` — the forbidden direction is the
+# other one (`nora.domain` may not read config). The ceiling is imported
+# rather than restated so `StandingConfig`'s startup refusal and the
+# database's own CHECK cannot come to disagree about the same number.
 
 
 class ConfigError(Exception):
@@ -1552,12 +1554,17 @@ class StandingConfig(BaseModel):
     # it `reload = "startup"` for this reader, or moving it off the slot, is a
     # separate change with its own measurement.
     #
-    # 150s is chosen to ADMIT today's deployment (120 + 20 + 2x5 = 150) rather
+    # 165s is the REAL worst case at the shipped timeouts (120 + 20 + 5x5),
+    # the fifth store call being the note-proposal sink.
+    # It was 150, reverse-engineered from a sum that counted two store calls
+    # when the stage makes four — never an operator judgement about an
+    # acceptable hold, just the arithmetic agreeing with itself. Chosen to
+    # ADMIT today's deployment rather
     # than to reject it: this validator's job is to make the arithmetic
     # impossible to get wrong silently, not to relitigate `[llm]`'s own timeout,
     # which was raised to 120 deliberately on 2026-08-08. Lower it and the
     # startup refusal tells the operator exactly which numbers no longer fit.
-    max_slot_hold_seconds: float = Field(default=150.0, gt=0)
+    max_slot_hold_seconds: float = Field(default=45.0, gt=0)
 
     @model_validator(mode="after")
     def _max_chars_stays_under_the_database_ceiling(self) -> StandingConfig:
@@ -2316,16 +2323,32 @@ class Config(BaseModel):
         2026-08-27).
         """
         hold = (
-            self.llm.timeout_seconds
-            + self.standing.timeout_seconds
-            + 2 * self.standing.store_timeout_seconds
+            # **`[llm] timeout_seconds` IS NOT IN THIS SUM, and leaving it in
+            # was the fourth wrong arity for this one number.** It bounds
+            # nothing in this stage: the fold's model call is built with
+            # `[standing] timeout_seconds` AND wrapped in a `wait_for` on the
+            # same value, and never sees the `[llm]` figure at all. Including
+            # it made an operator-facing budget read «this conversation can be
+            # held 165 seconds» when the real bounded hold is 45. Erring safe
+            # does not excuse it — a number that lies about the deployment is
+            # wrong on the page, which is the argument this validator exists
+            # to enforce.
+            self.standing.timeout_seconds
+            # FIVE. The stage holds five bounded store awaits:
+            # `store_verdict.latest` (the trigger's read), `store.read` (the
+            # prior), `store.write` (the revised position), `store_verdict.save`
+            # and `notes_sink.propose`. It was written as 2x when only the
+            # middle pair existed, then as 4x once the verdict landed, and each
+            # time the prose disagreed with the code. The constant is the one
+            # source and the stage's own test counts the awaits against it.
+            + STANDING_STORE_CALLS_PER_FOLD * self.standing.store_timeout_seconds
         )
         if hold > self.standing.max_slot_hold_seconds:
             raise ValueError(
                 f"[standing] would hold a conversation's slot for up to "
-                f"{hold:g}s — [llm] timeout_seconds ({self.llm.timeout_seconds:g})"
-                f" + [standing] timeout_seconds ({self.standing.timeout_seconds:g})"
-                f" + 2 x store_timeout_seconds "
+                f"{hold:g}s — [standing] timeout_seconds "
+                f"({self.standing.timeout_seconds:g})"
+                f" + {STANDING_STORE_CALLS_PER_FOLD} x store_timeout_seconds "
                 f"({self.standing.store_timeout_seconds:g}) — which is over "
                 f"[standing] max_slot_hold_seconds "
                 f"({self.standing.max_slot_hold_seconds:g}). Lower a timeout or "

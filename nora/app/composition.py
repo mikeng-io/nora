@@ -1719,6 +1719,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         debrief_wiring = DebriefWiring(
             store=standing_store,
             store_verdict=turn_verdict_store,
+            # The note tier's sink. `None` while `[notes] enabled = false`,
+            # so the debrief parses no proposals and raises none — the
+            # same inert shape the other optional collaborators use.
+            notes_sink=note_store if cfg.notes.enabled else None,
+            # The SAME workspace resolver the note tools and the assembler
+            # hold. `propose`'s key is the workspace (DEC-105), and two
+            # tiers keyed on it must not each carry their own idea of
+            # which workspace a room belongs to.
+            workspace_of=_note_workspace_of(allowlist),
             client=_DebriefModelClient(
                 client=client,
                 model=cfg.standing.model or cfg.llm.model,

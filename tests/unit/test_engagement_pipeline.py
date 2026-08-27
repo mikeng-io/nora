@@ -23,12 +23,15 @@ difference between the copy and the real thing observable.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
+from typing import ClassVar
 
 import pytest
 
 from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
+from nora.agent.tools import note_handle
 from nora.app.runtime import BackgroundTasks
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef
@@ -2120,7 +2123,8 @@ def _wiring() -> object:
     return Wiring(store=object(), store_verdict=object(), client=object(),
                   objective=object(),
                   max_chars=1200, window=40, timeout_seconds=5.0,
-                  store_timeout_seconds=5.0, rebuild_after_folds=20)
+                  store_timeout_seconds=5.0, rebuild_after_folds=20,
+                  notes_sink=None, workspace_of=lambda p, c: "ws")
 
 
 def _patch_debrief(monkeypatch, spy) -> None:
@@ -2317,3 +2321,163 @@ async def test_every_retained_trace_is_counted_by_outcome(monkeypatch):
     assert metrics.get("nora_tagtrace_writes_total", outcome="send_reply") == 1
     assert metrics.get("nora_tagtrace_writes_total") == len(
         metrics.observations("nora_tag_latency_seconds"))
+
+
+class _NoteReadTool:
+    """A `note_read` that answers `ok` the way every native tool here does.
+
+    R-55's latch keys on the tool NAME plus its own unwrapped status, and the
+    unwrap has two layers: Strands wraps a native tool's plain dict as JSON
+    text inside a `success`/`error` envelope, and `_unwrap_tool_status` parses
+    it back out. So this returns the PLAIN dict — `FakeAgentRunner` supplies
+    the envelope, exactly as the SDK does.
+
+    Returning a pre-wrapped envelope here reads as more faithful and is not:
+    it gets wrapped a second time, `_unwrap_tool_status` then finds Strands'
+    `"success"` rather than the tool's `"ok"`, and the guard records nothing.
+    """
+
+    tool_name = "note_read"
+    # `FakeAgentRunner` filters a scripted call's arguments through this the
+    # way Strands filters them through the real `inputSchema` — an argument the
+    # schema does not declare is silently DROPPED, not an error. Without it
+    # `title` never reaches the body, the guard reads an empty title and
+    # records nothing, and the test fails for a reason that has nothing to do
+    # with the wiring it is about.
+    tool_spec: ClassVar[dict] = {
+        "inputSchema": {"json": {"properties": {"title": {"type": "string"}}}}}
+
+    def __call__(self, *, title: str = "", **_: object) -> dict:
+        return {"status": "ok", "title": title}
+
+
+def _registry_with_note_read() -> ToolRegistry:
+    return ToolRegistry(mcp_tools={
+        "notes": McpToolGroup(budget=5, tools=(_NoteReadTool(),)),
+    })
+
+
+def _turns_that_read_a_note(title: str) -> list[ScriptedTurn]:
+    return [
+        ScriptedTurn(tool_calls=[("note_read", {"title": title})]),
+        ScriptedTurn(tool_calls=[("send_reply", {"text": "ok"})], final_text="ok"),
+    ]
+
+
+async def test_the_turns_note_read_set_reaches_the_debrief(monkeypatch):
+    """26 §7's second sub-decision, wired. R-55 already maintains exactly this
+    set (`ReplyGuard._notes_read`) and nothing could see it, so a proposal
+    against a note the turn read and declined would have been accepted.
+
+    **This asserted only `isinstance(..., frozenset)` and an EMPTY frozenset is
+    a frozenset** — which is precisely what `_notes_read_of` returns on the
+    degraded path, so the test could not tell "threaded" from "severed".
+    Falsified by replacing `_notes_read_of` with `lambda handle: frozenset()`,
+    the complete severance it names: it passed.
+
+    So the turn now actually READS a note, through the real guard hooks, and
+    the CONTENTS are asserted at the far end.
+    """
+    spy = _RecordingDebrief()
+    _patch_debrief(monkeypatch, spy)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        debrief_wiring=_wiring(),
+        runner=ScriptedRunner(_turns_that_read_a_note("Dinner on the 9th")),
+        tool_registry=_registry_with_note_read(),
+        policy=_policy_allowing(tools=frozenset({"notes"})),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["notes_read"] == frozenset({note_handle("Dinner on the 9th")}), (
+        "the note this turn read did not reach the debrief; a proposal "
+        "against it would be accepted"
+    )
+
+
+async def test_a_turn_that_read_nothing_hands_over_an_empty_set(monkeypatch):
+    """The other side of the same wire, and the reason the assertion above has
+    to name a handle: an empty set is the CORRECT answer here and the DEGRADED
+    answer there. Only the contents tell them apart."""
+    spy = _RecordingDebrief()
+    _patch_debrief(monkeypatch, spy)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        debrief_wiring=_wiring(),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert spy.calls[0]["notes_read"] == frozenset()
+
+
+def test_a_guard_that_cannot_report_its_read_set_degrades_to_empty():
+    """`_notes_read_of` runs in the `finally`, PAST the outer `except
+    BaseException`, so anything raised there escapes `run()` and takes down a
+    turn that already replied. Every failure degrades to an empty set.
+
+    **Renamed, and the setup it used to carry is gone.** It built a debrief spy
+    and monkeypatched the stage and then never ran the pipeline, so nothing it
+    named as "never costs the fold" was exercised — the fold was not in the
+    test at all. This asserts what it actually drives: the accessor's degraded
+    return. What the fold does with it is the next test.
+
+    Falsification: drop the `try` in `_notes_read_of` and this raises instead.
+    """
+    from nora.engagement import pipeline as pipeline_module
+
+    class _Exploding:
+        @property
+        def notes_read(self):
+            raise RuntimeError("guard internals unavailable")
+
+    assert pipeline_module._notes_read_of(
+        type("H", (), {"guard": _Exploding()})()) == frozenset()
+    # And the two OTHER shapes the same handler covers, which the original
+    # never reached: no guard at all, and a guard with no such attribute.
+    assert pipeline_module._notes_read_of(object()) == frozenset()
+    assert pipeline_module._notes_read_of(
+        type("H", (), {"guard": object()})()) == frozenset()
+
+
+def test_the_accessor_hands_out_a_copy_not_the_live_set():
+    """The debrief runs AFTER the reply in the same slot. Handing it the live
+    set would let a later stage mutate what R-55's veto reads — and that veto
+    is the tag path's only protection against writing over a note it has not
+    read this turn. A guard whose state a later stage can edit is not a guard.
+
+    **The first version of this test asserted only that `notes_read` is a
+    `property`, and PASSED when the accessor returned the live set** — it
+    pinned the syntax and not the property. Found by mutation, which is the
+    only thing that finds it. This version does what a caller could do: take
+    the returned set and try to change what the guard sees.
+    """
+    from nora.agent.guards import ReplyGuard
+
+    guard = _guard_with_notes_read({"dinner-on-the-9th"})
+    handed = guard.notes_read
+    assert handed == {"dinner-on-the-9th"}
+
+    # A frozenset cannot be mutated at all, which is the guarantee. If the
+    # accessor ever hands back the live `set`, this line succeeds and the
+    # assertion below catches what it did to the guard.
+    with pytest.raises(AttributeError):
+        handed.add("big-walk")            # type: ignore[attr-defined]
+    assert guard.notes_read == {"dinner-on-the-9th"}
+    assert isinstance(handed, frozenset)
+    assert isinstance(
+        inspect.getattr_static(ReplyGuard, "notes_read"), property)
+
+
+def _guard_with_notes_read(handles: set[str]):
+    """A `ReplyGuard` with R-55's latch pre-populated, without driving a whole
+    turn through it. `_notes_read` is private and set in `__init__`; reaching
+    it directly is right here because the SUBJECT is what the accessor does
+    with that attribute, not how it comes to be filled."""
+    from nora.agent.guards import ReplyGuard
+
+    guard = ReplyGuard.__new__(ReplyGuard)
+    guard._notes_read = set(handles)
+    return guard

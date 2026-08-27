@@ -1698,6 +1698,15 @@ STANDING = sa.Table(
     # which is retained for a bounded window and prunes out from under it.
     sa.Column("fold_count", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_at", sa.BigInteger, nullable=False),
+    # S2's ACTED-ON WATERMARK: the `tag_id` of the ungrounded `TurnVerdict` a
+    # re-derivation consumed. NULLABLE, and null is the only "nothing consumed"
+    # — anything that could compare equal to a real tag is a watermark
+    # satisfiable by accident. It replaces a comparison against `updated_at`,
+    # which was a PROXY for "a rebuild consumed this verdict" and was
+    # falsifiable by one transient failure of the verdict read; it holds the
+    # TAG rather than the `created_at` because a timestamp is a second proxy —
+    # two verdicts can share a millisecond (migration 0037).
+    sa.Column("consumed_verdict_tag", sa.Text, nullable=True),
     sa.CheckConstraint(
         f"length(btrim(body)) > 0 and length(body) <= {STANDING_BODY_CEILING_CHARS}",
         name="standing_body_fits_the_ceiling_check",
@@ -1754,5 +1763,12 @@ TURN_VERDICT = sa.Table(
 IDX_TURN_VERDICT_UNGROUNDED = sa.Index(
     "idx_turn_verdict_ungrounded",
     TURN_VERDICT.c.conversation_id, TURN_VERDICT.c.created_at,
-    postgresql_where=TURN_VERDICT.c.grounded.is_(False),
+    # **Spelled to MATCH MIGRATION 0035 exactly** (`grounded = false`), not
+    # `.is_(False)` (`grounded IS false`). Migrations are authoritative, so a
+    # disagreement here is latent rather than live — but the trap is the fix:
+    # aligning this declaration to the QUERY instead of to the migration would
+    # look right and silently leave the live index unusable. `test_schema_parity`
+    # compares CHECK predicates and index ordering, NOT partial-index
+    # predicates, so nothing catches it.
+    postgresql_where=TURN_VERDICT.c.grounded == sa.false(),
 )
