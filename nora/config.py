@@ -1640,13 +1640,24 @@ class NotesConfig(BaseModel):
     # sentence is kept, corrected, because a config docstring asserting a
     # safety property the code does not have is worse than one saying nothing.
     #
-    # It is safe NOW because `nora.language.note_revisitor._covers` reads the
-    # truncation directly: a full window that does not reach back past the
-    # anchor refuses the expiry rather than judging on what it happens to hold.
-    # So the cap still fails in one direction — too few messages means a note
-    # stays open one tick longer — but that is a property of the COVERAGE
-    # CHECK, not of the number, and lowering this raises how often the check
-    # withholds a decision rather than how often it gets one wrong.
+    # **The first correction was still false, and an external review caught
+    # that too.** It claimed safety on a `_covers` that measured truncation
+    # against the ANCHOR, so a window starting before the anchor passed while an
+    # answer given weeks earlier — any time after the note was written, which is
+    # what a closing condition allows — sat outside it. Lowering this number
+    # still turned an answered note into a retired one.
+    #
+    # It is safe now because `_covers` measures the window against the NOTE: a
+    # truncated window whose oldest row does not predate `created_at` refuses
+    # the expiry rather than judging on what it happens to hold. So the cap
+    # fails in ONE direction — too few messages means a note stays open longer —
+    # and that is a property of the COVERAGE CHECK rather than of the number.
+    # Lowering this raises how often the check WITHHOLDS a decision, never how
+    # often it gets one wrong.
+    #
+    # Twice-wrong is worth leaving on the page: a config docstring asserting a
+    # safety property is a claim about code somebody else has to verify, and
+    # this one was believed twice before it was true.
     max_revisits_per_tick: int = Field(default=10, ge=1)
     revisit_evidence_messages: int = Field(default=40, ge=1)
 

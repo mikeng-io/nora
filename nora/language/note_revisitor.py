@@ -199,15 +199,16 @@ _BECAUSE = {
     _VERDICT_CLOSED: NoteSupersedeReason.RETIRED_CLOSED,
     _VERDICT_EXPIRED: NoteSupersedeReason.RETIRED_EXPIRED,
 }
-# The inverse, for the one place a counter has to name the VERDICT after the
-# payload has already been narrowed to a `because`. Derived rather than written
-# out, so the two cannot disagree.
-_VERDICT_FOR = {because: verdict for verdict, because in _BECAUSE.items()}
-
 # The keys `_accept_one` reads out of one envelope item. Named here so a test
 # can compare them against what the objective PROMISES — a rename on one side
 # and not the other is a verdict silently refused as `unmeasured`, which reads
 # as a model that stopped answering.
+# Every value `_candidate` can put on `nora_note_revisit_candidates_total`'s
+# `evidence` label. Named so a test can hold the metric's help text to them:
+# `self_only` was added to the code and NOT to the spec, and nothing noticed —
+# an operator reading the spec got three values and saw four.
+EVIDENCE_STATES: tuple[str, ...] = ("present", "absent", "self_only", "unavailable")
+
 _KEY_NOTE = "note"
 _KEY_VERDICT = "verdict"
 _KEY_CITED = "cited_message_id"
@@ -278,6 +279,24 @@ class NoteRetirement:
     # Kept on the payload rather than discarded after validation because it is
     # the one thing that makes a wrong retirement reviewable afterwards.
     cited_message_id: int | None
+
+
+@dataclass(frozen=True)
+class _Verdict:
+    """One item that PARSED and grounded — the unit `accept` resolves per note.
+
+    Carries the verdict itself and not only the retirement it may imply,
+    because `unresolved` has to take part in the contradiction check. An
+    earlier revision returned `None` for it, so it never entered the grouping
+    and `["unresolved", "closed"]` retired the note in either order — a model
+    saying «I cannot tell» AND «it is closed» getting the answer that throws
+    the note away.
+    """
+
+    note_id: str
+    verdict: str
+    # `None` for `unresolved`, which decides nothing by construction.
+    retirement: NoteRetirement | None
 
 
 @dataclass(frozen=True)
@@ -535,9 +554,12 @@ class NoteRevisitor:
 
         Filtered to messages that POSTDATE the note: a closing condition cannot
         have been met before the note existed, and rendering earlier traffic
-        invites the model to answer from it. Re-ordered oldest-last because
-        `recent` is newest-first for the prompt and a conversation read
-        backwards is a conversation a reader gets wrong.
+        invites the model to answer from it. **No reordering happens** —
+        `recent` already returns oldest-first, `_render_note` renders in that
+        order, and `_covers` reads `evidence[0]` as the oldest. This docstring
+        claimed the opposite for three revisions: the third stale ordering
+        statement this file has carried, describing a bug that was fixed while
+        the sentence outlived it.
 
         A read that FAILS leaves the candidate with no evidence rather than
         propagating — which puts the note on the «cannot tell» path, where it
@@ -602,7 +624,10 @@ class NoteRevisitor:
             note=note,
             evidence=evidence,
             anchor_passed=bounds is not None and now_ms > bounds[1],
-            anchor_covered=_covers(evidence, bounds=bounds, truncated=truncated),
+            anchor_covered=_covers(
+                evidence, rows=rows, created_at=note.created_at,
+                bounds=bounds, truncated=truncated,
+            ),
             evidence_state=state,
         )
 
@@ -621,22 +646,27 @@ class NoteRevisitor:
         asked = self._asked.get(key, {})
         # Grouped by NOTE before anything is decided, because a note's verdict
         # is a property of the note and not of an item's position in a list.
-        by_note: dict[str, list[NoteRetirement]] = {}
+        # EVERY parsed verdict enters this map, `unresolved` included — see
+        # `_Verdict`.
+        by_note: dict[str, list[_Verdict]] = {}
         for item in items:
-            retirement = self._accept_one(item, asked=asked)
-            if retirement is not None:
-                by_note.setdefault(retirement.note_id, []).append(retirement)
+            verdict = self._accept_one(item, asked=asked)
+            if verdict is not None:
+                by_note.setdefault(verdict.note_id, []).append(verdict)
 
         out: list[NoteRetirement] = []
         for proposed in by_note.values():
-            reasons = {r.because for r in proposed}
+            reasons = {v.verdict for v in proposed}
             if len(reasons) > 1:
                 # **A model contradicting itself about one note is the
                 # DEFINITION of «cannot tell which», and both answers throw the
                 # note away.** An earlier revision de-duplicated first-come, so
                 # `[closed, expired]` retired it as closed and the same two
                 # items in the other order retired it as expired — an
-                # irreversible decision resolved by list position. Refused
+                # irreversible decision resolved by list position. And a later
+                # one grouped only RETIREMENTS, so `["unresolved", "closed"]`
+                # was not a conflict at all and the note was retired: «I cannot
+                # tell» and «it is closed» resolving to closed. Refused
                 # outright, and the note stands.
                 self._refuse("contradictory")
                 continue
@@ -644,22 +674,23 @@ class NoteRevisitor:
             # Superseding twice would fire this module's own `result="no_rows"`
             # alarm on the second call — a false positive on the counter built
             # to make a real silent no-op visible.
-            retirement = proposed[0]
+            resolved = proposed[0]
             # Counted HERE rather than in `_accept_one`, which runs per ITEM:
             # two items for one note incremented `verdicts_total` twice and
             # then produced one retirement, so the counters asserted two
             # accepted verdicts for one action. A verdict is accepted when it
-            # survives this resolution, not when it parses.
+            # survives this resolution, not when it parses — and that now
+            # covers `unresolved` too, which was still counted per item.
             self._inc(
-                "nora_note_revisit_verdicts_total",
-                verdict=_VERDICT_FOR[retirement.because],
+                "nora_note_revisit_verdicts_total", verdict=resolved.verdict,
             )
-            out.append(retirement)
+            if resolved.retirement is not None:
+                out.append(resolved.retirement)
         return tuple(out)
 
     def _accept_one(
         self, item: Mapping[str, object], *, asked: Mapping[str, _Candidate],
-    ) -> NoteRetirement | None:
+    ) -> _Verdict | None:
         """One verdict, or `None` with a counted reason.
 
         The order is deliberate and each step is a different question:
@@ -703,8 +734,11 @@ class NoteRevisitor:
             # from the refusals above, because «asked and could not tell» and
             # «did not answer the question» are different states and collapsing
             # them would hide a model that had stopped engaging.
-            self._inc("nora_note_revisit_verdicts_total", verdict="unresolved")
-            return None
+            #
+            # RETURNED rather than dropped, so it takes part in the
+            # contradiction check: paired with a `closed` or an `expired` for
+            # the same note it is a conflict, and the note must survive it.
+            return _Verdict(note_id=note_id, verdict=verdict, retirement=None)
 
         if not candidate.evidence:
             # Neither retirement is reachable without evidence. A room that has
@@ -736,10 +770,13 @@ class NoteRevisitor:
                 # missing entry, and here the entry costs a note.
                 self._refuse("citation_ungrounded")
                 return None
-            return NoteRetirement(
-                note_id=note_id,
-                because=_BECAUSE[_VERDICT_CLOSED],
-                cited_message_id=cited_id,
+            return _Verdict(
+                note_id=note_id, verdict=verdict,
+                retirement=NoteRetirement(
+                    note_id=note_id,
+                    because=_BECAUSE[_VERDICT_CLOSED],
+                    cited_message_id=cited_id,
+                ),
             )
 
         # `expired`, and the clock decides it rather than the model. A model
@@ -757,10 +794,13 @@ class NoteRevisitor:
             # stays.
             self._refuse("anchor_not_covered")
             return None
-        return NoteRetirement(
-            note_id=note_id,
-            because=_BECAUSE[_VERDICT_EXPIRED],
-            cited_message_id=None,
+        return _Verdict(
+            note_id=note_id, verdict=verdict,
+            retirement=NoteRetirement(
+                note_id=note_id,
+                because=_BECAUSE[_VERDICT_EXPIRED],
+                cited_message_id=None,
+            ),
         )
 
     # -- commit -------------------------------------------------------------
@@ -840,6 +880,7 @@ class NoteRevisitor:
 
 def _covers(
     evidence: Sequence[TranscriptRow], *,
+    rows: Sequence[TranscriptRow], created_at: int,
     bounds: tuple[int, int] | None, truncated: bool,
 ) -> bool:
     """Whether the evidence window actually SPANS the moment the note is about
@@ -868,23 +909,58 @@ def _covers(
     by, and still did not settle it. A room that fell silent beforehand cannot
     testify about a moment it was not present for.
 
-    **It must reach back to before the moment.** Either the window is not
-    truncated (there is no older traffic to hide) or its oldest row predates the
-    anchor's first instant. Otherwise there is unseen conversation lying exactly
-    across the moment, which is where an answer would be.
+    **It must reach back to before the NOTE.** Either the window is not
+    truncated (no older traffic exists at all) or its oldest row predates
+    `created_at`, so everything said since the note was written is in view.
+
+    **The reference point is the note, not the anchor, and getting that wrong
+    was a real defect at the shipped cap.** An earlier revision measured against
+    the anchor's first instant, reasoning that unseen traffic mattered only
+    where it lay "across the moment, which is where an answer would be". That is
+    false by the definition of a closing condition: a note anchored to 9
+    September is answered by «booked Yardbird for the 9th» said on 3 August.
+    Reproduced at `revisit_evidence_messages = 40` — answer two days after the
+    note, forty later messages straddling the anchor day, the window's oldest
+    row comfortably before the anchor so this check PASSED, the answer invisible
+    to the model, and an ANSWERED note retired as expired.
+
+    Measuring against `created_at` closes it and drops the anchor's start from
+    this clause entirely — which removes a second defect with it:
+    `_anchor_bounds_ms` computes in UTC while the deployment runs in HKT, and
+    while that makes `reaches_past` STRICTER (safe), it made the old
+    `reaches_back` LOOSER by the same eight hours (not safe).
 
     Fails CLOSED: no bounds, no evidence, or either condition unmet returns
-    `False`, and `_accept_one` then leaves the note standing. A note held
-    forever because its room went quiet before its date is the accepted cost —
-    the `strikes` machinery and the curator are the pressure valve for that,
-    not a guess here. *The reading that would reopen it:* notes accumulating
-    unretired with `reason="anchor_not_covered"` climbing and never resolving.
+    `False`, and `_accept_one` then leaves the note standing.
+
+    **The cost of holding, stated plainly because its pressure valve is NOT
+    BUILT.** A note whose room fell quiet before its date, or whose room is
+    permanently busier than the window, is refused here EVERY tick: `_is_due`
+    re-selects it, and `due[:max_revisits]` takes `standing()`'s oldest-first
+    order, so held notes at the head consume revisit slots forever and starve
+    the due notes behind them. The design's answer is the `strikes` breaker
+    (spec §9.6) and `strikes` HAS NO WRITER — see `_is_due`. So this deferral
+    currently defers to nothing: the direction is safe and the cost is
+    unbounded, which is the strongest argument for building the wake pass next.
+
+    One related pressure, pre-existing and made certain by the above: `closed`
+    does not pass through this check (its citation is its own ground), and that
+    check requires only that the cited id be IN the window, not that it answers
+    anything. A note held here is re-asked every tick, so it gets an unbounded
+    number of chances to come back as `closed` instead.
+
+    *The reading that would reopen it:* `reason="anchor_not_covered"` climbing
+    and never resolving.
     """
     if bounds is None or not evidence:
         return False
-    start, end = bounds
+    end = bounds[1]
     reaches_past = evidence[-1].ts >= end
-    reaches_back = (not truncated) or evidence[0].ts <= start
+    # `rows`, not `evidence`: the raw PRE-FILTER window. `evidence` has already
+    # dropped everything at or before `created_at`, so its oldest row cannot
+    # answer «did the window reach back far enough» — it is bounded by
+    # `created_at` by construction, and asking it that is circular.
+    reaches_back = (not truncated) or (bool(rows) and rows[0].ts <= created_at)
     return reaches_past and reaches_back
 
 

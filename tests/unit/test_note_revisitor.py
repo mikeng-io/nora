@@ -1095,3 +1095,126 @@ async def test_retiring_an_already_retired_note_moves_no_rows():
     assert metrics.get(
         "nora_note_retirements_total",
         because=NoteSupersedeReason.RETIRED_CLOSED, result="no_rows") == 1
+
+
+async def test_an_answer_before_the_window_cannot_expire_the_note():
+    """**The reference point, and the reason the first coverage check was still
+    wrong at the SHIPPED default cap.**
+
+    A closing condition can be met at any time after the note exists — that is
+    what a closing condition IS. A note anchored to the 9th of next month is
+    answered by «booked Yardbird for the 9th» said three weeks earlier, not on
+    the day itself. The first `_covers` measured truncation against the
+    ANCHOR's first instant, so a window starting well before the anchor passed
+    the check while the answer sat outside it, and an ANSWERED note was retired
+    as having gone unanswered.
+
+    Built at the real default (`revisit_evidence_messages = 40`): the answer two
+    days after the note, forty later messages straddling the anchor day. The
+    window's oldest row predates the anchor — so the OLD check passed — and the
+    answer is invisible."""
+    metrics = Metrics()
+    anchor_start = 1_767_225_600_000
+    created = anchor_start - 39 * DAY_MS
+    rows = [_row(1, "booked Yardbird for the 9th", ts=created + 2 * DAY_MS)]
+    rows += [
+        _row(i, f"chat {i}", ts=created + 30 * DAY_MS + (i - 2) * (DAY_MS // 2))
+        for i in range(2, 42)
+    ]
+    adaptor, _ = _revisitor(
+        (_note(created_at=created),), rows, metrics=metrics,
+        now_ms=anchor_start + 12 * DAY_MS,
+    )
+    rendered = await adaptor.inputs(key=WORKSPACE, batch=[])
+    assert "booked Yardbird" not in rendered, "the fixture must hide the answer"
+    assert await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "expired", "cited_message_id": None},
+    ]) == ()
+    assert metrics.get(
+        "nora_note_revisit_refused_total", reason="anchor_not_covered") == 1
+
+
+async def test_an_untruncated_window_covers_regardless_of_where_it_starts():
+    """The other half of the same reference point: when the window is NOT
+    truncated there is no older traffic to hide, so where its oldest row falls
+    relative to the note is irrelevant. Without this the fix would read as «the
+    window must always predate the note», which would make coverage unreachable
+    for any note written before its room's first message."""
+    anchor_start = 1_767_225_600_000
+    adaptor, _ = _revisitor(
+        (_note(created_at=anchor_start - 30 * DAY_MS),),
+        [
+            _row(1, "chatter", ts=anchor_start - DAY_MS),
+            _row(2, "nothing settled", ts=anchor_start + 2 * DAY_MS),
+        ],
+        now_ms=anchor_start + 5 * DAY_MS,
+    )
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    [out] = await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "expired", "cited_message_id": None},
+    ])
+    assert out.because == NoteSupersedeReason.RETIRED_EXPIRED
+
+
+async def test_unresolved_paired_with_a_retirement_is_a_contradiction():
+    """`unresolved` used to return `None` from `_accept_one`, so it never
+    entered the grouping and was invisible to the contradiction check: a model
+    saying «I cannot tell» AND «it is closed» about one note retired it, in
+    either order. «I cannot tell» is precisely the state this design says must
+    never retire.
+
+    Both orders and both retiring verdicts, because a single case cannot tell a
+    refusal from a lucky first element."""
+    anchor_start = 1_767_225_600_000
+    for other, cited in (("closed", 7), ("expired", None)):
+        for order in ((("unresolved", None), (other, cited)),
+                      ((other, cited), ("unresolved", None))):
+            metrics = Metrics()
+            adaptor, _ = _revisitor(
+                (_note(),),
+                [_row(7, "booked it", ts=anchor_start + 2 * DAY_MS)],
+                metrics=metrics, now_ms=anchor_start + 5 * DAY_MS,
+            )
+            await adaptor.inputs(key=WORKSPACE, batch=[])
+            items = [
+                {"note": "1", "verdict": v, "cited_message_id": c}
+                for v, c in order
+            ]
+            assert await adaptor.accept(key=WORKSPACE, items=items) == (), order
+            assert metrics.get(
+                "nora_note_revisit_refused_total", reason="contradictory") == 1
+
+
+async def test_unresolved_is_counted_once_per_note_not_once_per_item():
+    """The counter half. `verdicts_total{unresolved}` still fired inside
+    `_accept_one`, which runs per ITEM — the one branch that never reaches
+    resolution, in the counter whose own fix says a verdict is accepted when it
+    survives resolution rather than when it parses."""
+    metrics = Metrics()
+    adaptor, _ = _revisitor((_note(),), [_row(7, "hmm")], metrics=metrics)
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    assert await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "unresolved", "cited_message_id": None},
+        {"note": "1", "verdict": "unresolved", "cited_message_id": None},
+    ]) == ()
+    assert metrics.get("nora_note_revisit_verdicts_total", verdict="unresolved") == 1
+
+
+def test_every_evidence_state_is_described_in_the_metric_spec():
+    """Label parity, and it exists because the drift already happened:
+    `self_only` was added to the code and not to
+    `nora_note_revisit_candidates_total`'s help text, so an operator reading
+    the spec got three values while the endpoint emitted four — and nothing
+    caught it, because a help string is prose that no test reads.
+
+    Bound to `EVIDENCE_STATES`, which `_candidate` assigns from, so adding a
+    fifth state without describing it fails here."""
+    from nora.language.note_revisitor import EVIDENCE_STATES
+    from nora.obs.metric_specs import _COUNTERS
+
+    [spec] = [
+        c for c in _COUNTERS
+        if c.name == "nora_note_revisit_candidates_total"
+    ]
+    for state in EVIDENCE_STATES:
+        assert f'evidence="{state}"' in spec.help_text, state

@@ -1283,10 +1283,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_note_revisit_candidates_total",
         "Notes the revisitor selected as due, by whether it had anything to "
-        "judge them against. evidence=\"present\": the conversation has "
+        "judge them against. FOUR values, and a reader who sees only three has "
+        "an out-of-date copy of this text. evidence=\"present\": the "
+        "conversation has "
         "spoken since the note was written. evidence=\"absent\": it has not, "
         "so NEITHER retirement is reachable and the note stays — silence is "
-        "not an answer. evidence=\"unavailable\": the record read itself "
+        "not an answer. evidence=\"self_only\": the conversation HAS spoken "
+        "since the note and every row in the window was Nora's own — the cap "
+        "is applied before the is_nora filter, so her own traffic can exhaust "
+        "the window by itself. Counted apart from \"absent\" because calling "
+        "that a quiet room is false, and the prompt says so in different words "
+        "too. evidence=\"unavailable\": the record read itself "
         "failed, which lands on the same safe path but for a different reason "
         "and must not be counted as an honestly quiet room.",
         ("evidence",),

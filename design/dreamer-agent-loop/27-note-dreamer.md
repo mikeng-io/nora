@@ -653,6 +653,38 @@ it sits.
 permanent, where holding forever is the wrong answer and `strikes` is the right
 one.
 
+**The first version of this check was still wrong, and at the shipped default
+cap.** It measured truncation against the ANCHOR's first instant, on the
+reasoning that unseen traffic mattered only where it lay across the moment.
+That is false by the definition of a closing condition: **a note anchored to 9
+September is answered by «booked Yardbird for the 9th» said on 3 August.**
+Reproduced at `revisit_evidence_messages = 40` — the answer two days after the
+note, forty later messages straddling the anchor day, the window's oldest row
+comfortably before the anchor so the check PASSED, the answer invisible to the
+model, and an **answered** note retired as expired.
+
+The reference point is the **note**, not the anchor: either the window is
+untruncated, or its oldest row predates `created_at`, so everything said since
+the note was written is in view. That also drops the anchor's start from the
+clause and closes a second defect with it — `_anchor_bounds_ms` computes in UTC
+while the deployment runs in HKT, which makes `reaches_past` stricter (safe)
+but made the old `reaches_back` **looser** by the same eight hours (not safe).
+So §11.3.2's "later, never earlier" was true of one clause and false of the
+other while both existed.
+
+**The cost of holding has no pressure valve.** A note whose room fell quiet
+before its date is refused every tick, `_is_due` re-selects it, and
+`due[:max_revisits]` takes `standing()`'s oldest-first order — so held notes at
+the head consume revisit slots forever and starve the due notes behind them.
+The design's answer is the `strikes` breaker, and §11.3.5 records that
+`strikes` has no writer. **This deferral currently defers to nothing.** Safe
+direction, unbounded cost, and the strongest argument for building the wake
+pass next. One related pressure, pre-existing and made certain by it: `closed`
+does not pass through this check, and its citation test requires only that the
+cited id be IN the window rather than that it answers anything — so a held note
+is re-asked every tick and gets unbounded chances to come back as `closed`
+instead.
+
 ### 11.3.4 A model that contradicts itself retires nothing
 
 `[closed, expired]` for one note used to retire it as closed, and the same two
@@ -666,6 +698,15 @@ before de-duplication, so two items for one note asserted two accepted verdicts
 and produced one retirement — the instrument disagreeing with the action it was
 measuring. A verdict is accepted when it survives resolution, not when it
 parses.
+
+**And the first fix was blind to `unresolved`.** It grouped RETIREMENTS, and
+`unresolved` produces none — so it never entered the grouping and
+`["unresolved", "closed"]` was not a conflict at all: «I cannot tell» and «it
+is closed» resolved to closed, in either order, retiring the note. That is
+exactly the state this design says must never retire. Every parsed verdict now
+enters the resolution, `unresolved` included, and its counter moved with it —
+it was the one branch that never reached resolution, still being counted per
+item by the fix whose own argument says otherwise.
 
 ### 11.3.5 `revisit_at`, `strikes` and `last_wake_revision_id` have NO WRITER
 
