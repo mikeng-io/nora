@@ -162,7 +162,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol, get_args
 
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note, NoteSupersedeReason
@@ -204,11 +204,29 @@ _BECAUSE = {
 # and not the other is a verdict silently refused as `unmeasured`, which reads
 # as a model that stopped answering.
 # Every value `_candidate` can put on `nora_note_revisit_candidates_total`'s
-# `evidence` label. Named so a test can hold the metric's help text to them:
-# `self_only` was added to the code and NOT to the spec, and nothing noticed —
-# an operator reading the spec got three values and saw four.
-EVIDENCE_STATES: tuple[str, ...] = ("present", "absent", "self_only", "unavailable")
+# `evidence` label.
+#
+# **DERIVED from the type, not written out beside it**, and that is the whole
+# point. The first version of this was a hand-written tuple that nothing in the
+# module referenced: `_candidate` assigned bare literals, so adding a fifth
+# state kept every test green and the parity test below could only catch
+# DELETION from the help text. The drift it was written to prevent — a state in
+# the code and not in the spec, which is exactly how `self_only` got there — was
+# still undetectable. **The fix for the silent-failure finding had the silent
+# failure's own shape.**
+#
+# Two enforcers now, because this package is outside `make gate`'s mypy scope
+# (issue #61) and a static-only guard would be a claim rather than a check:
+# `EvidenceState` makes an undeclared literal a TYPE error, and
+# `_Candidate.__post_init__` makes it a RUNTIME error in every test that builds
+# a candidate.
+EvidenceState = Literal["present", "absent", "self_only", "unavailable"]
+EVIDENCE_STATES: tuple[str, ...] = get_args(EvidenceState)
 
+# The keys `_accept_one` reads out of one envelope item. Named here so a test
+# can compare them against what the objective PROMISES — a rename on one side
+# and not the other is a verdict silently refused as `unmeasured`, which reads
+# as a model that stopped answering.
 _KEY_NOTE = "note"
 _KEY_VERDICT = "verdict"
 _KEY_CITED = "cited_message_id"
@@ -295,7 +313,18 @@ class _Verdict:
 
     note_id: str
     verdict: str
-    # `None` for `unresolved`, which decides nothing by construction.
+    # `None` when this verdict cannot ACT — `unresolved`, which decides nothing
+    # by construction, and every verdict that failed grounding.
+    #
+    # **A verdict that failed grounding is still a CLAIM**, and that is the
+    # line this type exists to draw. Grounding decides whether a claim may act,
+    # never whether it was made. Two revisions in a row got this wrong in the
+    # same direction: the first grouped only retirements, so `unresolved` could
+    # not contradict; the second let `unresolved` in but still dropped every
+    # REFUSAL, so `[expired-refused, closed-grounded]` retired the note on the
+    # survivor. A model that says both things about one note has said «I cannot
+    # tell which», and which of its two answers happened to survive a grounding
+    # check is not a tie-break.
     retirement: NoteRetirement | None
 
 
@@ -324,7 +353,19 @@ class _Candidate:
     # first version of this counted both and produced 2 for one candidate: the
     # unavailable-collapsing-into-absent defect this module exists to refuse,
     # committed inside its own instrument.
-    evidence_state: str
+    evidence_state: EvidenceState
+
+    def __post_init__(self) -> None:
+        # The runtime half of the guard — see `EVIDENCE_STATES`. `nora.language`
+        # is outside the gate's mypy scope, so the `Literal` alone would be
+        # enforced only by a by-hand run; this fails in every test that builds a
+        # candidate, which is all of them.
+        if self.evidence_state not in EVIDENCE_STATES:
+            raise ValueError(
+                f"evidence_state {self.evidence_state!r} is not one of "
+                f"{EVIDENCE_STATES} — add it to EvidenceState AND to "
+                "nora_note_revisit_candidates_total's help text"
+            )
 
     @property
     def message_ids(self) -> frozenset[int]:
@@ -335,10 +376,13 @@ def _anchor_bounds_ms(anchor_date: int) -> tuple[int, int] | None:
     """The FIRST and LAST instants of a `YYYYMMDD` anchor, in epoch ms, or
     `None` if the value is not a date this can read.
 
-    Both, not just the end: the end decides whether the moment has passed, and
-    the start is what `_Candidate.anchor_covered` measures the evidence window
-    against — a window that begins after the moment began has unseen traffic
-    across it.
+    Both, not just the end — but **only the end is read**. The start was once
+    what `anchor_covered` measured the window against, and that was the defect
+    `_covers` documents: the reference point is the NOTE, not the anchor. The
+    start is kept because the pair is the honest reading of a `YYYYMMDD` value
+    and a caller may yet want it; `bounds[0]` has no reader today, and this
+    sentence says so rather than describing a use that was removed. Fourth
+    stale statement retired from this file.
 
     END of the day, not the start: a note anchored to the 15th is not stale at
     00:00 on the 15th. Computing it from the calendar rather than from a
@@ -566,7 +610,7 @@ class NoteRevisitor:
         survives. That is the correct direction for this tier: an unreachable
         record must never be able to cause a retirement.
         """
-        state = "present"
+        state: EvidenceState = "present"
         try:
             rows = await self._record.recent(
                 conversation_id=note.established_in, limit=self._evidence_limit,
@@ -744,8 +788,9 @@ class NoteRevisitor:
             # Neither retirement is reachable without evidence. A room that has
             # said nothing since the note was written cannot establish that a
             # question went unanswered — it establishes that nobody spoke.
-            self._refuse("no_evidence")
-            return None
+            return self._ungrounded(
+                "no_evidence", note_id=note_id, verdict=verdict,
+            )
 
         if verdict == _VERDICT_CLOSED:
             cited = item.get(_KEY_CITED)
@@ -756,20 +801,23 @@ class NoteRevisitor:
             # and `int(True) == 1` would silently become a citation of message
             # 1 — a real id, in the evidence, pointing at the wrong thing.
             if isinstance(cited, bool) or not isinstance(cited, (int, str)):
-                self._refuse("citation_missing")
-                return None
+                return self._ungrounded(
+                    "citation_missing", note_id=note_id, verdict=verdict,
+                )
             try:
                 cited_id = int(cited)
             except ValueError:
-                self._refuse("citation_missing")
-                return None
+                return self._ungrounded(
+                    "citation_missing", note_id=note_id, verdict=verdict,
+                )
             if cited_id not in candidate.message_ids:
                 # The model named a message it was never shown. Same refusal a
                 # hallucinated `message_id` gets in `nora.language.observer`,
                 # and for the same reason: fabricated grounding is worse than a
                 # missing entry, and here the entry costs a note.
-                self._refuse("citation_ungrounded")
-                return None
+                return self._ungrounded(
+                    "citation_ungrounded", note_id=note_id, verdict=verdict,
+                )
             return _Verdict(
                 note_id=note_id, verdict=verdict,
                 retirement=NoteRetirement(
@@ -784,16 +832,18 @@ class NoteRevisitor:
         # not looking at a calendar, and a note with no anchor at all has no
         # moment to have passed.
         if not candidate.anchor_passed:
-            self._refuse("anchor_not_passed")
-            return None
+            return self._ungrounded(
+                "anchor_not_passed", note_id=note_id, verdict=verdict,
+            )
         if not candidate.anchor_covered:
             # The moment has gone by, and we were not looking when it did. See
             # `_covers`: the room either fell silent before the anchor or is
             # busier than the window, so «nothing answered it» is a claim about
             # conversation this pass never read. `unavailable`, and the note
             # stays.
-            self._refuse("anchor_not_covered")
-            return None
+            return self._ungrounded(
+                "anchor_not_covered", note_id=note_id, verdict=verdict,
+            )
         return _Verdict(
             note_id=note_id, verdict=verdict,
             retirement=NoteRetirement(
@@ -868,6 +918,19 @@ class NoteRevisitor:
 
     def _refuse(self, reason: str) -> None:
         self._inc("nora_note_revisit_refused_total", reason=reason)
+
+    def _ungrounded(
+        self, reason: str, *, note_id: str, verdict: str,
+    ) -> _Verdict:
+        """A verdict the model DID make and that failed to ground.
+
+        Counted exactly as before — the reason label is unchanged and an
+        operator sees no difference — but returned rather than dropped, so it
+        still counts as a claim when `accept` asks whether this note got two
+        different answers. See `_Verdict.retirement`.
+        """
+        self._refuse(reason)
+        return _Verdict(note_id=note_id, verdict=verdict, retirement=None)
 
     def _inc(self, name: str, value: float = 1.0, **labels: object) -> None:
         if self._metrics is not None:

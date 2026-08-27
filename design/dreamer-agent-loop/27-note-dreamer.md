@@ -507,6 +507,16 @@ prose field.
 through the real screen, in the order the runtime does. A test that calls
 `accept` directly is testing half a pipeline.
 
+**A second rule, from the guard that had the defect's own shape.** The parity
+test written to catch «a value in the code and not in the spec» — the exact
+drift that had just been found — was itself bound to a hand-written tuple that
+nothing in the module referenced. Emitting a fifth state left every test green;
+it could only catch DELETION from the help text. **The fix for the
+silent-failure finding had the silent failure's shape.** It is derived from a
+`Literal` now and enforced twice, statically and at construction, because
+`nora.language` sits outside `make gate`'s mypy scope (#61) and a static-only
+guard in an unchecked package is a claim rather than a check.
+
 ### 11.2 What the model decides, and what it does not
 
 The verdict is semantic and belongs to a model. The grounding is not:
@@ -698,6 +708,23 @@ before de-duplication, so two items for one note asserted two accepted verdicts
 and produced one retirement — the instrument disagreeing with the action it was
 measuring. A verdict is accepted when it survives resolution, not when it
 parses.
+
+**Three revisions, one blind spot, and it is worth naming as a class.** Each
+fix carried forward the mental model that produced the defect, and the model —
+not the branch — was what needed testing:
+
+| revision | the model it kept | what still retired |
+|---|---|---|
+| 1 | de-duplicate first-come | `[closed, expired]` → whichever came first |
+| 2 | only RETIREMENTS can disagree | `[unresolved, closed]` → closed |
+| 3 | only SURVIVING verdicts can disagree | `[expired-refused, closed]` → closed |
+
+The settled line is that **a verdict that failed grounding is still a CLAIM**.
+Grounding decides whether a claim may act; it never decides whether it was
+made, and which of a model's two answers happens to survive a grounding check
+is not a tie-break between them. A non-answer — an unrecognised verdict — is
+NOT a claim, and does not block: treating it as one would let a single
+malformed item veto a grounded decision.
 
 **And the first fix was blind to `unresolved`.** It grouped RETIREMENTS, and
 `unresolved` produces none — so it never entered the grouping and

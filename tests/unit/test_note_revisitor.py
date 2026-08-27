@@ -1218,3 +1218,116 @@ def test_every_evidence_state_is_described_in_the_metric_spec():
     ]
     for state in EVIDENCE_STATES:
         assert f'evidence="{state}"' in spec.help_text, state
+
+
+async def test_a_refused_verdict_still_contradicts_a_grounded_one():
+    """**Third revision of the same blind spot, and the last one.**
+
+    A verdict that failed GROUNDING is still a claim the model made. The first
+    contradiction fix grouped only retirements, so `unresolved` could not
+    contradict; the second let `unresolved` in and still dropped every refusal,
+    so `[expired-refused, closed-grounded]` retired the note on whichever
+    answer happened to survive. Which of a model's two answers passes a
+    grounding check is not a tie-break between them.
+
+    Built so the `expired` arm is refused for a REAL reason — a truncated
+    window that does not reach back past the note — while the `closed` arm
+    grounds cleanly on a cited message. Before the fix: retirements
+    `['retired-closed']`, contradictory 0."""
+    anchor_start = 1_767_225_600_000
+    created = anchor_start - 40 * DAY_MS
+    rows = [
+        _row(i, f"chat {i}", ts=anchor_start - 10 * DAY_MS + i * DAY_MS)
+        for i in range(1, 6)
+    ]
+    rows.append(_row(99, "booked it", ts=anchor_start + 2 * DAY_MS))
+    for order in ((("expired", None), ("closed", 99)),
+                  (("closed", 99), ("expired", None))):
+        metrics = Metrics()
+        adaptor, _ = _revisitor(
+            (_note(created_at=created),), rows, metrics=metrics,
+            now_ms=anchor_start + 5 * DAY_MS, evidence_messages_per_note=3,
+        )
+        await adaptor.inputs(key=WORKSPACE, batch=[])
+        items = [
+            {"note": "1", "verdict": v, "cited_message_id": c} for v, c in order
+        ]
+        assert await adaptor.accept(key=WORKSPACE, items=items) == (), order
+        assert metrics.get(
+            "nora_note_revisit_refused_total", reason="contradictory") == 1
+        # The original refusal is still counted under its own reason — an
+        # operator's view of WHY a verdict failed must not change because the
+        # verdict now also participates in the contradiction check.
+        assert metrics.get(
+            "nora_note_revisit_refused_total", reason="anchor_not_covered") == 1
+
+
+async def test_an_unreadable_item_does_not_block_a_grounded_verdict():
+    """The other side of that line, and the reason it is drawn at «did the
+    model make a claim» rather than «did something go wrong for this note».
+
+    An item that names no recognisable verdict is a NON-answer, not a competing
+    one. Treating it as a contradiction would let one malformed item veto a
+    grounded decision — and a model that emits noise beside a good answer would
+    silently stop the tier retiring anything."""
+    adaptor, _ = _revisitor((_note(),), [_row(7, "booked it")])
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    [out] = await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "who knows", "cited_message_id": None},
+        {"note": "1", "verdict": "closed", "cited_message_id": 7},
+    ])
+    assert out.because == NoteSupersedeReason.RETIRED_CLOSED
+
+
+async def test_coverage_reads_the_raw_window_not_the_filtered_evidence():
+    """**The trap I flagged and did not guard.**
+
+    `_covers` must measure `rows[0]` — the raw pre-filter window — against
+    `created_at`. Substituting `evidence[0]`, which is the obvious-looking
+    version, is CIRCULAR: `evidence` has already dropped everything at or
+    before `created_at`, so `evidence[0].ts <= created_at` can never be true and
+    the clause degenerates to `not truncated`. That is fail-safe — it retires
+    nothing wrongly — but it makes expiry unreachable for every truncated
+    window, forever, and no test said so. A fix that looks right and does
+    nothing.
+
+    The discriminating case: a truncated window whose OLDEST row predates the
+    note. Correct code retires; the circular form refuses."""
+    anchor_start = 1_767_225_600_000
+    created = anchor_start - 20 * DAY_MS
+    adaptor, _ = _revisitor(
+        (_note(created_at=created),),
+        [
+            _row(1, "before the note", ts=created - 1),
+            _row(2, "after the note", ts=created + DAY_MS),
+            _row(3, "past the anchor", ts=anchor_start + 2 * DAY_MS),
+        ],
+        now_ms=anchor_start + 5 * DAY_MS, evidence_messages_per_note=3,
+    )
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    [out] = await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "expired", "cited_message_id": None},
+    ])
+    assert out.because == NoteSupersedeReason.RETIRED_EXPIRED
+
+
+def test_an_undeclared_evidence_state_cannot_be_constructed():
+    """The runtime half of `EVIDENCE_STATES`' enforcement.
+
+    The first parity test claimed to be "bound to EVIDENCE_STATES, which
+    _candidate assigns from" — it was not. `_candidate` assigned bare literals
+    and the tuple was hand-written, so emitting a fifth state left all 52 tests
+    green and the parity test caught only DELETION from the help text. The drift
+    it was written to prevent was still invisible: the fix for the
+    silent-failure finding had the silent failure's shape.
+
+    `EvidenceState` makes it a type error, and this makes it a runtime one —
+    both, because `nora.language` is outside the gate's mypy scope (#61), so a
+    static-only guard here is a claim rather than a check."""
+    from nora.language.note_revisitor import _Candidate
+
+    with pytest.raises(ValueError, match="partial"):
+        _Candidate(
+            handle="1", note=_note(), evidence=(), anchor_passed=False,
+            anchor_covered=False, evidence_state="partial",  # type: ignore[arg-type]
+        )
