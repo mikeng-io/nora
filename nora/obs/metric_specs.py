@@ -1317,7 +1317,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "closed verdict with no cited message, or one citing a message it was "
         "never shown. reason=\"anchor_not_passed\": an expired verdict on a "
         "note whose moment has not gone by — the clock decides that, not the "
-        "model.",
+        "model. reason=\"anchor_not_covered\": the moment HAS gone by but the "
+        "evidence window does not span it — the room fell silent before the "
+        "anchor, or is busier than the window — so \u00abnothing answered "
+        "it\u00bb would be a claim about conversation this pass never read. "
+        "reason=\"contradictory\": the model gave one note both a closed and "
+        "an expired verdict, which is the definition of \u00abcannot tell "
+        "which\u00bb, and both answers throw the note away.",
         ("reason",),
     ),
     _CounterSpec(

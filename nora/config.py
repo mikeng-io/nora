@@ -1630,12 +1630,23 @@ class NotesConfig(BaseModel):
     # (`nora_note_revisit_deferred_total`) rather than silently truncated.
     #
     # `revisit_evidence_messages = 40`: messages of a note's own
-    # `established_in` rendered as the evidence it is judged against. This is
-    # the only thing standing between the pass and a decision, and it fails in
-    # ONE direction: too few messages means a note that was answered looks
-    # unresolved and stays open, which is recoverable on the next tick. There
-    # is no setting of this that causes a wrong retirement, which is why it is
-    # a plain cap rather than a gated one.
+    # `established_in` rendered as the evidence it is judged against.
+    #
+    # **This comment used to claim "there is no setting of this that causes a
+    # wrong retirement". That was FALSE and an external review caught it.** A
+    # truncated window whose oldest row postdates the anchor hides exactly the
+    # conversation an answer would be in, so a busy room could turn an ANSWERED
+    # note into a `retired-expired` one — the unrecoverable direction. The
+    # sentence is kept, corrected, because a config docstring asserting a
+    # safety property the code does not have is worse than one saying nothing.
+    #
+    # It is safe NOW because `nora.language.note_revisitor._covers` reads the
+    # truncation directly: a full window that does not reach back past the
+    # anchor refuses the expiry rather than judging on what it happens to hold.
+    # So the cap still fails in one direction — too few messages means a note
+    # stays open one tick longer — but that is a property of the COVERAGE
+    # CHECK, not of the number, and lowering this raises how often the check
+    # withholds a decision rather than how often it gets one wrong.
     max_revisits_per_tick: int = Field(default=10, ge=1)
     revisit_evidence_messages: int = Field(default=40, ge=1)
 

@@ -609,6 +609,64 @@ never earlier), and choosing a timezone is a decision about what a note's date
 MEANS to the people writing it. *The reading that would settle it:* a note whose
 anchor day matters to within a few hours.
 
+### 11.3.3 `retired-expired` needs the window to SPAN the moment
+
+**Found by external review after two internal passes with 26 mutations missed
+it**, and it is the only finding across four reviews that produces a WRONG
+retirement.
+
+`anchor_passed` says the moment has gone by. It says nothing about whether
+anybody was looking when it did, and the first two revisions treated those as
+one thing: `expired` needed only that the room had said SOMETHING, anywhere
+after the note was written. Two live shapes retire a note wrongly:
+
+- **the room dies before the moment.** Note written 1 Aug, anchored to 9 Sept,
+  thirty messages in the first fortnight of August, silence after. The window is
+  non-empty and holds no answer, so the model answers `expired` — correctly, on
+  what it was shown — and the note is retired with **zero evidence about
+  September**. Reproduced against the real code before the fix.
+- **the room is busier than the window.** The message that ANSWERS the question
+  falls outside the newest `limit` rows. The window shows unrelated later
+  traffic, `expired` is accepted, and an **answered** note is recorded as having
+  gone unanswered.
+
+`_covers` is the code-side ground: the evidence must reach **past** the anchor's
+last instant (the room was still talking once the moment had gone by) and
+**back** to before its first — either the window is untruncated, so there is no
+older traffic to hide, or its oldest row predates the moment. Otherwise there is
+unseen conversation lying exactly where an answer would be, and that is
+`unavailable`.
+
+**This also falsified a claim in `config.py`.** The evidence cap's docstring
+asserted *"there is no setting of this that causes a wrong retirement"*. That
+was false: a truncated window converts «answered outside the window» into a
+retirement. Corrected in place rather than deleted — a config docstring
+asserting a safety property the code does not have is worse than one saying
+nothing.
+
+**Only `expired` needs it.** A `closed` verdict names a specific message that
+settled the question, and that citation is its own ground wherever in the window
+it sits.
+
+*The reading that would reopen it:* notes accumulating unretired with
+`anchor_not_covered` climbing and never resolving — a room whose quiet is
+permanent, where holding forever is the wrong answer and `strikes` is the right
+one.
+
+### 11.3.4 A model that contradicts itself retires nothing
+
+`[closed, expired]` for one note used to retire it as closed, and the same two
+items reversed retired it as expired — **an irreversible decision resolved by
+list position**. A model giving one note two different verdicts is the
+definition of «cannot tell which», and both answers throw the note away. Refused
+outright now, and the note stands.
+
+The counter had the matching defect: `verdicts_total` incremented per ITEM,
+before de-duplication, so two items for one note asserted two accepted verdicts
+and produced one retirement — the instrument disagreeing with the action it was
+measuring. A verdict is accepted when it survives resolution, not when it
+parses.
+
 ### 11.4 What is deliberately NOT built
 
 **`schedule_reminder`, and therefore the reaching-a-person half.** §3/D21

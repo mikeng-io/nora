@@ -22,7 +22,11 @@ import pytest
 from nora.domain.models import DeliveryStatus
 from nora.domain.notes import Note, NoteSupersedeReason
 from nora.domain.ports import Proposal
-from nora.language.note_revisitor import NoteRetirement, NoteRevisitor
+from nora.language.note_revisitor import (
+    ITEM_KEYS,
+    NoteRetirement,
+    NoteRevisitor,
+)
 from nora.obs.metrics import Metrics
 from nora.testing.fakes import FakeRecordStore
 from tests.objectives import shipped_objectives
@@ -37,6 +41,9 @@ DAY_MS = 86_400_000
 # the whole file go quiet the moment that date arrived — and it would go quiet
 # by rendering nothing, which reads as passing.
 PASSED_ANCHOR = 20260101
+# The first instant after `PASSED_ANCHOR`'s last — evidence at or after this is
+# what `_covers` requires before an expiry is reachable at all.
+AFTER_ANCHOR = 1_767_225_600_000 + 86_400_000
 FUTURE_ANCHOR = 21000101
 
 
@@ -75,6 +82,7 @@ class _FakeNoteStore:
         # Which targets actually resolve. Defaults to the notes handed in, so a
         # test superseding a real note gets 1 and an invented id gets 0.
         self._known = {n.id for n in notes} if known is None else known
+        self._retired: set[str] = set()
         self.calls: list[dict] = []
 
     async def standing(self, *, workspace: str) -> tuple[Note, ...]:
@@ -93,7 +101,18 @@ class _FakeNoteStore:
             "key": key, "target": target, "replaced_by": replaced_by,
             "because": because, "now_ms": now_ms,
         })
-        return 1 if target in self._known else 0
+        # ALREADY-RETIRED returns 0, like the real store: `SqlNoteStore
+        # .supersede` filters `NOTE.c.retired_at.is_(None)`, so a second
+        # supersession of one note affects no rows. The docstring above used to
+        # CLAIM this branch and not implement it, which is the same
+        # double-diverges-from-the-real-store shape four other findings have
+        # been — and it is the exact branch `result="no_rows"` exists to expose,
+        # so a double that got it wrong would make any future test of that
+        # counter pass while production did the opposite.
+        if target not in self._known or target in self._retired:
+            return 0
+        self._retired.add(target)
+        return 1
 
 
 def _record(messages=None, *, fail: bool = False) -> FakeRecordStore:
@@ -300,7 +319,13 @@ async def test_a_grounded_closed_verdict_retires_the_note():
 
 
 async def test_an_expired_verdict_retires_a_note_whose_moment_has_passed():
-    adaptor, _ = _revisitor((_note(),), [_row(7, "anyway, different subject")])
+    """The evidence must SPAN the anchor, not merely exist — `_covers`. A
+    message after the anchor's last instant is what makes «the moment went by
+    and nothing settled it» a claim about conversation this pass actually
+    read."""
+    adaptor, _ = _revisitor(
+        (_note(),), [_row(7, "anyway, different subject", ts=AFTER_ANCHOR)],
+    )
     await adaptor.inputs(key=WORKSPACE, batch=[])
     [out] = await adaptor.accept(key=WORKSPACE, items=[
         {"note": "1", "verdict": "expired", "cited_message_id": None},
@@ -855,7 +880,218 @@ def test_every_key_the_objective_promises_is_one_the_adaptor_reads():
     """The parity that makes the two tests above worth having: the schema line
     is only load-bearing if the adaptor actually reads exactly those keys. A
     key renamed on one side and not the other is a verdict silently refused as
-    `unmeasured`, which reads as a model that stopped answering."""
+    `unmeasured`, which reads as a model that stopped answering.
+
+    Asserted against `ITEM_KEYS`, which `_accept_one` itself reads through, so
+    renaming a key in the adaptor turns this red. An earlier version listed the
+    three names as literals here and therefore only ever compared the objective
+    to a copy of itself — it stayed green through a rename of the very thing it
+    claimed to pin."""
     line = _schema_line()
-    for key in ("note", "verdict", "cited_message_id"):
-        assert f'"{key}"' in line
+    for key in ITEM_KEYS:
+        assert f'"{key}"' in line, f"the adaptor reads {key!r}; the objective does not promise it"
+
+
+# ---------------------------------------------------------------------------
+# Coverage — the evidence must span the moment, not merely exist
+# ---------------------------------------------------------------------------
+
+
+async def test_a_room_that_died_before_the_anchor_cannot_expire_the_note():
+    """**The wrong retirement two internal review passes missed.**
+
+    Before `_covers`, `expired` needed only that the room had said SOMETHING —
+    anything, at any point after the note was written. Reproduced from the live
+    shape: a note written on the 1st, anchored to the 9th of the next month, a
+    room that talked for a fortnight and then fell silent. Every message in the
+    window predates the anchor by weeks. The model answers `expired` correctly
+    on what it was shown, and a note is retired with ZERO evidence about the
+    moment it is about.
+
+    A room that fell silent cannot testify about a moment it was not present
+    for. Held, and counted `anchor_not_covered`."""
+    metrics = Metrics()
+    anchor_start = 1_767_225_600_000  # PASSED_ANCHOR at 00:00Z
+    created = anchor_start - 40 * DAY_MS
+    chatter = [
+        _row(i, f"chat {i}", ts=created + i * DAY_MS) for i in range(1, 15)
+    ]
+    adaptor, _ = _revisitor(
+        (_note(created_at=created),), chatter, metrics=metrics,
+    )
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    assert await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "expired", "cited_message_id": None},
+    ]) == ()
+    assert metrics.get(
+        "nora_note_revisit_refused_total", reason="anchor_not_covered") == 1
+
+
+async def test_a_window_truncated_across_the_anchor_cannot_expire_the_note():
+    """The second variant, and the one that turns an ANSWERED note into an
+    expired one. The room is busier than the window, so the message that
+    settled the question sits outside the newest `limit` rows and the window
+    shows only later, unrelated traffic.
+
+    Detected from TRUNCATION rather than from content — the pass cannot see
+    what it did not fetch, so «the window is full and starts after the moment»
+    is the only signal available, and it is enough. `config.toml`'s evidence
+    cap is therefore not merely a cost knob: raising or lowering it moves this
+    boundary."""
+    metrics = Metrics()
+    anchor_start = 1_767_225_600_000
+    # Every row lands AFTER the anchor, and there are more of them than the cap
+    # — so the window is full and its oldest row postdates the moment.
+    rows = [
+        _row(i, f"later chat {i}", ts=anchor_start + DAY_MS * 2 + i * 1000)
+        for i in range(1, 9)
+    ]
+    adaptor, _ = _revisitor(
+        (_note(created_at=anchor_start - 30 * DAY_MS),), rows,
+        metrics=metrics, evidence_messages_per_note=4,
+    )
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    assert await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "expired", "cited_message_id": None},
+    ]) == ()
+    assert metrics.get(
+        "nora_note_revisit_refused_total", reason="anchor_not_covered") == 1
+
+
+async def test_an_untruncated_window_reaching_past_the_anchor_can_expire():
+    """The positive case, and it has to be here: a coverage check that never
+    passes is a mute button, and every test above would still pass with
+    `_covers` hard-wired to `False`."""
+    anchor_start = 1_767_225_600_000
+    adaptor, _ = _revisitor(
+        (_note(created_at=anchor_start - 10 * DAY_MS),),
+        [
+            _row(1, "before the day", ts=anchor_start - DAY_MS),
+            _row(2, "on the day, nothing settled", ts=anchor_start + 3600_000),
+            _row(3, "after the day", ts=anchor_start + 2 * DAY_MS),
+        ],
+    )
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    [out] = await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "expired", "cited_message_id": None},
+    ])
+    assert out.because == NoteSupersedeReason.RETIRED_EXPIRED
+
+
+async def test_coverage_is_not_required_to_close_a_note():
+    """Only `expired` reasons from an absence, so only `expired` needs the
+    window to span the moment. A `closed` verdict points at a specific message
+    that settled the question — that citation is its own ground, and it holds
+    wherever in the window the message sits."""
+    adaptor, _ = _revisitor(
+        (_note(),), [_row(7, "booked Yardbird", ts=1_767_225_600_000 - DAY_MS)],
+    )
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    [out] = await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "closed", "cited_message_id": 7},
+    ])
+    assert out.because == NoteSupersedeReason.RETIRED_CLOSED
+
+
+# ---------------------------------------------------------------------------
+# A model that contradicts itself
+# ---------------------------------------------------------------------------
+
+
+async def test_contradictory_verdicts_for_one_note_retire_nothing():
+    """A model saying both `closed` and `expired` about one note is the
+    DEFINITION of «cannot tell which», and both answers throw the note away.
+
+    An earlier revision de-duplicated first-come, so the list ORDER decided an
+    irreversible action: `[closed, expired]` retired it as closed and the same
+    two items reversed retired it as expired. Asserted in BOTH orders, because
+    a single-order test cannot tell a refusal from a lucky first element."""
+    for items in (
+        [{"note": "1", "verdict": "closed", "cited_message_id": 7},
+         {"note": "1", "verdict": "expired", "cited_message_id": None}],
+        [{"note": "1", "verdict": "expired", "cited_message_id": None},
+         {"note": "1", "verdict": "closed", "cited_message_id": 7}],
+    ):
+        metrics = Metrics()
+        adaptor, _ = _revisitor(
+            (_note(),), [_row(7, "booked it", ts=AFTER_ANCHOR)], metrics=metrics,
+        )
+        await adaptor.inputs(key=WORKSPACE, batch=[])
+        assert await adaptor.accept(key=WORKSPACE, items=items) == ()
+        assert metrics.get(
+            "nora_note_revisit_refused_total", reason="contradictory") == 1
+
+
+async def test_two_identical_verdicts_count_one_accepted_verdict():
+    """The counter half of the same fix. `_accept_one` runs per ITEM, so
+    incrementing there made two items for one note assert TWO accepted verdicts
+    and then produce ONE retirement — the instrument disagreeing with the
+    action it was measuring. A verdict is accepted when it survives resolution,
+    not when it parses."""
+    metrics = Metrics()
+    adaptor, _ = _revisitor((_note(),), [_row(7, "booked it")], metrics=metrics)
+    await adaptor.inputs(key=WORKSPACE, batch=[])
+    out = await adaptor.accept(key=WORKSPACE, items=[
+        {"note": "1", "verdict": "closed", "cited_message_id": 7},
+        {"note": "1", "verdict": "closed", "cited_message_id": 7},
+    ])
+    assert len(out) == 1
+    assert metrics.get("nora_note_revisit_verdicts_total", verdict="closed") == 1
+
+
+# ---------------------------------------------------------------------------
+# Nora exhausting her own evidence window
+# ---------------------------------------------------------------------------
+
+
+async def test_a_window_of_only_noras_messages_is_not_a_quiet_room():
+    """The cap is applied by `recent` BEFORE the `is_nora` filter, so if the
+    newest rows are all hers the evidence is empty even though the group has
+    spoken since the note. Counting that as `absent` — whose spec text says
+    «it has not spoken since the note was written» — and telling the model in
+    words that nothing has been said are both FALSE.
+
+    No retirement follows either way, so the direction is safe. The honesty is
+    the point: a window-exhaustion state collapsed into «honest quiet room» is
+    `unavailable` wearing `nothing_found`, in the counters built to keep them
+    apart."""
+    metrics = Metrics()
+    adaptor, _ = _revisitor(
+        (_note(),),
+        [_row(i, f"nora says {i}", ts=100 + i, is_nora=True) for i in range(1, 4)],
+        metrics=metrics,
+    )
+    rendered = await adaptor.inputs(key=WORKSPACE, batch=[])
+    assert metrics.get(
+        "nora_note_revisit_candidates_total", evidence="self_only") == 1
+    assert metrics.get(
+        "nora_note_revisit_candidates_total", evidence="absent") == 0
+    assert "nothing has been said" not in rendered
+
+
+async def test_retiring_an_already_retired_note_moves_no_rows():
+    """`SqlNoteStore.supersede` filters `retired_at IS NULL`, so a second
+    supersession of one note affects no rows. This is the exact branch
+    `result="no_rows"` exists to expose — and the double claimed it in a
+    docstring while returning 1, so any test of that counter would have passed
+    against the fake while production did the opposite.
+
+    Two commits, not two items in one accept: de-duplication already collapses
+    the second item, so the only way to reach a genuine second supersession is
+    a later tick acting on a note the previous one retired."""
+    metrics = Metrics()
+    adaptor, store = _revisitor((_note(),), [_row(7, "booked it")], metrics=metrics)
+    retirement = _proposals([NoteRetirement(
+        note_id=_note().id, because=NoteSupersedeReason.RETIRED_CLOSED,
+        cited_message_id=7,
+    )])
+
+    assert await adaptor.commit(key=WORKSPACE, proposals=retirement, now_ms=1) == 1
+    assert await adaptor.commit(key=WORKSPACE, proposals=retirement, now_ms=2) == 0
+    assert len(store.calls) == 2, "the second supersession was really attempted"
+    assert metrics.get(
+        "nora_note_retirements_total",
+        because=NoteSupersedeReason.RETIRED_CLOSED, result="applied") == 1
+    assert metrics.get(
+        "nora_note_retirements_total",
+        because=NoteSupersedeReason.RETIRED_CLOSED, result="no_rows") == 1

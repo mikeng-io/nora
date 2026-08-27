@@ -176,10 +176,15 @@ log = logging.getLogger(__name__)
 # `DEFAULT_EVIDENCE_MESSAGES_PER_NOTE` below into the size of one call.
 DEFAULT_MAX_REVISITS_PER_TICK = 10
 
-# Messages of `established_in` rendered as one note's evidence. Newest-first
-# from `recent`, then filtered to those actually postdating the note — a
-# closing condition cannot have been met before the note existed, and rendering
-# earlier traffic invites the model to answer from it.
+# Messages of `established_in` rendered as one note's evidence. `recent`
+# returns the newest `limit` rows OLDEST-FIRST; they are then filtered to those
+# actually postdating the note — a closing condition cannot have been met
+# before the note existed, and rendering earlier traffic invites the model to
+# answer from it — and to those that are not Nora's own.
+#
+# This cap is ALSO what `_covers` measures the anchor window against: a
+# truncated window is a window that may be hiding the answer, which is why
+# raising it is not merely a cost decision.
 DEFAULT_EVIDENCE_MESSAGES_PER_NOTE = 40
 
 # A `retired-closed` verdict must cite one of these; a note id must be one of
@@ -194,6 +199,19 @@ _BECAUSE = {
     _VERDICT_CLOSED: NoteSupersedeReason.RETIRED_CLOSED,
     _VERDICT_EXPIRED: NoteSupersedeReason.RETIRED_EXPIRED,
 }
+# The inverse, for the one place a counter has to name the VERDICT after the
+# payload has already been narrowed to a `because`. Derived rather than written
+# out, so the two cannot disagree.
+_VERDICT_FOR = {because: verdict for verdict, because in _BECAUSE.items()}
+
+# The keys `_accept_one` reads out of one envelope item. Named here so a test
+# can compare them against what the objective PROMISES — a rename on one side
+# and not the other is a verdict silently refused as `unmeasured`, which reads
+# as a model that stopped answering.
+_KEY_NOTE = "note"
+_KEY_VERDICT = "verdict"
+_KEY_CITED = "cited_message_id"
+ITEM_KEYS: frozenset[str] = frozenset({_KEY_NOTE, _KEY_VERDICT, _KEY_CITED})
 
 _MS_PER_DAY = 86_400_000
 
@@ -274,6 +292,13 @@ class _Candidate:
     note: Note
     evidence: tuple[TranscriptRow, ...]
     anchor_passed: bool
+    # Whether the evidence window actually SPANS the moment the note is about.
+    # `anchor_passed` says the moment has gone by; this says we were LOOKING
+    # when it did. Without it, `retired-expired` needed only that the room had
+    # said something — anything, at any time after the note was written — and a
+    # room that fell silent in August would retire a note anchored to September
+    # with no evidence whatsoever about September. See `_candidate`.
+    anchor_covered: bool
     # Why `evidence` is what it is, as ONE value — «the room said nothing» and
     # «the record read failed» both arrive here as an empty tuple, and they are
     # different states. Carried rather than re-derived at each use, because the
@@ -287,9 +312,14 @@ class _Candidate:
         return frozenset(row.id for row in self.evidence)
 
 
-def _anchor_end_ms(anchor_date: int) -> int | None:
-    """The last instant of a `YYYYMMDD` anchor, in epoch ms, or `None` if the
-    value is not a date this can read.
+def _anchor_bounds_ms(anchor_date: int) -> tuple[int, int] | None:
+    """The FIRST and LAST instants of a `YYYYMMDD` anchor, in epoch ms, or
+    `None` if the value is not a date this can read.
+
+    Both, not just the end: the end decides whether the moment has passed, and
+    the start is what `_Candidate.anchor_covered` measures the evidence window
+    against — a window that begins after the moment began has unseen traffic
+    across it.
 
     END of the day, not the start: a note anchored to the 15th is not stale at
     00:00 on the 15th. Computing it from the calendar rather than from a
@@ -319,8 +349,10 @@ def _anchor_end_ms(anchor_date: int) -> int | None:
         )
     except (ValueError, TypeError):
         return None
-    start = _dt.datetime.combine(day, _dt.time.min, tzinfo=_dt.UTC)
-    return int(start.timestamp() * 1000) + _MS_PER_DAY - 1
+    start = int(
+        _dt.datetime.combine(day, _dt.time.min, tzinfo=_dt.UTC).timestamp() * 1000
+    )
+    return start, start + _MS_PER_DAY - 1
 
 
 def _render_note(candidate: _Candidate) -> str:
@@ -350,11 +382,22 @@ def _render_note(candidate: _Candidate) -> str:
             f"{' (this date has passed)' if candidate.anchor_passed else ''}"
         )
     if not candidate.evidence:
-        # The reason is NOT rendered. The model's job is the same either way —
-        # decide nothing — and telling it «the record was unreachable» invites
-        # it to reason about our infrastructure instead of about the note. The
-        # distinction is for the operator, and it lives on the counter.
+        # Two absences, two sentences, because one of them would be a LIE as
+        # the other. `absent` really is «nobody has spoken since this note»;
+        # `self_only` is «the group has spoken, and none of what I can see is
+        # theirs» — Nora's own traffic can fill the window on its own. Telling
+        # the model the room has been quiet when it has not is a false premise
+        # handed to the thing being asked to judge.
+        #
+        # `unavailable` deliberately renders as `absent`'s sentence: the
+        # model's job is the same either way — decide nothing — and telling it
+        # «the record was unreachable» invites it to reason about our
+        # infrastructure instead of about the note. THAT distinction is for the
+        # operator and lives on the counter.
         lines.append(
+            "evidence: NONE — nothing the group has said since this note was "
+            "written is in the messages I can see."
+            if candidate.evidence_state == "self_only" else
             "evidence: NONE — nothing has been said in that conversation since "
             "this note was written."
         )
@@ -532,20 +575,34 @@ class NoteRevisitor:
         # anything — closing a note on it is self-attestation deciding a
         # retirement, which is the one thing no measure in this repo may rest
         # on.
-        evidence = tuple(
-            row for row in rows
-            if row.ts > note.created_at and not row.is_nora
-        )
+        #
+        # TRUNCATION is read BEFORE either filter, because it is a property of
+        # what `recent` could return, not of what survived. `recent` gives the
+        # newest `limit` rows of the WHOLE conversation; fewer than `limit`
+        # means there is no older traffic at all, which is the only way to know
+        # the window is not hiding something.
+        truncated = len(rows) >= self._evidence_limit
+        since = [row for row in rows if row.ts > note.created_at]
+        evidence = tuple(row for row in since if not row.is_nora)
         if state != "unavailable" and not evidence:
-            state = "absent"
-        anchor_end = (
-            _anchor_end_ms(note.anchor_date) if note.anchor_date is not None else None
+            # `absent` means the room has genuinely said nothing since the note.
+            # If it HAS spoken and every one of those rows was Nora's own, that
+            # is a different state: her traffic can exhaust the window on its
+            # own, and calling that «the room has been quiet» is `unavailable`
+            # wearing `nothing_found` inside the counter built to keep them
+            # apart. No retirement follows from either, so the direction is
+            # safe; the honesty is the point.
+            state = "self_only" if since else "absent"
+        bounds = (
+            _anchor_bounds_ms(note.anchor_date)
+            if note.anchor_date is not None else None
         )
         return _Candidate(
             handle=handle,
             note=note,
             evidence=evidence,
-            anchor_passed=anchor_end is not None and now_ms > anchor_end,
+            anchor_passed=bounds is not None and now_ms > bounds[1],
+            anchor_covered=_covers(evidence, bounds=bounds, truncated=truncated),
             evidence_state=state,
         )
 
@@ -562,17 +619,41 @@ class NoteRevisitor:
         a note on a doubt.
         """
         asked = self._asked.get(key, {})
-        out: list[NoteRetirement] = []
-        # One retirement per NOTE. Two `closed` items naming the same note are
-        # one decision stated twice, and superseding twice would fire this
-        # module's own `result="no_rows"` alarm on the second call — a false
-        # positive on the counter built to make a real silent no-op visible.
-        seen: set[str] = set()
+        # Grouped by NOTE before anything is decided, because a note's verdict
+        # is a property of the note and not of an item's position in a list.
+        by_note: dict[str, list[NoteRetirement]] = {}
         for item in items:
             retirement = self._accept_one(item, asked=asked)
-            if retirement is None or retirement.note_id in seen:
+            if retirement is not None:
+                by_note.setdefault(retirement.note_id, []).append(retirement)
+
+        out: list[NoteRetirement] = []
+        for proposed in by_note.values():
+            reasons = {r.because for r in proposed}
+            if len(reasons) > 1:
+                # **A model contradicting itself about one note is the
+                # DEFINITION of «cannot tell which», and both answers throw the
+                # note away.** An earlier revision de-duplicated first-come, so
+                # `[closed, expired]` retired it as closed and the same two
+                # items in the other order retired it as expired — an
+                # irreversible decision resolved by list position. Refused
+                # outright, and the note stands.
+                self._refuse("contradictory")
                 continue
-            seen.add(retirement.note_id)
+            # Same verdict twice is one decision stated twice, not a conflict.
+            # Superseding twice would fire this module's own `result="no_rows"`
+            # alarm on the second call — a false positive on the counter built
+            # to make a real silent no-op visible.
+            retirement = proposed[0]
+            # Counted HERE rather than in `_accept_one`, which runs per ITEM:
+            # two items for one note incremented `verdicts_total` twice and
+            # then produced one retirement, so the counters asserted two
+            # accepted verdicts for one action. A verdict is accepted when it
+            # survives this resolution, not when it parses.
+            self._inc(
+                "nora_note_revisit_verdicts_total",
+                verdict=_VERDICT_FOR[retirement.because],
+            )
             out.append(retirement)
         return tuple(out)
 
@@ -594,7 +675,7 @@ class NoteRevisitor:
            the clock for `expired`. This is where a plausible answer stops being
            enough.
         """
-        handle = item.get("note")
+        handle = item.get(_KEY_NOTE)
         # Accepted as `int` too: the handle is an ordinal rendered into the
         # prompt, and a model answering 1 rather than "1" has pointed at the
         # same note. `bool` is excluded for the reason the citation check gives
@@ -610,7 +691,7 @@ class NoteRevisitor:
             return None
         note_id = candidate.note.id
 
-        verdict = item.get("verdict")
+        verdict = item.get(_KEY_VERDICT)
         if not isinstance(verdict, str) or verdict.strip().lower() not in _VERDICTS:
             self._refuse("unmeasured")
             return None
@@ -633,7 +714,7 @@ class NoteRevisitor:
             return None
 
         if verdict == _VERDICT_CLOSED:
-            cited = item.get("cited_message_id")
+            cited = item.get(_KEY_CITED)
             # `int` and a numeric `str` are both accepted, because the id was
             # rendered INSIDE the prompt text and a model re-typing it as
             # "7" rather than 7 has still pointed at the right message. A bool
@@ -655,7 +736,6 @@ class NoteRevisitor:
                 # missing entry, and here the entry costs a note.
                 self._refuse("citation_ungrounded")
                 return None
-            self._inc("nora_note_revisit_verdicts_total", verdict="closed")
             return NoteRetirement(
                 note_id=note_id,
                 because=_BECAUSE[_VERDICT_CLOSED],
@@ -669,7 +749,14 @@ class NoteRevisitor:
         if not candidate.anchor_passed:
             self._refuse("anchor_not_passed")
             return None
-        self._inc("nora_note_revisit_verdicts_total", verdict="expired")
+        if not candidate.anchor_covered:
+            # The moment has gone by, and we were not looking when it did. See
+            # `_covers`: the room either fell silent before the anchor or is
+            # busier than the window, so «nothing answered it» is a claim about
+            # conversation this pass never read. `unavailable`, and the note
+            # stays.
+            self._refuse("anchor_not_covered")
+            return None
         return NoteRetirement(
             note_id=note_id,
             because=_BECAUSE[_VERDICT_EXPIRED],
@@ -751,6 +838,56 @@ class NoteRevisitor:
             self._metrics.gauge(name, value, **labels)
 
 
+def _covers(
+    evidence: Sequence[TranscriptRow], *,
+    bounds: tuple[int, int] | None, truncated: bool,
+) -> bool:
+    """Whether the evidence window actually SPANS the moment the note is about
+    — the ground `retired-expired` needs and did not have.
+
+    `anchor_passed` says the moment has gone by. It says nothing about whether
+    anybody was looking when it did, and an earlier revision treated the two as
+    the same thing: `expired` needed only that the room had said SOMETHING,
+    anything, at any point after the note was written. Two ways that retires a
+    note wrongly, both reachable in a live room:
+
+    - **the room dies before the moment.** Note written 1 Aug, anchored to 9
+      Sept, thirty messages across the first fortnight of August, silence after.
+      The window is non-empty and contains no answer, so the model answers
+      `expired` — correctly, on what it was shown — and a note is retired with
+      ZERO evidence about September.
+    - **the room is busier than the window.** The message that ANSWERS the
+      question sits outside the newest `limit` rows. The window shows unrelated
+      traffic, `expired` is accepted, and an ANSWERED note is recorded as having
+      gone unanswered.
+
+    Two conditions, and both are about the WINDOW rather than about the model:
+
+    **It must reach past the moment.** At least one message at or after the
+    anchor's last instant — the room was still talking once the moment had gone
+    by, and still did not settle it. A room that fell silent beforehand cannot
+    testify about a moment it was not present for.
+
+    **It must reach back to before the moment.** Either the window is not
+    truncated (there is no older traffic to hide) or its oldest row predates the
+    anchor's first instant. Otherwise there is unseen conversation lying exactly
+    across the moment, which is where an answer would be.
+
+    Fails CLOSED: no bounds, no evidence, or either condition unmet returns
+    `False`, and `_accept_one` then leaves the note standing. A note held
+    forever because its room went quiet before its date is the accepted cost —
+    the `strikes` machinery and the curator are the pressure valve for that,
+    not a guess here. *The reading that would reopen it:* notes accumulating
+    unretired with `reason="anchor_not_covered"` climbing and never resolving.
+    """
+    if bounds is None or not evidence:
+        return False
+    start, end = bounds
+    reaches_past = evidence[-1].ts >= end
+    reaches_back = (not truncated) or evidence[0].ts <= start
+    return reaches_past and reaches_back
+
+
 def _is_due(note: Note, *, now_ms: int) -> bool:
     """Whether this note's moment has arrived — arithmetic, no model.
 
@@ -765,6 +902,6 @@ def _is_due(note: Note, *, now_ms: int) -> bool:
         return True
     if note.anchor_date is None:
         return False
-    end = _anchor_end_ms(note.anchor_date)
-    return end is not None and now_ms > end
+    bounds = _anchor_bounds_ms(note.anchor_date)
+    return bounds is not None and now_ms > bounds[1]
 
