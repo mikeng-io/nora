@@ -1,0 +1,20 @@
+{
+  "type": "feature",
+  "summary": "Nora can now close out a note once the group has actually settled it, or once the moment it was about has gone by — and leaves it open whenever she cannot tell.",
+  "details": [
+    "A note is only looked at once its moment arrives: either the date it was about has passed, or it was explicitly marked to be revisited then. A note with no date attached is never swept.",
+    "To close a note as settled, she has to point at the specific message that settled it, and that message has to be one she was actually shown. A note she cannot point at stays open.",
+    "A note is only marked as having gone by unanswered when the date really has passed AND there was conversation to judge it against. If the group has said nothing since the note was written, that is not an answer and the note stays.",
+    "Merging related notes is the curator's job and this pass will not do it.",
+    "She judges a note against what the group said, never against her own messages: her saying she will book somewhere is an intention, not the group settling it.",
+    "If she reaches two different conclusions about the same note in one pass — including when one of them is 'I cannot tell', when one fails her own evidence check, or when one of them is garbled and she cannot read what it said — she treats that as not knowing, and the note stays open."
+  ],
+  "limitations": [
+    "This is the retirement half only. The revisitor cannot yet reach a person about a note whose moment has come — that needs a background pass to be allowed to schedule a reminder, which is a change to a shared rule about what background work may do, and is deliberately not made here.",
+    "Ships off. It runs only when both the research loop and the note tier are switched on, and nothing writes a note yet, so today it has nothing to read.",
+    "It judges a note against the conversation the note was born in, capped at the most recent messages. A note settled somewhere else in the same workspace will read as unresolved and stay open.",
+    "A note's date is read as ending at midnight UTC while the deployment runs in Hong Kong time, so a note anchored to the 9th is only treated as past at 08:00 local on the 10th. It errs late rather than early, so it cannot close out a note whose evening has not happened yet.",
+    "Only notes with a date attached are ever revisited. The 'look at this again later' timer exists in the database but nothing sets it yet, so a note with no date is never picked up.",
+    "When the group has talked more since a note was written than she reads back, she leaves the note open rather than guessing — but nothing yet clears such a note, so in a busy room it can hold a revisit slot indefinitely and keep later notes waiting behind it."
+  ]
+}

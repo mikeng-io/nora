@@ -109,6 +109,7 @@ from nora.language.consolidator import LanguageConsolidator
 from nora.language.exchange_consolidator import ExchangeConsolidator
 from nora.language.exchange_observer import ExchangePatternObserver
 from nora.language.fact_adaptor import FactAdaptor, FactCandidateAdaptor
+from nora.language.note_revisitor import NoteRevisitor
 from nora.language.observer import LexemeObserver
 from nora.language.portrait_synthesizer import PortraitSynthesizer
 from nora.obs.health import LLMState
@@ -2039,6 +2040,28 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     metrics=metrics,
                 ),
             )
+        # The note tier's REVISITOR, on the same two-gate rule the fact tier
+        # above is held to: `[dreamer]` decides whether the runtime exists,
+        # `[notes]` decides whether this tier is one of the things it runs.
+        # ADDITIVE to whatever the fact block built rather than replacing it —
+        # the two tiers are independent and an operator may run either alone.
+        #
+        # It takes `audit` for its evidence read, and that is the whole reason
+        # this adaptor needs no room-scoped TOOL: the evidence is selected in
+        # code, from the note's own `established_in`, where it can be capped and
+        # counted (§4.2's argument). A workspace-keyed adaptor handed a
+        # room-scoped tool would get a workspace where a conversation id is
+        # expected and be answered EMPTY — «I could not check» reported as
+        # «there was nothing», which for this adaptor would mean retiring a note
+        # against evidence that was never read.
+        if cfg.notes.enabled and note_store is not None:
+            dream_adaptors = (*dream_adaptors, NoteRevisitor(
+                notes=note_store,
+                record=audit,
+                max_revisits_per_tick=cfg.notes.max_revisits_per_tick,
+                evidence_messages_per_note=cfg.notes.revisit_evidence_messages,
+                metrics=metrics,
+            ))
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
         # `ModelSpec`, and the Dreamer needs `"auto"`: under `"required"` the
         # model must call something on every pass, and the only thing that ends

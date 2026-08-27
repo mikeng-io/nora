@@ -440,6 +440,408 @@ the wrong surface.
 **What remains, in order:** the curator (§2), then the revisitor (§3). The two
 unbuilt adaptors' four metrics ship with them.
 
+## 11. The revisitor, built — retirement half only
+
+**2026-08-28.** The adaptor is `nora.language.note_revisitor.NoteRevisitor`,
+workspace-keyed, watermark-free, and it holds **no tools at all**.
+
+### 11.1 The asymmetry the whole module is arranged around
+
+Retirement is irreversible in the direction that matters. A note swept away
+while its question is still open is a tracked uncertainty that silently stopped
+being tracked, and nothing downstream can tell that apart from a question that
+got answered. So the default everywhere is **the note survives**:
+
+**closing condition MET** → `retired-closed`. The model must cite a message,
+and that message must be in the evidence it was shown.
+
+**moment PASSED, nothing answered it** → `retired-expired`. The anchor date is
+behind the clock — arithmetic, not opinion — and there was real evidence for
+the question to have gone unanswered *in*.
+
+**anything else** → no `supersede` call is made and the note stands.
+
+`merged` is the curator's and is never written here: merging is a judgement
+across notes, and this adaptor sees one note at a time by construction.
+
+**Both retirements require evidence to EXIST**, and that is the ruling worth
+carrying forward. A room that has said nothing since the note was written
+cannot establish that a question went unanswered — it establishes that nobody
+spoke. **Silence is not an answer**, so `retired-expired` is deliberately NOT
+reachable from a passed anchor date alone.
+
+### 11.1.1 The envelope carries an OPAQUE HANDLE — found by cold review
+
+**The first revision of this adaptor could not retire anything at all**, and
+nothing in the tier said so. `DreamerRuntime` runs
+`nora.agent.dream_screen.screen` over the model's raw envelope items **before**
+`accept`, and that screen drops the WHOLE item on any identifier reachable in
+it. A note id is `str(uuid4())`, `egress._UUID` matches any hyphenated UUID,
+and the objective asked the model to echo `note_id` back — so **100% of items
+were screened, every tick, forever.**
+
+The only trace was `nora_dream_screened_total{adaptor="note-revisit",
+reason="identifier"}`, a generic Dreamer counter. All five of the tier's own
+counters behaved as if the model had stopped answering: candidates climbing,
+verdicts and refusals and retirements flat. **An operator reading the tier's
+own instruments would have concluded the wrong thing**, which is this bundle's
+Layer-5 shape one level down.
+
+Twenty-seven passing tests could not see it, because every one of them called
+`accept` directly. This adaptor was the **first to put a UUID in an envelope
+item**, so no earlier tier had tripped the screen and nothing in the runtime's
+own suite covered the combination.
+
+**The fix is a per-tick ordinal** — `### note 1` — mapped back through the
+asked-set, which had to exist anyway. It removes the UUIDs from the prompt as
+well. **Widening `dream_screen` was rejected**: it is a shared security rule,
+and widening it for one caller is how such a rule dies.
+
+**And the schema is minimal for the same reason.** Every model-authored string
+in an item is a chance for the screen to drop a correct verdict — a free-text
+`why` quoting a phone number out of the evidence would silently kill the
+retirement it was explaining. The citation is the explanation; there is no
+prose field.
+
+**The generalisable rule:** an adaptor's tests must drive at least one item
+through the real screen, in the order the runtime does. A test that calls
+`accept` directly is testing half a pipeline.
+
+**A second rule, from the guard that had the defect's own shape.** The parity
+test written to catch «a value in the code and not in the spec» — the exact
+drift that had just been found — was itself bound to a hand-written tuple that
+nothing in the module referenced. Emitting a fifth state left every test green;
+it could only catch DELETION from the help text. **The fix for the
+silent-failure finding had the silent failure's shape.** It is derived from a
+`Literal` now and enforced twice, statically and at construction, because
+`nora.language` sits outside `make gate`'s mypy scope (#61) and a static-only
+guard in an unchecked package is a claim rather than a check.
+
+### 11.2 What the model decides, and what it does not
+
+The verdict is semantic and belongs to a model. The grounding is not:
+
+| checked against | not the model's word for it |
+|---|---|
+| the note id | must be one this tick actually asked about |
+| a `closed` citation | must be a message id rendered for THAT note |
+| an `expired` verdict | the clock, not the model's opinion of the clock |
+
+The asked-set is rebuilt every tick and never merged across them: a note id
+from a previous tick is exactly as unaskable as one the model invented, because
+the evidence that justified asking is gone.
+
+A boolean citation is refused explicitly. `isinstance(True, int)` is True in
+Python and `int(True) == 1`, so `cited_message_id: true` would otherwise read
+as citing message 1 — a real id, plausibly in the evidence, grounded enough to
+pass the membership check, and pointing at the wrong thing.
+
+### 11.3 Evidence is assembled in CODE, not fetched by a tool
+
+A workspace has no single room, so no room-scoped tool can be granted (§4.2,
+and `tool_subset_faults`' second axis). The evidence is therefore selected here:
+the note's own `established_in`, capped, filtered to messages that POSTDATE the
+note — a closing condition cannot have been met before the note existed.
+`established_in` is a routing key and the workspace is already the disclosure
+boundary (DEC-105/R-49), so reading the room a note was born in to judge that
+note stays inside the boundary the note already sits in.
+
+**The evidence is rendered OLDEST-FIRST, and that is load-bearing.**
+`RecordStore.recent` returns the newest `limit` rows oldest-first — its own
+docstring says so and the audit-store contract suite pins it on both
+implementations. The first revision reversed them, putting the prompt in
+newest-first order under a header reading *"evidence, newest last"*. The
+failure that causes is not cosmetic: the model reads the OLDEST line as the
+latest word, and can close a note by citing a booking that a later message
+already cancelled — **a citation that passes every grounding check in the
+module**, retiring a note in the unrecoverable direction. The double in the
+adaptor's own suite had been written to match the code's belief rather than the
+store's contract, so the whole file agreed with the bug. That is the
+double-diverges-from-the-real-store family again, and the first instance where
+the double was derived from the code it was testing.
+
+**And the first fix did not close it.** Reverting the adaptor alone reddened;
+reverting the double alone reddened; reverting BOTH — which is exactly how the
+bug shipped — passed. A test that pins two things against each other pins
+nothing. That local double was also a FOURTH implementation of `recent` covered
+by no contract suite, against the rule that a port never gains one without one.
+It is deleted: the suite now uses `nora.testing.fakes.FakeRecordStore`, which
+`tests/contract/test_audit_store_contract.py` already holds to the same
+ordering as `SqlRecordStore`. **The coordinated revert now reddens the CONTRACT
+suite** rather than this tier's own file — which is the right place for the
+guard, because that is where the shared property lives.
+
+**Nora's own words are not evidence.** `recent` does not exclude `is_nora`
+rows; `since` does, in the query, and its docstring says why. Her saying *"I'll
+book Yardbird for the 9th"* is an intention she stated, not the group settling
+anything — closing a note on it is self-attestation deciding a retirement,
+which is the one thing no measure in this repo may rest on.
+
+**A failed record read leaves the note standing**, counted apart from an
+honestly quiet room. Both render identically to the model — its job is the same
+either way, decide nothing — but they are different states for the operator, and
+one counter for both is `unavailable` wearing `nothing_found`.
+
+### 11.3.1 The asked-set is keyed by KEY, not a bare attribute
+
+`dream_loop` dispatches one task per `(adaptor, key)` and its `running` lock is
+**per-unit**: one key's `inputs`/`accept` pair is non-overlapping, and nothing
+makes two DIFFERENT keys' pairs non-overlapping. The live `policy.toml` has two
+workspaces, so this is a deployed configuration.
+
+With a bare attribute, workspace B's `inputs` wipes workspace A's map, and A's
+grounded, correct verdict is dropped and counted `reason="unknown_note"` — the
+label whose own spec text reads *"one hallucinated identifier away"*. **A
+wiring gap reported as a model fault**, inside the instrument built to refuse
+exactly that collapse. `nora.language.fact_adaptor`'s `_message_ids` is the
+standing precedent and states the rule verbatim.
+
+### 11.3.2 The clock is injected
+
+`inputs` has no `now_ms` parameter (only `commit` does), and *"has this note's
+moment passed"* is one of the two grounds for an irreversible action — so it
+has to be testable **on** the boundary. Without an injected clock the fixtures
+are dated against the wall clock, a boundary case cannot be written at all, and
+a date chosen to be safely in the future silently stops testing anything the
+day it arrives — by rendering nothing, which reads as passing.
+
+Two separate comparisons use it, and only one was covered until a mutation
+found the gap: `_is_due` and `anchor_passed` both test the same end-of-day
+instant, and the second is the one that PERMITS a retirement. A note sitting
+exactly on its anchor's last instant is not due, so it reaches `accept` only
+via `revisit_at` — which is what makes the state reachable and the guard
+testable.
+
+**`_anchor_end_ms` computes end-of-day in UTC while the deployment runs in
+HKT**, so a note anchored to the 9th only reads as passed at 08:00 local on the
+10th. Recorded rather than fixed: it fails in the conservative direction (later,
+never earlier), and choosing a timezone is a decision about what a note's date
+MEANS to the people writing it. *The reading that would settle it:* a note whose
+anchor day matters to within a few hours.
+
+### 11.3.3 `retired-expired` needs the window to SPAN the moment
+
+**Found by external review after two internal passes with 26 mutations missed
+it**, and it is the only finding across four reviews that produces a WRONG
+retirement.
+
+`anchor_passed` says the moment has gone by. It says nothing about whether
+anybody was looking when it did, and the first two revisions treated those as
+one thing: `expired` needed only that the room had said SOMETHING, anywhere
+after the note was written. Two live shapes retire a note wrongly:
+
+- **the room dies before the moment.** Note written 1 Aug, anchored to 9 Sept,
+  thirty messages in the first fortnight of August, silence after. The window is
+  non-empty and holds no answer, so the model answers `expired` — correctly, on
+  what it was shown — and the note is retired with **zero evidence about
+  September**. Reproduced against the real code before the fix.
+- **the room is busier than the window.** The message that ANSWERS the question
+  falls outside the newest `limit` rows. The window shows unrelated later
+  traffic, `expired` is accepted, and an **answered** note is recorded as having
+  gone unanswered.
+
+`_covers` is the code-side ground: the evidence must reach **past** the anchor's
+last instant (the room was still talking once the moment had gone by) and
+**back** to before its first — either the window is untruncated, so there is no
+older traffic to hide, or its oldest row predates the moment. Otherwise there is
+unseen conversation lying exactly where an answer would be, and that is
+`unavailable`.
+
+**This also falsified a claim in `config.py`.** The evidence cap's docstring
+asserted *"there is no setting of this that causes a wrong retirement"*. That
+was false: a truncated window converts «answered outside the window» into a
+retirement. Corrected in place rather than deleted — a config docstring
+asserting a safety property the code does not have is worse than one saying
+nothing.
+
+**Only `expired` needs it.** A `closed` verdict names a specific message that
+settled the question, and that citation is its own ground wherever in the window
+it sits.
+
+*The reading that would reopen it:* notes accumulating unretired with
+`anchor_not_covered` climbing and never resolving — a room whose quiet is
+permanent, where holding forever is the wrong answer and `strikes` is the right
+one.
+
+**The first version of this check was still wrong, and at the shipped default
+cap.** It measured truncation against the ANCHOR's first instant, on the
+reasoning that unseen traffic mattered only where it lay across the moment.
+That is false by the definition of a closing condition: **a note anchored to 9
+September is answered by «booked Yardbird for the 9th» said on 3 August.**
+Reproduced at `revisit_evidence_messages = 40` — the answer two days after the
+note, forty later messages straddling the anchor day, the window's oldest row
+comfortably before the anchor so the check PASSED, the answer invisible to the
+model, and an **answered** note retired as expired.
+
+The reference point is the **note**, not the anchor: either the window is
+untruncated, or its oldest row predates `created_at`, so everything said since
+the note was written is in view. That also drops the anchor's start from the
+clause and closes a second defect with it — `_anchor_bounds_ms` computes in UTC
+while the deployment runs in HKT, which makes `reaches_past` stricter (safe)
+but made the old `reaches_back` **looser** by the same eight hours (not safe).
+So §11.3.2's "later, never earlier" was true of one clause and false of the
+other while both existed.
+
+**The cost of holding has no pressure valve.** A note whose room fell quiet
+before its date is refused every tick, `_is_due` re-selects it, and
+`due[:max_revisits]` takes `standing()`'s oldest-first order — so held notes at
+the head consume revisit slots forever and starve the due notes behind them.
+The design's answer is the `strikes` breaker, and §11.3.5 records that
+`strikes` has no writer. **This deferral currently defers to nothing.** Safe
+direction, unbounded cost, and the strongest argument for building the wake
+pass next. One related pressure, pre-existing and made certain by it: `closed`
+does not pass through this check, and its citation test requires only that the
+cited id be IN the window rather than that it answers anything — so a held note
+is re-asked every tick and gets unbounded chances to come back as `closed`
+instead.
+
+### 11.3.4 A model that contradicts itself retires nothing
+
+`[closed, expired]` for one note used to retire it as closed, and the same two
+items reversed retired it as expired — **an irreversible decision resolved by
+list position**. A model giving one note two different verdicts is the
+definition of «cannot tell which», and both answers throw the note away. Refused
+outright now, and the note stands.
+
+The counter had the matching defect: `verdicts_total` incremented per ITEM,
+before de-duplication, so two items for one note asserted two accepted verdicts
+and produced one retirement — the instrument disagreeing with the action it was
+measuring. A verdict is accepted when it survives resolution, not when it
+parses.
+
+**Three revisions, one blind spot, and it is worth naming as a class.** Each
+fix carried forward the mental model that produced the defect, and the model —
+not the branch — was what needed testing:
+
+| revision | the model it kept | what still retired |
+|---|---|---|
+| 1 | de-duplicate first-come | `[closed, expired]` → whichever came first |
+| 2 | only RETIREMENTS can disagree | `[unresolved, closed]` → closed |
+| 3 | only SURVIVING verdicts can disagree | `[expired-refused, closed]` → closed |
+| 4 | only READABLE verdicts can disagree | `[unreadable, closed]` → closed |
+
+The settled line is that **a verdict that failed grounding is still a CLAIM**.
+Grounding decides whether a claim may act; it never decides whether it was
+made, and which of a model's two answers happens to survive a grounding check
+is not a tie-break between them.
+
+**The fourth revision fixed the boundary underneath it, and the axis is
+ATTRIBUTION.** To block a note's retirement, an item must be a claim ABOUT THAT
+NOTE — and a malformed item can fall on either side of that:
+
+| | | |
+|---|---|---|
+| **unattributable** | the handle names no note this tick asked about | cannot block, **by construction** — there is nothing to attach the doubt to |
+| **attributable, unreadable** | the handle resolves, the verdict does not | **blocks** — a claim about this note that we cannot read |
+
+`{"note": "1", "verdict": "clsoed"}` beside a well-formed `closed` is not one
+answer plus noise. It is one answer plus an answer we cannot read, which is
+«cannot tell which». **Unreadable is not absent**, and that is the same
+reasoning as the settled line one level up: parseability, like grounding,
+decides whether a claim may act rather than whether it was made.
+
+The earlier rule let the second case fall through to the first, on the argument
+that one malformed item should not veto a grounded decision. **That argument is
+about cost**, and «this would be inconvenient» is the shape of reasoning that
+produced the three rows above — the same move, one level down, made while
+writing the fix for them. The cost is real and accepted: a model emitting noise
+beside good answers holds notes open, and holding is the recoverable direction.
+
+**And the first fix was blind to `unresolved`.** It grouped RETIREMENTS, and
+`unresolved` produces none — so it never entered the grouping and
+`["unresolved", "closed"]` was not a conflict at all: «I cannot tell» and «it
+is closed» resolved to closed, in either order, retiring the note. That is
+exactly the state this design says must never retire. Every parsed verdict now
+enters the resolution, `unresolved` included, and its counter moved with it —
+it was the one branch that never reached resolution, still being counted per
+item by the fix whose own argument says otherwise.
+
+### 11.3.5 `revisit_at`, `strikes` and `last_wake_revision_id` have NO WRITER
+
+Found by a completeness audit against this node and [26](26-standing.md).
+
+All three columns exist since migration `0026`, `SqlNoteStore` reads them into
+`Note`, and **nothing anywhere sets any of them** — not the tag-path tools, not
+the curator, not this pass. So `_is_due`'s `revisit_at` branch is
+**structurally unreachable in production**: every note that reaches it today is
+due by anchor date alone, and a note without an anchor date is never revisited.
+§6.1 already recorded `strikes` as a column with a CHECK and no writer; this
+records that the same is true of the other two, and that this adaptor now READS
+one of them.
+
+**The owner is this adaptor.** The note-tier spec's §9.6 names `NoteRevisitor`
+as the first thing in the design that needs a no-progress breaker, and the
+reason is structural: its unit of work is one note that may never change, so
+nothing is consumed by working on it and a note can be due forever. The strike
+is the substitute for the cursor every other pass has.
+
+**Why it is not in this change:** the wake pass has to WRITE, and `DreamSink`'s
+two verbs do not reach those columns — `propose` writes new rows and
+`supersede` retires them. A store verb is needed, `nora/infra/sql/notes.py`
+belongs to another session, and the standing protocol is to ask rather than
+reach into it. Building it against an invented write path would be worse than
+leaving the branch honest.
+
+**The trap §9.6 states, carried here so it is not lost:** the reset must be
+«head moved BY THE TAG PATH», never «head moved». If the revisitor's own writes
+counted, a note it keeps rewriting resets its own strike forever and the breaker
+is decorative — a self-referential reset is not a reset. Every revision carries
+its writer, and strikes reset only on a tag-path revision: a human actually
+engaging with the uncertainty.
+
+This is also the pressure valve §11.3.3 defers to. `_covers` holds a note whose
+room went quiet before its moment, deliberately and possibly forever; the strike
+loop is what should eventually retire it as dateless. **Until the wake pass
+exists, that deferral has nothing to defer to** — which is the strongest reason
+to build it next, and it is stated here rather than left for the next reader to
+notice.
+
+### 11.4 What is deliberately NOT built
+
+**`schedule_reminder`, and therefore the reaching-a-person half.** §3/D21
+resolved that an adaptor may hold a verb that ENQUEUES even though it may not
+hold one that DELIVERS — but **that amendment is in this document and not in
+`nora.agent.dreamer.tool_subset_faults`**, which still refuses every tool
+outside the read-only ceiling. Building it would mean widening what *every*
+background adaptor may hold: a security-relevant change to a shared rule, and
+not needed to retire a note. An empty tool set also makes the workspace-safe
+restriction moot rather than argued around.
+
+### 11.5 The instrument, and the gap it exists to close
+
+`supersede` returns 0 for an unknown target and **never raises**, so a
+retirement that silently did nothing looks exactly like one that was never
+attempted. `nora_note_retirements_total{because,result}` splits `applied` from
+`no_rows` for precisely that. The shape generalises: **any verb that returns a
+count instead of raising has this gap**, and the others have not been looked at.
+
+`unresolved` is counted as a VERDICT, not as a refusal — «asked and could not
+tell» is a real answer and often the right one, and collapsing it into the
+refusals would let a model that had stopped engaging hide among the honest
+holds.
+
+### 11.6 The objective CAN be reworded — and why that was checked first
+
+Checked on day one, before the adaptor was written, because the language tier
+had just been parked for the opposite reason
+([28](28-language-tier.md) §10.1).
+
+**The trap there is not "objectives are pinned".** It is that *three* lifted
+objectives — `room-language`, `room-language-verification`, `room-exchange` —
+are pinned byte-for-byte against `tests/fixtures/dreamer_objectives_pre_move/`
+until the instruction substrate's re-partition retires them. Anything touching
+those three hits it; nothing else does.
+
+A new objective has no pre-move fixture, so byte-identity is not a property it
+can have. The guard runs the other way: an objective with neither a fixture nor
+an entry in `NATIVELY_AUTHORED` is refused. `note-revisit` is declared there,
+and the operator can revise its wording freely, forever.
+
+**Generalised, because it will come up again:** when a tier's judgement depends
+on operator-owned instruction text, verify on day one that the text can be
+LANDED — not merely that it exists. A tier can be fail-closed by design and
+unfixable by accident.
+
 2026-08-27 — **§5.4: the cold start.** The log shows ONE note-tool call in the
 tier's life; the create path has never been invoked. With zero notes the
 `<notes>` block is absent from every prompt and doctrine carries no recognition

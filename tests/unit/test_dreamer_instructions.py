@@ -361,6 +361,10 @@ NATIVELY_AUTHORED = {
     # background pass before it, so there is no prior prompt to have
     # moved and no fixture that could pin one.
     "note-curation",
+    # Same, for the revisitor: a new objective has no pre-move fixture, so
+    # byte-identity is not a property it can have. Declaring it here is the
+    # deliberate one-line act this set exists to require.
+    "note-revisit",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

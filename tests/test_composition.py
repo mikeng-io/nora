@@ -847,6 +847,68 @@ async def test_both_gates_on_builds_the_extractor_and_the_adjudicator(cfg):
     assert [a.uses_watermark for a in deps.dream_adaptors] == [True, False]
 
 
+async def test_the_revisitor_needs_both_the_dreamer_and_the_notes_gate(cfg):
+    """The same two-question rule the fact tier is held to, and for the same
+    reason: an operator turning on the research loop has not thereby asked for
+    notes to start being retired."""
+    dreamer_only = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True})
+    )
+    notes_only = await build_dependencies(
+        override_config(cfg, {"notes.enabled": True})
+    )
+
+    assert [a.name for a in dreamer_only.dream_adaptors] == []
+    assert notes_only.dream_adaptors == ()
+
+
+async def test_the_revisitor_is_wired_and_is_not_silently_inert(cfg):
+    """«Wired end to end and silently inert» is the failure the fact tier's own
+    composition comment names, and it is the one a wiring test has to rule out
+    — an adaptor that is constructed but reads nothing looks exactly like a
+    quiet notebook.
+
+    So this asserts more than presence: the adaptor is workspace-keyed (a note
+    is workspace-scoped, and a scope-keyed one would be handed a room and read
+    the wrong notebook), it is watermark-free (its input is the note table, not
+    a message batch, so a watermark would make it run once and never again),
+    and it holds NO tools (the reaching-a-person half is deliberately unbuilt —
+    see 27-note-dreamer §11.4; a tool appearing here means someone widened the
+    shared background-tool rule)."""
+    deps = await build_dependencies(
+        override_config(cfg, {"dreamer.enabled": True, "notes.enabled": True})
+    )
+
+    [revisitor] = [a for a in deps.dream_adaptors if a.name == "note-revisit"]
+    assert revisitor.key_kind == "workspace"
+    assert revisitor.uses_watermark is False
+    assert revisitor.tools == frozenset()
+    assert revisitor.objective == "note-revisit"
+    # The envelope key the runtime parses, and the field name inside an item,
+    # are BOTH load-bearing against the Dreamer's egress screen: an item
+    # carrying a note's `str(uuid4())` id is dropped wholesale before `accept`
+    # ever runs, which is what made an earlier revision of this adaptor 100%
+    # inert with no counter of its own moving. `tests/unit/test_note_revisitor
+    # .py::test_a_verdict_survives_the_dreamers_egress_screen` is the real
+    # guard; this pins the envelope key it is asserted against.
+    assert revisitor.envelope_key == "revisits"
+
+
+async def test_the_revisitor_is_additive_to_the_fact_tiers_adaptors(cfg):
+    """The two tiers are independent and an operator may run either alone, so
+    the note block must EXTEND whatever the fact block built rather than
+    replace it. Written because the fact block assigns `dream_adaptors` and the
+    note block appends to it — a future edit that assigns in both places would
+    drop one tier silently, and every other test here would stay green."""
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "facts.enabled": True, "notes.enabled": True,
+    }))
+
+    assert [a.name for a in deps.dream_adaptors] == [
+        "fact-candidates", "fact-adjudication", "note-revisit",
+    ]
+
+
 async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg):
     """`verify_tool_subsets` runs at startup in R-5's refuse-to-start shape, so
     reaching this line at all is the assertion — a subset naming an act verb

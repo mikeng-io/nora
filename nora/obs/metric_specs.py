@@ -1273,6 +1273,86 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the resolved note ID and the guard on the title (see `note_update`'s own
     # comment). The one case they differ in is the one worth counting: a title
     # that resolved to a DIFFERENT note between the read and the write.
+    # ---------------------------------------------------------------------
+    # The REVISITOR (`nora.language.note_revisitor`) — the note tier's negative
+    # measurement, and the tier's only retiring writer. Everything here exists
+    # to keep one collapse visible: a note that was left standing because the
+    # pass COULD NOT TELL must never read the same as a notebook with nothing
+    # due in it.
+    # ---------------------------------------------------------------------
+    _CounterSpec(
+        "nora_note_revisit_candidates_total",
+        "Notes the revisitor selected as due, by whether it had anything to "
+        "judge them against. FOUR values, and a reader who sees only three has "
+        "an out-of-date copy of this text. evidence=\"present\": the "
+        "conversation has "
+        "spoken since the note was written. evidence=\"absent\": it has not, "
+        "so NEITHER retirement is reachable and the note stays — silence is "
+        "not an answer. evidence=\"self_only\": the conversation HAS spoken "
+        "since the note and every row in the window was Nora's own — the cap "
+        "is applied before the is_nora filter, so her own traffic can exhaust "
+        "the window by itself. Counted apart from \"absent\" because calling "
+        "that a quiet room is false, and the prompt says so in different words "
+        "too. evidence=\"unavailable\": the record read itself "
+        "failed, which lands on the same safe path but for a different reason "
+        "and must not be counted as an honestly quiet room.",
+        ("evidence",),
+    ),
+    _CounterSpec(
+        "nora_note_revisit_verdicts_total",
+        "Verdicts the revisitor ACCEPTED, by kind. verdict=\"closed\": the "
+        "closing condition was met and the citation was grounded in the "
+        "evidence shown. verdict=\"expired\": the anchor date is behind the "
+        "clock and real evidence showed nothing answered it. "
+        "verdict=\"unresolved\": the model was asked and said it could not "
+        "tell — a REAL answer and often the right one, counted apart from the "
+        "refusals so a model that has stopped engaging cannot hide among them.",
+        ("verdict",),
+    ),
+    _CounterSpec(
+        "nora_note_revisit_refused_total",
+        "Verdicts the revisitor REFUSED, by reason — every one of these leaves "
+        "the note standing. reason=\"unknown_note\": the item named a handle "
+        "outside the set this tick asked about. The handle is a per-tick "
+        "ORDINAL, never the note id — a note id in an envelope item is "
+        "dropped wholesale by dream_screen before accept ever runs. "
+        "Retiring an unrelated note is the worst thing this pass can do. "
+        "reason=\"unmeasured\": the verdict was absent or outside the three "
+        "states, i.e. the question was not answered. reason=\"no_evidence\": "
+        "a retirement was proposed for a note with nothing to judge it "
+        "against. reason=\"citation_missing\" / \"citation_ungrounded\": a "
+        "closed verdict with no cited message, or one citing a message it was "
+        "never shown. reason=\"anchor_not_passed\": an expired verdict on a "
+        "note whose moment has not gone by — the clock decides that, not the "
+        "model. reason=\"anchor_not_covered\": the moment HAS gone by but the "
+        "evidence window does not span it — the room fell silent before the "
+        "anchor, or is busier than the window — so \u00abnothing answered "
+        "it\u00bb would be a claim about conversation this pass never read. "
+        "reason=\"contradictory\": the model gave one note both a closed and "
+        "an expired verdict, which is the definition of \u00abcannot tell "
+        "which\u00bb, and both answers throw the note away.",
+        ("reason",),
+    ),
+    _CounterSpec(
+        "nora_note_revisit_deferred_total",
+        "Due notes the revisitor did NOT judge this tick because "
+        "[notes].max_revisits_per_tick capped the batch. A backlog stated "
+        "rather than silently truncated: without this, a tick that judged ten "
+        "of forty due notes reads identically to a notebook with ten due.",
+    ),
+    _CounterSpec(
+        "nora_note_retirements_total",
+        "Retirements the revisitor attempted, by reason and by whether they "
+        "MOVED anything. result=\"applied\": supersede affected a row. "
+        "result=\"no_rows\": it affected none — the note was already retired "
+        "or the id no longer resolves. That split is the point: supersede "
+        "returns 0 for an unknown target and never raises, so without it a "
+        "retirement that silently did nothing is indistinguishable from one "
+        "that was never attempted. result=\"refused\" with because="
+        "\"unknown\" is a foreign payload reaching commit, which is a wiring "
+        "fault rather than a note.",
+        ("because", "result"),
+    ),
     _CounterSpec(
         "nora_note_update_refused_total",
         "note_update calls refused, by reason: not_read (the R-55 latch — the "
@@ -1454,6 +1534,21 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "Standing notes rendered into <notes> for a workspace on the last tag "
         "it handled. Absent when [notes] is off; 0 means the notebook is "
         "wired and empty.",
+        ("workspace",),
+    ),
+    # The revisitor's own view of the same notebook, and deliberately a SECOND
+    # series rather than a reuse of the one above: that gauge is written on the
+    # tag path and says what a TURN saw, this one is written on the Dreamer's
+    # clock and says what the retiring pass saw. They diverge exactly when it
+    # matters — a pass running against a notebook that has changed since the
+    # last turn — and a single series would average the two into a number that
+    # answers neither question.
+    _GaugeSpec(
+        "nora_note_revisit_standing",
+        "Standing notes the revisitor read for a workspace on its last tick. "
+        "0 means the pass ran and the notebook was empty; ABSENT means the "
+        "pass has not run for that workspace at all, which is the distinction "
+        "that says whether the revisitor is wired.",
         ("workspace",),
     ),
 )

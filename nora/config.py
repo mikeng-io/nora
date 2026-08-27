@@ -1619,6 +1619,48 @@ class NotesConfig(BaseModel):
 
     enabled: bool = False
 
+    # --- the REVISITOR (`nora.language.note_revisitor`) ------------------
+    #
+    # `max_revisits_per_tick = 10`: how many DUE notes one pass judges. A
+    # ceiling on the PROMPT as much as on the work — each candidate carries its
+    # own evidence block, so this multiplies with `revisit_evidence_messages`
+    # below into the size of one model call. A workspace with more due than
+    # this drains over several ticks, which is correct for a background pass
+    # nobody is waiting on, and the overflow is COUNTED
+    # (`nora_note_revisit_deferred_total`) rather than silently truncated.
+    #
+    # `revisit_evidence_messages = 40`: messages of a note's own
+    # `established_in` rendered as the evidence it is judged against.
+    #
+    # **This comment used to claim "there is no setting of this that causes a
+    # wrong retirement". That was FALSE and an external review caught it.** A
+    # truncated window whose oldest row postdates the anchor hides exactly the
+    # conversation an answer would be in, so a busy room could turn an ANSWERED
+    # note into a `retired-expired` one — the unrecoverable direction. The
+    # sentence is kept, corrected, because a config docstring asserting a
+    # safety property the code does not have is worse than one saying nothing.
+    #
+    # **The first correction was still false, and an external review caught
+    # that too.** It claimed safety on a `_covers` that measured truncation
+    # against the ANCHOR, so a window starting before the anchor passed while an
+    # answer given weeks earlier — any time after the note was written, which is
+    # what a closing condition allows — sat outside it. Lowering this number
+    # still turned an answered note into a retired one.
+    #
+    # It is safe now because `_covers` measures the window against the NOTE: a
+    # truncated window whose oldest row does not predate `created_at` refuses
+    # the expiry rather than judging on what it happens to hold. So the cap
+    # fails in ONE direction — too few messages means a note stays open longer —
+    # and that is a property of the COVERAGE CHECK rather than of the number.
+    # Lowering this raises how often the check WITHHOLDS a decision, never how
+    # often it gets one wrong.
+    #
+    # Twice-wrong is worth leaving on the page: a config docstring asserting a
+    # safety property is a claim about code somebody else has to verify, and
+    # this one was believed twice before it was true.
+    max_revisits_per_tick: int = Field(default=10, ge=1)
+    revisit_evidence_messages: int = Field(default=40, ge=1)
+
 
 class XaiImageGenConfig(BaseModel):
     """`[image_gen.xai]` — the xAI adapter's own knobs (DEC-137).
