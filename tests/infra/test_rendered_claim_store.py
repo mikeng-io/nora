@@ -13,6 +13,10 @@ inversion the store exists to avoid.
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
+
 import pytest
 import sqlalchemy as sa
 
@@ -218,3 +222,60 @@ async def test_an_unknown_kind_is_refused(store):
                     "('c', 'note', 'k', 's', 't', 1)"
                 )
             )
+
+
+async def test_claims_rendered_in_one_turn_read_back_in_a_stable_order(store):
+    """**One turn writes every claim it rendered with ONE
+    `last_rendered_at`**, so this read is always choosing among equals — and
+    recognition takes `max_targets` from the FRONT of it. Which four claims a
+    quote-reply is checked against was therefore free to differ between two
+    reads of unchanged state.
+
+    Six rows rather than two: `_target` caps at four, so a batch smaller than
+    the cap could not distinguish a stable order from an arbitrary one that
+    happened to return everything.
+    """
+    ledger, _engine, _metrics = store
+    keys = ("f6", "f2", "f4", "f1", "f5", "f3")
+
+    assert await ledger.record(
+        claims=tuple(_claim(k, surface=k) for k in keys),
+    ) == "ok"
+
+    first = await ledger.in_window(conversation_id=CONV, since_ms=NOW - 1)
+    again = await ledger.in_window(conversation_id=CONV, since_ms=NOW - 1)
+
+    assert [c.row_key for c in first.claims] == sorted(keys)
+    assert [c.row_key for c in again.claims] == [
+        c.row_key for c in first.claims
+    ], "two reads of an unchanged ledger must agree"
+
+
+def test_the_window_read_declares_its_order_in_sql():
+    """**The half no execution can carry**, and this store is the reason the
+    distinction matters: "Postgres may return any order among equals" is a
+    statement about what the planner is PERMITTED to do. Removing the
+    tie-break and observing a stable order proves only that this size and this
+    statistics snapshot happened to plan it that way — which is exactly what
+    happened when a reviewer deleted both tie-break lines here and 99 tests
+    stayed green.
+
+    The docstring is stripped before the check. A structural assertion that
+    reads prose is an instrument that cannot fail, and the first version of
+    this pattern (on `unresolved_names`) passed with the clause deleted
+    because the comment explaining the fix contained the words ORDER BY.
+    """
+    fn = SqlRenderedClaimStore.in_window
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn))).body[0]
+    if (
+        tree.body
+        and isinstance(tree.body[0], ast.Expr)
+        and isinstance(tree.body[0].value, ast.Constant)
+    ):
+        del tree.body[0]
+    source = ast.unparse(tree)
+
+    assert "row_key" in source and "kind" in source, (
+        "in_window must break the last_rendered_at tie on the rest of the "
+        "primary key; recognition targets the FRONT of this list"
+    )
