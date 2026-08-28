@@ -26,8 +26,8 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.media import media_json
 from nora.domain.bounds import cut, over_fetch
+from nora.domain.media import media_json
 from nora.domain.models import (
     DeliveryStatus,
     NormalizedMessage,
