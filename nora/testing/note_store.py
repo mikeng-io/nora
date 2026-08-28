@@ -69,6 +69,9 @@ from nora.domain.notes import (
     NoteRevisionProposal,
     NoteSupersedeReason,
     StaleNoteHeadError,
+    WakeOutcome,
+    group_on_anchor_key,
+    tag_path_progressed_since_wake,
 )
 from nora.domain.ports import Proposal
 
@@ -119,7 +122,30 @@ class InMemoryNoteStore:
     notes: dict[str, Note] = field(default_factory=dict)
     revisions: dict[str, NoteRevision] = field(default_factory=dict)
     candidates: dict[tuple[str, str], NoteCandidate] = field(default_factory=dict)
+    #: `note_entity`, as a dict: note id -> RESOLVED entity ids. Empty, like
+    #: the real table, and **nothing here fills it in from
+    #: `anchor_entity_ids`.** A double that quietly resolved the model's own
+    #: strings would make merge eligible in the suite and inert in production —
+    #: the double-diverges-on-the-property-that-decides-it family, on the
+    #: property this tier's one destructive verb turns on. A test that wants an
+    #: eligible group writes this map, exactly as a SQL test inserts the rows.
+    entities: dict[str, tuple[str, ...]] = field(default_factory=dict)
     _ids: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
+
+    #: **UUID-SHAPED, like the real store's.** This double minted `note-1` and
+    #: `rev-2` until 2026-08-28, and that one divergence hid the defect that
+    #: made the whole curator inert: the Dreamer screens every adaptor item
+    #: against R-18/R-28 and `scan_identifiers` matches any hyphenated uuid, so
+    #: production rejected every item while this double's ids sailed through.
+    #: Eighteen tests passed over it.
+    #:
+    #: Deterministic rather than random — `uuid4` would make a failure
+    #: unreproducible — but SHAPED like the thing it stands in for, because the
+    #: shape is what the screen reads. A double may be simpler than the real
+    #: store; it may not differ on a property something downstream branches on.
+    @staticmethod
+    def _shaped_id(n: int, kind: str) -> str:
+        return f"{n:08x}-0000-4000-8000-{ord(kind[0]):012x}"
 
     async def create(
         self,
@@ -144,8 +170,8 @@ class InMemoryNoteStore:
     ) -> Note:
         """See the module docstring's (3): both objects are built before either
         is stored, so a refused note leaves no half-written revision behind."""
-        note_id = f"note-{next(self._ids)}"
-        revision_id = f"rev-{next(self._ids)}"
+        note_id = self._shaped_id(next(self._ids), "note")
+        revision_id = self._shaped_id(next(self._ids), "rev")
         note = Note(
             id=note_id, workspace=workspace, title=title, description=description,
             uncertainty=uncertainty, closing_condition=closing_condition,
@@ -220,7 +246,7 @@ class InMemoryNoteStore:
                 observed_head=note.head_revision_id,
             )
         revision = NoteRevision(
-            id=f"rev-{next(self._ids)}", note_id=note_id, body=body,
+            id=self._shaped_id(next(self._ids), "rev"), note_id=note_id, body=body,
             parent_revision_id=parent_revision_id, written_at=now_ms,
             established_by=established_by,
             instruction_sha256=instruction_sha256, model=model,
@@ -249,28 +275,126 @@ class InMemoryNoteStore:
                 hits.append((note, body))
         return tuple(hits[:limit])
 
+    async def merge(
+        self,
+        *,
+        workspace: str,
+        survivor: str,
+        survivor_parent: str,
+        merged_body: str,
+        retire: Sequence[str],
+        established_by: str,
+        instruction_sha256: str | None,
+        model: str | None,
+        now_ms: int,
+    ) -> int:
+        """`SqlNoteStore.merge`. Resolve-then-apply, like `propose`: the CAS is
+        decided before anything is retired, so a lost CAS leaves the notebook
+        untouched here as well as in Postgres."""
+        note = self.notes.get(survivor)
+        if (
+            note is None
+            or note.workspace != workspace
+            or note.head_revision_id != survivor_parent
+        ):
+            raise StaleNoteHeadError(
+                f"survivor {survivor} changed under you or is not in "
+                f"workspace {workspace!r} — read it again",
+                observed_head=(
+                    note.head_revision_id
+                    if note is not None and note.workspace == workspace
+                    else None
+                ),
+            )
+        revision = NoteRevision(
+            id=self._shaped_id(next(self._ids), "rev"), note_id=survivor, body=merged_body,
+            parent_revision_id=survivor_parent, written_at=now_ms,
+            established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
+        )
+        # De-duplicated for the reason `SqlNoteStore.merge` states: Postgres
+        # counts each row once, so a repeated id must not inflate the count
+        # this double returns.
+        targets = list(dict.fromkeys(
+            n for n in retire
+            if n != survivor
+            and (t := self.notes.get(n)) is not None
+            and t.workspace == workspace
+            and t.retired_at is None
+        ))
+        self.revisions[revision.id] = revision
+        self.notes[survivor] = replace(note, head_revision_id=revision.id)
+        for target in targets:
+            self.notes[target] = replace(
+                self.notes[target], retired_at=now_ms, replaced_by=survivor,
+                retire_reason=NoteSupersedeReason.MERGED,
+            )
+        return len(targets)
+
+    async def record_wake(
+        self, *, workspace: str, note_id: str, next_revisit_at: int,
+        now_ms: int,
+    ) -> WakeOutcome | None:
+        """`SqlNoteStore.record_wake`.
+
+        The head is read HERE and branched on here, matching the real store —
+        a double that took the decision from its caller would agree on every
+        happy path and diverge on the one case §9.6 exists for, a background
+        pass's own write being mistaken for progress.
+        """
+        note = self.notes.get(note_id)
+        if (
+            note is None
+            or note.workspace != workspace
+            or note.retired_at is not None
+        ):
+            return None
+        # THE SPAN SINCE THE WATERMARK, not the author of the head — the same
+        # shared predicate the SQL store walks, for the reason it states: a
+        # room revision followed by a background one is progress, and both
+        # implementations used to answer «no» to it in agreement.
+        progressed = tag_path_progressed_since_wake(
+            head_revision_id=note.head_revision_id,
+            last_wake_revision_id=note.last_wake_revision_id,
+            chain={
+                r.id: (r.parent_revision_id, r.established_by)
+                for r in self.revisions.values()
+                if r.note_id == note_id
+            },
+        )
+        if progressed:
+            self.notes[note_id] = replace(
+                note, strikes=0, last_wake_revision_id=note.head_revision_id,
+                revisit_at=next_revisit_at,
+            )
+            return WakeOutcome(strikes=0, reset=True)
+        self.notes[note_id] = replace(note, strikes=note.strikes + 1)
+        return WakeOutcome(strikes=note.strikes + 1, reset=False)
+
     async def merge_groups(
         self, *, workspace: str, limit: int,
-    ) -> tuple[tuple[Note, ...], ...]:
+    ) -> tuple[
+        tuple[tuple[tuple[Note, str], ...], ...],
+        tuple[tuple[Note, ...], ...],
+    ]:
         """`SqlNoteStore.merge_groups`. Dateless notes are excluded here too —
         the exclusion is the CONTRACT, not a SQL convenience, so a double that
         included them would be more permissive than the store and the suite
         would compare two different definitions of "same occasion"."""
         if limit <= 0:
-            return ()
-        buckets: dict[tuple[int, tuple[str, ...]], list[Note]] = {}
-        for note in await self.standing(workspace=workspace):
-            if note.anchor_date is None:
-                continue
-            buckets.setdefault(
-                (note.anchor_date, tuple(note.anchor_entity_ids)), [],
-            ).append(note)
-        collided = [(k, v) for k, v in buckets.items() if len(v) > 1]
-        # Most-collided first, then by anchor date — the SQL store's
-        # `ORDER BY count() DESC, anchor_date ASC`, written out so the two
-        # agree by construction rather than by coincidence.
-        collided.sort(key=lambda kv: (-len(kv[1]), kv[0][0]))
-        return tuple(tuple(v) for _, v in collided[:limit])
+            return ((), ())
+        # THE SAME FUNCTION the SQL store calls, imported rather than
+        # reimplemented. This is the comparison that decides whether two notes
+        # are merged; a double with its own copy would let the contract suite
+        # compare two definitions of "same occasion" and pass.
+        return group_on_anchor_key(
+            [
+                (n, self.revisions[n.head_revision_id].body)
+                for n in await self.standing(workspace=workspace)
+            ],
+            resolved_entities=self.entities,
+            limit=limit,
+        )
 
     async def anchored_before(
         self, *, workspace: str, day: int, limit: int,
@@ -349,8 +473,8 @@ class InMemoryNoteStore:
         declared: dict[str, str] = {}
         for p, payload in typed:
             if isinstance(payload, NoteCreationProposal):
-                note_id = f"note-{next(self._ids)}"
-                revision_id = f"rev-{next(self._ids)}"
+                note_id = self._shaped_id(next(self._ids), "note")
+                revision_id = self._shaped_id(next(self._ids), "rev")
                 note = Note(
                     id=note_id, workspace=key, title=payload.title,
                     description=payload.description,
@@ -405,7 +529,7 @@ class InMemoryNoteStore:
                     observed_head=head_now if reachable else None,
                 )
             revision = NoteRevision(
-                id=f"rev-{next(self._ids)}", note_id=payload.note_id,
+                id=self._shaped_id(next(self._ids), "rev"), note_id=payload.note_id,
                 body=payload.body,
                 parent_revision_id=heads.get(
                     payload.note_id, payload.parent_revision_id,

@@ -1353,6 +1353,66 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "fault rather than a note.",
         ("because", "result"),
     ),
+    # ---- the curator's readings, shipped WITH the curator ------------------
+    #
+    # Declared now and not earlier, which was the whole argument of the block
+    # above: a name with no call site exports a flat zero and a flat zero reads
+    # as a measurement. These three have call sites as of the same commit that
+    # declares them.
+    # The tier's OWN named justification, finally readable: 27 §6 says the
+    # curator's whole case rests on "notes retired versus notes grown", and
+    # `nora_note_index_entries` was only ever half of that. This is the other
+    # half — without it a flat index means either "nothing needed retiring" or
+    # "the curator retired one and somebody wrote one", and those are opposite
+    # healths. (It sat above the REFUSALS counter until 2026-08-28, two specs
+    # further down, describing neither of the things next to it.)
+    _CounterSpec(
+        "nora_note_curator_total",
+        "Curator actions by what it did: merge, merge_refused, "
+        "merge_failed, retire_failed, retire_stale, closed, moot. **merge_refused "
+        "and retire_stale are NOT "
+        "errors** — the survivor or the note moved under the pass, which is "
+        "the tag path winning a race the CAS exists to arbitrate, and the "
+        "work is re-selected next tick because the selection read is live "
+        "state rather than a cursor. retire_failed IS a fault. The vocabulary "
+        "is derived from nora.language.note_curator.CURATOR_ACTIONS and a test "
+        "asserts this text names exactly that set.",
+        ("action",),
+    ),
+    # The measurement that turns "merge does nothing" from a silence into an
+    # answer. An anchor is (date, RESOLVED entity set) and the resolved half is
+    # read from note_entity, which has no writer anywhere — so every group is
+    # refused today and merge is inert (27 §2: populating note_entity is the
+    # curator's real precondition, not its flag). This counts what that costs,
+    # so the reversal condition is a number rather than an estimate.
+    _CounterSpec(
+        "nora_note_curator_groups_refused_total",
+        "Merge groups the curator refused to merge, by reason. Today one: "
+        "no_entity_anchor — the notes collide on a DATE alone and NOTHING "
+        "RESOLVED into note_entity for either of them, so there is no "
+        "occasion, only a day. Not read from note.anchor_entity_ids, which is "
+        "the model's own unresolved free text. A rising count is the case for "
+        "giving note_entity a writer.",
+        ("reason",),
+    ),
+    _CounterSpec(
+        "nora_note_curator_dropped_total",
+        "Model answers the curator refused, by reason: malformed (a field "
+        "missing or a verdict outside the three the objective defines), "
+        "unknown_note (a handle this run did not render), body_too_long (a "
+        "merged body over the cap — the objective asked for more than it "
+        "allows, which is fixed in the INSTRUCTION not the model), "
+        "shorter_than_inputs (a merged body shorter than the longest body it "
+        "was meant to keep — a summary, on the one verb that overwrites), "
+        "not_shown_in_group (a merge for a group this run did not select), "
+        "conflicting_verdict (two contradictory answers about one note — not a "
+        "tie to break but «I cannot tell», so the note stays standing), or "
+        "conflicting_merged_body (two different bodies for one survivor, same "
+        "rule on the more destructive path). A drop is "
+        "never a guess — a retirement is a permanent removal from an index "
+        "nobody can see the inside of.",
+        ("reason",),
+    ),
     _CounterSpec(
         "nora_note_update_refused_total",
         "note_update calls refused, by reason: not_read (the R-55 latch — the "
@@ -1529,6 +1589,28 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # measurement of nothing, and it would collapse the first two rows above
     # into the third — the exact `unavailable`-as-`nothing_found` failure this
     # gauge was built to prevent, reintroduced by the attempt to tidy it.
+    # A GAUGE against its per-tick cap, not a counter, and the distinction is
+    # 27 §5.2's: the curator reads whole bodies and `note_revision.body` has no
+    # upper bound, so ONE long body can consume a tick's whole allowance. The
+    # reading that matters is "how much of the budget did this tick spend",
+    # which is a level; a running total cannot answer it.
+    #
+    # When this sits at the cap, the tier reports "nothing to do" for the notes
+    # it never reached — the `unavailable`-as-`nothing_found` failure at the
+    # pass level, which the tier's own spec names in advance.
+    _GaugeSpec(
+        "nora_note_curator_bodies_read",
+        "Note bodies the curator FETCHED on its last tick for a workspace — "
+        "the notes of every eligible merge group ([notes] max_groups_per_tick "
+        "GROUPS, so several notes each) plus every expired note it read "
+        "([notes] max_expired_per_tick, one body each). Written on every tick "
+        "including an idle one, where it is 0; absent means the pass did not "
+        "run. A note in a group AND past its date is fetched twice and counted "
+        "twice, because it spends a slot in both caps. Sitting at "
+        "max_expired_per_tick means the pass is reporting 'nothing to do' "
+        "about notes it never reached.",
+        ("workspace",),
+    ),
     _GaugeSpec(
         "nora_note_index_entries",
         "Standing notes rendered into <notes> for a workspace on the last tag "

@@ -157,6 +157,18 @@ The body is the sharper case: it has **no bound at all today**, only
 `length(btrim(body)) > 0` ([27](27-note-dreamer.md) §5.2), and the curator's
 per-tick read budget is only a budget if a row has a bounded size.
 
+**2026-08-28, and it revises this table's own pattern for one row.** The body's
+two numbers shipped as two CONSTANTS and no config key. A `[notes]
+max_body_chars` was declared with a range validator and a documented stanza and
+**nothing ever read it** — the enforcement was the domain constant in four
+places from the first commit. The key was deleted rather than threaded, because
+the operating cap's whole argument is that it is enforced in the constructor,
+where a refusal is reviewable and names the cap, and a `__post_init__` cannot
+see config. **The generalisable half:** this table's middle column is the
+operator surface, and a row only earns one if some code path can actually READ
+it. Otherwise the pair is two constants, and the parity gate — not a validator
+— is what keeps them in step.
+
 The note tier currently enforces 60 and 200 as **domain constants plus a
 `CHECK`** and offers no key at all — `note_title_fits_the_index_check`. That was
 the right instinct for the wrong reason: the cap exists because the field is

@@ -1040,3 +1040,78 @@ async def test_an_unusable_reasoning_effort_refuses_to_start(cfg):
             "standing.reasoning_effort": "",
             "llm.reasoning_effort": "hgh",
         }))
+
+
+async def test_the_curator_needs_three_gates_not_two(cfg):
+    """`[dreamer]` decides the runtime exists, `[notes] enabled` decides the
+    tier is on, and `curator_enabled` decides a background pass MERGES AND
+    RETIRES.
+
+    Three rather than two because the third is a different risk from the other
+    two: the tag path only reads, and the curator is the one thing in this tier
+    that REMOVES something from her index. An operator turning notes on has not
+    thereby signed up for a pass that reorganises them."""
+    for overrides in (
+        {"dreamer.enabled": True},
+        {"dreamer.enabled": True, "notes.enabled": True},
+        {"notes.enabled": True, "notes.curator_enabled": True},
+    ):
+        deps = await build_dependencies(override_config(cfg, overrides))
+        assert "note-curation" not in [a.name for a in deps.dream_adaptors], (
+            f"{overrides} must not produce a curator"
+        )
+
+
+async def test_all_three_gates_on_builds_the_curator(cfg):
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "notes.enabled": True,
+        "notes.curator_enabled": True,
+    }))
+
+    curator = next(
+        a for a in deps.dream_adaptors if a.name == "note-curation"
+    )
+    # Workspace-keyed and watermark-free: the notebook is workspace-scoped, and
+    # the questions it asks (what collides, what has expired) have no "since
+    # when" — a duplicate is a duplicate however long it has been one.
+    assert curator.key_kind == "workspace"
+    assert curator.uses_watermark is False
+    assert curator.tools == frozenset(), "the curator has nothing to look up"
+
+
+async def test_the_curator_reads_the_day_from_the_operators_timezone(cfg):
+    """«Has the 9th passed» is a question about the ROOM's day, not the
+    process's — a UTC boundary retires the 9th's note during the evening of the
+    9th, local, while people are still deciding where to eat.
+
+    **This test was decorative until 2026-08-28**, proven by mutation:
+    replacing `ZoneInfo(cfg.reminders.timezone)` with `ZoneInfo("UTC")` left it
+    green, because it set a zone and then asserted only `_today() >= 20260101`
+    — true of any working clock. It NAMED the thing it did not measure, which
+    is the shape I documented in the bundle an hour before writing it.
+
+    It now builds two curators whose zones are 25 hours apart. Kiritimati is
+    +14 and Niue is -11, so their calendar days differ at EVERY instant and no
+    clock-freezing is needed. Any hardcoded zone makes them equal — which is
+    the property under test, rather than a fact about today."""
+    async def _day(zone: str) -> int:
+        deps = await build_dependencies(override_config(cfg, {
+            "dreamer.enabled": True,
+            "notes.enabled": True,
+            "notes.curator_enabled": True,
+            "reminders.timezone": zone,
+        }))
+        curator = next(
+            a for a in deps.dream_adaptors if a.name == "note-curation"
+        )
+        return curator._today()
+
+    earliest = await _day("Pacific/Kiritimati")
+    latest = await _day("Pacific/Niue")
+
+    assert earliest != latest, (
+        "zones 25 hours apart always differ in calendar day; equal here means "
+        "the configured zone is being ignored"
+    )
+    assert earliest > latest, "Kiritimati is ahead of Niue, always"

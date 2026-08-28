@@ -88,6 +88,15 @@ it would require every anchor entity to already be a resolved canonical entity,
 and resolving `big walk` / `Big Walk` / 大步行 to one id is a candidate-selection
 concern this class does not perform. When the curator gains entity resolution it
 writes `note_entity` itself, from ids it has actually resolved.
+
+**`merge_groups` reads that empty table anyway, and that is the point.** Merge
+eligibility is `(anchor_date, resolved entity set)`, and the resolved half comes
+from `note_entity` — never from `anchor_entity_ids`, which is the model's own
+free text. So merge is inert until the join table has a writer, and
+`nora_note_curator_groups_refused_total` is the number that says what building
+one would unlock. Keying on the raw column instead would make merge fire, and
+fire wrongly in both directions: three spellings of one wedding are three keys,
+while two unrelated notes that both say 「wedding」 are one.
 """
 
 from __future__ import annotations
@@ -108,9 +117,17 @@ from nora.domain.notes import (
     NoteRevisionProposal,
     NoteSupersedeReason,
     StaleNoteHeadError,
+    WakeOutcome,
+    group_on_anchor_key,
+    tag_path_progressed_since_wake,
 )
 from nora.domain.ports import Proposal
-from nora.infra.sql.schema import NOTE, NOTE_CANDIDATE, NOTE_REVISION
+from nora.infra.sql.schema import (
+    NOTE,
+    NOTE_CANDIDATE,
+    NOTE_ENTITY,
+    NOTE_REVISION,
+)
 
 
 def _row_to_note(r: Row[Any]) -> Note:
@@ -462,18 +479,285 @@ class SqlNoteStore:
             rows = (await conn.execute(stmt)).all()
         return tuple((_row_to_note(r), r.body) for r in rows)
 
+    # ---- the wake pass (§9.6) ----------------------------------------------
+
+    async def record_wake(
+        self, *, workspace: str, note_id: str, next_revisit_at: int,
+        now_ms: int,
+    ) -> WakeOutcome | None:
+        """Record that the revisitor woke on this note. Returns what happened,
+        or `None` if the note is not reachable from `workspace`.
+
+        `revisit_at`, `strikes` and `last_wake_revision_id` have existed since
+        `0026` with a CHECK and **no writer anywhere**, so the revisitor's
+        `revisit_at` trigger was structurally unreachable in production: every
+        note that reached it was due by ANCHOR DATE alone, and an undated note
+        was never revisited at all. This is that writer.
+
+        **The comparison IS the decision, so it happens HERE and not in the
+        caller — and that is why there is no CAS.** A compare-and-swap would
+        have the caller assert a head it read earlier, which is exactly the
+        stale judgement this is meant to avoid: between the revisitor's read
+        and its write, the tag path may have revised the note, and that
+        revision is not an obstacle to record — it is the PROGRESS the reset
+        exists to detect. So this reads the head inside the transaction and
+        branches on it. `merge` and `propose` take a parent because they WRITE
+        content and must not overwrite; this writes only bookkeeping about a
+        head it just read.
+
+        §9.6's two arms, and the qualifier that makes the breaker real:
+
+        - **THE TAG PATH WROTE SOMETHING SINCE THE LAST WAKE** — `strikes = 0`,
+          `last_wake_revision_id = head`, and `revisit_at` advances. Somebody
+          engaged with the uncertainty, which is progress. It is the SPAN since
+          the watermark, not the author of the current head: a room revision
+          followed by a background one is progress, and asking who wrote the
+          head answered «no» to it.
+        - **anything else** — `strikes += 1` and **`revisit_at` is NOT
+          advanced**, so the note stays due and the count climbs toward the
+          ceiling the caller enforces.
+
+        The qualifier is not decoration. If a background pass's own writes
+        counted as movement, a note the revisitor keeps rewriting would reset
+        its own strike forever — a self-referential reset is not a reset, and
+        the spec says the mechanism "reads correct without the qualifier and
+        loops forever with it missing".
+
+        **Not on `DreamSink`.** That port has two verbs and deliberately no
+        third; this is a store method the revisitor calls directly, the same
+        placement `merge` took and for the same reason.
+        """
+        if not _is_uuid(note_id):
+            return None
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(
+                sa.select(
+                    NOTE.c.head_revision_id,
+                    NOTE.c.strikes,
+                    NOTE.c.last_wake_revision_id,
+                )
+                .where(
+                    NOTE.c.id == note_id,
+                    NOTE.c.workspace == workspace,
+                    NOTE.c.retired_at.is_(None),
+                )
+                # The row is write-locked for the rest of the transaction, so
+                # the branch below cannot be decided against a head another
+                # writer moves before the UPDATE lands.
+                .with_for_update()
+            )).one_or_none()
+            if row is None:
+                return None
+
+            # THE SPAN, NOT THE HEAD. This joined `note_revision` on the head
+            # and asked who wrote THAT — so a room revision followed by a
+            # background one (a merge, a debrief append) read as no progress
+            # and left the watermark behind, forever. See
+            # `tag_path_progressed_since_wake`.
+            #
+            # A note's revision chain is short by construction (a body is
+            # appended to, not rewritten per turn), so it is walked in code
+            # rather than pushed down as a recursive CTE: one shape both stores
+            # run, which is what the contract suite compares.
+            chain_rows = (await conn.execute(
+                sa.select(
+                    NOTE_REVISION.c.id,
+                    NOTE_REVISION.c.parent_revision_id,
+                    NOTE_REVISION.c.established_by,
+                ).where(NOTE_REVISION.c.note_id == note_id)
+            )).all()
+            progressed = tag_path_progressed_since_wake(
+                head_revision_id=row.head_revision_id,
+                last_wake_revision_id=row.last_wake_revision_id,
+                chain={
+                    r.id: (r.parent_revision_id, r.established_by)
+                    for r in chain_rows
+                },
+            )
+            if progressed:
+                values: dict[str, Any] = {
+                    "strikes": 0,
+                    "last_wake_revision_id": row.head_revision_id,
+                    "revisit_at": next_revisit_at,
+                }
+                strikes = 0
+            else:
+                # `strikes + 1` computed by the DATABASE, not read-then-write:
+                # two ticks racing on one note would otherwise both read N and
+                # both write N+1, losing a strike — and losing strikes is
+                # exactly how a breaker becomes decorative.
+                values = {"strikes": NOTE.c.strikes + 1}
+                strikes = int(row.strikes) + 1
+            await conn.execute(
+                sa.update(NOTE).where(NOTE.c.id == note_id).values(**values)
+            )
+        return WakeOutcome(strikes=strikes, reset=progressed)
+
+    # ---- merge: the one cross-note write, in one transaction ---------------
+
+    async def merge(
+        self,
+        *,
+        workspace: str,
+        survivor: str,
+        survivor_parent: str,
+        merged_body: str,
+        retire: Sequence[str],
+        established_by: str,
+        instruction_sha256: str | None,
+        model: str | None,
+        now_ms: int,
+    ) -> int:
+        """Append `merged_body` to `survivor` AND retire `retire`, atomically.
+        Returns notes retired.
+
+        **THIS VERB EXISTS BECAUSE OF A REVIEW FINDING, and the finding was
+        that my own justification did not hold.** `propose` was made atomic on
+        the argument that «a merge appends the merged body to the survivor,
+        then retires the originals, and a half-applied merge is the one outcome
+        worse than not running». True — and `supersede` is a SEPARATE verb
+        opening its own transaction, so the named scenario stayed fully
+        reachable: survivor carrying merged text beside a duplicate nobody
+        retired, caller told nothing happened.
+
+        **The alternative was to keep two transactions and argue it is safe**,
+        and that argument can actually be made: `merge_groups` reads LIVE rows
+        rather than a watermark, so an unretired duplicate is
+        still a duplicate next tick and the pass would retry. The ordering is
+        also deliberately fail-safe — appending first means a crash duplicates
+        content, where retiring first would LOSE it.
+
+        **It was rejected because it is reasoning a future reader has to
+        reconstruct.** Both halves are true today and both are properties of
+        code somewhere else: the selection read staying derived rather than
+        cursored, and the order of two calls in a caller this store does not
+        own. A transaction is checkable by looking at one function. The
+        retry argument also has a real cost even when it works — re-merging a
+        survivor that already holds the content grows the body every tick, and
+        §5.2 has no upper bound on body size.
+
+        **Not on `DreamSink`.** That port has two verbs and deliberately no
+        third; this is a store method the note curator's `commit` calls
+        directly, which is where a tier's own write SEQUENCE belongs
+        (`FactAdaptor.commit` does propose-then-supersede-then-retire for the
+        same reason).
+
+        The CAS on the survivor is unchanged and unweakened: if the tag path
+        revised it while the curator was thinking, the whole merge is refused
+        and nothing is retired.
+        """
+        # THE CAS DECIDES FIRST, and the ORDER of these two refusals is a
+        # contract property rather than a style choice.
+        #
+        # This built the `NoteRevision` up here, before any of it — so an
+        # over-cap merged body raised `ValueError` out of the constructor even
+        # when the survivor had already moved, while the in-memory double
+        # checked the head first and raised `StaleNoteHeadError`. One input,
+        # two exception types, and `NoteCuratorAdaptor.commit` branches on
+        # exactly that into `merge_refused` («NOT an error, the group is still
+        # a group») and `merge_failed` («a fault»). The two stores disagreed
+        # about which of two OPPOSITE readings an operator was shown.
+        if not _is_uuid(survivor) or not _is_uuid(survivor_parent):
+            raise StaleNoteHeadError(
+                f"survivor {survivor!r} is not a note id this store could look "
+                f"up — read it again",
+                observed_head=None,
+            )
+        # DE-DUPLICATED: `rowcount` from `WHERE id IN (...)` counts each row
+        # once, so a caller passing the same id twice gets 1 from Postgres
+        # and would have got 2 from a double counting its list. That count
+        # is `commit`'s return and becomes `nora_dream_written_total`.
+        targets = list(dict.fromkeys(
+            n for n in retire if _is_uuid(n) and n != survivor
+        ))
+        async with self._engine.begin() as conn:
+            # The head is read and LOCKED before the revision is constructed,
+            # so a lost CAS is reported as a lost CAS whatever else is wrong
+            # with the body. `_append_on_conn` re-asserts it in its UPDATE; the
+            # row is locked for the rest of this transaction, so that assertion
+            # cannot now fail — it is the insert's own guard, kept because the
+            # method is shared with `propose`.
+            observed = (await conn.execute(
+                sa.select(NOTE.c.head_revision_id).where(
+                    NOTE.c.id == survivor, NOTE.c.workspace == workspace,
+                ).with_for_update()
+            )).scalar_one_or_none()
+            if observed != survivor_parent:
+                raise StaleNoteHeadError(
+                    f"note {survivor} changed under you: this merge was "
+                    f"written against {survivor_parent}, the head is "
+                    f"{observed} — read it again"
+                    if observed is not None
+                    else f"note {survivor} is not in workspace {workspace!r} "
+                         f"— read it again",
+                    observed_head=observed,
+                )
+            revision = NoteRevision(
+                id=str(uuid4()), note_id=survivor, body=merged_body,
+                parent_revision_id=survivor_parent, written_at=now_ms,
+                established_by=established_by,
+                instruction_sha256=instruction_sha256, model=model,
+            )
+            # The append FIRST, so a lost CAS refuses before anything is
+            # retired. Inside one transaction the order cannot matter for
+            # atomicity — it matters for which failure the caller sees, and «I
+            # could not revise the survivor» is the honest one.
+            await self._append_on_conn(
+                conn, workspace=workspace, revision=revision,
+            )
+            if not targets:
+                return 0
+            result = await conn.execute(
+                sa.update(NOTE)
+                .where(
+                    NOTE.c.id.in_(targets),
+                    NOTE.c.workspace == workspace,
+                    NOTE.c.retired_at.is_(None),
+                )
+                .values(
+                    retired_at=now_ms, replaced_by=survivor,
+                    retire_reason=NoteSupersedeReason.MERGED,
+                )
+            )
+            return int(result.rowcount)
+
     # ---- the curator's selection reads (§9.2) ------------------------------
     #
-    # Both are SQL-ONLY and cost zero tokens. That is the payoff of anchoring
-    # merge on `(anchor_date, entity_set)` rather than on topical similarity
-    # (§7.1): candidate detection is a `GROUP BY … HAVING count(*) > 1`, not a
-    # judgement, so **the model is never asked whether two notes should merge.**
-    # It is asked only what a body SAYS, which is the one thing SQL cannot read.
+    # Both cost ZERO TOKENS. That is the payoff of anchoring merge on
+    # `(anchor_date, entity_set)` rather than on topical similarity (§7.1):
+    # candidate detection is a KEY COMPARISON, not a judgement, so **the model
+    # is never asked whether two notes should merge.** It is asked only what a
+    # body SAYS, which is the one thing a key comparison cannot read.
+    #
+    # "SQL-only" until 2026-08-28, and the grouping now happens in
+    # `nora.domain.notes.group_on_anchor_key` — see `merge_groups` for why
+    # leaving SQL made it STRICTER rather than weaker. The property that
+    # mattered was never that it ran in the database; it was that it runs in
+    # CODE and not in a prompt.
 
     async def merge_groups(
         self, *, workspace: str, limit: int,
-    ) -> tuple[tuple[Note, ...], ...]:
-        """Standing notes that share an anchor, grouped, most-collided first.
+    ) -> tuple[
+        tuple[tuple[tuple[Note, str], ...], ...],
+        tuple[tuple[Note, ...], ...],
+    ]:
+        """Standing notes that share an anchor, grouped, most-collided first,
+        **each with its head body**.
+
+        **The bodies are the whole point and this returned notes alone until
+        2026-08-28.** The curator's merge asks the model to write one body that
+        keeps everything every note in the group knew — and it was being shown
+        titles, uncertainties and closing conditions, never the content. A
+        merged body synthesised from two titles, written over a survivor that
+        had accumulated real detail, is content loss produced BY the merge
+        verb: «Ada can't do Fridays; Sai Kung ruled out» would survive only
+        inside a retired row's revision history, with nothing in the index
+        knowing it had existed.
+
+        `anchored_before` beside this one already returned `(Note, body)`. The
+        divergence was invisible because the renderer dropped bodies for groups
+        too, so the two halves agreed — the same shape as a docstring and a
+        test agreeing with each other and not with the requirement.
 
         **The anchor is `(anchor_date, anchor_entity_ids)` and both halves
         matter.** Two weddings on different dates are two notes; two notes
@@ -489,37 +773,91 @@ class SqlNoteStore:
         anyway, so an entity-only group today would be a group of notes
         anchored to `{}`, which is every dateless note in the workspace.
 
+        **The entity half comes from `note_entity`, not from
+        `note.anchor_entity_ids`.** That column holds whatever free text the
+        model handed `note_create`, unresolved and unvalidated, and a key built
+        from it is wrong in both directions at once — see
+        `group_on_anchor_key`. The join is a third query rather than a widened
+        first one because it is needed only for the grouping pass and only for
+        notes that have an anchor date.
+
         `limit` bounds GROUPS, not notes: the caller's budget is bodies read
         per tick, and a group is the unit it reads.
         """
         if limit <= 0:
-            return ()
-        grouped = (
-            sa.select(NOTE.c.anchor_date, NOTE.c.anchor_entity_ids)
+            return ((), ())
+        # GROUPED IN PYTHON ON `Note.anchor_key`, not in SQL on the raw column.
+        #
+        # `GROUP BY anchor_entity_ids` is order- AND duplicate-sensitive in
+        # Postgres: `{ada,ben}` and `{ben,ada}` are different groups, so two
+        # notes about the same occasion are missed for an artifact of the order
+        # somebody happened to list the people. `anchor_key` exists precisely to
+        # say that — «entities are sorted and de-duplicated so the key is a
+        # property of WHICH entities rather than of the order» — and until
+        # 2026-08-28 it had ZERO call sites while both implementations
+        # reimplemented the comparison on the raw array. A property with no
+        # caller is a claim, not a rule.
+        #
+        # The cost is reading the workspace's standing notes rather than pushing
+        # the grouping down. That is bounded by the same thing `standing`
+        # already is — the index is uncapped by design (§5.1) — and correctness
+        # on the key is worth more than a GROUP BY here.
+        # TWO QUERIES, and the split is the budget. Grouping needs the ANCHOR
+        # of every standing note; only the notes in a surviving group need
+        # their BODY. Fetching bodies for the grouping pass would read the
+        # whole workspace's prose every tick to answer a question about dates
+        # and entity sets — and `nora_note_curator_bodies_read` would report
+        # the handful it showed the model while the store had read all of them.
+        # The gauge is the tick's budget instrument; a query that makes it lie
+        # is worse than an extra round trip.
+        anchors_stmt = (
+            sa.select(NOTE)
             .where(
                 NOTE.c.workspace == workspace,
                 NOTE.c.retired_at.is_(None),
                 NOTE.c.anchor_date.is_not(None),
             )
-            .group_by(NOTE.c.anchor_date, NOTE.c.anchor_entity_ids)
-            .having(sa.func.count() > 1)
-            .order_by(sa.func.count().desc(), NOTE.c.anchor_date.asc())
-            .limit(limit)
+            .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
         )
         async with self._engine.connect() as conn:
-            keys = (await conn.execute(grouped)).all()
-            groups: list[tuple[Note, ...]] = []
-            for key in keys:
-                rows = (await conn.execute(
-                    self._head_join().where(
-                        NOTE.c.workspace == workspace,
-                        NOTE.c.retired_at.is_(None),
-                        NOTE.c.anchor_date == key.anchor_date,
-                        NOTE.c.anchor_entity_ids == key.anchor_entity_ids,
-                    ).order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
+            anchors = (await conn.execute(anchors_stmt)).all()
+            # THE RESOLVED ENTITIES, read from the registry rather than from
+            # the model's own words. `note_entity` has no writer anywhere in
+            # the system yet, so this map is empty in production and every
+            # group is refused — which is 27 §2's decision («populating
+            # note_entity is the curator's real precondition, not its flag»)
+            # showing up as behaviour instead of as prose.
+            resolved: dict[str, list[str]] = {}
+            if anchors:
+                ent_rows = (await conn.execute(
+                    sa.select(NOTE_ENTITY.c.note_id, NOTE_ENTITY.c.entity_id)
+                    .where(NOTE_ENTITY.c.note_id.in_([r.id for r in anchors]))
                 )).all()
-                groups.append(tuple(_row_to_note(r) for r in rows))
-        return tuple(groups)
+                for er in ent_rows:
+                    resolved.setdefault(er.note_id, []).append(er.entity_id)
+            # `""` as a placeholder body: `group_on_anchor_key` reads only the
+            # anchor, and the bodies are filled in below for the groups that
+            # survive. Typed as the same pair so one grouping function serves
+            # both callers rather than gaining a bodiless variant.
+            eligible, refused = group_on_anchor_key(
+                [(_row_to_note(r), "") for r in anchors],
+                resolved_entities=resolved,
+                limit=limit,
+            )
+            wanted = [n.id for g in eligible for n, _ in g]
+            bodies: dict[str, str] = {}
+            if wanted:
+                rows = (await conn.execute(
+                    self._head_join().where(NOTE.c.id.in_(wanted))
+                )).all()
+                bodies = {r.id: r.body for r in rows}
+        return (
+            tuple(
+                tuple((n, bodies.get(n.id, "")) for n, _ in g)
+                for g in eligible
+            ),
+            refused,
+        )
 
     async def anchored_before(
         self, *, workspace: str, day: int, limit: int,

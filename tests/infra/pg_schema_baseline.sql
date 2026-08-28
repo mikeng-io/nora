@@ -222,6 +222,7 @@ CONSTRAINT note_description_fits_the_index_check CHECK (((length(btrim(descripti
 CONSTRAINT note_has_a_closing_condition_check CHECK ((length(btrim(closing_condition)) > 0)),
 CONSTRAINT note_has_an_anchor_check CHECK (((anchor_date IS NOT NULL) OR (cardinality(anchor_entity_ids) > 0))),
 CONSTRAINT note_replacement_implies_retirement_check CHECK (((replaced_by IS NULL) OR (retired_at IS NOT NULL))),
+CONSTRAINT note_revision_body_fits_the_ceiling_check CHECK ((length(body) <= 32000)),
 CONSTRAINT note_revision_has_a_body_check CHECK ((length(btrim(body)) > 0)),
 CONSTRAINT note_revision_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT note_revision_model_is_named_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),

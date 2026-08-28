@@ -317,7 +317,7 @@ here and they ship with the adaptor that produces them, never before it.
 
 | reading | why |
 |---|---|
-| notes merged, **by anchor match kind** | §2's rule is only observed if a merge that fired on something other than an anchor is visible |
+| ~~notes merged, **by anchor match kind**~~ → `nora_note_curator_groups_refused_total{reason}` | §2's rule is only observed if a merge that fired on something other than an anchor is visible. **SUBSTITUTED, 2026-08-28, and the substitution is recorded because the original label is unbuildable by construction.** There is no «match kind»: eligibility is one key comparison with one outcome, so a merge that fired on something else is not a different label — it is a different function. What CAN be measured is the negative: the groups eligibility REFUSED, and why. `merge` beside `merge_refused`/`merge_failed` on `nora_note_curator_total{action}` carries the rest |
 | notes retired versus notes grown | the notebook only grows until a curator exists, so the curator's whole justification rests on `nora_note_index_entries` — which now has a call site (§6.1) |
 | reminders scheduled by the revisitor, and how many **fired** | scheduled-but-never-fired is the revisitor silently doing nothing, which looks identical to a quiet notebook |
 | revisits per person per window | §3's budget is the reminder caps, so the reading that matters is *how often background work nudged somebody*, not how often it ran |
@@ -439,6 +439,11 @@ the wrong surface.
 
 **What remains, in order:** the curator (§2), then the revisitor (§3). The two
 unbuilt adaptors' four metrics ship with them.
+
+2026-08-28 — **both are built.** The revisitor's retirement half is §11; the
+curator is §12. What remains of §3 is the reaching-a-person half, which is
+§11.4's deliberate omission and needs `tool_subset_faults` widened before it can
+exist.
 
 ## 11. The revisitor, built — retirement half only
 
@@ -756,7 +761,7 @@ enters the resolution, `unresolved` included, and its counter moved with it —
 it was the one branch that never reached resolution, still being counted per
 item by the fix whose own argument says otherwise.
 
-### 11.3.5 `revisit_at`, `strikes` and `last_wake_revision_id` have NO WRITER
+### 11.3.5 `revisit_at`, `strikes` and `last_wake_revision_id` — the writer they never had, and the reset that read the wrong question
 
 Found by a completeness audit against this node and [26](26-standing.md).
 
@@ -775,12 +780,45 @@ reason is structural: its unit of work is one note that may never change, so
 nothing is consumed by working on it and a note can be due forever. The strike
 is the substitute for the cursor every other pass has.
 
-**Why it is not in this change:** the wake pass has to WRITE, and `DreamSink`'s
+**Why it was not in that change:** the wake pass has to WRITE, and `DreamSink`'s
 two verbs do not reach those columns — `propose` writes new rows and
 `supersede` retires them. A store verb is needed, `nora/infra/sql/notes.py`
-belongs to another session, and the standing protocol is to ask rather than
-reach into it. Building it against an invented write path would be worse than
-leaving the branch honest.
+belonged to another session, and the standing protocol is to ask rather than
+reach into it. Building it against an invented write path would have been worse
+than leaving the branch honest.
+
+**BUILT 2026-08-28: `record_wake`, on both stores**, with the comparison inside
+the transaction and no CAS — a compare-and-swap would have the caller assert a
+head it read earlier, and a tag-path revision arriving between the read and the
+write is not an obstacle to record, it is the PROGRESS the reset exists to
+detect. `strikes + 1` is computed by the database, because two ticks racing on
+one note would otherwise both read N and both write N+1, and losing strikes is
+how a breaker becomes decorative. The store reports; the caller decides what
+happens at the ceiling, because «eligible for dateless retirement» is a
+judgement rather than a fact about the row.
+
+**And the first version asked the WRONG QUESTION, in both implementations at
+once.** It read `is_tag_path_revision(head.established_by)` — who wrote the
+CURRENT HEAD — where the rule is «did the tag path write anything since the last
+wake». They differ on a sequence that is not exotic:
+
+> wake at R5 → the room revises (R6, `tag:miles`) → the curator merges, or a
+> debrief appends (R7, a run id)
+
+The head is R7 and it is background-authored, so the check said «no progress»,
+charged a strike, and **left the watermark at R5** — so that same R6 could never
+count on any later tick either. A note the room is actively working, that a
+background pass also touches each cycle, never resets and marches to the
+ceiling. `merge` writes exactly such a revision, so a merged survivor's head is
+background-authored BY CONSTRUCTION, and the curator and the breaker would have
+fought each other from the day both shipped.
+
+It is `tag_path_progressed_since_wake` now: a walk from the head back along
+`parent_revision_id` to the watermark, in the domain, called by both stores. The
+contract suite could not see the defect before because **both implementations
+agreed** — the double was written from the same belief, not from the rule, which
+is the double-diverges family with the sign flipped: agreement is not
+corroboration when one author wrote both.
 
 **The trap §9.6 states, carried here so it is not lost:** the reset must be
 «head moved BY THE TAG PATH», never «head moved». If the revisitor's own writes
@@ -841,6 +879,173 @@ and the operator can revise its wording freely, forever.
 on operator-owned instruction text, verify on day one that the text can be
 LANDED — not merely that it exists. A tier can be fail-closed by design and
 unfixable by accident.
+
+## 12. The curator, built — and the guard that was decoration
+
+**2026-08-28.** `nora.language.note_curator.NoteCuratorAdaptor`,
+workspace-keyed, no tools, behind a third gate of its own.
+
+### 12.1 `uses_watermark = False`, and it is not an omission
+
+Every other adaptor reads an append-only log through a cursor. This one reads
+**live state**: which notes collide on an anchor, and which anchors have passed.
+Neither question has a *since when* — a duplicate is a duplicate however long it
+has been one, and **retirement here is TIME-driven, not evidence-driven**. A
+watermark would make the pass stop noticing an expired note the moment the
+notebook went quiet, which is exactly when expiry matters.
+
+**This supersedes the note-tier spec's §9.4**, which describes the curator as
+cursor-shaped with a watermark. That is recorded here rather than left to be
+rediscovered, because the spec is the older document and a reader arriving at it
+first would take it for current. The spec's shape is right for a pass over
+*things that were said*; this pass is over *things that are true*, and a
+watermark over live state answers «what changed» to a question that never asked.
+
+The consequence is stated rather than discovered: **the pass is self-limiting
+for the actions it TAKES and not otherwise.** A group the model declines to
+merge is re-selected every tick, forever, and occupies a `max_groups_per_tick`
+slot — it is eligible, so it is inside the limit. A refused group does NOT
+occupy one, because `limit` is applied to the eligible list and the refusals are
+returned whole: the count that argues for populating `note_entity` must not
+itself be bounded by a read budget.
+
+### 12.2 The merge key is a RESOLVED anchor, and merge is therefore inert
+
+§2 said an anchor is `(anchor_date, entity_set)` and that populating
+`note_entity` is "the curator's real precondition, not its flag". **The first
+implementation did not do that.** Eligibility read `note.anchor_entity_ids` —
+the column `note_create` fills with whatever strings the model typed,
+unresolved and unvalidated — while R-75, the release note, the metric help text
+and three comments all said `note_entity`. Two sentences, one enforced.
+
+**The raw column is wrong in both directions at once**, which is what settled
+it rather than fidelity to the design:
+
+| | |
+|---|---|
+| 「Grant 婚禮」/「Gabe's wedding」/「婚禮」 | three keys, **one occasion** — the merge §7.1 exists for still cannot fire |
+| two unrelated notes both anchored 「wedding」 | one key, **two occasions** — they merge, irreversibly. The two-weddings failure, entered THROUGH the guard rather than around it |
+
+A key wrong in both directions is not a weaker key. It is a different rule
+wearing this one's name, and the guard's own label would have lied:
+`no_entity_anchor` would mean «the model typed nothing» rather than «nothing
+resolved».
+
+So eligibility joins `note_entity`, and since nothing anywhere writes that
+table, **merge is inert in production today** — every group refused and counted.
+That is the correct outcome and it is stated in the release note rather than
+implied: the retire half is what addresses «the notebook only grows», and the
+refusal count is what says whether building the entity writer is worth it,
+measured against the real notebook.
+
+*The reading that would reopen it:* `nora_note_curator_groups_refused_total`
+climbing, which is the case for the writer rather than for loosening the key.
+
+### 12.3 The guard that was decoration, and the content loss under it
+
+**`untouchable` — the set of notes a merge protects from being retired
+individually in the same tick — went through three versions and only the third
+does anything.**
+
+| version | protected | what still happened |
+|---|---|---|
+| 1 | `g[1:]` of every selected group | a merged body plus `closed` on the survivor merged into it and then retired it — the whole occasion out of the index, the duplicate pointing at a retired row |
+| 2 | every note of the groups that **actually merged** | every OTHER outcome left the group unprotected: an over-cap body, two different bodies, a body naming the wrong member, a lost CAS. `commit` then retired each member on its own verdict with `replaced_by=None` |
+| 3 | every note of the groups the model **ASKED** to merge | — |
+
+**Version 2 is the one that shipped, and it lost content on the ORDINARY
+path.** The objective tells the model to return one entry per note it was
+shown; `inputs`' own comment calls a colliding group whose occasion has passed
+"the common case rather than an edge". So `moot` on both members beside a merged
+body is the *expected* answer, not a contrived one — and any hiccup in the merge
+then retired both. Retirement is terminal in practice: `note_read` resolves
+against `standing()` and `note_search` filters retired rows, so the content the
+merge existed to preserve was reachable only by direct database query, with
+nothing pointing at either half.
+
+**And version 2 was also unfalsifiable, which is why it survived review.**
+Deleting the set entirely left all 29 tests green — including the one whose
+docstring said it existed for this guard. It was unreachable by construction: a
+successful merge moves the survivor's head, so the retirement's own head check
+already refuses it, and the duplicates are already retired so `supersede`
+returns 0. **A guard nothing can redden is not a guard**, and the test that was
+supposed to prove it was asserting an outcome two other mechanisms produced.
+
+The fix keys on the **claim, not the outcome**: `accept` emits a
+`_MergeOffered` marker for every merge-shaped item naming any handle in a
+rendered group, and `commit` builds `untouchable` from those. A wrongly-named
+member still protects its group — the model got the handle wrong, not the
+occasion. The merged groups are **not** unioned in: a merge only runs for a
+survivor a `_MergedBody` named, and every item producing one also produces the
+offer, so it is a strict subset. **A redundant term in a guard is how the last
+version became unfalsifiable**, so it is left out rather than kept for comfort.
+
+The survivor test now asserts `retire_stale` stays at **zero**, which is what
+makes it able to fail. With the guard deleted the survivor still stands — and
+`retire_stale` fires, which reads as *the tag path moved a note under the
+curator*. That is a contention reading, and shipping one per merge would send an
+operator to look for a race the curator had with itself.
+
+**R-75's second clause was a non-sequitur and is corrected.** It justified
+version 2 by saying computing the set unconditionally "let a refused merge
+suppress its own group's retirements, ending a tick with the survivor retired
+and the duplicate standing". Computing it unconditionally over WHOLE groups
+protects the survivor too, so it cannot produce that outcome; the inversion was
+version 1's `g[1:]`, and it was fixed by *including* `g[0]`, never by narrowing
+to merged groups. Two independent fixes were written up as one.
+
+### 12.4 The merged BODY is checked in code too
+
+`group_on_anchor_key` refuses date-only merges because "relying on the model to
+decline is self-attestation on a destructive operation" — and the same tick then
+accepted the merged **body**, the thing that overwrites the survivor's head, on
+the model's word alone. The only checks were non-blank and under the cap.
+
+The objective's one instruction is that the merged body keeps everything every
+note knew, so it **cannot be shorter than the longest body it is keeping**. A
+body that is, is a summary — the single failure mode this verb has, and the one
+nothing downstream can undo. It is a floor rather than an equality, and
+deliberately not "at least the sum": two bodies about one occasion overlap, and
+an honest merge is shorter than the concatenation.
+
+### 12.5 Three smaller things, each of which had the shape of a bigger one
+
+- **The merged-body conflict was not sticky.** Two different bodies for one
+  survivor removed the first from the list — so a third item repeating it found
+  nothing, appended itself, and **the merge landed with the very body the
+  conflict had just been counted for**. The instrument said refused; it merged.
+  `commit`'s verdict path had a sticky `conflicted` set all along; the more
+  destructive path got the weaker mechanism.
+- **The retirement head-check `read` was the one unguarded `await`**, added
+  underneath a comment arguing that an exception escaping the loop "would
+  discard `retired`, INCLUDING a merge that already committed". A connection
+  blip on the first note lost the count for merges already in Postgres, and
+  `merge_groups` reads live state, so those groups are gone next tick and the
+  number is never recovered.
+- **`bodies_read` was sticky AND undercounted.** Published after `inputs`' early
+  return, so an idle tick — "the overwhelming majority" by the pass's own
+  docstring — never wrote it and the gauge held the last busy tick's value. And
+  it reported the expired count AFTER group members were subtracted out, while
+  `anchored_before(limit=…)` had already fetched all of them, so the number
+  could never reach the cap and the help text's stated reading was unreachable
+  exactly when the cap binds. Now published unconditionally, including zero, over
+  what the store FETCHED.
+
+### 12.6 `[notes] max_body_chars` was a knob nothing read
+
+Declared with a twelve-line docstring and a range validator, documented in
+`config.example.toml`, cited by migration `0038` as a live setting — and
+**nothing anywhere read it**. Enforcement was the module constant
+`BODY_MAX_CHARS` in four places from the first commit.
+
+Deleted rather than threaded, and the reason generalises to
+[22-config.md](22-config.md)'s table: the operating cap's own argument is that
+it is enforced **in the type**, where a refusal is reviewable and names the cap,
+and a `__post_init__` cannot see config. Threading it would mean moving the
+refusal out to a store boundary to make a knob true. **A config key with no
+reader is the config-file form of a declared metric with no call site** — it
+renders as a control and is a decoration, and an operator who changes it learns
+nothing.
 
 2026-08-27 — **§5.4: the cold start.** The log shows ONE note-tool call in the
 tier's life; the create path has never been invoked. With zero notes the

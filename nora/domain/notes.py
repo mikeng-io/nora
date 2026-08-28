@@ -37,6 +37,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 #: The injected index carries one line per note on EVERY tag (§5.1), so these
@@ -46,6 +47,41 @@ from dataclasses import dataclass, field
 #: index being a complete listing of what exists.
 TITLE_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 200
+#: 27 §5.2's OPERATING value — what a writer should produce. **Not
+#: configurable, deliberately.** `[notes] max_body_chars` was declared with a
+#: range validator and a stanza in `config.example.toml` and NOTHING EVER READ
+#: IT — enforcement was this constant, in four places, the whole time. A
+#: documented knob that changes nothing is the config-file form of a declared
+#: metric with no call site: it reads as a control and is a decoration.
+#:
+#: It was deleted rather than threaded because the cap's own argument is that
+#: it is enforced in the TYPE, where a refusal is reviewable and names the cap
+#: — and `__post_init__` cannot see config. Threading it would have moved the
+#: refusal out to a store boundary to make a knob true, which is the tail
+#: wagging the dog. Enforced in `NoteRevision.__post_init__` and both proposal
+#: types.
+BODY_MAX_CHARS = 8000
+
+#: 27 §5.2's ABSOLUTE ceiling — what the table will hold. NOT configurable, and
+#: four times the operating value on purpose.
+#:
+#: The two numbers mean different things, which is why there are two: 8000 says
+#: «no writer should produce that», 32000 says «this row is corrupt». A body
+#: between them means something reached the table WITHOUT passing the domain
+#: type — a bug to go and find, not a row to reject when somebody reads it. A
+#: CHECK at the operating value would collapse the two meanings.
+#:
+#: **`nora/infra/sql/schema.py` reads this constant rather than repeating the
+#: number**, on `STANDING_BODY_CEILING_CHARS`' precedent and for its stated
+#: reason: a change to the ceiling must not leave the table and the type
+#: disagreeing silently. The gate cannot catch that on its own —
+#: `test_schema_parity` compares `schema.py` against the migrated database, so
+#: two literals agree with each other and with no declared intent.
+#:
+#: Migration `0038` keeps its own literal, deliberately: a migration is a
+#: snapshot of what was applied and must not import a constant that can move
+#: underneath it.
+NOTE_BODY_CEILING_CHARS = 32000
 
 #: Anchor dates are `YYYYMMDD` integers, not epoch milliseconds. The anchor is
 #: compared for EQUALITY when deciding merge eligibility (§7.1) and against
@@ -149,21 +185,21 @@ class Note:
         return self.retired_at is None
 
     @property
-    def anchor_key(self) -> tuple[int | None, tuple[str, ...]]:
-        """What merge eligibility compares, and **the only thing it compares**
-        (§7.1).
+    def written_anchor_entities(self) -> tuple[str, ...]:
+        """The entity strings the WRITER typed, sorted and de-duplicated.
 
-        Entities are sorted and de-duplicated so the key is a property of *which
-        entities* rather than of the order somebody happened to list them —
-        without that, a merge candidate is missed for an artifact of insertion
-        order.
+        **This is not what merge compares** — `anchor_key` is, and it is fed
+        RESOLVED entity ids out of `note_entity`. The distinction is the whole
+        of §2: 「Grant 婚禮」, 「Gabe's wedding」 and 「婚禮」 are three
+        different strings and one occasion, while two unrelated notes that both
+        say 「wedding」 are one string and two occasions. A key built from these
+        is wrong in both directions at once.
 
-        Two weddings differ in both components, so they are structurally
-        ineligible to merge however alike their prose reads. That is the point:
-        topical similarity is precisely the signal that would destroy the
-        venue-to-groom mapping, so it is not the signal used.
+        Kept because `note_has_an_anchor_check` reads the column and a reader
+        asking «what did somebody write here» deserves an answer that is not
+        the merge key.
         """
-        return (self.anchor_date, tuple(sorted(set(self.anchor_entity_ids))))
+        return tuple(sorted(set(self.anchor_entity_ids)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,12 +243,179 @@ class NoteRevision:
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():
             raise ValueError("a revision needs a body")
+        # 27 §5.2, and the reason it is a cap at all: the body is NOT injected
+        # — it is read on demand — so the exposure is the CURATOR, which reads
+        # bodies per tick against a budget counted in ROWS. A row budget is
+        # only a budget if a row has a bounded size; one unbounded body can
+        # consume a whole tick's allowance, and the pass then reports «nothing
+        # to do» about the notes it never reached.
+        #
+        # TWO NUMBERS, deliberately. This is the operating value (8000, roughly
+        # a long page); the database CHECK is 32000. The gap is not slack — it
+        # is the difference between «this writer should not do that» and «this
+        # row is corrupt». A body between them means a writer bypassed this
+        # type, which is a bug to find rather than a row to reject at read
+        # time, and a database that refused at 8000 would make the two
+        # indistinguishable.
+        if len(self.body) > BODY_MAX_CHARS:
+            raise ValueError(
+                f"a note body is at most {BODY_MAX_CHARS} characters (got "
+                f"{len(self.body)}). Bodies are read whole by the curator "
+                f"against a per-tick budget counted in rows, so an unbounded "
+                f"one silently eats the allowance"
+            )
         if not self.established_by or not self.established_by.strip():
             raise ValueError(
                 "a revision needs established_by: the strike reset in §9.6 "
                 "distinguishes a tag-path revision from the revisitor's own, "
                 "and cannot without it"
             )
+
+
+def anchor_key(
+    anchor_date: int | None, entity_ids: Sequence[str],
+) -> tuple[int | None, tuple[str, ...]]:
+    """What merge eligibility compares, and **the only thing it compares**
+    (§7.1).
+
+    Entities are sorted and de-duplicated so the key is a property of *which
+    entities* rather than of the order somebody happened to list them — without
+    that, a merge candidate is missed for an artifact of insertion order.
+
+    Two weddings differ in both components, so they are structurally ineligible
+    to merge however alike their prose reads. That is the point: topical
+    similarity is precisely the signal that would destroy the venue-to-groom
+    mapping, so it is not the signal used.
+
+    **A FUNCTION over ids the caller resolved, not a property of `Note`.** It
+    was a property reading `Note.anchor_entity_ids` until 2026-08-28, which
+    made the key a comparison of MODEL-AUTHORED FREE TEXT — see
+    `group_on_anchor_key` for why that is wrong in both directions at once.
+    `Note` has no resolved-entity field on purpose: `standing` and `read` do
+    not join `note_entity`, and a field that is populated on one read path and
+    empty on the others is where two implementations quietly disagree.
+    """
+    return (anchor_date, tuple(sorted(set(entity_ids))))
+
+
+def group_on_anchor_key(
+    notes: Sequence[tuple[Note, str]],
+    *,
+    resolved_entities: Mapping[str, Sequence[str]],
+    limit: int,
+) -> tuple[
+    tuple[tuple[tuple[Note, str], ...], ...],
+    tuple[tuple[Note, ...], ...],
+]:
+    """The grouping itself, shared by `SqlNoteStore` and its in-memory double.
+
+    Returns **(eligible, refused)** — groups that may merge WITH their bodies,
+    and groups that collide on a date alone and therefore may not, as NOTES
+    ALONE.
+
+    **`resolved_entities` maps a note id to the entity ids `note_entity` holds
+    for it, and it is the merge key's second half.** Not `Note.anchor_entity_
+    ids`, which is what `note_create` stored verbatim from the model with no
+    resolution and no validation. That distinction is the finding this
+    signature exists for:
+
+    - 「Grant 婚禮」, 「Gabe's wedding」 and 「婚禮」 are three raw strings and
+      ONE occasion, so a raw-string key misses the collision §7.1 exists for.
+    - two unrelated notes that both say 「wedding」 are one raw string and TWO
+      occasions, so a raw-string key MERGES THEM — the two-weddings failure,
+      entered through the guard rather than around it.
+
+    A key wrong in both directions is not a weaker key; it is a different rule
+    wearing this one's name. So eligibility joins the entity registry, and a
+    note with no `note_entity` row resolves to `()` — which is what
+    `no_entity_anchor` counts, and it now means «unresolved» rather than «the
+    model typed nothing».
+
+    **The consequence, stated rather than discovered later: `note_entity` has
+    no writer, so merge is INERT in production today.** 27 §2 already decided
+    that — populating `note_entity` is "the curator's real precondition, NOT
+    its flag" — and `nora_note_curator_groups_refused_total` is the number that
+    says what building the writer would unlock. The retire half is unaffected
+    and is the half that answers "the notebook only grows".
+
+    **The refused half carries no bodies, and the asymmetry is deliberate.**
+    Nothing reads a refused group's body — it is counted and discarded — so a
+    body there is a value with no consumer, and a value with no consumer is
+    where two implementations quietly disagree. They did: `SqlNoteStore` ran
+    the grouping over a placeholder-body pass and returned `''`, while the
+    double returned the real text. Harmless, and therefore exactly the kind
+    that survives.
+
+    Fixed by removing the field rather than by making the two agree on it,
+    because agreement has to be maintained and a type does not. Two return
+    values rather than one filtered list because the refused ones are the ONLY
+    evidence of what entity resolution would unlock, and a function that
+    silently dropped them would make "merge does nothing" indistinguishable
+    from "there is nothing to merge".
+
+    **In the DOMAIN, and imported by both**, rather than the same rule written
+    twice. This is the comparison that decides whether two notes get merged, so
+    a double that grouped differently from the store would make the contract
+    suite compare two definitions of "same occasion" and pass.
+
+    It lives here rather than in either store because `lint-imports` refused
+    the alternative and was right to: `nora.testing` and `nora.infra` are
+    siblings, so a helper shared by both belongs in the layer beneath them —
+    and "which notes are the same occasion" is a rule about notes, not about
+    Postgres. `anchor_key` is one function up for the same reason.
+
+    Ordering matches what both stores promise elsewhere: most-collided first,
+    then by anchor date, and within a group by `(created_at, id)` — which is
+    what makes the SURVIVOR (the first entry) stable across ticks. A retried
+    merge that picked a different survivor would produce two merged notes.
+    """
+    if limit <= 0:
+        return ((), ())
+    buckets: dict[tuple[int | None, tuple[str, ...]], list[tuple[Note, str]]] = {}
+    for note, body in notes:
+        if note.anchor_date is None:
+            continue
+        key = anchor_key(
+            note.anchor_date, resolved_entities.get(note.id, ()),
+        )
+        buckets.setdefault(key, []).append((note, body))
+    collided = [(k, v) for k, v in buckets.items() if len(v) > 1]
+    collided.sort(key=lambda kv: (-len(kv[1]), kv[0][0] or 0))
+
+    # A GROUP WITH NO RESOLVED ENTITIES IS REFUSED, NOT MERGED — and counted,
+    # so that refusal is a reading rather than a silence.
+    #
+    # An anchor is `(anchor_date, entity_set)` and BOTH halves are what make it
+    # an occasion. A group whose entity half is empty is "everything that
+    # happens on the 9th" — «Dinner, 9 Sept» beside «Ada's flight to Tokyo».
+    # Merging those is the two-weddings failure with a different label, and it
+    # is unrecoverable in the direction that matters.
+    #
+    # The entity half is EMPTY FOR EVERY NOTE IN PRODUCTION, because
+    # `note_entity` has no writer anywhere in the system. So this branch
+    # refuses every group today. 27 §2 already decided that: populating
+    # `note_entity` is "the curator's real precondition, NOT its flag".
+    #
+    # **The alternative that was rejected**: key on `Note.anchor_entity_ids`,
+    # which IS populated — with whatever free text the model handed
+    # `note_create`. That makes merge fire, and fire wrongly in both
+    # directions, and it makes the guard's own name a lie: `no_entity_anchor`
+    # would mean «the model typed nothing» rather than «nothing resolved».
+    #
+    # **Relying on the model to decline is not the alternative either.** Since
+    # the bodies are rendered it probably WOULD decline — and that is
+    # self-attestation on a destructive operation, which is exactly what
+    # keeping eligibility in code exists to avoid.
+    #
+    # THE REVERSAL CONDITION: this comes out when `note_entity` gains a writer
+    # and entities resolve. The refused count is what says whether that is
+    # worth doing, measured against the real notebook rather than estimated.
+    eligible = [(k, v) for k, v in collided if k[1]]
+    refused = [(k, v) for k, v in collided if not k[1]]
+    return (
+        tuple(tuple(v) for _, v in eligible[:limit]),
+        tuple(tuple(n for n, _ in v) for _, v in refused),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +457,11 @@ class NoteRevisionProposal:
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():
             raise ValueError("a proposed revision needs a body")
+        if len(self.body) > BODY_MAX_CHARS:
+            raise ValueError(
+                f"a proposed revision's body is at most {BODY_MAX_CHARS} "
+                f"characters (got {len(self.body)})"
+            )
         if not self.note_id or not self.note_id.strip():
             raise ValueError("a proposed revision needs the note it revises")
         if not self.parent_revision_id or not self.parent_revision_id.strip():
@@ -328,6 +536,11 @@ class NoteCreationProposal:
         ):
             if not value or not value.strip():
                 raise ValueError(f"a proposed note needs {what}")
+        if len(self.body) > BODY_MAX_CHARS:
+            raise ValueError(
+                f"a proposed note's body is at most {BODY_MAX_CHARS} "
+                f"characters (got {len(self.body)})"
+            )
         # THE SAME CAPS `Note` ENFORCES, mirrored here on purpose. This type's
         # docstring argues that a refusal at the boundary is reviewable while a
         # raise inside a tick is a log line nobody reads — and until 2026-08-27
@@ -361,6 +574,102 @@ class NoteCreationProposal:
                 "mechanically. In practice this is a date: the entity registry "
                 "is not populated yet"
             )
+
+
+#: The prefix `nora.agent.tools` stamps on a revision it writes for a person.
+#: **The one thing §9.6's strike reset turns on**, and it is a prefix rather
+#: than a flag column because `established_by` already had to distinguish the
+#: writers for provenance — a second column saying the same thing is a second
+#: thing to keep in step.
+TAG_PATH_PREFIX = "tag:"
+
+
+def is_tag_path_revision(established_by: str) -> bool:
+    """Whether a revision was written by a person on the tag path.
+
+    **§9.6's trap, and the whole reason this predicate exists rather than a
+    bare `head != last_wake` comparison:** the strike reset must be «head moved
+    BY THE TAG PATH», not «head moved». If a background pass's own writes
+    counted, a note the revisitor keeps rewriting would reset its own strike
+    forever and the breaker would be decorative — a self-referential reset is
+    not a reset.
+
+    The spec states this plainly and says why: *"the mechanism reads correct
+    without the qualifier and loops forever with it missing."*
+    """
+    return established_by.startswith(TAG_PATH_PREFIX)
+
+
+def tag_path_progressed_since_wake(
+    *,
+    head_revision_id: str,
+    last_wake_revision_id: str | None,
+    chain: Mapping[str, tuple[str | None, str]],
+) -> bool:
+    """Whether the TAG PATH wrote anything since the last wake.
+
+    `chain` maps a revision id to `(parent_revision_id, established_by)` for
+    every revision of the note. The walk goes head → parent until it reaches
+    `last_wake_revision_id`, so what it asks is «is there a tag-path revision
+    in the span this wake has not seen».
+
+    **It used to ask who wrote the CURRENT HEAD**, and that is a different
+    question with a different answer on the sequence that matters:
+
+        wake at R5 → the room revises (R6, `tag:miles`) → the curator merges or
+        the debrief appends (R7, a run id)
+
+    The head is R7, background-authored, so the old test said «no progress»,
+    charged a strike, and LEFT THE WATERMARK AT R5 — so the same R6 could never
+    count on any later tick either. A note the room is actively working, that a
+    background pass also touches each cycle, never resets and marches to the
+    strike ceiling. `merge` writes exactly such a revision, so a merged
+    survivor's head is background-authored BY CONSTRUCTION.
+
+    Both implementations agreed on the wrong answer, which is why the contract
+    suite could not see it: they shared a belief, not a check.
+
+    A `last_wake_revision_id` of `None` is a note that has never been woken, so
+    the whole chain is unseen and any tag-path revision in it counts.
+
+    The walk terminates on a revision it has already visited. An append-only
+    chain cannot cycle; a walk over rows it did not write must not assume that.
+    """
+    seen: set[str] = set()
+    current: str | None = head_revision_id
+    while current is not None and current != last_wake_revision_id:
+        if current in seen:
+            break
+        seen.add(current)
+        entry = chain.get(current)
+        if entry is None:
+            break
+        parent, established_by = entry
+        if is_tag_path_revision(established_by):
+            return True
+        current = parent
+    return False
+
+
+@dataclass(frozen=True, slots=True)
+class WakeOutcome:
+    """What a wake did — returned so the CALLER decides what follows.
+
+    `strikes` is the count AFTER this wake. `reset` says the head had moved on
+    the tag path, so the note is making progress and the counter went back to
+    zero.
+
+    **The store does not retire at the ceiling, and that is deliberate.**
+    §9.6 says a note past K strikes "stops waking and becomes eligible for
+    dateless retirement" — ELIGIBLE, which is a judgement about what to do
+    next, not a fact about the row. Retirement is a `supersede` with a reason
+    and a `replaced_by`; hiding one inside a bookkeeping verb would make one
+    call do two things, and the destructive half would be the invisible one. So
+    the wake reports and the revisitor decides, which is also where K lives.
+    """
+
+    strikes: int
+    reset: bool
 
 
 class NoteSupersedeReason:

@@ -1660,6 +1660,48 @@ class NotesConfig(BaseModel):
     # this one was believed twice before it was true.
     max_revisits_per_tick: int = Field(default=10, ge=1)
     revisit_evidence_messages: int = Field(default=40, ge=1)
+    #: The curator, separately from the tier. `[notes] enabled` decides whether
+    #: the INDEX is injected and the four tools reachable; this decides whether
+    #: the background pass runs. Two switches because they are two risks: the
+    #: tag path only reads, and the curator MERGES AND RETIRES — the one thing
+    #: in this tier that removes something from her index. An operator turning
+    #: notes on should not thereby have signed up for a pass that reorganises
+    #: them.
+    #:
+    #: Also off because the curator is the tier's only writer that acts across
+    #: notes, and 27 §2 makes that the Dreamer's alone precisely because it is
+    #: the dangerous half.
+    curator_enabled: bool = False
+
+    #: MERGE GROUPS per tick, not notes. The curator's cost is bodies read, and
+    #: a group is the unit it reads — typically two notes, occasionally more.
+    #:
+    #: Small on purpose. A collided anchor is rare (it needs two notes about the
+    #: same date AND the same people), so a tick that finds three groups is
+    #: already unusual, and the cap is a bound on a surprise rather than a
+    #: throughput knob. `nora_note_curator_bodies_read` is what says whether it
+    #: binds.
+    max_groups_per_tick: int = Field(default=3, ge=1, le=50)
+
+    #: EXPIRED notes per tick. Larger than the group cap because expiry is the
+    #: common case and each costs one body: after a quiet month, every note
+    #: whose date has passed becomes eligible at once, and a cap of three would
+    #: take a fortnight of ticks to work through a backlog that appeared in a
+    #: day.
+    #:
+    #: When this binds, the pass reports "nothing to do" about the notes it did
+    #: not reach — the `unavailable`-as-`nothing_found` failure at the pass
+    #: level, which is why the gauge exists and why the cap is generous.
+    max_expired_per_tick: int = Field(default=20, ge=1, le=200)
+
+    # NO `max_body_chars`, and its absence is the decision. The field existed
+    # here with a twelve-line docstring and a range validator and NOTHING READ
+    # IT — the cap was `nora.domain.notes.BODY_MAX_CHARS` in four places the
+    # whole time. A knob that changes nothing is the config-file form of a
+    # declared metric with no call site. It is not threaded because the cap's
+    # own argument is that it is enforced in the TYPE, and `__post_init__`
+    # cannot see config; making the knob true would mean moving the refusal out
+    # to a store boundary to serve the knob.
 
 
 class XaiImageGenConfig(BaseModel):

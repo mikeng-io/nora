@@ -40,6 +40,14 @@ ROOT = Path(__file__).resolve().parents[1]
 # The named test the spec's B.1 table assigns to each rule.
 RULE_TESTS = {
     "R-1": "test_ambient_never_constructs_agent",
+    # R-75: the curator, the note tier's only cross-note writer. Named test
+    # is the date-only refusal, because it is the one property that decides
+    # whether ANY merge happens in production — merge eligibility reads
+    # `note_entity`, which has no writer, so every group is refused today and
+    # the counter is the reversal condition. The other enforcing tests are on
+    # the index row, including the one the branch could not merge without:
+    # a group the model asked to merge is never retired piecemeal.
+    "R-75": "test_a_date_only_collision_is_refused_and_counted",
     # R-1b: R-1's FIRST clause, revised. `nora.app.fire.FirePath` made "only the
     # tagging path may cause a send" false — a fire turn is a send not caused by
     # a tag. R-1 keeps its entry rather than losing it (the DEC-40 precedent

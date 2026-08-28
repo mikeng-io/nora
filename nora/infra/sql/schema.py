@@ -57,6 +57,7 @@ from sqlalchemy.dialects import postgresql as pg
 # the migrations, which DO hardcode the number (a migration that read a live
 # constant would change meaning under a later edit), so moving the constant
 # fails the parity gate loudly instead of drifting.
+from nora.domain.notes import NOTE_BODY_CEILING_CHARS
 from nora.domain.standing import STANDING_BODY_CEILING_CHARS
 
 METADATA = sa.MetaData()
@@ -1500,6 +1501,16 @@ NOTE_REVISION = sa.Table(
     sa.CheckConstraint(
         "model is null or length(btrim(model)) > 0",
         name="note_revision_model_is_named_check",
+    ),
+    # 27 §5.2's DATABASE ceiling, added by `0038_note_body_ceiling`. FOUR TIMES
+    # the operating cap in `nora.domain.notes.BODY_MAX_CHARS`, and the gap is
+    # deliberate: 8000 says "no writer should produce that", the ceiling says "this
+    # row is corrupt". `length()` and not `octet_length()` — the cap is on
+    # CHARACTERS, and a body is routinely Cantonese where the two differ
+    # threefold.
+    sa.CheckConstraint(
+        f"length(body) <= {NOTE_BODY_CEILING_CHARS}",
+        name="note_revision_body_fits_the_ceiling_check",
     ),
     sa.CheckConstraint("length(btrim(body)) > 0", name="note_revision_has_a_body_check"),
     sa.CheckConstraint(

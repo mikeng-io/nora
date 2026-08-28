@@ -73,7 +73,12 @@ from ..domain.gatherings import (
 )
 from ..domain.media import HANDLE_CHARS, GifCandidate, MediaBlob, MediaObject
 from ..domain.models import WeatherObservation
-from ..domain.notes import Note, NoteRevision, StaleNoteHeadError
+from ..domain.notes import (
+    TAG_PATH_PREFIX,
+    Note,
+    NoteRevision,
+    StaleNoteHeadError,
+)
 from ..domain.ports import (
     ComputeBackend,
     GifSource,
@@ -5021,8 +5026,12 @@ def build_tool_specs(
             title: A short handle, at most 60 characters. This is what you will
                 see in <notes> and what note_read takes, so make it name the
                 thing: 「Grant 婚禮」, not 「婚禮」.
-            description: One line, at most 200 characters, saying what is open.
-                It rides in <notes> on every turn.
+            description: One line, at most 200 characters: what is undecided
+                AND what would settle it. It rides in <notes> on every turn and
+                is the ONLY thing you have when deciding whether to read the
+                body, so 「三間餐廳 冇人揀」 tells you it bears on what is
+                being said now, where 「9號晚飯」 only tells you a note exists.
+                Not a summary — the title already said what it is about.
             uncertainty: What exactly is not known yet, in a sentence.
             closing_condition: What would settle it.
             body: The contents — what is actually known so far, arranged so it
@@ -5053,7 +5062,8 @@ def build_tool_specs(
                 workspace=_workspace() or "", title=title, description=description,
                 uncertainty=uncertainty, closing_condition=closing_condition,
                 established_in=bound_conversation_id, body=body,
-                established_by=f"tag:{tagger.person_id}", now_ms=_now_ms(),
+                established_by=f"{TAG_PATH_PREFIX}{tagger.person_id}",
+                now_ms=_now_ms(),
                 anchor_date=anchor_date,
                 anchor_entity_ids=tuple(anchor_entities or ()),
             )
@@ -5151,7 +5161,8 @@ def build_tool_specs(
             revision = await book.append_revision(
                 workspace=_workspace() or "", note_id=note.id, body=body,
                 parent_revision_id=parent,
-                established_by=f"tag:{tagger.person_id}", now_ms=_now_ms(),
+                established_by=f"{TAG_PATH_PREFIX}{tagger.person_id}",
+                now_ms=_now_ms(),
             )
         except StaleNoteHeadError:
             # §6.3. `unavailable`, never `refused` and never applied on top:
