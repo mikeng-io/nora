@@ -114,6 +114,19 @@ class Recogniser:
     """Runs on the tag path, BEFORE context assembly, so a dispute it raises
     reaches this turn's own prefill."""
 
+    #: The objective this reads, and the envelope key its parser unwraps —
+    #: DECLARED, in the same two names every `DreamAdaptor` declares them
+    #: under, because that pair is what binds a prompt to a parser and
+    #: `test_objective_parser_parity` derives its coverage from finding it.
+    #: They were a literal in `composition` and a literal in `_parse_disputes`,
+    #: which is two hand-copies of one contract and the exact drift this
+    #: recogniser's own objective is checked against. Recognition is not a
+    #: Dreamer adaptor — 31 §2 says why it cannot be — but it reads an
+    #: objective and parses an envelope, and that is the whole of what the
+    #: parity gate needs to see.
+    objective = "fact-dispute"
+    envelope_key = "disputes"
+
     def __init__(
         self,
         *,
@@ -139,7 +152,7 @@ class Recogniser:
 
     async def recognise(
         self, *, msg: NormalizedMessage, tag_id: str, person_id: str | None,
-        parent_is_nora: bool = False,
+        quotes_nora: bool = False,
     ) -> int:
         """Mark whatever this message contradicts. Returns rows marked.
 
@@ -150,7 +163,7 @@ class Recogniser:
         try:
             return await self._recognise(
                 msg=msg, tag_id=tag_id, person_id=person_id,
-                parent_is_nora=parent_is_nora,
+                quotes_nora=quotes_nora,
             )
         except Exception:
             log.exception("recognition failed for tag %s", tag_id)
@@ -160,7 +173,7 @@ class Recogniser:
 
     async def _recognise(
         self, *, msg: NormalizedMessage, tag_id: str, person_id: str | None,
-        parent_is_nora: bool,
+        quotes_nora: bool,
     ) -> int:
         now_ms = int(time.time() * 1000)
         read = await self._ledger.in_window(
@@ -175,7 +188,7 @@ class Recogniser:
                       scope="direct", via="none")
             return 0
 
-        targets, via = self._target(msg, read.claims, parent_is_nora)
+        targets, via = self._target(msg, read.claims, quotes_nora)
         self._inc(
             "nora_dispute_targets_total", value=float(len(targets)),
             status="ok" if targets else "nothing_found",
@@ -192,7 +205,7 @@ class Recogniser:
             self._inc("nora_dispute_degraded_total")
             return 0
 
-        disputes, channel = await self._decide(msg, targets)
+        disputes, channel = await self._decide(msg, targets, quotes_nora)
         if not disputes:
             self._inc("nora_dispute_unacted_total", cause=channel)
             return 0
@@ -214,7 +227,7 @@ class Recogniser:
 
     def _target(
         self, msg: NormalizedMessage, claims: Sequence[RenderedClaim],
-        parent_is_nora: bool,
+        quotes_nora: bool,
     ) -> tuple[tuple[_Target, ...], str]:
         """Which claims could this message be about. Deterministic, and it
         decides the blast radius.
@@ -223,6 +236,17 @@ class Recogniser:
         Nora's own messages inside the window targets what that window
         rendered, because within one conversation the same rows render on
         consecutive turns and an exact turn join buys almost nothing over it.
+
+        **`quotes_nora` means the quoted author IS her**, and the name says so
+        because the previous one — `parent_is_nora` — was passed
+        `msg.quote is not None`. That is «this is a reply to ANYBODY», so a
+        member quoting another member with no surface of hers in the message
+        put the entire 24-hour window in front of the classifier under
+        `via="quote"`. Targeting is the half that must be right precisely
+        because it decides the blast radius, and this was the widest possible
+        reading of it. `ReplyToNoraPolicy` already matches `Quote.author_id`
+        against her own identifier set to decide a reply IS a tag; this is the
+        same predicate and it now comes from the same field.
         **T2** is normalised containment of the message against each claim's
         surface.
 
@@ -237,13 +261,13 @@ class Recogniser:
                         min_cjk_chars=_MIN_CJK_CHARS)
         ]
         via = "surface"
-        if not matched and parent_is_nora:
+        if not matched and quotes_nora:
             # A quote-reply to her with no surface in it — 「唔係呀」 replying to
             # a turn that rendered something. The quote is what puts those rows
             # in scope; the classifier decides whether it is a contradiction.
             matched = list(claims)
             via = "quote"
-        elif matched and parent_is_nora:
+        elif matched and quotes_nora:
             via = "quote+surface"
         return (
             tuple(
@@ -257,6 +281,7 @@ class Recogniser:
 
     async def _decide(
         self, msg: NormalizedMessage, targets: tuple[_Target, ...],
+        quotes_nora: bool,
     ) -> tuple[tuple[tuple[str, str], ...], str]:
         """`(disputes, cause)` — the handles contradicted, and why nothing was
         returned if nothing was.
@@ -270,7 +295,7 @@ class Recogniser:
         """
         if self._classifier is None or not self._instruction:
             self._inc("nora_dispute_classify_total", status="unavailable")
-            return self._rule_f(msg, targets), "not_reached"
+            return self._rule_f(msg, targets, quotes_nora), "not_reached"
         try:
             raw = await self._classifier.complete(
                 prompt=self._prompt(msg, targets),
@@ -278,12 +303,12 @@ class Recogniser:
         except Exception:
             log.exception("dispute classifier unavailable")
             self._inc("nora_dispute_classify_total", status="unavailable")
-            return self._rule_f(msg, targets), "not_reached"
+            return self._rule_f(msg, targets, quotes_nora), "not_reached"
 
         disputes = _parse_disputes(raw)
         if disputes is None:
             self._inc("nora_dispute_classify_total", status="unavailable")
-            return self._rule_f(msg, targets), "not_reached"
+            return self._rule_f(msg, targets, quotes_nora), "not_reached"
         self._inc(
             "nora_dispute_classify_total",
             status="ok" if disputes else "nothing_found",
@@ -302,6 +327,7 @@ class Recogniser:
 
     def _rule_f(
         self, msg: NormalizedMessage, targets: tuple[_Target, ...],
+        quotes_nora: bool,
     ) -> tuple[tuple[str, str], ...]:
         """31 §5.2. Fires ONLY when the classifier could not.
 
@@ -309,8 +335,16 @@ class Recogniser:
         where the reply itself names the claim's surface. All three, and the
         surface must be in the REPLY rather than merely in the quoted message —
         otherwise a bare 「唔得」 would mark whatever that turn rendered.
+
+        **`quotes_nora`, not `msg.quote is not None`** — the same conflation
+        `_target` had. The docstring above said "one of Nora's own messages"
+        and the code accepted a reply to anybody, so a member contradicting
+        ANOTHER MEMBER while naming one of her surfaces marked her claim on a
+        rule whose whole premise is that the correction was addressed to her.
+        It fires only where the classifier could not, which is exactly where
+        nothing else is checking.
         """
-        if msg.quote is None:
+        if not quotes_nora:
             return ()
         body = (msg.body or "").casefold()
         if not any(cue in body for cue in _NEGATION_CUES):
@@ -378,9 +412,10 @@ def _parse_disputes(raw: str) -> tuple[tuple[str, str], ...] | None:
         envelope = json.loads(raw)
     except (TypeError, ValueError):
         return None
-    if not isinstance(envelope, dict) or "disputes" not in envelope:
+    key = Recogniser.envelope_key
+    if not isinstance(envelope, dict) or key not in envelope:
         return None
-    items = envelope["disputes"]
+    items = envelope[key]
     if not isinstance(items, list):
         return None
     out: list[tuple[str, str]] = []

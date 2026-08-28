@@ -280,27 +280,39 @@ async def test_rule_f_fires_only_when_the_classifier_is_unavailable():
         author_id="nora", text="big walk means a walk", quoted_ts=999,
     ))
 
-    marked = await rec.recognise(msg=quoted, tag_id="t", person_id="g")
+    marked = await rec.recognise(
+        msg=quoted, tag_id="t", person_id="g", quotes_nora=True,
+    )
 
     assert marked == 1
     assert facts.calls[0]["fact_id"] == FACT
 
 
-async def test_rule_f_needs_a_quote_a_cue_and_the_surface():
+async def test_rule_f_needs_a_reply_to_her_a_cue_and_the_surface():
     """All three. The surface must be in the REPLY rather than merely in the
-    quoted message, or a bare 「唔得」 would mark whatever that turn rendered."""
-    for body, quote, expected in (
-        ("no, big walk is a game", None, 0),                 # no quote
-        ("big walk is a game", _q(), 0),                     # no cue
-        ("no way", _q(), 0),                                 # no surface
-        ("no, big walk is a game", _q(), 1),                 # all three
+    quoted message, or a bare 「唔得」 would mark whatever that turn rendered.
+
+    **The third row is the one that was missing.** RULE-F guarded on
+    `msg.quote is not None` while its docstring said "a quote-reply to one of
+    Nora's own messages" — so a member contradicting ANOTHER MEMBER, while
+    naming a surface she holds, marked her claim on a rule whose entire
+    premise is that the correction was addressed to her. It fires only where
+    the classifier could not, which is exactly where nothing else is looking.
+    """
+    for body, quote, quotes_nora, expected in (
+        ("no, big walk is a game", None, False, 0),          # no quote
+        ("big walk is a game", _q(), True, 0),               # no cue
+        ("no, big walk is a game", _q(), False, 0),          # quotes SOMEBODY ELSE
+        ("no way", _q(), True, 0),                           # no surface
+        ("no, big walk is a game", _q(), True, 1),           # all three
     ):
         facts = _FakeFacts()
         rec = _recogniser(facts=facts, classifier=_FakeClassifier(raises=True))
         marked = await rec.recognise(
             msg=_msg(body, quote=quote), tag_id="t", person_id="g",
+            quotes_nora=quotes_nora,
         )
-        assert marked == expected, (body, quote is not None)
+        assert marked == expected, (body, quotes_nora)
 
 
 def _q():
@@ -317,7 +329,7 @@ async def test_a_bare_negation_reply_targets_but_does_not_mark_without_a_cue_mat
 
     marked = await rec.recognise(
         msg=_msg("唔係呀", quote=_q()), tag_id="t", person_id="g",
-        parent_is_nora=True,
+        quotes_nora=True,
     )
 
     assert classifier.prompts != []

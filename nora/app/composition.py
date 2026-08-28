@@ -1839,7 +1839,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 client=client, model=cfg.language.model,
                 timeout_seconds=cfg.language.timeout_seconds,
             ),
-            instruction=dreamer_instructions.objective_body("fact-dispute"),
+            instruction=dreamer_instructions.objective_body(Recogniser.objective),
             metrics=metrics,
             window_hours=cfg.facts.recognition_window_hours,
             adjudicator_alive=cfg.dreamer.enabled,

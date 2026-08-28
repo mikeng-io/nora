@@ -152,9 +152,17 @@ def _keys_read_by(fn: Callable[..., object], *, name: str = "item") -> set[str]:
     return found
 
 
+#: Where a reader can live. `nora.language` holds the Dreamer's adaptors;
+#: `nora.engagement` holds `Recogniser`, which reads an objective on the REPLY
+#: path and is not an adaptor at all. Restricting the walk to `nora.language`
+#: is why `fact-dispute` — the newest pair on the branch — was the one
+#: contract this gate did not cover.
+READER_PACKAGES = ("nora.language", "nora.engagement")
+
+
 def _adaptor_modules():
-    """Every module in `nora.language` that can hold a `DreamAdaptor`,
-    DISCOVERED rather than listed.
+    """Every module that can hold an objective reader, DISCOVERED rather than
+    listed, walked RECURSIVELY.
 
     A hand-written tuple was the hand-copied vocabulary this file exists to
     outlaw, and it failed in the specific way the rule predicts: a new adaptor
@@ -162,10 +170,17 @@ def _adaptor_modules():
     parametrisation, so `test_every_shipped_adaptor_is_covered` iterated the
     same tuple it was meant to police and could never fail. Its own docstring
     claimed otherwise.
+
+    Recursive because `nora.engagement` has subpackages and a reader in one of
+    them would otherwise be invisible in exactly the same way.
     """
-    package = importlib.import_module("nora.language")
-    for info in pkgutil.iter_modules(package.__path__):
-        yield importlib.import_module(f"nora.language.{info.name}")
+    for name in READER_PACKAGES:
+        package = importlib.import_module(name)
+        for info in pkgutil.walk_packages(package.__path__, f"{name}."):
+            # No try/except. A module under these packages that will not
+            # import is a red test, not a skipped one — swallowing it is how a
+            # reader becomes invisible to the very gate that polices readers.
+            yield importlib.import_module(info.name)
 
 
 def _adaptors():
@@ -198,27 +213,38 @@ def _read_sites(cls, module) -> list:
     reads, by whatever route, is what the objective must declare — and
     following calls one level deep catches every shape without needing to know
     which one an adaptor chose.
+
+    The start is EVERY function on the class, not `accept` alone, because
+    `Recogniser` — a reader that is not an adaptor — has no `accept` at all;
+    its entry point is `recognise`. Naming the entry point would have been a
+    third hand-copied vocabulary. This is safe rather than over-broad because
+    `_keys_read_by` only matches subscripts on a variable literally named
+    `item`, which in these modules is only ever an envelope item.
     """
-    sites = [cls.accept]
-    tree = ast.parse(textwrap.dedent(inspect.getsource(cls.accept)))
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
+    sites = [f for f in vars(cls).values() if inspect.isfunction(f)]
+    for fn in list(sites):
+        try:
+            tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+        except (OSError, SyntaxError):  # pragma: no cover
             continue
-        target = None
-        if isinstance(node.func, ast.Name):
-            target = getattr(module, node.func.id, None)
-        elif (
-            isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "self"
-        ):
-            target = getattr(cls, node.func.attr, None)
-        if (
-            inspect.isfunction(target)
-            and target.__module__ == module.__name__
-            and target not in sites
-        ):
-            sites.append(target)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            target = None
+            if isinstance(node.func, ast.Name):
+                target = getattr(module, node.func.id, None)
+            elif (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "self"
+            ):
+                target = getattr(cls, node.func.attr, None)
+            if (
+                inspect.isfunction(target)
+                and target.__module__ == module.__name__
+                and target not in sites
+            ):
+                sites.append(target)
     return sites
 
 
@@ -238,9 +264,10 @@ def test_the_case_list_is_derived_and_not_empty():
     silently-shrinking `CASES` makes every parametrized test below vacuous, and
     a hand-written list was exactly the hand-copied vocabulary this file's own
     docstring outlaws."""
-    assert len(CASES) >= 4
+    assert len(CASES) >= 6
     assert {c.id for c in CASES} >= {
         "FactCandidateAdaptor", "FactAdaptor", "NoteCuratorAdaptor",
+        "Recogniser",
     }
 
 
@@ -255,6 +282,51 @@ def test_every_shipped_adaptor_is_covered():
             f"covers it"
         )
         assert (OBJECTIVES / f"{cls.objective}.md").is_file()
+
+
+def test_every_shipped_objective_is_read_by_something():
+    """**The inversion**, and it is the half that catches an objective nobody
+    reads rather than a reader with no objective.
+
+    Walking readers can only ever police the readers that exist. An objective
+    file is a prompt shipped on the bind mount: it can be added, renamed or
+    orphaned with nothing in the codebase mentioning it, and every counter in
+    every tier stays healthy because no tier was ever asked to run it. So the
+    directory is the population and the code is checked against it, not the
+    other way round.
+
+    The floor is deliberately weak — the objective's NAME appears somewhere in
+    `nora/` — because the readers are genuinely three different shapes: a
+    `DreamAdaptor` class attribute, a module constant
+    (`ROOM_LANGUAGE_OBJECTIVE`), and a `Recogniser` class attribute. A strong
+    check would need to know which, which is the hand-copied vocabulary this
+    file exists to outlaw. A weak check over the whole population still fails
+    on the case that matters: an objective loaded by nobody.
+    """
+    source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in Path(fact_adaptor.__file__).resolve().parents[1].rglob("*.py")
+    )
+    orphans = [
+        path.stem for path in sorted(OBJECTIVES.glob("*.md"))
+        if f'"{path.stem}"' not in source and f"'{path.stem}'" not in source
+    ]
+    assert not orphans, (
+        f"objectives no code names: {orphans}. A prompt shipped on the bind "
+        f"mount that nothing loads is inert, and no counter can say so."
+    )
+
+
+def test_the_orphan_check_can_actually_fire():
+    """The run-that-ran control for the check above: a name that IS in the
+    directory but not in the source has to come back as an orphan, or the
+    assertion is `not []` over a list that is empty for the wrong reason."""
+    source = "nothing here names anything"
+    orphans = [
+        path.stem for path in sorted(OBJECTIVES.glob("*.md"))
+        if f'"{path.stem}"' not in source
+    ]
+    assert len(orphans) == len(list(OBJECTIVES.glob("*.md"))) >= 6
 
 
 @pytest.mark.parametrize(("objective", "envelope_key", "sites"), CASES)

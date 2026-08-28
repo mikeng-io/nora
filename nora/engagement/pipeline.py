@@ -546,8 +546,11 @@ class EngagementPipeline:
         ):
             await self._run_turn(request, identity, indicator)
 
-    async def _recognise(self, request: EngagementRequest) -> None:
-        """Hand the message to the recogniser, with the sender resolved.
+    async def _recognise(
+        self, request: EngagementRequest, identity: Any,
+    ) -> None:
+        """Hand the message to the recogniser, with the sender resolved and
+        the quote resolved to whether it points at HER.
 
         The `person_id` is looked up here rather than inside the recogniser
         because `Persons` is this pipeline's collaborator and resolution is one
@@ -555,16 +558,29 @@ class EngagementPipeline:
         their correction would make the loop depend on somebody having been
         added to a config file, which is a wiring gap deciding whether a
         correction counts.
+
+        `quotes_nora` is computed the same way `ReplyToNoraPolicy` computes it
+        — `Quote.author_id` against her alias set, an id and never a display
+        name (design/10 §1.3), because a profile name is settable by anyone.
+        It was `msg.quote is not None`, which is «a reply to anybody»: two
+        members quoting each other opened the whole window to the classifier.
+        `identity` is threaded in for the alias set rather than read from a
+        field on the pipeline because that is where every other caller on this
+        path gets it.
         """
         if self._recogniser is None:
             return
         msg = request.message
         ref = self._persons.resolve(msg.platform, msg.sender_id)
+        self_ids = frozenset(getattr(identity, "aliases", ()))
+        quote = msg.quote
         await self._recogniser.recognise(
             msg=msg,
             tag_id=request.tag_id,
             person_id=ref.person_id if ref else None,
-            parent_is_nora=msg.quote is not None,
+            quotes_nora=bool(
+                quote is not None and self_ids and quote.author_id in self_ids
+            ),
         )
 
     async def _run_turn(
@@ -615,7 +631,7 @@ class EngagementPipeline:
             # dispute on the very turn it was contradicted, rather than one
             # turn late (31 §5). It never raises: a recogniser fault costs the
             # correction, which is the status quo, and never the turn.
-            await self._recognise(request)
+            await self._recognise(request, identity)
             ctx = await self._context.assemble(request=request)
             # An @-mention is a placeholder plus a parallel array, so until
             # DEC-34 every name in the transcript — including Nora's own —
