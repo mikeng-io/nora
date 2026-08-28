@@ -119,6 +119,7 @@ rank that is deliberately NOT implemented.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from typing import Any, Literal, get_args
 from uuid import UUID, uuid4
@@ -128,9 +129,11 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.facts import CandidateClaim, FactCandidate
+from nora.domain.facts import CandidateClaim, FactCandidate, normalise_name
 from nora.domain.ports import Proposal
 from nora.infra.sql.schema import FACT, FACT_CANDIDATE, FACT_ENTITY
+
+log = logging.getLogger(__name__)
 
 # The two statuses `supersede` may write. NOT `CandidateStatus` itself:
 # `pending` is a legal status for a ROW and an illegal reason for a
@@ -160,8 +163,24 @@ class SqlFactCandidateStore:
     arrives on `propose`/`supersede`, not here.
     """
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(
+        self, engine: AsyncEngine, *,
+        roster: frozenset[str] = frozenset(),
+        metrics: Any = None,
+    ) -> None:
+        """`roster` is the set of `person_id`s `identity.toml` knows, so this
+        sink can REFUSE a claim about one of them (25 §2.4). `metrics` is
+        injected and never imported, the shape `SqlPresenceStore` uses.
+
+        Both default to empty/None so a contract-suite fixture still builds
+        this from a bare `AsyncEngine` — and an empty roster refuses nothing,
+        which is the correct degradation: a sink that refused everything
+        because nobody wired the roster would be a worse failure than the one
+        it guards against.
+        """
         self._engine = engine
+        self._roster = frozenset(normalise_name(p) for p in roster if p.strip())
+        self._metrics = metrics
 
     async def propose(
         self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
@@ -188,6 +207,7 @@ class SqlFactCandidateStore:
         all-or-nothing.
         """
         rows: list[dict[str, Any]] = []
+        refused = 0
         for p in proposals:
             if not isinstance(p.payload, CandidateClaim):
                 raise TypeError(
@@ -195,6 +215,25 @@ class SqlFactCandidateStore:
                     f"CandidateClaim payload, got {type(p.payload).__name__}"
                 )
             claim = p.payload
+            # 25 §2.4 / 21 §2. The extraction objective's FIRST exclusion is
+            # "anything about a person in this room", and a probe measured the
+            # model breaking it at five person-claims in six edges WITH the
+            # roster supplied and a Person type declared. So the boundary is
+            # checkable and NOT enforced by the prompt, and 17 §7's rule
+            # applies: refuse loudly, never accept and forget.
+            #
+            # **The SUBJECT only.** A person in OBJECT position is 21 §2's own
+            # worked example of a legitimate claim — "Grant's wedding is on
+            # the 9th" is a claim about an event, not about Grant's
+            # disposition. The restriction bites on predicates ABOUT a person,
+            # which is what a person-subject triple is.
+            if normalise_name(claim.subject) in self._roster:
+                refused += 1
+                log.info(
+                    "fact candidate refused: subject %r is a roster person "
+                    "(workspace=%s)", claim.subject, key,
+                )
+                continue
             rows.append({
                 "id": str(uuid4()),
                 "workspace": key,
@@ -218,6 +257,10 @@ class SqlFactCandidateStore:
                 "instruction_sha256": p.instruction_sha256,
                 "model": p.model,
             })
+        if refused and self._metrics is not None:
+            self._metrics.inc(
+                "nora_fact_person_claim_refused_total", float(refused),
+            )
         if not rows:
             return ()
         ids: list[str] = []
@@ -435,6 +478,27 @@ class SqlFactCandidateStore:
             )
             .exists()
         )
+        # `nora_fact_entity_unresolved_total`'s FIRST call site. It has been
+        # declared with none since the tier shipped, which renders as a series
+        # that is genuinely always zero — and it is the tier's ONLY instrument
+        # for the entity problem, so the one thing that could observe
+        # fragmentation could not observe anything (02's seventh blind layer,
+        # found while writing the contract that depends on it).
+        #
+        # Counted HERE rather than at the drop, because a subject that resolves
+        # to nothing is a reading about the tier whether or not this particular
+        # candidate also happened to be seen twice. Pending rows only: a
+        # settled candidate's subject is somebody else's problem.
+        unresolved_stmt = (
+            sa.select(sa.func.count())
+            .select_from(c)
+            .where(
+                c.c.workspace == workspace,
+                c.c.status == "pending",
+                sa.not_(subject_resolves),
+            )
+        )
+
         stmt = (
             sa.select(c)
             .where(
@@ -452,6 +516,14 @@ class SqlFactCandidateStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
+            unresolved = (await conn.execute(unresolved_stmt)).scalar_one()
+        # Same connection as the read it describes: a count taken against a
+        # different snapshot would be a number about a moment nothing else
+        # observed.
+        if unresolved and self._metrics is not None:
+            self._metrics.inc(
+                "nora_fact_entity_unresolved_total", float(unresolved),
+            )
         return tuple(_row_to_candidate(r) for r in rows)
 
     async def candidate_by_id(

@@ -77,6 +77,7 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.obs.metrics import Metrics
 from nora.infra.sql.schema import FACT_ENTITY
 from nora.testing import (
     InMemoryFactCandidateStore,
@@ -934,3 +935,116 @@ async def test_pending_with_a_negative_limit_clamps_to_empty(store):
 
     assert await store.pending(workspace=WS, limit=-1) == ()
     assert await store.pending(workspace=WS, limit=0) == ()
+
+
+# ---------------------------------------------------------------------------
+# the sink's own refusals and readings — SQL only, because both are the
+# STORE's behaviour and the double deliberately has neither
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def sql_sink(candidate_pg_url):
+    engine = create_sql_engine(candidate_pg_url)
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            "TRUNCATE fact_premise, fact, fact_candidate, fact_entity "
+            "RESTART IDENTITY CASCADE"
+        ))
+    metrics = Metrics()
+    try:
+        yield SqlFactCandidateStore(
+            engine, roster=frozenset({"miles", "Grant"}), metrics=metrics,
+        ), engine, metrics
+    finally:
+        await engine.dispose()
+
+
+async def test_a_claim_about_a_roster_person_is_refused_at_the_sink(sql_sink):
+    """25 §2.4. The objective's first exclusion is "anything about a person in
+    this room", and a probe measured the model breaking it at five
+    person-claims in six edges WITH the roster supplied — so the boundary is
+    checkable and not enforced by the prompt. 17 §7's rule then applies: refuse
+    loudly, never accept and forget.
+
+    The sibling claim surviving is the positive control: a sink that refused
+    everything would satisfy the first assertion on its own."""
+    store, _engine, metrics = sql_sink
+
+    ids = await store.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="MILES", predicate="likes", object="ramen"),
+            _candidate(subject="big walk", predicate="made_by", object="hh"),
+        ),
+        now_ms=NOW,
+    )
+
+    assert len(ids) == 1
+    assert metrics.get("nora_fact_person_claim_refused_total") == 1
+
+
+async def test_a_person_in_OBJECT_position_is_not_refused(sql_sink):
+    """21 §2's own worked example: "Grant's wedding is on the 9th" is a claim
+    about an EVENT with Grant in object position, not a claim about Grant's
+    disposition. The restriction bites on predicates ABOUT a person, which is
+    what a person-SUBJECT triple is — and a refusal that read both positions
+    would delete the case the design uses to explain itself."""
+    store, _engine, metrics = sql_sink
+
+    ids = await store.propose(
+        key=WS,
+        proposals=(_candidate(subject="the wedding", predicate="of",
+                              object="Grant"),),
+        now_ms=NOW,
+    )
+
+    assert len(ids) == 1
+    assert metrics.get("nora_fact_person_claim_refused_total") == 0
+
+
+async def test_an_empty_roster_refuses_nothing(sql_sink, candidate_pg_url):
+    """The degradation that matters. A sink whose roster nobody wired must
+    refuse NOTHING, not everything — the second would be a worse failure than
+    the one this guard exists for, and it would look identical to a quiet
+    room."""
+    engine = create_sql_engine(candidate_pg_url)
+    try:
+        store = SqlFactCandidateStore(engine)
+        ids = await store.propose(
+            key=WS,
+            proposals=(_candidate(subject="miles", predicate="likes",
+                                  object="ramen"),),
+            now_ms=NOW,
+        )
+        assert len(ids) == 1
+    finally:
+        await engine.dispose()
+
+
+async def test_an_unresolvable_subject_is_counted_not_merely_dropped(sql_sink):
+    """`nora_fact_entity_unresolved_total` was declared with ZERO call sites —
+    the tier's only instrument for the entity problem, unable to observe it.
+    This is that call site.
+
+    Two candidates, one resolvable and one not, so the number is a reading and
+    not a row count: a counter that simply reported every pending candidate
+    would pass an assertion of 1 on a one-row store."""
+    store, engine, metrics = sql_sink
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            "insert into fact_entity (id, workspace, canonical_name, "
+            "created_at) values (gen_random_uuid(), :w, 'big walk', 1)"
+        ), {"w": WS})
+    await store.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="big walk", predicate="p", object="o"),
+            _candidate(subject="who-even", predicate="p", object="o"),
+        ),
+        now_ms=NOW,
+    )
+
+    await store.pending(workspace=WS, limit=10)
+
+    assert metrics.get("nora_fact_entity_unresolved_total") == 1

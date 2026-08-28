@@ -992,7 +992,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "ceiling), or a verdict dropped before it could be written "
         "(malformed, invariant, unknown_supersedes, id_mismatch, "
         "supersede_failed, supersede_missed, unmatched_candidate, "
-        "retire_failed). A silent drop reads as 'we checked everything'.",
+        "retire_failed, promotion_failed). A silent drop reads as 'we checked everything'.",
         ("reason",),
     ),
     _CounterSpec(
@@ -1008,6 +1008,45 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # that must never collapse: «nobody claimed this» and «I could not tell
     # who claimed this» are different facts about a row, and one of them is a
     # wiring gap.
+    # Pass 3, promotion (25 §4). Four series, and the last two are why the
+    # first two can be interpreted: `created` and `resolved` alone cannot tell
+    # a pass that promoted nothing because the room is sparse from one that
+    # promoted nothing because a veto is too wide, and 21 §10 names exactly
+    # that reading — "it is wrong if a substantial share of objects that
+    # should be nodes never reach degree 2" — as what would prove the whole
+    # substrate contract wrong.
+    _CounterSpec(
+        "nora_fact_entities_created_total",
+        "Entities minted by promotion. An entity is never created ahead of "
+        "use: the substrate grows only where a fact actually asserted a "
+        "relation.",
+    ),
+    _CounterSpec(
+        "nora_fact_objects_resolved_total",
+        "Standing facts whose object gained an entity id. The literal is "
+        "untouched — resolution points at a thing, it does not rewrite what "
+        "the room said.",
+    ),
+    _CounterSpec(
+        "nora_fact_objects_vetoed_total",
+        "Object literals refused entity-hood by the veto: a date, quantity, "
+        "price, duration, time of day, leading negation, URL, or a string "
+        "long enough to be a sentence rather than a thing.",
+    ),
+    _CounterSpec(
+        "nora_fact_objects_below_degree_total",
+        "Object literals that survived the veto and appear in no second edge "
+        "position. A node of degree one is a string with extra steps; this is "
+        "the reading that says whether the room is too sparse for promotion "
+        "to fire at all.",
+    ),
+    _CounterSpec(
+        "nora_fact_person_claim_refused_total",
+        "Claims refused at the sink because their subject resolves to a "
+        "person on the roster. Measured at five person-claims in six edges "
+        "with the roster supplied, so the prompt's exclusion is checkable and "
+        "NOT enforced — refused loudly here, never accepted and forgotten.",
+    ),
     _CounterSpec(
         "nora_fact_asserter_total",
         "Facts by the outcome of the message -> sender -> person join that "

@@ -117,6 +117,15 @@ class _CandidateStore(DreamSink, FactCandidateReader, Protocol):
     reads a candidate by id."""
 
 
+class _EntityPromoter(Protocol):
+    """`SqlEntityStore.promote`, seen from here. A Protocol rather than the
+    class because `nora.language` may not import `nora.infra` — the same seam
+    `_FactStore` and `_CandidateStore` above use, and the reason all three are
+    structural."""
+
+    async def promote(self, *, workspace: str, now_ms: int) -> object: ...
+
+
 def _text(value: object, *, limit: int) -> str | None:
     """One model-authored string field, or `None` if it is not one.
 
@@ -483,10 +492,12 @@ class FactAdaptor:
         max_standing_facts: int = DEFAULT_MAX_STANDING_FACTS,
         max_term_chars: int = DEFAULT_MAX_TERM_CHARS,
         max_predicate_chars: int = DEFAULT_MAX_PREDICATE_CHARS,
+        entities: _EntityPromoter | None = None,
         metrics: Metrics | None = None,
     ) -> None:
         self._facts = facts
         self._candidates = candidates
+        self._entities = entities
         self._max_adjudications = max_adjudications_per_tick
         self._max_standing_facts = max_standing_facts
         self._max_term_chars = max_term_chars
@@ -689,7 +700,36 @@ class FactAdaptor:
                 )
 
         await self._retire_candidates(key=key, proposals=proposals, now_ms=now_ms)
+        await self._promote(key=key, wrote=bool(ids), now_ms=now_ms)
         return len(ids)
+
+    async def _promote(self, *, key: str, wrote: bool, now_ms: int) -> None:
+        """Pass 3, after the writes and OUTSIDE their transaction.
+
+        30 §4: "promotion and embedding are downstream and idempotent, keyed
+        off the fingerprint, never inside it". Inside, a promotion failure
+        would roll back an adjudication that had already spent its research
+        loop; outside, it is simply re-run next tick over a store that has not
+        changed.
+
+        **Only when this tick actually wrote a fact.** 25 §4: degree changes
+        only when a fact lands, so a tick that wrote nothing has nothing new to
+        promote — and promotion is an aggregate over the workspace, which is
+        cheap but not free, and the Dreamer fires on its own clock over rooms
+        that are mostly quiet.
+
+        A failure is CAUGHT and counted for `_supersede_fact`'s reason: the
+        facts are already written by the time this runs, so letting it reach
+        the runtime would report the whole run `unavailable` with `written=0`
+        while rows sit in the table.
+        """
+        if self._entities is None or not wrote:
+            return
+        try:
+            await self._entities.promote(workspace=key, now_ms=now_ms)
+        except Exception:
+            log.exception("fact promotion failed: workspace=%s", key)
+            self._skip("promotion_failed")
 
     def _candidate_id_for(self, key: str, payload: object) -> str | None:
         """The candidate a verdict settles, or `None`. ONE lookup, used by both

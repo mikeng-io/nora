@@ -77,6 +77,7 @@ from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
+from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.facts import SqlFactStore, oversized_terms
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
@@ -2035,7 +2036,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # an operator turning on the research loop has not thereby asked for a
         # fact store to start filling.
         if cfg.facts.enabled and fact_store is not None:
-            fact_candidates = SqlFactCandidateStore(engine)
+            # The roster is `identity.toml`'s person ids. It is what lets the
+            # sink REFUSE a claim whose subject is somebody in the room (25
+            # §2.4) — the objective's first exclusion, measured broken at five
+            # person-claims in six edges with the roster supplied to the model.
+            fact_candidates = SqlFactCandidateStore(
+                engine,
+                roster=frozenset(persons.by_person),
+                metrics=metrics,
+            )
+            fact_entities = SqlEntityStore(engine, metrics=metrics)
             dream_adaptors = (
                 # PHASE A, scope-keyed: it reads one room's message batch.
                 # `workspace_for` is not a convenience — the extractor's KEY is
@@ -2065,6 +2075,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     max_adjudications_per_tick=cfg.facts.max_adjudications_per_tick,
                     max_term_chars=cfg.facts.max_term_chars,
                     max_predicate_chars=cfg.facts.max_predicate_chars,
+                    # Pass 3 rides the adjudication tick: degree changes only
+                    # when a fact lands, so this is exactly when there is
+                    # something new to promote.
+                    entities=fact_entities,
                     metrics=metrics,
                 ),
             )

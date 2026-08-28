@@ -942,3 +942,103 @@ async def test_a_contradicted_verdict_survives_the_dreamers_egress_screen():
         workspace=WS, fact_id=retired.superseded_by or "",
     )
     assert successor is not None and successor.object_literal == "three"
+
+
+# ---------------------------------------------------------------------------
+# pass 3 rides the tick
+# ---------------------------------------------------------------------------
+
+
+class _RecordingPromoter:
+    """Records the calls `FactAdaptor` makes, and can be told to fail. Not a
+    no-op double: a promoter that never raised could not show that a failure is
+    caught rather than propagated, which is the property that decides whether a
+    written fact reports as `unavailable, written=0`."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.calls: list[tuple[str, int]] = []
+        self._fail = fail
+
+    async def promote(self, *, workspace: str, now_ms: int) -> object:
+        self.calls.append((workspace, now_ms))
+        if self._fail:
+            raise RuntimeError("promotion exploded")
+        return None
+
+
+async def test_promotion_runs_after_a_tick_that_wrote_a_fact():
+    """25 §4: promotion runs after any write to `fact`, because degree changes
+    only when a fact lands."""
+    facts, candidates = InMemoryFactStore(), InMemoryFactCandidateStore()
+    promoter = _RecordingPromoter()
+    candidates.entities = [_entity("big walk")]
+    await _pending_candidate(
+        candidates, subject="big walk", predicate="made_by", obj="hh",
+    )
+    adaptor = FactAdaptor(
+        facts=facts, candidates=candidates, max_adjudications_per_tick=5,
+        entities=promoter,
+    )
+    await adaptor.inputs(key=WS, batch=())
+    verdicts = await adaptor.accept(key=WS, items=(
+        {"subject": "big walk", "predicate": "made_by", "object": "hh",
+         "status": "supported", "addresses_claim": True,
+         "source_url": "https://x.test/a", "source_excerpt": "x"},
+    ))
+
+    written = await adaptor.commit(
+        key=WS, proposals=tuple(_proposal(v) for v in verdicts), now_ms=NOW,
+    )
+
+    assert written == 1
+    assert promoter.calls == [(WS, NOW)]
+
+
+async def test_promotion_does_not_run_when_the_tick_wrote_nothing():
+    """A tick that wrote no fact changed no degree. Promotion is an aggregate
+    over the workspace — cheap, not free — and the Dreamer fires on its own
+    clock over rooms that are mostly quiet."""
+    facts, candidates = InMemoryFactStore(), InMemoryFactCandidateStore()
+    promoter = _RecordingPromoter()
+    adaptor = FactAdaptor(
+        facts=facts, candidates=candidates, max_adjudications_per_tick=5,
+        entities=promoter,
+    )
+    await adaptor.inputs(key=WS, batch=())
+
+    await adaptor.commit(key=WS, proposals=(), now_ms=NOW)
+
+    assert promoter.calls == []
+
+
+async def test_a_promotion_failure_does_not_fail_the_tick_that_wrote():
+    """`_supersede_fact`'s reason, one verb later: the facts are ALREADY
+    written by the time promotion runs, so letting the exception reach the
+    runtime would report the whole run `unavailable` with `written=0` while
+    rows sit in the table. Counted instead, so a promotion that never happened
+    is visible rather than merely survived."""
+    facts, candidates = InMemoryFactStore(), InMemoryFactCandidateStore()
+    metrics = Metrics()
+    promoter = _RecordingPromoter(fail=True)
+    candidates.entities = [_entity("big walk")]
+    await _pending_candidate(
+        candidates, subject="big walk", predicate="made_by", obj="hh",
+    )
+    adaptor = FactAdaptor(
+        facts=facts, candidates=candidates, max_adjudications_per_tick=5,
+        entities=promoter, metrics=metrics,
+    )
+    await adaptor.inputs(key=WS, batch=())
+    verdicts = await adaptor.accept(key=WS, items=(
+        {"subject": "big walk", "predicate": "made_by", "object": "hh",
+         "status": "supported", "addresses_claim": True,
+         "source_url": "https://x.test/a", "source_excerpt": "x"},
+    ))
+
+    written = await adaptor.commit(
+        key=WS, proposals=tuple(_proposal(v) for v in verdicts), now_ms=NOW,
+    )
+
+    assert written == 1
+    assert metrics.get(
+        "nora_fact_adjudications_skipped_total", reason="promotion_failed") == 1

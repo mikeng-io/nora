@@ -17,6 +17,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Literal, get_args
 
@@ -109,6 +110,35 @@ ASSERTER_JOIN_STATUSES: frozenset[str] = frozenset(get_args(AsserterJoinStatus))
 # `instruction_sha256 ~ '^[0-9a-f]{64}$'` (see nora.domain.provenance); the
 # domain must refuse everything the column would, not just the wrong length.
 _INSTRUCTION_SHA256_RE = re.compile(rf"^[0-9a-f]{{{INSTRUCTION_SHA256_HEX_LEN}}}$")
+
+
+def normalise_name(value: str) -> str:
+    """The tier's ONE normalisation for an entity name (21 §6.1).
+
+    **NFKC, strip, casefold — and nothing fuzzy.** 21 §6.1: matching is exact
+    after normalisation, never fuzzy, "for the reason 16 §4.1 already measured:
+    embeddings rank a literal misreading NEARER than a true alias, so no
+    threshold separates them. Under-merge, per §5." Two entities wrongly kept
+    apart is a missing edge — visible as a thin neighbourhood, fixable by a
+    later merge. Two wrongly merged is a corrupted node that has already
+    absorbed both sets of edges, and unmerging needs to know which edge came
+    from where.
+
+    NFKC because a code-switching room's IME emits full-width Latin, and
+    a full-width `Big Walk` and an ASCII one are the same name written on
+    two keyboards. `casefold`, not `lower`: `lower` leaves ß alone and casefold
+    does not, and the whole point is that two spellings collapse.
+
+    Internal whitespace collapses too — `house  house` and `house house` are
+    one name, and the vendored matcher's only real yield on this corpus is
+    exactly this (25 §4.1: the two "resolved" rows are exact-branch hits,
+    `lower()` plus whitespace collapse).
+
+    Exported from the DOMAIN because the sink, the promotion pass and any
+    future resolver must all use the same one. Two normalisations is two
+    definitions of identity.
+    """
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
 
 
 def _check_term(field: str, value: str) -> None:
