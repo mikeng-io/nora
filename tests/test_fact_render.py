@@ -225,15 +225,15 @@ def test_a_fact_in_both_slices_is_rendered_once():
 
 
 def _disputed(**over):
-    kw = dict(
-        id="0191f2c4-0000-7000-8000-00000000000d", workspace="nora",
-        subject_id="big walk", predicate="means", object_entity_id=None,
-        object_literal="a walking activity",
-        source_url="https://x.test/a", source_excerpt="x",
-        valid_from=1, created_at=1, instruction_sha256=DIGEST, model=MODEL,
-        established_by="tick-1", disputed_at=5, disputed_by="grant",
-        disputed_reason="it's a video game",
-    )
+    kw = {
+        "id": "0191f2c4-0000-7000-8000-00000000000d", "workspace": "nora",
+        "subject_id": "big walk", "predicate": "means",
+        "object_entity_id": None, "object_literal": "a walking activity",
+        "source_url": "https://x.test/a", "source_excerpt": "x",
+        "valid_from": 1, "created_at": 1, "instruction_sha256": DIGEST,
+        "model": MODEL, "established_by": "tick-1", "disputed_at": 5,
+        "disputed_by": "grant", "disputed_reason": "it's a video game",
+    }
     kw.update(over)
     return Fact(**kw)
 
