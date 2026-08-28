@@ -231,6 +231,49 @@ whole, with no signal that the verb exists or is worth reaching for.
 These are defaults with their reasoning, adjusted by the same window that tunes
 [09-measurement.md](09-measurement.md) §6. What they are **not** is open.
 
+### 6.1 The room slice costs one round trip, and it was measured
+
+The slice is *"facts whose subject is an entity this conversation has
+touched"*, and the only honest source for what the conversation has touched is
+the transcript — which the tag path reads **in parallel** with the fact block,
+deliberately, for the reply slot ([26](26-standing.md) §1). So the fact read is
+sequenced after it.
+
+**Two alternatives were refused, and both for the same reason.** Keying the
+slice on the tagging message alone needs no extra read and is empty most turns,
+which makes a block claiming to be about what the room is discussing actually
+about one line. Filtering a wider recency read afterwards costs nothing and
+silently misses anything outside that window — a subset presented as the whole,
+which is the exact defect the extent line above exists to stop, rebuilt one
+level down.
+
+**Measured 2026-08-28**, because the reasoning was a prior and a prior is what
+*"probably fine"* sounds like. The four reads the block makes, against real
+Postgres, over **400 standing facts across 60 subjects** — a corpus well beyond
+what this room holds, deliberately, since a measurement at zero rows says
+nothing about the shape it defends against — 200 trials:
+
+| | |
+|---|---|
+| p50 | **3.4 ms** |
+| p95 | **4.2 ms** |
+| smallest bucket of `nora_tag_latency_seconds` | 100 ms |
+| p95 as a fraction of that bucket | **4.2%** |
+
+**What this is NOT.** It is not end-to-end tag latency. That cannot be measured
+until `[facts]` is on and deployed, because with the tier off `_facts` returns
+before touching the database and the serialisation costs exactly nothing. What
+is measured is the quantity that actually changed: the reads no longer hide
+under the transcript read, so their wall time IS the added cost.
+
+The fallback if this ever stops holding is the third option **with the extent
+line reporting honestly over the whole workspace** — which is what makes it a
+survivable fallback rather than the defect it would otherwise be.
+
 ## Status / Checkpoint
+
+2026-08-28 — §6.1 records the latency the room slice costs, measured rather than
+argued: p95 of 4.2 ms against a 100 ms bucket, on a corpus larger than the
+room's.
 
 2026-08-24 — §6 now decides the block shape — one block, three slices, caps 8/4/one line — rather than waiting on a registry.
