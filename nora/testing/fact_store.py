@@ -226,7 +226,11 @@ class InMemoryFactStore:
             f for (ws, _fid), f in self._facts.items()
             if ws == workspace and f.is_disputed and f.is_standing
         ]
-        rows.sort(key=lambda f: f.disputed_at or 0)
+        # Tie-break on `id`, matching `SqlFactStore`. One `recognise()`
+        # stamps every row it marks with one `now_ms`, so ties here are
+        # the normal case — and a stable sort made this double
+        # deterministic where production was not.
+        rows.sort(key=lambda f: (f.disputed_at or 0, f.id))
         return tuple(rows[:limit])
 
     async def facts_asserted_by(
@@ -245,7 +249,9 @@ class InMemoryFactStore:
             f for (ws, fid), f in self._facts.items()
             if ws == workspace and fid in mine and f.is_standing
         ]
-        matches.sort(key=lambda f: f.created_at, reverse=True)
+        # Tie-break on `id`, matching `SqlFactStore`: one propose batch
+        # writes every row with one `now_ms`.
+        matches.sort(key=lambda f: (f.created_at, f.id), reverse=True)
         return tuple(matches[:limit])
 
     async def standing_subjects(self, *, workspace: str) -> tuple[str, ...]:
@@ -309,7 +315,9 @@ class InMemoryFactStore:
             f for (ws, _fid), f in self._facts.items()
             if ws == workspace and f.subject_id in wanted and f.is_standing
         ]
-        matches.sort(key=lambda f: f.created_at, reverse=True)
+        # Tie-break on `id`, matching `SqlFactStore`: one propose batch
+        # writes every row with one `now_ms`.
+        matches.sort(key=lambda f: (f.created_at, f.id), reverse=True)
         return tuple(matches[:limit])
 
     async def recent_facts(self, *, workspace: str, limit: int) -> tuple[Fact, ...]:
@@ -322,7 +330,9 @@ class InMemoryFactStore:
             f for (ws, _fid), f in self._facts.items()
             if ws == workspace and f.is_standing
         ]
-        matches.sort(key=lambda f: f.created_at, reverse=True)
+        # Tie-break on `id`, matching `SqlFactStore`: one propose batch
+        # writes every row with one `now_ms`.
+        matches.sort(key=lambda f: (f.created_at, f.id), reverse=True)
         return tuple(matches[:limit])
 
     async def fact_by_id(self, *, workspace: str, fact_id: str) -> Fact | None:

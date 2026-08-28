@@ -65,6 +65,9 @@ below, and the first is already global (it checks the Protocol, not a store).
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
 import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, replace
@@ -1188,3 +1191,70 @@ async def test_the_settle_counter_moves_once_per_settled_row(sql_sink):
         because="adjudicated", source=None, now_ms=NOW + 2,
     )
     assert metrics.get("nora_fact_candidates_total", outcome="adjudicated") == 1
+
+
+async def test_the_pending_queue_is_stable_across_reads_of_unchanged_state(store):
+    """**This queue decides which candidates spend the tick's research
+    budget**, and all three of its ordering keys tie routinely: one propose
+    batch stamps every row with one `last_seen_at`, and candidates commonly
+    share `occurrence_count = 1`. Postgres may return any order among equals,
+    so the tick adjudicated a different set each run and a candidate past the
+    limit could be starved indefinitely.
+
+    Six candidates read four at a time: the LIMIT has to be under the
+    population or every ordering returns the same set and the test passes
+    against an unordered query. Read twice, because the property is «identical
+    stored state, identical answer» rather than «this particular subset».
+
+    Each candidate is proposed TWICE so it survives §5's
+    seen-once-unresolvable drop — otherwise this would pass against a store
+    that returned nothing at all.
+    """
+    ids = list(dict.fromkeys(await store.propose(
+        key=WS,
+        proposals=tuple(
+            _candidate(object=f"v{i}") for i in range(6) for _ in (0, 1)
+        ),
+        now_ms=NOW,
+    )))
+    # `propose` returns one id PER PROPOSAL, and a repeat of the same triple
+    # upserts onto the same row — so twelve proposals give twelve ids over six
+    # distinct rows. Deduped here rather than proposed once, because a single
+    # sighting is dropped by the seen-once-unresolvable filter and the queue
+    # would be empty.
+    assert len(ids) == 6
+
+    first = await store.pending(workspace=WS, limit=4)
+    again = await store.pending(workspace=WS, limit=4)
+
+    assert [c.id for c in first] == sorted(ids)[:4], (
+        "the queue must be a deterministic prefix of the eligible set"
+    )
+    assert [c.id for c in again] == [c.id for c in first]
+
+
+def test_the_pending_query_declares_its_tie_break_in_sql():
+    """The half no execution can carry. Removing the tie-break and observing a
+    stable order proves only that this size and this statistics snapshot
+    happened to plan a sort — a reviewer deleted it and 1046 tests stayed
+    green.
+
+    The docstring is stripped first: a structural check that reads prose is an
+    instrument that cannot fail, which is how the first version of this
+    pattern passed with the clause deleted.
+    """
+    fn = SqlFactCandidateStore.pending
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn))).body[0]
+    if (
+        tree.body
+        and isinstance(tree.body[0], ast.Expr)
+        and isinstance(tree.body[0].value, ast.Constant)
+    ):
+        del tree.body[0]
+    source = ast.unparse(tree)
+
+    assert "c.c.id" in source, (
+        "pending() slices a LIMIT off a three-key order whose keys tie "
+        "routinely; without a unique tie-break the research budget is spent "
+        "arbitrarily"
+    )

@@ -143,7 +143,23 @@ class SqlRenderedClaimStore:
                         RENDERED_CLAIM.c.conversation_id == conversation_id,
                         RENDERED_CLAIM.c.last_rendered_at >= since_ms,
                     )
-                    .order_by(RENDERED_CLAIM.c.last_rendered_at.desc())
+                    # Tie-break. This read has no LIMIT, but recognition
+                    # caps what it targets to `max_targets` from the FRONT
+                    # of this list — and one turn writes every claim it
+                    # rendered with one `last_rendered_at`, so the four
+                    # claims a quote-reply targets varied run to run.
+                    #
+                    # `kind` as well as `row_key`: the primary key is
+                    # (conversation_id, kind, row_key) and this read does not
+                    # filter `kind`, so `row_key` alone is not total over what
+                    # comes back. Two tiers colliding on one key string is
+                    # vanishingly unlikely and it costs nothing to make the
+                    # claim true rather than nearly true.
+                    .order_by(
+                        RENDERED_CLAIM.c.last_rendered_at.desc(),
+                        RENDERED_CLAIM.c.row_key.asc(),
+                        RENDERED_CLAIM.c.kind.asc(),
+                    )
                 )).all()
         except Exception:
             log.exception(

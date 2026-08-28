@@ -355,6 +355,22 @@ class SqlEntityStore:
         ways is one thing to adjudicate rather than three — the model should
         never be asked the same question twice in one prompt, and a prompt that
         did would read as three separate near-misses.
+
+        **ORDERED, and this had no ordering clause at all** — which is worse
+        than the ties elsewhere in this tier, not better: `SELECT DISTINCT`
+        returns rows in whatever order the hash aggregate produces, and that
+        shifts with statistics and with parallelism. So `[:limit]` over it
+        chose pass 6's per-tick entity-resolution budget arbitrarily, which
+        names got adjudicated varied run to run, and a name past the limit
+        could be starved indefinitely. It has no `ORDER BY` to append to,
+        which is why a grep for one could not find it.
+
+        Ordered by the SURFACE, which is a total order over the deduped key
+        and also settles which spelling represents a group. It is deliberately
+        NOT a ranking: whether a more-recurrent unresolved name deserves the
+        budget ahead of a rarer one is a real question, and answering it here
+        would be inventing a priority the design has not decided. Determinism
+        first; a ranking is a separate decision with its own evidence.
         """
         if limit <= 0:
             return ()
@@ -362,7 +378,8 @@ class SqlEntityStore:
             rows = (await conn.execute(
                 sa.text(
                     "select distinct c.subject_id from fact_candidate c "
-                    "where c.workspace = :ws and c.status = 'pending'"
+                    "where c.workspace = :ws and c.status = 'pending' "
+                    "order by c.subject_id"
                 ),
                 {"ws": workspace},
             )).all()

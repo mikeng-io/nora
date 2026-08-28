@@ -1347,3 +1347,30 @@ async def test_a_fact_store_without_an_entity_store_still_writes_the_fact(pg_url
 
     assert len(ids) == 1
     assert entities == 0
+
+
+async def test_both_stores_break_a_created_at_tie_the_same_way(store):
+    """The DOUBLE was deterministic while production was not, which is worse
+    than both being non-deterministic: `list.sort` is stable, so the in-memory
+    store returned insertion order among ties and a contract test could pin an
+    ordering the real store does not have. That is the double diverging
+    exactly where the real path branches.
+
+    Runs against both implementations through the shared fixture, so the
+    property is the PORT's and not one store's.
+    """
+    ids = await store.propose(
+        key="ws-main",
+        proposals=[
+            _proposal(_verdict(subject="e1", predicate=f"p{i}", object=f"v{i}"))
+            for i in range(8)
+        ],
+        now_ms=1_000,
+    )
+    assert len(ids) == 8
+
+    facts = await store.standing_facts(
+        workspace="ws-main", subject_ids=("e1",), limit=8,
+    )
+
+    assert [f.id for f in facts] == sorted(ids, reverse=True)

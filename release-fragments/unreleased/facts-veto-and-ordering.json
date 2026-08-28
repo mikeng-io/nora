@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "A veto list that failed to mount is now a refusal to start rather than a silently empty one, and the facts Nora shows no longer vary between identical runs.",
+  "details": [
+    "The operator-owned list of things this room has decided are not things is optional. But a configured path that was not there — a mount that failed to attach, a typo, a moved symlink — was read as 'no list', so everything the room had ruled out became eligible to be treated as a thing again, quietly and additively. Nora now refuses to start and says which of the two situations she is in.",
+    "Configuring nothing, or leaving the setting empty, is unchanged and still means 'nothing extra vetoed'. Only a path that names something which is not there refuses.",
+    "Everything written in one pass is stamped with the same instant, so the queries that pick 'the most recent handful' were routinely choosing between rows that tie. The database is free to return ties in any order, which meant which facts appeared in front of her, and which corrections a reply was checked against, could differ between two identical runs — and an item that lost the tie could keep losing it forever.",
+    "Those reads are now settled deterministically, along with the queue the entity-resolution pass draws from, which had no ordering at all."
+  ],
+  "limitations": [
+    "Everything here is behind the knowledge tier's flag and that flag is off, so none of it is reachable today. The start-up refusal is the one exception in waiting: it becomes reachable the moment the tier is switched on with a veto file configured."
+  ]
+}

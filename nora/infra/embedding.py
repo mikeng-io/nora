@@ -67,10 +67,30 @@ def fingerprint(*, model: str, text: str) -> str:
     > a future writer can change one. What changes is that this is now a
     > cheap-and-general guard rather than the fix for a specific known rewrite.
     """
+    # LENGTH-PREFIXED, not separated. A separator is only unforgeable if it
+    # cannot occur in either field, and no byte satisfies that here: the code
+    # first joined on `b"\\x00"` — a backslash, an `x` and two zeroes, four
+    # PRINTABLE bytes — where a model ending in those characters collided with
+    # a text beginning with them; and switching to a real NUL only moves the
+    # collision to an input containing a NUL. Prefixing each field with its own
+    # byte length removes the question rather than answering it: there is no
+    # string either producer can write that makes two different pairs hash
+    # alike.
+    #
+    # The test that was meant to guard this asserted `("ab", "c") != ("a",
+    # "bc")`, which EVERY separator satisfies — so it passed against a
+    # separator that did not have the property. The test now uses the
+    # separator itself as the input, which is the only input that can tell the
+    # implementations apart.
+    #
+    # Changing this changes every fingerprint. Free today — nothing has
+    # written an embedding row — and a full re-embed later, which is the
+    # reason to settle it now rather than after the tier runs.
     digest = hashlib.sha256()
-    digest.update(model.encode("utf-8"))
-    digest.update(b"\\x00")
-    digest.update(text.encode("utf-8"))
+    for field in (model, text):
+        raw = field.encode("utf-8")
+        digest.update(len(raw).to_bytes(8, "big"))
+        digest.update(raw)
     return digest.hexdigest()
 
 

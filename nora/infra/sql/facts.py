@@ -423,7 +423,16 @@ class SqlFactStore:
                         FACT.c.disputed_at.isnot(None),
                         FACT.c.superseded_at.is_(None),
                     )
-                    .order_by(FACT.c.disputed_at.asc())
+                    # TIE-BREAK, and ties are the NORMAL case here rather
+                    # than the edge: one `recognise()` stamps every row it
+                    # marks with the same `now_ms`, so a workspace's
+                    # disputed rows routinely share `disputed_at` exactly.
+                    # Postgres may return any order among equals, so
+                    # without this the LIMIT selects a different subset run
+                    # to run and rows over the limit can be starved
+                    # forever. `id` is unique and never null, which is what
+                    # a tie-break has to be.
+                    .order_by(FACT.c.disputed_at.asc(), FACT.c.id.asc())
                     .limit(limit)
                 )).all()
         except Exception:
@@ -458,7 +467,9 @@ class SqlFactStore:
                             FACT_ASSERTER.c.person_id == person_id,
                         ),
                     )
-                    .order_by(FACT.c.created_at.desc())
+                    # Tie-break; see `disputed_facts`. One propose batch
+                    # writes every row with one `now_ms`.
+                    .order_by(FACT.c.created_at.desc(), FACT.c.id.desc())
                     .limit(limit)
                 )).all()
         except Exception:
@@ -782,7 +793,10 @@ class SqlFactStore:
                     FACT.c.subject_id.in_(subject_ids),
                     FACT.c.superseded_at.is_(None),
                 )
-                .order_by(FACT.c.created_at.desc())
+                # Tie-break; see `disputed_facts`. This one decides WHICH
+                # facts reach the prefill block, so a run-to-run different
+                # subset is a different answer from the same store.
+                .order_by(FACT.c.created_at.desc(), FACT.c.id.desc())
                 .limit(limit)
             )
             async with self._engine.connect() as conn:
@@ -808,7 +822,10 @@ class SqlFactStore:
                     FACT.c.workspace == workspace,
                     FACT.c.superseded_at.is_(None),
                 )
-                .order_by(FACT.c.created_at.desc())
+                # Tie-break; see `disputed_facts`. This one decides WHICH
+                # facts reach the prefill block, so a run-to-run different
+                # subset is a different answer from the same store.
+                .order_by(FACT.c.created_at.desc(), FACT.c.id.desc())
                 .limit(limit)
             )
             async with self._engine.connect() as conn:

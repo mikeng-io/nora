@@ -1430,7 +1430,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # `note.strikes` is a column with a CHECK constraint and no writer; the
     # strike is the revisitor's wake pass (spec §9.6). Declaring them here
     # would ship a name whose call site does not exist, which is
-    # `nora_fact_entity_unresolved_total` again — instance 7 in
+    # `nora_fact_entity_unresolved` again — instance 7 in
     # `design/dreamer-agent-loop/02-instrument-blindness.md`'s own tally, and
     # the exact defect this block was written to close. They ship with their
     # adaptor.

@@ -575,7 +575,7 @@ class SqlFactCandidateStore:
             )
             .exists()
         )
-        # `nora_fact_entity_unresolved_total`'s FIRST call site. It has been
+        # `nora_fact_entity_unresolved`'s FIRST call site. It has been
         # declared with none since the tier shipped, which renders as a series
         # that is genuinely always zero — and it is the tier's ONLY instrument
         # for the entity problem, so the one thing that could observe
@@ -608,6 +608,14 @@ class SqlFactCandidateStore:
                 sa.case((contradicts_a_fact, 0), else_=1),
                 c.c.occurrence_count.desc(),
                 c.c.last_seen_at.desc(),
+                # TIE-BREAK, and this is the ordering that spends the
+                # tick's research budget. One propose batch stamps every
+                # candidate with one `last_seen_at` and they commonly share
+                # `occurrence_count = 1`, so all three keys tie routinely
+                # and Postgres may then return any order. Which candidates
+                # get adjudicated varied run to run, and one over the limit
+                # could be starved indefinitely.
+                c.c.id.asc(),
             )
             .limit(limit)
         )
