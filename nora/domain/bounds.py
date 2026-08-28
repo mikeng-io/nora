@@ -55,13 +55,31 @@ hint that its list was a ceiling.
 
 THE REVERSAL CONDITION
 ----------------------
-This design is wrong if `nora_bound_truncated_total{site=...}` sits at or near
-the call rate for a site, sustained. A bit that is always 1 carries no
-information — the operator learns "there is a backlog" and never "it is
-growing" — and that site needs a queue-DEPTH gauge instead, an unbounded
-`COUNT(*)` of eligible rows. `fact_candidates.pending` is the one most likely
-to read that way, and it is deliberately the first site wired so that reading
-arrives early rather than after sixteen more.
+This design is wrong for a site if `nora_bound_truncated_total{site=...}` sits
+at or near that site's call rate, sustained. A bit that is always 1 carries no
+information — the operator learns "there is more" and never "it is growing" —
+and such a site needs a queue-DEPTH gauge instead, an unbounded `COUNT(*)` of
+eligible rows.
+
+**`audit.recent` is expected to read exactly that way from day one, and that
+is measured rather than predicted.** `[audit] context_window` is 40 while
+`max_per_conversation` is 500 and `prune_enabled` is false, so nothing trims a
+conversation; the busiest room held 970 rows when this was wired, against a
+window of 40. Both per-turn readers pass the window, so this bound bites on
+every turn in every established room, permanently. It is wired anyway — the
+window IS the thing whose clipping makes an empty room-facts block ambiguous
+three ways — but an operator must read its always-1 as foreseen, not as a
+discovery. Its useful reading is the DAY it stops: a room whose transcript
+window suddenly fits is a room that went quiet or got pruned.
+
+`fact_candidates.pending` is the genuinely event-shaped one: it truncates only
+under real backlog, and it already ships the unbounded census this condition
+prescribes (`nora_fact_entity_unresolved`, set on every read and deliberately
+not derived from the page). `audit.recent` has no such companion, and that
+asymmetry is the thing to fix first if this series is ever to be read as a
+rate. An earlier draft of this paragraph had these two sites the wrong way
+round; the correction came from reading the config and the row counts rather
+than from the argument.
 """
 
 from __future__ import annotations
@@ -121,7 +139,7 @@ def cut(
     rows: Sequence[T],
     *,
     limit: int,
-    site: str,
+    site: BoundSite,
     metrics: _Counter | None = None,
 ) -> tuple[T, ...]:
     """Trim an over-fetched read back to `limit`, counting when it truncated.
@@ -129,13 +147,34 @@ def cut(
     `rows` must have been fetched with `over_fetch(limit)`. `len(rows) > limit`
     is then exactly "at least one more row existed", which is the whole datum.
 
-    The site name is checked at RUNTIME, not only by mypy: `make gate`'s mypy
-    is scoped and does not cover `nora/language` or `nora/agent`, where most of
-    the remaining bounded reads live, so a static-only guard there would be a
-    claim rather than a check. It LOGS and still records rather than raising —
-    a mistyped label must not take down a read path, and the wrong-label series
-    is visible in the same place the right one would have been.
+    The site name is checked TWICE, and it needs both. `site: BoundSite` is
+    what makes a typo fail `make gate` at the two wired sites, which live in
+    `nora/infra` and are inside mypy's scope — an earlier draft typed it `str`
+    and a reviewer showed a typo'd label type-checked clean. But that scope
+    does NOT cover `nora/language` or `nora/agent`, where most of the remaining
+    bounded reads live, so a static-only guard would be a claim there: hence
+    the runtime check below, which is the repo's rule for exactly this gap.
+
+    The runtime half LOGS and still records rather than raising. A mistyped
+    label must not take down a read path, and the wrong-label series then shows
+    up in the same place the right one would have.
+
+    PROBE (2026-08-29): changing `site="audit.recent"` to `"audit.recnt"` in
+    `nora/infra/sql/audit.py` now fails `make gate` — «Argument "site" to "cut"
+    has incompatible type Literal['audit.recnt']». Under the earlier `site:
+    str` it type-checked clean.
     """
+    if limit <= 0:
+        # BEFORE everything else. `0 > -1` is true, so an unguarded negative
+        # limit FABRICATES a truncation in the one series whose whole job is
+        # separating «there is nothing» from «I could not see all of it» — and
+        # `rows[:-1]` silently drops a row, the exact `list[:-1]` trap both
+        # wired callers' own docstrings cite as the reason for their
+        # short-circuits. Unreachable from those two, which guard already; it
+        # lives HERE because this helper exists to be wired to a dozen more,
+        # and an invariant re-implemented by every caller is the shape that
+        # produced the defect this module is about.
+        return ()
     if site not in BOUND_SITES:
         log.warning(
             "bounded read recorded under an undeclared site %r — add it to "

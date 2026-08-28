@@ -94,3 +94,23 @@ def test_every_declared_site_is_a_store_dot_method_name() -> None:
         assert site.count(".") == 1, site
         store, method = site.split(".")
         assert store and method and not site.startswith("nora."), site
+
+
+def test_a_non_positive_limit_returns_nothing_and_counts_nothing() -> None:
+    """The guard lives in the HELPER, not in each caller.
+
+    `0 > -1` is true, so an unguarded negative limit fabricates a truncation in
+    the one series whose whole job is separating «there is nothing» from «I
+    could not see all of it» — a fail-OPEN in the measure verb. And `rows[:-1]`
+    silently drops a row, which is the `list[:-1]` trap both wired callers'
+    docstrings already cite as the reason for their own short-circuits.
+
+    Unreachable from those two callers today. It is asserted here because this
+    helper exists to be wired to a dozen more, and an invariant re-implemented
+    by every caller is the shape that produced the defect this module is about.
+    """
+    metrics = _Metrics()
+    assert cut([1, 2, 3], limit=0, site=SITE, metrics=metrics) == ()
+    assert cut([1, 2, 3], limit=-1, site=SITE, metrics=metrics) == ()
+    assert cut([], limit=-1, site=SITE, metrics=metrics) == ()
+    assert metrics.calls == [], "a bound that was never applied did not bite"
