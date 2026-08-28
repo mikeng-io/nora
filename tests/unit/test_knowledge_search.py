@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from nora.infra.sql.embeddings import ChannelRead
 from nora.language.knowledge_search import (
     RRF_K,
     KnowledgeSearch,
@@ -66,11 +67,11 @@ class _FakeChannels:
         self.dense_calls: list[dict] = []
 
     async def lexical(self, *, kind, scope, query, limit, threshold):
-        return self._lexical, self._lexical_status
+        return ChannelRead(hits=self._lexical, status=self._lexical_status)
 
     async def nearest(self, *, kind, scope, model, probe, limit, floor):
         self.dense_calls.append({"model": model, "floor": floor})
-        return self._dense, self._dense_status
+        return ChannelRead(hits=self._dense, status=self._dense_status)
 
 
 # ---------------------------------------------------------------------------

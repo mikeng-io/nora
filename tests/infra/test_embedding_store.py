@@ -13,6 +13,10 @@ with the two collapsed.
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
+
 import pytest
 import sqlalchemy as sa
 
@@ -130,15 +134,15 @@ async def test_the_dense_read_ranks_by_distance_and_respects_the_floor(store):
         (_row("far"), far),
     ))
 
-    close, status = await emb.nearest(
+    read = await emb.nearest(
         kind="fact", scope=WS, model="bge-m3", probe=near, limit=8, floor=0.5,
     )
 
-    assert status == "ok"
-    assert [m.row_key for m in close] == ["near"], (
+    assert read.status == "ok"
+    assert [m.row_key for m in read.hits] == ["near"], (
         "the far row is outside the floor and must be dropped, not ranked"
     )
-    assert close[0].distance < 0.5
+    assert read.hits[0].distance < 0.5
 
 
 async def test_everything_beyond_the_floor_is_nothing_found(store):
@@ -151,12 +155,12 @@ async def test_everything_beyond_the_floor_is_nothing_found(store):
         _row("far"), tuple([0.1] * (EMBEDDING_DIMENSIONS - 1) + [-9.0]),
     ),))
 
-    rows, status = await emb.nearest(
+    read = await emb.nearest(
         kind="fact", scope=WS, model="bge-m3", probe=_vec(0.1), limit=8, floor=0.5,
     )
 
-    assert rows == ()
-    assert status == "nothing_found"
+    assert read.hits == ()
+    assert read.status == "nothing_found"
 
 
 async def test_the_dense_read_never_crosses_a_scope(store):
@@ -170,31 +174,33 @@ async def test_the_dense_read_never_crosses_a_scope(store):
         (_row("theirs", scope="ws-other"), _vec(0.1)),
     ))
 
-    rows, _status = await emb.nearest(
+    read = await emb.nearest(
         kind="fact", scope=WS, model="bge-m3", probe=_vec(0.1), limit=8, floor=0.5,
     )
 
-    assert [m.row_key for m in rows] == ["mine"]
+    assert [m.row_key for m in read.hits] == ["mine"]
 
 
 async def test_a_row_awaiting_its_vector_is_not_a_retrieval_hit(store):
     """`v1024` is nullable so pass 4 can record the text before the endpoint
     answers. A NULL must not rank: `<=>` against NULL is NULL, which sorts
     unpredictably and would put an unembedded row anywhere in the list."""
-    emb, engine, _metrics = store
-    await emb.upsert(rows=((_row("real"), _vec(0.1)),))
-    async with engine.begin() as conn:
-        await conn.execute(sa.text(
-            "insert into embedding (kind, row_key, scope, text, model, "
-            "fingerprint, embedded_at) values "
-            "('fact', 'queued', :ws, 'x', 'bge-m3', 'c', :t)"
-        ), {"ws": WS, "t": NOW})
+    emb, _engine, _metrics = store
+    # THROUGH THE TYPE, not raw SQL. `upsert` used to demand a vector tuple, so
+    # the one state the schema explicitly supports — text recorded, vector
+    # still to come — could not be expressed at all and this test had to reach
+    # around the store to create it. A type that cannot express a state the
+    # design requires pushes every caller around it.
+    await emb.upsert(rows=(
+        (_row("real"), _vec(0.1)),
+        (_row("queued"), None),
+    ))
 
-    rows, _status = await emb.nearest(
+    read = await emb.nearest(
         kind="fact", scope=WS, model="bge-m3", probe=_vec(0.1), limit=8, floor=0.5,
     )
 
-    assert [m.row_key for m in rows] == ["real"]
+    assert [m.row_key for m in read.hits] == ["real"]
 
     # The positive control: the queued row IS in the table and IS visible to
     # the staleness read, so this is the ranking excluding it rather than the
@@ -234,9 +240,17 @@ async def test_the_dense_read_never_mixes_two_models_geometries(store):
     than a wrong answer.
 
     The old row is deliberately the CLOSER one, so a store that ignored the
-    model would rank it first and this test would fail on the ordering rather
-    than on a count. A test where the wrong row merely appeared somewhere
-    could pass on a lucky sort.
+    model ranks it FIRST and this test fails on the ordering rather than on a
+    count — a test where the wrong row merely appeared somewhere could pass on
+    a lucky sort.
+
+    That requires the two vectors to be NON-PARALLEL, which the first version
+    of this test got wrong: it used fills of 0.1 and 0.2, and `0.2 = 2 * 0.1`
+    is the same direction, so cosine distance from the probe was exactly
+    0.000000 for both and the tie fell to `row_key`. The docstring claimed a
+    property the arithmetic did not have — the same defect as a structural
+    check that greps its own explanatory comment. The new row now points
+    somewhere else, so «closer» is a real ordering.
     """
     emb, _engine, _metrics = store
     probe = _vec(0.1)
@@ -250,19 +264,25 @@ async def test_the_dense_read_never_mixes_two_models_geometries(store):
             kind="fact", row_key="new", scope=WS, text="y",
             model="bge-m3", fingerprint="b" * 64, embedded_at=NOW,
             has_vector=True,
-        ), tuple([0.2] * EMBEDDING_DIMENSIONS)),
+        # NON-PARALLEL to the probe and still inside the floor: 100 of 1024
+        # dimensions flipped puts it at cosine distance 2*100/1024 ~= 0.195,
+        # comfortably under 0.5 and strictly further than the old row, which
+        # IS the probe and sits at 0. Flipping every dimension would put it at
+        # ~2 and it would be dropped by the floor instead of out-ranked, which
+        # is a different test.
+        ), tuple([-0.1] * 100 + [0.1] * (EMBEDDING_DIMENSIONS - 100))),
     ))
 
-    rows, status = await emb.nearest(
+    read = await emb.nearest(
         kind="fact", scope=WS, model="bge-m3", probe=probe, limit=8,
         floor=0.5,
     )
 
-    assert [m.row_key for m in rows] == ["new"], (
+    assert [m.row_key for m in read.hits] == ["new"], (
         "the row embedded under another model must not rank at all, however "
         "close its vector happens to be"
     )
-    assert status == "ok"
+    assert read.status == "ok"
 
     # The positive control: the old row IS in the table and IS reachable — so
     # this is the model filter excluding it from RANKING, not the write having
@@ -288,16 +308,16 @@ async def test_the_lexical_channel_finds_a_term_and_ranks_the_predicate(store):
         (_row("other", text="the wedding │ of │ Grant"), _vec()),
     ))
 
-    rows, status = await emb.lexical(
+    read = await emb.lexical(
         kind="fact", scope=WS, query="who made big walk", limit=8,
     )
 
-    assert status == "ok"
-    assert [m.row_key for m in rows] == ["made", "means"], (
+    assert read.status == "ok"
+    assert [m.row_key for m in read.hits] == ["made", "means"], (
         "the unrelated triple must not clear the threshold, and the predicate "
         "the question asked for must rank first"
     )
-    assert rows[0].distance < rows[1].distance
+    assert read.hits[0].distance < read.hits[1].distance
 
 
 async def test_the_lexical_channel_matches_cantonese_terms(store):
@@ -312,11 +332,11 @@ async def test_the_lexical_channel_matches_cantonese_terms(store):
         (_row("walk", text="big walk │ means │ a walking activity"), _vec()),
     ))
 
-    rows, _status = await emb.lexical(
+    read = await emb.lexical(
         kind="fact", scope=WS, query="打風", limit=8,
     )
 
-    assert [m.row_key for m in rows] == ["typhoon"]
+    assert [m.row_key for m in read.hits] == ["typhoon"]
 
 
 async def test_a_paraphrased_question_falls_below_the_lexical_threshold(store):
@@ -335,12 +355,12 @@ async def test_a_paraphrased_question_falls_below_the_lexical_threshold(store):
         (_row("hh", text="大步行 │ made_by │ House House"), _vec()),
     ))
 
-    rows, status = await emb.lexical(
+    read = await emb.lexical(
         kind="fact", scope=WS, query="邊個做嘅大步行", limit=8,
     )
 
-    assert rows == ()
-    assert status == "nothing_found"
+    assert read.hits == ()
+    assert read.status == "nothing_found"
 
 
 async def test_the_lexical_channel_never_crosses_a_scope(store):
@@ -353,8 +373,223 @@ async def test_the_lexical_channel_never_crosses_a_scope(store):
               scope="ws-other"), _vec()),
     ))
 
-    rows, _status = await emb.lexical(
+    read = await emb.lexical(
         kind="fact", scope=WS, query="big walk", limit=8,
     )
 
-    assert [m.row_key for m in rows] == ["mine"]
+    assert [m.row_key for m in read.hits] == ["mine"]
+
+
+async def _stored_vector(engine, row_key: str):
+    """The column itself, read around the store.
+
+    `StoredEmbedding` deliberately omits the vector — nothing outside the
+    store has a use for 1024 floats — and that is right for the type and fatal
+    for a test about the column. Reading it here is the same move the queued
+    row's positive control makes: when the type cannot see the thing under
+    test, the test looks past the type rather than pretending.
+    """
+    async with engine.connect() as conn:
+        return (await conn.execute(sa.text(
+            "select v1024::text from embedding where row_key = :k"
+        ), {"k": row_key})).scalar_one()
+
+
+async def test_re_embedding_actually_replaces_the_vector(store):
+    """**The test named for this could not see it.**
+
+    Deleting `"v1024": stmt.excluded.v1024` from the upsert's `set_` — so a
+    re-embed rewrites text, model, fingerprint and `embedded_at` and leaves
+    the OLD VECTOR — left the whole suite green, because every assertion was
+    on the fields `StoredEmbedding` carries and the vector is not one of them.
+
+    What that costs is exactly the corruption this module exists to prevent,
+    surviving inside the mechanism built to prevent it: a model swap rewrites
+    the model name on every row, the sweep reports a clean re-embed, `nearest`
+    filters on the NEW model — and ranks on the OLD model's geometry.
+    Permanently, and invisibly, because every label says the migration
+    succeeded. The model filter makes it worse rather than better, since the
+    rows now pass it while carrying foreign vectors.
+    """
+    emb, engine, _metrics = store
+    await emb.upsert(rows=((_row("f1", fp="a" * 64), _vec(0.1)),))
+    before = await _stored_vector(engine, "f1")
+
+    await emb.upsert(rows=((_row("f1", fp="b" * 64), _vec(0.9)),))
+    after = await _stored_vector(engine, "f1")
+
+    assert before != after, (
+        "a re-embed must replace the vector, not only the fingerprint that "
+        "describes it"
+    )
+    assert after.startswith("[0.9")
+
+
+async def test_a_dense_read_against_a_broken_engine_is_unavailable(store):
+    """**Issue #71's defect on the verb that faces a user.** Postgres down,
+    retrieval asks, gets `nothing_found`, and she says «I don't know anything
+    about that» when the truth is she could not look.
+
+    Only `existing` had an outage test, so changing this branch's status to
+    `nothing_found` left the suite green.
+    """
+    _emb, _engine, metrics = store
+    broken = SqlEmbeddingStore(
+        create_sql_engine("postgresql+asyncpg://nobody@127.0.0.1:1/none"),
+        metrics=metrics,
+    )
+
+    read = await broken.nearest(
+        kind="fact", scope=WS, model="bge-m3", probe=_vec(0.1), limit=8,
+        floor=0.5,
+    )
+
+    assert read.hits == ()
+    assert read.status == "unavailable"
+    assert metrics.get(
+        "nora_embedding_store_total", verb="nearest",
+        status="unavailable") == 1
+
+
+async def test_a_lexical_read_against_a_broken_engine_is_unavailable(store):
+    """The same rule on the other channel. A guard on one of two channels is
+    not a guard, and the verb above collapses `nothing_found` when EITHER
+    channel silently reports the wrong one."""
+    _emb, _engine, metrics = store
+    broken = SqlEmbeddingStore(
+        create_sql_engine("postgresql+asyncpg://nobody@127.0.0.1:1/none"),
+        metrics=metrics,
+    )
+
+    read = await broken.lexical(
+        kind="fact", scope=WS, query="big walk", limit=8,
+    )
+
+    assert read.status == "unavailable"
+
+
+async def test_the_staleness_read_never_crosses_a_scope(store):
+    """**Worse than a leak.** Key `K` is embedded in `ws-other`; pass 4 sweeps
+    `ws-main`; without the scope filter `existing` returns the other
+    workspace's row, ITS fingerprint decides `ws-main`'s staleness, `K` is
+    never embedded in `ws-main` at all, and one workspace's text silently
+    drives the other's decision.
+
+    The sibling test guards `nearest`'s scope. Nobody guarded this one, and
+    deleting the filter left the suite green.
+    """
+    emb, _engine, _metrics = store
+    await emb.upsert(rows=(
+        (_row("shared", text="theirs", scope="ws-other"), _vec()),
+    ))
+
+    read = await emb.existing(
+        kind="fact", scope=WS, row_keys=("shared",),
+    )
+
+    assert read.rows == ()
+    assert read.status == "nothing_found"
+
+    # The positive control: the row IS there under its own scope, so this is
+    # the filter excluding it rather than the write having failed.
+    theirs = await emb.existing(
+        kind="fact", scope="ws-other", row_keys=("shared",),
+    )
+    assert [r.row_key for r in theirs.rows] == ["shared"]
+
+
+async def test_the_staleness_read_is_ordered_under_its_own_limit(store):
+    """`existing` has no LIMIT today, but it is ordered, and the ordering is
+    what makes two reads of unchanged state agree — the property the whole
+    tie-break round established for every other read in this tier.
+
+    Written after a review pointed out that this one shipped with a comment
+    and no test, which is the exact thing that round was about.
+    """
+    emb, _engine, _metrics = store
+    await emb.upsert(rows=tuple(
+        (_row(k), _vec()) for k in ("f3", "f1", "f2")
+    ))
+
+    first = await emb.existing(
+        kind="fact", scope=WS, row_keys=("f3", "f1", "f2"),
+    )
+    again = await emb.existing(
+        kind="fact", scope=WS, row_keys=("f2", "f3", "f1"),
+    )
+
+    assert [r.row_key for r in first.rows] == ["f1", "f2", "f3"]
+    assert [r.row_key for r in again.rows] == [r.row_key for r in first.rows], (
+        "the answer must not depend on the order the caller asked in"
+    )
+
+
+def test_the_staleness_read_declares_its_order_in_sql():
+    """**The behavioural test above cannot falsify this, and I measured that
+    rather than assuming it**: deleting the `ORDER BY` leaves it green,
+    because at three keys Postgres returns them in a stable order anyway.
+
+    "Postgres may return any order" is a statement about what the planner is
+    PERMITTED to do, so its absence is unfalsifiable by execution. The clause
+    is asserted in the source instead, with the docstring stripped via the AST
+    — a structural check that reads prose is an instrument that cannot fail.
+    """
+    fn = SqlEmbeddingStore.existing
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn))).body[0]
+    if (
+        tree.body
+        and isinstance(tree.body[0], ast.Expr)
+        and isinstance(tree.body[0].value, ast.Constant)
+    ):
+        del tree.body[0]
+    source = ast.unparse(tree)
+
+    assert "order_by" in source, (
+        "two reads of unchanged state must agree, and only the clause can "
+        "promise that"
+    )
+
+
+async def test_an_empty_probe_is_unavailable_and_a_zero_limit_is_not(store):
+    """Two different silences. An empty probe means the caller could not
+    compute a query vector — «I could not look» — while `limit <= 0` means
+    nobody asked for any rows. The first version returned `nothing_found` for
+    both and counted neither, so the verb under-counted while its help text
+    promised three states."""
+    emb, _engine, metrics = store
+
+    empty = await emb.nearest(
+        kind="fact", scope=WS, model="bge-m3", probe=(), limit=8, floor=0.5,
+    )
+    zero = await emb.nearest(
+        kind="fact", scope=WS, model="bge-m3", probe=_vec(), limit=0,
+        floor=0.5,
+    )
+
+    assert empty.status == "unavailable"
+    assert zero.status == "nothing_found"
+    assert metrics.get(
+        "nora_embedding_store_total", verb="nearest",
+        status="unavailable") == 1
+    assert metrics.get(
+        "nora_embedding_store_total", verb="nearest",
+        status="nothing_found") == 1
+
+
+async def test_a_wrong_width_probe_raises_rather_than_reporting_unavailable(
+    store,
+):
+    """**A permanent caller bug must not wear an infrastructure label.**
+
+    Postgres rejects a comparison between a 1024-d column and a 3-d probe;
+    `except Exception` caught it and the caller read `unavailable` — so a bug
+    that will never fix itself was retried forever and pointed an operator at
+    a healthy database. R-27's three states are about the world, not about us.
+    """
+    emb, _engine, _metrics = store
+
+    with pytest.raises(ValueError, match="dimensions"):
+        await emb.nearest(
+            kind="fact", scope=WS, model="bge-m3", probe=(0.1, 0.2, 0.3),
+            limit=8, floor=0.5,
+        )

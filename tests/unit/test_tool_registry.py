@@ -84,6 +84,8 @@ def test_the_registry_exposes_every_declared_tool():
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
         "note_read", "note_search", "note_create", "note_update",
+        # The knowledge tier's retrieval verb (23 §9).
+        "search_knowledge",
     }
 
 
@@ -200,6 +202,7 @@ def test_budgets_match_todays_table():
         # meaningful: under one `note_write` an accidental create would spend
         # the revision budget instead.
         "note_read": 3, "note_search": 2, "note_create": 1, "note_update": 2,
+        "search_knowledge": 2,
     }
 
 
@@ -567,6 +570,7 @@ READ_ONLY = frozenset({
     "web_search", "web_fetch", "weather", "list_reminders", "list_events",
     "suggest_venue", "version", "search_gifs",
     "note_read", "note_search",
+    "search_knowledge",
     "music_status",
 })
 

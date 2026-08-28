@@ -82,12 +82,12 @@ class _Channels(Protocol):
     async def nearest(
         self, *, kind: str, scope: str, model: str, probe: tuple[float, ...],
         limit: int, floor: float,
-    ) -> tuple[Any, str]: ...
+    ) -> Any: ...
 
     async def lexical(
         self, *, kind: str, scope: str, query: str, limit: int,
         threshold: float,
-    ) -> tuple[Any, str]: ...
+    ) -> Any: ...
 
 
 class _Embedder(Protocol):
@@ -182,14 +182,15 @@ class KnowledgeSearch:
         texts: dict[str, str] = {}
         statuses: list[str] = []
 
-        lex, lex_status = await self._channels.lexical(
+        lex = await self._channels.lexical(
             kind=self._kind, scope=scope, query=query, limit=self._top_k,
             threshold=self._lexical_threshold,
         )
-        statuses.append(lex_status)
-        if lex:
-            ranked["lexical"] = tuple(m.row_key for m in lex)
-            texts.update({m.row_key: m.text for m in lex})
+        statuses.append(lex.status)
+        self._count_channel("lexical", lex.status)
+        if lex.hits:
+            ranked["lexical"] = tuple(m.row_key for m in lex.hits)
+            texts.update({m.row_key: m.text for m in lex.hits})
 
         dense_status = await self._dense(
             scope=scope, query=query, ranked=ranked, texts=texts,
@@ -233,16 +234,16 @@ class KnowledgeSearch:
         if result.status != "ok" or not result.vectors:
             self._count_channel("dense", "unavailable")
             return "unavailable"
-        rows, status = await self._channels.nearest(
+        read = await self._channels.nearest(
             kind=self._kind, scope=scope, model=self._embedder.model,
             probe=tuple(result.vectors[0]), limit=self._top_k,
             floor=self._dense_floor,
         )
-        if rows:
-            ranked["dense"] = tuple(m.row_key for m in rows)
-            texts.update({m.row_key: m.text for m in rows})
-        self._count_channel("dense", status)
-        return str(status)
+        if read.hits:
+            ranked["dense"] = tuple(m.row_key for m in read.hits)
+            texts.update({m.row_key: m.text for m in read.hits})
+        self._count_channel("dense", read.status)
+        return str(read.status)
 
     def _count(self, status: SearchStatus) -> None:
         # RUNTIME check as well as mypy's: `nora.language` is outside the

@@ -119,6 +119,8 @@ def test_every_declared_tool_is_built(wiring):
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
         "note_read", "note_search", "note_create", "note_update",
+        # The knowledge tier's retrieval verb (23 §9).
+        "search_knowledge",
     }
 
 

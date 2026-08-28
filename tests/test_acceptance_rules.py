@@ -469,6 +469,13 @@ RULE_TESTS = {
     # once. The fact-render tests and the store round trip are named in the
     # index row.
     "R-79": "test_a_disputed_gloss_renders_marked_and_still_renders",
+    # R-80 names the MIXED-GEOMETRY test rather than the re-embed one, and the
+    # choice is the same as R-79's: both are needed, and the one a future
+    # change breaks is the filter. `model=` reads like a convenience argument
+    # — the kind a later author deletes as tidying — and the design bundle
+    # never raises the problem it solves, so the row and this entry are the
+    # only places the reason is written down.
+    "R-80": "test_the_dense_read_never_mixes_two_models_geometries",
 }
 
 
