@@ -459,6 +459,16 @@ RULE_TESTS = {
     # why their named tests live beside the stores.
     "R-77": "test_a_claim_about_a_roster_person_is_refused_at_the_sink",
     "R-78": "test_degree_two_promotes_and_degree_one_does_not",
+    # R-79 names the LEXEME render, not the fact one, and that is the whole
+    # point of the choice. «A dispute marks rather than mutes» held in the
+    # fact tier from the first commit and reddens under mutation there; the
+    # lexeme half wrote its four columns and NOTHING READ THEM, so the
+    # contradicted gloss kept rendering as unqualified truth while
+    # `nora_dispute_targets_total` reported `ok`. The clause a future change
+    # breaks is the read, and this is the tier where it was already broken
+    # once. The fact-render tests and the store round trip are named in the
+    # index row.
+    "R-79": "test_a_disputed_gloss_renders_marked_and_still_renders",
 }
 
 
