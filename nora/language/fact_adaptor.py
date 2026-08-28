@@ -43,9 +43,10 @@ exception.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Protocol
+from typing import Any, Protocol
 
 from ..domain.facts import (
     DEFAULT_MAX_PREDICATE_CHARS,
@@ -124,6 +125,17 @@ class _EntityPromoter(Protocol):
     structural."""
 
     async def promote(self, *, workspace: str, now_ms: int) -> object: ...
+
+
+class _Sweeper(Protocol):
+    """`FactEmbedder.sweep`, seen from here — pass 4's whole surface.
+
+    A Protocol for `_EntityPromoter`'s reason: this adaptor knows that
+    something re-embeds after a write and knows nothing about how, which is
+    what lets the contract suite build it without an endpoint.
+    """
+
+    async def sweep(self, *, workspace: str, now_ms: int) -> Any: ...
 
 
 class _EntityResolver(Protocol):
@@ -511,11 +523,13 @@ class FactAdaptor:
         max_term_chars: int = DEFAULT_MAX_TERM_CHARS,
         max_predicate_chars: int = DEFAULT_MAX_PREDICATE_CHARS,
         entities: _EntityPromoter | None = None,
+        embedder: _Sweeper | None = None,
         metrics: Metrics | None = None,
     ) -> None:
         self._facts = facts
         self._candidates = candidates
         self._entities = entities
+        self._embedder = embedder
         self._max_adjudications = max_adjudications_per_tick
         self._max_standing_facts = max_standing_facts
         self._max_term_chars = max_term_chars
@@ -719,6 +733,7 @@ class FactAdaptor:
 
         await self._retire_candidates(key=key, proposals=proposals, now_ms=now_ms)
         await self._promote(key=key, wrote=bool(ids), now_ms=now_ms)
+        await self._embed(key=key, wrote=bool(ids), now_ms=now_ms)
         return len(ids)
 
     async def _promote(self, *, key: str, wrote: bool, now_ms: int) -> None:
@@ -748,6 +763,62 @@ class FactAdaptor:
         except Exception:
             log.exception("fact promotion failed: workspace=%s", key)
             self._skip("promotion_failed")
+
+    async def _embed(self, *, key: str, wrote: bool, now_ms: int) -> None:
+        """Pass 4, AFTER pass 3 and outside the writes' transaction.
+
+        **3 before 4, always** (`25` §5). The section argues it from promotion
+        rewriting the triple, which migration 0039 made untrue — promotion adds
+        `object_entity_id` and leaves `object_literal` alone, precisely so the
+        words the room used survive resolution. The ordering still holds for
+        the reason that survives: a tick that promotes and then embeds spends
+        one pass, and one that embeds then promotes leaves rows to re-embed
+        next tick.
+
+        **On EVERY tick, not only on one that wrote**, and the first version
+        got this wrong by copying `_promote`'s trigger without checking that
+        the two passes answer the same question.
+
+        Promotion is driven by degree, which changes only when a fact lands.
+        Staleness is `fingerprint(model, text)` — and the MODEL half moves with
+        no write at all. Gated on `wrote`, a workspace that had said everything
+        it was going to say would never re-embed after a model swap, and R-80
+        makes un-re-embedded rows INVISIBLE to retrieval: the stated
+        degradation is "`nothing_found` shrinking for a while", and with that
+        trigger the while is unbounded. Nothing measured it, because the sweep
+        that never fires emits no counter at all.
+
+        The cost of running it every tick is one indexed read that returns
+        nothing when the workspace is current — the fingerprint predicate is
+        exactly what makes a quiet sweep affordable, and `nothing_found` with
+        no model call is its usual answer.
+
+        Its own failure is already `unavailable` inside the sweep and never
+        raises, so there is nothing to catch here — but the count is read back
+        rather than discarded, because "the sweep ran and wrote nothing" and
+        "the sweep was never called" are the same silence otherwise.
+        """
+        if self._embedder is None:
+            return
+        started = time.perf_counter()
+        sweep = await self._embedder.sweep(workspace=key, now_ms=now_ms)
+        # The COST, because the instruments above measure the RESULT and a
+        # correct result is compatible with any cost. This runs INSIDE the
+        # adjudication tick and outside the runtime's `wait_for`, which wraps
+        # only the model invocation — so a slow endpoint spends the tick here
+        # and `runtime` then skips this (adaptor, key) as `in_flight_adaptor`,
+        # costing the workspace its next adjudications. That consequence is
+        # counted one layer up; this is the cause, and it was unmeasured.
+        self._observe_sweep(time.perf_counter() - started)
+        if sweep.status == "unavailable":
+            log.warning(
+                "fact embedding incomplete: %d of %d rows written "
+                "(workspace=%s)", sweep.embedded, sweep.stale, key,
+            )
+
+    def _observe_sweep(self, seconds: float) -> None:
+        if self._metrics is not None:
+            self._metrics.observe("nora_fact_embed_sweep_seconds", seconds)
 
     def _candidate_id_for(self, key: str, payload: object) -> str | None:
         """The candidate a verdict settles, or `None`. ONE lookup, used by both

@@ -53,7 +53,7 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
-from typing import Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
 from nora.agent.security import _names_a_person, scan_identifiers
@@ -670,6 +670,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                "contents, and you must read one before you can "
                                "revise it",
                             source_tier="remembered", read_only=True),
+    # `source_tier="remembered"`: what she holds, not what she is looking at.
+    # Budget 2 — a question may legitimately need a follow-up search when the
+    # first phrasing misses, and the verb is one database read plus one small
+    # embedding call, not a research loop.
+    "search_knowledge": NativeTool(2, "a question about something this room has "
+                                      "discussed before, beyond the handful "
+                                      "<facts> shows — searches what she knows "
+                                      "by meaning as well as by words, across "
+                                      "languages",
+                                   source_tier="remembered", read_only=True),
     "note_search": NativeTool(2, "something might be written down inside a note "
                                  "whose title says nothing about it — searches "
                                  "note contents, not the titles you can already "
@@ -883,6 +893,18 @@ RECALL_LOOKUPS_WINDOW_DAYS = 7
 # larger scale, since this is a WHOLE response re-sent on every subsequent
 # model call in the turn, not one search result.
 RECALL_LOOKUPS_MAX_CHARS = 8000
+
+# How many rows one `search_knowledge` hands back. `23` §9's 8, and it matches
+# `19` §6's room slice on purpose so the verb and the <facts> block speak in the
+# same unit — a model that reads "8 shown" in the block and gets a different
+# number from the verb has to reconcile two counts that mean the same thing.
+#
+# NOT a model-supplied parameter, DEC-24's rule: a parameter is a value the
+# model must invent on every call, so each one buys a way to get the call
+# wrong. The design's signature carries `limit` and `hops`; both are omitted
+# here for that reason, and `hops` additionally because the structural channel
+# is not built yet — a knob the code cannot honour is worse than an absent one.
+KNOWLEDGE_SEARCH_LIMIT = 8
 
 # How many notes one `note_search` hands back, and it is NOT a model-supplied
 # parameter on purpose (DEC-24's rule: a parameter is a value the model must
@@ -1545,6 +1567,24 @@ class EventsCollaborator(Protocol):
     ) -> VenueSuggestions: ...
 
 
+class KnowledgeCollaborator(Protocol):
+    """Structural type for the retrieval verb —
+    `nora.language.knowledge_search.KnowledgeSearch` in production.
+
+    A local Protocol for `NoteCollaborator`'s reason: `nora.agent` sits above
+    `nora.language` in the layered import contract, so this module can only
+    name the SHAPE. One verb, because one verb is all the tool layer calls.
+
+    The return is deliberately not typed beyond «has `status` and `hits`»: a
+    tool must not depend on a dataclass it cannot import, and the two fields
+    are the whole contract.
+    """
+
+    async def search(
+        self, *, scope: str, query: str, limit: int,
+    ) -> Any: ...
+
+
 class NoteCollaborator(Protocol):
     """Structural type for the note store — `nora.infra.sql.notes.SqlNoteStore`
     in production, `nora.testing.note_store.InMemoryNoteStore` in tests.
@@ -1654,6 +1694,8 @@ def build_tool_specs(
     events: EventsCollaborator | None = None,
     notes: NoteCollaborator | None = None,
     note_workspace: Callable[[str, str], str | None] | None = None,
+    workspace_for: Callable[[str, str], str | None] | None = None,
+    knowledge: KnowledgeCollaborator | None = None,
     music: MusicToolBridge | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
@@ -4817,13 +4859,23 @@ def build_tool_specs(
 
         Resolved per turn from `room.platform` and the bound conversation —
         never a process-wide constant. `None` means policy could not name the
-        room, and every note verb answers `unavailable` on it: reading the
-        wrong workspace's notebook is worse than reading none.
+        room, and every verb that needs one answers `unavailable` on it:
+        reading the wrong workspace's notebook is worse than reading none.
+
+        **Shared by the note tier and the knowledge tier**, because it is one
+        value — `policy.conversation(...).workspace` — and two resolvers for
+        it would be two definitions of which social unit a room belongs to.
+        `workspace_for` is the parameter; `note_workspace` is its older name,
+        still accepted so the note tier's call sites keep working. Preferring
+        one over the other rather than requiring both means the knowledge tier
+        does not silently depend on the NOTE tier being wired, which it would
+        have if it had simply read `note_workspace`.
         """
-        if note_workspace is None:
+        resolver = workspace_for or note_workspace
+        if resolver is None:
             return None
         try:
-            return note_workspace(room.platform, bound_conversation_id)
+            return resolver(room.platform, bound_conversation_id)
         except Exception:
             log.exception("note workspace resolution failed")
             return None
@@ -4914,6 +4966,87 @@ def build_tool_specs(
             # latch has no use for: it is here so a revision can be discussed
             # («this changed since I read it»), not so it can be passed back.
             "revision_id": head.id,
+        }
+
+    async def search_knowledge(query: str) -> dict:
+        """Look through what I actually know about this room — the things
+        people have said and I have checked — rather than what is in front of
+        me right now.
+
+        <facts> shows a handful and tells you how many more I hold. This is
+        how you reach the rest. It is for a QUESTION: 「邊個做嘅大步行」,
+        「big walk 係咩嚟」 — give it the question, not a keyword, because it
+        searches by meaning as well as by the words themselves and a question
+        carries more of both.
+
+        It finds things written in another language from the one you ask in.
+        It does not invent: everything it returns is something somebody here
+        said and I checked.
+
+        Outcomes: `ok` with what I hold, closest first; `nothing_found` when
+        the room genuinely has not discussed it — a real answer; `unavailable`
+        when I could not look, which is NOT the same and you should not report
+        it as «we have never talked about that».
+
+        Args:
+            query: The question, in the words you would ask it.
+        """
+        if knowledge is None:
+            _record(metrics, "search_knowledge", "unavailable", reason="off")
+            return {
+                "status": "unavailable",
+                "note": "I can't reach what I know right now.",
+            }
+        workspace = _workspace() or ""
+        if not workspace:
+            # A conversation with no workspace is one nothing was ever written
+            # under, so there is nothing to search rather than a failure — but
+            # it is `unavailable` and not `nothing_found`, because "no
+            # workspace configured" is a WIRING gap and R-27's whole rule is
+            # that a wiring gap is never «there's nothing».
+            _record(
+                metrics, "search_knowledge", "unavailable", reason="no_workspace")
+            return {
+                "status": "unavailable",
+                "note": "I can't reach what I know right now.",
+            }
+        probe = query.strip()
+        if not probe:
+            _record(metrics, "search_knowledge", "refused", reason="empty")
+            return {
+                "status": "refused",
+                "note": "Give me the question you want me to look up.",
+            }
+        result = await knowledge.search(
+            scope=workspace, query=probe, limit=KNOWLEDGE_SEARCH_LIMIT,
+        )
+        if result.status == "unavailable":
+            _record(metrics, "search_knowledge", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't search what I know just now.",
+            }
+        if not result.hits:
+            _record(metrics, "search_knowledge", "nothing_found")
+            return {"status": "nothing_found"}
+        _record(
+            metrics, "search_knowledge", "ok", count=len(result.hits))
+        return {
+            "status": "ok",
+            # The TEXT and nothing else. No row_key, no entity id, no score:
+            # anything a model echoes back is an ordinal handle and never a
+            # stored identifier, and this verb has nothing for it to echo — so
+            # the safest shape is the one with no identifier in it at all.
+            # `dream_screen` drops any item carrying a uuid, silently, and a
+            # result shaped to trip it would look healthy on every counter.
+            "facts": [
+                # The dispute mark rides WITH the text rather than as a field
+                # (R-79): the model reads one line, and a claim she holds
+                # under objection must not read as one she does not. The
+                # `<facts>` block renders it the same way.
+                f"{hit.text} — disputed" if hit.disputed else hit.text
+                for hit in result.hits
+            ],
         }
 
     async def note_search(query: str) -> dict:
@@ -5547,6 +5680,7 @@ def build_tool_specs(
         _spec("rsvp_event", rsvp_event),
         _spec("cancel_event", cancel_event),
         _spec("suggest_venue", suggest_venue),
+        _spec("search_knowledge", search_knowledge),
         _spec("note_read", note_read),
         _spec("note_search", note_search),
         _spec("note_create", note_create),
@@ -5591,6 +5725,8 @@ def build_tools(
     links: LinkCarry | None = None,
     notes: NoteCollaborator | None = None,
     note_workspace: Callable[[str, str], str | None] | None = None,
+    workspace_for: Callable[[str, str], str | None] | None = None,
+    knowledge: KnowledgeCollaborator | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
     media_store: MediaObjectStore | None = None,
@@ -5614,6 +5750,7 @@ def build_tools(
         question=question, context_window=context_window, ai_peer=ai_peer,
         links=links, giphy_source=giphy_source,
         notes=notes, note_workspace=note_workspace,
+        knowledge=knowledge, workspace_for=workspace_for,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         media_store=media_store,
     )

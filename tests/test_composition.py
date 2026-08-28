@@ -1155,3 +1155,44 @@ async def test_a_missing_veto_file_refuses_to_start_readably(cfg, tmp_path):
         }))
 
     assert "failed to mount" in str(caught.value)
+
+
+async def test_the_knowledge_tier_is_wired_and_not_merely_granted(cfg):
+    """**A capability she is told she has and cannot use is the phantom-metric
+    rule one layer up, and it costs tokens on every request.**
+
+    `search_knowledge` was in `NATIVE_TOOLS` unconditionally while composition
+    constructed none of it — so the tool went into every model call's schema,
+    `ToolRegistry.capability()` rendered "searches what she knows by meaning
+    as well as by words, across languages" into the doctrine block
+    immediately above the closed-world clause telling her that list is the
+    WHOLE of what she can do, and the verb could only ever answer
+    `unavailable`.
+
+    Asserted through `build_dependencies` against a real database rather than
+    by grepping the composition source, because the failure was that the wire
+    did not exist and a grep would have found the tool name either way.
+    """
+    deps = await build_dependencies(override_config(cfg, {
+        "facts.enabled": True,
+        "facts.embedding_url": "http://127.0.0.1:1/nowhere",
+    }))
+
+    registry = deps.engagement._tool_registry
+    assert registry._knowledge is not None, (
+        "the retrieval verb must have a collaborator behind it, or the grant "
+        "is a capability she cannot use"
+    )
+    assert registry._workspace_for is not None, (
+        "and a workspace resolver of its own, so it does not depend on the "
+        "note tier being wired"
+    )
+
+
+async def test_the_knowledge_tier_stays_dark_with_the_flag_off(cfg):
+    """The other half, and the reason the grant is safe: with `[facts]` off
+    nothing is constructed, so the tool answers `unavailable` for the honest
+    reason rather than because a wire is missing."""
+    deps = await build_dependencies(cfg)
+
+    assert deps.engagement._tool_registry._knowledge is None

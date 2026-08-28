@@ -539,6 +539,15 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
         # substitution this classification exists to prevent. Move them when
         # the note tier's curator adaptor lands and the wiring is real.
         "note_read", "note_search",
+        # `search_knowledge` for the same reason and a sharper one: `23` §9
+        # grants it to Dreamer adaptors, and it resolves its workspace THROUGH
+        # THE ROOM, while `RegistryToolSource.build` hands a workspace-keyed
+        # adaptor a room with no platform and the workspace in the
+        # conversation slot. Policy cannot name that, so the verb answers
+        # `unavailable` on every call — which is `08-state.md` §10's stated
+        # trap, "the seam looking like it works while every call fails
+        # closed". Move it when the key path is SUPPLIED rather than derived.
+        "search_knowledge",
         # `music_status` (design/discord-music/07-agent-tool.md) reports on
         # ONE Discord conversation's voice session — the exact shape
         # `load_transcript`/`where_is` are room-scoped for, not a

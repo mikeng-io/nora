@@ -908,6 +908,26 @@ enabled = false
 # recognition_window_hours = 24     # how far back a correction may reach
 # dispute_classify_timeout_seconds = 8.0   # ON THE REPLY PATH — see above
 # retention_days = 180              # how long a settled candidate is kept
+# The embedding endpoint, and it is set rather than commented because the
+# knowledge tier's dense channel is the half no lexical scheme can replace.
+# `bge-m3` is pulled on this host's Ollama (verified 2026-08-28) and reached
+# over the host gateway, the same way [stt] and [llm] reach their services.
+#
+# MEASURED through the repo's own port, not assumed: 1024 dimensions, and the
+# Cantonese question 邊個做嘅大步行 sits at 0.3453 from
+# `big walk │ made_by │ House House` and 0.6366 from an unrelated triple — so
+# the 0.5 floor admits the right one and excludes the other. That same query
+# scores 0.250 on the lexical channel, below its threshold, which is why both
+# channels exist.
+#
+# Empty is a real deployment: the tier runs on the lexical channel alone,
+# losing cross-lingual and paraphrased recall, counted as
+# nora_knowledge_channel_total{channel="dense",status="not_configured"}.
+embedding_url = "http://host.docker.internal:11434"
+# embedding_model = "bge-m3"
+# embedding_timeout_seconds = 30.0
+# max_embed_rows_per_sweep = 200   # one TICK's cost
+# embed_batch_size = 32            # one failed call's blast radius
 # veto_file = "/app/config/veto.txt"  # operator-owned "not a thing" list (21 §10).
 #                                   # A path that is NOT THERE refuses to start —
 #                                   # a mount that failed to attach must not read as

@@ -1059,3 +1059,126 @@ async def test_a_promotion_failure_does_not_fail_the_tick_that_wrote():
     assert written == 1
     assert metrics.get(
         "nora_fact_adjudications_skipped_total", reason="promotion_failed") == 1
+
+
+class _RecordingSweeper:
+    """Pass 4, seen from the tick. Records ORDER against the promoter, because
+    `25` §5's "3 before 4, always" is a property of the pair rather than of
+    either one."""
+
+    def __init__(self, log: list[str], *, status: str = "ok") -> None:
+        self._log = log
+        self._status = status
+        self.calls: list[tuple[str, int]] = []
+
+    async def sweep(self, *, workspace: str, now_ms: int):
+        self._log.append("embed")
+        self.calls.append((workspace, now_ms))
+        from nora.language.fact_embedder import Sweep
+        return Sweep(embedded=1, stale=1, status=self._status)
+
+
+class _OrderedPromoter:
+    def __init__(self, log: list[str]) -> None:
+        self._log = log
+        self.calls: list[tuple[str, int]] = []
+
+    async def promote(self, *, workspace: str, now_ms: int) -> object:
+        self._log.append("promote")
+        self.calls.append((workspace, now_ms))
+        return None
+
+
+async def _drive_one_write(adaptor, candidates):
+    candidates.entities = [_entity("big walk")]
+    await _pending_candidate(
+        candidates, subject="big walk", predicate="made_by", obj="hh",
+    )
+    await adaptor.inputs(key=WS, batch=())
+    verdicts = await adaptor.accept(key=WS, items=(
+        {"subject": "big walk", "predicate": "made_by", "object": "hh",
+         "status": "supported", "addresses_claim": True,
+         "source_url": "https://x.test/a", "source_excerpt": "x"},
+    ))
+    return await adaptor.commit(
+        key=WS, proposals=tuple(_proposal(v) for v in verdicts), now_ms=NOW,
+    )
+
+
+async def test_the_embedding_sweep_runs_after_promotion_and_not_before():
+    """**3 before 4, always** (`25` §5). The section's original argument —
+    promotion rewrites the triple, so embedding first wastes the call — stopped
+    being true at migration 0039, which made promotion additive so the words
+    the room used survive resolution. The ordering still holds for the reason
+    that survives: promote-then-embed spends one pass, embed-then-promote
+    leaves rows to re-embed next tick.
+
+    Asserted as an ORDER rather than as two independent calls, because that is
+    the property, and two `assert x.calls` would pass with the pair reversed.
+    """
+    facts, candidates = InMemoryFactStore(), InMemoryFactCandidateStore()
+    order: list[str] = []
+    promoter, sweeper = _OrderedPromoter(order), _RecordingSweeper(order)
+    adaptor = FactAdaptor(
+        facts=facts, candidates=candidates, max_adjudications_per_tick=5,
+        entities=promoter, embedder=sweeper,
+    )
+
+    assert await _drive_one_write(adaptor, candidates) == 1
+
+    assert order == ["promote", "embed"]
+    assert sweeper.calls == [(WS, NOW)]
+
+
+async def test_the_embedding_sweep_runs_even_on_a_tick_that_wrote_nothing():
+    """**It must NOT match `_promote`'s trigger, and the first version did.**
+
+    Promotion is driven by degree, which changes only when a fact lands.
+    Staleness is `fingerprint(model, text)` — and the MODEL half moves with no
+    write at all. Gated on `wrote`, a workspace that had said everything it
+    was going to say would never re-embed after a model swap, and R-80 makes
+    un-re-embedded rows INVISIBLE to retrieval: the stated degradation is
+    «`nothing_found` shrinking for a while» and the while would be unbounded.
+
+    Nothing measured it either, because a sweep that never fires emits no
+    counter — the absence is invisible in exactly the way the presence would
+    not be.
+
+    A quiet sweep is affordable: the fingerprint predicate answers
+    `nothing_found` after one indexed read and no model call, which is what
+    makes running it every tick the cheap option rather than the thorough one.
+    """
+    facts, candidates = InMemoryFactStore(), InMemoryFactCandidateStore()
+    order: list[str] = []
+    sweeper = _RecordingSweeper(order)
+    promoter = _OrderedPromoter(order)
+    adaptor = FactAdaptor(
+        facts=facts, candidates=candidates, max_adjudications_per_tick=5,
+        entities=promoter, embedder=sweeper,
+    )
+    await adaptor.inputs(key=WS, batch=())
+
+    await adaptor.commit(key=WS, proposals=(), now_ms=NOW)
+
+    assert sweeper.calls == [(WS, NOW)]
+    # The other half of the same decision, in the same test so the pair cannot
+    # drift: PROMOTION still does not run on an empty tick, because degree
+    # genuinely did not change. Two passes, two triggers, one hook.
+    assert promoter.calls == []
+
+
+async def test_an_incomplete_sweep_does_not_fail_the_tick_that_wrote():
+    """The facts are already written by the time pass 4 runs. An
+    `unavailable` sweep must leave `commit`'s count alone — reporting the run
+    as failed with rows in the table is the inversion `_promote` already
+    guards against, and it is worse here because the rows ARE correct, merely
+    unembedded."""
+    facts, candidates = InMemoryFactStore(), InMemoryFactCandidateStore()
+    order: list[str] = []
+    adaptor = FactAdaptor(
+        facts=facts, candidates=candidates, max_adjudications_per_tick=5,
+        entities=_OrderedPromoter(order),
+        embedder=_RecordingSweeper(order, status="unavailable"),
+    )
+
+    assert await _drive_one_write(adaptor, candidates) == 1

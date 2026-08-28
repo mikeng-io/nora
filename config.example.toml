@@ -799,14 +799,36 @@ verify_max_candidates = 10
 max_rendered_exchanges = 4
 
 [facts]
-# The fact tier's gate (docs/superpowers/specs/2026-08-20-fact-tier-design.md).
-# Nothing writes a fact yet — the schema and the <facts> block ship dormant —
-# so this section is a flag and three bounds for a future adaptor, not a
-# running subsystem today.
+# The knowledge tier's gate (design/dreamer-agent-loop/, decision index
+# DEC-144 / R-77 / R-78 / R-79 / R-80). It is a running subsystem behind a
+# flag, not a placeholder — the text here said "nothing writes a fact yet"
+# long after three adaptors wrote.
+#
+# `enabled = true` switches on: extraction, adjudication and entity
+# resolution on the Dreamer's tick; the embedding sweep after them; the
+# <facts> block in every tag's prefill; the correction loop on the REPLY
+# PATH, which holds the conversation's slot for up to
+# dispute_classify_timeout_seconds; and the search_knowledge verb.
 #
 # Ships INERT, like every other subsystem's first deployment: a config.toml
 # written before this section existed keeps loading with facts off.
 enabled = false
+# The dense retrieval channel's endpoint — bge-m3 over Ollama (23 §9),
+# reached the way [stt] and [llm] reach host services. EMPTY IS A REAL
+# DEPLOYMENT rather than a broken one: the tier then runs on the lexical
+# channel alone, which loses cross-lingual and paraphrased recall in a way
+# that is measured and counted, never silent.
+#
+# The width is 1024 and the `embedding` column is created at it, so a model
+# of another width needs its own column rather than this key alone (24 §7.5).
+embedding_url = ""
+# embedding_model = "bge-m3"
+# embedding_timeout_seconds = 30.0
+# One TICK's cost, and one failed call's blast radius. They bound different
+# things: a sweep of 200 in batches of 32 that dies on the third batch has
+# written 64 correct rows and left 136 stale, which is intended.
+# max_embed_rows_per_sweep = 200
+# embed_batch_size = 32
 # The Phase B cap — one research loop (search + classify) per surviving
 # candidate is the expensive step, same shape and same default as
 # [language]'s verify_max_candidates.

@@ -1470,6 +1470,30 @@ class FactsConfig(BaseModel):
     # Losing a correction costs the status quo; two minutes of dead air costs
     # the turn.
     dispute_classify_timeout_seconds: float = Field(default=8.0, gt=0)
+    # Pass 4 and the retrieval verb's endpoint. `23` §9 settles the runtime as
+    # bge-m3 on the Ollama service already running on this host, reached
+    # through a PORT with a fake — not a direct HTTP call from the tier — so
+    # that a service which is down reports `unavailable` rather than raising.
+    #
+    # Empty `embedding_url` is a real deployment and not a broken one: the
+    # tier runs on the lexical channel alone, which loses cross-lingual and
+    # paraphrased recall in a way that is measured
+    # (`SqlEmbeddingStore.lexical`) and counted
+    # (`nora_knowledge_channel_total{channel="dense",status="not_configured"}`).
+    embedding_url: str = ""
+    embedding_model: str = "bge-m3"
+    embedding_timeout_seconds: float = Field(default=30.0, gt=0)
+    # Two numbers because they bound different things: the first is one
+    # TICK's cost, the second the blast radius of a single failed call. A
+    # sweep of 200 in batches of 32 that dies on the third batch has written
+    # 64 correct rows and left 136 stale, which is the intended outcome.
+    #
+    # The sweep runs INSIDE the adjudication tick and outside the runtime's
+    # per-run timeout, so `max_embed_rows_per_sweep / embed_batch_size`
+    # sequential calls at `embedding_timeout_seconds` each is the worst case
+    # it can hold that tick — measured by `nora_fact_embed_sweep_seconds`.
+    max_embed_rows_per_sweep: int = Field(default=200, ge=1)
+    embed_batch_size: int = Field(default=32, ge=1)
     max_term_chars: int = Field(default=DEFAULT_MAX_TERM_CHARS, ge=1)
     max_predicate_chars: int = Field(default=DEFAULT_MAX_PREDICATE_CHARS, ge=1)
 

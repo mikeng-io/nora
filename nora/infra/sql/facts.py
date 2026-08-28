@@ -86,7 +86,7 @@ from nora.domain.facts import (
 )
 from nora.domain.ports import Proposal
 from nora.infra.sql.entities import SqlEntityStore
-from nora.infra.sql.schema import FACT, FACT_ASSERTER
+from nora.infra.sql.schema import EMBEDDING, FACT, FACT_ASSERTER
 
 log = logging.getLogger(__name__)
 
@@ -834,6 +834,140 @@ class SqlFactStore:
         except Exception:
             log.exception("recent_facts unavailable for workspace %s", workspace)
             return ()
+
+    async def standing_among(
+        self, *, workspace: str, fact_ids: tuple[str, ...],
+    ) -> tuple[dict[str, bool], str]:
+        """Which of these ids are STILL STANDING, and which of those are
+        disputed. Returns `{fact_id: is_disputed}` and an R-27 status.
+
+        **Retrieval's re-grounding read, and it exists because the embedding
+        corpus is a SECOND read path that does not carry what the first one
+        carries.** Two things live on `fact` and not in `embedding.text`:
+
+        - **Supersession.** A superseded row keeps its id and its embedding.
+          `embeddable` stops OFFERING it for re-embedding, which is right, but
+          nothing removes the vector — so a belief the tier has RETRACTED
+          would come back through the retrieval verb indistinguishable from a
+          current one. `forget` is the write-side answer and this is the
+          fail-safe: a crash between superseding and forgetting must not make
+          a retracted claim answerable.
+        - **The dispute mark.** R-79's whole argument is that a mark nothing
+          reads is worse than no mark, and the recorded defect is a
+          contradicted gloss that kept rendering as unqualified truth. The
+          `<facts>` block renders the mark; this read path would have dropped
+          it silently, on a verb whose own description tells the model
+          «everything it returns is something somebody here said and I
+          checked».
+
+        A missing id is a retracted or deleted row and the caller drops it.
+        `unavailable` means the caller could not re-ground what it retrieved,
+        and the honest thing then is to return nothing rather than to return
+        text that may be retracted — silence beats a wrong answer.
+        """
+        if not fact_ids:
+            return {}, "nothing_found"
+        try:
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(
+                    sa.select(FACT.c.id, FACT.c.disputed_at)
+                    .where(
+                        FACT.c.workspace == workspace,
+                        FACT.c.id.in_([UUID(i) for i in fact_ids]),
+                        FACT.c.superseded_at.is_(None),
+                    )
+                )).all()
+        except (ValueError, AttributeError):
+            # A non-UUID id is a caller bug, not an outage — but it reaches
+            # here from a retrieval corpus that may hold a key from another
+            # tier, so it degrades rather than raising. Nothing standing.
+            log.warning(
+                "standing_among got a non-UUID row key (workspace=%s)",
+                workspace,
+            )
+            return {}, "nothing_found"
+        except Exception:
+            log.exception("standing_among unavailable for workspace %s", workspace)
+            return {}, "unavailable"
+        out = {str(r.id): r.disputed_at is not None for r in rows}
+        return out, "ok" if out else "nothing_found"
+
+    async def embeddable(
+        self, *, workspace: str, limit: int,
+    ) -> tuple[tuple[Fact, ...], str]:
+        """Standing facts for pass 4's sweep, LEAST-RECENTLY-EMBEDDED FIRST
+        with unembedded rows before all of them. Returns the rows and an R-27
+        status.
+
+        **The first version had no cursor at all**, and that made it the worst
+        defect in this tier. It ordered by `created_at ASC` over `fact` ALONE,
+        with no join to `embedding` — so it returned the SAME oldest rows on
+        every call, forever. Measured at 500 facts and a cap of 200: two
+        consecutive calls returned identical lists and the newest fact was
+        never offered once. Every tick after the first reported
+        `nothing_found` with `embedded=0` — which this module described as
+        "the usual steady state" — while the workspace stayed half-embedded.
+
+        It is the worst shape because the LEXICAL channel reads
+        `embedding.text` too, deliberately, so that both channels agree about
+        what exists. An unswept fact is invisible to BOTH:
+        `search_knowledge` could not see anything the room said after the
+        first `limit` facts, and a model swap would re-embed only those.
+
+        **The ordering IS the cursor**, computed over embedding state rather
+        than stored as a position. It converges without a watermark, and a
+        recomputed order cannot go stale the way a stored one can — which is
+        the failure that made plain oldest-first look sufficient.
+
+        `created_at ASC, id ASC` remains, now as the tie-break WITHIN a cohort
+        rather than as the whole order: one propose batch stamps every row
+        with one `created_at`, so this would otherwise choose among equals.
+
+        **A status, not a bare tuple.** This is the one read in this class
+        whose caller can act on the difference: `()` with `ok` means there is
+        nothing standing to embed, `()` with `unavailable` means the sweep
+        never ran and must not be recorded as complete. The
+        other five collapse the two and that is issue #71; this one is new, so
+        it does not inherit the defect.
+        """
+        if limit <= 0:
+            return (), "nothing_found"
+        try:
+            embedded = EMBEDDING.alias("e")
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(
+                    sa.select(FACT)
+                    .select_from(FACT.outerjoin(
+                        embedded,
+                        sa.and_(
+                            embedded.c.kind == "fact",
+                            embedded.c.scope == workspace,
+                            embedded.c.row_key == sa.cast(FACT.c.id, sa.Text),
+                        ),
+                    ))
+                    .where(
+                        FACT.c.workspace == workspace,
+                        FACT.c.superseded_at.is_(None),
+                    )
+                    .order_by(
+                        # Unembedded rows first. THIS IS THE CURSOR, and it is
+                        # recomputed from the truth rather than stored, so it
+                        # cannot go stale the way a watermark can.
+                        embedded.c.row_key.is_(None).desc(),
+                        # Then least-recently-embedded, so a model swap
+                        # rotates through the whole corpus instead of
+                        # re-offering one cohort forever.
+                        embedded.c.embedded_at.asc(),
+                        FACT.c.created_at.asc(),
+                        FACT.c.id.asc(),
+                    )
+                    .limit(limit)
+                )).all()
+        except Exception:
+            log.exception("embeddable unavailable for workspace %s", workspace)
+            return (), "unavailable"
+        out = tuple(_row_to_fact(r) for r in rows)
+        return out, "ok" if out else "nothing_found"
 
     async def fact_by_id(self, *, workspace: str, fact_id: str) -> Fact | None:
         """History reads, including superseded rows — no `superseded_at`

@@ -71,11 +71,13 @@ from nora.engagement.stages.debrief import Wiring as DebriefWiring
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.compute.docker_backend import LocalDockerBackend
+from nora.infra.embedding import OllamaEmbedder
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.embeddings import SqlEmbeddingStore
 from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
@@ -118,6 +120,8 @@ from nora.language.fact_adaptor import (
     FactCandidateAdaptor,
     FactEntityResolutionAdaptor,
 )
+from nora.language.fact_embedder import FactEmbedder
+from nora.language.knowledge_search import KnowledgeSearch
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.note_revisitor import NoteRevisitor
 from nora.language.observer import LexemeObserver
@@ -735,6 +739,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # built only for the Dreamer, which is why that sentence was true of the
     # document and false of the code.
     fact_entities: SqlEntityStore | None = None
+    fact_embeddings: SqlEmbeddingStore | None = None
     if cfg.facts.enabled:
         try:
             veto_extra = load_veto_list(cfg.facts.veto_file)
@@ -752,6 +757,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         fact_entities = SqlEntityStore(
             engine, veto_extra=veto_extra, metrics=metrics,
         )
+        # The embedding seam, built HERE with the fact store rather than
+        # inside the Dreamer block, because both halves of the tier need it:
+        # pass 4 writes through it on the adjudication tick and the retrieval
+        # verb reads through it on a turn. One instance for the same reason
+        # `fact_entities` is one — two stores over one table is two answers to
+        # the same question.
+        fact_embeddings = SqlEmbeddingStore(engine, metrics=metrics)
     fact_store: SqlFactStore | None = (
         SqlFactStore(
             engine,
@@ -760,6 +772,50 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             entities=fact_entities,
             metrics=metrics,
         ) if cfg.facts.enabled else None
+    )
+    # The dense channel's endpoint, and its ABSENCE is a real deployment
+    # rather than a broken one: with no `embedding_url` the tier runs on the
+    # lexical channel alone, which loses cross-lingual and paraphrased recall
+    # in a way that is measured (`SqlEmbeddingStore.lexical`) and counted, not
+    # silent. `OllamaEmbedder` is reached through a port so a service that is
+    # down reports `unavailable` instead of raising (`23` §9).
+    fact_embedder: OllamaEmbedder | None = (
+        OllamaEmbedder(
+            base_url=cfg.facts.embedding_url,
+            model=cfg.facts.embedding_model,
+            timeout_seconds=cfg.facts.embedding_timeout_seconds,
+            metrics=metrics,
+        )
+        if cfg.facts.enabled and cfg.facts.embedding_url
+        else None
+    )
+    # Pass 4. Built even with no endpoint, because the sweep then reports
+    # `unavailable` on its first batch and says so — which is a reading — and
+    # because building it conditionally would make «the endpoint is absent»
+    # and «the pass is unwired» the same silence.
+    fact_sweeper: FactEmbedder | None = (
+        FactEmbedder(
+            facts=fact_store, embeddings=fact_embeddings,
+            embedder=fact_embedder,
+            max_rows_per_sweep=cfg.facts.max_embed_rows_per_sweep,
+            batch_size=cfg.facts.embed_batch_size,
+            metrics=metrics,
+        )
+        if fact_store is not None and fact_embeddings is not None
+        and fact_embedder is not None
+        else None
+    )
+    # Pass 5, the retrieval verb behind `search_knowledge`. `grounding` is the
+    # fact store because the corpus is a SECOND read path that does not carry
+    # supersession or the dispute mark — without it a retracted belief comes
+    # back indistinguishable from a current one, and R-79's mark is dropped.
+    knowledge_search: KnowledgeSearch | None = (
+        KnowledgeSearch(
+            channels=fact_embeddings, embedder=fact_embedder,
+            grounding=fact_store, metrics=metrics,
+        )
+        if fact_embeddings is not None and fact_store is not None
+        else None
     )
     # The render ledger (31 §3), wired only when the tier is on: with `[facts]`
     # off nothing is rendered, so there is nothing to record and a store here
@@ -1730,6 +1786,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # the note verbs report as `unavailable` rather than guessing a
         # notebook. Same `allowlist` instance the assembler and ingest hold.
         note_workspace=_note_workspace_of(allowlist),
+        # ONE resolver for both tiers. `search_knowledge` is workspace-keyed
+        # exactly as the note verbs are, and reading `note_workspace` for it
+        # would make the knowledge tier silently depend on the NOTE tier being
+        # wired — two absences covering for each other.
+        workspace_for=_note_workspace_of(allowlist),
+        knowledge=knowledge_search,
         versions=version_manifest,
         giphy=giphy_client,
         music=music_bridge,
@@ -2205,6 +2267,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     # when a fact lands, so this is exactly when there is
                     # something new to promote.
                     entities=fact_entities,
+                    # Pass 4 rides it too, AFTER pass 3, and on every tick
+                    # rather than only on one that wrote — staleness is
+                    # `fingerprint(model, text)` and the model half moves with
+                    # no write at all.
+                    embedder=fact_sweeper,
                     metrics=metrics,
                 ),
                 # PASS 6, workspace-keyed and watermark-free like the

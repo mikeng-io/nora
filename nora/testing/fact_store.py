@@ -320,6 +320,33 @@ class InMemoryFactStore:
         matches.sort(key=lambda f: (f.created_at, f.id), reverse=True)
         return tuple(matches[:limit])
 
+    async def embeddable(
+        self, *, workspace: str, limit: int,
+    ) -> tuple[tuple[Fact, ...], str]:
+        """Pass 4's backlog read. **This verb was MISSING from the double**,
+        so wiring `FactEmbedder` against it would have raised
+        `AttributeError` into the sweep's blanket handler and reported
+        `unavailable` forever — a wiring gap wearing an outage's label, which
+        is the one thing this tier's whole R-27 discipline exists to prevent.
+
+        The double holds no embedding state, so it cannot reproduce
+        production's cursor — unembedded first, then least-recently-embedded.
+        It sorts by the cohort tie-break alone and SAYS SO here, because a
+        double that silently answered a different question would let a
+        sweep-level test assert an ordering production does not have. The
+        convergence property is tested against real Postgres, in
+        `tests/infra/test_fact_store.py`, where the join exists.
+        """
+        if limit <= 0:
+            return (), "nothing_found"
+        matches = [
+            f for (ws, _fid), f in self._facts.items()
+            if ws == workspace and f.is_standing
+        ]
+        matches.sort(key=lambda f: (f.created_at, f.id))
+        out = tuple(matches[:limit])
+        return out, "ok" if out else "nothing_found"
+
     async def recent_facts(self, *, workspace: str, limit: int) -> tuple[Fact, ...]:
         # Same clamp as `standing_facts` above and for the same reason: the
         # double must degrade the way the real store does, or a test that

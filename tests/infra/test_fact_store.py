@@ -15,6 +15,10 @@ implementation is a claim about that implementation, not about the tier.
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
+
 import pytest
 import sqlalchemy as sa
 
@@ -26,10 +30,12 @@ from nora.domain.facts import (
     FactVerdict,
 )
 from nora.domain.ports import Proposal
+from nora.infra.sql.embeddings import SqlEmbeddingStore, StoredEmbedding
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.facts import SqlFactStore, oversized_terms
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.schema import EMBEDDING_DIMENSIONS
 from nora.obs.metrics import Metrics
 from nora.testing import InMemoryFactStore, fact_proposal_factory
 
@@ -1374,3 +1380,217 @@ async def test_both_stores_break_a_created_at_tie_the_same_way(store):
     )
 
     assert [f.id for f in facts] == sorted(ids, reverse=True)
+
+
+async def test_the_embedding_backlog_drains_oldest_first(pg_url):
+    """**Oldest first, which is the opposite of every other read in this
+    class, and the direction is the point.**
+
+    The others feed a prefill block where recency is the value. This feeds a
+    BACKLOG: newest-first over a bounded batch means a workspace with more
+    unembedded rows than one sweep never reaches its oldest ones. That is the
+    same starvation the tie-break work fixed at five other sites, arriving
+    here through the sort DIRECTION rather than through a tie — and no
+    tie-break would have caught it.
+
+    Read at half the population, because a limit at or above it returns
+    everything in any order.
+    """
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        store = SqlFactStore(engine)
+        for i in range(6):
+            await store.propose(
+                key="ws-main",
+                proposals=[_proposal(_verdict(predicate=f"p{i}"))],
+                now_ms=1_000 + i,
+            )
+
+        rows, status = await store.embeddable(workspace="ws-main", limit=3)
+    finally:
+        await engine.dispose()
+
+    assert status == "ok"
+    assert [f.created_at for f in rows] == [1_000, 1_001, 1_002]
+
+
+async def test_the_embedding_backlog_breaks_a_created_at_tie(pg_url):
+    """One propose batch stamps every row with one `created_at`, so this
+    ordering is always choosing among equals and it feeds a LIMIT — the same
+    property as its five siblings, on the read that decides which rows get
+    embedded at all."""
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        store = SqlFactStore(engine)
+        ids = await store.propose(
+            key="ws-main",
+            proposals=[
+                _proposal(_verdict(predicate=f"p{i}")) for i in range(6)
+            ],
+            now_ms=1_000,
+        )
+
+        first, _s = await store.embeddable(workspace="ws-main", limit=4)
+        again, _s2 = await store.embeddable(workspace="ws-main", limit=4)
+    finally:
+        await engine.dispose()
+
+    assert [f.id for f in first] == sorted(ids)[:4]
+    assert [f.id for f in again] == [f.id for f in first]
+
+
+async def test_an_empty_backlog_is_nothing_found_not_an_empty_ok(pg_url):
+    """R-27 at the boundary, and this read is the ONE in this class that
+    carries it — the other five collapse `unavailable` into `()` and that is
+    issue #71. Pass 4 acts on the difference: `nothing_found` means the sweep
+    is done, `unavailable` means it never ran."""
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        rows, status = await SqlFactStore(engine).embeddable(
+            workspace="ws-empty", limit=10,
+        )
+    finally:
+        await engine.dispose()
+
+    assert rows == ()
+    assert status == "nothing_found"
+
+
+def test_the_embedding_backlog_declares_its_order_in_sql():
+    """The half no execution can carry, for the reason the ledger and the
+    candidate queue already carry it: "Postgres may return any order among
+    equals" is a statement about what the planner is PERMITTED to do, so
+    removing the clause and observing a stable order proves only what this
+    size and this statistics snapshot happened to plan.
+
+    The docstring is stripped first — a structural check that reads prose is
+    an instrument that cannot fail, which is how the first version of this
+    pattern passed with the clause deleted.
+    """
+    fn = SqlFactStore.embeddable
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn))).body[0]
+    if (
+        tree.body
+        and isinstance(tree.body[0], ast.Expr)
+        and isinstance(tree.body[0].value, ast.Constant)
+    ):
+        del tree.body[0]
+    source = ast.unparse(tree)
+
+    assert "created_at.asc()" in source, (
+        "the cohort tie-break; without it the sweep chooses among equals"
+    )
+    assert "id.asc()" in source, (
+        "one propose batch shares a created_at, so this LIMIT chooses among "
+        "equals without a unique tie-break"
+    )
+    assert "outerjoin" in source, (
+        "the CURSOR is the join to `embedding`; without it the read is over "
+        "`fact` alone and returns the same rows forever"
+    )
+
+
+async def test_the_backlog_advances_instead_of_re_offering_one_cohort(pg_url):
+    """**The starvation the ordering test could not see**, and the guard was
+    on the wrong axis: the DIRECTION was pinned twice, by execution and by an
+    AST check, while the CURSOR did not exist.
+
+    Without a join to `embedding` this read is over `fact` alone, so two
+    consecutive calls return byte-identical lists and a workspace larger than
+    one sweep is permanently half-embedded — with
+    `nora_fact_embed_sweep_total{status="nothing_found"}` reporting the usual
+    steady state while it happens.
+
+    It bites both channels, not one: the lexical channel reads
+    `embedding.text` so that the two agree about what exists, so an unswept
+    fact is unreachable by ANY query.
+
+    Six facts at two per sweep, embedding each batch as a real sweep would,
+    and the assertion is that the UNION covers everything — not that any
+    particular call returned any particular row, which is a fact about the
+    ordering rather than about convergence.
+    """
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        store = SqlFactStore(engine)
+        embeddings = SqlEmbeddingStore(engine)
+        ids = await store.propose(
+            key="ws-main",
+            proposals=[_proposal(_verdict(predicate=f"p{i}")) for i in range(6)],
+            now_ms=1_000,
+        )
+
+        seen: set[str] = set()
+        for tick in range(3):
+            batch, status = await store.embeddable(workspace="ws-main", limit=2)
+            assert status == "ok", f"tick {tick} found nothing to embed"
+            seen |= {f.id for f in batch}
+            await embeddings.upsert(rows=tuple(
+                (
+                    StoredEmbedding(
+                        kind="fact", row_key=f.id, scope="ws-main",
+                        text=f"{f.subject_id} | {f.predicate} | "
+                             f"{f.object_literal}",
+                        model="bge-m3", fingerprint=f.id[:32] * 2,
+                        embedded_at=2_000 + tick, has_vector=True,
+                    ),
+                    tuple([0.1] * EMBEDDING_DIMENSIONS),
+                )
+                for f in batch
+            ))
+    finally:
+        await engine.dispose()
+
+    assert seen == set(ids), (
+        "three sweeps of two must cover six facts; anything less means the "
+        "read re-offers a cohort it has already embedded"
+    )
+
+
+async def test_an_embedded_row_is_offered_again_after_the_unembedded_ones(
+    pg_url,
+):
+    """The other half, and the reason the cursor is an ORDER rather than a
+    filter: a model swap has to re-embed rows that already have vectors, so
+    an embedded row must come back — after every unembedded one, and
+    least-recently-embedded first so the rotation covers the corpus.
+
+    A filter on `row_key IS NULL` would drain the backlog and then never
+    re-embed anything, which is the same permanent staleness in the other
+    direction.
+    """
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        store = SqlFactStore(engine)
+        embeddings = SqlEmbeddingStore(engine)
+        ids = await store.propose(
+            key="ws-main",
+            proposals=[_proposal(_verdict(predicate=f"p{i}")) for i in range(3)],
+            now_ms=1_000,
+        )
+        oldest_embed = sorted(ids)[0]
+        await embeddings.upsert(rows=tuple(
+            (
+                StoredEmbedding(
+                    kind="fact", row_key=fid, scope="ws-main", text="x",
+                    model="bge-m3", fingerprint="a" * 64,
+                    embedded_at=2_000 if fid == oldest_embed else 9_000,
+                    has_vector=True,
+                ),
+                tuple([0.1] * EMBEDDING_DIMENSIONS),
+            )
+            for fid in ids
+        ))
+
+        batch, _status = await store.embeddable(workspace="ws-main", limit=1)
+    finally:
+        await engine.dispose()
+
+    assert [f.id for f in batch] == [oldest_embed], (
+        "with everything embedded, the least-recently-embedded row is next"
+    )
