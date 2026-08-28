@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "A background answer that began with a sentence was thrown away whole and reported as 'I couldn't reach the model'.",
+  "details": [
+    "Nora's background passes answer in a fixed shape, and anything that was not exactly that shape was discarded. When the model wrote a line of explanation before its answer, the answer went with it — and the pass reported that it could not reach the model at all, which is a different thing and the one nobody investigates.",
+    "Worse, that report holds the reading position, so the same messages were read again on the next pass and thrown away again. A pass that HAD read its batch looked like an outage, indefinitely.",
+    "The answer is now found inside the reply rather than required to be the whole of it. What has not changed is that there must BE an answer: a reply that only explains itself is still 'I could not check', which is the distinction the whole tier is built on."
+  ],
+  "limitations": [
+    "The instructions still tell the model to write nothing but the answer. The parser is now more forgiving than the prompt, which is the safe direction — but it does mean a model that narrates constantly will not be caught by anything except a reader noticing."
+  ]
+}

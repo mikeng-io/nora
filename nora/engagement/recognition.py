@@ -37,13 +37,13 @@ rather than muting it.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from nora.agent.dreamer import parse_envelope
 from nora.domain.facts import RenderedClaim, mentions, normalise_name
 from nora.domain.models import NormalizedMessage
 
@@ -420,18 +420,30 @@ class Recogniser:
 
 
 def _parse_disputes(raw: str) -> tuple[tuple[str, str], ...] | None:
-    """`None` when the reply is not the envelope — which is `unavailable`, not
-    `nothing_found`: a model that answered with prose did not decide there was
-    no dispute, it failed to answer."""
-    try:
-        envelope = json.loads(raw)
-    except (TypeError, ValueError):
-        return None
-    key = Recogniser.envelope_key
-    if not isinstance(envelope, dict) or key not in envelope:
-        return None
-    items = envelope[key]
-    if not isinstance(items, list):
+    """`None` when the reply contains no envelope — which is `unavailable`,
+    not `nothing_found`: a model that answered with only prose did not decide
+    there was no dispute, it failed to answer.
+
+    **A PREAMBLE is not that**, and this is the SEVENTH parser with the same
+    contract — `parse_envelope` carries the other six and the measurement
+    behind the change. `fact-dispute.md` tells the model the same «your entire
+    reply is one JSON object» that `fact-adjudication.md` does, and the model
+    narrates anyway.
+
+    It matters more here than there. This one runs on the TAG PATH, before
+    context assembly, inside the conversation's slot — so discarding a
+    readable answer costs a correction on the turn it was made, and the
+    correction is the whole point of the loop. `_decide` maps `None` to
+    `unavailable` and falls back to RULE-F, which catches only the clearest
+    case.
+
+    Delegated to `parse_envelope` rather than reimplemented: a seventh copy of
+    a rule that has now been wrong twice is a seventh place for it to be wrong
+    again, and this module already imports from `nora.agent` for the same
+    reason its objective and envelope key live on the class.
+    """
+    items = parse_envelope(raw, key=Recogniser.envelope_key)
+    if items is None:
         return None
     out: list[tuple[str, str]] = []
     for item in items:

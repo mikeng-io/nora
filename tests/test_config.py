@@ -1431,3 +1431,34 @@ def test_a_misspelt_dreamer_effort_refuses_to_start(toml_path):
 
     with pytest.raises(ConfigError, match="reasoning_effort"):
         load(toml_path)
+
+
+def test_the_adjudicator_has_room_to_converge(toml_path):
+    """**MEASURED, and it is the fix for the tier's second production
+    failure.** Five runs of the shipped `fact-adjudication` objective against
+    the shipped prompt, with a `web_search` schema attached and a plausible
+    result returned each turn, converged at turns 9, 15, 14, 10 and 13.
+
+    At `turns = 10`, four of those five would have exhausted the budget — and
+    an exhausted loop hands `parse_envelope` whatever text accumulated, which
+    the runtime reports as `unavailable` while HOLDING the watermark. A batch
+    that was read, re-read forever, under a counter saying the model could not
+    be reached.
+
+    Pinned against the OBSERVED MAXIMUM rather than as a round number: if a
+    later change makes the loop converge faster, lowering this should be a
+    decision with its own measurement rather than a tidy-up, and if the model
+    starts needing more this is the number that has to move.
+    """
+    cfg = load(toml_path)
+    budget = cfg.dreamer.budgets["fact-adjudication"]
+
+    assert budget.turns >= 16, (
+        "the adjudicator converged at turn 15 in one of five measured runs; "
+        "a budget at or below that exhausts the loop and reports an outage "
+        "for a batch it had read"
+    )
+    # The other three are what still bound it, and they are unchanged: a
+    # turn budget with nothing beside it is an unbounded research loop.
+    assert budget.total_tokens == 120_000
+    assert budget.timeout_seconds == 300.0

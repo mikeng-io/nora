@@ -478,7 +478,23 @@ output_tokens = 4000
 timeout_seconds = 60
 
 [dreamer.budgets.fact-adjudication]
-turns = 10
+# 10 -> 20, MEASURED. Five runs of the shipped objective against the shipped
+# prompt, with a web_search schema attached and a plausible result returned
+# each turn, converged at turns 9, 15, 14, 10 and 13. Against a budget of 10,
+# FOUR OF FIVE would have exhausted it — and an exhausted loop hands
+# `parse_envelope` whatever text accumulated, which the runtime reports as
+# `unavailable` while holding the watermark. That is a batch that WAS read,
+# re-read forever, under a counter saying the model could not be reached.
+#
+# 20 is the observed maximum plus a third. It is not the right long-term
+# answer: the objective never tells the model how much research is enough, so
+# the loop is bounded by the budget rather than by the question — the same
+# shape as extraction having no candidate cap. Raising the ceiling buys
+# convergence today and does not make the loop self-limiting.
+#
+# `total_tokens` and `timeout_seconds` are unchanged and still bound it: 15
+# turns at the observed sizes is well inside 120k tokens and 300 seconds.
+turns = 20
 total_tokens = 120000
 output_tokens = 8000
 timeout_seconds = 300

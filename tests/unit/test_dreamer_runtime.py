@@ -732,3 +732,154 @@ async def test_a_real_prompt_still_reaches_the_model(monkeypatch):
 
     assert invoked == [1]
     assert outcome.status == "ok"
+
+
+@pytest.mark.parametrize(
+    ("raw", "why"),
+    [
+        (
+            'I could not find any source about this.\n\n'
+            '{"observations": [{"term": "a"}]}',
+            "the shape production actually produced: narration, then the answer",
+        ),
+        (
+            '```json\n{"observations": [{"term": "a"}]}\n```',
+            "a fence is a preamble with a suffix",
+        ),
+        (
+            '{"observations": [{"term": "a"}]}\n\nI hope that helps.',
+            "and a trailing sentence is the same defect the other way round",
+        ),
+    ],
+)
+def test_an_envelope_preceded_by_prose_is_still_read(raw, why):
+    """**A readable answer discarded because a sentence preceded it is an
+    outage reported for a batch that WAS read**, and the watermark is held, so
+    the same batch is re-read forever while the counter says the model could
+    not be reached. That is R-27 upside down.
+
+    Measured on 2026-08-28: driving the shipped `fact-adjudication` objective
+    through its whole tool loop, the model converged at turn 6 with
+    «Search returning empty results consistently. Cannot find any source…»
+    followed by a well-formed `{"verdicts": [...]}`. Both production runs
+    failed as `no readable envelope`, at 950 and 1009 characters.
+    """
+    assert parse_envelope(raw, key="observations") == ({"term": "a"},), why
+
+
+def test_prose_with_no_envelope_at_all_is_still_none():
+    """The positive control, and the line this change must not cross: a reply
+    that never produces the envelope is still `unavailable`. What was dropped
+    is the requirement that the envelope come FIRST, not the requirement that
+    it exist."""
+    assert parse_envelope(
+        "I looked and I am not sure. Probably yes?", key="observations",
+    ) is None
+
+
+def test_an_envelope_named_in_prose_does_not_count_as_one():
+    """Keyed on the declared envelope KEY inside a balanced object, not on
+    «the first thing with braces» — so a preamble that merely talks about the
+    shape is not mistaken for it, and the real envelope after it still wins."""
+    raw = ('I would normally answer with {"note": "an example"} here.\n'
+           '{"observations": [{"term": "real"}]}')
+
+    assert parse_envelope(raw, key="observations") == ({"term": "real"},)
+
+
+def test_a_brace_inside_a_string_does_not_split_the_envelope():
+    """Brace counting is string-aware, because a `source_excerpt` quoting code
+    plainly can contain one — and a parser that split there would truncate a
+    legal answer into an unreadable one."""
+    # An UNBALANCED brace, which is what discriminates. A balanced `{x}` inside
+    # a string leaves the depth count correct by accident, so a parser with no
+    # string-awareness passes that case and this one is the test.
+    raw = ('here you go\n'
+           '{"observations": [{"term": "a", "excerpt": "the sample is {x"}]}')
+
+    items = parse_envelope(raw, key="observations")
+
+    assert items is not None, (
+        "an unbalanced brace inside a string must not end the object early"
+    )
+    assert items[0]["excerpt"] == "the sample is {x"
+
+
+def test_the_last_envelope_wins_when_the_model_quotes_its_instructions():
+    """**Taking the first would be silent, irreversible data loss.**
+
+    Every objective prints its empty form — `{"verdicts": []}` — as the
+    nothing-found instruction, so a model that quotes its instructions on the
+    way to answering puts a VALID but empty envelope ahead of its real one.
+    First-wins yields zero items, which is `nothing_found`, which ADVANCES the
+    watermark: real verdicts discarded, the batch consumed permanently, every
+    counter green.
+
+    The bug this whole change replaces was loud, retryable and lost nothing.
+    Getting the pick rule wrong would have made it worse than what it fixed.
+    """
+    raw = ('The shape I must return is {"observations": []}.\n\n'
+           'Here is my answer:\n{"observations": [{"term": "real"}]}')
+
+    assert parse_envelope(raw, key="observations") == ({"term": "real"},)
+
+
+def test_a_populated_example_in_the_preamble_is_not_stored_as_the_answer():
+    """The sharper form, and the reason this is not merely lossy:
+    `fact-adjudication.md` prints a POPULATED worked example. First-wins would
+    write the documentation's own example as a fact about the world."""
+    raw = ('For example: {"observations": [{"term": "from the objective"}]}\n'
+           '{"observations": [{"term": "what I actually found"}]}')
+
+    items = parse_envelope(raw, key="observations")
+
+    assert items == ({"term": "what I actually found"},)
+
+
+def test_a_malformed_envelope_does_not_shadow_a_valid_one_after_it():
+    """Validity is checked while scanning, not after picking. An object
+    carrying the key whose value is not a list of mappings is not an envelope,
+    and treating it as one would let a bad first draft hide a good answer."""
+    raw = '{"observations": ["a string"]}\n{"observations": [{"term": "a"}]}'
+
+    assert parse_envelope(raw, key="observations") == ({"term": "a"},)
+
+
+@pytest.mark.parametrize(
+    ("preamble", "why"),
+    [
+        ('I could not find a source for the 5" pipe.',
+         "an unterminated quote — an inch measurement, not an exotic input"),
+        ("the set { is open here",
+         "an unclosed brace"),
+        ('he said \\"maybe\\" and left',
+         "an escaped quote inside prose"),
+        ("stray } close",
+         "a stray close, which the first implementation did recover from"),
+    ],
+)
+def test_odd_punctuation_before_the_envelope_does_not_swallow_it(preamble, why):
+    """**The first implementation counted braces by hand and could not
+    resynchronise.** State carried across the whole reply, so one unterminated
+    quote or one unclosed `{` in the prose consumed everything after it — and
+    reinstated the exact bug this change exists to fix, on inputs a research
+    pass produces routinely.
+
+    `json.JSONDecoder.raw_decode` at each `{` is the real parser: strings,
+    escapes and nesting are right by construction, and a candidate that fails
+    simply advances to the next `{`.
+    """
+    raw = f'{preamble}\n{{"observations": [{{"term": "a"}}]}}'
+
+    assert parse_envelope(raw, key="observations") == ({"term": "a"},), why
+
+
+def test_deeply_nested_json_does_not_raise_into_the_caller():
+    """`run`'s own docstring says nothing here raises into the caller, and a
+    `RecursionError` from the parser lands where `_finish` never runs — so a
+    tick that HAPPENED increments no counter in any bucket. Pre-existing for
+    whole-reply payloads and widened by scanning for objects anywhere in the
+    text, so it is caught here."""
+    raw = "prefix " + "{\"a\":" * 20_000 + "1" + "}" * 20_000
+
+    assert parse_envelope(raw, key="observations") is None
