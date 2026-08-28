@@ -26,6 +26,7 @@ from nora.domain.music import (
     QueuedTrack,
 )
 from nora.domain.ports import TrackSource
+from nora.platform.discord import music_messages as m
 from nora.platform.discord.music_player import MusicPlayer, PlayerStatus, PlayOutcome, VoiceSession
 
 log = logging.getLogger("nora.music")
@@ -348,10 +349,15 @@ class MusicPlayerManager:
         # Tells apart a track someone actually queued from one autoplay
         # picked (`AUTOPLAY_PERSON_ID`, design/discord-music/08-autoplay.md)
         # -- otherwise a listener has no way to tell why a track nobody
-        # requested just started.
+        # requested just started. Wording comes from the canonical message
+        # table (`music_messages.py`) — this module never formats its own.
         is_autoplay = now_playing.added_by_person_id == AUTOPLAY_PERSON_ID
-        verb = "Autoplaying" if is_autoplay else "Now playing"
-        await notify(f"{verb}: {now_playing.title} — {now_playing.url}")
+        line = (
+            m.autoplay_now_playing_line(now_playing)
+            if is_autoplay
+            else m.now_playing_line(now_playing)
+        )
+        await notify(line)
 
     def _schedule_idle_disconnect(self, guild_id: str) -> None:
         """03's disconnect-timer rule 2: queue empty and nothing playing ->

@@ -20,21 +20,27 @@ from datetime import UTC, datetime
 import discord
 
 from nora.domain.ports import MusicToolOutcome
+from nora.platform.discord import music_messages as m
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.music_commands import _connect_factory
 from nora.platform.discord.music_manager import MusicPlayerManager
 
 log = logging.getLogger("nora.music")
 
+# Model-facing outcome notes pull their wording from the canonical message
+# table, so the `note` the LLM reads and the line a channel post renders can
+# never drift apart (design/discord-music/09-message-conventions.md D2).
 _UNAVAILABLE_DISCONNECTED = MusicToolOutcome(
-    status="unavailable", note="Discord isn't connected right now.",
+    status="unavailable", note=m.disconnected_note(),
 )
 _UNAVAILABLE_NOT_IN_VOICE = MusicToolOutcome(
-    status="unavailable", note="You need to be in a voice channel first.",
+    status="unavailable", note=m.not_in_voice_note(),
 )
-_NOTHING_PLAYING = MusicToolOutcome(status="nothing_found", note="Nothing is playing.")
+_NOTHING_PLAYING = MusicToolOutcome(
+    status="nothing_found", note=m.nothing_playing_line(),
+)
 _NOTHING_QUEUED_AT_POSITION = MusicToolOutcome(
-    status="nothing_found", note="Nothing queued at that position.",
+    status="nothing_found", note=m.nothing_queued_at_position_line(),
 )
 
 
@@ -137,11 +143,11 @@ class DiscordMusicToolBridge:
             )
         except Exception:
             log.exception("agent tool play_music failed for guild %s", guild_id)
-            return MusicToolOutcome(status="unavailable", note="Couldn't join the voice channel.")
+            return MusicToolOutcome(status="unavailable", note=m.join_failed_note())
         if outcome is None:
             return _UNAVAILABLE_NOT_IN_VOICE
         if outcome.status == "nothing_found" or outcome.track is None:
-            return MusicToolOutcome(status="nothing_found", note="Couldn't find that.")
+            return MusicToolOutcome(status="nothing_found", note=m.nothing_found_line())
         return MusicToolOutcome(
             status="ok", title=outcome.track.title, url=outcome.track.url,
             queued=outcome.status == "queued",

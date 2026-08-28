@@ -4186,6 +4186,13 @@ def build_tool_specs(
         already playing, `false` when it actually started playing — so say
         "queued" or "now playing" accurately instead of guessing.
 
+        When a track you started actually BEGINS playing, YOUR reply is the
+        only announcement the channel gets — the system does not post its
+        own "Now playing" line for a session-started-by-request
+        (design/discord-music/09-message-conventions.md). The system only
+        announces what starts on its own later: a natural track-end, an
+        autoplay pick, or the next track after a skip.
+
         Args:
             query: what to play — a search term, a video URL, or a playlist URL.
         """
