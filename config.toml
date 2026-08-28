@@ -853,7 +853,31 @@ max_horizon_days = 365
 # (963 messages -> 2 rows, both wrong), and the substrate contract they
 # write against landed only today (design/dreamer-agent-loop/21).
 # Nothing writes until that contract is built against.
-enabled = false
+#
+# false -> true (2026-08-28). The contract that condition named is built
+# against: 21-substrate-contract's §4 sink resolution, §5's two-half entity
+# resolution, §6.1's promotion rule, and 23's retrieval — with the write side,
+# the correction loop and the read side each reviewed twice and verified by
+# mutation on the merged tip.
+#
+# What is switched on, and what to watch first:
+#   - three Dreamer adaptors write on the background tick. The tell that
+#     extraction is producing noise rather than claims is
+#     `nora_fact_candidates_total{outcome="not_covered"}` climbing while
+#     `outcome="adjudicated"` does not.
+#   - the <facts> block renders into EVERY tag's prefill, so a wrong fact is
+#     not one bad reply, it is a standing instruction. R-77 refuses claims
+#     about people in the room at the sink and counts what it refused.
+#   - recognition runs on the REPLY PATH, bounded by
+#     dispute_classify_timeout_seconds and inside [standing]'s slot-hold gate.
+#   - the embedding sweep runs after adjudication, inside the tick and outside
+#     the runtime's per-run timeout — `nora_fact_embed_sweep_seconds` is the
+#     reading that says whether it is costing the workspace its next
+#     adjudications.
+#
+# Turn this back off if the rendered block starts asserting things about
+# people rather than describing what the room has established.
+enabled = true
 # tick_seconds = 300
 # safety_lag = 300
 # quiet_seconds = 1800
@@ -901,7 +925,31 @@ verify_known_entities = true
 # (963 messages -> 2 rows, both wrong), and the substrate contract they
 # write against landed only today (design/dreamer-agent-loop/21).
 # Nothing writes until that contract is built against.
-enabled = false
+#
+# false -> true (2026-08-28). The contract that condition named is built
+# against: 21-substrate-contract's §4 sink resolution, §5's two-half entity
+# resolution, §6.1's promotion rule, and 23's retrieval — with the write side,
+# the correction loop and the read side each reviewed twice and verified by
+# mutation on the merged tip.
+#
+# What is switched on, and what to watch first:
+#   - three Dreamer adaptors write on the background tick. The tell that
+#     extraction is producing noise rather than claims is
+#     `nora_fact_candidates_total{outcome="not_covered"}` climbing while
+#     `outcome="adjudicated"` does not.
+#   - the <facts> block renders into EVERY tag's prefill, so a wrong fact is
+#     not one bad reply, it is a standing instruction. R-77 refuses claims
+#     about people in the room at the sink and counts what it refused.
+#   - recognition runs on the REPLY PATH, bounded by
+#     dispute_classify_timeout_seconds and inside [standing]'s slot-hold gate.
+#   - the embedding sweep runs after adjudication, inside the tick and outside
+#     the runtime's per-run timeout — `nora_fact_embed_sweep_seconds` is the
+#     reading that says whether it is costing the workspace its next
+#     adjudications.
+#
+# Turn this back off if the rendered block starts asserting things about
+# people rather than describing what the room has established.
+enabled = true
 # max_adjudications_per_tick = 10   # research loops per tick — the cost knob
 # max_room_facts = 8                # render cap: facts about the room
 # max_sender_facts = 4              # render cap: facts about the sender

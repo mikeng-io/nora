@@ -1,0 +1,16 @@
+{
+  "type": "feature",
+  "summary": "Nora now keeps what the group has established — not just what was said — and can search it when a question needs more than the last few messages.",
+  "details": [
+    "She notices claims worth keeping in ordinary conversation, checks them, and keeps the ones that hold up with a note of who said it and what backs it. Nothing about a person in the room is kept: that is refused at the point of writing and counted, not filtered later.",
+    "A handful of what she holds about whatever is being discussed rides in front of every message, along with a line saying how many more there are — so that reaching for the rest is an obvious thing to do rather than a guess.",
+    "Asking her a question she cannot answer from the conversation now searches what she holds. It searches by meaning as well as by words and across languages, so a question in Cantonese finds something written in English and the other way round.",
+    "When somebody tells her she has something wrong, the claim is marked as disputed rather than deleted — it keeps appearing, marked, with who objected and what they said. One person's objection does not remove something true for everyone.",
+    "A claim she has replaced stops being findable, and a disputed one comes back marked, on the search path as well as in the block. What she shows and what she searches agree."
+  ],
+  "limitations": [
+    "Two of the three retrieval channels are built. Traversal — 'what else is connected to this' — is not, so she finds things that MENTION what you asked about and not yet things merely related to it.",
+    "Every search pays for the cross-language step even when an exact name match already settled it. That is cost, not correctness, and it is measured.",
+    "Names are matched exactly. Two spellings of one thing stay two things until something merges them, which is deliberate: wrongly keeping them apart is a missing connection, and wrongly merging them corrupts both."
+  ]
+}
