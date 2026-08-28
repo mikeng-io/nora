@@ -1,8 +1,12 @@
 """`SqlFactCandidateStore` — the candidate tier's `DreamSink` +
 `FactCandidateReader`, over SQLAlchemy Core. Sibling of
 `nora.infra.sql.facts.SqlFactStore` and built to the same shape; like it,
-there is no writer above it yet (`nora.dreamer` has no fact adaptor), so it
-exists today to be exercised by `tests/infra/test_fact_candidate_store.py`
+`nora.language.fact_adaptor.FactCandidateAdaptor` is the writer above it, and
+this store is where the tier's two REFUSALS live — a claim about somebody in
+the room, and a term over the operating cap. This header said "no writer yet"
+long after one existed, which is the same stale claim `SqlFactStore`'s header
+carried; the tier is DISABLED, not unwritten. Also exercised by
+`tests/infra/test_fact_candidate_store.py`
 and to be wired into a real adaptor later without changing shape.
 
 **Why `fact_candidate` exists at all** (spec §5.1 — this is the whole

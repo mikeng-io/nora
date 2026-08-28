@@ -20,6 +20,10 @@ from nora.config import (
     SpeechConfig,
     load,
 )
+from nora.domain.facts import (
+    FACT_PREDICATE_CEILING_CHARS,
+    FACT_TERM_CEILING_CHARS,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -1237,7 +1241,9 @@ def test_a_fact_term_cap_above_the_database_ceiling_refuses_to_start(toml_path):
     i = text.index("[facts]")
     toml_path.write_text(
         text[:i] + text[i:].replace(
-            "enabled = false", "enabled = false\nmax_term_chars = 900", 1))
+            "enabled = false",
+            f"enabled = false\nmax_term_chars = {FACT_TERM_CEILING_CHARS + 1}",
+            1))
     with pytest.raises(ConfigError, match="ceiling"):
         load(toml_path)
 
@@ -1249,20 +1255,31 @@ def test_a_fact_predicate_cap_above_the_database_ceiling_refuses_to_start(toml_p
     i = text.index("[facts]")
     toml_path.write_text(
         text[:i] + text[i:].replace(
-            "enabled = false", "enabled = false\nmax_predicate_chars = 201", 1))
+            "enabled = false",
+            f"enabled = false\n"
+            f"max_predicate_chars = {FACT_PREDICATE_CEILING_CHARS + 1}",
+            1))
     with pytest.raises(ConfigError, match="ceiling"):
         load(toml_path)
 
 
 def test_fact_caps_exactly_at_their_ceilings_are_allowed(toml_path):
     """The boundary from the accepting side: the ceiling is the largest value a
-    writer may pass, not the first one it may not."""
+    writer may pass, not the first one it may not.
+
+    **The numbers are IMPORTED, not written here.** Hard-coding 800 and 200 was
+    a fourth copy of a constant migration 0041's own docstring says must never
+    be repeated — and it made the test green through a raised ceiling while no
+    longer testing a boundary at all."""
     text = toml_path.read_text()
     i = text.index("[facts]")
     toml_path.write_text(
         text[:i] + text[i:].replace(
             "enabled = false",
-            "enabled = false\nmax_term_chars = 800\nmax_predicate_chars = 200",
+            f"enabled = false\n"
+            f"max_term_chars = {FACT_TERM_CEILING_CHARS}\n"
+            f"max_predicate_chars = {FACT_PREDICATE_CEILING_CHARS}",
             1))
     cfg = load(toml_path)
-    assert (cfg.facts.max_term_chars, cfg.facts.max_predicate_chars) == (800, 200)
+    assert cfg.facts.max_term_chars == FACT_TERM_CEILING_CHARS
+    assert cfg.facts.max_predicate_chars == FACT_PREDICATE_CEILING_CHARS

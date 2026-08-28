@@ -452,6 +452,13 @@ RULE_TESTS = {
     # `generation` root and requires it exported anyway; the two drop tests and
     # the two engagement ones are named in the index row.
     "R-76": "test_a_generation_root_keeps_the_plumbing_underneath_it",
+    # The knowledge tier's two new behavioural rules — R-77/R-78, not 75/76:
+    # master took those first for the note tier's date-only collision and the
+    # Langfuse root rule, and the number goes to whoever landed. Both of these
+    # are enforced where the WRITES happen rather than at a render, which is
+    # why their named tests live beside the stores.
+    "R-77": "test_a_claim_about_a_roster_person_is_refused_at_the_sink",
+    "R-78": "test_degree_two_promotes_and_degree_one_does_not",
 }
 
 

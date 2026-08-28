@@ -995,14 +995,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "retire_failed, promotion_failed). A silent drop reads as 'we checked everything'.",
         ("reason",),
     ),
-    # R-27's three states on the attribution join (21 §7.2), and all three are
-    # reachable: `ok` wrote asserter rows, `nothing_found` found the candidate
-    # but none of its messages resolved to a person (an unmapped sender, or a
-    # conversation whose messages have been pruned), `unavailable` found no
-    # candidate to join through at all. The middle and the last are the pair
-    # that must never collapse: «nobody claimed this» and «I could not tell
-    # who claimed this» are different facts about a row, and one of them is a
-    # wiring gap.
     # Pass 3, promotion (25 §4). Four series, and the last two are why the
     # first two can be interpreted: `created` and `resolved` alone cannot tell
     # a pass that promoted nothing because the room is sparse from one that
@@ -1062,6 +1054,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "ONLY write — it never merges two entity rows, because a split is "
         "provisional and a merge has already absorbed both sets of edges.",
     ),
+    # R-27's three states on the attribution join (21 §7.2), and all three are
+    # reachable: `ok` wrote asserter rows, `nothing_found` found the candidate
+    # and its messages but none of them names a person (an unmapped sender),
+    # `unavailable` found no candidate to join through — or found one whose
+    # messages have been PRUNED, which is «the evidence is gone» and not
+    # «nobody said it». The middle and the last are the pair that must never
+    # collapse: one is a fact about the room and the other is a wiring gap.
     _CounterSpec(
         "nora_fact_asserter_total",
         "Facts by the outcome of the message -> sender -> person join that "

@@ -114,10 +114,14 @@ async def test_an_object_entity_id_that_is_not_a_uuid_is_refused(pg_engine):
     """The column is `uuid`, not `text`. Before 0039 `'House House'` was a
     legal value here."""
     async with pg_engine.begin() as conn:
-        # `DBAPIError` alone: `IntegrityError` is a subclass of it, so the
-        # tuple was redundant AND the wider arm accepted a connection failure
-        # as a pass.
-        with pytest.raises(sa.exc.DBAPIError):
+        # `DBAPIError` PLUS the message, because the class alone cannot carry
+        # this. SQLAlchemy does not map asyncpg's
+        # `InvalidTextRepresentationError` onto `DataError`, so the bare base
+        # class is genuinely all that is raised — and that base class also
+        # covers every connection failure, which is how the first version
+        # (a redundant `(DBAPIError, IntegrityError)` tuple) would have passed
+        # against a database that was simply unreachable.
+        with pytest.raises(sa.exc.DBAPIError, match="invalid input syntax"):
             await conn.execute(sa.text(
                 "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
                 "object_entity_id, object_literal, source_url, source_excerpt, "

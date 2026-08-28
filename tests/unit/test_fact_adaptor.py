@@ -1009,6 +1009,23 @@ async def test_promotion_does_not_run_when_the_tick_wrote_nothing():
     await adaptor.commit(key=WS, proposals=(), now_ms=NOW)
 
     assert promoter.calls == []
+    # The positive control, in THIS test: `== []` is also true of a `commit`
+    # that never reaches `_promote` at all, so the same adaptor is driven once
+    # more with a batch that DOES write, and the call appears.
+    candidates.entities = [_entity("big walk")]
+    await _pending_candidate(
+        candidates, subject="big walk", predicate="made_by", obj="hh",
+    )
+    await adaptor.inputs(key=WS, batch=())
+    verdicts = await adaptor.accept(key=WS, items=(
+        {"subject": "big walk", "predicate": "made_by", "object": "hh",
+         "status": "supported", "addresses_claim": True,
+         "source_url": "https://x.test/a", "source_excerpt": "x"},
+    ))
+    await adaptor.commit(
+        key=WS, proposals=tuple(_proposal(v) for v in verdicts), now_ms=NOW,
+    )
+    assert promoter.calls == [(WS, NOW)]
 
 
 async def test_a_promotion_failure_does_not_fail_the_tick_that_wrote():

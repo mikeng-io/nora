@@ -296,7 +296,7 @@ class FactCandidateAdaptor:
 
         Two guards beyond the field types:
 
-        - **Length caps** (see `_MAX_SUBJECT_CHARS` and friends), so an
+        - **Length caps** (the injected `max_term_chars`/`max_predicate_chars`), so an
           unbounded model-authored string never reaches a durable column.
         - **EVERY `message_ids` entry must be IN `batch`.** The objective
           tells the model "do not invent one, and do not use a message id that
