@@ -3,11 +3,10 @@
 WHAT THIS IS FOR
 ----------------
 A full audit of every store method across the standing, knowledge, language and
-note tiers found thirteen public methods that nothing under `nora/` calls, and
-twelve more reverse-direction gaps — columns with no writer, tables with no
-store, a config key read nowhere. The obvious reading is "unfinished work", and
-it is wrong for most of them. The reading that survives all of it is narrower
-and worse:
+note tiers found methods that nothing under `nora/` calls, plus reverse-direction
+gaps — columns with no writer, tables with no store, a config key read nowhere.
+The obvious reading is "unfinished work", and it is wrong for most of them. The
+reading that survives all of it is narrower and worse:
 
     **the contract suite was accepted as the completion gate.**
 
@@ -28,7 +27,7 @@ so that the NEXT method to arrive unwired has to be classified deliberately
 rather than by default.
 
 THE THREE SHAPES, because lumping them together is what made the list look
-like thirteen bugs:
+like a pile of bugs:
 
   `read_back_affordance` — a by-id read shipped on the store's own surface for
       the contract suite and for an operator, with no consumer designed. Its
@@ -38,41 +37,86 @@ like thirteen bugs:
   `defect`               — a live write path creates state that no production
       code can act on or leave. These are the ones that want fixing.
 
-WHAT THIS CAN AND CANNOT SEE
-----------------------------
-Callers are resolved BY METHOD NAME, which is only sound when the name is
-unique across every store class. 99 of 120 public store method names are; the
-other 21 (`read`, `recent`, `save`, `search`, `resolve`, `supersede`, `get`,
-`create` …) are shared, so a call to any one of them looks like a call to all
-of them. Those are pinned in `_NAME_NOT_UNIQUE` and are NOT checked here —
-`SqlTagTraceStore.recent` and `SqlTurnVerdictStore.read` both have no
-production caller and this file cannot prove it, because `SqlRecordStore.recent`
-and `SqlNoteStore.read` do.
+THE COUNTS, so they reconcile with something: TWELVE methods are pinned below.
+TWO more are known to have no production caller and cannot be proven so here —
+`SqlTagTraceStore.recent` and `SqlTurnVerdictStore.read` — because their names
+are shared with other stores (see the ambiguity rule). Fourteen in total; the
+twelve are what this file can check.
 
-That is stated rather than hidden because it is the same rule the rest of these
-gates keep: a name this file cannot resolve is UNCHECKED, never clean. Both
-pins are checked in both directions, so a row that stops matching reality fails
-rather than rotting.
+HOW A CALLER IS RESOLVED, AND WHAT THAT STILL CANNOT SEE
+--------------------------------------------------------
+A call site is a PARSED `ast.Call` whose function is an attribute access on a
+NAME-BOUND receiver — `self._facts.propose(...)`, `store.pending(...)`. Both
+halves of that are load-bearing, and an earlier version of this file got both
+wrong by searching raw file text instead:
 
-PROBE (2026-08-29, production code only; each mutation asserted to have
-applied AND to still parse, because one that does not compile can redden for
-the wrong reason and one whose anchor missed measures the original code):
-  - Added `await self._facts.clear_disputed()` to
+  - Parsing, not text, because a DOCSTRING that mentions a method vouched for
+    it. `nora/domain/compute.py` contains the prose «Unlike `ReminderStore.due()`»
+    and that alone certified `SqlReminderStore.due` as called; deleting its one
+    real caller left this gate green.
+  - A name-bound receiver, because `(await conn.execute(stmt)).all()` — which
+    appears in twenty-odd store modules — certified `SqlMusicSessionStore.all`.
+    A store is always reached through a name, never off the result of a call.
+
+What remains unresolvable is a NAMESAKE: a method of the same name on some
+other class. Two kinds are excluded from checking entirely and listed in
+`_AMBIGUOUS`:
+
+  - names defined on more than one store class (`read`, `recent`, `save`,
+    `resolve`, `supersede`, `get`, `create`, …), and
+  - names also defined on a non-Protocol class elsewhere under `nora/`
+    (`record` is `CallLedger.record` and `ReplyGuard.record` as well as
+    `SqlRenderedClaimStore.record`).
+
+Protocol and ABC declarations are deliberately NOT treated as namesakes: a port
+in `nora/domain/ports.py` declaring `propose` IS this store's own interface, and
+calls land on it legitimately. Excluding those too would make almost every
+method unresolvable and the gate would check nothing while looking thorough.
+
+A name in `_AMBIGUOUS` is UNCHECKED, never clean — the same R-27 rule the rest
+of these gates keep. Both pins are checked in both directions, and `_AMBIGUOUS`
+is DERIVED from the code every run rather than hand-maintained, so a name that
+stops being ambiguous cannot keep its exemption.
+
+STILL NOT SEEN, and stated rather than left to be discovered:
+  - A THIRD-PARTY namesake. `_namesakes` only sees classes defined under
+    `nora/`, so a method whose name matches something on a library object is
+    still wrongly cleared. Demonstrated: adding an uncalled `SqlFactStore.close`
+    passes this gate, because `self.deps.client.close()` in `nora/__main__.py`
+    is a name-bound `.close(...)` call site. It takes a NEW store method landing
+    on a borrowed name to bite — the twelve rows below were each confirmed by a
+    separate audit — and closing it properly needs receiver type inference,
+    which is more machinery than this gate is worth. Said plainly instead of
+    left for someone to trip over.
+  - Dynamic dispatch — `getattr(store, name)`, a string-keyed registry. Nothing
+    here would catch it.
+  - REACHABILITY. A caller that is itself dead — an unimported module, a branch
+    behind a never-true flag — reads as a live caller.
+  - Whether the call actually lands on THIS store. A call on a port whose bound
+    implementation is a different class counts here.
+
+PROBE (2026-08-29, production code only; each mutation asserted to have applied
+AND to still parse, because one that does not compile can redden for the wrong
+reason and one whose anchor missed measures the original code):
+  - A new uncalled `SqlFactStore.totally_new_read`:
+    `test_every_uncalled_store_method_is_pinned` RED, naming it.
+  - `await self._facts.clear_disputed()` added to
     `nora/engagement/recognition.py`: `test_pinned_methods_still_have_no_caller`
-    FAILED with «facts.py::clear_disputed is now called from
-    nora/engagement/recognition.py:393». So wiring one of these up forces its
-    row OUT of the pin rather than leaving a stale excuse behind for the next
-    method to inherit. Restored.
-  - Renamed `SqlFactStore.disputed_facts` to `disputed_facts2`: BOTH halves
-    fired — `test_every_uncalled_store_method_is_pinned` on the new unpinned
-    name, and `test_pinned_methods_still_have_no_caller` on the row that now
-    matches nothing. Restored.
+    RED — wiring one up forces its row OUT rather than leaving a stale excuse.
+  - `SqlFactStore.disputed_facts` renamed: BOTH halves RED.
+  - A second `forget` defined on another store: the derived-ambiguity test RED,
+    and the pin independently RED as missing.
+  - One row deleted from the pin table: RED, so the table is content and not
+    decoration.
+  - THE TWO A REVIEWER USED TO BREAK THE PREVIOUS VERSION, both now caught and
+    both green before: deleting the only real caller of `SqlReminderStore.due`
+    (previously vouched for by a docstring) and of `SqlMusicSessionStore.all`
+    (previously vouched for by `Result.all()`).
 """
 
 from __future__ import annotations
 
 import ast
-import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Literal, NamedTuple, get_args
@@ -91,9 +135,9 @@ class _Pin(NamedTuple):
 
 # Public store methods with NO production caller, by (module, method).
 #
-# Sorted by module. Every row carries the shape and the reason, because a bare
-# list is exactly the artifact that gets re-derived from scratch by the next
-# session that notices one of them.
+# Every row carries the shape and the reason, because a bare list is exactly
+# the artifact that gets re-derived from scratch by the next session that
+# notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("announcements.py", "announced"): _Pin(
         "read_back_affordance",
@@ -104,10 +148,12 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "defect",
         "`supersede` IS wired (nora/language/fact_adaptor.py) and facts.py names "
         "`forget` as its write-side answer, so a retracted fact keeps its vector "
-        "forever and keeps eating the retrieval budget. COST ONLY, not "
-        "correctness: `standing_among` re-grounds every retrieval hit against "
-        "`fact`, so a retracted claim cannot come back through the corpus — the "
-        "loop was closed by the fail-safe instead of by the verb.",
+        "forever. NOT cost-only, which an earlier version of this row claimed: "
+        "knowledge_search grounds AFTER fusing, so orphaned vectors occupy "
+        "channel top-k and fused slots ahead of the standing filter and can "
+        "starve standing facts out of the result — which then surfaces as "
+        "`nothing_found`. Re-grounding does guarantee a retracted claim is never "
+        "RENDERED; it does not stop one crowding out a live one.",
     ),
     ("fact_candidates.py", "candidate_by_id"): _Pin(
         "read_back_affordance",
@@ -117,10 +163,12 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("facts.py", "clear_disputed"): _Pin(
         "defect",
         "Half of a state machine whose other half is LIVE. `mark_disputed` fires "
-        "from nora/engagement/recognition.py on a member's objection and "
-        "fact_render then renders the dispute on every later turn; the only exit "
-        "is supersession. A dispute that was itself wrong cannot be dismissed. "
-        "Pairs with `disputed_facts` — see it.",
+        "from nora/engagement/recognition.py on a member's objection, and the "
+        "mark then surfaces whenever that subject is selected into <facts> — not "
+        "on every later turn, since the room slice is filtered to the subjects "
+        "in play and capped. Supersession is the only exit (facts.py's "
+        "`supersede` nulls all four dispute columns), so a dispute that was "
+        "itself wrong cannot be dismissed. Pairs with `disputed_facts`.",
     ),
     ("facts.py", "disputed_facts"): _Pin(
         "defect",
@@ -136,14 +184,15 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("facts.py", "recent_facts"): _Pin(
         "defect",
         "STALE CLAIM, not a missing loop. Its docstring asserts it «runs on the "
-        "same critical path, inside the same asyncio.gather» — it does not; only "
-        "the subject-filtered `standing_facts` reaches the prefill. It had a "
-        "caller on origin/master and lost it. The defect is the false docstring.",
+        "same critical path, inside the same asyncio.gather». Three fact reads "
+        "do reach the prefill — `standing_facts`, `facts_asserted_by` and "
+        "`standing_count` — and this is not one of them; it had a caller on "
+        "origin/master and lost it. The defect is the false docstring.",
     ),
     ("mobility.py", "trips_for_subject"): _Pin(
         "read_back_affordance",
         "Kept correct for a future caller by explicit decision — its docstring "
-        "argues against silently discarding a column «a trap for the next "
+        "argues against silently discarding a column, «a trap for the next "
         "caller». Outside the three memory tiers.",
     ),
     ("notes.py", "note_by_id"): _Pin(
@@ -175,23 +224,32 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ),
 }
 
-# Method names shared by two or more store classes. A name-based caller search
-# cannot attribute a call to one of them, so these are NOT checked by this file
-# — including two known-unwired ones (`tag_traces.recent`, `turn_verdicts.read`)
-# whose siblings on other stores ARE called. Unchecked, never clean.
-_NAME_NOT_UNIQUE: frozenset[str] = frozenset(
+# Names this file CANNOT resolve, pinned so the set cannot grow in silence.
+# It is DERIVED every run (see `_ambiguous`) and asserted to equal this list, so
+# the pin is a record of a decision rather than a second source of truth: a name
+# that becomes ambiguous fails here instead of quietly dropping out of the
+# checked set, and one that stops being ambiguous cannot keep its exemption.
+#
+# Two kinds, both unresolvable for the same reason — a call to `.read(...)`
+# cannot be attributed: defined on more than one store class, or also defined on
+# a non-Protocol class elsewhere under `nora/`. Two methods KNOWN to have no
+# production caller hide in here and cannot be proven so: `tag_traces.recent`
+# and `turn_verdicts.read`.
+_AMBIGUOUS: frozenset[str] = frozenset(
     {
-        "aclose", "append", "append_observations", "claim", "create", "get",
-        "mark", "mark_disputed", "pending", "propose", "prune", "prune_all",
-        "read", "recent", "rescore", "resolve", "save", "search", "supersede",
-        "sweep_firing", "upsert",
+        "aclose", "append", "append_observations", "claim", "create", "delete",
+        "describe", "enqueue", "get", "mark", "mark_disputed", "pending",
+        "propose", "prune", "prune_all", "put", "read", "recent", "record",
+        "rescore", "resolve", "rsvps_for", "save", "search", "supersede",
+        "sweep_firing", "update", "upsert", "watermark",
     }
 )
 
-# The sweep must see at least this much. Measured when this file was written:
-# 120 distinct public method names across the SQL stores, 99 of them unique.
-_MIN_METHOD_NAMES = 110
-_MIN_UNIQUE_NAMES = 90
+# The sweep must see every store module and roughly this many names. The MODULE
+# set is the real control: a reviewer showed that a bare count let nine of the
+# twenty-five store modules vanish from the walk with every assertion still
+# green, because a count has slack and a set does not.
+_MIN_METHOD_NAMES = 115
 
 
 class _Method(NamedTuple):
@@ -199,84 +257,155 @@ class _Method(NamedTuple):
     cls: str
     name: str
     line: int
-    is_property: bool
+
+
+def _parse(path: Path) -> ast.Module:
+    return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+
+def _store_modules() -> list[Path]:
+    return sorted(SQL.glob("*.py"))
 
 
 def _store_methods() -> dict[str, list[_Method]]:
     """Every public method on every class in `nora/infra/sql/`, keyed by name."""
     found: dict[str, list[_Method]] = defaultdict(list)
-    for path in sorted(SQL.glob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for cls in (n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)):
+    for path in _store_modules():
+        for cls in (n for n in ast.walk(_parse(path)) if isinstance(n, ast.ClassDef)):
             for node in cls.body:
                 if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                     continue
                 if node.name.startswith("_"):
                     continue
-                is_prop = any(
-                    isinstance(d, ast.Name) and d.id == "property"
-                    for d in node.decorator_list
-                )
                 found[node.name].append(
-                    _Method(path.name, cls.name, node.name, node.lineno, is_prop)
+                    _Method(path.name, cls.name, node.name, node.lineno)
                 )
     return found
 
 
-def _production_sources() -> list[tuple[Path, str]]:
+def _production_sources() -> list[Path]:
     """Everything that could hold a production caller.
 
-    `nora/testing/` is excluded — it is the fakes package, and a call there is
-    exactly the "the contract suite is the gate" mistake this file is about.
-    `nora/infra/sql/` IS included, because one store legitimately calling
-    another is a production caller; a method's own defining module is excluded
-    per-check so a docstring mention or self-call cannot vouch for it.
+    `nora/testing/` is the fakes package and `nora/compute/smith/tests/` is a
+    test suite that lives inside `nora/` — a call from either is exactly the
+    "the contract suite is the gate" mistake this file is about, so neither may
+    vouch for anything. The second was missed by an earlier version, whose
+    exclusion checked for the path component "testing" while that directory is
+    named "tests".
     """
-    out: list[tuple[Path, str]] = []
-    for path in (ROOT / "nora").rglob("*.py"):
-        if ".venv" in path.parts or "testing" in path.parts:
+    return sorted(
+        p
+        for p in (ROOT / "nora").rglob("*.py")
+        if ".venv" not in p.parts
+        and "testing" not in p.parts
+        and "tests" not in p.parts
+    )
+
+
+def _is_protocol(cls: ast.ClassDef) -> bool:
+    return any(
+        (isinstance(b, ast.Name) and b.id in ("Protocol", "ABC"))
+        or (isinstance(b, ast.Attribute) and b.attr in ("Protocol", "ABC"))
+        for b in cls.bases
+    )
+
+
+def _namesakes() -> dict[str, set[str]]:
+    """Method names defined on a non-Protocol class OUTSIDE the store package.
+
+    These make a name unresolvable: a call to `.record(...)` may be reaching
+    `CallLedger.record` rather than `SqlRenderedClaimStore.record`.
+
+    Protocols and ABCs are excluded on purpose. A port declaring `propose` IS
+    the store's own interface and calls land on it legitimately; counting those
+    as namesakes would push nearly every method into the unchecked set and this
+    file would check almost nothing while still looking thorough.
+    """
+    found: dict[str, set[str]] = defaultdict(set)
+    for path in _production_sources():
+        if path.parent == SQL:
             continue
-        out.append((path, path.read_text(encoding="utf-8")))
-    return out
+        for cls in (n for n in ast.walk(_parse(path)) if isinstance(n, ast.ClassDef)):
+            if _is_protocol(cls):
+                continue
+            for node in cls.body:
+                if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                    found[node.name].add(f"{path.relative_to(ROOT)}::{cls.name}")
+    return found
 
 
-def _find_caller(method: _Method, sources: list[tuple[Path, str]]) -> str | None:
-    # A property is read as `.window_ms`, everything else called as `.name(`.
-    suffix = r"\b" if method.is_property else r"\s*\("
-    pattern = re.compile(r"\." + re.escape(method.name) + suffix)
-    for path, blob in sources:
-        if path.name == method.module and path.parent == SQL:
+class _Site(NamedTuple):
+    path: Path
+    line: int
+
+
+def _call_sites() -> dict[str, list[_Site]]:
+    """Attribute accesses on a NAME-BOUND receiver, by attribute name.
+
+    Both a call (`store.propose(...)`) and a bare read (`ledger.window_ms`) are
+    collected, because one pinned member is a property.
+
+    The receiver must be a `Name` or an `Attribute` — never the result of a
+    call. `(await conn.execute(stmt)).all()` is not a store call, and treating
+    it as one is what previously certified `SqlMusicSessionStore.all` as used.
+    """
+    found: dict[str, list[_Site]] = defaultdict(list)
+    for path in _production_sources():
+        for node in ast.walk(_parse(path)):
+            if isinstance(node, ast.Attribute) and isinstance(
+                node.value, ast.Name | ast.Attribute
+            ):
+                found[node.attr].append(_Site(path, node.lineno))
+    return found
+
+
+def _ambiguous(methods: dict[str, list[_Method]]) -> frozenset[str]:
+    shared = {name for name, defs in methods.items() if len(defs) > 1}
+    elsewhere = _namesakes()
+    unique = {name for name, defs in methods.items() if len(defs) == 1}
+    return frozenset(shared | {n for n in unique if n in elsewhere})
+
+
+def _caller_of(method: _Method, sites: dict[str, list[_Site]]) -> str | None:
+    for site in sites.get(method.name, []):
+        if site.path.parent == SQL and site.path.name == method.module:
             continue  # its own module cannot vouch for it
-        match = pattern.search(blob)
-        if match is not None:
-            rel = path.relative_to(ROOT)
-            return f"{rel}:{blob[: match.start()].count(chr(10)) + 1}"
+        return f"{site.path.relative_to(ROOT)}:{site.line}"
     return None
 
 
 def test_every_uncalled_store_method_is_pinned() -> None:
     methods = _store_methods()
-    sources = _production_sources()
+    sites = _call_sites()
+    ambiguous = _ambiguous(methods)
 
-    # POSITIVE CONTROL. An empty `unpinned` is also what a walk that found no
-    # methods produces — a moved package, an AST change, a renamed directory.
-    unique = {n: m[0] for n, m in methods.items() if len(m) == 1}
-    assert len(methods) >= _MIN_METHOD_NAMES and len(unique) >= _MIN_UNIQUE_NAMES, (
-        f"the sweep found {len(methods)} public store method names "
-        f"({len(unique)} unique), below the {_MIN_METHOD_NAMES}/"
-        f"{_MIN_UNIQUE_NAMES} this tree contains. The walk stopped matching — "
-        "fix it before trusting a green run."
+    # POSITIVE CONTROL, on the MODULE SET rather than a count. An empty result
+    # is also what a walk that silently dropped a module produces, and a
+    # numeric floor has slack a set does not: with a count alone, nine of the
+    # twenty-five store modules could vanish and every assertion stayed green.
+    seen = {m.module for defs in methods.values() for m in defs}
+    expected = {p.name for p in _store_modules()} - {"__init__.py"}
+    assert seen >= expected - {"engine.py", "migrations_runner.py", "schema.py"}, (
+        f"the walk missed store modules entirely: {sorted(expected - seen)}. "
+        "Fix it before trusting a green run."
+    )
+    assert len(methods) >= _MIN_METHOD_NAMES, (
+        f"only {len(methods)} public store method names found, below "
+        f"{_MIN_METHOD_NAMES}. The walk stopped matching."
     )
 
     unpinned: list[str] = []
-    for name, method in sorted(unique.items()):
-        if name in _NAME_NOT_UNIQUE:
+    for name, defs in sorted(methods.items()):
+        if name in ambiguous:
             continue
-        if _find_caller(method, sources) is not None:
+        method = defs[0]
+        if _caller_of(method, sites) is not None:
             continue
         if (method.module, name) in _NO_PRODUCTION_CALLER:
             continue
-        unpinned.append(f"nora/infra/sql/{method.module}:{method.line} {method.cls}.{name}")
+        unpinned.append(
+            f"nora/infra/sql/{method.module}:{method.line} {method.cls}.{name}"
+        )
 
     assert not unpinned, (
         "store methods with no production caller that are not pinned in "
@@ -293,9 +422,11 @@ def test_pinned_methods_still_have_no_caller() -> None:
     """The pin must not rot. Wiring one of these up should DELETE its row, not
     leave an excuse behind for whatever lands on the same name later."""
     methods = _store_methods()
-    sources = _production_sources()
+    sites = _call_sites()
     by_key = {
-        (m[0].module, name): m[0] for name, m in methods.items() if len(m) == 1
+        (defs[0].module, name): defs[0]
+        for name, defs in methods.items()
+        if len(defs) == 1
     }
 
     now_called: list[str] = []
@@ -305,7 +436,7 @@ def test_pinned_methods_still_have_no_caller() -> None:
         if method is None:
             missing.append(f"{key[0]}::{key[1]}")
             continue
-        caller = _find_caller(method, sources)
+        caller = _caller_of(method, sites)
         if caller is not None:
             now_called.append(f"{key[0]}::{key[1]} is now called from {caller}")
 
@@ -320,19 +451,15 @@ def test_pinned_methods_still_have_no_caller() -> None:
     )
 
 
-def test_the_unresolvable_name_list_is_exactly_the_shared_names() -> None:
-    """Derived, not hand-maintained: `_NAME_NOT_UNIQUE` must equal the set of
-    method names that genuinely appear on more than one store class. A name
-    that stops being shared becomes checkable and must leave this list, or it
-    would silently exempt a real method forever."""
+def test_no_pinned_method_is_ambiguous() -> None:
+    """A pinned row asserts «nothing calls this». If its name became ambiguous
+    the row would stop being checkable, and an unchecked row is an excuse."""
     methods = _store_methods()
-    shared = {name for name, m in methods.items() if len(m) > 1}
-    assert shared == _NAME_NOT_UNIQUE, (
-        "_NAME_NOT_UNIQUE has drifted from the code.\n"
-        f"  no longer shared (delete, they are checkable now): "
-        f"{sorted(_NAME_NOT_UNIQUE - shared)}\n"
-        f"  newly shared (add, they cannot be checked here): "
-        f"{sorted(shared - _NAME_NOT_UNIQUE)}"
+    ambiguous = _ambiguous(methods)
+    bad = sorted(name for _mod, name in _NO_PRODUCTION_CALLER if name in ambiguous)
+    assert not bad, (
+        "pinned methods whose names are no longer resolvable, so their rows "
+        "assert something this file can no longer check: " + str(bad)
     )
 
 
@@ -351,4 +478,23 @@ def test_every_pin_declares_a_known_shape() -> None:
     assert not thin, (
         "pins whose reason is too short to be a reason. A row here is the only "
         "record of why a method nothing calls is allowed to exist: " + str(thin)
+    )
+
+
+def test_the_ambiguous_set_is_exactly_what_the_code_makes_ambiguous() -> None:
+    """Derived, not hand-maintained — and pinned, so it cannot grow in silence.
+
+    Without the pin an unresolvable name simply vanishes from the checked set,
+    which is the very substitution this file is about one level up: `unavailable`
+    reported as clean. With it, a store method that collides with something else
+    fails here and someone has to look.
+    """
+    derived = _ambiguous(_store_methods())
+    assert derived == _AMBIGUOUS, (
+        "_AMBIGUOUS has drifted from the code.\n"
+        f"  newly ambiguous (add them — they are no longer checked, and any of "
+        f"them may now have no caller without this gate noticing): "
+        f"{sorted(derived - _AMBIGUOUS)}\n"
+        f"  no longer ambiguous (delete them — they are checkable now): "
+        f"{sorted(_AMBIGUOUS - derived)}"
     )
