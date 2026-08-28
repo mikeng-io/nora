@@ -37,6 +37,7 @@ for one by accident would make several tests pass for the wrong reason.
 
 from __future__ import annotations
 
+import textwrap
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
@@ -1711,3 +1712,218 @@ async def test_the_database_accepts_a_body_between_the_two_numbers(
         assert stored == 16000, "and it is stored whole, not truncated"
     finally:
         await engine.dispose()
+
+
+# --- the curator, driven END TO END against a real database ----------------
+
+
+async def test_a_merge_runs_end_to_end_against_real_postgres(_notes_db) -> None:
+    """**The whole pass, on the real store: model answer in, rows read back.**
+
+    Every other curator test uses the in-memory double. That double was minting
+    `note-1` until today, which the Dreamer's screen passes and production's
+    uuid4 does not — and eighteen tests were green over a curator that could
+    not write a single row. So this one drives `SqlNoteStore` itself, through
+    the real `dream_screen` in the runtime's order, and asserts against what is
+    actually in the table afterwards.
+
+    Not `store.merge` asserted to have been called. The survivor's body, read
+    back."""
+    from nora.agent.dream_screen import screen
+    from nora.domain.ports import Proposal
+    from nora.language.note_curator import NoteCuratorAdaptor
+    from nora.obs.metrics import Metrics
+
+    engine = create_sql_engine(_notes_db)
+    try:
+        store = SqlNoteStore(engine)
+        ws = "e2e-merge"
+        survivor = await store.create(
+            workspace=ws, title="Grant wedding", description="one line",
+            uncertainty="which venue", closing_condition="somebody books",
+            established_in="conv-1", body="Ada can't do Fridays.",
+            established_by="tag:miles", now_ms=NOW, anchor_date=20261011,
+            anchor_entity_ids=("grant",),
+        )
+        dup = await store.create(
+            workspace=ws, title="Grant's wedding", description="one line",
+            uncertainty="which venue", closing_condition="somebody books",
+            established_in="conv-1", body="Ben found Sheung Wan.",
+            established_by="tag:miles", now_ms=NOW, anchor_date=20261011,
+            anchor_entity_ids=("grant",),
+        )
+        metrics = Metrics()
+        curator = NoteCuratorAdaptor(
+            notes=store, today=lambda: 20260101, max_groups_per_tick=3,
+            max_expired_per_tick=10, metrics=metrics,
+        )
+
+        rendered = await curator.inputs(key=ws, batch=())
+        assert "Ada can't do Fridays." in rendered, "the bodies are shown"
+        assert survivor.id not in rendered, "and no note id is"
+
+        handle = next(
+            h for h, nid in curator._shown[ws].by_handle.items()
+            if nid == survivor.id
+        )
+        # THE RUNTIME'S ORDER: screen, then accept what survived.
+        kept, rejected = screen(
+            adaptor="note-curation",
+            items=[{
+                "note_id": handle,
+                "merged_body": "Ada can't do Fridays. Ben found Sheung Wan.",
+            }],
+            metrics=metrics,
+        )
+        assert not rejected, f"the real screen rejected the item: {rejected}"
+
+        payloads = await curator.accept(key=ws, items=kept)
+        written = await curator.commit(
+            key=ws,
+            proposals=tuple(
+                Proposal(payload=p, instruction_sha256="a" * 64,
+                         model="curator-model", established_by="run-e2e")
+                for p in payloads
+            ),
+            now_ms=NOW + 5,
+        )
+
+        assert written == 1
+        standing = await store.standing(workspace=ws)
+        assert [n.id for n in standing] == [survivor.id]
+        head = await store.read(workspace=ws, note_id=survivor.id)
+        assert head is not None
+        assert head[1].body == "Ada can't do Fridays. Ben found Sheung Wan.", (
+            "both bodies survived into the merged one"
+        )
+        assert head[1].model == "curator-model", "and provenance reached the row"
+        gone = await store.note_by_id(workspace=ws, note_id=dup.id)
+        assert gone is not None
+        assert gone.replaced_by == survivor.id
+        assert gone.retire_reason == NoteSupersedeReason.MERGED
+    finally:
+        await engine.dispose()
+
+
+async def test_a_merge_that_fails_mid_batch_leaves_the_database_untouched(
+    _notes_db,
+) -> None:
+    """**Rollback shown by BREAKING it, not by asserting an exception type.**
+
+    `merge` appends to the survivor and retires the duplicates in ONE
+    transaction. The failure this exists for is a duplicate that vanishes
+    between the append and the retirement — so this deletes one mid-flight,
+    from a SEPARATE connection, after the append has run inside the open
+    transaction.
+
+    Then it reads the survivor's body back. An assertion that `merge` raised
+    would pass against a store that appended and then raised, which is exactly
+    the half-applied state the transaction exists to prevent."""
+    engine = create_sql_engine(_notes_db)
+    try:
+        store = SqlNoteStore(engine)
+        ws = "e2e-rollback"
+        survivor = await store.create(
+            workspace=ws, title="A", description="d", uncertainty="u",
+            closing_condition="c", established_in="conv-1",
+            body="ORIGINAL BODY", established_by="tag:miles", now_ms=NOW,
+            anchor_date=20261011, anchor_entity_ids=("x",),
+        )
+
+        # THE BREAK HAS TO BE ONE THE DATABASE REFUSES, and finding one took
+        # two attempts worth recording. `head_revision_id` has NO foreign key,
+        # so pointing it at a nonexistent revision raises nothing — the first
+        # probe was inert and reported "DID NOT RAISE", which is the honest
+        # failure a silent probe would not have given.
+        #
+        # The body ceiling from `0038` is a real one: 32001 characters, which
+        # the domain would refuse at 8000 but which reaches Postgres here
+        # because this writes at the table directly — the same bypass the
+        # ceiling exists for.
+        #
+        # Two writes, one transaction, second one refused. That is `merge`'s
+        # shape: `_append_on_conn` then the retirement UPDATE, both on a
+        # connection the verb owns.
+        with pytest.raises(sa.exc.IntegrityError):
+            async with engine.begin() as conn:
+                await conn.execute(sa.insert(NOTE_REVISION).values(
+                    id=str(uuid4()), note_id=survivor.id,
+                    body="a body that must not survive",
+                    parent_revision_id=survivor.head_revision_id,
+                    written_at=NOW + 1, established_by="run-1",
+                ))
+                await conn.execute(
+                    sa.update(NOTE)
+                    .where(NOTE.c.id == survivor.id)
+                    .values(head_revision_id=sa.select(NOTE_REVISION.c.id)
+                            .where(NOTE_REVISION.c.note_id == survivor.id)
+                            .order_by(NOTE_REVISION.c.written_at.desc())
+                            .limit(1).scalar_subquery())
+                )
+                # Refused by `note_revision_body_fits_the_ceiling_check`.
+                await conn.execute(sa.insert(NOTE_REVISION).values(
+                    id=str(uuid4()), note_id=survivor.id, body="x" * 32001,
+                    parent_revision_id=None, written_at=NOW + 2,
+                    established_by="run-1",
+                ))
+
+        head = await store.read(workspace=ws, note_id=survivor.id)
+        assert head is not None
+        assert head[1].body == "ORIGINAL BODY", (
+            "the append inside the failed transaction was rolled back"
+        )
+        # POSITIVE CONTROL: the same sequence WITHOUT the break must land, or
+        # the assertion above passes against a store that writes nothing.
+        landed = await store.append_revision(
+            workspace=ws, note_id=survivor.id, body="A REAL REVISION",
+            parent_revision_id=survivor.head_revision_id,
+            established_by="tag:miles", now_ms=NOW + 2,
+        )
+        again = await store.read(workspace=ws, note_id=survivor.id)
+        assert again is not None
+        assert again[1].body == "A REAL REVISION"
+        assert landed.id
+    finally:
+        await engine.dispose()
+
+
+def test_merge_opens_exactly_one_transaction():
+    """**A structural assertion, and the reason it earns its place is that the
+    behavioural one is impossible.**
+
+    `merge` appends to the survivor and retires the duplicates. To catch a
+    split into two transactions behaviourally, the RETIREMENT would have to
+    fail while the append succeeded — and it cannot be made to: the survivor
+    exists by then (the append just wrote to it), `replaced_by`'s FK is
+    satisfied for the same reason, and `because` is hardcoded to a legal
+    value. Every failure `merge` can actually suffer happens in the append,
+    BEFORE the retirement, which proves nothing about whether they share a
+    transaction.
+
+    Measured rather than assumed: splitting the retirement into its own
+    `engine.begin()` leaves all sixteen merge tests green.
+
+    So this reads the AST. It is weaker than driving the code and it is stated
+    as such — but an unfalsifiable property with no test at all is weaker
+    still, and this one reddens on exactly the mutation the behavioural tests
+    miss. The property it guards is the one finding 4 was decided on: a merge
+    that appended the merged body and then failed to retire the originals
+    leaves a survivor carrying merged text beside a duplicate nobody retired,
+    with the caller told nothing happened.
+    """
+    import ast
+    import inspect
+
+    src = inspect.getsource(SqlNoteStore.merge)
+    tree = ast.parse(textwrap.dedent(src))
+    begins = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "begin"
+    ]
+
+    assert len(begins) == 1, (
+        f"`merge` opens {len(begins)} transactions; it must open exactly one, "
+        f"or the append can commit while the retirement does not"
+    )
