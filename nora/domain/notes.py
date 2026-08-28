@@ -47,9 +47,31 @@ from dataclasses import dataclass, field
 #: index being a complete listing of what exists.
 TITLE_MAX_CHARS = 60
 DESCRIPTION_MAX_CHARS = 200
-#: 27 §5.2's OPERATING value. The database ceiling is 32000 and is a different
-#: number on purpose — see `NoteRevision.__post_init__` for why there are two.
+#: 27 §5.2's OPERATING value — what a writer should produce. Configurable as
+#: `[notes] max_body_chars`; enforced in `NoteRevision.__post_init__` and both
+#: proposal types, where a refusal is reviewable and names the cap.
 BODY_MAX_CHARS = 8000
+
+#: 27 §5.2's ABSOLUTE ceiling — what the table will hold. NOT configurable, and
+#: four times the operating value on purpose.
+#:
+#: The two numbers mean different things, which is why there are two: 8000 says
+#: «no writer should produce that», 32000 says «this row is corrupt». A body
+#: between them means something reached the table WITHOUT passing the domain
+#: type — a bug to go and find, not a row to reject when somebody reads it. A
+#: CHECK at the operating value would collapse the two meanings.
+#:
+#: **`nora/infra/sql/schema.py` reads this constant rather than repeating the
+#: number**, on `STANDING_BODY_CEILING_CHARS`' precedent and for its stated
+#: reason: a change to the ceiling must not leave the table and the type
+#: disagreeing silently. The gate cannot catch that on its own —
+#: `test_schema_parity` compares `schema.py` against the migrated database, so
+#: two literals agree with each other and with no declared intent.
+#:
+#: Migration `0038` keeps its own literal, deliberately: a migration is a
+#: snapshot of what was applied and must not import a constant that can move
+#: underneath it.
+NOTE_BODY_CEILING_CHARS = 32000
 
 #: Anchor dates are `YYYYMMDD` integers, not epoch milliseconds. The anchor is
 #: compared for EQUALITY when deciding merge eligibility (§7.1) and against

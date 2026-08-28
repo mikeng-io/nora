@@ -71,10 +71,12 @@ down_revision = "0037_standing_consumed_verdict"
 branch_labels = None
 depends_on = None
 
-#: 27 §5.2's DATABASE ceiling, four times the operating value. Deliberately not
-#: imported from `nora.domain.notes` — a migration is a historical record of
-#: what was applied, and a constant that moves later would silently rewrite
-#: what this revision claims to have done.
+#: 27 §5.2's DATABASE ceiling, four times the operating value. **Taken from
+#: `nora.domain.notes.NOTE_BODY_CEILING_CHARS`, and deliberately NOT imported
+#: from it** — a migration is a historical record of what was applied, and a
+#: constant that moves later would silently rewrite what this revision claims
+#: to have done. `schema.py` reads the constant; this file records the number.
+#: `0034_standing` names its source the same way for the same reason.
 BODY_CEILING_CHARS = 32000
 
 

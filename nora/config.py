@@ -21,6 +21,7 @@ from pydantic import (
     model_validator,
 )
 
+from nora.domain.notes import NOTE_BODY_CEILING_CHARS
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -1695,7 +1696,7 @@ class NotesConfig(BaseModel):
     max_expired_per_tick: int = Field(default=20, ge=1, le=200)
 
     #: 27 §5.2. The OPERATING cap on a note body, in characters. The database
-    #: carries a separate ceiling of 32000 and the gap is the point: this says
+    #: carries a separate, larger ceiling (NOTE_BODY_CEILING_CHARS) and the gap is
     #: «no writer should produce that», the CHECK says «this row is corrupt».
     #: A body between the two means something bypassed the domain type, which
     #: is a bug to find rather than a row to reject on read.
@@ -1707,7 +1708,9 @@ class NotesConfig(BaseModel):
     #: `le` is the database ceiling: a configured value above it would be
     #: unenforceable, refused by Postgres rather than by the domain, and the
     #: operator would find out from a failed write.
-    max_body_chars: int = Field(default=8000, ge=1000, le=32000)
+    max_body_chars: int = Field(
+        default=8000, ge=1000, le=NOTE_BODY_CEILING_CHARS,
+    )
 
 
 class XaiImageGenConfig(BaseModel):
