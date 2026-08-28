@@ -76,6 +76,7 @@ from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.entities import SqlEntityStore
+from nora.infra.veto_list import load_veto_list
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore, oversized_terms
@@ -151,29 +152,6 @@ from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .runtime import BackgroundTasks
 
 log = logging.getLogger("nora.app.composition")
-
-
-def _veto_list(path: Path | None) -> frozenset[str]:
-    """21 §10's operator-owned veto list, or nothing.
-
-    One string per line, `#` comments and blanks ignored. **A missing file
-    vetoes nothing extra rather than refusing to start**, unlike `policy.toml`:
-    the rules in code are the floor and this only narrows what promotes, so an
-    absent file is a room that has not needed one — whereas an absent
-    `policy.toml` would mean nobody decided who may talk to her.
-
-    An UNREADABLE file is different from an absent one and raises: the operator
-    wrote a path, so reading nothing from it is a wiring gap, not a decision.
-    """
-    if path is None:
-        return frozenset()
-    if not path.is_file():
-        return frozenset()
-    lines = path.read_text(encoding="utf-8").splitlines()
-    return frozenset(
-        stripped for line in lines
-        if (stripped := line.split("#", 1)[0].strip())
-    )
 
 
 class StartupError(Exception):
@@ -2101,7 +2079,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 metrics=metrics,
             )
             fact_entities = SqlEntityStore(
-                engine, veto_extra=_veto_list(cfg.facts.veto_file),
+                engine, veto_extra=load_veto_list(cfg.facts.veto_file),
                 metrics=metrics,
             )
             dream_adaptors = (

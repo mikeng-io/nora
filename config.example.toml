@@ -1202,6 +1202,16 @@ total_tokens = 120000
 output_tokens = 8000
 timeout_seconds = 300
 
+# Pass 6, entity-resolution adjudication. Sized like the EXTRACTOR, not like the
+# adjudicator: tool-free and single-shot, and its whole input is a short list of
+# names against a short list of candidates. Deciding whether two names mean one
+# thing is a judgement about the two names, not research.
+[dreamer.budgets.fact-entity-resolution]
+turns = 2
+total_tokens = 20000
+output_tokens = 2000
+timeout_seconds = 60
+
 [obs.logging]
 level = "INFO"
 path = "~/workspace/nora/data/nora.log"
