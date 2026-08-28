@@ -269,3 +269,92 @@ async def test_the_dense_read_never_mixes_two_models_geometries(store):
     # failed.
     read = await emb.existing(kind="fact", scope=WS, row_keys=("old",))
     assert [r.model for r in read.rows] == ["bge-m2"]
+
+
+async def test_the_lexical_channel_finds_a_term_and_ranks_the_predicate(store):
+    """`23` §4's cheap channel, and the ranking is the part that matters: a
+    natural-language question must put the predicate it ASKED FOR above the
+    other triples about the same subject.
+
+    Measured before it was written (2026-08-28): `who made big walk` scores
+    0.824 against `made_by` and 0.588 against `means`, so the ordering is a
+    real property of `word_similarity` over a triple rather than an artefact
+    of insertion order.
+    """
+    emb, _engine, _metrics = store
+    await emb.upsert(rows=(
+        (_row("made", text="big walk │ made_by │ House House"), _vec()),
+        (_row("means", text="big walk │ means │ a walking activity"), _vec()),
+        (_row("other", text="the wedding │ of │ Grant"), _vec()),
+    ))
+
+    rows, status = await emb.lexical(
+        kind="fact", scope=WS, query="who made big walk", limit=8,
+    )
+
+    assert status == "ok"
+    assert [m.row_key for m in rows] == ["made", "means"], (
+        "the unrelated triple must not clear the threshold, and the predicate "
+        "the question asked for must rank first"
+    )
+    assert rows[0].distance < rows[1].distance
+
+
+async def test_the_lexical_channel_matches_cantonese_terms(store):
+    """Contrary to the note tier's two-character trigram finding, which is
+    about a different unit: that store matched a three-sentence body where a
+    short query shares few trigrams out of dozens. A triple is six tokens, so
+    the word extent IS the term — `打風` measured at 1.000 on its own row and
+    0.000 on every other."""
+    emb, _engine, _metrics = store
+    await emb.upsert(rows=(
+        (_row("typhoon", text="打風 │ means │ a typhoon"), _vec()),
+        (_row("walk", text="big walk │ means │ a walking activity"), _vec()),
+    ))
+
+    rows, _status = await emb.lexical(
+        kind="fact", scope=WS, query="打風", limit=8,
+    )
+
+    assert [m.row_key for m in rows] == ["typhoon"]
+
+
+async def test_a_paraphrased_question_falls_below_the_lexical_threshold(store):
+    """**`23` §6's split, as a measurement rather than an argument.** The
+    Cantonese question `邊個做嘅大步行` scores 0.250 against the row it is
+    about — below 0.3 — so the lexical channel correctly reports
+    `nothing_found` and the dense channel is what closes it.
+
+    This test exists to fix that boundary: if a later change lowered the
+    threshold to "catch more", it would admit noise from every unrelated row
+    at the same score, and the dense channel's whole justification would
+    quietly become an optimisation instead of a requirement.
+    """
+    emb, _engine, _metrics = store
+    await emb.upsert(rows=(
+        (_row("hh", text="大步行 │ made_by │ House House"), _vec()),
+    ))
+
+    rows, status = await emb.lexical(
+        kind="fact", scope=WS, query="邊個做嘅大步行", limit=8,
+    )
+
+    assert rows == ()
+    assert status == "nothing_found"
+
+
+async def test_the_lexical_channel_never_crosses_a_scope(store):
+    """R-49 again, on the other channel. A guard on one of two channels is not
+    a guard."""
+    emb, _engine, _metrics = store
+    await emb.upsert(rows=(
+        (_row("mine", text="big walk │ means │ a walk", scope=WS), _vec()),
+        (_row("theirs", text="big walk │ means │ a walk",
+              scope="ws-other"), _vec()),
+    ))
+
+    rows, _status = await emb.lexical(
+        kind="fact", scope=WS, query="big walk", limit=8,
+    )
+
+    assert [m.row_key for m in rows] == ["mine"]

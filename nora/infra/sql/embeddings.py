@@ -257,6 +257,101 @@ class SqlEmbeddingStore:
         self._count("nearest", "ok" if out else "nothing_found")
         return out, "ok" if out else "nothing_found"
 
+    async def lexical(
+        self, *, kind: str, scope: str, query: str, limit: int,
+        threshold: float = 0.3,
+    ) -> tuple[tuple[Match, ...], EmbeddingStatus]:
+        """The lexical channel (`23` §4), over the SAME text the dense channel
+        embedded.
+
+        **`embedding.text`, not the fact's columns**, and that is the load-
+        bearing choice. Matching against `subject || predicate || object`
+        assembled in SQL would be a SECOND renderer beside
+        `render_for_embedding` — the two-copies-drift failure the spine's
+        first rule names, and it would drift on the first change to the
+        separator. Reading the stored text means one renderer and one corpus,
+        so the two channels agree about what exists: a row not yet embedded is
+        invisible to BOTH, consistently, rather than found by one and missed
+        by the other.
+
+        **`word_similarity`, not `similarity` and not `ilike`. Measured**
+        against a real database, 2026-08-28, over the triples in this room's
+        own examples:
+
+        | query | best `word_similarity` | best `similarity` |
+        |---|---|---|
+        | `big walk` | **1.000** | 0.409 |
+        | `who made big walk` | **0.824** on `made_by`, 0.588 on `means` | 0.560 |
+        | `大步行` | **1.000**, 0.000 on every other row | 0.222 |
+        | `打風` | **1.000** | 0.158 |
+        | `邊個做嘅大步行` | 0.250 | 0.083 |
+
+        Three readings from that, and each decided something:
+
+        - `similarity` is whole-string and useless here — an EXACT term scores
+          0.409 against a triple, below any threshold worth setting, because
+          the rest of the triple dilutes it. `word_similarity` compares
+          against the best word extent, which is the question actually being
+          asked.
+        - **CJK works**, contrary to the note tier's two-character finding:
+          `打風` is two characters and scores 1.000. That store matched a
+          three-sentence body where a short query shares few trigrams; a
+          triple is six tokens, so the extent IS the term.
+        - The Cantonese QUESTION scores 0.250 and falls below the threshold —
+          and that is `23` §6's split arriving as a measurement rather than an
+          argument. Cross-lingual and paraphrased questions are the dense
+          channel's job, and no trigram scheme closes them.
+
+        `threshold` is `23` §9's 0.3: it admits everything at 0.529 and above
+        and excludes the 0.250, which is the row the dense channel is there
+        for.
+
+        **`distance` is `1 - word_similarity`**, so smaller is closer and the
+        field means the same thing it means on the dense channel. Fusion is by
+        RANK rather than by score, so the two are never compared numerically —
+        but a field called `distance` that ran the other way in one channel
+        would be read wrongly by the first person to look at it.
+        """
+        if limit <= 0 or not query.strip():
+            return (), "nothing_found"
+        score = sa.func.word_similarity(query, EMBEDDING.c.text)
+        try:
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(
+                    sa.select(
+                        EMBEDDING.c.kind, EMBEDDING.c.row_key,
+                        EMBEDDING.c.scope, EMBEDDING.c.text,
+                        score.label("score"),
+                    )
+                    .where(
+                        EMBEDDING.c.kind == kind,
+                        EMBEDDING.c.scope == scope,
+                        score >= threshold,
+                    )
+                    .order_by(
+                        sa.desc(sa.text("score")),
+                        # Tie-break. Identical texts score identically and this
+                        # feeds a LIMIT.
+                        EMBEDDING.c.row_key.asc(),
+                    )
+                    .limit(limit)
+                )).all()
+        except Exception:
+            log.exception(
+                "lexical read unavailable (kind=%s scope=%s)", kind, scope,
+            )
+            self._count("lexical", "unavailable")
+            return (), "unavailable"
+        out = tuple(
+            Match(
+                kind=r.kind, row_key=r.row_key, scope=r.scope, text=r.text,
+                distance=1.0 - float(r.score),
+            )
+            for r in rows
+        )
+        self._count("lexical", "ok" if out else "nothing_found")
+        return out, "ok" if out else "nothing_found"
+
     async def forget(self, *, kind: str, row_keys: tuple[str, ...]) -> int:
         """Drop embeddings for rows that no longer exist. Returns rows removed.
 

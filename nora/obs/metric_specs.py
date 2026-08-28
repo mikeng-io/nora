@@ -1184,8 +1184,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(rows found), nothing_found (none of these keys is embedded), "
         "unavailable (the read failed, so a sweep cannot tell an unembedded "
         "row from an unreadable one). verb=upsert: ok, nothing_found (nothing "
-        "to write). verb=nearest: the same three, where nothing_found means "
-        "no row in scope was inside the distance floor.",
+        "to write). verb=nearest and verb=lexical: the same three, where "
+        "nothing_found means no row in scope cleared the channel's "
+        "threshold — the distance floor for the dense channel, the "
+        "word_similarity threshold for the lexical one.",
         ("verb", "status"),
     ),
     _CounterSpec(
