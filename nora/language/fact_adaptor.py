@@ -1158,15 +1158,29 @@ class FactEntityResolutionAdaptor:
                 self._inc("nora_fact_resolutions_total", status="split")
                 continue
             if offered is None:
-                # `inputs` did not run for this key — the shared contract suite
-                # calling `accept` on its own. Skipped rather than failing every
-                # item closed, matching `FactCandidateAdaptor.accept`: refusing
-                # a batch because this class has no record of showing it would
-                # be a guess about a call it did not observe.
-                self._inc("nora_fact_resolutions_total", status="merged")
-                kept.append(EntityResolution(
-                    name=name_handle, entity_id=entity_handle,
-                ))
+                # `inputs` did not run for this key, so there is NO MAP from
+                # handles to values and nothing here can be resolved.
+                #
+                # This branch used to keep `EntityResolution(name="1",
+                # entity_id="a")` — the model's raw ordinal handles — and count
+                # it `merged`. `commit` then handed `"a"` to `attach_alias`
+                # against a `pg.UUID` column: an invalid-UUID error, the tick
+                # reporting `unavailable`, and the merge counter already moved.
+                # It was the one place in this tier where "the model may only
+                # name something it was shown" was not enforced, and it turned
+                # an unshown handle into a write.
+                #
+                # `unknown_handle` is the honest label and it is the same one
+                # the miss below uses: in both cases the handle names nothing
+                # this run rendered. The distinction between "no map" and "not
+                # in the map" is an internal one, and splitting the label would
+                # make an operator learn our call order to read the series.
+                log.warning(
+                    "entity resolution dropped: [%s]->[%s] arrived with no "
+                    "record of what this run rendered (workspace=%s)",
+                    name_handle, entity_handle, key,
+                )
+                self._inc("nora_fact_resolutions_total", status="unknown_handle")
                 continue
             name = offered.names.get(name_handle)
             entity_id = offered.entity_ids.get(name_handle, {}).get(entity_handle)

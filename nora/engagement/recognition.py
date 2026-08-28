@@ -36,6 +36,7 @@ rather than muting it.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -135,6 +136,7 @@ class Recogniser:
         lexemes: _LexemeDisputeStore | None = None,
         classifier: _DisputeClassifier | None = None,
         instruction: str = "",
+        classify_timeout_seconds: float = 8.0,
         metrics: Any = None,
         window_hours: int = 24,
         max_targets: int = 4,
@@ -145,6 +147,7 @@ class Recogniser:
         self._lexemes = lexemes
         self._classifier = classifier
         self._instruction = instruction
+        self._classify_timeout = classify_timeout_seconds
         self._metrics = metrics
         self._window_ms = window_hours * 60 * 60 * 1000
         self._max_targets = max_targets
@@ -297,10 +300,22 @@ class Recogniser:
             self._inc("nora_dispute_classify_total", status="unavailable")
             return self._rule_f(msg, targets, quotes_nora), "not_reached"
         try:
-            raw = await self._classifier.complete(
-                prompt=self._prompt(msg, targets),
+            # WRAPPED as well as configured, which is `StandingConfig`'s own
+            # belt-and-braces on the same slot: a client's own deadline is a
+            # promise about the request, and this is the bound on the HOLD. A
+            # transport that retries internally, or one that honours the
+            # timeout for the connect and not the read, would otherwise keep a
+            # live conversation waiting past a budget the gate says is
+            # enforced.
+            raw = await asyncio.wait_for(
+                self._classifier.complete(prompt=self._prompt(msg, targets)),
+                timeout=self._classify_timeout,
             )
         except Exception:
+            # `asyncio.TimeoutError` IS `TimeoutError` and IS an `Exception`
+            # on 3.11+, so one clause covers the deadline and the fault. They
+            # are the same outcome here anyway: `unavailable`, RULE-F, and the
+            # turn continues.
             log.exception("dispute classifier unavailable")
             self._inc("nora_dispute_classify_total", status="unavailable")
             return self._rule_f(msg, targets, quotes_nora), "not_reached"

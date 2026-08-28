@@ -18,6 +18,8 @@ and the fact store returns the four CAS outcomes.
 
 from __future__ import annotations
 
+import asyncio
+import time
 from dataclasses import dataclass
 
 from nora.domain.facts import RenderedClaim
@@ -419,3 +421,52 @@ async def test_an_unmapped_sender_still_disputes():
 
     assert await rec.recognise(msg=_msg(), tag_id="t", person_id=None) == 1
     assert facts.calls[0]["person_id"] is None
+
+
+class _SlowClassifier:
+    """Never returns. The only fake that can distinguish «configured with a
+    timeout» from «bounded by one»."""
+
+    def __init__(self) -> None:
+        self.started = 0
+
+    async def complete(self, *, prompt: str) -> str:
+        self.started += 1
+        await asyncio.sleep(3600)
+        raise AssertionError("unreachable")
+
+
+async def test_a_hanging_classifier_is_bounded_and_the_turn_continues():
+    """**This call is awaited before her reply**, so an unbounded one is a
+    live conversation that stops answering.
+
+    It inherited `[language] timeout_seconds` — 120, sized for a Dreamer tick
+    — until it got its own key. That key is in the startup slot-hold gate, but
+    a key in a gate is a claim about a deployment: a client that honours its
+    deadline for the connect and not the read, or that retries internally,
+    holds the slot anyway. `asyncio.wait_for` is what makes the number true,
+    and this is the test that says so.
+
+    A timeout is `unavailable` and RULE-F still runs — the correction is lost
+    if the deterministic channel does not catch it, which costs the status
+    quo. Two minutes of dead air costs the turn.
+    """
+    metrics = Metrics()
+    classifier = _SlowClassifier()
+    rec = _recogniser(
+        classifier=classifier, metrics=metrics, classify_timeout_seconds=0.05,
+    )
+
+    started = time.perf_counter()
+    marked = await rec.recognise(
+        msg=_msg("no, big walk is a video game"), tag_id="t", person_id="g",
+    )
+    elapsed = time.perf_counter() - started
+
+    assert classifier.started == 1, "the classifier was never called"
+    assert elapsed < 1.0, f"the call was not bounded ({elapsed:.2f}s)"
+    assert metrics.get("nora_dispute_classify_total", status="unavailable") == 1
+    # RULE-F did not fire — no quote — so nothing was marked, and the turn
+    # returned rather than raising. Both halves matter: a bound that raised
+    # would cost the reply it was added to protect.
+    assert marked == 0

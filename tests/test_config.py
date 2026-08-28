@@ -1129,7 +1129,7 @@ def test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_pa
     times: 2x store calls when there were two, then four, then five, and then
     an `[llm] timeout_seconds` term that bounds nothing here at all.
 
-    44 is one second under the real hold (20 + 5 x 5).
+    44 is under the real hold (20 + 8 + 5 x 5 = 53).
     """
     # `count=0` on `re.sub` means replace ALL, not none — so the line that used
     # to sit here flipped every `enabled = false` in the file (~18 sections:
@@ -1157,8 +1157,14 @@ def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
 
     Falsification: put `self.llm.timeout_seconds` back in the sum and this
     refuses to start.
+
+    53, not 45: the real hold gained recognition's classify timeout when that
+    stage stopped inheriting `[language]`'s 120s Dreamer ceiling. The number
+    here is the WHOLE hold, deliberately — set to exactly what the sum is, so
+    a term added to it or dropped from it reddens this test as well as the
+    one below.
     """
-    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "45.0")
+    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "53.0")
     # `timeout_seconds` appears in ten sections, so this one is scoped to
     # `[llm]` by hand — `_set_key` deliberately refuses an ambiguous key rather
     # than silently editing the first or all of them.
@@ -1172,7 +1178,7 @@ def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
 
     cfg = load(toml_path)
     assert cfg.llm.timeout_seconds == 600.0, "the edit did not land"
-    assert cfg.standing.max_slot_hold_seconds == 45.0
+    assert cfg.standing.max_slot_hold_seconds == 53.0
 
 
 def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):
@@ -1284,3 +1290,34 @@ def test_fact_caps_exactly_at_their_ceilings_are_allowed(toml_path):
     cfg = load(toml_path)
     assert cfg.facts.max_term_chars == FACT_TERM_CEILING_CHARS
     assert cfg.facts.max_predicate_chars == FACT_PREDICATE_CEILING_CHARS
+
+
+def test_the_dispute_classifier_has_its_own_timeout_and_is_in_the_slot_hold(
+    toml_path,
+):
+    """**A 120-second model call sat ahead of every reply.**
+
+    `Recogniser`'s classifier was built with `[language] timeout_seconds`,
+    which is 120 because it bounds a DREAMER call in a background tick where a
+    slow model costs a tick. Recognition runs on the REPLY PATH — awaited in
+    `_run_turn` before context assembly, holding the conversation's slot — so
+    inherited there it was two minutes of silence before she answered.
+    `[standing]`, the other stage on this slot, bounds itself at 20 and made
+    the total a startup gate; this walked past that gate because it had no key
+    of its own to put in the sum.
+
+    Asserted BOTH ways round, because the default alone would be satisfied by
+    a key nothing reads: the value is in the sum the gate enforces, so raising
+    it past the budget refuses to start.
+    """
+    cfg = load(toml_path)
+    assert cfg.facts.dispute_classify_timeout_seconds == 8.0
+    assert cfg.language.timeout_seconds != 8.0, (
+        "the two must be different values or this proves nothing about which "
+        "one the classifier is built with"
+    )
+
+    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "50.0")
+    toml_path.write_text(text)
+    with pytest.raises(ConfigError, match="dispute_classify_timeout_seconds"):
+        load(toml_path)

@@ -1428,6 +1428,24 @@ class FactsConfig(BaseModel):
     # resolve, which is readable from the ledger itself.
     recognition_window_hours: int = Field(default=24, ge=1)
     veto_file: Path | None = None
+    # 31 §5's own key, and it exists because the classifier runs on the REPLY
+    # PATH — awaited in `_run_turn` before context assembly, holding the
+    # conversation's slot, ahead of every word she says.
+    #
+    # Without it the classifier was built with `[language] timeout_seconds`,
+    # which is **120** because it bounds a DREAMER call in a background tick
+    # where a slow model costs a tick and nothing else. Inherited onto this
+    # path it is two minutes of silence in a live room before she answers.
+    # `[standing]`, the other stage that holds this slot, bounds itself at 20
+    # and made the total a startup gate; this walked past that gate entirely.
+    #
+    # 8 seconds because the call is one short classification over at most
+    # `max_targets` one-line claims — not research, not a fold — and because
+    # the fallback is not silence: a timeout is `unavailable`, RULE-F still
+    # runs, and the correction is caught on the deterministic channel or lost.
+    # Losing a correction costs the status quo; two minutes of dead air costs
+    # the turn.
+    dispute_classify_timeout_seconds: float = Field(default=8.0, gt=0)
     max_term_chars: int = Field(default=DEFAULT_MAX_TERM_CHARS, ge=1)
     max_predicate_chars: int = Field(default=DEFAULT_MAX_PREDICATE_CHARS, ge=1)
 
@@ -1632,7 +1650,15 @@ class StandingConfig(BaseModel):
     # impossible to get wrong silently, not to relitigate `[llm]`'s own timeout,
     # which was raised to 120 deliberately on 2026-08-08. Lower it and the
     # startup refusal tells the operator exactly which numbers no longer fit.
-    max_slot_hold_seconds: float = Field(default=45.0, gt=0)
+    # 45 -> 60 (2026-08-28). 45 was 20 + 5 x 5 EXACTLY, so the default budget
+    # sat on the default hold with nothing between them: a second stage
+    # arriving on the same slot — recognition, 8s — made a config with no
+    # `[standing]` section refuse to start, which is a default that cannot be
+    # left alone. 60 leaves seven seconds of headroom, so the next stage on
+    # this slot fails the GATE with a number to reason about rather than
+    # failing every deployment that never set the key. The deployment sets 150
+    # explicitly and is unaffected.
+    max_slot_hold_seconds: float = Field(default=60.0, gt=0)
 
     @model_validator(mode="after")
     def _max_chars_stays_under_the_database_ceiling(self) -> StandingConfig:
@@ -2486,6 +2512,24 @@ class Config(BaseModel):
             # wrong on the page, which is the argument this validator exists
             # to enforce.
             self.standing.timeout_seconds
+            # Recognition holds the SAME slot — `EngagementPipeline._run_turn`
+            # awaits `_recognise` before context assembly — so its model call
+            # belongs in this sum for the same reason `[standing]`'s does. It
+            # was absent, and the classifier inherited `[language]`'s 120s
+            # Dreamer ceiling, which is how a background timeout ended up
+            # ahead of a live reply (review finding, 2026-08-28).
+            #
+            # UNGATED on `[facts] enabled`, matching the argument this
+            # validator already makes for `[standing]`: the moment a tier is
+            # switched on is the worst time to discover the budget meant
+            # something else.
+            #
+            # The store awaits on the recognition path — the ledger read and
+            # up to `max_targets` marks — are NOT in this sum, because nothing
+            # bounds them and a number invented for them would be the fourth
+            # wrong arity this validator has already been through. That is a
+            # gap and it is written down as one.
+            + self.facts.dispute_classify_timeout_seconds
             # FIVE. The stage holds five bounded store awaits:
             # `store_verdict.latest` (the trigger's read), `store.read` (the
             # prior), `store.write` (the revised position), `store_verdict.save`
@@ -2500,6 +2544,8 @@ class Config(BaseModel):
                 f"[standing] would hold a conversation's slot for up to "
                 f"{hold:g}s — [standing] timeout_seconds "
                 f"({self.standing.timeout_seconds:g})"
+                f" + [facts] dispute_classify_timeout_seconds "
+                f"({self.facts.dispute_classify_timeout_seconds:g})"
                 f" + {STANDING_STORE_CALLS_PER_FOLD} x store_timeout_seconds "
                 f"({self.standing.store_timeout_seconds:g}) — which is over "
                 f"[standing] max_slot_hold_seconds "

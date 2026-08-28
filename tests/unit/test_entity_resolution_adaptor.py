@@ -297,3 +297,61 @@ async def test_the_value_type_carries_no_negative_case():
     to keep two things apart FOREVER, and 21 §5's whole argument is that a
     split is provisional."""
     assert set(EntityResolution.__annotations__) == {"name", "entity_id"}
+
+
+async def test_accept_without_inputs_refuses_rather_than_keeping_raw_handles():
+    """**The one self-attesting write in the tier, and it reached a uuid
+    column.**
+
+    With no record of what this run rendered, `accept` used to keep
+    `EntityResolution(name="1", entity_id="a")` — the model's own ordinal
+    handles — and count it `merged`. `commit` then handed `"a"` to
+    `attach_alias` against `fact_entity.id`, a `pg.UUID`: an invalid-UUID
+    error, the tick reporting `unavailable`, and the merge counter already
+    moved. Every other path in this tier enforces «the model may only name
+    something it was shown»; this was the one that did not.
+
+    Counted `unknown_handle`, which is the same label the not-in-the-map miss
+    uses, because in both cases the handle names nothing this run rendered.
+    """
+    metrics = Metrics()
+    adaptor = FactEntityResolutionAdaptor(
+        entities=_FakeEntities(), metrics=metrics,
+    )
+
+    parsed = await adaptor.accept(
+        key=WS, items=[{"name": "1", "entity": "a"}],
+    )
+
+    assert parsed == ()
+    assert metrics.get(
+        "nora_fact_resolutions_total", status="unknown_handle") == 1
+    assert metrics.get("nora_fact_resolutions_total", status="merged") == 0
+
+
+async def test_the_same_batch_after_inputs_is_kept_and_carries_real_values():
+    """The positive control for the refusal above — and the half that proves
+    it is a refusal rather than a broken parse. Same items, same adaptor
+    class; the only difference is that `inputs` ran, so a map exists.
+
+    It also fixes the property the refusal protects: what comes back is the
+    stored NAME and the stored uuid, never the handles that were echoed.
+    """
+    entities = _FakeEntities(
+        unresolved=("HKO",),
+        similar={"HKO": [
+            ("0191f2c4-0000-7000-8000-0000000000aa", "Hong Kong Observatory"),
+        ]},
+    )
+    metrics = Metrics()
+    adaptor = FactEntityResolutionAdaptor(entities=entities, metrics=metrics)
+    await adaptor.inputs(key=WS, batch=())
+
+    parsed = await adaptor.accept(key=WS, items=[{"name": "1", "entity": "a"}])
+
+    assert parsed == (
+        EntityResolution(
+            name="HKO", entity_id="0191f2c4-0000-7000-8000-0000000000aa",
+        ),
+    )
+    assert metrics.get("nora_fact_resolutions_total", status="merged") == 1

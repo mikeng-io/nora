@@ -1837,8 +1837,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             lexemes=language_store,
             classifier=_LanguageModelClient(
                 client=client, model=cfg.language.model,
-                timeout_seconds=cfg.language.timeout_seconds,
+                # `[facts]`, not `[language]`. This call is on the REPLY PATH
+                # and `[language] timeout_seconds` is 120 because it bounds a
+                # Dreamer tick; inherited here it was two minutes of silence
+                # ahead of a live answer. 31 §5's own key, and it is in the
+                # startup slot-hold gate beside `[standing]`'s.
+                timeout_seconds=cfg.facts.dispute_classify_timeout_seconds,
             ),
+            classify_timeout_seconds=cfg.facts.dispute_classify_timeout_seconds,
             instruction=dreamer_instructions.objective_body(Recogniser.objective),
             metrics=metrics,
             window_hours=cfg.facts.recognition_window_hours,
