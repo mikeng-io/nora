@@ -605,7 +605,7 @@ services:
   # (migrations, the one-time load, backups, the `nora groups` CLI) in without
   # exposing it off the box.
   db:
-    image: postgres:18-alpine
+    image: pgvector/pgvector:pg18
     restart: unless-stopped
     networks: [nora]
     ports: ["127.0.0.1:5435:5432"]
