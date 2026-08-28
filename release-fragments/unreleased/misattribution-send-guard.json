@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "Nora can no longer send a reply that puts words in the wrong mouth. Everything else shipped this week for the 2026-08-28 incident needed her to choose to use it; this is the part that does not ask.",
+  "details": [
+    "Before a reply leaves, it is checked mechanically against the last ~40 messages she can see: if the reply quotes something delimited the way this group actually writes reported speech (「」) and that exact phrase was said in the window by somebody other than the person she is speaking to, the reply is refused before it reaches the group — no model call, no judgement, a substring check against messages already in hand.",
+    "Who she is speaking to, absent an explicit @name in the same reply: the person whose message brought about this turn. That is the incident's own shape — nothing said her name, nothing quoted-replied to a specific line, and she answered whoever had just flatly denied something.",
+    "Covers both ways a reply reaches the group: the normal tool call, and the separate recovery path that ships a reply the model wrote without calling the tool (roughly half of live turns, on the current provider). Both funnel through the one class that is ever allowed to call the platform's send — one guard, not two copies that could disagree.",
+    "Reconstructed the live incident's own reply against the live database and confirmed it is refused; replayed the guard against the real replies Nora has actually sent and confirmed it does not meaningfully refuse ordinary traffic."
+  ],
+  "limitations": [
+    "It cannot tell an invented quote from an accurate one about something said further back than the visible window — that is a different defect (this week's grounding-rubric fix covers it) and is deliberately not this guard's job; catching it here would block ordinary references to older conversation.",
+    "A reply that refers to the true speaker only by nickname or pronoun, never by an explicit @name, is not recognised as addressing them — replaying the guard against real traffic found this costs a small number of genuine replies (well under 1%), all sharing this one cause. Widening who counts as addressed is the known next step if that rate ever grows."
+  ]
+}
