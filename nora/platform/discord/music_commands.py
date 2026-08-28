@@ -24,7 +24,7 @@ import math
 import discord
 from discord import app_commands
 
-from nora.domain.music import QueuedTrack
+from nora.platform.discord import music_messages as m
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.music_player import PlayerStatus, PlayOutcome
 from nora.platform.discord.voice_session import DiscordVoiceSession
@@ -106,28 +106,14 @@ def _who(interaction: discord.Interaction) -> str:
     return f"{interaction.user}({interaction.user.id})"
 
 
-def _now_playing_line(track: QueuedTrack, *, paused: bool = False) -> str:
-    """The ONE canonical \"what's playing\" line every surface uses
-    (slash replies, controls, queue view, track-finish/autoplay
-    notifications): `Now playing: {title} — {url}`, with the URL always
-    present so a listener can click through, and the autoplay verb chosen
-    by the caller. Kept as one helper so the surfaces cannot drift
-    (message-consistency pass, 2026-08-26)."""
-    suffix = " (paused)" if paused else ""
-    return f"Now playing: {track.title} — {track.url}{suffix}"
-
-
 def _reply_for(outcome: PlayOutcome) -> str:
+    """Thin dispatch over the canonical message table — the table owns the
+    wording; this only picks the line the outcome calls for."""
     if outcome.status == "nothing_found" or outcome.track is None:
-        return "Couldn't find that."
-    verb = "Now playing" if outcome.status == "playing" else "Queued"
-    if outcome.queued_count <= 1:
-        return f"{verb}: {outcome.track.title} — {outcome.track.url}"
-    # A playlist link expanded into more than one track
-    # (01-playback-and-source.md) -- name the first and the total, not just
-    # the first, so queuing fifty tracks doesn't read as queuing one.
-    rest = outcome.queued_count - 1
-    return f"{verb}: {outcome.track.title} — {outcome.track.url} (+{rest} more from the playlist)"
+        return m.nothing_found_line()
+    if outcome.status == "playing":
+        return m.now_playing_line(outcome.track)
+    return m.queued_line(outcome.track, outcome.queued_count)
 
 
 class _NowPlayingControls(discord.ui.View):
@@ -148,9 +134,9 @@ class _NowPlayingControls(discord.ui.View):
         if status is None or status.now_playing is None:
             self._disable_all()
             self.stop()
-            return "Nothing is playing."
+            return m.nothing_playing_line()
         self.pause_resume.label = "▶ Resume" if status.paused else "⏸ Pause"
-        return _now_playing_line(status.now_playing, paused=status.paused)
+        return m.now_playing_line(status.now_playing, paused=status.paused)
 
     @discord.ui.button(label="⏭ Skip", style=discord.ButtonStyle.secondary)
     async def skip(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
@@ -182,7 +168,7 @@ class _NowPlayingControls(discord.ui.View):
         log.info("music control: stop clicked guild=%s user=%s", self._guild_id, _who(interaction))
         await self._manager.stop(self._guild_id)
         self._disable_all()
-        await interaction.response.edit_message(content="Stopped.", view=self)
+        await interaction.response.edit_message(content=m.stopped_line(), view=self)
         self.stop()
 
     def _disable_all(self) -> None:
@@ -216,12 +202,12 @@ class _QueuePaginator(discord.ui.View):
         -- that's what makes it worth showing a queue reply at all."""
         now_playing = status.now_playing
         if now_playing is None:
-            return "Nothing is playing."
+            return m.nothing_playing_line()
         pages = max(1, math.ceil(len(status.queue) / _QUEUE_PAGE_SIZE))
         self._page = max(0, min(self._page, pages - 1))
         start = self._page * _QUEUE_PAGE_SIZE
         page_tracks = status.queue[start : start + _QUEUE_PAGE_SIZE]
-        lines = [_now_playing_line(now_playing, paused=status.paused)]
+        lines = [m.now_playing_line(now_playing, paused=status.paused)]
         if status.queue:
             lines.append(f"Queue (page {self._page + 1}/{pages}):")
             lines += [f"{start + i + 1}. {t.title}" for i, t in enumerate(page_tracks)]
@@ -280,7 +266,7 @@ class MusicCommands(app_commands.Group):
     async def play(self, interaction: discord.Interaction, query: str) -> None:
         if interaction.guild_id is None:
             await interaction.response.send_message(
-                "Music only works in a server, not a DM.", ephemeral=True,
+                m.music_not_in_server_line(), ephemeral=True,
             )
             return
         guild_id = str(interaction.guild_id)
@@ -314,7 +300,7 @@ class MusicCommands(app_commands.Group):
             # in the logs to explain why.
             log.exception("music play failed for guild %s", guild_id)
             await interaction.followup.send(
-                "Couldn't join the voice channel — try again in a moment.", ephemeral=True,
+                m.join_failed_line(), ephemeral=True,
             )
             return
         if outcome is None:
@@ -323,7 +309,7 @@ class MusicCommands(app_commands.Group):
                 guild_id,
             )
             await interaction.followup.send(
-                "Join a voice channel first, then try again.", ephemeral=True,
+                m.join_voice_channel_line(), ephemeral=True,
             )
             return
         log.info("music command: /music play guild=%s -> %s", guild_id, outcome.status)
@@ -343,9 +329,9 @@ class MusicCommands(app_commands.Group):
         await interaction.response.defer()
         skipped = await self._manager.skip(guild_id)
         if skipped is None:
-            await interaction.followup.send("Nothing is playing.")
+            await interaction.followup.send(m.nothing_playing_line())
             return
-        await interaction.followup.send(f"Skipped: {skipped.title}")
+        await interaction.followup.send(m.skipped_line(skipped))
 
     @app_commands.command(
         name="top", description="Move a queued track to play next.",
@@ -364,9 +350,9 @@ class MusicCommands(app_commands.Group):
         await interaction.response.defer()
         moved = await self._manager.top(guild_id, position)
         if moved is None:
-            await interaction.followup.send("Nothing queued at that position.")
+            await interaction.followup.send(m.nothing_queued_at_position_line())
             return
-        await interaction.followup.send(f"Now next: {moved.title}")
+        await interaction.followup.send(m.next_line(moved))
 
     @app_commands.command(name="queue", description="Show what's playing and queued.")
     async def queue(self, interaction: discord.Interaction) -> None:
@@ -376,7 +362,7 @@ class MusicCommands(app_commands.Group):
         guild_id = str(interaction.guild_id)
         status = await self._manager.status(guild_id)
         if status is None or status.now_playing is None:
-            await interaction.followup.send("Nothing is playing.")
+            await interaction.followup.send(m.nothing_playing_line())
             return
         view = _QueuePaginator(self._manager, guild_id)
         content = view.render_page(status)
@@ -396,7 +382,7 @@ class MusicCommands(app_commands.Group):
         log.info("music command: /music pause guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
         ok = await self._manager.pause(guild_id)
-        await interaction.followup.send("Paused." if ok else "Nothing is playing.")
+        await interaction.followup.send(m.paused_line() if ok else m.nothing_playing_line())
 
     @app_commands.command(name="resume", description="Resume playback.")
     async def resume(self, interaction: discord.Interaction) -> None:
@@ -406,7 +392,7 @@ class MusicCommands(app_commands.Group):
         log.info("music command: /music resume guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
         ok = await self._manager.resume(guild_id)
-        await interaction.followup.send("Resumed." if ok else "Not paused.")
+        await interaction.followup.send(m.resumed_line() if ok else m.not_paused_line())
 
     @app_commands.command(name="stop", description="Stop playback, clear the queue, and leave.")
     async def stop(self, interaction: discord.Interaction) -> None:
@@ -416,7 +402,7 @@ class MusicCommands(app_commands.Group):
         log.info("music command: /music stop guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
         await self._manager.stop(guild_id)
-        await interaction.followup.send("Stopped.")
+        await interaction.followup.send(m.stopped_line())
 
     @app_commands.command(name="volume", description="Set playback volume (0-200%).")
     @app_commands.describe(percent="Volume as a percentage, 0-200 (100 = normal)")
@@ -437,12 +423,12 @@ class MusicCommands(app_commands.Group):
         # thing standing between a malformed value and MusicPlayer.
         result = await self._manager.set_volume(guild_id, percent / 100.0)
         if result is None:
-            await interaction.followup.send("Nothing is playing.")
+            await interaction.followup.send(m.nothing_playing_line())
             return
         if not result:
-            await interaction.followup.send("Volume must be between 0 and 200.")
+            await interaction.followup.send(m.volume_out_of_range_line())
             return
-        await interaction.followup.send(f"Volume set to {percent}%.")
+        await interaction.followup.send(m.volume_line(percent))
 
 
 async def register(
