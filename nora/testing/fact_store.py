@@ -28,9 +28,14 @@ import itertools
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from nora.domain.facts import Fact, FactVerdict, SupersedeReason
+from nora.domain.facts import (
+    Fact,
+    FactAsserter,
+    FactVerdict,
+    SupersedeReason,
+)
 from nora.domain.ports import Proposal
 
 _counter = itertools.count(1)
@@ -89,6 +94,7 @@ class InMemoryFactStore:
     constructor."""
 
     _facts: dict[tuple[str, str], Fact] = field(default_factory=dict)
+    _asserters: list[FactAsserter] = field(default_factory=list)
 
     async def propose(
         self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
@@ -171,6 +177,34 @@ class InMemoryFactStore:
             supersede_source=source,
         )
         return 1
+
+    async def asserters(self, *, fact_id: str) -> tuple[FactAsserter, ...]:
+        """Reads back what `seed_asserters` put in, oldest first.
+
+        **This double does NOT perform the attribution join, and that is
+        stated rather than left to be discovered.** `SqlFactStore._attribute`
+        walks `fact_candidate.observed_in -> messages.person_id`, two tables
+        this class does not hold; reproducing it here would mean reproducing
+        an unmapped sender, a pruned message and a missing candidate, and a
+        double that got any of them subtly wrong would make a green test a
+        claim about the double. So the JOIN is asserted against real Postgres
+        only (`tests/infra/test_fact_store.py`), and what is shared here is
+        the READ — which does branch, on a malformed id and on ordering, and
+        matches production on both.
+        """
+        try:
+            UUID(fact_id)
+        except ValueError:
+            return ()
+        rows = [a for a in self._asserters if a.fact_id == fact_id]
+        rows.sort(key=lambda a: (a.asserted_at, a.message_id))
+        return tuple(rows)
+
+    def seed_asserters(self, *asserters: FactAsserter) -> None:
+        """Test seam for `asserters`, and the only writer this double has for
+        them — a production `propose` writes them through SQL the double
+        cannot run."""
+        self._asserters.extend(asserters)
 
     async def standing_facts(
         self, *, workspace: str, subject_ids: Sequence[str], limit: int,

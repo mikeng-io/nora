@@ -1000,6 +1000,23 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Candidate subjects that resolved to no fact_entity — the alias "
         "problem, observed rather than assumed.",
     ),
+    # R-27's three states on the attribution join (21 §7.2), and all three are
+    # reachable: `ok` wrote asserter rows, `nothing_found` found the candidate
+    # but none of its messages resolved to a person (an unmapped sender, or a
+    # conversation whose messages have been pruned), `unavailable` found no
+    # candidate to join through at all. The middle and the last are the pair
+    # that must never collapse: «nobody claimed this» and «I could not tell
+    # who claimed this» are different facts about a row, and one of them is a
+    # wiring gap.
+    _CounterSpec(
+        "nora_fact_asserter_total",
+        "Facts by the outcome of the message -> sender -> person join that "
+        "records WHO claimed them: ok (asserters written), nothing_found (the "
+        "claim's messages resolved to no person), unavailable (no candidate "
+        "to join through). Without this, a fact nobody can attribute and a "
+        "fact nobody has tried to attribute look identical.",
+        ("status",),
+    ),
     # ---- the Dreamer runtime (substrate plan Task 2.7) --------------------
     #
     # R-27's three states, at the run. A run that FAILED is `unavailable` and

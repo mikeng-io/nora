@@ -49,11 +49,21 @@ FidelityStatus = Literal["tentative", "proven", "deprecated"]
 # row afterwards at any price.
 SupersedeReason = Literal["stale", "wrong", "merged"]
 
+# The outcome of the `message_id -> sender_id -> person_id` join that records
+# WHO claimed a fact (21 §7.2). R-27's three states, and all three are
+# reachable — `nothing_found` («the claim's messages resolved to no person»)
+# and `unavailable` («there was no candidate to join through») are the pair
+# that must never collapse: one is a fact about the room, the other is a
+# wiring gap. The metric's label vocabulary is `get_args` of THIS, never a
+# hand-copied tuple.
+AsserterJoinStatus = Literal["ok", "nothing_found", "unavailable"]
+
 _STATUSES: frozenset[str] = frozenset(get_args(FactStatus))
 _CANDIDATE_STATUSES: frozenset[str] = frozenset(get_args(CandidateStatus))
 _WARRANT_KINDS: frozenset[str] = frozenset(get_args(WarrantKind))
 _FIDELITY_STATUSES: frozenset[str] = frozenset(get_args(FidelityStatus))
 _SUPERSEDE_REASONS: frozenset[str] = frozenset(get_args(SupersedeReason))
+ASSERTER_JOIN_STATUSES: frozenset[str] = frozenset(get_args(AsserterJoinStatus))
 
 # The DB CHECK constraint this column maps to is
 # `instruction_sha256 ~ '^[0-9a-f]{64}$'` (see nora.domain.provenance); the
@@ -421,6 +431,39 @@ class Fact:
     @property
     def is_standing(self) -> bool:
         return self.superseded_at is None
+
+
+@dataclass(frozen=True)
+class FactAsserter:
+    """WHO claimed a fact, and in which message (`21-substrate-contract.md`
+    §7).
+
+    `established_by` on `Fact` records the RUN that produced the row — the
+    tick. This records the HUMAN, which for a tier whose job is belief is the
+    axis that matters: corroboration and disagreement are properties of who
+    said a thing, and `occurrence_count` alone cannot tell «one person said it
+    three times» from «three people said it once».
+
+    **Not Honcho's axis.** Honcho holds what someone is LIKE, re-inferred
+    forever. This holds who said THIS sentence, which is a fixed historical
+    fact and is never re-inferred.
+
+    **And it is not a disclosure change.** Recording who asserted a claim is
+    not permission to say so; egress is governed exactly as before.
+    """
+
+    fact_id: str
+    person_id: str
+    message_id: int
+    asserted_at: int
+
+    def __post_init__(self) -> None:
+        if not self.person_id.strip():
+            raise ValueError(
+                "a FactAsserter names a person: '' and '   ' are non-NULL to "
+                "every query asking which claims are attributable, which "
+                "turns «I could not check» into a false «nobody»"
+            )
 
 
 @dataclass(frozen=True)

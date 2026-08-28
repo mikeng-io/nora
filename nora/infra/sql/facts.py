@@ -72,9 +72,15 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.facts import Fact, FactVerdict
+from nora.domain.facts import (
+    ASSERTER_JOIN_STATUSES,
+    AsserterJoinStatus,
+    Fact,
+    FactAsserter,
+    FactVerdict,
+)
 from nora.domain.ports import Proposal
-from nora.infra.sql.schema import FACT
+from nora.infra.sql.schema import FACT, FACT_ASSERTER, FACT_CANDIDATE
 
 log = logging.getLogger(__name__)
 
@@ -101,8 +107,136 @@ class SqlFactStore:
     else it needs.
     """
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, metrics: Any = None) -> None:
+        """`metrics` is OPTIONAL and INJECTED, never imported — the same shape
+        `SqlPresenceStore` and `SqlMobilityStore` use, and for the same
+        import-linter reason (`nora.infra` sits below `nora.obs`).
+
+        Optional rather than required because the class docstring's promise
+        still holds: a contract-suite fixture builds this from a bare
+        `AsyncEngine` and must never have to guess what else it needs. What it
+        costs is that the attribution join's three states go uncounted in such
+        a fixture, which is why `test_fact_store.py` passes a real `Metrics`
+        wherever it asserts on them.
+        """
         self._engine = engine
+        self._metrics = metrics
+
+    def _count_asserters(self, status: AsserterJoinStatus) -> None:
+        # RUNTIME check, not just mypy: this module IS in `make gate`'s mypy
+        # scope, but the vocabulary constant is what the metric's help text is
+        # written from and a value drifting from it is the label-vocabulary
+        # failure CLAUDE.md names. Cheap, and it fires in the fixture that has
+        # no metrics too.
+        if status not in ASSERTER_JOIN_STATUSES:
+            raise ValueError(
+                f"nora_fact_asserter_total status must be one of "
+                f"{sorted(ASSERTER_JOIN_STATUSES)}, got {status!r}"
+            )
+        if self._metrics is not None:
+            self._metrics.inc("nora_fact_asserter_total", status=status)
+
+    async def _attribute(
+        self, conn: Any, *, fact_id: str, workspace: str,
+        verdict: FactVerdict, now_ms: int,
+    ) -> None:
+        """`message_id -> sender_id -> person_id`, in the SAME transaction as
+        the fact write (`30-review-response.md` §4: fact write + candidate
+        retirement + provenance rows are one boundary).
+
+        The join runs through the CANDIDATE, because that is the only row that
+        knows which messages the claim came from — `observed_in`. A verdict
+        carries the triple and nothing else, and the triple is exactly how
+        `_retire_candidates` maps a verdict back to its candidate, so this uses
+        the same key rather than inventing a second one.
+
+        **`m.person_id is not null` is a filter, not a failure.** An unmapped
+        sender has no `person_id` at the moment of ingest, by design, and a
+        claim asserted only by unmapped senders is `nothing_found` — a real
+        finding about the room. It is NOT `unavailable`, which is reserved for
+        «there was no candidate to join through at all».
+
+        **The `~ '^[0-9]+$'` guard is not defensive noise.** `observed_in` is
+        `text[]`; every writer in this repo puts `str(int)` in it, but a cast
+        that raises would abort the whole transaction and lose the FACT, not
+        just its attribution. A row that cannot be parsed contributes nothing
+        and is counted through the status rather than taking the write down.
+        """
+        inserted = (await conn.execute(
+            sa.text(
+                "insert into fact_asserter "
+                "(fact_id, person_id, message_id, asserted_at) "
+                "select :fid, m.person_id, m.id, :now "
+                "from fact_candidate c "
+                "cross join lateral unnest(c.observed_in) as oi(mid) "
+                "join messages m on m.id = oi.mid::int "
+                "where c.workspace = :ws and c.subject_id = :s "
+                "  and c.predicate = :p and c.object = :o "
+                "  and oi.mid ~ '^[0-9]+$' "
+                "  and m.person_id is not null "
+                "on conflict do nothing"
+            ),
+            {
+                "fid": fact_id, "now": now_ms, "ws": workspace,
+                "s": verdict.subject, "p": verdict.predicate, "o": verdict.object,
+            },
+        )).rowcount
+        if inserted:
+            self._count_asserters("ok")
+            return
+        # Zero rows has two causes and they are different facts about the row.
+        # A zero-assertion is also true of a join that never ran, so this asks
+        # the database which one it was rather than reporting the friendlier
+        # of the two.
+        had_candidate = (await conn.execute(
+            sa.select(sa.literal(1)).where(
+                sa.exists().where(
+                    FACT_CANDIDATE.c.workspace == workspace,
+                    FACT_CANDIDATE.c.subject_id == verdict.subject,
+                    FACT_CANDIDATE.c.predicate == verdict.predicate,
+                    FACT_CANDIDATE.c.object == verdict.object,
+                )
+            )
+        )).scalar_one_or_none()
+        self._count_asserters("nothing_found" if had_candidate else "unavailable")
+
+    async def asserters(self, *, fact_id: str) -> tuple[FactAsserter, ...]:
+        """Who claimed this fact, oldest first. `()` for a fact nobody could be
+        attributed to AND for a `fact_id` that names nothing — the caller is
+        rendering, and `21` §7.5 is explicit that recording an asserter is not
+        permission to say so, so there is no state here worth branching on.
+
+        **Ordered by `message_id`, with `asserted_at` first for a shape that
+        does not exist yet.** Every asserter of one fact is written by a single
+        `_attribute` call, so they all share `now_ms` and the timestamp orders
+        nothing today — `message_id` is what actually sorts them, and message
+        ids are monotonic per conversation, so this reads as "in the order the
+        room said it". The leading `asserted_at` is there for the day a second
+        pass attributes an existing fact; stating that here rather than
+        implying the timestamp is doing work now.
+
+        A non-UUID `fact_id` returns `()` rather than raising, the same rule
+        `standing_facts` states for itself: this read runs on a rendering path
+        and a malformed id is an unknown row, not a reason to take a turn
+        down.
+        """
+        try:
+            UUID(fact_id)
+        except ValueError:
+            return ()
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(FACT_ASSERTER)
+                .where(FACT_ASSERTER.c.fact_id == fact_id)
+                .order_by(FACT_ASSERTER.c.asserted_at, FACT_ASSERTER.c.message_id)
+            )).all()
+        return tuple(
+            FactAsserter(
+                fact_id=r.fact_id, person_id=r.person_id,
+                message_id=r.message_id, asserted_at=r.asserted_at,
+            )
+            for r in rows
+        )
 
     async def propose(
         self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
@@ -110,6 +244,7 @@ class SqlFactStore:
         """See the module docstring's (1) and (2). `key` is the workspace."""
         rows = []
         ids: list[str] = []
+        attributions: list[tuple[str, FactVerdict]] = []
         for p in proposals:
             if not isinstance(p.payload, FactVerdict):
                 raise TypeError(
@@ -138,10 +273,16 @@ class SqlFactStore:
                 "established_by": p.established_by,
             })
             ids.append(fact_id)
+            attributions.append((fact_id, verdict))
         if not rows:
             return ()
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(FACT), rows)
+            for row, verdict in attributions:
+                await self._attribute(
+                    conn, fact_id=row, workspace=key, verdict=verdict,
+                    now_ms=now_ms,
+                )
         return tuple(ids)
 
     async def supersede(

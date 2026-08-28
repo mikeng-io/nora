@@ -1395,6 +1395,64 @@ IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(
 )
 
 
+# WHO said it — `21-substrate-contract.md` §7's whole answer (migration 0039).
+# `established_by` records the RUN that produced a fact; nothing anywhere
+# recorded the HUMAN who claimed it, and for a tier whose job is belief that is
+# the wrong direction: corroboration and disagreement are properties of who
+# said it. Occurrence count alone conflates «one person said it three times»
+# (emphasis) with «three people said it once» (consensus), and the ranking that
+# decides what is worth adjudicating treated them identically.
+#
+# **A junction, not an array column, and the repo already argued this once.**
+# `fact_premise` exists rather than a `premise_ids` array because "which facts
+# depend on this one" is an unindexable array-containment scan with the array
+# and an indexed lookup with the table. The asserter question has the same
+# reverse direction — «what has Grant been telling us» — so it gets the same
+# answer, and `IDX_FACT_ASSERTER_PERSON` below is that direction.
+#
+# **The grain is (fact, person, message), the finest that loses nothing.**
+# Three people once is three rows over three persons; one person three times is
+# three rows over one. Anything coarser destroys exactly the distinction the
+# table exists to preserve. NOTE for whoever implements `fidelity = 'proven'`
+# (§10: "a second independent asserter"): `count(distinct person_id) >= 2` is
+# NOT sufficient on its own — a claim spanning two messages by two speakers in
+# ONE episode produces two persons from a single sighting, which is
+# collaboration, not corroboration.
+#
+# **No FOREIGN KEY on `message_id`, deliberately**, the same call
+# `standing.consumed_verdict_tag` makes: `prune_all` deletes messages by
+# conversation, and a pruned message must not delete the attribution. Who said
+# a thing is a fixed historical fact; the message is the evidence, and losing
+# the evidence does not unmake the assertion. A dangling id reads as "said in a
+# message no longer retained", which is the correct answer.
+FACT_ASSERTER = sa.Table(
+    "fact_asserter",
+    METADATA,
+    sa.Column("fact_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("fact.id", name="fact_asserter_fact_id_fkey",
+                            ondelete="CASCADE"),
+              primary_key=True),
+    # The Honcho peer (A2/DEC-14), never a platform account: one human with two
+    # accounts is one asserter, and a per-account grain would read as two
+    # people corroborating each other.
+    sa.Column("person_id", sa.Text, primary_key=True),
+    # `messages.id` is `sa.Integer` (INT4 Identity), so this matches it rather
+    # than widening — a mismatch here is a silent cast in every join.
+    sa.Column("message_id", sa.Integer, primary_key=True),
+    sa.Column("asserted_at", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        "length(btrim(person_id)) > 0",
+        name="fact_asserter_person_is_named_check",
+    ),
+)
+
+# §7.4's whole argument: «what did Grant tell us» is an indexed lookup with
+# this table and an array scan without it.
+IDX_FACT_ASSERTER_PERSON = sa.Index(
+    "idx_fact_asserter_person", FACT_ASSERTER.c.person_id,
+)
+
+
 # ---------------------------------------------------------------------------
 # The note tier (2026-08-21 note-tier design). A note is TRACKED UNCERTAINTY —
 # workspace-keyed like `fact`, and for the same DEC-105/R-49 reason: rooms

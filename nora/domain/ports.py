@@ -205,6 +205,7 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from nora.domain.facts import Fact as Fact
+from nora.domain.facts import FactAsserter as FactAsserter
 from nora.domain.facts import FactCandidate as FactCandidate
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
@@ -1609,6 +1610,24 @@ class FactReader(Protocol):
         """One fact by id, standing or superseded. `None` if it does not
         exist in `workspace` — never a proxy for "the store could not be
         reached"."""
+        ...
+
+    async def asserters(self, *, fact_id: str) -> tuple[FactAsserter, ...]:
+        """WHO claimed this fact, oldest first (`21-substrate-contract.md`
+        §7). `()` both for a fact nobody could be attributed to and for a
+        `fact_id` naming nothing.
+
+        **The two are deliberately not distinguished HERE**, unlike everywhere
+        else in this module: a caller of this verb is rendering, `§7.5` is
+        explicit that recording an asserter is not permission to say so, and a
+        renderer that branched on the difference would be deciding disclosure
+        from a read's shape. The distinction that matters — «nobody» versus «I
+        could not check» — is made where it can be acted on, at the WRITE, on
+        `nora_fact_asserter_total`.
+
+        Never raises, for `standing_facts`' reason: this runs beside the
+        render.
+        """
         ...
 
 

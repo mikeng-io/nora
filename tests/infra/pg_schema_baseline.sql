@@ -50,6 +50,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -61,6 +62,8 @@ ADD CONSTRAINT event_rsvps_pkey PRIMARY KEY (event_id, person_id);
 ADD CONSTRAINT events_pkey PRIMARY KEY (id);
 ADD CONSTRAINT exchange_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT exchange_observation_scope_id_act_message_ids_key UNIQUE (scope_id, act, message_ids);
+ADD CONSTRAINT fact_asserter_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
+ADD CONSTRAINT fact_asserter_pkey PRIMARY KEY (fact_id, person_id, message_id);
 ADD CONSTRAINT fact_candidate_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_candidate_triple_key UNIQUE (workspace, subject_id, predicate, object);
 ADD CONSTRAINT fact_entity_pkey PRIMARY KEY (id);
@@ -122,6 +125,8 @@ ALTER TABLE ONLY public.exchange_observation
 ALTER TABLE ONLY public.fact
 ALTER TABLE ONLY public.fact
 ALTER TABLE ONLY public.fact
+ALTER TABLE ONLY public.fact_asserter
+ALTER TABLE ONLY public.fact_asserter
 ALTER TABLE ONLY public.fact_candidate
 ALTER TABLE ONLY public.fact_candidate
 ALTER TABLE ONLY public.fact_entity
@@ -202,6 +207,7 @@ CONSTRAINT exchange_observation_instruction_sha256_check CHECK (((instruction_sh
 CONSTRAINT exchange_observation_message_ids_check CHECK ((array_length(message_ids, 1) >= 2)),
 CONSTRAINT exchange_observation_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
 CONSTRAINT exchange_observation_participants_check CHECK ((array_length(participants, 1) >= 2))
+CONSTRAINT fact_asserter_person_is_named_check CHECK ((length(btrim(person_id)) > 0))
 CONSTRAINT fact_candidate_instruction_sha256_check CHECK ((instruction_sha256 ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT fact_candidate_model_is_named_check CHECK ((length(btrim(model)) > 0)),
 CONSTRAINT fact_candidate_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'adjudicated'::text, 'not_covered'::text])))
@@ -247,6 +253,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
+CREATE INDEX idx_fact_asserter_person ON public.fact_asserter USING btree (person_id);
 CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
 CREATE INDEX idx_fact_standing ON public.fact USING btree (workspace, subject_id) WHERE (superseded_at IS NULL);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
@@ -275,6 +282,7 @@ CREATE TABLE public.event_rsvps (
 CREATE TABLE public.events (
 CREATE TABLE public.exchange_observation (
 CREATE TABLE public.fact (
+CREATE TABLE public.fact_asserter (
 CREATE TABLE public.fact_candidate (
 CREATE TABLE public.fact_entity (
 CREATE TABLE public.fact_premise (
@@ -364,6 +372,7 @@ anchor_date integer,
 anchor_entity_ids text[] DEFAULT '{}'::text[] NOT NULL,
 announced_at timestamp with time zone NOT NULL,
 artifact_id text,
+asserted_at bigint NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
 avg_speed_kmh double precision NOT NULL,
 backend_job_id text NOT NULL,
@@ -443,6 +452,7 @@ exchange_basis text[] DEFAULT '{}'::text[] NOT NULL,
 expires_at bigint
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
+fact_id uuid NOT NULL,
 fact_id uuid NOT NULL,
 fetch_token text NOT NULL,
 fidelity text DEFAULT 'tentative'::text NOT NULL,
@@ -528,6 +538,7 @@ media_type text DEFAULT ''::text NOT NULL,
 media_type text DEFAULT ''::text NOT NULL,
 media_type text NOT NULL,
 message_id integer NOT NULL,
+message_id integer NOT NULL,
 message_ids integer[] NOT NULL,
 messages jsonb NOT NULL,
 model text NOT NULL,
@@ -568,6 +579,7 @@ participants text[] NOT NULL,
 participants text[] NOT NULL,
 paused boolean NOT NULL,
 payload jsonb,
+person_id text NOT NULL,
 person_id text NOT NULL,
 person_id text NOT NULL,
 person_id text NOT NULL,

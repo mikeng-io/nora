@@ -716,7 +716,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `config.toml` assert a subsystem is running when none is — the defect
     # class this tier exists to prevent, committed by its own switch.
     fact_store: SqlFactStore | None = (
-        SqlFactStore(engine) if cfg.facts.enabled else None
+        SqlFactStore(engine, metrics=metrics) if cfg.facts.enabled else None
     )
     exchange_store: SqlExchangeStore | None = (
         SqlExchangeStore(engine, metrics=metrics) if cfg.language.enabled else None
