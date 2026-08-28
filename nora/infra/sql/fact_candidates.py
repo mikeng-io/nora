@@ -134,6 +134,7 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.bounds import cut, over_fetch
 from nora.domain.facts import (
     DEFAULT_MAX_PREDICATE_CHARS,
     DEFAULT_MAX_TERM_CHARS,
@@ -617,7 +618,10 @@ class SqlFactCandidateStore:
                 # could be starved indefinitely.
                 c.c.id.asc(),
             )
-            .limit(limit)
+            # OVER-FETCH BY ONE (`nora.domain.bounds`). The extra row is never
+            # returned; its existence is the only cheap, snapshot-consistent
+            # answer to "was this queue longer than the tick could take".
+            .limit(over_fetch(limit))
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
@@ -635,7 +639,17 @@ class SqlFactCandidateStore:
                 "nora_fact_entity_unresolved", float(unresolved),
                 workspace=workspace,
             )
-        return tuple(_row_to_candidate(r) for r in rows)
+        # The cut applies to the PAGE only. `unresolved` above is a census of
+        # the whole pending queue and stays that way because it comes from its
+        # own unbounded statement, not from `rows` — the two numbers answer
+        # different questions and must not be derived from one another. A
+        # census narrowed to the page would read healthier the more backlog
+        # there was, which is the opposite of what it is for.
+        kept = cut(
+            rows, limit=limit, site="fact_candidates.pending",
+            metrics=self._metrics,
+        )
+        return tuple(_row_to_candidate(r) for r in kept)
 
     async def candidate_by_id(
         self, *, workspace: str, candidate_id: str,

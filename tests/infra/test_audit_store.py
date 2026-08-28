@@ -31,9 +31,10 @@ async def make_store(pg_url):
     run_migrations(pg_url)
     created = []
 
-    def _make(*, max_per_conversation=500):
+    def _make(*, max_per_conversation=500, metrics=None):
         s = SqlRecordStore(
-            create_sql_engine(pg_url), max_per_conversation=max_per_conversation
+            create_sql_engine(pg_url), max_per_conversation=max_per_conversation,
+            metrics=metrics,
         )
         created.append(s)
         return s
@@ -282,3 +283,62 @@ async def test_set_delivery_outcome_on_an_unknown_row_is_a_silent_no_op(store):
     await store.set_delivery_outcome(row_id=999_999, status=DeliveryStatus.SENT, ts=1)
     row = (await store.recent(conversation_id="g1", limit=1))[0]
     assert row.delivery_status is DeliveryStatus.PENDING
+
+
+# ---------------------------------------------------------------------------
+# the window bound says when it bit (`nora.domain.bounds`)
+# ---------------------------------------------------------------------------
+
+
+class _Metrics:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[tuple[str, object], ...]]] = []
+
+    def inc(self, name: str, value: float = 1.0, **labels: object) -> None:
+        self.calls.append((name, tuple(sorted(labels.items()))))
+
+
+async def test_a_clipped_transcript_window_is_counted(make_store):
+    """`recent` is the read `_subjects_in_play` builds the room's subject set
+    from, so a silent cut here makes an empty facts block ambiguous three ways
+    — no such fact, its subject fell outside the window, or the window itself
+    was clipped. This is what makes the third one visible."""
+    metrics = _Metrics()
+    store = make_store(metrics=metrics)
+    for i in range(5):
+        await store.append(message=_msg(ts=i + 1, body=f"m{i}"))
+
+    rows = await store.recent(conversation_id="g1", limit=3)
+
+    assert [r.body for r in rows] == ["m2", "m3", "m4"], (
+        "the NEWEST three, oldest-first — the over-fetched row must be cut "
+        "from the OLD end, before the reverse, not after it"
+    )
+    assert metrics.calls == [("nora_bound_truncated_total", (("site", "audit.recent"),))]
+
+
+async def test_a_window_that_exactly_fits_is_not_counted(make_store):
+    """THE CASE THE COUNTER EXISTS TO DISTINGUISH. Three rows under a limit of
+    three is a full page with nothing behind it — the bound did not bite, and a
+    counter that fired here would be measuring «the page was full», which is
+    true of almost every healthy read."""
+    metrics = _Metrics()
+    store = make_store(metrics=metrics)
+    for i in range(3):
+        await store.append(message=_msg(ts=i + 1, body=f"m{i}"))
+
+    rows = await store.recent(conversation_id="g1", limit=3)
+
+    assert [r.body for r in rows] == ["m0", "m1", "m2"]
+    assert metrics.calls == [], "a full page is not a truncation"
+
+
+async def test_the_over_fetched_row_never_reaches_the_caller(make_store):
+    """The bug this shape invites: fetch limit+1 and forget to cut, so every
+    bounded read quietly returns one row more than it promised."""
+    store = make_store()
+    for i in range(20):
+        await store.append(message=_msg(ts=i + 1, body=f"m{i}"))
+    for limit in (1, 2, 7, 19):
+        rows = await store.recent(conversation_id="g1", limit=limit)
+        assert len(rows) == limit, f"limit={limit} returned {len(rows)}"

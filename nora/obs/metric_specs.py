@@ -1703,6 +1703,31 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "«her card stopped appearing» and nothing narrower.",
         ("platform",),
     ),
+    # Bounded reads where the LIMIT actually bit, by site. The vocabulary is
+    # `nora.domain.bounds.BoundSite` and is deliberately NOT restated here —
+    # `nora_ingest_outcomes_total`'s own help text sets that precedent, because
+    # a hand-copied vocabulary is exactly what drifts.
+    #
+    # It counts the BIT, not the remainder: one increment per truncated read,
+    # never "how many were left". Over-fetching by one is the only probe that
+    # is cheap and correct at every site, so a series carrying a magnitude from
+    # the sites that can compute one and a 1 from the sites that cannot would
+    # be lying about its own unit. Sites with a real depth to report keep their
+    # own gauges — this does not replace `nora_note_revisit_deferred_total`.
+    #
+    # Read it AGAINST the call rate for the same site. Sustained truncation on
+    # every call is not "the cap is working", it is a backlog this series
+    # cannot size — see `nora.domain.bounds`' reversal condition.
+    _CounterSpec(
+        "nora_bound_truncated_total",
+        "Bounded reads where the limit actually bit — one per truncated read, "
+        "by site. A read that returned exactly `limit` rows and a read that "
+        "stopped at `limit` with more behind it are otherwise identical, and "
+        "the second is `unavailable` wearing `nothing_found`'s face. Sites are "
+        "named for where the bound is APPLIED (`store.method`), never for the "
+        "caller; the vocabulary is `nora.domain.bounds.BoundSite`.",
+        ("site",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (

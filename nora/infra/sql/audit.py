@@ -26,6 +26,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.bounds import cut, over_fetch
 from nora.domain.media import media_json
 from nora.domain.models import (
     DeliveryStatus,
@@ -125,11 +126,23 @@ class SqlRecordStore:
             )
             .where(MESSAGES.c.conversation_id == conversation_id)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
-            .limit(limit)
+            # OVER-FETCH BY ONE (`nora.domain.bounds`). This window is what
+            # `_subjects_in_play` builds the room's subject set from, so a
+            # silent cut here makes an empty facts block ambiguous three ways
+            # — no such fact, its subject fell outside the window, or the
+            # window itself was clipped — and only this makes the third
+            # visible.
+            .limit(over_fetch(limit))
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return [self._row(r) for r in reversed(rows)]
+        # Cut BEFORE reversing: the query is newest-first, so the rows to keep
+        # are the leading `limit`. Cutting after the reverse would drop the
+        # newest rows and keep the oldest — the opposite of what this reads.
+        kept = cut(
+            rows, limit=limit, site="audit.recent", metrics=self._metrics,
+        )
+        return [self._row(r) for r in reversed(kept)]
 
     async def since(
         self, *, conversation_id: str, after_id: int, limit: int

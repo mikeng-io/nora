@@ -1258,3 +1258,77 @@ def test_the_pending_query_declares_its_tie_break_in_sql():
         "routinely; without a unique tie-break the research budget is spent "
         "arbitrarily"
     )
+
+
+# ---------------------------------------------------------------------------
+# the adjudication queue says when its bound bit (`nora.domain.bounds`)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_surviving(store, n: int) -> None:
+    """`n` candidates that survive §5's two drops.
+
+    Proposed TWICE on purpose: the unresolvable-subject-seen-once drop removes
+    a candidate whose subject resolves to no `fact_entity` and has been seen
+    exactly once, so a single sighting would leave `pending` empty and every
+    assertion below would pass for the wrong reason.
+    """
+    proposals = tuple(
+        _candidate(subject=f"thing-{i}", predicate="has", object=f"v{i}")
+        for i in range(n)
+    )
+    await store.propose(key=WS, proposals=proposals, now_ms=NOW)
+    await store.propose(key=WS, proposals=proposals, now_ms=NOW + 1)
+
+
+async def test_a_clipped_adjudication_queue_is_counted(sql_sink):
+    """The FIRST site wired, and the reason for that ordering: this is the one
+    bound on the tier's WRITE path. Every other truncation clips a VIEW of
+    state and is in principle recoverable from a later read; a capped
+    adjudication queue is invisible from every read below it, because the row
+    was never promoted — the claim stays `pending` and `standing_facts`
+    correctly reports nothing about a subject Nora has an unprocessed claim
+    about. That is «I have not checked yet» wearing `nothing_found`'s face, at
+    the bottom of the tier."""
+    store, _engine, metrics = sql_sink
+    await _seed_surviving(store, 9)
+
+    rows = await store.pending(workspace=WS, limit=8)
+
+    assert len(rows) == 8, "the over-fetched row must never escape"
+    assert metrics.get(
+        "nora_bound_truncated_total", site="fact_candidates.pending") == 1
+
+
+async def test_a_queue_that_exactly_fits_is_not_counted(sql_sink):
+    """THE CASE THAT MAKES THE SERIES MEAN ANYTHING, and the positive control
+    for the test above: eight candidates under a limit of eight is a full page
+    with nothing behind it. A counter that fired here would be measuring «the
+    tick was busy», which is true of every healthy run, and the two readings
+    would be indistinguishable."""
+    store, _engine, metrics = sql_sink
+    await _seed_surviving(store, 8)
+
+    rows = await store.pending(workspace=WS, limit=8)
+
+    assert len(rows) == 8
+    assert metrics.get(
+        "nora_bound_truncated_total", site="fact_candidates.pending") == 0
+
+
+async def test_the_unresolved_census_is_not_narrowed_to_one_page(sql_sink):
+    """`nora_fact_entity_unresolved` is a census of the WHOLE pending queue,
+    and adding a page bound next to it invites deriving one from the other.
+    This pins that it is not: the gauge must come from its own unbounded
+    statement, so it reads 9 whatever page size was asked for. A census
+    narrowed to the page would look healthier the more backlog there was —
+    the opposite of what it is for.
+
+    FALSIFIED (2026-08-29): clamping the census to `limit` in
+    `SqlFactCandidateStore.pending` turns this red (2.0 != 9)."""
+    store, _engine, metrics = sql_sink
+    await _seed_surviving(store, 9)
+
+    await store.pending(workspace=WS, limit=2)
+
+    assert metrics.get("nora_fact_entity_unresolved", workspace=WS) == 9
