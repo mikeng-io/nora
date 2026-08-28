@@ -52,7 +52,7 @@ exactly the class of row the missing FK was admitting. Verified zero rows
 before writing this.
 
 Revision ID: 0039_fact_object_relax
-Revises: 0037_standing_consumed_verdict
+Revises: 0038_note_body_ceiling
 Create Date: 2026-08-28
 """
 
@@ -63,7 +63,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
 revision = "0039_fact_object_relax"
-down_revision = "0037_standing_consumed_verdict"
+down_revision = "0038_note_body_ceiling"
 branch_labels = None
 depends_on = None
 
