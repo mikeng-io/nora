@@ -2349,12 +2349,43 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # the Dreamer has none of by construction. Its loop ends when the model
         # declines to call anything, inside a wall clock.
         dream_model = cfg.dreamer_model()
+        # VALIDATED here for its refusal, then passed as the plain string
+        # `ModelSpec` declares. `_reasoning_effort` raises `StartupError` on
+        # anything the provider will not accept and returns a narrowed literal
+        # that `ModelSpec.reasoning_effort: str` does not want; the refusal is
+        # the part that matters and it happens either way.
+        dream_effort = cfg.dreamer.reasoning_effort or tier.reasoning_effort
+        _reasoning_effort(
+            dream_effort,
+            source="[dreamer] reasoning_effort (or [llm]'s, inherited)",
+        )
         dream_models = factory.ModelSource(
             client=client,
             spec=factory.ModelSpec(
                 model=dream_model, max_tokens=tier.max_tokens,
                 temperature=tier.temperature,
-                reasoning_effort=tier.reasoning_effort,
+                # `[dreamer] reasoning_effort` where set, else the tier's.
+                # Measured: at the tier's "low" this model reasons its way to
+                # `{"candidates": []}` on a transcript that plainly contains
+                # claims, and to `MaxTokensReachedException` on a real one —
+                # reasoning is billed as completion and it spends the ceiling.
+                # The key is the Dreamer's own so her replies keep theirs.
+                # WRAPPED, and the wrap is the point rather than a tidy-up.
+                # `[dreamer] reasoning_effort` is typed, so it cannot arrive
+                # wrong — but `""` is its default and its documented inherit
+                # value, and what it inherits is `[llm] reasoning_effort`, a
+                # bare `str`. Unwrapped, `[llm] = "hgh"` with `[dreamer] = ""`
+                # LOADS and resolves to `"hgh"`, which reaches the provider as
+                # a 400 mid-tick and surfaces as one more `unavailable` in a
+                # background pass nobody watches. That is exactly the scenario
+                # the typed declaration is supposed to have made impossible,
+                # and the declaration alone does not make it so.
+                #
+                # `_reasoning_effort` exists for this case and says so; the
+                # debrief's `standing-or-llm` expression 460 lines up is the
+                # same shape. Copying `StandingConfig`'s declaration without
+                # its RESOLUTION is half the precedent.
+                reasoning_effort=dream_effort,
                 tool_choice=tool_choice.AFTER_SPEAKING,
             ),
         )

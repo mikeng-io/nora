@@ -1364,3 +1364,70 @@ def test_a_real_veto_path_survives_the_empty_string_normalisation(toml_path):
 
     assert cfg.facts.veto_file is not None
     assert cfg.facts.veto_file.name == "veto.txt"
+
+
+def test_the_dreamer_carries_its_own_reasoning_effort(toml_path):
+    """**The knowledge tier's first production failure**, and the reason the
+    key is the Dreamer's rather than one level up.
+
+    Reasoning is billed as COMPLETION on this model, so `reasoning_effort` is
+    a budget spent before any answer text is written. At the tier's "low" the
+    extractor reasons its way to `{"candidates": []}` on a transcript that
+    plainly contains claims, and to `MaxTokensReachedException` on a real
+    room's. At "none" it returns three candidates in 133 tokens.
+
+    Asserted as a SEPARATION, not just a value: `[llm] reasoning_effort` must
+    keep its own, because that one is shared with her replies and changing it
+    to fix a background pass would change what every turn can say.
+    """
+    cfg = load(toml_path)
+
+    assert cfg.dreamer.reasoning_effort == "none"
+
+    # The separation asserted STRUCTURALLY, not by pinning `[llm]`'s content.
+    # The first version asserted `cfg.llm.reasoning_effort != "none"`, which
+    # forbids a value DEC-84 records as the operator's decision with an ADR
+    # behind it: restoring it would turn this red claiming the separation was
+    # broken when nothing was. What the tier owes is a field of its own that
+    # is READ, not a particular value in the other one.
+    assert "reasoning_effort" in type(cfg.dreamer).model_fields, (
+        "the Dreamer must carry its own field rather than reading [llm]'s"
+    )
+    assert (
+        type(cfg.dreamer).model_fields["reasoning_effort"]
+        is not type(cfg.llm).model_fields["reasoning_effort"]
+    ), "two fields, so one can move without the other"
+
+
+def test_an_unset_dreamer_effort_inherits_the_tier(toml_path):
+    """`""` is the seventh legal value and means «inherit `[llm]`» —
+    `StandingConfig`'s shape, so that switching a tier on changes one thing at
+    a time and a config written before this key existed keeps loading."""
+    # `\n[dreamer]\n`, not `[dreamer]`: the `[notes]` section's prose contains
+    # the literal string `[dreamer] (the runtime exists)`, so an unanchored
+    # search finds a COMMENT and the replacement below silently does nothing —
+    # which the test then reads as the code failing.
+    text = toml_path.read_text()
+    i = text.index("\n[dreamer]\n") + 1
+    j = text.index("\n[", i + 1)
+    section = text[i:j].replace('reasoning_effort = "none"', 'reasoning_effort = ""')
+    toml_path.write_text(text[:i] + section + text[j:])
+
+    cfg = load(toml_path)
+
+    assert cfg.dreamer.reasoning_effort == ""
+
+
+def test_a_misspelt_dreamer_effort_refuses_to_start(toml_path):
+    """TYPED for `StandingConfig`'s reason: a typo in a loose `str` reaches
+    the provider and comes back a 400 — here inside a background tick, where
+    it is one more `unavailable` among many and nobody looks. A boot failure
+    is the refuse-to-start posture the rest of the config uses."""
+    text = toml_path.read_text()
+    i = text.index("\n[dreamer]\n") + 1
+    j = text.index("\n[", i + 1)
+    section = text[i:j].replace('reasoning_effort = "none"', 'reasoning_effort = "hgh"')
+    toml_path.write_text(text[:i] + section + text[j:])
+
+    with pytest.raises(ConfigError, match="reasoning_effort"):
+        load(toml_path)

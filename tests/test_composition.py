@@ -1196,3 +1196,74 @@ async def test_the_knowledge_tier_stays_dark_with_the_flag_off(cfg):
     deps = await build_dependencies(cfg)
 
     assert deps.engagement._tool_registry._knowledge is None
+
+
+async def test_the_dreamer_model_is_built_with_the_dreamers_own_effort(cfg):
+    """**A config key nothing reads is the phantom-metric rule again**, and
+    the first version of this change had exactly that: three config tests
+    asserting the VALUE, and removing the line in composition that uses it
+    left them all green.
+
+    The effort is baked into the model object at construction rather than
+    passed per call, so the only place it can be observed is the spec the
+    Dreamer's own `ModelSource` was built with. Asserted with a value that is
+    NOT the tier's, so a composition still reading `[llm]` fails rather than
+    coincidentally agreeing.
+    """
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "dreamer.reasoning_effort": "xhigh",
+    }))
+
+    assert deps.dreamer_runtime is not None, "the runtime must be built at all"
+    spec = deps.dreamer_runtime._models._spec
+    assert spec.reasoning_effort == "xhigh"
+
+
+async def test_an_unset_dreamer_effort_leaves_the_model_on_the_tiers(cfg):
+    """The inherit path, and the positive control for the test above: a
+    composition that hard-coded the Dreamer's key would pass the first
+    assertion and break every deployment that never set it."""
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "dreamer.reasoning_effort": "",
+    }))
+
+    assert deps.dreamer_runtime is not None
+    spec = deps.dreamer_runtime._models._spec
+    assert spec.reasoning_effort == cfg.llm.reasoning_effort
+
+
+async def test_a_misspelt_inherited_effort_refuses_to_start(cfg):
+    """**The typed declaration alone does not give the boot refusal it claims.**
+
+    `[dreamer] reasoning_effort` is typed, so it cannot arrive wrong. But `""`
+    is its default AND its documented inherit value — and what it inherits is
+    `[llm] reasoning_effort`, a bare `str`. Unwrapped, `[llm] = "hgh"` with
+    `[dreamer] = ""` LOADS and resolves to `"hgh"`, which reaches the provider
+    as a 400 mid-tick and surfaces as one more `unavailable` in a background
+    pass nobody watches — the exact scenario the declaration's comment says is
+    now impossible.
+
+    Copying `StandingConfig`'s declaration without its RESOLUTION is half the
+    precedent; `_reasoning_effort` is the other half and exists for this case.
+    """
+    with pytest.raises(StartupError, match="reasoning effort"):
+        await build_dependencies(override_config(cfg, {
+            "dreamer.enabled": True,
+            "dreamer.reasoning_effort": "",
+            "llm.reasoning_effort": "hgh",
+        }))
+
+
+async def test_a_valid_inherited_effort_still_starts(cfg):
+    """The positive control: a refusal that fired on every inherited value
+    would satisfy the test above while making `""` — the default — unusable."""
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "dreamer.reasoning_effort": "",
+        "llm.reasoning_effort": "medium",
+    }))
+
+    assert deps.dreamer_runtime is not None
+    assert deps.dreamer_runtime._models._spec.reasoning_effort == "medium"

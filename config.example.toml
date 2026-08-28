@@ -1163,6 +1163,22 @@ strict = true
 # [language]/[analytics]/[facts] all shipped inert too. Off, no DreamerRuntime
 # is constructed and the existing consolidators run exactly as they do today.
 enabled = false
+# NONE, and it is the fix for the knowledge tier's first production failure.
+# Reasoning is billed as COMPLETION on this model family, so the effort is a
+# budget spent BEFORE any answer text — and at "low" the extractor spends all
+# of it: measured against a real room's transcript, "low" returned HTTP 502
+# and "none" returned three candidates in 133 tokens. On a smaller sample
+# "low" reasons its way to `{"candidates": []}` on text that plainly contains
+# claims — a clean stop, well under the ceiling, and still no answer.
+#
+# Raising the ceiling is the wrong lever, measured: at 16,000 tokens the model
+# spent 7,307 writing the same answer it writes in 933 at 4,000. The cost is
+# deliberation, not capacity.
+#
+# `""` means inherit `[llm] reasoning_effort`. This is the DREAMER's key so a
+# background pass can be tuned without changing what her replies can say.
+reasoning_effort = "none"
+
 # The same model Nora runs. OPERATOR DECISION (2026-08-21), NOT a measurement
 # — and the distinction is stated because the earlier version of this comment
 # claimed the opposite while carrying a value nobody had measured.
