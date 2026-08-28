@@ -1501,6 +1501,16 @@ NOTE_REVISION = sa.Table(
         "model is null or length(btrim(model)) > 0",
         name="note_revision_model_is_named_check",
     ),
+    # 27 §5.2's DATABASE ceiling, added by `0038_note_body_ceiling`. FOUR TIMES
+    # the operating cap in `nora.domain.notes.BODY_MAX_CHARS`, and the gap is
+    # deliberate: 8000 says "no writer should produce that", 32000 says "this
+    # row is corrupt". `length()` and not `octet_length()` — the cap is on
+    # CHARACTERS, and a body is routinely Cantonese where the two differ
+    # threefold.
+    sa.CheckConstraint(
+        "length(body) <= 32000",
+        name="note_revision_body_fits_the_ceiling_check",
+    ),
     sa.CheckConstraint("length(btrim(body)) > 0", name="note_revision_has_a_body_check"),
     sa.CheckConstraint(
         "length(btrim(established_by)) > 0",

@@ -58,7 +58,7 @@ from nora.domain.ports import Proposal
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.notes import SqlNoteStore
-from nora.infra.sql.schema import NOTE, NOTE_CANDIDATE
+from nora.infra.sql.schema import NOTE, NOTE_CANDIDATE, NOTE_REVISION
 from nora.testing import InMemoryNoteStore
 
 NOW = 1_755_200_000_000
@@ -1631,3 +1631,83 @@ async def test_a_wake_on_an_unknown_or_retired_note_reports_none(
     assert await notes.store.record_wake(
         workspace=WS, note_id=note.id, next_revisit_at=NOW, now_ms=NOW,
     ) is None, "a retired note does not wake"
+
+
+# --- the CHECK, proven against a real migrated database --------------------
+
+
+async def test_the_database_refuses_a_body_over_the_ceiling(_notes_db) -> None:
+    """**Driven against real Postgres with the full migration chain applied**,
+    not asserted from `schema.py`. `compare_metadata` is blind to CHECK
+    constraints, so a constraint declared on the `sa.Table` and never written to
+    a database is documentation — this repo demonstrated that in 2026-08-20 by
+    deleting four of them from `schema.py` alone and watching the suite stay
+    green.
+
+    So this writes 32001 characters straight at the table, bypassing the domain
+    type entirely, and reads back the refusal. Bypassing is the point: the
+    domain refuses at 8000, and what the ceiling exists for is the writer that
+    never reached the domain at all."""
+    engine = create_sql_engine(_notes_db)
+    try:
+        note_id = str(uuid4())
+        rev_id = str(uuid4())
+        async with engine.begin() as conn:
+            await conn.execute(sa.insert(NOTE).values(
+                id=note_id, workspace="ceiling-probe", title="t",
+                description="d", uncertainty="u", closing_condition="c",
+                established_in="conv-1", created_at=NOW,
+                head_revision_id=rev_id, anchor_date=20261011,
+                anchor_entity_ids=[],
+            ))
+        with pytest.raises(Exception) as caught:
+            async with engine.begin() as conn:
+                await conn.execute(sa.insert(NOTE_REVISION).values(
+                    id=rev_id, note_id=note_id, body="x" * 32001,
+                    parent_revision_id=None, written_at=NOW,
+                    established_by="tag:miles",
+                ))
+        assert "note_revision_body_fits_the_ceiling_check" in str(caught.value), (
+            f"refused, but not by the ceiling CHECK: {caught.value}"
+        )
+    finally:
+        await engine.dispose()
+
+
+async def test_the_database_accepts_a_body_between_the_two_numbers(
+    _notes_db,
+) -> None:
+    """**The positive control, and it is the whole design in one assertion.**
+    16000 characters is over the OPERATING cap (8000) and under the CEILING
+    (32000), and the database must take it.
+
+    That gap is deliberate: 8000 says «no writer should produce that» and is
+    enforced in the domain where a refusal is reviewable; 32000 says «this row
+    is corrupt». A body between them means something reached the table without
+    passing the domain type — a bug to go and find, not a row to reject when
+    somebody reads it. A CHECK at 8000 would collapse the two meanings and make
+    a skipped-validation write indistinguishable from a raised config."""
+    engine = create_sql_engine(_notes_db)
+    try:
+        note_id = str(uuid4())
+        rev_id = str(uuid4())
+        async with engine.begin() as conn:
+            await conn.execute(sa.insert(NOTE).values(
+                id=note_id, workspace="ceiling-probe-2", title="t",
+                description="d", uncertainty="u", closing_condition="c",
+                established_in="conv-1", created_at=NOW,
+                head_revision_id=rev_id, anchor_date=20261011,
+                anchor_entity_ids=[],
+            ))
+            await conn.execute(sa.insert(NOTE_REVISION).values(
+                id=rev_id, note_id=note_id, body="x" * 16000,
+                parent_revision_id=None, written_at=NOW,
+                established_by="tag:miles",
+            ))
+            stored = (await conn.execute(
+                sa.select(sa.func.length(NOTE_REVISION.c.body))
+                .where(NOTE_REVISION.c.id == rev_id)
+            )).scalar_one()
+        assert stored == 16000, "and it is stored whole, not truncated"
+    finally:
+        await engine.dispose()
