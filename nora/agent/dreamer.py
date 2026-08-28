@@ -313,59 +313,40 @@ def tool_subset_faults(
     return tuple(faults)
 
 
-def _balanced_objects(text: str):
-    """Every balanced `{...}` in `text`, in order, string-aware.
+def _envelopes(raw: str, *, key: str):
+    """Every VALID envelope in `raw`, in order — an object carrying `key`
+    whose value is a list of mappings.
 
-    Brace counting rather than a regex, because a JSON object is not a regular
-    language and an object containing a brace inside a string — which a
-    `source_excerpt` quoting code plainly can — defeats any pattern short of a
-    parser. Quotes and backslash escapes are tracked for the same reason.
+    **`raw_decode` at each `{`, not hand-rolled brace counting.** The first
+    version counted braces with its own quote and escape tracking, and a
+    review broke it three ways: an unterminated quote in prose swallowed the
+    rest of the reply (`'no source for the 5" pipe'` is not exotic for a
+    research pass), an unclosed `{` did the same, and the escape handling the
+    docstring credited was pinned by no test at all — no test in the file
+    contained a `\\"`. `json.JSONDecoder.raw_decode` is the real parser; it
+    gets strings, escapes and nesting right by construction, and a candidate
+    that fails simply advances to the next `{`.
+
+    **Validity is checked HERE rather than by the caller**, because a
+    malformed object carrying the key would otherwise SHADOW a well-formed one
+    after it: `{"verdicts": ["a string"]}` followed by a real envelope has to
+    yield the real envelope, not `None`.
     """
-    depth = 0
-    start = None
-    in_string = False
-    escaped = False
-    for i, ch in enumerate(text):
-        if in_string:
-            if escaped:
-                escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            if depth == 0:
-                continue
-            depth -= 1
-            if depth == 0 and start is not None:
-                yield text[start:i + 1]
-                start = None
-
-
-def _first_envelope(raw: str, *, key: str) -> dict | None:
-    """The first balanced object in `raw` that carries `key`, or `None`.
-
-    The WHOLE reply is scanned rather than only its start, because the model
-    narrates before answering (see `parse_envelope`). Keyed on the declared
-    envelope key rather than on «the first object», which is precise: a
-    preamble mentioning `{"verdicts": ...}` in prose would parse, and an
-    object that is merely the first thing with braces would not be the answer.
-    """
-    for blob in _balanced_objects(raw):
+    decoder = json.JSONDecoder()
+    at = raw.find("{")
+    while at != -1:
         try:
-            data = json.loads(blob)
-        except (json.JSONDecodeError, TypeError, ValueError):
+            data, end = decoder.raw_decode(raw, at)
+        except (json.JSONDecodeError, ValueError, RecursionError):
+            at = raw.find("{", at + 1)
             continue
-        if isinstance(data, dict) and key in data:
-            return data
-    return None
+        if (
+            isinstance(data, dict)
+            and isinstance(items := data.get(key), list)
+            and all(isinstance(item, Mapping) for item in items)
+        ):
+            yield data
+        at = raw.find("{", max(end, at + 1))
 
 
 def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | None:
@@ -377,9 +358,27 @@ def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | 
     to `unavailable`. It is deliberately NOT the same value as an empty list,
     which is a well-formed «I looked and found nothing».
 
-    **A PREAMBLE is no longer one of them**, and that change is the fix for a
-    production failure rather than a loosening. Measured 2026-08-28, driving
-    the shipped `fact-adjudication` objective through its whole tool loop:
+    **A PREAMBLE is no longer one of them.** Two documents forbid exactly this
+    by name and both are overturned here rather than ignored:
+    `docs/superpowers/specs/2026-08-21-dreamer-live-transfer.md` §91 — "do not
+    fix this by loosening `parse_envelope`… fix it at the objective" — and
+    `07-loop.md` §57, which wants the envelope to be a terminal tool call
+    rather than text parsed out of a reply.
+
+    The first is overturned by evidence it did not have: the objective fix
+    LANDED. `fact-adjudication.md` spends its closing paragraph on «your
+    entire reply is one JSON object, the first character you write is `{`»,
+    and the model narrates anyway — measured below. An instruction that has
+    been given and is not followed is not a fix that is still pending.
+
+    The second is not overturned, it is deferred: a terminal tool call is the
+    better shape and it is a change to every adaptor and to the guard that
+    ends a Dreamer turn. This is the reading that would reopen it — if
+    narration keeps costing batches after this, the parser is the wrong layer
+    and 07 §57 is where to go.
+
+    Measured 2026-08-28, driving the shipped `fact-adjudication` objective
+    through its whole tool loop:
 
       effort=none, empty results  converged turn 6 — «Search returning empty
                                   results consistently. Cannot find any
@@ -411,15 +410,28 @@ def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | 
             len(raw), MAX_ENVELOPE_CHARS,
         )
         return None
-    data = _first_envelope(raw, key=key)
-    if data is None:
+    # THE LAST valid envelope, not the first. Every objective prints the empty
+    # form — `{"verdicts": []}` — as its nothing-found instruction, so a model
+    # that quotes its instructions on the way to answering puts a VALID but
+    # empty envelope ahead of its real one. Taking the first yields zero
+    # items, which is `nothing_found`, which ADVANCES THE WATERMARK: real
+    # verdicts discarded and the batch consumed permanently, with every
+    # counter green. That is silent and irreversible where the bug it replaced
+    # was loud and retryable.
+    #
+    # Worse than lossy on `fact-adjudication`, whose objective prints a
+    # POPULATED example: the tier would have written the documentation's own
+    # worked example as a fact about the world, marked supported, carrying a
+    # source_url out of the objective file.
+    #
+    # Last is also what the measurement says: the model narrates, then
+    # answers. Nothing pinned first-vs-last before this comment existed —
+    # mutating one to the other left the suite green, which is how a policy
+    # nobody decided ends up load-bearing.
+    envelopes = list(_envelopes(raw, key=key))
+    if not envelopes:
         return None
-    items = data.get(key)
-    if not isinstance(items, list):
-        return None
-    if not all(isinstance(item, Mapping) for item in items):
-        return None
-    return tuple(items)
+    return tuple(envelopes[-1][key])
 
 
 class RegistryToolSource:

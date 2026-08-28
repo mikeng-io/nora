@@ -470,3 +470,53 @@ async def test_a_hanging_classifier_is_bounded_and_the_turn_continues():
     # returned rather than raising. Both halves matter: a bound that raised
     # would cost the reply it was added to protect.
     assert marked == 0
+
+
+async def test_a_dispute_answer_after_prose_is_still_read():
+    """**The seventh parser, and the one that matters most.**
+
+    `_parse_disputes` did `json.loads` over the whole reply, carrying the same
+    «your entire reply is one JSON object» contract the adjudicator carries —
+    and the model narrates anyway, which is measured in `parse_envelope`'s own
+    docstring.
+
+    It costs more here than in a background pass. This runs on the TAG PATH,
+    before context assembly, inside the conversation's slot: a discarded
+    answer is a correction lost on the turn it was made, and catching a
+    correction on that turn is the whole point of the loop. `_decide` maps
+    `None` to `unavailable` and falls back to RULE-F, which catches only the
+    clearest case.
+    """
+    metrics = Metrics()
+    classifier = _FakeClassifier(
+        'Looking at the message, it contradicts the first claim.\n\n'
+        '{"disputes": [{"claim": "1", "reason": "no"}]}'
+    )
+    facts = _FakeFacts()
+    rec = _recogniser(facts=facts, classifier=classifier, metrics=metrics)
+
+    marked = await rec.recognise(
+        msg=_msg("no, big walk is a video game"), tag_id="t", person_id="g",
+    )
+
+    assert marked == 1, "the answer is there; a sentence in front of it is not"
+    assert metrics.get("nora_dispute_classify_total", status="ok") == 1
+
+
+async def test_a_dispute_reply_with_no_envelope_is_still_unavailable():
+    """The positive control, and the line the change must not cross: a reply
+    that never produces an envelope is «I could not answer», not «there is no
+    dispute». R-5's direction — silence beats a wrong answer — is what makes
+    the fallback conservative rather than the default."""
+    metrics = Metrics()
+    rec = _recogniser(
+        classifier=_FakeClassifier("I am really not sure about this one."),
+        metrics=metrics,
+    )
+
+    await rec.recognise(
+        msg=_msg("no, big walk is a video game"), tag_id="t", person_id="g",
+    )
+
+    assert metrics.get(
+        "nora_dispute_classify_total", status="unavailable") == 1
