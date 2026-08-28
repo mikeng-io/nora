@@ -79,15 +79,21 @@ is DERIVED from the code every run rather than hand-maintained, so a name that
 stops being ambiguous cannot keep its exemption.
 
 STILL NOT SEEN, and stated rather than left to be discovered:
-  - A THIRD-PARTY namesake. `_namesakes` only sees classes defined under
-    `nora/`, so a method whose name matches something on a library object is
-    still wrongly cleared. Demonstrated: adding an uncalled `SqlFactStore.close`
-    passes this gate, because `self.deps.client.close()` in `nora/__main__.py`
-    is a name-bound `.close(...)` call site. It takes a NEW store method landing
-    on a borrowed name to bite — the twelve rows below were each confirmed by a
-    separate audit — and closing it properly needs receiver type inference,
-    which is more machinery than this gate is worth. Said plainly instead of
-    left for someone to trip over.
+  - A THIRD-PARTY namesake, and this is the real remaining hole. `_namesakes`
+    only sees classes defined under `nora/`, so a store method whose name
+    matches a method on a stdlib or library object is wrongly cleared. Two
+    demonstrated, both still passing this gate today:
+      `SqlFactStore.count`  — cleared by `essence.count("/")` (`str.count`) and
+                              by `sa.func.count()`;
+      `SqlFactStore.close`  — cleared by `self.deps.client.close()`.
+    Neither name is defined on any class under `nora/`, so nothing pushes them
+    into `_AMBIGUOUS` and they read `ok` rather than `unavailable`. It takes a
+    NEW store method landing on a borrowed name to bite — every row below was
+    confirmed by a separate audit, not by this gate alone — and closing it
+    properly needs receiver type inference, which is more machinery than this
+    gate is worth. Said plainly instead of left for someone to trip over. The
+    cheap partial mitigation if it ever does bite: add the name to `_AMBIGUOUS`
+    by hand, which turns the silent clear into a loud "unchecked".
   - Dynamic dispatch — `getattr(store, name)`, a string-keyed registry. Nothing
     here would catch it.
   - REACHABILITY. A caller that is itself dead — an unimported module, a branch
