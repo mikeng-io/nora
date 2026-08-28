@@ -2071,6 +2071,78 @@ class DreamerConfig(BaseModel):
     # Empty = `[language].model`. Never read directly — `Config.dreamer_model()`
     # is the only resolver.
     model: str = ""
+    # The Dreamer's OWN reasoning effort, `""` meaning «inherit `[llm]`» — the
+    # shape `StandingConfig.reasoning_effort` already uses, and TYPED for its
+    # reason: a typo in a loose `str` reaches the provider and returns a 400,
+    # here inside a background tick where it is one more `unavailable` among
+    # many. Typed, it is a boot failure, which is the refuse-to-start posture.
+    #
+    # **It exists because reasoning is billed as COMPLETION, and this model
+    # spends the whole ceiling on it.** Measured 2026-08-28 against the real
+    # objective and a real failing room's transcript, through OmniRoute at the
+    # deployed settings:
+    #
+    #   max_tokens=2000   upstream returned nothing usable
+    #   max_tokens=4000   933 completion tokens, four correct candidates
+    #   max_tokens=8000   upstream returned nothing usable
+    #   max_tokens=16000  7,307 completion tokens for the SAME 1,136-character
+    #                     answer
+    #
+    # and, holding the ceiling fixed and varying only the effort:
+    #
+    #   effort=low   1,311 completion, 5,768 characters of deliberation,
+    #                and the answer was `{"candidates": []}`
+    #   effort=none  100 completion, four correct candidates
+    #
+    # So more room is not the lever — at 16,000 it spent seven thousand tokens
+    # to write the same eleven hundred characters, and at "low" it reasons its
+    # way to an EMPTY LIST on a transcript that plainly contains claims. The
+    # failure has two faces depending on transcript size: silence on a small
+    # one, `MaxTokensReachedException` on a real one. That is also the most
+    # likely reading of August's 963 messages producing 2 rows, on this same
+    # model at this same setting.
+    #
+    # Dreamer-WIDE rather than per-adaptor, and the other two passes are now
+    # MEASURED rather than assumed — the first version of this comment said
+    # neither had been, which is a gap that should not survive a review it can
+    # be closed before:
+    #
+    #   fact-entity-resolution  low   4 of 4 runs resolved `big walk`/`Big Walk`
+    #                           none  3 of 4; the fourth SPLIT them
+    #   fact-adjudication       low   `supported` with a source_url, tool-free
+    #                           none  `not_covered`
+    #
+    # Entity resolution loses a little recall at "none", and it loses it in the
+    # direction `21` §5 chose on purpose: default to SPLIT, because two
+    # entities wrongly kept apart is a missing edge and two wrongly merged is a
+    # corrupted node. A small rate of over-splitting is the failure that design
+    # asked for.
+    #
+    # The adjudicator's real risk was not verdict quality, it was that a model
+    # told not to deliberate would stop REACHING FOR A TOOL — and an
+    # adjudicator that never searches marks nothing `supported`, writes no
+    # fact, and stalls the chain one step past extraction while every counter
+    # reports an honest empty. Measured with a `web_search` schema attached,
+    # three runs at each effort:
+    #
+    #   low    tool_calls=2 every run
+    #   none   tool_calls=2 every run, the same two queries
+    #
+    # It still researches. The earlier tool-free result — "low" answering
+    # `supported` with an invented `source_url` while "none" said
+    # `not_covered` — was a probe with nothing to search WITH, and
+    # `not_covered` was the correct answer to it rather than a recall loss.
+    #
+    # The Dreamer already has its own `ModelSource`, so this costs one line and
+    # keeps one model object; per-adaptor would need one object per adaptor.
+    # The reading that would split it is an adjudication run against real tools
+    # measurably worse at "none" — that is the measurement to take when the
+    # tier has traffic, and it needs production rather than a probe.
+    #
+    # `[llm] reasoning_effort` is UNTOUCHED, so her replies are unaffected.
+    reasoning_effort: Literal[
+        "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
+    ] = ""
     budgets: dict[str, DreamBudgetConfig] = Field(default_factory=dict)
 
     def budget_for(self, adaptor: str) -> DreamBudgetConfig:

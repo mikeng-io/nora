@@ -67,7 +67,19 @@ async def test_a_honcho_failure_does_not_block_ingest(harness):
 
 
 async def test_ingest_does_not_wait_on_a_slow_honcho(harness):
-    async def slow_feed(peer_id, text):
+    entered = False
+
+    async def slow_feed(peer_id, text, conversation_id=None, metadata=None):
+        """PRODUCTION'S SIGNATURE (#74). It was `(peer_id, text)` while
+        `memory_feed` has called `feed(peer_id=, text=, conversation_id=,
+        metadata=)` since 2026-08-07 — so the fake raised `TypeError`
+        immediately, inside the spawned task, and the elapsed-time assertion
+        below was satisfied by a call that never slept. The test passed while
+        proving the opposite of its name, and turned red only when the
+        background task's log landed inside this test's capture.
+        """
+        nonlocal entered
+        entered = True
         await asyncio.sleep(1.0)
         return True
 
@@ -75,6 +87,17 @@ async def test_ingest_does_not_wait_on_a_slow_honcho(harness):
     started = asyncio.get_running_loop().time()
     await harness.handler.on_event(group_event(body="hi"))
     assert asyncio.get_running_loop().time() - started < 0.2
+    # THE POSITIVE CONTROL, and the reason the signature fix matters: with the
+    # wrong signature the fake raised in microseconds, so `< 0.2` was true of
+    # a call that never slept and the test measured nothing. Asserting the
+    # fake was actually entered is what makes the elapsed time a statement
+    # about the SPAWN rather than about an exception.
+    #
+    # After one loop tick, not before: the feed is SPAWNED, so it has not
+    # started when `on_event` returns — which is the very property the
+    # elapsed-time assertion above is about.
+    await asyncio.sleep(0)
+    assert entered, "the slow feed must have been reached, or 0.2s proves nothing"
 
 
 async def test_debounce_window(harness_factory):

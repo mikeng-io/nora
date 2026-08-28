@@ -373,6 +373,61 @@ enabled = true
 #
 # Reopen with evidence from real runs, not before.
 model = "ollamacloud/deepseek-v4-flash"
+# NONE, and it is the fix for the knowledge tier's first production failure
+# (2026-08-28). Reasoning is billed as COMPLETION on this model, so the effort
+# setting is a budget it spends BEFORE writing anything — and at the tier's
+# "low" it spends all of it.
+#
+# Measured against the real objective and the REAL transcript of a room that
+# had produced nothing for hours, one variable changed:
+#
+#   effort = "low"    HTTP 502, the call did not return
+#   effort = "none"   133 completion tokens, THREE candidates
+#
+# and on a smaller sample, where it fails quietly instead:
+#
+#   effort = "low"    1,311 completion, 5,768 characters of deliberation,
+#                     and the answer was `{"candidates": []}`
+#   effort = "none"   100 completion, four correct candidates
+#
+# Raising the ceiling is the wrong lever and was measured to be: at 16,000
+# tokens it spent 7,307 of them writing the same 1,136-character answer it
+# writes in 933 at 4,000. The cost is deliberation, not capacity.
+#
+# This is the DREAMER's key. `[llm] reasoning_effort = "low"` is untouched, so
+# her replies are unaffected — that separation is the whole reason this exists
+# rather than a change one level up.
+#
+# The other two passes were measured before this shipped, not assumed:
+#
+#   fact-entity-resolution   low   4 of 4 runs resolved big walk / Big Walk
+#                            none  3 of 4; the fourth split them
+#   fact-adjudication        low   `supported` with a source_url, TOOL-FREE
+#                            none  `not_covered`
+#
+# Entity resolution loses a little recall at "none" and loses it in the
+# direction 21 §5 chose deliberately — default to SPLIT, since two entities
+# wrongly kept apart is a missing edge while two wrongly merged is a corrupted
+# node.
+#
+# The adjudicator's real risk was that a model told not to deliberate would
+# stop REACHING for a tool — and then nothing is ever `supported`, no fact is
+# written, and the chain stalls one step past extraction. Measured with a
+# `web_search` schema attached, three runs at each effort:
+#
+#   low    tool_calls=2 every run
+#   none   tool_calls=2 every run, same two queries
+#
+# So "none" does not stop it researching. The earlier tool-free result — "low"
+# answering `supported` with an invented source_url while "none" said
+# `not_covered` — was a probe with nothing to search WITH, and `not_covered`
+# was the correct answer to it.
+#
+# Turn this back to "" (inherit) if adjudication QUALITY against real sources
+# is worse at "none" — that is about verdicts on real traffic, not about
+# whether the tool is reached, and it is the reading that would split this
+# into a per-adaptor setting.
+reasoning_effort = "none"
 
 # One budget block per adaptor — NOT one global ceiling: proving a fact is
 # worth more calls than glossing a word, and a single number would starve the
