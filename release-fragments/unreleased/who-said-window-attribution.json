@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Nora can now check who said something in the messages she is already looking at, before she puts words in anybody's mouth.",
+  "details": [
+    "A new who_said tool answers \"who said this\" from the conversation window already in her prompt, and returns the speaker's name with the line itself.",
+    "It completes the recall ladder: who_said searches what she was just shown, load_transcript reads older messages from the conversation, and search_memory reaches back further still.",
+    "Her doctrine already required her to find the line before saying \"you said X\". For a line inside the visible window that check left no trace at all, so a verified attribution and an invented one looked identical afterwards; it is now a recorded call with its own counter and trace span.",
+    "When the window cannot be read, she is told she could not check rather than that nobody said it."
+  ],
+  "limitations": [
+    "It only searches the messages currently in front of her. Anything older needs load_transcript or search_memory, and the tool's own answer says so.",
+    "Matching is on the words as written — a paraphrase will not find the line."
+  ]
+}

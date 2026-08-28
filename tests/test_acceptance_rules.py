@@ -486,6 +486,15 @@ RULE_TESTS = {
     # model can read it; its second half reads the same prompt back for the
     # speaker labels the rule presupposes. Next free number after R-80.
     "R-81": "test_r81_a_quote_is_grounded_only_against_the_person_who_said_it",
+    # R-82 names the fail-closed branch rather than the happy path, because it
+    # is the clause a future change is most likely to "simplify": an empty
+    # window LOOKS like an empty room, and `nothing_found` reads as the more
+    # informative answer. It is not — `EngagementContext._recent` returns `()`
+    # for a FAILED store read too, so that simplification turns an outage into
+    # a confident denial in the middle of a group argument, which is the exact
+    # failure `who_said` was built to stop. The window-not-the-store test, the
+    # DEC-24 schema test and the span tests are named in the index row.
+    "R-82": "test_an_unread_window_is_unavailable_never_nothing_found",
 }
 
 

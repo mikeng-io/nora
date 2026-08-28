@@ -739,6 +739,13 @@ class EngagementPipeline:
                 honcho=self._memory, deliverer=handle.deliverer,
                 room=room, question=msg.body,
                 context_window=self._context_window, metrics=self._metrics,
+                # DEC-146: the SAME tuple `build_prefill` below renders
+                # `<group_transcript>` from. `who_said` answers out of the window
+                # the model is looking at, so it is passed rather than re-read —
+                # a second store call here would be a second interpretation of
+                # the same messages, and the two would drift the first time one
+                # side's limit or naming pass changed.
+                transcript=ctx.transcript,
                 allowed_mcp=allowed_mcp, location_trusted=location_trusted,
                 # DEC-89: the SAME carrier the `Deliverer` above holds. The
                 # tools mint links into it and the sender puts back the ones the

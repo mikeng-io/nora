@@ -124,6 +124,9 @@ async def wiring(pg_url, tmp_path):
 
 def test_every_declared_tool_is_built(wiring):
     assert set(wiring["tools"]) == {
+        # DEC-146: the window-scoped rung of the recall ladder, below
+        # `load_transcript`. Exercised in tests/test_who_said.py.
+        "who_said",
         "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
         "send_to",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
