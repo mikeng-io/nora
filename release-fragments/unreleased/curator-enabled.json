@@ -1,5 +1,5 @@
 {
-  "type": "changed",
+  "type": "change",
   "summary": "Nora now tidies her own notebook: notes whose question is settled, or whose moment has passed, stop appearing.",
   "details": "The note curator is switched on. Once a day per room, and after a quiet spell, it reviews notes whose occasion has gone by and retires the ones the conversation has answered or overtaken. Retiring is not deleting — a retired note stays readable, it just stops taking up room in what Nora is shown.",
   "limitations": [
