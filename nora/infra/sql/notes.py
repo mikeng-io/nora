@@ -491,8 +491,8 @@ class SqlNoteStore:
         retired, caller told nothing happened.
 
         **The alternative was to keep two transactions and argue it is safe**,
-        and that argument can actually be made: `merge_groups` is a `GROUP BY`
-        over LIVE rows rather than a watermark, so an unretired duplicate is
+        and that argument can actually be made: `merge_groups` reads LIVE rows
+        rather than a watermark, so an unretired duplicate is
         still a duplicate next tick and the pass would retry. The ordering is
         also deliberately fail-safe — appending first means a crash duplicates
         content, where retiring first would LOSE it.
@@ -561,11 +561,17 @@ class SqlNoteStore:
 
     # ---- the curator's selection reads (§9.2) ------------------------------
     #
-    # Both are SQL-ONLY and cost zero tokens. That is the payoff of anchoring
-    # merge on `(anchor_date, entity_set)` rather than on topical similarity
-    # (§7.1): candidate detection is a `GROUP BY … HAVING count(*) > 1`, not a
-    # judgement, so **the model is never asked whether two notes should merge.**
-    # It is asked only what a body SAYS, which is the one thing SQL cannot read.
+    # Both cost ZERO TOKENS. That is the payoff of anchoring merge on
+    # `(anchor_date, entity_set)` rather than on topical similarity (§7.1):
+    # candidate detection is a KEY COMPARISON, not a judgement, so **the model
+    # is never asked whether two notes should merge.** It is asked only what a
+    # body SAYS, which is the one thing a key comparison cannot read.
+    #
+    # "SQL-only" until 2026-08-28, and the grouping now happens in
+    # `nora.domain.notes.group_on_anchor_key` — see `merge_groups` for why
+    # leaving SQL made it STRICTER rather than weaker. The property that
+    # mattered was never that it ran in the database; it was that it runs in
+    # CODE and not in a prompt.
 
     async def merge_groups(
         self, *, workspace: str, limit: int,

@@ -2,10 +2,19 @@
 
 **The one rule that carries the design: merge is keyed on the ANCHOR, never on
 topical similarity, so two weddings stay two notes.** That is enforced
-structurally rather than by prompting — eligibility is a `GROUP BY
-(anchor_date, entity_set) HAVING count(*) > 1` in `SqlNoteStore.merge_groups`,
-so **the model is never asked whether two notes should merge.** It is asked only
-what a body SAYS, which is the one thing SQL cannot read.
+structurally rather than by prompting — eligibility is
+`nora.domain.notes.group_on_anchor_key`, a pure function over `Note.anchor_key`
+that BOTH stores call, so **the model is never asked whether two notes should
+merge.** It is asked only what a body SAYS, which is the one thing a key
+comparison cannot read.
+
+It was a `GROUP BY (anchor_date, anchor_entity_ids)` until 2026-08-28 and moved
+for a reason worth keeping: Postgres compares a `text[]` by ORDER and
+MULTIPLICITY, so `{ada,ben}` and `{ben,ada}` were different groups and a real
+collision was missed for an artifact of the order somebody listed the people.
+`anchor_key` sorts and de-duplicates. **The enforcement did not weaken by
+leaving SQL — it is stricter, and it is now one function rather than two
+reimplementations that could drift.**
 
 Topical similarity would merge two weddings: same vocabulary, same shape, same
 kind of uncertainty. And the merge is unrecoverable in the direction that
@@ -179,10 +188,16 @@ class NoteCuratorAdaptor:
 
     **The pass is self-limiting FOR THE ACTIONS IT TAKES, and not otherwise.**
     A merge removes its group; a retirement removes its note. But a group the
-    model DECLINES to merge — or one refused for having no entity anchor — is
-    re-selected every tick, forever, and permanently occupies a
-    `max_groups_per_tick` slot. Observed: five consecutive ticks, model fired
-    each time, nothing written, the same two notes standing.
+    model DECLINES to merge is re-selected every tick, forever, and DOES
+    occupy a `max_groups_per_tick` slot — it is eligible, so it is inside the
+    limit. Observed: five consecutive ticks, model fired each time, nothing
+    written, the same two notes standing.
+
+    A group refused for having no entity anchor does NOT occupy a slot, and an
+    earlier version of this docstring said it did. `limit` is applied to the
+    ELIGIBLE list inside `group_on_anchor_key`; refusals are returned whole and
+    uncapped, precisely so the count that argues for populating `note_entity`
+    is not itself bounded by a read budget.
 
     The general claim ("everything it does removes its own trigger") was in
     this docstring and was FALSE, which is worth saying rather than quietly

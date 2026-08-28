@@ -859,7 +859,7 @@ enabled = false
 #             set) are one occasion written twice. The merged body keeps
 #             everything both said, disagreements included; the oldest note
 #             survives and the rest are retired pointing at it. ELIGIBILITY IS
-#             DECIDED IN SQL, never by the model — merge keyed on topical
+#             DECIDED IN CODE, never by the model — merge keyed on topical
 #             similarity would merge two weddings, and that is unrecoverable.
 #   RETIRE  — a note whose anchor date has passed, where the model reading the
 #             body says the question is answered ("closed") or can no longer be

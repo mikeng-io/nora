@@ -6,8 +6,8 @@ applies_to: [note_curator_adaptor]
 description: >-
   The note tier's housekeeping pass. Decides, per note, whether an open question
   has CLOSED and whether two notes are the same occasion written twice. Reads
-  bodies; writes nothing itself. Merge ELIGIBILITY is decided in SQL by the
-  anchor and is never asked of the model — the model is asked only what a body
+  bodies; writes nothing itself. Merge ELIGIBILITY is decided in CODE, never by the model,
+  by comparing anchors, and is never asked of the model — the model is asked only what a body
   says, which is the one thing SQL cannot read.
 change_policy: operator-only
 ---
