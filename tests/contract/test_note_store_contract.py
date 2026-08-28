@@ -1383,3 +1383,92 @@ async def test_merge_cannot_retire_another_workspaces_note(
         workspace="another-workspace", note_id=theirs.id,
     )
     assert still is not None and still[0].retired_at is None
+
+
+# --- the REFUSED half of merge_groups, which had no coverage at all --------
+#
+# It is only counted, never rendered, which is precisely why the two
+# implementations were free to disagree about it — `SqlNoteStore` grouped over
+# a placeholder-body pass and returned `''` where the double returned the real
+# text. Harmless, and therefore the kind that survives. Both now return NOTES
+# with no body at all, so the disagreement is unrepresentable rather than fixed.
+
+
+async def test_a_date_only_collision_comes_back_in_the_refused_half(
+    notes: _Harness,
+) -> None:
+    """The refusal is the reading that says what entity resolution would
+    unlock. A store that silently dropped these would make "merge does nothing"
+    indistinguishable from "there is nothing to merge"."""
+    a = await _make(
+        notes.store, title="Dinner, 9 Sept", anchor_date=20260909,
+        anchor_entity_ids=(),
+    )
+    b = await _make(
+        notes.store, title="Ada's flight to Tokyo", anchor_date=20260909,
+        anchor_entity_ids=(),
+    )
+
+    eligible, refused = await notes.store.merge_groups(workspace=WS, limit=10)
+
+    assert eligible == (), "a date is not an occasion"
+    assert len(refused) == 1
+    assert {n.id for n in refused[0]} == {a.id, b.id}
+
+
+async def test_the_refused_half_carries_no_bodies_in_either_implementation(
+    notes: _Harness,
+) -> None:
+    """Both return `Note` objects, not `(Note, body)` pairs. Asserted through
+    the SHAPE rather than by comparing two body strings, because comparing
+    strings is what let the divergence stand: `''` and the real text are both
+    strings and neither side was wrong on its own terms."""
+    await _make(notes.store, title="A", anchor_date=20260909,
+                anchor_entity_ids=())
+    await _make(notes.store, title="B", anchor_date=20260909,
+                anchor_entity_ids=())
+
+    _eligible, refused = await notes.store.merge_groups(workspace=WS, limit=10)
+
+    assert refused, "positive control: there IS a refused group to inspect"
+    for group in refused:
+        for entry in group:
+            assert isinstance(entry, Note), (
+                f"refused entries are Notes, got {type(entry).__name__} — a "
+                f"body here is a value with no consumer, which is where two "
+                f"implementations quietly disagree"
+            )
+
+
+async def test_an_eligible_group_still_carries_its_bodies(
+    notes: _Harness,
+) -> None:
+    """The positive control for the asymmetry. Stripping bodies from the
+    REFUSED half must not strip them from the eligible one — the merge is asked
+    to preserve content it must therefore be shown."""
+    await _make(notes.store, title="Grant wedding", anchor_date=20261011,
+                anchor_entity_ids=("grant",), body="Ada can't do Fridays.")
+    await _make(notes.store, title="Grant's wedding", anchor_date=20261011,
+                anchor_entity_ids=("grant",), body="Ben found Sheung Wan.")
+
+    eligible, _refused = await notes.store.merge_groups(workspace=WS, limit=10)
+
+    assert len(eligible) == 1
+    bodies = {body for _, body in eligible[0]}
+    assert bodies == {"Ada can't do Fridays.", "Ben found Sheung Wan."}
+
+
+async def test_the_refused_half_is_not_capped_by_limit(
+    notes: _Harness,
+) -> None:
+    """`limit` bounds what the tick will READ, and a refused group is never
+    read — so capping it would under-report the very number that argues for
+    populating `note_entity`."""
+    for day in (20260901, 20260902, 20260903):
+        for title in ("A", "B"):
+            await _make(notes.store, title=f"{title}{day}", anchor_date=day,
+                        anchor_entity_ids=())
+
+    _eligible, refused = await notes.store.merge_groups(workspace=WS, limit=1)
+
+    assert len(refused) == 3, "all three refusals are reported, not one"

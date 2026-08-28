@@ -571,7 +571,7 @@ class SqlNoteStore:
         self, *, workspace: str, limit: int,
     ) -> tuple[
         tuple[tuple[tuple[Note, str], ...], ...],
-        tuple[tuple[tuple[Note, str], ...], ...],
+        tuple[tuple[Note, ...], ...],
     ]:
         """Standing notes that share an anchor, grouped, most-collided first,
         **each with its head body**.

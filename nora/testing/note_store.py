@@ -325,7 +325,7 @@ class InMemoryNoteStore:
         self, *, workspace: str, limit: int,
     ) -> tuple[
         tuple[tuple[tuple[Note, str], ...], ...],
-        tuple[tuple[tuple[Note, str], ...], ...],
+        tuple[tuple[Note, ...], ...],
     ]:
         """`SqlNoteStore.merge_groups`. Dateless notes are excluded here too —
         the exclusion is the CONTRACT, not a SQL convenience, so a double that

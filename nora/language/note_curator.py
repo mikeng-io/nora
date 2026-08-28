@@ -91,7 +91,7 @@ class _NoteStore(Protocol):
         self, *, workspace: str, limit: int,
     ) -> tuple[
         tuple[tuple[tuple[Note, str], ...], ...],
-        tuple[tuple[tuple[Note, str], ...], ...],
+        tuple[tuple[Note, ...], ...],
     ]: ...
 
     async def anchored_before(

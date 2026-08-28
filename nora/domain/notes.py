@@ -244,12 +244,24 @@ def group_on_anchor_key(
     notes: Sequence[tuple[Note, str]], *, limit: int,
 ) -> tuple[
     tuple[tuple[tuple[Note, str], ...], ...],
-    tuple[tuple[tuple[Note, str], ...], ...],
+    tuple[tuple[Note, ...], ...],
 ]:
     """The grouping itself, shared by `SqlNoteStore` and its in-memory double.
 
-    Returns **(eligible, refused)** — groups that may merge, and groups that
-    collide on a date alone and therefore may not. Two return values rather
+    Returns **(eligible, refused)** — groups that may merge WITH their bodies,
+    and groups that collide on a date alone and therefore may not, as NOTES
+    ALONE.
+
+    **The refused half carries no bodies, and the asymmetry is deliberate.**
+    Nothing reads a refused group's body — it is counted and discarded — so a
+    body there is a value with no consumer, and a value with no consumer is
+    where two implementations quietly disagree. They did: `SqlNoteStore` ran
+    the grouping over a placeholder-body pass and returned `''`, while the
+    double returned the real text. Harmless, and therefore exactly the kind
+    that survives.
+
+    Fixed by removing the field rather than by making the two agree on it,
+    because agreement has to be maintained and a type does not. Two return values rather
     than one filtered list because the refused ones are the ONLY evidence of
     what entity resolution would unlock, and a function that silently dropped
     them would make "merge does nothing" indistinguishable from "there is
@@ -308,7 +320,7 @@ def group_on_anchor_key(
     refused = [(k, v) for k, v in collided if not k[1]]
     return (
         tuple(tuple(v) for _, v in eligible[:limit]),
-        tuple(tuple(v) for _, v in refused),
+        tuple(tuple(n for n, _ in v) for _, v in refused),
     )
 
 
