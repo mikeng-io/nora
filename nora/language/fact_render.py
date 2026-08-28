@@ -89,7 +89,8 @@ def render_facts(view: FactsView) -> str:
     seen: set[str] = set()
     room = _dedupe(view.room, seen)
     sender = _dedupe(view.sender, seen)
-    if not room and not sender and view.extent.standing == 0:
+    if not room and not sender and not view.extent.unshown \
+            and view.extent.standing in (0, None):
         return ""
 
     parts: list[str] = []
@@ -99,7 +100,8 @@ def render_facts(view: FactsView) -> str:
     if sender:
         parts.append("things they told her:")
         parts += [_render_entry(f, view.asserters) for f in sender]
-    parts.append(_extent_line(view.extent))
+    if view.extent.is_readable:
+        parts.append(_extent_line(view.extent))
     body = "\n".join(parts)
     return (
         f'<facts untrusted="true" note="{FACTS_BLOCK_NOTE}">\n'
@@ -120,7 +122,13 @@ def _dedupe(facts: tuple[Fact, ...], seen: set[str]) -> tuple[Fact, ...]:
 
 def _extent_line(extent: FactExtent) -> str:
     """Counts, never rows. `23` §3: she is told the SIZE of what she has not
-    been shown, which is the signal a recency window never gave her."""
+    been shown, which is the signal a recency window never gave her.
+
+    Only ever called when the count was READ. An unreadable extent omits the
+    line entirely (issue #71): «0 in all, all shown» during an outage tells
+    her she holds nothing, on the one line that exists to say how much she has
+    not been shown.
+    """
     if extent.unshown <= 0:
         return f"({extent.standing} in all, all shown)"
     return (

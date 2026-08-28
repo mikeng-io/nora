@@ -691,19 +691,38 @@ class RenderedClaim:
 class FactExtent:
     """What the `<facts>` block did NOT show, in counts (19 §6, 23 §3).
 
-    **Not a slice of content and not optional.** Without it the block
-    reproduces the defect the recency window had: a subset presented as the
-    whole, with no signal that more exists or that a verb is worth reaching
-    for. `standing` is every standing fact in the workspace; `shown` is how
-    many reached the prompt.
+    **Not a slice of content, and not optional WHEN IT CAN BE READ.** Without
+    it the block reproduces the defect the recency window had: a subset
+    presented as the whole, with no signal that more exists or that a verb is
+    worth reaching for. `standing` is every standing fact in the workspace;
+    `shown` is how many reached the prompt.
+
+    `standing = None` is the one case where the line is omitted rather than
+    rendered, and it is not a softening of "not optional": a count nobody
+    could take is not a smaller number, it is an absent one, and «0 in all,
+    all shown» during an outage is the recency window's defect arriving
+    through the error path (issue #71).
     """
 
-    standing: int
+    #: `None` means the count could not be READ — not that it is zero. The
+    #: render omits the extent line entirely on `None`, because this line's
+    #: whole job is to tell her the size of what she has not been shown, and a
+    #: fabricated size is the one thing it must never carry.
+    standing: int | None
     shown: int
 
     @property
     def unshown(self) -> int:
+        """`0` when the count is unreadable — but the render never reaches
+        this on `None`, because it omits the line rather than printing a
+        number derived from an unknown."""
+        if self.standing is None:
+            return 0
         return max(0, self.standing - self.shown)
+
+    @property
+    def is_readable(self) -> bool:
+        return self.standing is not None
 
 
 @dataclass(frozen=True)

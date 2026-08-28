@@ -498,10 +498,23 @@ class SqlFactStore:
             return ()
         return tuple(r[0] for r in rows)
 
-    async def standing_count(self, *, workspace: str) -> int:
-        """The extent (19 §6, 23 §3). `0` on an unreachable store — a wrong
+    async def standing_count(self, *, workspace: str) -> int | None:
+        """The extent (19 §6, 23 §3). **`None` on an unreachable store**, never
+        `0`.
+
+        The previous version returned `0` and its own docstring said "a wrong
         number here would be a claim about the size of what she knows, and the
-        honest degradation is to claim nothing."""
+        honest degradation is to claim nothing" — while `0` IS that claim. It
+        renders as «0 in all, all shown», which tells her she holds nothing
+        about this room during a database outage, on the one line whose entire
+        purpose is to say how much she has NOT been shown.
+
+        The other five reads in this class degrade to `()`, which is silence
+        and which R-5 tolerates. This one degraded to a confident wrong NUMBER
+        (issue #71), and that is a different thing: silence beats a wrong
+        answer, and a wrong number is not silence. `None` lets the render omit
+        the line rather than assert a size.
+        """
         try:
             async with self._engine.connect() as conn:
                 return int((await conn.execute(
@@ -514,7 +527,7 @@ class SqlFactStore:
                 )).scalar_one())
         except Exception:
             log.exception("standing_count unavailable for workspace %s", workspace)
-            return 0
+            return None
 
     async def asserters(self, *, fact_id: str) -> tuple[FactAsserter, ...]:
         """Who claimed this fact, oldest first. `()` for a fact nobody could be
