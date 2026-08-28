@@ -1415,6 +1415,18 @@ class FactsConfig(BaseModel):
     # versioning are the design's decision. Absent by default, and an absent
     # file vetoes nothing extra — the rules in code are the floor and this only
     # narrows what promotes.
+    # 31 §3.4's window: how far back a message may reach when deciding what
+    # Nora "just rendered". Twenty-four hours because a correction arrives
+    # either in the same sitting or after somebody looked something up
+    # overnight, and because it is the horizon over which a claim she rendered
+    # is still a thing a member could be reacting to. The ledger is pruned at
+    # TWICE this, so a row is still readable for one window after it stops
+    # being eligible — which is what lets the prune be a background sweep
+    # rather than a precise deletion.
+    #
+    # Reversal condition: the age distribution of the quote-replies that
+    # resolve, which is readable from the ledger itself.
+    recognition_window_hours: int = Field(default=24, ge=1)
     veto_file: Path | None = None
     max_term_chars: int = Field(default=DEFAULT_MAX_TERM_CHARS, ge=1)
     max_predicate_chars: int = Field(default=DEFAULT_MAX_PREDICATE_CHARS, ge=1)

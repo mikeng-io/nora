@@ -135,6 +135,18 @@ class App:
             ))
         else:
             log.info("retention sweep disabled (store.prune_enabled = false)")
+        # The render ledger's own sweep (31 §3.1). It joins the loop above
+        # rather than growing one — it is a working set on a horizon, which is
+        # exactly what that loop already does for `messages` — and it is
+        # UNCONDITIONAL on `store.prune_enabled`: that flag means "keep the
+        # record in full", and this is not a record. It is a working set whose
+        # rows stop being readable by design, so never pruning it would be a
+        # table nobody decided the size of.
+        if deps.rendered_claims is not None:
+            deps.background.spawn(runtime.prune_loop(
+                deps.rendered_claims, deps.metrics,
+                interval_seconds=PRUNE_INTERVAL_SECONDS,
+            ))
         # The Dreamer's clock (Task 11), the SAME conditional shape as the
         # retention sweep above: `[language] enabled = false` (the shipped
         # default — a new subsystem does not switch itself on) means

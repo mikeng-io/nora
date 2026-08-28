@@ -88,6 +88,7 @@ from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.infra.sql.rendered_claims import SqlRenderedClaimStore
 from nora.infra.sql.room_portrait import SqlRoomPortraitStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
@@ -566,6 +567,11 @@ class Dependencies:
     # agent's event tools use, rather than a second `GatheringService` over the
     # same store.
     events: GatheringService
+    # The render ledger, or `None` while `[facts]` is off. Exposed here
+    # only so the retention sweep can prune it — 31 §3.1's trigger, which
+    # is the one that already exists rather than a new loop. LAST and
+    # defaulted, so every existing construction site keeps working.
+    rendered_claims: SqlRenderedClaimStore | None = None
 
 
 async def build_dependencies(cfg: Config) -> Dependencies:
@@ -728,6 +734,18 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             max_predicate_chars=cfg.facts.max_predicate_chars,
             metrics=metrics,
         ) if cfg.facts.enabled else None
+    )
+    # The render ledger (31 §3), wired only when the tier is on: with `[facts]`
+    # off nothing is rendered, so there is nothing to record and a store here
+    # would be a table that only ever holds zero rows. Named rather than
+    # inlined because the retention sweep needs it too.
+    rendered_claims: SqlRenderedClaimStore | None = (
+        SqlRenderedClaimStore(
+            engine,
+            window_hours=cfg.facts.recognition_window_hours,
+            metrics=metrics,
+        )
+        if cfg.facts.enabled else None
     )
     if fact_store is not None:
         # 30 §5: a cap that only refuses a CONFIG above its ceiling leaves
@@ -975,6 +993,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # the note tier above uses — two tiers keyed on `Conversation.workspace`
         # must not each carry their own idea of what a room's workspace is.
         facts=fact_store,
+        # The render ledger, wired only when the tier is on: with `[facts]`
+        # off nothing is rendered, so there is nothing to record and a store
+        # here would be a table that only ever holds zero rows.
+        rendered=rendered_claims,
         max_room_facts=cfg.facts.max_room_facts,
         max_sender_facts=cfg.facts.max_sender_facts,
         # Standing's READ half. `None` while `[standing] enabled = false`, the
@@ -2248,6 +2270,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         verify_tool_subsets(dream_adaptors, tools=dream_tools)
 
     return Dependencies(
+        rendered_claims=rendered_claims,
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         dispatcher=dispatcher, adapter=adapter, registry=registry,

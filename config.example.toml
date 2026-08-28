@@ -821,6 +821,14 @@ max_adjudications_per_tick = 10
 # ground "you told us...".
 max_room_facts = 8
 max_sender_facts = 4
+
+# 31 §3.4: how far back a message may reach when deciding what Nora "just
+# rendered". Twenty-four hours because a correction arrives either in the
+# same sitting or after somebody looked something up overnight. The render
+# ledger is pruned at TWICE this, so a row stays readable for one window
+# after it stops being eligible — which is what lets the prune be a
+# background sweep rather than a deletion racing the read.
+recognition_window_hours = 24
 # How long a resolved fact_candidate (a not_covered verdict, or a superseded
 # fact) is kept before a future prune sweep drops it — matches the tool-
 # recall-log's own retention_days = 180 for the same shape of row.

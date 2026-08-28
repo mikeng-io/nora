@@ -51,6 +51,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -100,6 +101,7 @@ ADD CONSTRAINT presence_places_pkey PRIMARY KEY (circle_id, place_id);
 ADD CONSTRAINT presence_stays_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_trips_pkey PRIMARY KEY (id);
 ADD CONSTRAINT reminders_pkey PRIMARY KEY (id);
+ADD CONSTRAINT rendered_claim_pkey PRIMARY KEY (conversation_id, kind, row_key);
 ADD CONSTRAINT room_exchange_pkey PRIMARY KEY (scope_id, act, participants);
 ADD CONSTRAINT room_lexeme_pkey PRIMARY KEY (scope_id, canonical_form, sense);
 ADD CONSTRAINT room_portrait_pkey PRIMARY KEY (scope_id);
@@ -162,6 +164,7 @@ ALTER TABLE ONLY public.presence_places
 ALTER TABLE ONLY public.presence_stays
 ALTER TABLE ONLY public.presence_trips
 ALTER TABLE ONLY public.reminders
+ALTER TABLE ONLY public.rendered_claim
 ALTER TABLE ONLY public.room_exchange
 ALTER TABLE ONLY public.room_lexeme
 ALTER TABLE ONLY public.room_portrait
@@ -240,6 +243,8 @@ CONSTRAINT note_revision_model_is_named_check CHECK (((model IS NULL) OR (length
 CONSTRAINT note_revision_names_its_writer_check CHECK ((length(btrim(established_by)) > 0))
 CONSTRAINT note_strikes_are_not_negative_check CHECK ((strikes >= 0)),
 CONSTRAINT note_title_fits_the_index_check CHECK (((length(btrim(title)) > 0) AND (length(title) <= 60)))
+CONSTRAINT rendered_claim_kind_check CHECK ((kind = ANY (ARRAY['fact'::text, 'lexeme'::text]))),
+CONSTRAINT rendered_claim_surface_is_named_check CHECK ((length(btrim(surface)) > 0))
 CONSTRAINT room_exchange_act_check CHECK ((act = ANY (ARRAY['insult_trade'::text, 'banter'::text, 'tease'::text, 'callback_joke'::text, 'agreement_ritual'::text, 'disagreement_ritual'::text, 'compliment_exchange'::text]))),
 CONSTRAINT room_exchange_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT room_exchange_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
@@ -273,6 +278,7 @@ CREATE INDEX idx_presence_member_ts ON public.presence_fixes USING btree (circle
 CREATE INDEX idx_presence_stays_subject_ts ON public.presence_stays USING btree (subject_id, started_ts DESC);
 CREATE INDEX idx_presence_trips_subject_started ON public.presence_trips USING btree (subject_id, started_ts DESC);
 CREATE INDEX idx_reminders_due ON public.reminders USING btree (state, due_at);
+CREATE INDEX idx_rendered_claim_window ON public.rendered_claim USING btree (conversation_id, last_rendered_at DESC);
 CREATE INDEX idx_tag_trace_conversation_created ON public.tag_trace USING btree (conversation_id, created_at);
 CREATE INDEX idx_tool_call_log_conv_ts ON public.tool_call_log USING btree (conversation_id, created_at DESC);
 CREATE INDEX idx_turn_verdict_ungrounded ON public.turn_verdict USING btree (conversation_id, created_at) WHERE (grounded = false);
@@ -309,6 +315,7 @@ CREATE TABLE public.presence_places (
 CREATE TABLE public.presence_stays (
 CREATE TABLE public.presence_trips (
 CREATE TABLE public.reminders (
+CREATE TABLE public.rendered_claim (
 CREATE TABLE public.room_exchange (
 CREATE TABLE public.room_lexeme (
 CREATE TABLE public.room_portrait (
@@ -398,6 +405,7 @@ consolidator_name text NOT NULL,
 consumed_verdict_tag text,
 context text NOT NULL,
 context_sha256 text DEFAULT ''::text NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
@@ -510,11 +518,13 @@ is_driving integer,
 is_nora integer DEFAULT 0 NOT NULL,
 kind text DEFAULT 'reminder'::text NOT NULL,
 kind text NOT NULL,
+kind text NOT NULL,
 label text,
 last_adjudicated_at bigint,
 last_cluster_id integer DEFAULT 0 NOT NULL,
 last_fix_id integer DEFAULT 0 NOT NULL,
 last_message_id integer DEFAULT 0 NOT NULL,
+last_rendered_at bigint NOT NULL,
 last_seen timestamp with time zone DEFAULT now() NOT NULL,
 last_seen_at bigint NOT NULL,
 last_seen_at bigint NOT NULL,
@@ -522,6 +532,7 @@ last_seen_at bigint NOT NULL,
 last_seen_at bigint NOT NULL,
 last_seen_ts bigint NOT NULL
 last_seen_ts bigint NOT NULL,
+last_tag_id text NOT NULL,
 last_wake_revision_id uuid,
 lat double precision NOT NULL,
 lat double precision NOT NULL,
@@ -629,6 +640,7 @@ result_url text,
 retire_reason text,
 retired_at bigint,
 revisit_at bigint,
+row_key text NOT NULL,
 sample_count integer DEFAULT 0 NOT NULL,
 sample_count integer DEFAULT 0 NOT NULL,
 sample_count integer NOT NULL,
@@ -682,6 +694,7 @@ supersede_reason text,
 supersede_source text,
 superseded_at bigint,
 superseded_by uuid,
+surface text NOT NULL,
 surface_form text NOT NULL,
 synthesized_at bigint NOT NULL
 tag_id text NOT NULL,
@@ -732,4 +745,5 @@ workspace text NOT NULL,
 workspace text NOT NULL,
 workspace text NOT NULL,
 workspace text NOT NULL,
+workspace text,
 written_at bigint NOT NULL,

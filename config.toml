@@ -892,6 +892,7 @@ enabled = false
 # max_adjudications_per_tick = 10
 # max_room_facts = 8
 # max_sender_facts = 4
+# recognition_window_hours = 24
 # retention_days = 180
 
 [tools.mcp.pulse]

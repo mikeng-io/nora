@@ -961,3 +961,61 @@ async def test_the_sender_slice_asks_for_the_tagger():
 
     assert [c[1] for c in reader.sender_calls] == ["miles"]
     assert [f.id for f in ctx.facts.sender] == ["f2"]
+
+
+class _FakeLedger:
+    def __init__(self, *, raises: bool = False) -> None:
+        self.calls: list[tuple] = []
+        self._raises = raises
+
+    async def record(self, *, claims):
+        if self._raises:
+            raise RuntimeError("the ledger is down")
+        self.calls.append(claims)
+        return "ok"
+
+
+async def test_what_was_rendered_is_recorded_for_recognition():
+    """31 §3: step 3 says "a claim Nora just RENDERED", and nothing recorded
+    that. `TagTrace` keeps the turn's messages and transcript, not the rows
+    that went into the prefill — and recovering them by parsing the block back
+    out of a stored prefill would be interpreting twice."""
+    reader = _FakeFactReader([_fact()], subjects=("big walk",))
+    ledger = _FakeLedger()
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), facts=reader,
+        rendered=ledger, policy=_policy(),
+    )
+
+    await assembler.assemble(
+        request=_request(_msg_with_body("is big walk on?")),
+    )
+
+    assert len(ledger.calls) == 1
+    claim = ledger.calls[0][0]
+    assert claim.row_key == "f1"
+    assert claim.surface == "big walk"
+    assert claim.kind == "fact"
+    assert claim.last_tag_id == "tag-1"
+
+
+async def test_only_what_was_SHOWN_is_recorded():
+    """A fact read and then not rendered is not a claim she made. Recording it
+    would make "a claim Nora just rendered" mean "a claim Nora looked at", and
+    a member mentioning that subject would then be correcting something she
+    never said."""
+    reader = _FakeFactReader([_fact()], subjects=("big walk",))
+    ledger = _FakeLedger()
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), facts=reader,
+        rendered=ledger, policy=_policy(),
+    )
+
+    await assembler.assemble(
+        request=_request(_msg_with_body("what time is dinner")),
+    )
+
+    # The subject was not touched, so nothing rendered and nothing is recorded.
+    assert ledger.calls == [()]

@@ -1434,6 +1434,66 @@ IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(
 )
 
 
+# WHAT SHE RENDERED, and the only reason it exists is that step 3 of the
+# correction loop says "a claim Nora just RENDERED" and nothing recorded that
+# (`design/dreamer-agent-loop/31-recognition.md` §3, migration 0042).
+#
+# `TagTrace` keeps the turn's messages and transcript; it does not keep which
+# rows went into the prefill. Recovering them by parsing the `<facts>` block
+# back out of a stored prefill would be INTERPRETING TWICE — the spine's first
+# rule, and the way two copies drift. So the render site records it, because
+# that is the one place the row ids are already in hand.
+#
+# **This table is also the measurement.** Without it, "Nora rendered it" is an
+# assumption; with it, it is a read. That is the difference between a `measure`
+# step and a proxy.
+#
+# **UPSERT, one row per rendered claim per conversation.** Keyed on the tag too,
+# it would write a fresh row for the same claim on every consecutive tag — forty
+# rows for one fact in an active conversation, read back with `DISTINCT ON` —
+# for provenance `tag_trace` already carries. `last_tag_id` says which turn last
+# put the row in scope and is deliberately NOT part of the key.
+#
+# **`row_key` is TEXT, not uuid.** A fact's is its uuid; a lexeme's is its
+# composite key, because `room_lexeme`'s primary key is three TEXT columns and
+# it has no surrogate id — deliberately, since the compound key is the fix for a
+# real overwrite bug. A `uuid` column here would have been unimplementable for
+# half the rows it is specified to hold.
+#
+# **A WORKING SET, not an audit trail.** Pruned on the recognition window; the
+# audit trail is the Langfuse trace and the `tag_trace` row.
+RENDERED_CLAIM = sa.Table(
+    "rendered_claim",
+    METADATA,
+    sa.Column("conversation_id", sa.Text, primary_key=True),
+    sa.Column("kind", sa.Text, primary_key=True),
+    sa.Column("row_key", sa.Text, primary_key=True),
+    # What a later message is matched against — `fact.subject_id` for a fact,
+    # `room_lexeme.canonical_form` for a lexeme.
+    sa.Column("surface", sa.Text, nullable=False),
+    # Facts only. A lexeme is conversation-keyed and has no workspace, and a
+    # sentinel would be a workspace that compares equal to nothing.
+    sa.Column("workspace", sa.Text),
+    sa.Column("last_tag_id", sa.Text, nullable=False),
+    sa.Column("last_rendered_at", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        "kind in ('fact', 'lexeme')", name="rendered_claim_kind_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(surface)) > 0",
+        name="rendered_claim_surface_is_named_check",
+    ),
+)
+
+#: The one read this table exists to serve: everything this conversation
+#: rendered inside the window, newest first.
+IDX_RENDERED_CLAIM_WINDOW = sa.Index(
+    "idx_rendered_claim_window",
+    RENDERED_CLAIM.c.conversation_id,
+    sa.text("last_rendered_at DESC"),
+)
+
+
 # WHO said it — `21-substrate-contract.md` §7's whole answer (migration 0040).
 # `established_by` records the RUN that produced a fact; nothing anywhere
 # recorded the HUMAN who claimed it, and for a tier whose job is belief that is

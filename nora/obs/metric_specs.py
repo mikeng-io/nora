@@ -1061,6 +1061,32 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # messages have been PRUNED, which is «the evidence is gone» and not
     # «nobody said it». The middle and the last are the pair that must never
     # collapse: one is a fact about the room and the other is a wiring gap.
+    # The render ledger (31 §3), and R-27 on both verbs. `record` failing is
+    # not a lost reply — it is counted and the reply goes out — but the NEXT
+    # turn's targeting then has to report `unavailable` rather than an empty
+    # set, and a silent failure here would make that impossible to explain.
+    #
+    # `nothing_found` on the read is «she rendered nothing about this» and
+    # licenses ruling a dispute out; `unavailable` is «I could not check what
+    # she rendered» and licenses nothing. Collapsing them would make
+    # recognition report that nobody is talking about anything she holds
+    # whenever the database hiccuped.
+    _CounterSpec(
+        "nora_rendered_claim_total",
+        "The render ledger by verb and outcome. verb=record: ok (rows "
+        "written), nothing_found (the turn rendered nothing), unavailable (the "
+        "write failed, so the next turn cannot tell an empty ledger from an "
+        "unwritten one). verb=read: the same three, where nothing_found means "
+        "she rendered nothing about this conversation in the window.",
+        ("verb", "status"),
+    ),
+    _CounterSpec(
+        "nora_rendered_claim_pruned_total",
+        "Ledger rows dropped past the recognition window. This is a working "
+        "set, not an audit trail — the audit trail is the Langfuse trace and "
+        "the tag_trace row — and a working set that is never pruned is a "
+        "table nobody decided the size of.",
+    ),
     _CounterSpec(
         "nora_fact_asserter_total",
         "Facts by the outcome of the message -> sender -> person join that "

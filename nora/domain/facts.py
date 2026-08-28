@@ -633,6 +633,31 @@ class Fact:
         return self.superseded_at is None
 
 
+#: What a rendered claim is ABOUT. `fact` today; `lexeme` is in the CHECK so the
+#: language tier joins without a migration, and 31 §3.0 records what it needs
+#: first — `RoomLexeme` reaches the render site carrying no key at all.
+ClaimKind = Literal["fact", "lexeme"]
+CLAIM_KINDS: frozenset[str] = frozenset(get_args(ClaimKind))
+
+
+@dataclass(frozen=True)
+class RenderedClaim:
+    """One row Nora actually put in front of the model, on one turn.
+
+    A DOMAIN type rather than the store's, because the render site constructs
+    it and `nora.engagement` may not import `nora.infra` — and because it is a
+    value with no framework in it, which is this package's whole rule.
+    """
+
+    conversation_id: str
+    kind: ClaimKind
+    row_key: str
+    surface: str
+    workspace: str | None
+    last_tag_id: str
+    last_rendered_at: int
+
+
 @dataclass(frozen=True)
 class FactExtent:
     """What the `<facts>` block did NOT show, in counts (19 §6, 23 §3).

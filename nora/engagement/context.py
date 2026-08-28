@@ -27,6 +27,7 @@ from nora.domain.facts import (
     Fact,
     FactExtent,
     FactsView,
+    RenderedClaim,
     mentions,
     normalise_name,
 )
@@ -53,6 +54,15 @@ from nora.domain.ports import (
 from nora.domain.standing import Standing
 from nora.persons import Persons
 from nora.policy import Policy
+
+
+class RenderedClaimWriter(Protocol):
+    """`SqlRenderedClaimStore.record`, seen from here — structural, so
+    `nora.engagement` does not import `nora.infra`. The same seam the fact
+    adaptor's three store protocols use."""
+
+    async def record(self, *, claims: tuple[RenderedClaim, ...]) -> str: ...
+
 
 log = logging.getLogger("nora.engagement.context")
 
@@ -142,6 +152,11 @@ class TranscriptInjection:
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
         facts: FactReader | None = None,
+        # The render ledger (31 §3). Optional and defaulted for the same
+        # reason every block reader here is: a deployment without the
+        # fact tier has nothing to record, and a required collaborator
+        # would make every existing construction site a change.
+        rendered: RenderedClaimWriter | None = None,
         # 19 §6's two caps, with its reasoning. ROOM is the working set —
         # more than eight and the block competes with the transcript it sits
         # beside. SENDER is the narrowest slice and the most often empty, and
@@ -187,6 +202,7 @@ class TranscriptInjection:
         # `Conversation.workspace` must not each carry their own idea of what a
         # room's workspace is.
         self._facts_reader = facts
+        self._rendered = rendered
         self._max_room_facts = max_room_facts
         self._max_sender_facts = max_sender_facts
         # Standing (design/dreamer-agent-loop/26-standing.md). `None` while
@@ -293,7 +309,9 @@ class TranscriptInjection:
         # path whose latency histogram starts at 0.1s. That is a PRIOR and not
         # a measurement, which is why it is measured on the real endpoint after
         # this lands rather than asserted here.
-        facts = await self._facts(msg, transcript=transcript, tagger=ref)
+        facts = await self._facts(
+            msg, transcript=transcript, tagger=ref, tag_id=request.tag_id,
+        )
 
         return TagContext(
             tag_id=request.tag_id,
@@ -507,6 +525,7 @@ class TranscriptInjection:
         self, msg: NormalizedMessage, *,
         transcript: tuple[TranscriptRow, ...],
         tagger: PersonRef | None,
+        tag_id: str,
     ) -> FactsView:
         """The `<facts>` block's three slices (19 §6).
 
@@ -561,11 +580,50 @@ class TranscriptInjection:
             return FactsView()
 
         shown = {f.id for f in room} | {f.id for f in sender}
+        await self._record_rendered(
+            room + sender, workspace=workspace, msg=msg, tag_id=tag_id,
+        )
         return FactsView(
             room=room, sender=sender,
             extent=FactExtent(standing=standing, shown=len(shown)),
             asserters=await self._asserters_for(reader, room + sender),
         )
+
+    async def _record_rendered(
+        self, facts: tuple[Fact, ...], *, workspace: str,
+        msg: NormalizedMessage, tag_id: str,
+    ) -> None:
+        """The render ledger (31 §3) — the precondition recognition's own
+        wording presupposes and nothing had.
+
+        **AWAITED, not spawned**, unlike the `tag_trace` write. A fast
+        follow-up correction landing against a ledger this turn has not written
+        yet targets an empty set and reports «nothing matched», when the truth
+        is «I could not check» — R-27's exact inversion, on the path the
+        correction loop exists for.
+
+        **Never raises**, and a failure does not cost the reply: it is counted,
+        and the consequence lands on the NEXT turn's targeting, which then has
+        to say `unavailable` rather than pretend the ledger was empty.
+
+        Only what was actually shown. A fact read and then not rendered is not
+        a claim she made, and recording it would make «a claim Nora just
+        rendered» mean «a claim Nora looked at».
+        """
+        if self._rendered is None:
+            return
+        await self._rendered.record(claims=tuple(
+            RenderedClaim(
+                conversation_id=msg.conversation_id,
+                kind="fact",
+                row_key=f.id,
+                surface=f.subject_id,
+                workspace=workspace,
+                last_tag_id=tag_id,
+                last_rendered_at=int(time.time() * 1000),
+            )
+            for f in facts
+        ))
 
     async def _subjects_in_play(
         self, reader: FactReader, *, workspace: str,
