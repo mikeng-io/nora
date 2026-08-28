@@ -182,73 +182,52 @@ def _adaptors():
                 yield module, cls
 
 
-def _parsers_called_by(
-    fn: Callable[..., object], module, owner: type | None = None,
-) -> list[Callable[..., object]]:
-    """The module-level functions `fn`'s body calls, in source order.
+def _read_sites(cls, module) -> list:
+    """`accept` and every function it calls — the adaptor's whole READ SURFACE.
 
-    This is what binds the checked parser to the adaptor that USES it. Without
-    it the parity check compares two artefacts and asserts nothing about
-    whether production reads either: point `accept` at a `_parse_claim_v2` and
-    leave `_parse_claim` behind, and the old check stays green while measuring
-    a function nothing calls — the exact failure this file exists to catch, one
-    level up.
+    **Three parse shapes exist in this repo and the test has to cover all
+    three.** A module-level function (`_parse_claim`); a method taking one item
+    (`NoteRevisitor._accept_one`); and a loop reading `item[...]` INLINE in
+    `accept` itself, with more keys read in a second method it calls — which is
+    what `NoteCuratorAdaptor` does.
+
+    The first version bound only to a callable whose first argument was named
+    `item`. That covered two shapes and reported the third as UNCOVERED: a red
+    test for a real gap, except the gap was in this file rather than in the
+    curator. So the unit is the ADAPTOR, not the parser — whatever `accept`
+    reads, by whatever route, is what the objective must declare — and
+    following calls one level deep catches every shape without needing to know
+    which one an adaptor chose.
     """
-    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
-    out = []
+    sites = [cls.accept]
+    tree = ast.parse(textwrap.dedent(inspect.getsource(cls.accept)))
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        # `_parse_claim(item)` — a module-level function.
+        target = None
         if isinstance(node.func, ast.Name):
             target = getattr(module, node.func.id, None)
-        # `self._accept_one(item, ...)` — a method. The note revisitor parses
-        # this way, and a walk that only saw module-level names reported it as
-        # UNCOVERED rather than checking it, which is the same silent gap in
-        # the opposite direction.
         elif (
             isinstance(node.func, ast.Attribute)
             and isinstance(node.func.value, ast.Name)
             and node.func.value.id == "self"
-            and owner is not None
         ):
-            target = getattr(owner, node.func.attr, None)
-        else:
-            continue
-        if _is_item_parser(target, module) and target not in out:
-            out.append(target)
-    return out
-
-
-def _is_item_parser(target: object, module) -> bool:
-    """A function in THIS module whose first real argument is one envelope
-    item.
-
-    `dataclasses.replace` and friends are module-level names too; the
-    discriminator is the SHAPE the runtime hands an adaptor. `accept` receives
-    `Sequence[Mapping[str, object]]`, and a parser takes one of those first —
-    by convention named `item`, which is also the name `_keys_read_by` walks
-    for, so anything else could not be checked even if it were included.
-    """
-    if not inspect.isfunction(target):
-        return False
-    if target.__module__ != module.__name__:
-        return False
-    params = [p for p in inspect.signature(target).parameters if p != "self"]
-    return bool(params) and params[0] == "item"
+            target = getattr(cls, node.func.attr, None)
+        if (
+            inspect.isfunction(target)
+            and target.__module__ == module.__name__
+            and target not in sites
+        ):
+            sites.append(target)
+    return sites
 
 
 def _cases():
     for module, cls in _adaptors():
-        parsers = _parsers_called_by(cls.accept, module, owner=cls)
-        # An adaptor whose `accept` calls no module-level function parses
-        # inline; there is nothing to bind to and the pair is reported as
-        # uncovered rather than silently skipped.
-        for parser in parsers:
-            yield pytest.param(
-                cls.objective, cls.envelope_key, parser,
-                id=f"{cls.__name__}:{parser.__name__}",
-            )
+        yield pytest.param(
+            cls.objective, cls.envelope_key, _read_sites(cls, module),
+            id=cls.__name__,
+        )
 
 
 CASES = list(_cases())
@@ -259,10 +238,9 @@ def test_the_case_list_is_derived_and_not_empty():
     silently-shrinking `CASES` makes every parametrized test below vacuous, and
     a hand-written list was exactly the hand-copied vocabulary this file's own
     docstring outlaws."""
-    assert len(CASES) >= 3
+    assert len(CASES) >= 4
     assert {c.id for c in CASES} >= {
-        "FactCandidateAdaptor:_parse_claim",
-        "FactAdaptor:_parse_verdict",
+        "FactCandidateAdaptor", "FactAdaptor", "NoteCuratorAdaptor",
     }
 
 
@@ -274,23 +252,25 @@ def test_every_shipped_adaptor_is_covered():
     for _module, cls in _adaptors():
         assert cls.objective in covered, (
             f"{cls.__name__} declares objective={cls.objective!r} and no case "
-            f"covers it — its `accept` calls no module-level parser this test "
-            f"can bind to"
+            f"covers it"
         )
         assert (OBJECTIVES / f"{cls.objective}.md").is_file()
 
 
-@pytest.mark.parametrize(("objective", "envelope_key", "parser"), CASES)
+@pytest.mark.parametrize(("objective", "envelope_key", "sites"), CASES)
 def test_the_objective_declares_exactly_the_fields_the_parser_reads(
-    objective, envelope_key, parser,
+    objective, envelope_key, sites,
 ):
     declared: set[str] = set()
     for item in _return_examples(objective, envelope_key):
         declared |= set(item)
-    read = _keys_read_by(parser)
+    read: set[str] = set()
+    for site in sites:
+        read |= _keys_read_by(site)
 
     assert declared == read, (
-        f"{objective}.md and {parser.__name__} disagree.\n"
+        f"{objective}.md and "
+        f"{', '.join(site.__name__ for site in sites)} disagree.\n"
         f"  asked for but never read: {sorted(declared - read)}\n"
         f"  read but never asked for: {sorted(read - declared)}\n"
         "A field on one side only is a tier that parses cleanly and produces "

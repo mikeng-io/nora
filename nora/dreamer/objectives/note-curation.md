@@ -72,7 +72,17 @@ that group — two separate notes is the recoverable answer.
 
 ## Answering
 
-Return one entry per note you were shown, each with:
+Return **one JSON object** with a single key `verdicts`, holding one entry per note you
+were shown:
+
+```json
+{"verdicts": [{"note_id": "<the number in the note's id attribute>", "verdict": "closed|open|moot", "why": "<one short sentence>", "merged_body": "<only for a merge group's survivor>"}]}
+```
+
+Nothing outside that object — no prose before it, no explanation after it. An answer that is
+not exactly this shape is not read at all, and the notes are left alone.
+
+Each entry carries:
 
 - `note_id` — exactly as given to you.
 - `verdict` — `closed`, `open`, or `moot`.
@@ -83,4 +93,5 @@ Return one entry per note you were shown, each with:
 For a merge you are also given `merge_group`, and you return `merged_body` for it — the one
 body that keeps what all of them knew.
 
-If you are shown nothing, return nothing. That is a real answer and it is the common one.
+If you are shown nothing, respond with exactly `{"verdicts": []}`. That is a real answer
+and it is the common one.
