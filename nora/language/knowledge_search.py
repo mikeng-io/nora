@@ -55,6 +55,21 @@ RRF_K = 60
 TOP_K_PER_CHANNEL = 20
 
 #: `23` §9. A maximum cosine DISTANCE, named for the direction it works in.
+#:
+#: **Validated against the real endpoint, 2026-08-28**, through this repo's own
+#: `OllamaEmbedder` rather than a stand-in — bge-m3 at 1024 dimensions on the
+#: Ollama running on this host, which is also where the width in
+#: `EMBEDDING_DIMENSIONS` was measured:
+#:
+#:   query `邊個做嘅大步行`
+#:     0.3453  big walk │ made_by │ House House
+#:     0.6366  the wedding │ of │ Grant
+#:
+#: 0.5 admits the right triple and excludes the unrelated one, with room on
+#: both sides. And it is the SAME query the lexical channel scores 0.250 on —
+#: below its own threshold — so the two channels compose exactly as `23` §6
+#: argues: no trigram scheme reaches a paraphrased cross-lingual question, and
+#: the dense channel does.
 DENSE_DISTANCE_FLOOR = 0.5
 
 #: `23` §9, and measured in `SqlEmbeddingStore.lexical`'s own docstring.

@@ -75,6 +75,14 @@ _MAY_DIFFER = {
     "obs.tracing.endpoint", "obs.tracing.exporter", "obs.tracing.headers_env",
     "evals.langfuse.host", "evals.langfuse.headers_env",
     "presence.refresh_url", "shortener.base_url", "notes.curator_enabled",
+    # `facts.embedding_url` is a HOST address like its neighbours above — this
+    # deployment reaches an Ollama on its own host gateway, and a fresh one
+    # has no reason to inherit that. Empty is the template's value on purpose:
+    # it is a real deployment (the tier runs on the lexical channel alone,
+    # counted as not_configured, never silently), so shipping empty leaves a
+    # new install working and less capable rather than pointing at a service
+    # it does not have.
+    "facts.embedding_url",
     # image_gen.enabled is the LIVE operator decision (2026-08-26: enabled
     # after live smoke on the subscription lane); the template stays the
     # ships-OFF default (DEC-43 posture) so a fresh deployment is inert by
