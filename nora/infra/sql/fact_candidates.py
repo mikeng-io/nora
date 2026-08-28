@@ -62,7 +62,7 @@ thrown away at the one place it is free to keep.)
 **`observed_in` holds the MESSAGE the claim was seen in, not the key** (flagged
 2026-08-21, and the one place this store departs from the instruction it was
 built to). §5's Phase A is "read the window, emit candidate triples **with the
-turn each came from**", and `CandidateClaim.message_id` is that turn; each
+turn each came from**", and `CandidateClaim.message_ids` are those turns; each
 sighting merges its message id in, so the column accumulates the distinct turns
 a claim was asserted across and `occurrence_count` counts them. The
 alternative — taking it from `key` — holds only for a SCOPE-keyed sink: this
@@ -195,7 +195,7 @@ class SqlFactCandidateStore:
                 "first_seen_at": now_ms,
                 "last_seen_at": now_ms,
                 "occurrence_count": 1,
-                "observed_in": [str(claim.message_id)],
+                "observed_in": [str(i) for i in claim.message_ids],
                 "status": "pending",
                 "attempts": 0,
                 "established_by": p.established_by,

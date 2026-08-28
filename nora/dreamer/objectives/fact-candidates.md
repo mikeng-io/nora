@@ -1,7 +1,7 @@
 ---
 name: fact-candidates
 kind: objective
-version: 2
+version: 3
 applies_to: [fact_candidate_adaptor]
 description: >-
   Phase A of the fact tier. Read a batch of a room's messages and name the
@@ -54,13 +54,16 @@ Return JSON and nothing else — no prose before it, no explanation after it, no
   {"subject": "big walk",
    "predicate": "unlocked_by",
    "object": "the four coloured towers",
-   "message_id": 4812}
+   "message_ids": [4812]}
 ]}
 
 - `subject`, `predicate`, `object` — strings, the triple, in the room's own words.
-- `message_id` — the integer id of the message the claim was asserted in, exactly as it appears
-  in the batch you were given. Do not invent one, and do not use a message id that is not in
-  the batch.
+- `message_ids` — a list of the integer ids of the messages the claim was asserted in, exactly
+  as they appear in the batch you were given. Usually one. Give more than one only when the
+  claim genuinely needed several messages to be made — somebody starting a sentence and
+  finishing it, or answering a question with the thing that completes it. Do not invent an id,
+  and do not use an id that is not in the batch; a single id that is not in the batch discards
+  the whole claim.
 
 If nobody asserted a claim about the world in this batch, return `{"candidates": []}`. That is a
 complete and correct answer, and it will be the right one most of the time. An empty list costs

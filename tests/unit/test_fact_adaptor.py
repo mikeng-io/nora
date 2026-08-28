@@ -92,13 +92,13 @@ async def _standing_fact(
 
 async def _pending_candidate(
     candidates: InMemoryFactCandidateStore, *,
-    subject: str, predicate: str, obj: str, message_id: int = 1,
+    subject: str, predicate: str, obj: str, message_ids: tuple[int, ...] = (1,),
 ) -> str:
     ids = await candidates.propose(
         key=WS,
         proposals=(_proposal(CandidateClaim(
             subject=subject, predicate=predicate, object=obj,
-            message_id=message_id,
+            message_ids=message_ids,
         )),),
         now_ms=NOW - 1,
     )
@@ -132,7 +132,7 @@ def test_the_extractor_holds_no_tools_at_all():
 async def test_inputs_renders_every_row_including_one_with_no_body():
     """A media-only message has `body is None`, and the row is still rendered
     WITH ITS ID rather than skipped: `accept` validates a returned
-    `message_id` against the whole batch, so a row dropped from the render
+    every `message_ids` entry against the whole batch, so a row dropped from the render
     would make the set the model was shown smaller than the set `accept`
     accepts from it."""
     adaptor = FactCandidateAdaptor(
@@ -159,12 +159,94 @@ async def test_a_message_id_outside_the_batch_is_dropped():
 
     parsed = await adaptor.accept(key=SCOPE, items=(
         {"subject": "big walk", "predicate": "contains", "object": "a tower",
-         "message_id": 41},
+         "message_ids": [41]},
         {"subject": "big walk", "predicate": "costs", "object": "ten",
-         "message_id": 999},
+         "message_ids": [999]},
     ))
 
-    assert [c.message_id for c in parsed] == [41]  # type: ignore[attr-defined]
+    assert [c.message_ids for c in parsed] == [(41,)]  # type: ignore[attr-defined]
+
+
+async def test_a_claim_spanning_two_messages_keeps_both():
+    """D31 makes an episode a conversational CHUNK, so a claim can be asserted
+    across turns — somebody starting a sentence and finishing it. The singular
+    `message_id` could not say so: the extractor would have had to pick one and
+    the rest of the provenance would be dropped at the one point where it is
+    free (21 §7.2's join runs off exactly these ids)."""
+    store = InMemoryFactCandidateStore()
+    store.entities = [_entity("big walk")]
+    adaptor = FactCandidateAdaptor(candidates=store, workspace_for=lambda _: WS)
+    await adaptor.inputs(
+        key=SCOPE, batch=(_row(41, "big walk is"), _row(42, "unlocked by four")),
+    )
+
+    parsed = await adaptor.accept(key=SCOPE, items=(
+        {"subject": "big walk", "predicate": "unlocked_by",
+         "object": "four towers", "message_ids": [41, 42]},
+    ))
+    await adaptor.commit(
+        key=SCOPE, proposals=tuple(_proposal(p) for p in parsed), now_ms=NOW,
+    )
+
+    rows = await store.pending(workspace=WS, limit=10)
+    assert len(rows) == 1
+    assert sorted(rows[0].observed_in) == ["41", "42"]
+
+
+async def test_a_claim_with_one_invented_id_is_dropped_whole():
+    """Not trimmed to its good ids. A claim half-attributed to messages that
+    exist and half to messages that do not is fabricated provenance wearing a
+    partial answer's clothes, and a later reader cannot tell which half it is
+    holding. The sibling claim in the same batch survives, which is what makes
+    this a drop rather than a batch failure."""
+    adaptor = FactCandidateAdaptor(
+        candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
+    )
+    await adaptor.inputs(key=SCOPE, batch=(_row(41, "a"), _row(42, "b")))
+
+    parsed = await adaptor.accept(key=SCOPE, items=(
+        {"subject": "big walk", "predicate": "contains", "object": "a tower",
+         "message_ids": [41, 999]},
+        {"subject": "big walk", "predicate": "costs", "object": "ten",
+         "message_ids": [42]},
+    ))
+
+    assert [c.message_ids for c in parsed] == [(42,)]  # type: ignore[attr-defined]
+
+
+async def test_an_empty_message_ids_list_is_not_a_claim():
+    """A claim with no message behind it has no provenance, and `observed_in`
+    would be an empty array that reads as «seen nowhere» exactly like a row
+    nobody wrote. Refused in the domain type, dropped here."""
+    adaptor = FactCandidateAdaptor(
+        candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
+    )
+    await adaptor.inputs(key=SCOPE, batch=(_row(41, "a"),))
+
+    parsed = await adaptor.accept(key=SCOPE, items=(
+        {"subject": "big walk", "predicate": "contains", "object": "a tower",
+         "message_ids": []},
+    ))
+
+    assert parsed == ()
+
+
+async def test_a_boolean_message_id_is_refused_not_coerced():
+    """`bool` is an `int` in Python and `int(True)` is 1 — a real message id in
+    every conversation — so a model returning `[true]` would silently attribute
+    a claim to message 1. The batch check would not catch it: message 1 is
+    often IN the batch."""
+    adaptor = FactCandidateAdaptor(
+        candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
+    )
+    await adaptor.inputs(key=SCOPE, batch=(_row(1, "a"),))
+
+    parsed = await adaptor.accept(key=SCOPE, items=(
+        {"subject": "big walk", "predicate": "contains", "object": "a tower",
+         "message_ids": [True]},
+    ))
+
+    assert parsed == ()
 
 
 async def test_an_over_long_field_never_reaches_the_store():
@@ -178,7 +260,7 @@ async def test_an_over_long_field_never_reaches_the_store():
 
     parsed = await adaptor.accept(key=SCOPE, items=(
         {"subject": "x" * 5_000, "predicate": "contains", "object": "a tower",
-         "message_id": 41},
+         "message_ids": [41]},
     ))
 
     assert parsed == ()
@@ -194,7 +276,7 @@ async def test_the_extractor_writes_its_claims_through_the_candidate_sink():
     await adaptor.inputs(key=SCOPE, batch=(_row(41, "a claim"),))
     payloads = await adaptor.accept(key=SCOPE, items=(
         {"subject": "big walk", "predicate": "contains", "object": "a tower",
-         "message_id": 41},
+         "message_ids": [41]},
     ))
 
     written = await adaptor.commit(
@@ -222,7 +304,7 @@ async def test_candidates_are_filed_under_the_workspace_not_the_scope():
     await adaptor.inputs(key=SCOPE, batch=(_row(41, "a claim"),))
     payloads = await adaptor.accept(key=SCOPE, items=(
         {"subject": "big walk", "predicate": "contains", "object": "a tower",
-         "message_id": 41},
+         "message_ids": [41]},
     ))
 
     await adaptor.commit(
@@ -243,7 +325,7 @@ async def test_a_scope_with_no_workspace_writes_nothing_and_raises():
     adaptor = FactCandidateAdaptor(candidates=store, workspace_for=lambda _: None)
     payloads = await adaptor.accept(key=SCOPE, items=(
         {"subject": "big walk", "predicate": "contains", "object": "a tower",
-         "message_id": 41},
+         "message_ids": [41]},
     ))
 
     with pytest.raises(LookupError):
@@ -666,7 +748,7 @@ async def test_the_pending_read_is_capped_by_the_per_tick_budget():
     for n in range(5):
         await _pending_candidate(
             candidates, subject="big walk", predicate=f"p{n}", obj=f"o{n}",
-            message_id=n,
+            message_ids=(n,),
         )
     adaptor = FactAdaptor(
         facts=facts, candidates=candidates, max_adjudications_per_tick=2,

@@ -93,7 +93,7 @@ def _candidate(
     subject: str = "e1",
     predicate: str = "has",
     object: str = "v1",
-    message_id: int = 1,
+    message_ids: tuple[int, ...] = (1,),
     established_by: str = "run-1",
 ) -> Proposal:
     """A `Proposal` carrying a `CandidateClaim` — the NARROW write-side type.
@@ -102,7 +102,7 @@ def _candidate(
     to invent them (see `CandidateClaim`'s own docstring)."""
     return fact_candidate_proposal_factory(
         subject=subject, predicate=predicate, object=object,
-        message_id=message_id, established_by=established_by,
+        message_ids=message_ids, established_by=established_by,
     )
 
 
@@ -398,25 +398,53 @@ async def test_a_repeat_sighting_bumps_the_same_row_rather_than_writing_a_second
 async def test_a_repeat_sighting_merges_observed_in_without_duplicating(store):
     """`observed_in` is the SET of TURNS a claim was asserted in — §5's Phase
     A emits "candidate triples with the turn each came from", and
-    `CandidateClaim.message_id` is that turn. It accumulates across sightings
+    `CandidateClaim.message_ids` are those turns. It accumulates across sightings
     and never duplicates: re-reading the same window would otherwise grow the
     array without bound for a claim nobody repeated.
 
     Asserted BOTH ways on purpose. A store that appended blindly passes an
     accumulate-only check, and a store that overwrote passes a
     no-duplicates-only check; only doing both at once catches either."""
-    await store.propose(key=WS, proposals=(_candidate(message_id=101),), now_ms=NOW)
+    await store.propose(key=WS, proposals=(_candidate(message_ids=(101,)),), now_ms=NOW)
 
     await store.propose(
-        key=WS, proposals=(_candidate(message_id=101),), now_ms=NOW + 1,
+        key=WS, proposals=(_candidate(message_ids=(101,)),), now_ms=NOW + 1,
     )
     await store.propose(
-        key=WS, proposals=(_candidate(message_id=102),), now_ms=NOW + 2,
+        key=WS, proposals=(_candidate(message_ids=(102,)),), now_ms=NOW + 2,
     )
 
     rows = await store.pending(workspace=WS, limit=10)
     assert sorted(rows[0].observed_in) == ["101", "102"]
     assert rows[0].occurrence_count == 3
+
+
+async def test_one_sighting_across_two_messages_records_both(world):
+    """D31 makes an episode a conversational CHUNK, so ONE sighting of a claim
+    can carry several turns — distinct from the repeat-sighting case above,
+    which merges across CALLS. A store that took only the first id would pass
+    every test in this file that existed before plural landed, because each of
+    them proposes one id at a time.
+
+    Both implementations, because the fake's list append and the SQL array
+    literal are two different pieces of code that must agree — this is exactly
+    where a double that quietly differs from production hides a defect."""
+    store = world.store
+    # Seen ONCE, so without a resolvable subject §5's second drop removes the
+    # row and this test would assert against an empty read — passing for a
+    # reason that has nothing to do with plural ids.
+    await world.seed_entity(canonical_name="e1")
+    await store.propose(
+        key=WS, proposals=(_candidate(message_ids=(101, 102, 103)),), now_ms=NOW,
+    )
+
+    rows = await store.pending(workspace=WS, limit=10)
+
+    assert sorted(rows[0].observed_in) == ["101", "102", "103"]
+    # The positive control: occurrence is a count of SIGHTINGS, not of
+    # messages. Three ids in one call is one sighting, and a store that
+    # conflated them would read as corroboration nobody gave.
+    assert rows[0].occurrence_count == 1
 
 
 async def test_the_proposals_provenance_lands_on_the_row(store):
@@ -429,7 +457,7 @@ async def test_the_proposals_provenance_lands_on_the_row(store):
     different value for each of the three on every call, so a store that
     swapped two of them would still be caught."""
     p = fact_candidate_proposal_factory(
-        subject="e1", predicate="has", object="v1", message_id=1,
+        subject="e1", predicate="has", object="v1", message_ids=(1,),
     )
 
     ids = await store.propose(key=WS, proposals=(p,), now_ms=NOW)
@@ -447,10 +475,10 @@ async def test_a_repeat_sighting_does_not_rewrite_the_establishing_run(store):
     would leave a row whose digest names an instruction that never produced
     it — worse than no digest, because it reads as a real one."""
     first = fact_candidate_proposal_factory(
-        subject="e1", predicate="has", object="v1", message_id=1,
+        subject="e1", predicate="has", object="v1", message_ids=(1,),
     )
     later = fact_candidate_proposal_factory(
-        subject="e1", predicate="has", object="v1", message_id=2,
+        subject="e1", predicate="has", object="v1", message_ids=(2,),
     )
     assert later.instruction_sha256 != first.instruction_sha256, (
         "the factory must vary provenance per call or this test measures nothing"

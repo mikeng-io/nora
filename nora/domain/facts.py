@@ -156,7 +156,7 @@ class FactEntity:
 @dataclass(frozen=True)
 class CandidateClaim:
     """What the extraction adaptor produces: one claim somebody asserted, and
-    the message it was asserted in.
+    the messages it was asserted in.
 
     **NOT a `FactCandidate`** — that is the ROW, with an id, timestamps, an
     occurrence count and a status, none of which an adaptor can know. This is
@@ -176,7 +176,22 @@ class CandidateClaim:
     subject: str
     predicate: str
     object: str
-    message_id: int
+    # PLURAL. D31 makes an episode a conversational CHUNK, so a claim can be
+    # asserted across more than one message and the singular form could not
+    # say so — the extractor would have to pick one and the rest of the
+    # provenance would be silently dropped at the point where it is free.
+    # Non-empty: a claim with no message behind it has no provenance at all,
+    # and `observed_in` would be an empty array that reads as "seen nowhere"
+    # exactly like a row nobody wrote.
+    message_ids: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        if not self.message_ids:
+            raise ValueError(
+                "a CandidateClaim needs at least one message_id: a claim "
+                "nothing asserted has no provenance, and an empty "
+                "`observed_in` is indistinguishable from a row nobody wrote"
+            )
 
 
 @dataclass(frozen=True)

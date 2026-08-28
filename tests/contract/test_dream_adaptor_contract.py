@@ -211,9 +211,9 @@ def _build_fact_candidates() -> tuple[object, object]:
 def _fact_candidate_items() -> tuple[Mapping[str, object], ...]:
     return (
         {"subject": "big walk", "predicate": "unlocked_by",
-         "object": "the four coloured towers", "message_id": 41},
+         "object": "the four coloured towers", "message_ids": [41]},
         {"subject": "big walk", "predicate": "contains",
-         "object": "a black tower", "message_id": 42},
+         "object": "a black tower", "message_ids": [42]},
     )
 
 
@@ -222,7 +222,7 @@ def _fact_candidate_malformed_item() -> Mapping[str, object]:
     # triple is half of `fact_candidate_triple_key`, so a coerced `"7"`/`"None"`
     # would be a durable key nobody can ever match back — see
     # `nora.language.fact_adaptor._text`.
-    return {"subject": 7, "predicate": None, "object": "x", "message_id": "later"}
+    return {"subject": 7, "predicate": None, "object": "x", "message_ids": "later"}
 
 
 def _build_fact_adjudication() -> tuple[object, object]:

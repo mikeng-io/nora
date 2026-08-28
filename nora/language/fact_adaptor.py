@@ -212,6 +212,11 @@ class FactCandidateAdaptor:
         when it says "the integer id of the message the claim was asserted
         in, exactly as it appears in the batch you were given".
 
+        The claim's attribution is PLURAL (`CandidateClaim.message_ids`)
+        because D31 makes an episode a conversational chunk, so a claim can
+        span turns. This render is unchanged by that: the model is still shown
+        one line per message and still copies ids off it.
+
         `TranscriptRow.body` is `str | None` — a media-only message has no
         text at all — so it is rendered as an empty body rather than assumed
         to be a string; an `inputs` that assumed one would take the tick down
@@ -247,12 +252,14 @@ class FactCandidateAdaptor:
 
         - **Length caps** (see `_MAX_SUBJECT_CHARS` and friends), so an
           unbounded model-authored string never reaches a durable column.
-        - **`message_id` must be IN `batch`.** The objective tells the model
-          "do not invent one, and do not use a message id that is not in the
-          batch"; an invented id points a later reader at a message that does
-          not exist, which is fabricated provenance — worse than a missing
-          entry, and the same drop `LexemeObserver._extract` makes for the
-          same reason. `accept` has no `batch` parameter, so the set of ids
+        - **EVERY `message_ids` entry must be IN `batch`.** The objective
+          tells the model "do not invent one, and do not use a message id that
+          is not in the batch"; an invented id points a later reader at a
+          message that does not exist, which is fabricated provenance — worse
+          than a missing entry, and the same drop `LexemeObserver._extract`
+          makes for the same reason. A claim with one bad id is dropped whole
+          rather than trimmed to its good ones.
+          `accept` has no `batch` parameter, so the set of ids
           this run showed is remembered by `inputs` (see `_message_ids`).
           When `inputs` has not run for this key — nothing in production, and
           the shared contract suite calling `accept` on its own — the check
@@ -266,10 +273,16 @@ class FactCandidateAdaptor:
             claim = _parse_claim(item)
             if claim is None:
                 continue
-            if seen is not None and claim.message_id not in seen:
+            if seen is not None and not set(claim.message_ids) <= seen:
+                # The WHOLE claim goes, not the offending ids: a claim
+                # half-attributed to messages that exist and half to messages
+                # that do not is fabricated provenance wearing a partial
+                # answer's clothes, and a later reader cannot tell which half
+                # it is holding.
                 log.warning(
-                    "fact candidate dropped: message_id %d is not in the batch "
-                    "(scope=%s)", claim.message_id, key,
+                    "fact candidate dropped: message_ids %s are not all in "
+                    "the batch (scope=%s)",
+                    sorted(set(claim.message_ids) - seen), key,
                 )
                 continue
             parsed.append(claim)
@@ -335,13 +348,26 @@ def _parse_claim(item: Mapping[str, object]) -> CandidateClaim | None:
     obj = _text(item.get("object"), limit=_MAX_OBJECT_CHARS)
     if subject is None or predicate is None or obj is None:
         return None
-    try:
-        message_id = int(item["message_id"])  # type: ignore[call-overload]
-    except (KeyError, TypeError, ValueError):
+    raw = item.get("message_ids")
+    if not isinstance(raw, list) or not raw:
         return None
-    return CandidateClaim(
-        subject=subject, predicate=predicate, object=obj, message_id=message_id,
-    )
+    try:
+        # `bool` is an `int` in Python and `int(True)` is 1, so a model
+        # returning `[true]` would otherwise mint message 1 — a real message
+        # in every conversation. Refused rather than coerced.
+        ids = tuple(
+            int(v) for v in raw if not isinstance(v, bool)
+        )
+    except (TypeError, ValueError):
+        return None
+    if len(ids) != len(raw):
+        return None
+    try:
+        return CandidateClaim(
+            subject=subject, predicate=predicate, object=obj, message_ids=ids,
+        )
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------------------
