@@ -575,7 +575,7 @@ class SqlFactCandidateStore:
             )
             .exists()
         )
-        # `nora_fact_entity_unresolved_total`'s FIRST call site. It has been
+        # `nora_fact_entity_unresolved`'s FIRST call site. It has been
         # declared with none since the tier shipped, which renders as a series
         # that is genuinely always zero — and it is the tier's ONLY instrument
         # for the entity problem, so the one thing that could observe

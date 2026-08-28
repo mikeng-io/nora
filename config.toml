@@ -908,7 +908,11 @@ enabled = false
 # recognition_window_hours = 24     # how far back a correction may reach
 # dispute_classify_timeout_seconds = 8.0   # ON THE REPLY PATH — see above
 # retention_days = 180              # how long a settled candidate is kept
-# veto_file = ""                    # operator-owned "not a thing" list (21 §10)
+# veto_file = "/app/config/veto.txt"  # operator-owned "not a thing" list (21 §10).
+#                                   # A path that is NOT THERE refuses to start —
+#                                   # a mount that failed to attach must not read as
+#                                   # "nothing vetoed". Leave the key out entirely,
+#                                   # or set it to "", for no list at all.
 # max_term_chars = 200              # operating cap, enforced at every write
 # max_predicate_chars = 100         # operating cap, enforced at every write
 

@@ -15,6 +15,10 @@ that readable in production are asserted too.
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
+
 import pytest
 import sqlalchemy as sa
 
@@ -429,3 +433,104 @@ async def test_promotion_does_not_reach_a_sibling_workspace(store):
 
     assert result.entities_created == 0
     assert result.below_degree == 1
+
+
+async def _pending_candidate(engine, *, subject: str, predicate: str,
+                             workspace: str = WS) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.text(
+                "insert into fact_candidate "
+                "(id, workspace, subject_id, predicate, object, status, "
+                " occurrence_count, first_seen_at, last_seen_at, observed_in, "
+                " instruction_sha256, model, established_by) values "
+                "(gen_random_uuid(), :ws, :s, :p, 'v', 'pending', 1, :t, :t, "
+                " '{}'::text[], :sha, 'm', 'run-1')"
+            ),
+            {"ws": workspace, "s": subject, "p": predicate, "t": NOW,
+             "sha": "a" * 64},
+        )
+
+
+async def test_unresolved_names_are_ordered_rather_than_whatever_the_plan_gave(
+    store,
+):
+    """**This had no ORDER BY at all**, which is worse than the ties elsewhere
+    in the tier rather than better: `SELECT DISTINCT` returns rows in whatever
+    order the hash aggregate produces, and that shifts with statistics and
+    with parallelism. `[:limit]` over it chose pass 6's per-tick
+    entity-resolution budget arbitrarily — which names got adjudicated varied
+    run to run, and a name past the limit could be starved indefinitely.
+
+    Asserted with a limit BELOW the population, because that is the case the
+    defect bites in: with `limit >= n` every ordering returns the same set and
+    the test would pass against an unordered query.
+
+    **This test alone cannot catch the defect, and that is measured rather
+    than assumed.** Removing the `ORDER BY` leaves it GREEN: at this size
+    Postgres plans the `DISTINCT` as a sort rather than a hash aggregate, so
+    the rows come back ordered anyway. What it establishes is the positive
+    half — the order is the right one and the limit is applied after the dedup.
+    The negative half is `test_the_unresolved_read_declares_its_order_in_sql`
+    below, and the two together are the check; either alone is a claim.
+    """
+    _store, engine, _metrics = store
+    for subject in ("delta", "alpha", "charlie", "bravo"):
+        await _pending_candidate(engine, subject=subject, predicate="p")
+
+    first = await _store.unresolved_names(workspace=WS, limit=2)
+    again = await _store.unresolved_names(workspace=WS, limit=2)
+
+    assert first == ("alpha", "bravo"), first
+    assert again == first, "two reads of an unchanged table must agree"
+
+
+async def test_the_unresolved_read_still_finds_everything_when_unlimited(store):
+    """The positive control: an ordering that dropped rows, or a limit applied
+    before the dedup, would satisfy the test above while making pass 6 blind
+    to most of the queue."""
+    _store, engine, _metrics = store
+    for subject in ("delta", "alpha", "charlie", "bravo"):
+        await _pending_candidate(engine, subject=subject, predicate="p")
+
+    assert set(await _store.unresolved_names(workspace=WS, limit=10)) == {
+        "alpha", "bravo", "charlie", "delta",
+    }
+
+
+def test_the_unresolved_read_declares_its_order_in_sql():
+    """**The half a behavioural test cannot carry.**
+
+    "Postgres MAY return any order among equals" is a statement about what the
+    planner is permitted to do, not about what it does today — so no execution
+    can falsify its absence: removing the `ORDER BY` and observing sorted
+    output proves only that this size and this statistics snapshot happened to
+    plan a sort. CLAUDE.md's rule is to state what a positive result would look
+    like before concluding from a null one, and here there is no positive
+    result available at all.
+
+    So the ordering clause is asserted STRUCTURALLY, in the one place that can
+    see it. Reading the source rather than the plan is deliberate: `EXPLAIN`
+    would tell us what this planner chose, which is the thing that is allowed
+    to change.
+    """
+    # THE DOCSTRING IS STRIPPED FIRST, and the first version of this test did
+    # not do it — so it passed with the clause deleted, because the docstring
+    # explaining the fix contains the words `ORDER BY`. A structural check
+    # that reads prose is the same defect one layer up: an instrument that
+    # cannot fail. Found by running the mutation rather than by reading it.
+    fn = SqlEntityStore.unresolved_names
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn))).body[0]
+    if (
+        tree.body
+        and isinstance(tree.body[0], ast.Expr)
+        and isinstance(tree.body[0].value, ast.Constant)
+    ):
+        del tree.body[0]
+    source = ast.unparse(tree)
+
+    assert "order by" in source.lower(), (
+        "unresolved_names slices a LIMIT off this query, so an unordered "
+        "SELECT DISTINCT makes pass 6's per-tick budget arbitrary and can "
+        "starve a name indefinitely"
+    )

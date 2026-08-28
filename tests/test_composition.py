@@ -1124,3 +1124,34 @@ async def test_the_curator_reads_the_day_from_the_operators_timezone(cfg):
         "the configured zone is being ignored"
     )
     assert earliest > latest, "Kiritimati is ahead of Niue, always"
+
+
+async def test_a_missing_veto_file_refuses_to_start_readably(cfg, tmp_path):
+    """**A refusal the operator can read**, not a traceback.
+
+    `load_veto_list` refuses a configured-but-missing path on purpose — a
+    mount that failed to attach must not read as "nothing vetoed". But the
+    call was inline and unwrapped, so `FileNotFoundError` propagated out of
+    `build_dependencies` through `build_app` to `asyncio.run`, and
+    `__main__` catches `StartupError` only. The operator got a Python
+    traceback.
+
+    Every neighbouring step in this function converts, and the `[facts]` cap
+    check's own comment names a raw exception escaping from here as "the one
+    boot failure in this function with no operator-readable message". This
+    was that exception.
+
+    The message text is asserted too, not merely the type: the whole value of
+    the refusal is that it distinguishes «no list configured» from «the list
+    you configured is not there», and a `StartupError` that lost that
+    sentence would be a readable message saying nothing.
+    """
+    missing = tmp_path / "not-there" / "veto.txt"
+
+    with pytest.raises(StartupError, match="veto_file") as caught:
+        await build_dependencies(override_config(cfg, {
+            "facts.enabled": True,
+            "facts.veto_file": missing,
+        }))
+
+    assert "failed to mount" in str(caught.value)

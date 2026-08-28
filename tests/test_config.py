@@ -1321,3 +1321,46 @@ def test_the_dispute_classifier_has_its_own_timeout_and_is_in_the_slot_hold(
     toml_path.write_text(text)
     with pytest.raises(ConfigError, match="dispute_classify_timeout_seconds"):
         load(toml_path)
+
+
+def test_an_empty_veto_file_setting_is_no_veto_file(toml_path):
+    """**`config.toml` documented this exact form**, and once a
+    configured-but-missing veto path started refusing to start, it became a
+    boot failure naming a path the operator never wrote.
+
+    Pydantic coerces `""` to `PosixPath(".")` — neither `None` nor a file — so
+    an operator uncommenting the repo's own example got "`[facts] veto_file`
+    points at `.`, which is not a readable file". The empty string is a
+    pydantic artifact rather than an operator intent, so it is normalised
+    HERE, in the layer that can tell the difference, rather than at the reader
+    which would then have to treat "." as special forever.
+
+    Through a real TOML load, not through `FactsConfig(...)`: the coercion is
+    what the file's own value goes through, and constructing the model with a
+    Python value takes a different path.
+    """
+    text = toml_path.read_text()
+    i = text.index("[facts]")
+    j = text.index("\n[", i + 1)
+    section = text[i:j] + '\nveto_file = ""\n'
+    toml_path.write_text(text[:i] + section + text[j:])
+
+    cfg = load(toml_path)
+
+    assert cfg.facts.veto_file is None
+
+
+def test_a_real_veto_path_survives_the_empty_string_normalisation(toml_path):
+    """The positive control: a normalisation that returned `None` for every
+    value would satisfy the test above while making the veto list
+    unconfigurable."""
+    text = toml_path.read_text()
+    i = text.index("[facts]")
+    j = text.index("\n[", i + 1)
+    section = text[i:j] + '\nveto_file = "/app/config/veto.txt"\n'
+    toml_path.write_text(text[:i] + section + text[j:])
+
+    cfg = load(toml_path)
+
+    assert cfg.facts.veto_file is not None
+    assert cfg.facts.veto_file.name == "veto.txt"

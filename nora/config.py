@@ -18,6 +18,7 @@ from pydantic import (
     Field,
     ValidationError,
     ValidationInfo,
+    field_validator,
     model_validator,
 )
 
@@ -1412,9 +1413,22 @@ class FactsConfig(BaseModel):
     # 21 §10's operator-owned veto list: the extra object strings THIS room
     # decides are not things, one per line, blank lines and `#` comments
     # ignored. Its CONTENTS are configuration; its existence, ownership and
-    # versioning are the design's decision. Absent by default, and an absent
-    # file vetoes nothing extra — the rules in code are the floor and this only
-    # narrows what promotes.
+    # versioning are the design's decision.
+    #
+    # **NO PATH configured vetoes nothing extra** — the rules in code are the
+    # floor and this only narrows what promotes. **A path that is not there
+    # REFUSES TO START**: those are different operator situations, and reading
+    # the second as the first meant a mount that failed to attach silently
+    # re-admitted everything the room had ruled out. This comment previously
+    # merged them as "an absent file vetoes nothing extra", which was the
+    # sentence the code was written from.
+    #
+    # `""` is NO PATH. Pydantic coerces an empty string to `PosixPath(".")`,
+    # which is neither `None` nor a file — so with the refusal above, an
+    # operator uncommenting `config.toml`'s own documented `veto_file = ""`
+    # got a boot failure naming a path they never wrote. The empty string is a
+    # pydantic artifact rather than an operator intent, and it is normalised
+    # HERE, where that is knowable, rather than at the reader.
     # 31 §3.4's window: how far back a message may reach when deciding what
     # Nora "just rendered". Twenty-four hours because a correction arrives
     # either in the same sitting or after somebody looked something up
@@ -1428,6 +1442,16 @@ class FactsConfig(BaseModel):
     # resolve, which is readable from the ledger itself.
     recognition_window_hours: int = Field(default=24, ge=1)
     veto_file: Path | None = None
+
+    @field_validator("veto_file", mode="before")
+    @classmethod
+    def _an_empty_path_is_no_path(cls, value: object) -> object:
+        """`veto_file = ""` means «no veto list», not «the current
+        directory»."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     # 31 §5's own key, and it exists because the classifier runs on the REPLY
     # PATH — awaited in `_run_turn` before context assembly, holding the
     # conversation's slot, ahead of every word she says.

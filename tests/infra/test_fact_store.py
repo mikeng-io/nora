@@ -1349,47 +1349,6 @@ async def test_a_fact_store_without_an_entity_store_still_writes_the_fact(pg_url
     assert entities == 0
 
 
-async def test_facts_written_in_one_batch_come_back_in_a_stable_order(pg_url):
-    """**Ties are the NORMAL case here, not the edge.** One `propose` batch
-    stamps every row with one `now_ms`, so `ORDER BY created_at DESC LIMIT n`
-    was choosing among equals — and Postgres may return any order among
-    equals, so which facts reached the prefill block varied run to run and a
-    row over the limit could be starved indefinitely.
-
-    Asserted as the WHOLE order rather than the selected subset: a subset test
-    can pass by luck on a single run, while the full order distinguishes «id
-    tie-break» from «whatever the heap gave us» — the ids are uuid4 and their
-    sort order is independent of insertion order, so eight rows make an
-    accidental match a one-in-forty-thousand event.
-    """
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
-    try:
-        store = SqlFactStore(engine)
-        ids = await store.propose(
-            key="ws-main",
-            proposals=[
-                _proposal(_verdict(subject="e1", predicate=f"p{i}",
-                                   object=f"v{i}"))
-                for i in range(8)
-            ],
-            now_ms=1_000,
-        )
-        assert len(ids) == 8
-
-        facts = await store.standing_facts(
-            workspace="ws-main", subject_ids=("e1",), limit=8,
-        )
-    finally:
-        await engine.dispose()
-
-    got = [f.id for f in facts]
-    assert got == sorted(ids, reverse=True), (
-        "facts sharing a created_at must come back in a deterministic order; "
-        "without a tie-break the LIMIT selects a different subset run to run"
-    )
-
-
 async def test_both_stores_break_a_created_at_tie_the_same_way(store):
     """The DOUBLE was deterministic while production was not, which is worse
     than both being non-deterministic: `list.sort` is stable, so the in-memory

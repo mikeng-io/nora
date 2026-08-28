@@ -150,3 +150,30 @@ def test_the_fingerprint_cannot_be_confused_by_a_split():
     ("ab", "c") and ("a", "bc") hash identically, so a model rename could
     silently match a different row's fingerprint and skip re-embedding it."""
     assert fingerprint(model="ab", text="c") != fingerprint(model="a", text="bc")
+
+
+def test_the_separator_is_one_a_caller_cannot_write():
+    """**The version above passes against a separator that does not have the
+    property**, which is how this shipped wrong.
+
+    Any separator at all satisfies `("ab", "c") != ("a", "bc")`. The property
+    that actually matters is that the separator cannot appear in either field
+    — and no byte can: the code joined on four PRINTABLE bytes (a backslash,
+    an `x`, two zeroes), where a model ending in those characters collided
+    with a text beginning with them; switching to a real NUL only moves the
+    collision to an input containing a NUL.
+
+    The answer is to length-prefix each field rather than to look for an
+    unforgeable byte — there is not one. Asserted by trying to forge the
+    boundary with each candidate separator in turn, which is the only class of
+    input that can tell the implementations apart.
+    """
+    # No empty joiner: `("m", "t")` against `("m", "t")` is the SAME pair, so
+    # it cannot be a forgery and asserting it would be asserting that a hash
+    # is not equal to itself.
+    for joiner in (chr(92) + "x00", chr(0), "|"):
+        assert fingerprint(model="m" + joiner, text="t") != fingerprint(
+            model="m", text=joiner + "t"), (
+            f"a caller writing {joiner!r} must not be able to forge the "
+            f"boundary between the two fields"
+        )

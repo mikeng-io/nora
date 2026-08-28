@@ -734,12 +734,24 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # an edge implies, in the same transaction that writes the edge. It was
     # built only for the Dreamer, which is why that sentence was true of the
     # document and false of the code.
-    fact_entities: SqlEntityStore | None = (
-        SqlEntityStore(
-            engine, veto_extra=load_veto_list(cfg.facts.veto_file),
-            metrics=metrics,
-        ) if cfg.facts.enabled else None
-    )
+    fact_entities: SqlEntityStore | None = None
+    if cfg.facts.enabled:
+        try:
+            veto_extra = load_veto_list(cfg.facts.veto_file)
+        except OSError as exc:
+            # Converted, because every neighbouring step in this function
+            # converts: policy, identity, migrations, doctrine and the cap
+            # check all raise `StartupError`, and the cap check's own comment
+            # names a raw exception escaping from here as "the one boot
+            # failure in this function with no operator-readable message".
+            # `load_veto_list` refuses a configured-but-missing path on
+            # purpose, so this is a refusal an operator must be able to READ —
+            # a traceback would make the only startup refusal in the system
+            # that does not look like one.
+            raise StartupError(str(exc)) from exc
+        fact_entities = SqlEntityStore(
+            engine, veto_extra=veto_extra, metrics=metrics,
+        )
     fact_store: SqlFactStore | None = (
         SqlFactStore(
             engine,
