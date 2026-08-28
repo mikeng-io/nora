@@ -66,7 +66,7 @@ below, and the first is already global (it checks the Protocol, not a store).
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytest
 import sqlalchemy as sa
@@ -155,6 +155,12 @@ class _World:
     store: object
     seed_fact: Callable[..., object]
     seed_entity: Callable[..., object]
+    # What PROMOTION does (`25-knowledge-pipeline.md` §4): points a standing
+    # fact's object at an entity, WITHOUT touching the literal. Seeding is
+    # split from resolving on purpose — production writes the literal at the
+    # sink and adds the pointer in a later pass, and a helper that did both at
+    # once would test a row shape no writer ever produces.
+    resolve_object: Callable[..., object]
 
 
 def _fact(
@@ -213,15 +219,23 @@ async def world(request) -> AsyncIterator[_World]:
         async def seed_entity(
             *, workspace: str = WS, canonical_name: str,
             aliases: tuple[str, ...] = (),
-        ) -> None:
+        ) -> str:
+            eid = f"seed-entity-{next(seq)}"
             entities.append(FactEntity(
-                id=f"seed-entity-{next(seq)}", workspace=workspace,
+                id=eid, workspace=workspace,
                 canonical_name=canonical_name, created_at=NOW, aliases=aliases,
             ))
+            return eid
+
+        async def resolve_object(*, object: str, entity_id: str) -> None:
+            for i, f in enumerate(facts):
+                if f.object_literal == object:
+                    facts[i] = replace(f, object_entity_id=entity_id)
 
         yield _World(
             store=InMemoryFactCandidateStore(facts=facts, entities=entities),
             seed_fact=seed_fact, seed_entity=seed_entity,
+            resolve_object=resolve_object,
         )
         return
 
@@ -267,17 +281,25 @@ async def world(request) -> AsyncIterator[_World]:
     async def seed_entity(
         *, workspace: str = WS, canonical_name: str,
         aliases: tuple[str, ...] = (),
-    ) -> None:
+    ) -> str:
         async with engine.begin() as conn:
-            await conn.execute(sa.insert(FACT_ENTITY).values(
-                workspace=workspace, canonical_name=canonical_name,
-                aliases=list(aliases), created_at=NOW,
-            ))
+            return str((await conn.execute(
+                sa.insert(FACT_ENTITY).values(
+                    workspace=workspace, canonical_name=canonical_name,
+                    aliases=list(aliases), created_at=NOW,
+                ).returning(FACT_ENTITY.c.id)
+            )).scalar_one())
+
+    async def resolve_object(*, object: str, entity_id: str) -> None:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text(
+                "update fact set object_entity_id = :e where object_literal = :o"
+            ), {"e": entity_id, "o": object})
 
     try:
         yield _World(
             store=SqlFactCandidateStore(engine), seed_fact=seed_fact,
-            seed_entity=seed_entity,
+            seed_entity=seed_entity, resolve_object=resolve_object,
         )
     finally:
         await engine.dispose()
@@ -664,6 +686,52 @@ async def test_pending_drops_a_candidate_already_backed_by_a_live_fact(world):
     )
 
     assert await store.pending(workspace=WS, limit=10) == ()
+
+
+async def test_pending_drops_a_candidate_backed_by_a_fact_with_a_resolved_object(
+    world,
+):
+    """The negative cache broke exactly here (`21-substrate-contract.md`
+    §6.4). Before migration 0038 a promoted object made `object_literal`
+    NULL, dedup compares that column, and `NULL = 'x'` is NULL — so the claim
+    was never deduped, was re-adjudicated every tick forever, and ranked FIRST
+    each time because the contradiction predicate then read it as
+    contradicting its own candidate.
+
+    The literal now survives promotion, so resolving an object changes nothing
+    about whether its claim is already proven. The assertion is the SAME as
+    the unresolved case one test up; what varies is only the promotion."""
+    store = world.store
+    await world.seed_entity(canonical_name="e1")
+    object_entity = await world.seed_entity(canonical_name="v1")
+    await world.seed_fact(subject="e1", object="v1")
+    await world.resolve_object(object="v1", entity_id=object_entity)
+    await store.propose(
+        key=WS, proposals=(_candidate(subject="e1", object="v1"),), now_ms=NOW,
+    )
+
+    assert await store.pending(workspace=WS, limit=10) == ()
+
+
+async def test_a_resolved_object_still_ranks_a_genuine_contradiction_first(world):
+    """The positive control for the test above, and the other half of the same
+    defect. `== ()` is also true of a store that returned nothing because the
+    seeding failed, so this asserts something only a run that RAN produces:
+    against the SAME resolved fact, a candidate proposing a DIFFERENT object
+    comes back, and comes back as a contradiction rather than as ordinary
+    recurrence."""
+    store = world.store
+    await world.seed_entity(canonical_name="e1")
+    object_entity = await world.seed_entity(canonical_name="v1")
+    await world.seed_fact(subject="e1", object="v1")
+    await world.resolve_object(object="v1", entity_id=object_entity)
+    ids = await store.propose(
+        key=WS, proposals=(_candidate(subject="e1", object="v2"),), now_ms=NOW,
+    )
+
+    rows = await store.pending(workspace=WS, limit=10)
+
+    assert [c.id for c in rows] == [ids[0]]
 
 
 async def test_pending_keeps_a_candidate_whose_backing_fact_was_superseded(world):

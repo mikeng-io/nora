@@ -1352,14 +1352,12 @@ class FactsConfig(BaseModel):
     turn reads.
 
     **The workspace startup check the design doc's §7 argued for was CUT**
-    (operator, 2026-08-20): the store's read (`standing_facts`, Task 3 of the
-    fact-tier plan, not yet built) is specified to scope `WHERE workspace =
-    ...` in SQL, so once it exists a fact will not be able to reach a room
-    outside its own workspace regardless of what a startup refusal would add
-    on top — the property is meant to be structural, not something this
-    section asserts. Until that store lands there is no `standing_facts` to
-    read at all, so this only holds when the deferred reader is finally
-    built matching the spec.
+    (operator, 2026-08-20): the store's read scopes `WHERE workspace = ...` in
+    SQL, so a fact cannot reach a room outside its own workspace regardless of
+    what a startup refusal would add on top — the property is structural, not
+    something this section asserts. `SqlFactStore.standing_facts` is built and
+    does scope that way; what keeps the tier dark in production is `enabled`
+    below, not a missing reader.
 
     `max_adjudications_per_tick = 10`: the Phase B cap — one research loop
     (search + classify) per surviving candidate is the expensive step, same

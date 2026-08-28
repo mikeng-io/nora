@@ -65,6 +65,7 @@ ADD CONSTRAINT fact_candidate_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_candidate_triple_key UNIQUE (workspace, subject_id, predicate, object);
 ADD CONSTRAINT fact_entity_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_entity_workspace_name_key UNIQUE (workspace, canonical_name);
+ADD CONSTRAINT fact_object_entity_id_fkey FOREIGN KEY (object_entity_id) REFERENCES public.fact_entity(id);
 ADD CONSTRAINT fact_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_premise_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id);
 ADD CONSTRAINT fact_premise_pkey PRIMARY KEY (fact_id, premise_fact_id);
@@ -118,6 +119,7 @@ ALTER TABLE ONLY public.event_rsvps
 ALTER TABLE ONLY public.events
 ALTER TABLE ONLY public.exchange_observation
 ALTER TABLE ONLY public.exchange_observation
+ALTER TABLE ONLY public.fact
 ALTER TABLE ONLY public.fact
 ALTER TABLE ONLY public.fact
 ALTER TABLE ONLY public.fact_candidate
@@ -206,7 +208,6 @@ CONSTRAINT fact_candidate_status_check CHECK ((status = ANY (ARRAY['pending'::te
 CONSTRAINT fact_fidelity_check CHECK ((fidelity = ANY (ARRAY['tentative'::text, 'proven'::text, 'deprecated'::text]))),
 CONSTRAINT fact_instruction_sha256_check CHECK ((instruction_sha256 ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT fact_model_is_named_check CHECK ((length(btrim(model)) > 0)),
-CONSTRAINT fact_one_object_check CHECK (((object_entity_id IS NULL) <> (object_literal IS NULL))),
 CONSTRAINT fact_premise_no_self_reference_check CHECK ((fact_id <> premise_fact_id))
 CONSTRAINT fact_source_excerpt_warrant_check CHECK (((source_excerpt IS NOT NULL) = (warrant_kind = 'source'::text))),
 CONSTRAINT fact_source_url_warrant_check CHECK (((source_url IS NOT NULL) = (warrant_kind = 'source'::text))),
@@ -545,8 +546,8 @@ now_playing_locator text,
 now_playing_source text,
 now_playing_title text,
 object text NOT NULL,
-object_entity_id text,
-object_literal text,
+object_entity_id uuid,
+object_literal text NOT NULL,
 observed_at bigint NOT NULL,
 observed_at bigint NOT NULL,
 observed_in text[] DEFAULT '{}'::text[] NOT NULL

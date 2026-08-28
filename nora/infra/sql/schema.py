@@ -1218,8 +1218,25 @@ FACT = sa.Table(
     sa.Column("workspace", sa.Text, nullable=False),
     sa.Column("subject_id", sa.Text, nullable=False),
     sa.Column("predicate", sa.Text, nullable=False),
-    sa.Column("object_entity_id", sa.Text),
-    sa.Column("object_literal", sa.Text),
+    # 2026-08-28 (migration 0038): an ADDITIVE, nullable resolution pointer —
+    # `21-substrate-contract.md` §10 relaxing §6.5. It was `sa.Text` against a
+    # `uuid` PK with NO foreign key, so the "node reference" half of the old
+    # exactly-one CHECK referenced nothing: a second free-text column wearing
+    # an id's name. It is now the type it claims to be, and the FK is what
+    # makes it one.
+    sa.Column(
+        "object_entity_id",
+        pg.UUID(as_uuid=False),
+        sa.ForeignKey("fact_entity.id", name="fact_object_entity_id_fkey"),
+    ),
+    # NOT NULL as of 0038. The old `(object_entity_id is null) <>
+    # (object_literal is null)` forced promotion to DESTROY the surface string
+    # the room actually used, and broke the negative cache on the way past:
+    # dedup compares `object_literal`, an entity-object fact had it NULL, and
+    # `NULL = 'x'` is NULL — so the claim was never deduped and was
+    # re-adjudicated every tick forever. Keeping the literal fixes both by
+    # removing the state that caused them, rather than by adding a branch.
+    sa.Column("object_literal", sa.Text, nullable=False),
     # 2026-08-21: the warrant axis. `warrant_kind` names WHAT kind of
     # evidence backs the row; `source_url`/`source_excerpt` are no longer
     # unconditionally NOT NULL (see the two CHECKs below) because a fact can
@@ -1282,10 +1299,6 @@ FACT = sa.Table(
     sa.CheckConstraint(
         "length(btrim(model)) > 0",
         name="fact_model_is_named_check",
-    ),
-    sa.CheckConstraint(
-        "(object_entity_id is null) <> (object_literal is null)",
-        name="fact_one_object_check",
     ),
     # Biconditional, not an implication: a fact is either standing (both
     # NULL) or superseded (both set). `superseded_at` set alone would hide

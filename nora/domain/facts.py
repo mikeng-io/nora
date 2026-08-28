@@ -288,8 +288,18 @@ class Fact:
     workspace: str
     subject_id: str
     predicate: str
+    # An ADDITIVE, nullable resolution pointer as of 2026-08-28 (migration
+    # 0038, `21-substrate-contract.md` §10). Never the object on its own —
+    # `object_literal` always carries the words, so promotion RESOLVES a row
+    # instead of rewriting it, and nothing downstream has to branch on which
+    # half is present.
     object_entity_id: str | None
-    object_literal: str | None
+    # The object, always. NOT NULL in the schema and non-optional here: the
+    # old exactly-one CHECK made an entity-object fact's literal NULL, which
+    # broke the negative cache (`NULL = 'x'` is NULL, so the claim was never
+    # deduped) and made two render paths fall back to printing a bare uuid
+    # into the prompt.
+    object_literal: str
     valid_from: int
     created_at: int
     instruction_sha256: str
@@ -319,12 +329,17 @@ class Fact:
                 "digest; a fact whose instruction is unknown is not "
                 "attributable and is refused"
             )
-        has_entity = self.object_entity_id is not None
-        has_literal = self.object_literal is not None
-        if has_entity == has_literal:
+        # Not "exactly one" any more (migration 0038): the literal is the
+        # object and the entity id is an optional pointer beside it. What is
+        # still refused is an EMPTY literal — `""` and `"   "` are non-NULL to
+        # every query asking «what does this fact say», which turns R-27's
+        # `unavailable` into a false `ok`, and the column's NOT NULL cannot
+        # see it.
+        if not self.object_literal.strip():
             raise ValueError(
-                "a fact needs exactly one object: an entity id or a literal, "
-                "never both and never neither"
+                "a fact's object_literal is the object and cannot be blank: "
+                "the entity id is an additional pointer, never a replacement "
+                "for the words the room used"
             )
         # The DB CHECK is `(superseded_by is null) = (superseded_at is
         # null)` — a biconditional, not an implication. `superseded_at` set

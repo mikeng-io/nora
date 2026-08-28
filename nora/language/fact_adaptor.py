@@ -828,11 +828,17 @@ def _render_standing(fact: Fact, *, handle: str) -> str:
     `handle`, never `fact.id`: see `_Shown.by_handle`. The id does not appear
     in the prompt at all, which is the second half of the fix — a model cannot
     echo back an identifier it was never shown.
+
+    **And that applies to the OBJECT column too.** This rendered
+    `object_entity_id` whenever `object_literal` was NULL — which, under the
+    pre-0038 exactly-one CHECK, was every entity-object fact. The one function
+    whose docstring says no identifier reaches the prompt was the function
+    putting a bare uuid in it. Since 0038 `object_literal` is NOT NULL and
+    the entity id is never rendered anywhere.
     """
-    obj = fact.object_literal if fact.object_literal is not None else (
-        fact.object_entity_id or ""
-    )
-    parts = [f"- [{handle}] {fact.subject_id} | {fact.predicate} | {obj}"]
+    parts = [
+        f"- [{handle}] {fact.subject_id} | {fact.predicate} | {fact.object_literal}"
+    ]
     if fact.source_url:
         parts.append(f"  source: {fact.source_url}")
     if fact.source_excerpt:

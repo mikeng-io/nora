@@ -386,11 +386,17 @@ class SqlFactCandidateStore:
             )
             .exists()
         )
-        # `is_distinct_from`, not `!=`: a fact whose object is an ENTITY has
-        # a NULL `object_literal`, and `null != 'x'` is NULL — which would
-        # quietly rank a genuine contradiction as an ordinary candidate. No
-        # writer produces that shape today; the operator is what keeps this
-        # true when one does.
+        # `is_distinct_from`, not `!=`, and it is now a BELT rather than the
+        # load-bearing part. Before migration 0038 an entity-object fact had
+        # `object_literal` NULL; `null = 'x'` is NULL, so the dedup predicate
+        # above never fired for it and the claim was re-adjudicated every tick
+        # forever, ranking FIRST each time because this predicate then read it
+        # as a contradiction of its own candidate. 0038 made `object_literal`
+        # NOT NULL — the literal always carries the words and the entity id is
+        # an additive pointer beside it — so the NULL that caused it cannot
+        # occur. `is_distinct_from` stays because a three-valued comparison
+        # that degrades to a two-valued one costs nothing and the column's
+        # nullability is a schema fact, not an invariant this query controls.
         contradicts_a_fact = (
             sa.select(sa.literal(1))
             .where(

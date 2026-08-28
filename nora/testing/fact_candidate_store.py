@@ -288,9 +288,13 @@ class InMemoryFactCandidateStore:
         )
 
     def _contradicts_a_live_fact(self, candidate: FactCandidate) -> bool:
-        # `is distinct from` in SQL, `!=` over an Optional here: a fact whose
-        # object is an entity has `object_literal is None`, which is a
-        # different object from any literal candidate.
+        # `is distinct from` in SQL, `!=` here. Since migration 0038
+        # `object_literal` is NOT NULL on both sides, so the two agree without
+        # the NULL case that used to separate them — which is the point: the
+        # production comparison and this one broke the negative cache
+        # IDENTICALLY, so the contract suite could not have caught it. A fake
+        # that mirrors the bug faithfully is the failure CLAUDE.md's
+        # fake-answers-everything-the-same-way rule is about, one level in.
         return any(
             f.object_literal != candidate.object for f in self._live_facts(candidate)
         )

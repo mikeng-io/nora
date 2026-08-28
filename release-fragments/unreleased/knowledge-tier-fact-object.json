@@ -1,0 +1,6 @@
+{
+  "type": "fix",
+  "summary": "A fact's object keeps the words the room used, even after it resolves to an entity.",
+  "details": "The fact tier's schema forced a fact's object to be EITHER a literal string OR an entity reference, never both. Three consequences, all latent because nothing writes an entity object yet: resolving an object destroyed the original wording; the duplicate-claim check compares the literal, so a resolved claim was never recognised as already proven and would have been re-researched every cycle; and two render paths fell back to printing the raw entity id, putting a bare identifier in front of the model. The object is now always the literal, with the entity reference as an additional pointer beside it — and that pointer is now a real, foreign-keyed id rather than a free-text column.",
+  "issue": null
+}
