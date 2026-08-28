@@ -194,6 +194,14 @@ WORKSPACE_SAFE_TOOLS: frozenset[str] = frozenset({
     # but a lookup is a global search of her own creations, never
     # conversation-scoped like `load_transcript`).
     "media_search",
+    # The knowledge tier's retrieval verb (`23` §9 grants it to Nora and to
+    # Dreamer adaptors alike). It is keyed on a WORKSPACE — the same unit an
+    # adjudication tick is keyed on — so it does not need a conversation, and
+    # it passes this set's actual test rather than merely fitting the label:
+    # with no workspace resolvable it answers `unavailable`, never an empty
+    # list. That is the exact failure this set exists to keep out — «I could
+    # not check» reported as «there was nothing».
+    "search_knowledge",
 })
 
 
