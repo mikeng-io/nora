@@ -975,7 +975,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # the note tier above uses — two tiers keyed on `Conversation.workspace`
         # must not each carry their own idea of what a room's workspace is.
         facts=fact_store,
-        max_rendered_facts=cfg.facts.max_rendered_facts,
+        max_room_facts=cfg.facts.max_room_facts,
+        max_sender_facts=cfg.facts.max_sender_facts,
         # Standing's READ half. `None` while `[standing] enabled = false`, the
         # shipped default, so `<standing>` renders nothing. Unlike `notes`/
         # `facts` beside it this needs no `policy=` at all: a position is keyed

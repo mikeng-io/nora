@@ -1,5 +1,5 @@
 from nora.agent.prefill import build_prefill, build_tag_message, escape
-from nora.domain.facts import Fact
+from nora.domain.facts import Fact, FactExtent, FactsView
 from nora.domain.models import (
     DeliveryStatus,
     ExchangeExample,
@@ -18,13 +18,24 @@ from nora.domain.notes import Note
 from nora.domain.standing import Standing
 
 
+def _facts_view(*facts):
+    """A one-slice view. The block is three slices now (19 §6); these tests are
+    about the PREFILL's framing, so the slice a fact arrives in is not their
+    subject."""
+    return FactsView(
+        room=tuple(facts),
+        extent=FactExtent(standing=len(facts), shown=len(facts)),
+    )
+
+
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
          quote=None, platform="signal", room_language=None, room_portrait=None,
-         room_exchange=None, tagger_card=(), facts=(), notes=(),
+         room_exchange=None, tagger_card=(), facts=None, notes=(),
          standing=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
-    kwargs = {"tagger_card": tuple(tagger_card), "facts": tuple(facts),
+    kwargs = {"tagger_card": tuple(tagger_card),
+              "facts": FactsView() if facts is None else facts,
               "notes": tuple(notes), "standing": standing}
     if room_language is not None:
         kwargs["room_language"] = room_language
@@ -167,7 +178,7 @@ def _full_prefill_body() -> str:
         _rows("hello"), peer_card=("likes espresso",), self_card=("nora said a thing",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
         room_language=_room_language(), room_exchange=_room_exchange(),
-        room_portrait=_room_portrait(), facts=(_fact(),), notes=(_note(),),
+        room_portrait=_room_portrait(), facts=_facts_view(_fact()), notes=(_note(),),
         standing=_standing(),
     )
     return build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
@@ -1009,7 +1020,7 @@ def test_the_notes_block_comes_after_the_facts_block():
     `<facts>` is what is known, `<notes>` is what is not, and the open
     questions sit closest to the transcript that may bear on them."""
     prefill = build_prefill(
-        _ctx(room_language=_room_language(), facts=(_fact(),), notes=(_note(),)),
+        _ctx(room_language=_room_language(), facts=_facts_view(_fact()), notes=(_note(),)),
         display_name="Nora", context_window=40,
     )
     body = "\n".join(m["content"][0]["text"] for m in prefill)

@@ -178,6 +178,37 @@ class InMemoryFactStore:
         )
         return 1
 
+    async def facts_asserted_by(
+        self, *, workspace: str, person_id: str, limit: int,
+    ) -> tuple[Fact, ...]:
+        """The sender slice, over whatever `seed_asserters` recorded. Same
+        clamp as `standing_facts` and for the same reason: the double must
+        degrade the way the real store does, or a test that passes here fails
+        against Postgres."""
+        if limit <= 0:
+            return ()
+        mine = {
+            a.fact_id for a in self._asserters if a.person_id == person_id
+        }
+        matches = [
+            f for (ws, fid), f in self._facts.items()
+            if ws == workspace and fid in mine and f.is_standing
+        ]
+        matches.sort(key=lambda f: f.created_at, reverse=True)
+        return tuple(matches[:limit])
+
+    async def standing_subjects(self, *, workspace: str) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(
+            f.subject_id for (ws, _fid), f in self._facts.items()
+            if ws == workspace and f.is_standing
+        ))
+
+    async def standing_count(self, *, workspace: str) -> int:
+        return sum(
+            1 for (ws, _fid), f in self._facts.items()
+            if ws == workspace and f.is_standing
+        )
+
     async def asserters(self, *, fact_id: str) -> tuple[FactAsserter, ...]:
         """Reads back what `seed_asserters` put in, oldest first.
 
@@ -199,6 +230,12 @@ class InMemoryFactStore:
         rows = [a for a in self._asserters if a.fact_id == fact_id]
         rows.sort(key=lambda a: (a.asserted_at, a.message_id))
         return tuple(rows)
+
+    def seed_fact(self, fact: Fact) -> None:
+        """Test seam for a fact this double did not `propose`. Its SQL sibling
+        gets one for free from the FK that refuses an orphan asserter; without
+        it here, the two halves of `facts_asserted_by` answered differently."""
+        self._facts[(fact.workspace, fact.id)] = fact
 
     def seed_asserters(self, *asserters: FactAsserter) -> None:
         """Test seam for `asserters`, and the only writer this double has for

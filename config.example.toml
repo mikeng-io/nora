@@ -815,7 +815,12 @@ max_adjudications_per_tick = 10
 # [language]'s max_rendered_lexemes/max_rendered_exchanges: this block sits
 # in the same uncached volatile tail, and a fact line additionally carries a
 # source URL and an excerpt.
-max_rendered_facts = 8
+# 19 §6's two render caps, one per slice. ROOM is the working set — more
+# than eight and the block competes with the transcript beside it. SENDER
+# is the narrowest slice and the most often empty, and four is enough to
+# ground "you told us...".
+max_room_facts = 8
+max_sender_facts = 4
 # How long a resolved fact_candidate (a not_covered verdict, or a superseded
 # fact) is kept before a future prune sweep drops it — matches the tool-
 # recall-log's own retention_days = 180 for the same shape of row.
@@ -902,6 +907,7 @@ curator_enabled = false
 # the operating cap is enforced in the type that constructs a revision, where a
 # refusal is reviewable and names the cap, and a type cannot read this file.
 # No render cap here, unlike [facts]' max_rendered_facts, and that is a
+# No render cap here, unlike [facts]' two slice caps, and that is a
 # decision rather than an omission: §5.1 makes the index uncapped, because a
 # note silently missing from it is invisible to her and invisible is
 # indistinguishable from absent. The budget is held by the per-entry caps in

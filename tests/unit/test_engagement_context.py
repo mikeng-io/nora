@@ -12,6 +12,7 @@ gains a second implementation without a shared contract suite, and
 
 from __future__ import annotations
 
+from nora.domain.facts import FactsView
 from nora.domain.models import (
     LexemeExample,
     NormalizedMessage,
@@ -717,19 +718,52 @@ def _fact(fact_id: str = "f1", *, workspace: str = "ridgeline"):
 
 
 class _FakeFactReader:
-    def __init__(self, facts=(), *, raises: bool = False) -> None:
+    """The four reads the block now makes (19 §6): the room slice by subject,
+    the sender slice by person, the extent count, and the subject list the room
+    slice is matched against.
+
+    `subjects` is what makes the room slice reachable at all — the assembler
+    matches these against the conversation's text with
+    `nora.domain.facts.mentions`, so a fake returning none would make every
+    room-slice test pass with an empty block for the wrong reason.
+    """
+
+    def __init__(
+        self, facts=(), *, raises: bool = False, subjects=("big walk",),
+        asserted=(),
+    ) -> None:
         self._facts = tuple(facts)
         self._raises = raises
+        self._subjects = tuple(subjects)
+        self._asserted = tuple(asserted)
         self.calls: list[tuple[str, int]] = []
+        self.sender_calls: list[tuple[str, str, int]] = []
 
-    async def recent_facts(self, *, workspace: str, limit: int):
+    async def standing_subjects(self, *, workspace: str):
+        if self._raises:
+            raise RuntimeError("the store is down")
+        return self._subjects
+
+    async def standing_facts(self, *, workspace, subject_ids, limit):
         self.calls.append((workspace, limit))
         if self._raises:
             raise RuntimeError("the store is down")
+        if not subject_ids:
+            return ()
         return self._facts[:limit]
 
-    async def standing_facts(self, *, workspace, subject_ids, limit):
+    async def facts_asserted_by(self, *, workspace, person_id, limit):
+        self.sender_calls.append((workspace, person_id, limit))
+        return self._asserted[:limit]
+
+    async def standing_count(self, *, workspace: str) -> int:
+        return len(self._facts)
+
+    async def asserters(self, *, fact_id: str):
         return ()
+
+    async def recent_facts(self, *, workspace: str, limit: int):
+        return self._facts[:limit]
 
     async def fact_by_id(self, *, workspace, fact_id):
         return None
@@ -746,7 +780,7 @@ async def test_no_fact_reader_leaves_the_block_empty_and_asks_nothing():
 
     ctx = await assembler.assemble(request=_request())
 
-    assert ctx.facts == ()
+    assert ctx.facts == FactsView()
 
 
 async def test_the_facts_are_read_for_this_conversations_workspace():
@@ -757,13 +791,15 @@ async def test_the_facts_are_read_for_this_conversations_workspace():
         audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
         context_window=10, metrics=Metrics(),
         facts=reader, policy=_policy(workspace="friends"),
-        max_rendered_facts=5,
+        max_room_facts=5,
     )
 
-    ctx = await assembler.assemble(request=_request())
+    ctx = await assembler.assemble(
+        request=_request(_msg_with_body("is big walk on tonight?")),
+    )
 
     assert reader.calls == [("friends", 5)]
-    assert len(ctx.facts) == 1
+    assert len(ctx.facts.room) == 1
 
 
 async def test_an_unmapped_conversation_falls_back_to_the_default_workspace():
@@ -795,7 +831,7 @@ async def test_a_fact_read_failure_never_cancels_its_siblings():
 
     ctx = await assembler.assemble(request=_request())
 
-    assert ctx.facts == ()
+    assert ctx.facts == FactsView()
     assert metrics.get("nora_errors_total", stage="facts", platform="signal") == 1
     assert ctx.room_language is not None
 
@@ -866,3 +902,62 @@ async def test_a_failed_standing_read_is_counted_rather_than_swallowed():
     assert ctx.standing is None
     assert metrics.get(
         "nora_errors_total", stage="standing", platform="signal") == 1
+
+
+async def test_the_room_slice_is_only_what_this_conversation_touched():
+    """19 §6's room slice: "facts whose subject is an entity this conversation
+    has touched". A workspace's whole standing set is not that, and rendering
+    it would be the recency window's defect with a different filter.
+
+    The extent line is what keeps the omission honest — she is told the size of
+    what she was not shown, which is the signal a bare subset never gave her."""
+    reader = _FakeFactReader([_fact()], subjects=("big walk",))
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), facts=reader, policy=_policy(),
+    )
+
+    ctx = await assembler.assemble(
+        request=_request(_msg_with_body("what time is dinner")),
+    )
+
+    assert ctx.facts.room == ()
+    # The extent still reports the whole workspace, so the block says she holds
+    # one and is being shown none rather than saying nothing exists.
+    assert ctx.facts.extent.standing == 1
+    assert ctx.facts.extent.unshown == 1
+
+
+async def test_the_room_slice_matches_the_transcript_not_only_the_message():
+    """"This conversation has touched" is the conversation, not the one line
+    that tagged her — which is the whole reason the fact read is sequenced
+    after the transcript instead of beside it."""
+    reader = _FakeFactReader([_fact()], subjects=("big walk",))
+    audit = FakeRecordStore()
+    await audit.append(message=_msg_with_body("big walk later?"))
+    assembler = TranscriptInjection(
+        audit=audit, memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), facts=reader, policy=_policy(),
+    )
+
+    ctx = await assembler.assemble(
+        request=_request(_msg_with_body("nora what do you reckon")),
+    )
+
+    assert len(ctx.facts.room) == 1
+
+
+async def test_the_sender_slice_asks_for_the_tagger():
+    """It grounds «you told us…», so it is keyed on who is speaking now. No
+    tagger — an unmapped sender — means no slice rather than somebody else's
+    facts."""
+    reader = _FakeFactReader([_fact()], asserted=(_fact("f2"),))
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), facts=reader, policy=_policy(),
+    )
+
+    ctx = await assembler.assemble(request=_request())
+
+    assert [c[1] for c in reader.sender_calls] == ["miles"]
+    assert [f.id for f in ctx.facts.sender] == ["f2"]

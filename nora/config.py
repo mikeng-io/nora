@@ -1370,7 +1370,11 @@ class FactsConfig(BaseModel):
     shape and same default as `LanguageConfig.verify_max_candidates`, which
     bounds the analogous (search + classify) round trip for slang.
 
-    `max_rendered_facts = 8`: the RENDER cap on the `<facts>` block, the same
+    `max_room_facts = 8` / `max_sender_facts = 4`: 19 §6's two render caps, one
+    per slice. The ROOM slice is the working set — more than eight and the
+    block competes with the transcript it sits beside. The SENDER slice is the
+    narrowest and the most often empty, and four is enough to ground «you told
+    us…». They replace one `max_rendered_facts`, which was the same
     per-turn-cost argument as `LanguageConfig.max_rendered_lexemes` (6) and
     `max_rendered_exchanges` (4) — this block sits in the same uncached
     volatile tail, and a fact line additionally carries a source URL and an
@@ -1386,7 +1390,8 @@ class FactsConfig(BaseModel):
 
     enabled: bool = False
     max_adjudications_per_tick: int = Field(default=10, ge=1)
-    max_rendered_facts: int = Field(default=8, ge=1)
+    max_room_facts: int = Field(default=8, ge=1)
+    max_sender_facts: int = Field(default=4, ge=1)
     retention_days: int = Field(default=180, ge=1)
     # The OPERATING caps on the tier's model-authored strings (25 §9.1). Both
     # columns were uncapped, which is the note-body defect on a JOIN KEY:

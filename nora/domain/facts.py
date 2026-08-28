@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Literal, get_args
 
 from .provenance import INSTRUCTION_SHA256_HEX_LEN
@@ -141,6 +142,81 @@ def normalise_name(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
 
 
+def _is_cjk(ch: str) -> bool:
+    return "\u3000" <= ch <= "\u9fff" or "\uf900" <= ch <= "\ufaff"
+
+
+def mentions(
+    haystack: str, needle: str, *, min_cjk_chars: int = 2,
+) -> bool:
+    """Does this text talk about that thing? ONE matcher, shared.
+
+    **Containment, not similarity**, and three reasons:
+
+    - The job IS containment. «Does this message talk about `big walk`» is a
+      substring question; `pg_trgm`'s `similarity()` answers a different one.
+    - A threshold nobody can calibrate is not a measurement. There is no graded
+      corpus for this room, so a number chosen here would be chosen blind and
+      would then look like evidence.
+    - Trigram is measurably weak on this room's default script — 25 §4.1, on
+      this database: 打風/打风 scores 0.200 and 香港天文台/天文台 0.250, because a
+      two-character word makes too few trigrams.
+
+    It is also **collation-independent**, which matters on a database about to
+    be reindexed under a different libc's `en_US.utf8` ordering: one fewer
+    thing that can silently change meaning across that swap.
+
+    **The boundary rule is on the ADJACENT CHARACTERS, not on the needle.** A
+    rule keyed on "Latin needles take a word boundary" is undefined for a mixed
+    needle like `Big Walk 大步行`, and Python treats CJK as word characters, so
+    `\bHKO\b` fails against 「HKO好準」 — the exact place this room's text
+    lives. A match is bounded when each adjacent character is not a letter or
+    digit of the SAME script class, with CJK its own class, so Latin abutting
+    CJK counts as bounded and `party` still does not match `art`.
+
+    **CJK gets containment DIRECTLY, above a length floor.** CJK has no word
+    boundaries at all, so a boundary rule there is not strict, it is broken:
+    「打風啦」 mentions 打風 and a boundary test rejects it because 啦 is a
+    particle, not a separator. But short needles are substrings of longer
+    compounds constantly — 大浪 inside 大浪灣, 行街 inside 行街市 (25 §4.1's own
+    examples) — so `min_cjk_chars` is the floor below which a CJK needle must
+    still land on a real boundary.
+
+    **A parameter, not a second matcher.** The two callers want different
+    recall: a retrieval slice missing a fact costs a lookup, while marking a
+    row disputed on a false positive costs a claim. One matcher with one knob
+    keeps that a calibration rather than two definitions of what "mentions"
+    means.
+
+    Both arguments are expected NORMALISED (`normalise_name`); this does not
+    normalise, so a caller cannot get one side wrong silently.
+    """
+    if not needle or not haystack:
+        return False
+    cjk_needle = all(_is_cjk(c) for c in needle if not c.isspace())
+    free = cjk_needle and len(needle.replace(" ", "")) >= min_cjk_chars
+    start = 0
+    while (i := haystack.find(needle, start)) != -1:
+        if free:
+            return True
+        before = haystack[i - 1] if i > 0 else ""
+        after_at = i + len(needle)
+        after = haystack[after_at] if after_at < len(haystack) else ""
+        if _bounded(before, needle[0]) and _bounded(after, needle[-1]):
+            return True
+        start = i + 1
+    return False
+
+
+def _bounded(neighbour: str, edge: str) -> bool:
+    """An empty neighbour is the string's end, which is always a boundary."""
+    if not neighbour or not neighbour.isalnum():
+        return True
+    # Different script classes are a boundary: `HKO` inside 「HKO好準」 is a
+    # match, and that is the case a `\b` rule gets wrong.
+    return _is_cjk(neighbour) != _is_cjk(edge)
+
+
 def refuse_over_operating_caps(
     *, subject: str, predicate: str, obj: str,
     max_term_chars: int, max_predicate_chars: int,
@@ -161,13 +237,13 @@ def refuse_over_operating_caps(
     (a candidate is one sighting and losing it costs a re-extraction). Both are
     honest; a shared helper that chose for them would not be.
     """
-    for field, value, cap in (
+    for name, value, cap in (
         ("subject", subject, max_term_chars),
         ("predicate", predicate, max_predicate_chars),
         ("object", obj, max_term_chars),
     ):
         if len(value) > cap:
-            return field
+            return name
     return None
 
 
@@ -555,6 +631,44 @@ class Fact:
     @property
     def is_standing(self) -> bool:
         return self.superseded_at is None
+
+
+@dataclass(frozen=True)
+class FactExtent:
+    """What the `<facts>` block did NOT show, in counts (19 §6, 23 §3).
+
+    **Not a slice of content and not optional.** Without it the block
+    reproduces the defect the recency window had: a subset presented as the
+    whole, with no signal that more exists or that a verb is worth reaching
+    for. `standing` is every standing fact in the workspace; `shown` is how
+    many reached the prompt.
+    """
+
+    standing: int
+    shown: int
+
+    @property
+    def unshown(self) -> int:
+        return max(0, self.standing - self.shown)
+
+
+@dataclass(frozen=True)
+class FactsView:
+    """One block, three labelled slices (19 §6). Not three blocks: they share a
+    header and a provenance line, and three siblings in a prompt read as three
+    unrelated systems rather than one store seen from three angles.
+
+    `asserters` is keyed by `fact_id` and is what makes a `stated` fact render
+    WITH WHO SAID IT — 30 §2.3's answer to abuse, which is not to prevent the
+    claim but to make it attributable: "*Nora, remember Grant owes me $500*"
+    rendered as a bare claim is authoritative, and rendered with its asserter
+    is a prank anyone can see.
+    """
+
+    room: tuple[Fact, ...] = ()
+    sender: tuple[Fact, ...] = ()
+    extent: FactExtent = field(default_factory=lambda: FactExtent(0, 0))
+    asserters: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

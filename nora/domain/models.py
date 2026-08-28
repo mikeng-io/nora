@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from .facts import Fact
+from .facts import FactsView
 from .media import MediaBlob, MediaRef
 from .notes import Note
 from .standing import Standing
@@ -318,7 +318,11 @@ class TagContext:
     # so every deployed `TagContext` holds `()` until then —
     # `nora.language.fact_render.render_facts` renders no block for that,
     # same as its siblings' empty state.
-    facts: tuple[Fact, ...] = ()
+    # 19 §6's three slices, not a flat tuple: room, sender, and an extent
+    # line that is counts only. A flat tuple could not carry the extent,
+    # and the extent is the half that stops the block being a subset
+    # presented as the whole.
+    facts: FactsView = field(default_factory=FactsView)
     # The note tier (2026-08-21 note-tier design), §5.1 — the INDEX of tracked
     # uncertainties, workspace-keyed like `facts` above and unlike every block
     # before it. Defaulted empty for the same reason all four of its siblings

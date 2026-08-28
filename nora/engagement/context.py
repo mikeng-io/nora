@@ -23,7 +23,13 @@ import logging
 import time
 from typing import Any, Protocol
 
-from nora.domain.facts import Fact
+from nora.domain.facts import (
+    Fact,
+    FactExtent,
+    FactsView,
+    mentions,
+    normalise_name,
+)
 from nora.domain.models import (
     NormalizedMessage,
     PersonRef,
@@ -136,7 +142,12 @@ class TranscriptInjection:
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
         facts: FactReader | None = None,
-        max_rendered_facts: int = 8,
+        # 19 §6's two caps, with its reasoning. ROOM is the working set —
+        # more than eight and the block competes with the transcript it sits
+        # beside. SENDER is the narrowest slice and the most often empty, and
+        # four is enough to ground «you told us…».
+        max_room_facts: int = 8,
+        max_sender_facts: int = 4,
         standing: StandingStore | None = None,
     ) -> None:
         self._audit = audit
@@ -176,7 +187,8 @@ class TranscriptInjection:
         # `Conversation.workspace` must not each carry their own idea of what a
         # room's workspace is.
         self._facts_reader = facts
-        self._max_rendered_facts = max_rendered_facts
+        self._max_room_facts = max_room_facts
+        self._max_sender_facts = max_sender_facts
         # Standing (design/dreamer-agent-loop/26-standing.md). `None` while
         # `[standing] enabled = false`, the same "not yet wired" shape its five
         # neighbours use.
@@ -255,12 +267,33 @@ class TranscriptInjection:
                 self._room_exchange(msg),
                 self._room_portrait(msg),
                 self._notes(msg),
-                self._facts(msg),
+                self._standing_facts_unused(),
             ),
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
         transcript = self._persons.name_transcript(transcript, platform=msg.platform)
+
+        # **The fact block is read AFTER the transcript, and that is a
+        # deliberate latency decision** (19 §6, operator 2026-08-28). Its room
+        # slice is "facts whose subject is an entity this conversation has
+        # touched", and the only honest source for what the conversation has
+        # touched is the transcript — which the gather above reads in PARALLEL
+        # with everything else, so a fact read inside it cannot see one.
+        #
+        # The two alternatives were both refused with reasons. Keying the slice
+        # on the tagging message alone needs no extra read and is empty most
+        # turns, which makes a block claiming to be about what the room is
+        # discussing actually about one message. Filtering a wider recency read
+        # afterwards costs nothing and silently misses any fact outside that
+        # window — a subset presented as the whole, which is the exact defect
+        # the extent line exists to stop, rebuilt one level down.
+        #
+        # So it is one extra sequential round trip: a single indexed read, on a
+        # path whose latency histogram starts at 0.1s. That is a PRIOR and not
+        # a measurement, which is why it is measured on the real endpoint after
+        # this lands rather than asserted here.
+        facts = await self._facts(msg, transcript=transcript, tagger=ref)
 
         return TagContext(
             tag_id=request.tag_id,
@@ -463,38 +496,123 @@ class TranscriptInjection:
                 "nora_errors_total", stage="room_exchange", platform=msg.platform)
             return RoomExchange(scope_id=msg.conversation_id)
 
-    async def _facts(self, msg: NormalizedMessage) -> tuple[Fact, ...]:
-        """The workspace's standing facts, or none — the fourth sibling of
-        `_room_language`/`_room_exchange`/`_room_portrait`, with the same
-        never-raises guard for the same reason: this runs inside the turn's
-        `asyncio.gather`, where one uncaught exception cancels its siblings and
-        silences the whole turn.
+    async def _standing_facts_unused(self) -> None:
+        """A placeholder keeping the second gather at five members while the
+        fact read moves out of it. Five is what the `asyncio.gather` overloads
+        type against; dropping to four would work and would also make the two
+        branches asymmetric for a reason nobody reading them could see."""
+        return None
+
+    async def _facts(
+        self, msg: NormalizedMessage, *,
+        transcript: tuple[TranscriptRow, ...],
+        tagger: PersonRef | None,
+    ) -> FactsView:
+        """The `<facts>` block's three slices (19 §6).
+
+        **One block, three labelled slices** — room (8), sender (4), and an
+        extent line that is counts only. Three sibling blocks would read as
+        three unrelated systems rather than one store seen from three angles.
 
         **The one block whose content is not derived from the room it renders
         into**, which is why the workspace lookup is here rather than a
-        conversation id passed straight through. §1.1's argument is that within
-        one workspace this crosses no boundary R-31 guards — DEC-105/R-49's
-        own reasoning, that rooms sharing a workspace are one social unit
-        reachable in more than one place. That argument is borrowed, and it is
-        only as strong as the workspace configuration is honest.
+        conversation id passed straight through. Within one workspace this
+        crosses no boundary R-31 guards — DEC-105/R-49's own reasoning, that
+        rooms sharing a workspace are one social unit. That argument is
+        borrowed, and it is only as strong as the workspace configuration is
+        honest.
 
-        No subject filter (`recent_facts`, not `standing_facts`), and that port
-        method's docstring carries the argument: §13.1 leaves entity resolution
-        open, and inventing a resolution rule at the render site would put a
-        second definition of "subject" in the codebase for the writer to
-        disagree with."""
-        if self._facts_reader is None:
-            return ()
+        **Never raises**, the same guard its siblings carry and for a reason
+        that survives the move out of the gather: a thinner reply beats no
+        reply, and every read below already degrades to nothing on its own.
+
+        **The extent is read even when both slices are empty.** That is the
+        whole point of it: a block that vanishes when nothing matched tells her
+        nothing exists, and one saying she holds forty and is being shown none
+        tells her the verb is worth reaching for.
+        """
+        reader = self._facts_reader
+        if reader is None:
+            return FactsView()
+        workspace = _workspace_of(self._policy, msg)
         try:
-            return await self._facts_reader.recent_facts(
-                workspace=_workspace_of(self._policy, msg),
-                limit=self._max_rendered_facts,
+            subjects = await self._subjects_in_play(
+                reader, workspace=workspace, transcript=transcript, msg=msg,
+            )
+            room = await reader.standing_facts(
+                workspace=workspace,
+                subject_ids=subjects,
+                limit=self._max_room_facts,
+            )
+            sender: tuple[Fact, ...] = ()
+            if tagger is not None:
+                sender = await reader.facts_asserted_by(
+                    workspace=workspace,
+                    person_id=tagger.person_id,
+                    limit=self._max_sender_facts,
+                )
+            standing = await reader.standing_count(
+                workspace=workspace,
             )
         except Exception:
             log.exception("fact read failed; continuing without the block")
             self._metrics.inc(
                 "nora_errors_total", stage="facts", platform=msg.platform)
+            return FactsView()
+
+        shown = {f.id for f in room} | {f.id for f in sender}
+        return FactsView(
+            room=room, sender=sender,
+            extent=FactExtent(standing=standing, shown=len(shown)),
+            asserters=await self._asserters_for(reader, room + sender),
+        )
+
+    async def _subjects_in_play(
+        self, reader: FactReader, *, workspace: str,
+        transcript: tuple[TranscriptRow, ...], msg: NormalizedMessage,
+    ) -> tuple[str, ...]:
+        """The subjects this conversation has TOUCHED — 19 §6's room slice.
+
+        Matched by normalised containment against the transcript and the
+        tagging message, the same matcher recognition uses and for the same
+        reasons: the job is «does this text talk about X», which is a substring
+        question, and a similarity threshold nobody can calibrate would look
+        like evidence. It is also collation-independent, which matters on a
+        database about to be reindexed under a different libc's ordering.
+
+        `standing_subjects` is bounded by the workspace, and the cost of the
+        scan is what `nora_facts_subject_scan` reports — the RESULT here is a
+        list of subjects, and a correct list is compatible with any cost.
+        """
+        haystack = normalise_name(
+            " ".join([msg.body or "", *(r.body or "" for r in transcript)])
+        )
+        if not haystack:
             return ()
+        subjects = await reader.standing_subjects(workspace=workspace)
+        return tuple(
+            subject for subject in subjects
+            if mentions(haystack, normalise_name(subject))
+        )
+
+    async def _asserters_for(
+        self, reader: FactReader, facts: tuple[Fact, ...],
+    ) -> dict[str, tuple[str, ...]]:
+        """Who said each `stated` fact — 30 §2.3, and the read that makes a
+        prank legible rather than authoritative.
+
+        Only for `stated` rows: every other warrant renders what backs it
+        without a person, so asking would be one query per fact for a string
+        nothing shows.
+        """
+        out: dict[str, tuple[str, ...]] = {}
+        for fact in facts:
+            if fact.warrant_kind != "stated":
+                continue
+            rows = await reader.asserters(fact_id=fact.id)
+            if rows:
+                out[fact.id] = tuple(dict.fromkeys(a.person_id for a in rows))
+        return out
 
     async def _room_portrait(self, msg: NormalizedMessage) -> RoomPortrait:
         """Dreamer Plan 3's own sibling of `_room_language`/`_room_exchange`

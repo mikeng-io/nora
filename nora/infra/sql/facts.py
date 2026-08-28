@@ -303,6 +303,80 @@ class SqlFactStore:
         )
         return "ok"
 
+    async def facts_asserted_by(
+        self, *, workspace: str, person_id: str, limit: int,
+    ) -> tuple[Fact, ...]:
+        """The sender slice (19 §6). Standing rows only, newest first.
+
+        `limit <= 0` yields `()` BEFORE touching the database — Postgres errors
+        on a negative LIMIT, and the double must degrade the same way rather
+        than answering a different question the way `list[:-1]` silently does.
+
+        Never raises, for `standing_facts`' reason: this runs inside the turn's
+        `asyncio.gather`, where one uncaught exception cancels its siblings and
+        silences the whole turn.
+        """
+        if limit <= 0:
+            return ()
+        try:
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(
+                    sa.select(FACT)
+                    .where(
+                        FACT.c.workspace == workspace,
+                        FACT.c.superseded_at.is_(None),
+                        sa.exists().where(
+                            FACT_ASSERTER.c.fact_id == FACT.c.id,
+                            FACT_ASSERTER.c.person_id == person_id,
+                        ),
+                    )
+                    .order_by(FACT.c.created_at.desc())
+                    .limit(limit)
+                )).all()
+        except Exception:
+            log.exception(
+                "facts_asserted_by unavailable for workspace %s", workspace,
+            )
+            return ()
+        return tuple(_row_to_fact(r) for r in rows)
+
+    async def standing_subjects(self, *, workspace: str) -> tuple[str, ...]:
+        """Distinct subjects of standing facts. Never raises."""
+        try:
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(
+                    sa.select(FACT.c.subject_id)
+                    .where(
+                        FACT.c.workspace == workspace,
+                        FACT.c.superseded_at.is_(None),
+                    )
+                    .distinct()
+                )).all()
+        except Exception:
+            log.exception(
+                "standing_subjects unavailable for workspace %s", workspace,
+            )
+            return ()
+        return tuple(r[0] for r in rows)
+
+    async def standing_count(self, *, workspace: str) -> int:
+        """The extent (19 §6, 23 §3). `0` on an unreachable store — a wrong
+        number here would be a claim about the size of what she knows, and the
+        honest degradation is to claim nothing."""
+        try:
+            async with self._engine.connect() as conn:
+                return int((await conn.execute(
+                    sa.select(sa.func.count())
+                    .select_from(FACT)
+                    .where(
+                        FACT.c.workspace == workspace,
+                        FACT.c.superseded_at.is_(None),
+                    )
+                )).scalar_one())
+        except Exception:
+            log.exception("standing_count unavailable for workspace %s", workspace)
+            return 0
+
     async def asserters(self, *, fact_id: str) -> tuple[FactAsserter, ...]:
         """Who claimed this fact, oldest first. `()` for a fact nobody could be
         attributed to AND for a `fact_id` that names nothing — the caller is

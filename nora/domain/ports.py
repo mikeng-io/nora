@@ -1625,6 +1625,45 @@ class FactReader(Protocol):
         reached"."""
         ...
 
+    async def facts_asserted_by(
+        self, *, workspace: str, person_id: str, limit: int,
+    ) -> tuple[Fact, ...]:
+        """Standing facts THIS person asserted, most recent first — 19 §6's
+        sender slice, and the first read the asserter junction exists for.
+
+        It grounds «you told us…», and it is the narrowest slice and the most
+        often empty, which is why its cap is the smallest. Never raises: it
+        runs beside the render.
+        """
+        ...
+
+    async def standing_subjects(self, *, workspace: str) -> tuple[str, ...]:
+        """Every DISTINCT subject the workspace's standing facts name.
+
+        The room slice's haystack-side input: the render site matches these
+        against the conversation's text rather than asking the database to,
+        because the matcher is `nora.domain.facts.mentions` and there is
+        exactly one of it — a SQL `LIKE` here would be a second definition of
+        what "mentions" means, and the two would drift on the first CJK case.
+
+        `()` on an unreachable store, for `standing_facts`' reason. Bounded by
+        the workspace's distinct subjects, which is small while it is small;
+        the cost is reported rather than assumed.
+        """
+        ...
+
+    async def standing_count(self, *, workspace: str) -> int:
+        """How many standing facts the workspace holds, for the extent line.
+
+        **Counts, never rows** (19 §6, 23 §3). Without it the block is a subset
+        presented as the whole, with no signal that more exists or that a verb
+        is worth reaching for — the defect the recency window had. `0` on an
+        unreachable store, for `standing_facts`' reason: a wrong number here
+        would be a claim about the size of what she knows, and the honest
+        degradation is to claim nothing.
+        """
+        ...
+
     async def asserters(self, *, fact_id: str) -> tuple[FactAsserter, ...]:
         """WHO claimed this fact, oldest first (`21-substrate-contract.md`
         §7). `()` both for a fact nobody could be attributed to and for a

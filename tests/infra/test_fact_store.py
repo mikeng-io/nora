@@ -346,6 +346,22 @@ async def reader(request):
         store = InMemoryFactStore()
 
         async def seed(fact_id, rows):
+            # The FACT too, not only its asserters. The SQL half inserts a real
+            # `fact` row because `fact_asserter_fact_id_fkey` refuses an
+            # orphan; a double that recorded only the junction would answer
+            # `facts_asserted_by` with nothing while production answered with
+            # the row — a divergence exactly where the two are supposed to
+            # agree, and one this suite found the first time it asked.
+            store.seed_fact(
+                Fact(
+                    id=fact_id, workspace="ws", subject_id="s", predicate="p",
+                    object_entity_id=None, object_literal="o",
+                    source_url="https://x.test/a", source_excerpt="x",
+                    valid_from=1, created_at=1,
+                    instruction_sha256="a" * 64, model="m",
+                    established_by="run",
+                )
+            )
             store.seed_asserters(*[
                 FactAsserter(
                     fact_id=fact_id, person_id=p, message_id=m, asserted_at=t,
@@ -1021,3 +1037,60 @@ async def test_an_oversized_candidate_is_named_too(pg_url):
         assert "predicate is 150 characters" in offending[0]
     finally:
         await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# the sender slice and the extent — 19 §6, on BOTH implementations
+# ---------------------------------------------------------------------------
+
+
+async def test_the_sender_slice_is_what_this_person_asserted(reader):
+    """The first read the asserter junction exists for. It grounds «you told
+    us…», which is why the sender slice exists at all."""
+    store, seed = reader
+    await seed(FACT_A, [("miles", 41, 10)])
+    await seed(FACT_B, [("grant", 42, 10)])
+
+    mine = await store.facts_asserted_by(
+        workspace="ws", person_id="miles", limit=10,
+    )
+
+    assert [f.id for f in mine] == [FACT_A]
+    # The positive control: the other person's fact IS reachable, so the single
+    # result above is a filter and not an empty store.
+    theirs = await store.facts_asserted_by(
+        workspace="ws", person_id="grant", limit=10,
+    )
+    assert [f.id for f in theirs] == [FACT_B]
+
+
+async def test_the_sender_slice_clamps_a_negative_limit_to_empty(reader):
+    """Postgres errors on a negative LIMIT, so the double must degrade the same
+    way rather than answering a different question the way `list[:-1]`
+    silently does."""
+    store, seed = reader
+    await seed(FACT_A, [("miles", 41, 10)])
+
+    assert await store.facts_asserted_by(
+        workspace="ws", person_id="miles", limit=-1,
+    ) == ()
+
+
+async def test_the_sender_slice_never_crosses_a_workspace(reader):
+    store, seed = reader
+    await seed(FACT_A, [("miles", 41, 10)])
+
+    assert await store.facts_asserted_by(
+        workspace="other", person_id="miles", limit=10,
+    ) == ()
+
+
+async def test_the_extent_counts_standing_rows(reader):
+    """Counts, never rows (19 §6, 23 §3). Without it the block is a subset
+    presented as the whole, which is the defect the recency window had."""
+    store, seed = reader
+    await seed(FACT_A, [("miles", 41, 10)])
+    await seed(FACT_B, [("grant", 42, 10)])
+
+    assert await store.standing_count(workspace="ws") == 2
+    assert await store.standing_count(workspace="other") == 0

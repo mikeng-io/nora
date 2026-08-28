@@ -480,7 +480,8 @@ def test_the_facts_section_is_optional_and_ships_inert(toml_path):
 
     assert cfg.facts.enabled is False
     assert cfg.facts.max_adjudications_per_tick == 10
-    assert cfg.facts.max_rendered_facts == 8
+    assert cfg.facts.max_room_facts == 8
+    assert cfg.facts.max_sender_facts == 4
     assert cfg.facts.retention_days == 180
 
 
@@ -492,7 +493,7 @@ def test_the_notes_section_is_optional_and_ships_inert(toml_path):
     `<notes>` block out of every tag until somebody decides otherwise.
 
     One field only, and the ABSENCE is the assertion worth making: there is no
-    render cap here, unlike `[facts].max_rendered_facts`. §5.1 makes the index
+    render cap here, unlike `[facts]`' two slice caps. §5.1 makes the index
     uncapped on purpose — a note missing from it is invisible to her, and
     invisible is indistinguishable from absent — so a top-N knob would be a
     supported way to reintroduce that failure. The per-entry caps in
