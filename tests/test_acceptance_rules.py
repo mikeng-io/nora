@@ -476,6 +476,16 @@ RULE_TESTS = {
     # never raises the problem it solves, so the row and this entry are the
     # only places the reason is written down.
     "R-80": "test_the_dense_read_never_mixes_two_models_geometries",
+    # R-81 (DEC-145): attribution is SOURCING. The debrief's grounding rubric
+    # asked whether a claim was supported by «something someone said in the
+    # transcript» and said in as many words that it was «not about
+    # correctness» — so a reply that put one person's words in another
+    # person's mouth passed, because the words WERE said, by someone. The
+    # named test asserts on the prompt the fold was actually given rather
+    # than on the markdown, because the clause only does anything where the
+    # model can read it; its second half reads the same prompt back for the
+    # speaker labels the rule presupposes. Next free number after R-80.
+    "R-81": "test_r81_a_quote_is_grounded_only_against_the_person_who_said_it",
 }
 
 

@@ -26,6 +26,7 @@ from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import span
 from nora.testing import InMemoryStandingStore, InMemoryTurnVerdictStore
+from tests.objectives import shipped_objectives
 
 pytestmark = pytest.mark.asyncio
 
@@ -1771,3 +1772,120 @@ async def test_a_refused_fold_says_so_on_the_span(exported_spans):
         await _run(client=_Client(debrief.Completion("not json at all", "stop")))
     assert _spans(exported_spans)["engagement.debrief"].attributes[
         "nora.debrief.outcome"] == "malformed"
+
+
+# --- R-81: the grounding rubric is attribution-aware ------------------------
+
+
+class _ShippedObjective:
+    """The REAL instruction store over the shipped `nora/dreamer/` tree.
+
+    Not `_Objective`, which answers `"OBJECTIVE-TEXT"` — the point of the test
+    below is that the rubric the DEPLOYMENT reads reaches the model, so a
+    stand-in string would assert the test's own text back to itself.
+    """
+
+    def objective_body(self, name: str) -> str:
+        return shipped_objectives().objective_body(name)
+
+
+def _misattribution_trace() -> TagTrace:
+    """2026-08-28 16:35:01 UTC, with the names kept: Grant said 「收隊」 and the
+    reply said Avery did. Two speakers, one of whom said the quoted line and
+    one of whom did not — the whole shape the rubric was blind to."""
+    said = TranscriptRow(
+        id=1, sender_id="+852111", sender_name="Grant Carver",
+        ts=1_756_398_780_000, body="收隊", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+    other = TranscriptRow(
+        id=2, sender_id="+852222", sender_name="Avery Walsh",
+        ts=1_756_398_840_000, body="我遲啲返", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+    reply = {"role": "assistant", "content": [{"toolUse": {
+        "name": "send_reply", "input": {"text": "Avery 話收隊喇"},
+    }}]}
+    return TagTrace(
+        tag_id="tag-attr", conversation_id="g1", messages=(reply,),
+        transcript=(said, other), outcome="send_reply",
+        created_at=1_756_398_901_000,
+    )
+
+
+async def test_r81_a_quote_is_grounded_only_against_the_person_who_said_it():
+    """**R-81.** On 2026-08-28 a reply attributed Grant's 「收隊」 to Avery and
+    the fold answered `{"grounded": true, "unsupported": []}`. It was right by
+    its own rubric: the rubric asked whether SOMETHING SOMEONE SAID supported
+    the claim, and 「收隊」 was said — by someone. It never asked by whom, and it
+    told the model in as many words that this was about sourcing «not about
+    correctness», which reads as licence to wave a wrong name through.
+
+    Two axes, because either one alone is a claim rather than a measurement:
+
+    1. **The rule reaches the model.** Asserted on the prompt the fold was
+       actually given, through the real `DreamerInstructions` over the shipped
+       tree — not on `read_text()` of the markdown, which would also be
+       satisfied by the clause sitting in the frontmatter `description`, where
+       nothing ever sends it.
+    2. **The surface the rule presupposes exists.** «the speaker on that
+       transcript line» is unjudgeable unless the render puts the speaker ON
+       the line and keeps two speakers apart. So the same prompt is read back:
+       the quoted line names Grant and not Avery, and Avery is present
+       elsewhere as the speaker of her own line — without that second half the
+       Avery assertion is also true of a render that dropped her entirely.
+
+    FALSIFIED (production only, never this file):
+    - revert `standing-debrief.md`'s attribution paragraph -> axis 1 red;
+    - `_speaker` in `nora/engagement/debrief_render.py` returning `""` ->
+      axis 2 red, axis 1 still green.
+    """
+    client = _Client(_ok("a position"))
+    metrics = Metrics()
+    await debrief.run(
+        trace=_misattribution_trace(), platform="signal",
+        store=InMemoryStandingStore(), store_verdict=InMemoryTurnVerdictStore(),
+        client=client, objective=_ShippedObjective(), metrics=metrics,
+        display_name="Nora", max_chars=1200, window=40, timeout_seconds=5.0,
+        store_timeout_seconds=5.0, rebuild_after_folds=20,
+        notes_read=frozenset(), notes_sink=_FakeSink(),
+        workspace_of=lambda p, c: "ws", now_ms=1_756_398_902_000,
+    )
+    # The positive control: every assertion below is read off a prompt, and a
+    # stage that raised before building one produces no prompt at all.
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    [prompt] = client.prompts
+
+    # --- axis 1: the rule the model is judging by -------------------------
+    assert "speaker on the line it came from" in prompt, (
+        "the rubric no longer ties a named attribution to the speaker of the "
+        "line, so «someone said it» is grounding enough again"
+    )
+    assert "an attribution is a claim about who" in prompt, (
+        "«this is about SOURCING, not about correctness» stands unqualified "
+        "again, which is what let a wrong name through as a correctness quibble"
+    )
+
+    # --- axis 2: the surface that rule is judged against ------------------
+    # Both halves of the 16:35 turn are in front of the fold — the room's own
+    # lines and the reply that misnamed one of them. Neither axis means
+    # anything if the fold was never shown what it is judging.
+    assert "Avery 話收隊喇" in prompt, "the reply under review never reached the fold"
+    # Everything before the close tag, then after the LAST open tag: the rubric
+    # itself names `<transcript>` when it tells the model what it is given, so
+    # a leading split lands inside the instructions instead of the room.
+    transcript = prompt.split("</transcript>")[0].rsplit("<transcript>", 1)[1]
+
+    quoted = [line for line in transcript.splitlines() if "收隊" in line]
+    assert len(quoted) == 1, (
+        f"expected one transcript line carrying the quote, got {quoted}")
+    assert "Grant Carver" in quoted[0], (
+        "the quoted line does not name its speaker, so no rubric can tell who "
+        f"said it: {quoted[0]!r}"
+    )
+    assert "Avery Walsh" not in quoted[0]
+    assert any("Avery Walsh" in line and "我遲啲返" in line
+               for line in transcript.splitlines()), (
+        "Avery is not in the rendered transcript at all — the assertion above "
+        "would then hold for a render that simply dropped her"
+    )
