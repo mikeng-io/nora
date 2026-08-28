@@ -128,6 +128,10 @@ edges:
   - {src: 30-review-response, dst: 00-overview, rel: corrects, provenance: asserted}
   - {src: 30-review-response, dst: 21-substrate-contract, rel: corrects, provenance: asserted}
   - {src: 30-review-response, dst: 29-authority, rel: corrects, provenance: asserted}
+  - {src: 31-recognition, dst: 30-review-response, rel: extends, provenance: asserted}
+  - {src: 31-recognition, dst: 16-open-items, rel: closes, provenance: asserted}
+  - {src: 31-recognition, dst: 12-self-correction, rel: depends_on, provenance: asserted}
+  - {src: 31-recognition, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
 scope:
   v1:
     - "This is the KNOWLEDGE tier: write canonical entity ids, the one column four problems bottom out in"
