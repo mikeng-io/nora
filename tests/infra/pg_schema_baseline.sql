@@ -52,12 +52,14 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
 ADD CONSTRAINT artifacts_slug_key UNIQUE (slug);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
+ADD CONSTRAINT embedding_pkey PRIMARY KEY (kind, row_key);
 ADD CONSTRAINT event_rsvps_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id);
 ADD CONSTRAINT event_rsvps_pkey PRIMARY KEY (event_id, person_id);
 ADD CONSTRAINT events_pkey PRIMARY KEY (id);
@@ -119,6 +121,7 @@ ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.compute_jobs
 ALTER TABLE ONLY public.consolidation_watermark
+ALTER TABLE ONLY public.embedding
 ALTER TABLE ONLY public.event_rsvps
 ALTER TABLE ONLY public.event_rsvps
 ALTER TABLE ONLY public.events
@@ -193,6 +196,7 @@ CACHE 1
 CACHE 1
 CACHE 1
 COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
+COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
 CONSTRAINT ck_compute_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'failed'::text])))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
@@ -205,6 +209,8 @@ CONSTRAINT ck_reminders_recurrence CHECK ((((recurrence = 'none'::text) AND (rec
 CONSTRAINT ck_reminders_recurrence_kind CHECK ((recurrence = ANY (ARRAY['none'::text, 'daily'::text, 'weekly'::text, 'monthly'::text, 'yearly'::text]))),
 CONSTRAINT ck_reminders_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'cancelled'::text, 'failed'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
+CONSTRAINT embedding_model_is_named_check CHECK ((length(btrim(model)) > 0)),
+CONSTRAINT embedding_text_is_present_check CHECK ((length(btrim(text)) > 0))
 CONSTRAINT exchange_observation_act_check CHECK ((act = ANY (ARRAY['insult_trade'::text, 'banter'::text, 'tease'::text, 'callback_joke'::text, 'agreement_ritual'::text, 'disagreement_ritual'::text, 'compliment_exchange'::text]))),
 CONSTRAINT exchange_observation_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT exchange_observation_message_ids_check CHECK ((array_length(message_ids, 1) >= 2)),
@@ -259,7 +265,10 @@ CONSTRAINT tag_trace_outcome_check CHECK ((outcome = ANY (ARRAY['send_reply'::te
 CONSTRAINT turn_verdict_grounded_has_no_unsupported_check CHECK ((NOT (grounded AND (cardinality(unsupported) > 0)))),
 CONSTRAINT turn_verdict_unsupported_fits_the_list_check CHECK ((cardinality(unsupported) <= 10))
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
+CREATE INDEX idx_embedding_scope ON public.embedding USING btree (kind, scope);
+CREATE INDEX idx_embedding_v1024 ON public.embedding USING hnsw (v1024 public.vector_cosine_ops);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
 CREATE INDEX idx_fact_disputed ON public.fact USING btree (workspace) WHERE (disputed_at IS NOT NULL);
@@ -288,6 +297,7 @@ CREATE TABLE public.analytics_watermark (
 CREATE TABLE public.artifacts (
 CREATE TABLE public.compute_jobs (
 CREATE TABLE public.consolidation_watermark (
+CREATE TABLE public.embedding (
 CREATE TABLE public.event_rsvps (
 CREATE TABLE public.events (
 CREATE TABLE public.exchange_observation (
@@ -456,6 +466,7 @@ due_at timestamp with time zone NOT NULL,
 duration_mad_ms bigint,
 duration_median_ms bigint,
 dwell_ms bigint DEFAULT 0 NOT NULL,
+embedded_at bigint NOT NULL,
 ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
 entity_id uuid NOT NULL
@@ -476,6 +487,7 @@ fact_id uuid NOT NULL,
 fact_id uuid NOT NULL,
 fetch_token text NOT NULL,
 fidelity text DEFAULT 'tentative'::text NOT NULL,
+fingerprint text NOT NULL,
 fired_at timestamp with time zone,
 first_seen timestamp with time zone DEFAULT now() NOT NULL,
 first_seen_at bigint NOT NULL,
@@ -528,6 +540,7 @@ is_nora integer DEFAULT 0 NOT NULL,
 kind text DEFAULT 'reminder'::text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
+kind text NOT NULL,
 label text,
 last_adjudicated_at bigint,
 last_cluster_id integer DEFAULT 0 NOT NULL,
@@ -564,6 +577,7 @@ message_id integer NOT NULL,
 message_id integer NOT NULL,
 message_ids integer[] NOT NULL,
 messages jsonb NOT NULL,
+model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text,
@@ -650,10 +664,12 @@ retire_reason text,
 retired_at bigint,
 revisit_at bigint,
 row_key text NOT NULL,
+row_key text NOT NULL,
 sample_count integer DEFAULT 0 NOT NULL,
 sample_count integer DEFAULT 0 NOT NULL,
 sample_count integer NOT NULL,
 saved_place_id text,
+scope text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
@@ -712,6 +728,7 @@ tag_id text NOT NULL,
 task text NOT NULL,
 task_sha256 text DEFAULT ''::text NOT NULL,
 text text NOT NULL,
+text text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
@@ -733,6 +750,7 @@ updated_ts bigint NOT NULL
 updated_ts bigint NOT NULL,
 updated_ts bigint NOT NULL,
 url text NOT NULL,
+v1024 public.vector(1024),
 valid_from bigint NOT NULL,
 valid_to bigint,
 venue_address text,

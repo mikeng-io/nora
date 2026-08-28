@@ -46,7 +46,6 @@ defaults are not. The store was SQLite until the 2026-08-07 migration
 from __future__ import annotations
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql as pg
 
 # The one domain import this module makes, and it is deliberate. `tag_trace`'s
 # own outcome CHECK spells its six values out as a literal beside a comment
@@ -57,12 +56,19 @@ from sqlalchemy.dialects import postgresql as pg
 # the migrations, which DO hardcode the number (a migration that read a live
 # constant would change meaning under a later edit), so moving the constant
 # fails the parity gate loudly instead of drifting.
+from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects import postgresql as pg
+
 from nora.domain.facts import (
     FACT_PREDICATE_CEILING_CHARS,
     FACT_TERM_CEILING_CHARS,
 )
 from nora.domain.notes import NOTE_BODY_CEILING_CHARS
 from nora.domain.standing import STANDING_BODY_CEILING_CHARS
+
+#: bge-m3's width, MEASURED against the live endpoint on 2026-08-28 rather
+#: than read off a model card. The migration reads this same constant.
+EMBEDDING_DIMENSIONS = 1024
 
 METADATA = sa.MetaData()
 
@@ -1472,6 +1478,68 @@ IDX_FACT_DISPUTED = sa.Index(
 
 IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(
     "idx_fact_premise_premise_fact_id", FACT_PREMISE.c.premise_fact_id,
+)
+
+
+# THE EMBEDDING SEAM (24 §7.5, migration 0044). ONE table for every tier, not
+# one per tier — 24 §1's whole argument is that this is one seam and not three.
+#
+# **`kind` is an open string, never an enum.** A closed set means the fifth
+# tier ships with a schema change and a CHECK edit before it can store its
+# first vector. The exchange tier's closed act set is right for ACTS, which are
+# a vocabulary; `kind` is a REGISTRY, and registries stay open.
+#
+# **`row_key` is TEXT**, for `rendered_claim`'s reason one table over: it holds
+# different tiers' keys, and `room_lexeme`'s is three TEXT columns with no
+# surrogate id.
+#
+# **One column per DIMENSION, routed by kind** (24 §7.5). `vector(N)` fixes N at
+# DDL time, so a future tier bringing its own model adds a COLUMN rather than a
+# type — and the "declare three things and write no schema" bar holds for any
+# tier reusing an existing dimension. `v1024` is bge-m3, and 1024 is MEASURED
+# against the live endpoint rather than read off a model card.
+#
+# **`fingerprint` is the re-embedding predicate** (25 §5): model identity and
+# the exact text embedded. One comparison — `fingerprint <> current` — catches a
+# model swap and a changed row, with no second mechanism and no ordering trap.
+EMBEDDING = sa.Table(
+    "embedding",
+    METADATA,
+    sa.Column("kind", sa.Text, primary_key=True),
+    sa.Column("row_key", sa.Text, primary_key=True),
+    # The scope a search is allowed to cross. `workspace` for a fact, a
+    # conversation for a lexeme — the seam does not care which, only that a
+    # reader can filter by it, because a retrieval verb that could not would
+    # be R-49's relay in a new place.
+    sa.Column("scope", sa.Text, nullable=False),
+    # What was embedded, kept so a stale vector can be explained rather than
+    # merely detected.
+    sa.Column("text", sa.Text, nullable=False),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column("fingerprint", sa.Text, nullable=False),
+    sa.Column("embedded_at", sa.BigInteger, nullable=False),
+    sa.Column("v1024", Vector(EMBEDDING_DIMENSIONS)),
+    sa.CheckConstraint(
+        "length(btrim(text)) > 0", name="embedding_text_is_present_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(model)) > 0", name="embedding_model_is_named_check",
+    ),
+)
+
+#: The dense channel's index. HNSW rather than IVFFlat: it needs no training
+#: pass over existing rows, which matters for a table that starts empty and
+#: grows slowly — an IVFFlat index built on nothing has useless lists forever.
+#: `vector_cosine_ops` because 23 §6 ranks on cosine distance.
+IDX_EMBEDDING_V1024 = sa.Index(
+    "idx_embedding_v1024", EMBEDDING.c.v1024,
+    postgresql_using="hnsw",
+    postgresql_ops={"v1024": "vector_cosine_ops"},
+)
+
+#: The scope filter every read applies before ranking.
+IDX_EMBEDDING_SCOPE = sa.Index(
+    "idx_embedding_scope", EMBEDDING.c.kind, EMBEDDING.c.scope,
 )
 
 

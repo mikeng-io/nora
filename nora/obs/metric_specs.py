@@ -1141,6 +1141,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "without a live one marking would accumulate and never resolve — the "
         "loop would be a ratchet rather than a loop.",
     ),
+    # Pass 4, embedding (25 §5). R-27 on the service, and the middle state is a
+    # real one: an EMPTY batch is `nothing_found`. A short or mis-shaped batch
+    # is `unavailable` rather than a partial success — writing three vectors
+    # for four triples leaves the fourth looking un-embeddable forever, which
+    # is a `nothing_found` wearing a shape nobody would check.
+    _CounterSpec(
+        "nora_fact_embed_total",
+        "Embedding batches by outcome: ok, nothing_found (nothing to embed), "
+        "unavailable (the local model could not be reached, or returned a "
+        "batch that did not match its input).",
+        ("status",),
+    ),
     _CounterSpec(
         "nora_rendered_claim_total",
         "The render ledger by verb and outcome. verb=record: ok (rows "

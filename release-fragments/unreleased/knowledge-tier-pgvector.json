@@ -1,0 +1,11 @@
+{
+  "type": "change",
+  "summary": "The database moved to an image that can store vectors, and every index was rebuilt.",
+  "details": [
+    "The old image and the new one sort text differently for the same locale, and every text index in the database had been built under the old ordering. Read under the new one they would have given quietly wrong results for range queries — not an error, just wrong answers. Every index was rebuilt after the swap and all seventy-one verified byte-identical in definition.",
+    "The test database now uses the same image as the deployment. It did not, which meant the check that guards every schema change was validating against a database that could not do what the real one does."
+  ],
+  "limitations": [
+    "Restarting the two background services to do this revealed that they had been running for two days on an image that could not read the current configuration — they would not have survived any restart, including a reboot. They were recreated on the current image and are healthy."
+  ]
+}
