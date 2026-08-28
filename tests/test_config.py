@@ -1001,12 +1001,12 @@ def test_the_declared_budgets_parse_into_bounded_budgets(toml_path):
     budgets = load(toml_path).dreamer.budgets
     # Pinned, so ADDING an adaptor is a decision rather than an omission —
     # `budget_for` falls back to the defaults for an unknown key silently, so
-    # an adaptor with no block runs on numbers nobody chose. `fact-candidates`
-    # and `fact-adjudication` are the two that exist today; the two `room_*`
-    # are Phase 3's migration targets and name nothing yet.
+    # an adaptor with no block runs on numbers nobody chose. The three `fact-*`
+    # are the adaptors that exist today; the two `room_*` are Phase 3's
+    # migration targets and name nothing yet.
     assert set(budgets) == {
         "room_language", "room_exchange",
-        "fact-candidates", "fact-adjudication",
+        "fact-candidates", "fact-adjudication", "fact-entity-resolution",
     }
     for name, budget in budgets.items():
         assert budget.turns > 0, name
