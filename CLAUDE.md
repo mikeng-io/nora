@@ -284,6 +284,13 @@ earned. They are the `measure` verb pointed at our own instruments.
   `ok`, and never two of them on one event.
 - **A declared metric with no call site is a lie** — it renders as a series that
   is genuinely always zero. Ship the name with its increment, or not yet.
+- **And an increment with no declaration is worse** — `Metrics.inc` raises
+  `KeyError`, which the caller's own `except Exception` then reports as the
+  failure of whatever it wrapped. `nora_peer_card_empty_total` spent a
+  deployment turning every genuinely empty card into a fake transport error.
+  `tests/architecture/test_every_recorded_metric_is_declared.py` is the gate;
+  a call site whose name it cannot read statically must be PINNED there, never
+  skipped.
 - **Label vocabularies are DERIVED from the code, never hand-copied.** One named
   constant the code increments against and the help text reads from: `get_args`
   off a `Literal`, plus a RUNTIME check wherever `make gate`'s mypy does not

@@ -1674,6 +1674,35 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(the compare-and-set lost; the note moved under the call).",
         ("reason",),
     ),
+    # DECLARED LATE, and the gap was not inert. `engagement/context.py` has
+    # incremented this name since the peer-card blindness was found on
+    # 2026-08-15, but it was never added here — so `Metrics.inc` fell through
+    # its counter branch to the bare `self._gauges[name]` lookup and raised
+    # `KeyError`. That raise lands INSIDE `_peer_card`'s own `except
+    # Exception`, which logs "peer-card read failed" and increments
+    # `nora_errors_total{stage="peer_card"}`.
+    #
+    # So the one counter whose entire purpose is to separate «her card is
+    # genuinely empty» from «the read failed» was reporting every genuinely
+    # empty card as a transport failure — the exact confusion it was added to
+    # end, inverted. The instance is one line; the reason it survived is that
+    # nothing checked call sites against this tuple, which is what
+    # `tests/architecture/test_every_recorded_metric_is_declared.py` now does.
+    _CounterSpec(
+        "nora_peer_card_empty_total",
+        "Peer-card reads that came back empty, by platform — i.e. tagged turns "
+        "where her card was NOT rendered into the prompt. It cannot say why: "
+        "`HonchoClient._get` catches every transport failure and returns None, "
+        "so a dead endpoint, a timeout, a 4xx, an unknown peer and a genuinely "
+        "empty card all arrive here as the same `[]`. Do NOT read this against "
+        "`nora_errors_total{stage=\"peer_card\"}` expecting the two to "
+        "partition the space — an outage lands in THIS series, not that one, "
+        "which is why that stage label stays near zero even while Honcho is "
+        "down. Separating the four needs `Recollection`'s two-axis shape on "
+        "the port, which is a port change; until then a RISING count here is "
+        "«her card stopped appearing» and nothing narrower.",
+        ("platform",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
