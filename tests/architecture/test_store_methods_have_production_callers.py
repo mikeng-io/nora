@@ -45,10 +45,12 @@ twelve are what this file can check.
 
 HOW A CALLER IS RESOLVED, AND WHAT THAT STILL CANNOT SEE
 --------------------------------------------------------
-A call site is a PARSED `ast.Call` whose function is an attribute access on a
-NAME-BOUND receiver — `self._facts.propose(...)`, `store.pending(...)`. Both
-halves of that are load-bearing, and an earlier version of this file got both
-wrong by searching raw file text instead:
+A caller of a METHOD is a PARSED `ast.Call` whose function is an attribute
+access on a NAME-BOUND receiver — `self._facts.propose(...)`,
+`store.pending(...)`. A caller of a PROPERTY is a bare Load of the same shape,
+because a property is read rather than called; `window_ms` is the one pinned
+member that needs it. Every part of that is load-bearing, and successive
+versions of this file got each part wrong in turn:
 
   - Parsing, not text, because a DOCSTRING that mentions a method vouched for
     it. `nora/domain/compute.py` contains the prose «Unlike `ReminderStore.due()`»
@@ -57,6 +59,12 @@ wrong by searching raw file text instead:
   - A name-bound receiver, because `(await conn.execute(stmt)).all()` — which
     appears in twenty-odd store modules — certified `SqlMusicSessionStore.all`.
     A store is always reached through a name, never off the result of a call.
+  - CALLS for methods, not every attribute, because collecting bare Loads for
+    everything let a dataclass field, a SQLAlchemy column accessor, a decorator,
+    an annotation and even an assignment TARGET vouch for a method. 1265 names
+    on this tree were borrowable that way, and none of them is a method — so
+    `_namesakes` never saw them and the result read `ok` instead of
+    `unavailable`.
 
 What remains unresolvable is a NAMESAKE: a method of the same name on some
 other class. Two kinds are excluded from checking entirely and listed in
@@ -251,10 +259,32 @@ _AMBIGUOUS: frozenset[str] = frozenset(
     }
 )
 
-# The sweep must see every store module and roughly this many names. The MODULE
-# set is the real control: a reviewer showed that a bare count let nine of the
-# twenty-five store modules vanish from the walk with every assertion still
-# green, because a count has slack and a set does not.
+# THE POSITIVE CONTROL, and it must be a LITERAL: every store module that
+# defines at least one public method, written out rather than globbed.
+#
+# Two versions of this control were wrong before it. A bare name COUNT had
+# enough slack that nine of these modules could vanish from the walk with every
+# assertion still green. Replacing it with a module SET did not fix it either,
+# because the expected set was computed from the same glob the walk used —
+# narrowing the walk narrowed both sides equally, and a reviewer dropped three
+# modules, one of them carrying a freshly added uncalled method, and stayed
+# green. A control derived from the thing it controls is not a control.
+#
+# `engine.py`, `migrations_runner.py` and `schema.py` are the package's only
+# other files and define no public methods, so they are simply not here.
+_STORE_MODULES: frozenset[str] = frozenset(
+    {
+        "announcements.py", "audit.py", "compute_jobs.py", "embeddings.py",
+        "entities.py", "exchange.py", "fact_candidates.py", "facts.py",
+        "gatherings.py", "geocode_cache.py", "language.py",
+        "media_descriptions.py", "media_objects.py", "mobility.py",
+        "music_queue.py", "music_session.py", "notes.py", "presence.py",
+        "reminders.py", "rendered_claims.py", "room_portrait.py",
+        "standing.py", "tag_traces.py", "tool_call_log.py", "turn_verdicts.py",
+    }
+)
+
+# Secondary, against the walk going thin WITHIN the modules it does reach.
 _MIN_METHOD_NAMES = 115
 
 
@@ -263,6 +293,7 @@ class _Method(NamedTuple):
     cls: str
     name: str
     line: int
+    is_property: bool
 
 
 def _parse(path: Path) -> ast.Module:
@@ -283,8 +314,12 @@ def _store_methods() -> dict[str, list[_Method]]:
                     continue
                 if node.name.startswith("_"):
                     continue
+                is_prop = any(
+                    isinstance(d, ast.Name) and d.id == "property"
+                    for d in node.decorator_list
+                )
                 found[node.name].append(
-                    _Method(path.name, cls.name, node.name, node.lineno)
+                    _Method(path.name, cls.name, node.name, node.lineno, is_prop)
                 )
     return found
 
@@ -345,24 +380,44 @@ class _Site(NamedTuple):
     line: int
 
 
-def _call_sites() -> dict[str, list[_Site]]:
-    """Attribute accesses on a NAME-BOUND receiver, by attribute name.
+def _call_sites() -> tuple[dict[str, list[_Site]], dict[str, list[_Site]]]:
+    """(calls, reads) — attribute accesses on a NAME-BOUND receiver, by name.
 
-    Both a call (`store.propose(...)`) and a bare read (`ledger.window_ms`) are
-    collected, because one pinned member is a property.
+    TWO sets, because a method and a property are used differently and treating
+    them alike is a false-clear machine. A method is CALLED, so only an
+    attribute that is the `func` of an `ast.Call` counts; a property is READ, so
+    a bare Load counts too.
 
-    The receiver must be a `Name` or an `Attribute` — never the result of a
-    call. `(await conn.execute(stmt)).all()` is not a store call, and treating
-    it as one is what previously certified `SqlMusicSessionStore.all` as used.
+    Collecting every attribute for both — which an earlier version did — meant a
+    dataclass field, a SQLAlchemy column accessor, a decorator, a type
+    annotation and even an assignment TARGET all vouched for a store method. A
+    reviewer measured 1265 such borrowable names on this tree, concentrated in
+    exactly the column-name space store methods draw from (`due_at`,
+    `revisit_at`, `disputed_at`, `anchor_date`). None of them is a method, so
+    `_namesakes` never saw them either and the name read `ok` rather than
+    `unavailable` — this file's own subject, one level up inside it.
+
+    The receiver must be a `Name` or an `Attribute`, never the result of a call:
+    `(await conn.execute(stmt)).all()` is not a store call, and treating it as
+    one previously certified `SqlMusicSessionStore.all` as used.
     """
-    found: dict[str, list[_Site]] = defaultdict(list)
+    calls: dict[str, list[_Site]] = defaultdict(list)
+    reads: dict[str, list[_Site]] = defaultdict(list)
     for path in _production_sources():
         for node in ast.walk(_parse(path)):
-            if isinstance(node, ast.Attribute) and isinstance(
-                node.value, ast.Name | ast.Attribute
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name | ast.Attribute)
             ):
-                found[node.attr].append(_Site(path, node.lineno))
-    return found
+                calls[node.func.attr].append(_Site(path, node.lineno))
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.ctx, ast.Load)
+                and isinstance(node.value, ast.Name | ast.Attribute)
+            ):
+                reads[node.attr].append(_Site(path, node.lineno))
+    return calls, reads
 
 
 def _ambiguous(methods: dict[str, list[_Method]]) -> frozenset[str]:
@@ -372,8 +427,11 @@ def _ambiguous(methods: dict[str, list[_Method]]) -> frozenset[str]:
     return frozenset(shared | {n for n in unique if n in elsewhere})
 
 
-def _caller_of(method: _Method, sites: dict[str, list[_Site]]) -> str | None:
-    for site in sites.get(method.name, []):
+def _caller_of(
+    method: _Method, sites: tuple[dict[str, list[_Site]], dict[str, list[_Site]]]
+) -> str | None:
+    calls, reads = sites
+    for site in (reads if method.is_property else calls).get(method.name, []):
         if site.path.parent == SQL and site.path.name == method.module:
             continue  # its own module cannot vouch for it
         return f"{site.path.relative_to(ROOT)}:{site.line}"
@@ -390,10 +448,17 @@ def test_every_uncalled_store_method_is_pinned() -> None:
     # numeric floor has slack a set does not: with a count alone, nine of the
     # twenty-five store modules could vanish and every assertion stayed green.
     seen = {m.module for defs in methods.values() for m in defs}
-    expected = {p.name for p in _store_modules()} - {"__init__.py"}
-    assert seen >= expected - {"engine.py", "migrations_runner.py", "schema.py"}, (
-        f"the walk missed store modules entirely: {sorted(expected - seen)}. "
-        "Fix it before trusting a green run."
+    assert seen >= _STORE_MODULES, (
+        "the walk missed store modules entirely: "
+        f"{sorted(_STORE_MODULES - seen)}. Every module named in _STORE_MODULES "
+        "defines public methods, so one absent from `seen` means the walk "
+        "stopped reaching it and everything it holds silently left the checked "
+        "set. Fix the walk before trusting a green run."
+    )
+    unknown = seen - _STORE_MODULES
+    assert not unknown, (
+        "store modules with public methods that are not in _STORE_MODULES — add "
+        f"them so the control keeps covering the package: {sorted(unknown)}"
     )
     assert len(methods) >= _MIN_METHOD_NAMES, (
         f"only {len(methods)} public store method names found, below "
