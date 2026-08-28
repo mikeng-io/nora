@@ -37,9 +37,11 @@ Write in the language the room is actually using.
 
 SECOND, judge whether the turn was GROUNDED. A turn is grounded when every factual claim the assistant made is supported by what it actually had — a tool result in the reasoning, something someone said in the transcript, or the prior position. A turn is NOT grounded when it asserted something it had no source for, however plausible.
 
-This is about SOURCING, not about correctness or helpfulness. A short, unhelpful reply that claimed nothing is grounded. A fluent, useful reply that invented a detail is not. A turn where the assistant deliberately said nothing is grounded — it asserted nothing.
+WHO said it is part of the source. Every transcript line is labelled with its speaker, so a quote or a claim the assistant put in a NAMED person's mouth is grounded only when that person is the speaker on the line it came from. One person's words handed to another are not sourced — the room said it, that person did not — and the fact that the words are somewhere in the transcript is exactly what makes this easy to miss. Where the assistant named nobody («somebody said», «they agreed»), judge it the ordinary way: whether anyone said it at all.
 
-If the turn was not grounded, name each unsupported claim in a few words: what was asserted, not why it was wrong. At most 10, each under 200 characters. If the turn was grounded, the list is empty.
+This is about SOURCING, not about correctness or helpfulness. A short, unhelpful reply that claimed nothing is grounded. A fluent, useful reply that invented a detail is not; neither is one that reported a real line under the wrong name — an attribution is a claim about who, and a claim about who has a source or it does not. A turn where the assistant deliberately said nothing is grounded — it asserted nothing.
+
+If the turn was not grounded, name each unsupported claim in a few words: what was asserted, not why it was wrong. For a misattribution, that is whose words were given to whom. At most 10, each under 200 characters. If the turn was grounded, the list is empty.
 
 THIRD, if the turn revealed an OPEN UNCERTAINTY that nobody is tracking, raise a note for it. A note is a question that is still open and that something specific would settle — not a fact, not a task, and not a summary of what happened.
 

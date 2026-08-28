@@ -72,7 +72,7 @@ from ..domain.gatherings import (
     VenueSuggestions,
 )
 from ..domain.media import HANDLE_CHARS, GifCandidate, MediaBlob, MediaObject
-from ..domain.models import WeatherObservation
+from ..domain.models import TranscriptRow, WeatherObservation
 from ..domain.notes import (
     TAG_PATH_PREFIX,
     Note,
@@ -107,6 +107,7 @@ from ..domain.reminders import (
 from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
 from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
+from ..obs.tracing import annotate, span
 from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_reply
 from .links import LinkCarry
@@ -369,6 +370,39 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                   "someone asks about, or routes to, a place by a "
                                   "personal name rather than a public one",
                                source_tier="remembered", read_only=True),
+    # DEC-146/R-82. The THIRD rung of the recall ladder and the shortest one:
+    # `who_said` reads the window the prefill already rendered, `load_transcript`
+    # reads OLDER rows off the store, `search_memory` reaches past what
+    # `load_transcript` covers. Before it, the bottom rung had no tool at all —
+    # doctrine (§評判) orders her to find the line before saying 「你話咗 X」, and
+    # for a line inside the 40 messages already in her prompt that check was a
+    # pure in-context re-read: no call, no span, no counter, so a checked
+    # attribution and an invented one were byte-identical in the trace. On
+    # 2026-08-28 she put 「收隊」 in the wrong person's mouth and nothing in the
+    # system could say whether she had looked.
+    #
+    # 4, sized exactly like `lookup_person` and for the same reason: one reply
+    # routinely carries more than one attribution — «你話咗 A» and «佢話咗 B» in
+    # one breath — and each of them is a separate question that has to be
+    # checked separately. The call itself is FREE — an in-memory scan of a
+    # tuple that is already in hand, no store read, no network — so the budget is
+    # sized by model round trips and by nothing else.
+    #
+    # `cacheable=False` (the default, and load-bearing here): the answer is a
+    # function of THIS turn's window, so replaying a cached one against a later
+    # turn would answer about messages that are no longer on screen — the exact
+    # shape the `cacheable` field's own note rules out.
+    #
+    # **The NAME is unmeasured.** DEC-39/DEC-58 both settled a tool name on the
+    # routing harness rather than on argument, and this one has not been through
+    # it: `who_said` is the operator's working name, kept because it is the
+    # question in the model's own words. The reading that would reopen it is a
+    # DEC-58-shaped run — identifier varying, docstrings byte-identical — showing
+    # it pulling «頭先講咗啲咩» off `load_transcript` or a 「邊個話要book枱」 off
+    # `search_memory`.
+    "who_said": NativeTool(4, "who said something in the messages you were ALREADY "
+                              "shown — check here before you tell anyone 「你話咗 X」",
+                           source_tier="remembered", read_only=True),
     # **`load_transcript`, not `read_buffer`, and that was MEASURED, not argued
     # (DEC-58, same harness as DEC-39).** The old name was a lie — nothing is
     # buffered; it reads durable rows off disk (GLOSSARY). With the docstring
@@ -1357,6 +1391,47 @@ def _memory_result(payload: dict) -> dict:
     return {**payload, "untrusted": True, "framing": _MEMORY_FRAMING}
 
 
+def _speaker(row: TranscriptRow) -> str:
+    """The one name a transcript row is called by, for both tools that render one.
+
+    `person_name` FIRST, exactly as `nora.agent.prefill._label` orders it
+    (DEC-80): the identity-canonical name is what every other surface of the
+    prompt calls this person — `tag_message from=`, `group_members`,
+    `lookup_person`, and the `[label]` on the row's own line in
+    `<group_transcript>` — so preferring it is what lets the model join a tool's
+    answer to the prompt by literal match instead of inferring. The self-set
+    Signal profile name is the fallback, so an unmapped account stays visible as
+    SOMEBODY rather than collapsing to "unknown".
+
+    Shared by `load_transcript` and `who_said`, and the sharing is the point.
+    DEC-80's original bug was three renderers of the same rows disagreeing
+    inside one context window; two tools that both hand back transcript lines
+    are two more renderers, and a second hand-written copy of this fallback
+    order is how the third one drifts.
+
+    `"Nora"` for her own rows is `load_transcript`'s pre-existing literal, kept
+    rather than widened: `nora.agent.prefill._label` uses `[doctrine]
+    display_name` here, which `build_tool_specs` does not hold. The two agree in
+    this deployment (`display_name = "Nora"`) and would diverge in one that
+    renames her — a known, single-line gap now in ONE place instead of two.
+    """
+    if row.is_nora:
+        return "Nora"
+    return row.person_name or row.sender_name or "unknown"
+
+
+def _said(body: str | None) -> str:
+    """A row's body, whitespace-collapsed, for matching against the model's words.
+
+    Collapsed on BOTH sides of the comparison (`who_said` normalises its
+    argument through this same function) so a line the prefill rendered across
+    a newline still matches the phrase the model read off it. Casefolded because
+    the ASCII half of this group's speech is typed inconsistently; a no-op on
+    the Chinese half, which is most of it.
+    """
+    return " ".join((body or "").split()).casefold()
+
+
 # ---- R-28: the outbound egress boundary for routing (design/14 §2.2) ---------
 #
 # A route query inherently contains TWO locations, and they LEAVE THE HOST to
@@ -1679,6 +1754,7 @@ def build_tool_specs(
     shortener=None,
     question: str = "",
     context_window: int = 40,
+    transcript: tuple[TranscriptRow, ...] | None = None,
     ai_peer: str = "nora",
     fire_turn: bool = False,
     reminders: ReminderStore | None = None,
@@ -1755,6 +1831,23 @@ def build_tool_specs(
     `send_to`. So it takes `(platform, conversation_id)` and answers `None` for
     a room policy cannot name, which is `unavailable` rather than a guess.
 
+    `transcript` is `who_said`'s whole world (DEC-146): the SAME
+    `TagContext.transcript` tuple `nora.agent.prefill._transcript_block`
+    rendered `<group_transcript>` from, passed in rather than re-read. That is
+    comprehend-once — the window is interpreted at assembly and every consumer
+    computes on that one fixed model, so the tool cannot disagree with the block
+    the model is looking at. Re-querying the store for it would be a second
+    interpretation of the same messages and would drift the first time the
+    `limit` or the naming pass changed on one side.
+
+    `None` is the honest "no window was wired" state every other optional
+    collaborator above uses, and it answers `unavailable` — never
+    `nothing_found`, which would report an unread window as an empty one. An
+    EMPTY tuple is the same answer for the same reason: `EngagementContext.
+    _recent` degrades a FAILED store read to `()` (a thinner reply beats no
+    reply), so at this seam "the read broke" and "the room has said nothing"
+    are one value, and R-27 resolves that ambiguity towards `unavailable`.
+
     `music` is `MusicToolBridge` (`nora.domain.ports`, design/discord-music/
     07-agent-tool.md) — `None` in every composition that has not wired
     `DiscordMusicToolBridge`, the same honest wiring-gap shape every other
@@ -1778,6 +1871,12 @@ def build_tool_specs(
     # shadowed by a same-named model-supplied parameter; deleting the parameter
     # removes the shadow along with the shape of that bug.
     bound_conversation_id = conversation_id
+    # The window the prefill rendered, captured once, for the same reason
+    # `bound_conversation_id` is: it is Nora's own working state, so under
+    # DEC-24 the model is never asked which messages it means. `()` and `None`
+    # collapse here because they answer identically (see the docstring) — the
+    # branch that tells them apart would be a distinction with no consequence.
+    bound_window: tuple[TranscriptRow, ...] = tuple(transcript or ())
 
     def _now_ms() -> int:
         """Epoch milliseconds off the SAME clock every other tool here reads.
@@ -1788,6 +1887,127 @@ def build_tool_specs(
         the reminder set in the same turn.
         """
         return int(now_fn().timestamp() * 1000)
+
+    async def who_said(words: str) -> dict:
+        """Check who said something, in the messages you can see right now.
+
+        Call this BEFORE you tell anybody 「你話咗 X」, 「佢頭先話 Y」, or put words in
+        somebody's mouth — attributing a line to the wrong person is worse than not
+        naming anyone. Give it the words themselves, not a paraphrase: it looks for
+        them inside the messages in front of you and tells you who wrote each one.
+
+        This searches ONLY what you were already shown. It is the first thing to
+        reach for, because the line is usually right there. If it is not:
+        `load_transcript` reads OLDER messages from this conversation, and
+        `search_memory` reaches back further still.
+
+        Outcomes: `ok` with `said_by` — one entry per matching line, `who` and the
+        `line` itself, oldest first; `nothing_found` when nobody in view said it,
+        which means do not attribute it (look further back, or say you can't find
+        it); `unavailable` when the messages could not be re-read at all — say you
+        couldn't check, NEVER that nobody said it.
+
+        Args:
+            words: the words you are about to put in somebody's mouth, as they were
+                written.
+        """
+        # `words`, not `query`/`text`, and one argument only (DEC-24). Which
+        # conversation, which messages, how far back and how many to return are
+        # all values Nora already holds — `bound_window` IS the answer to every
+        # one of them — so none of them appears in the schema. A `limit` here
+        # would be the shape DEC-24 exists to forbid: a number the model must
+        # invent on every call, that nothing downstream could honour better than
+        # the window's own size already does.
+        #
+        # The span is opened around the WHOLE body, including the early return,
+        # so a call that could not check ends visibly at a named stage rather
+        # than leaving a trace that just stops. `window_rows` goes on at START
+        # (it is known before the search, and it is what makes an `unavailable`
+        # re-derivable as "the window was empty" rather than "something threw");
+        # status and match count are annotated on the way out, which is the only
+        # end they can be known at. No `nora.trace_kind`: R-76's decision is
+        # about ROOTS, and this is a child of the turn's root — declaring one
+        # here would be a second, competing sampling decision.
+        #
+        # NEITHER the words nor any line goes on the span. Span attributes leave
+        # the host to the collector, so this is R-73's boundary and not a
+        # judgement call: a model-supplied argument can carry a phone number
+        # (`_asked_about` exists because one did) and a body is the group's own
+        # speech. Counts and a length are what re-derive the call.
+        with span(
+            "tool.who_said",
+            **{"nora.tool": "who_said", "nora.who_said.window_rows": len(bound_window)},
+        ):
+            if not bound_window:
+                # `unavailable`, and this is the R-27 branch that matters most
+                # here. An empty window is not «nobody said that» — it is «there
+                # was nothing to read», and the two are indistinguishable at this
+                # seam by construction: `EngagementContext._recent` catches a
+                # failed store read and returns `()` so the turn can still
+                # produce a thinner reply. Answering `nothing_found` would turn
+                # that outage into a confident denial in a group argument, which
+                # is the exact failure the tool was built to stop.
+                annotate(**{
+                    "nora.tool.status": "unavailable", "nora.who_said.matches": 0,
+                })
+                _record(metrics, "who_said", "unavailable")
+                return {
+                    "status": "unavailable", **_asked_about(words),
+                    "note": "I can't re-read the messages in front of me, so I can't "
+                            "check who said that. Say you couldn't check — never say "
+                            "nobody said it.",
+                }
+            needle = _said(words)
+            # Bounded by the window, which is bounded by `[store] context_window`
+            # — there is no model-supplied cap because there is nothing for one to
+            # cap. Every match is returned: «who said it» has two honest answers
+            # when two people did, and silently keeping the first would be the
+            # tool inventing the attribution it exists to prevent.
+            hits = [
+                {"who": _speaker(row), "line": row.body}
+                for row in bound_window
+                if needle and needle in _said(row.body)
+            ]
+            if not hits:
+                # `nothing_found` is a real claim here and it is safe to make:
+                # the window was READ (`bound_window` is non-empty) and the words
+                # are not in it. That is the whole difference from the branch
+                # above, and it is why the emptiness check comes first.
+                annotate(**{
+                    "nora.tool.status": "nothing_found", "nora.who_said.matches": 0,
+                })
+                _record(metrics, "who_said", "nothing_found", rows=len(bound_window))
+                return {
+                    "status": "nothing_found", **_asked_about(words),
+                    "note": "Nobody in the messages you can see said that. Do not put "
+                            "it in anyone's mouth — look further back with "
+                            "load_transcript or search_memory, or say you can't find "
+                            "it.",
+                }
+            annotate(**{"nora.tool.status": "ok", "nora.who_said.matches": len(hits)})
+            _record(metrics, "who_said", "ok",
+                    rows=len(bound_window), matches=len(hits))
+            # `_memory_result`, because `line` is verbatim group-authored text —
+            # the same class `load_transcript`'s `messages` and `search_memory`'s
+            # `results` carry, and it gets the same demotion rather than a fourth
+            # notation.
+            #
+            # NO egress filter over the bodies, and that is deliberate rather
+            # than an omission. `search_memory` screens its hits with
+            # `scan_reply` because it surfaces words from OUTSIDE the window —
+            # text the model has not seen, chosen for quoting. Every line here is
+            # already rendered verbatim inside `<group_transcript>` in this same
+            # prompt, so filtering would disclose nothing and hide nothing; it
+            # would only make the tool disagree with the block above it about
+            # what was said, which is DEC-80's bug reproduced inside one context
+            # window. The reply itself is still screened where it always was, at
+            # `Deliverer` (R-18).
+            #
+            # `who` needs no screening either: `_speaker` returns a NAME from
+            # `identity.toml` or a platform profile, never a `sender_id` — this
+            # tool accepts no identifier and emits none (R-18/R-28).
+            return _memory_result(
+                {"status": "ok", "said_by": hits, **_asked_about(words)})
 
     async def load_transcript(limit: int = LOAD_TRANSCRIPT_DEFAULT) -> dict:
         """Read older messages from this conversation.
@@ -1852,12 +2072,10 @@ def build_tool_specs(
         # keeps its profile name rather than collapsing to "unknown", so the two
         # renderers cannot disagree in EITHER direction.
         rows = persons.name_transcript(rows, platform=room.platform)
-
-        def who(row) -> str:
-            return "Nora" if row.is_nora else (
-                row.person_name or row.sender_name or "unknown"
-            )
-
+        # `_speaker`, module-level and shared with `who_said` — this used to be a
+        # local `who()` here, and a second tool handing back transcript lines is
+        # exactly how DEC-80's three-disagreeing-renderers bug gets a fourth.
+        who = _speaker
         by_ts = {r.ts: r for r in rows}
         out = []
         threaded = 0
@@ -5652,6 +5870,7 @@ def build_tool_specs(
         _spec("place_info", place_info),
         _spec("saved_places", saved_places),
         _spec("where_is", where_is),
+        _spec("who_said", who_said),
         _spec("load_transcript", load_transcript),
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
@@ -5721,6 +5940,7 @@ def build_tools(
     giphy_source: GifSource | None = None,
     question: str = "",
     context_window: int = 40,
+    transcript: tuple[TranscriptRow, ...] | None = None,
     ai_peer: str = "nora",
     links: LinkCarry | None = None,
     notes: NoteCollaborator | None = None,
@@ -5747,7 +5967,8 @@ def build_tools(
         refresher=refresher,
         geocoder=geocoder,
         shortener=shortener,
-        question=question, context_window=context_window, ai_peer=ai_peer,
+        question=question, context_window=context_window, transcript=transcript,
+        ai_peer=ai_peer,
         links=links, giphy_source=giphy_source,
         notes=notes, note_workspace=note_workspace,
         knowledge=knowledge, workspace_for=workspace_for,

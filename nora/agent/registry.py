@@ -30,6 +30,7 @@ from datetime import datetime
 from typing import Any
 
 from ..domain.compute import ComputeJobStore
+from ..domain.models import TranscriptRow
 from ..domain.ports import (
     BlobStore,
     ComputeBackend,
@@ -578,6 +579,7 @@ class ToolRegistry:
         room: Room,
         question: str = "",
         context_window: int = 40,
+        transcript: tuple[TranscriptRow, ...] | None = None,
         fire_turn: bool = False,
         location_trusted: bool = False,
         links: LinkCarry | None = None,
@@ -600,6 +602,15 @@ class ToolRegistry:
         registry-owned collaborator. The heartbeat's fire path passes True; see
         `nora.agent.tools.build_tool_specs` for what reads it.
 
+        `transcript` is in it for the same reason and is the most per-turn value
+        here: it is `TagContext.transcript`, the window the prefill rendered
+        `<group_transcript>` from, and `who_said` (DEC-146) answers out of it.
+        It must never become a registry field — a window living for the life of
+        the process would let one conversation's messages be searched from
+        another, which is a disclosure and not a staleness bug. Passing the SAME
+        tuple the prefill used is what keeps the tool and the block in the
+        prompt one interpretation of one window rather than two.
+
         `links` is in it for the same reason and is the same KIND of thing —
         per-TURN, not per-process (DEC-89). It must not become a registry field:
         one `LinkCarry` living for the life of the process would offer a link
@@ -620,6 +631,7 @@ class ToolRegistry:
             geocoder=self._geocoder,
             shortener=self._shortener,
             question=question, context_window=context_window,
+            transcript=transcript,
             ai_peer=self._ai_peer, fire_turn=fire_turn,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             events=self._events,
@@ -651,6 +663,7 @@ class ToolRegistry:
         room: Room,
         question: str = "",
         context_window: int = 40,
+        transcript: tuple[TranscriptRow, ...] | None = None,
         fire_turn: bool = False,
         allowed_mcp: frozenset[str] = frozenset(),
         location_trusted: bool = False,
@@ -675,6 +688,7 @@ class ToolRegistry:
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
+            transcript=transcript,
             fire_turn=fire_turn, location_trusted=location_trusted, links=links,
         )
         tools = [adapt(spec) for spec in specs]

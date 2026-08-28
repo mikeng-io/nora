@@ -60,6 +60,8 @@ def _built_tools(registry: ToolRegistry) -> list:
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry())
     assert {t.tool_name for t in tools} == {
+        # DEC-146: the window-scoped rung below `load_transcript`.
+        "who_said",
         "now", "load_transcript", "send_reply", "search_gifs", "send_gif",
         "send_to",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
@@ -91,6 +93,10 @@ def test_the_registry_exposes_every_declared_tool():
 
 def test_budgets_match_todays_table():
     assert dict(ToolRegistry().budgets()) == {
+        # 4, sized like `lookup_person`: one reply routinely carries more than
+        # one attribution and each is a separate question. The call is free — a
+        # scan of a tuple already in hand — so round trips are the only currency.
+        "who_said": 4,
         "now": 4, "load_transcript": 4,
         # 6 — the cap on how many messages one tag may send. 1→3 activated
         # multi-message (DEC-42); 3→6 (DEC-95) makes the BURST first-class —
@@ -564,7 +570,7 @@ ACT_VERBS = frozenset({
 # default safe.
 READ_ONLY = frozenset({
     "now", "calculate", "transit", "route", "where_is", "place_info",
-    "saved_places", "load_transcript", "group_members", "lookup_person",
+    "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
     "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "list_events",

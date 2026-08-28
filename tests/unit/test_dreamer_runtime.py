@@ -527,6 +527,12 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
 
     room_scoped = {
         "transit", "route", "where_is", "place_info", "saved_places",
+        # `who_said` (DEC-146) is room-scoped in the strictest sense in the
+        # table: it answers out of ONE turn's prefill window, which a Dreamer
+        # tick does not have at all — `RegistryToolSource` builds it with no
+        # transcript, so every call there is honestly `unavailable`. Room-scoped
+        # is the fail-closed side and the correct one; it does not move.
+        "who_said",
         "load_transcript", "group_members", "lookup_person", "about",
         "ask_memory", "search_memory", "recall_lookups", "media_fetch",
         "list_reminders", "list_events", "suggest_venue", "search_gifs",

@@ -1,5 +1,6 @@
 """E.7 criterion 5: every rule R-1…R-17 has a passing named test."""
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -476,6 +477,33 @@ RULE_TESTS = {
     # never raises the problem it solves, so the row and this entry are the
     # only places the reason is written down.
     "R-80": "test_the_dense_read_never_mixes_two_models_geometries",
+    # R-81 (DEC-145): attribution is SOURCING. The debrief's grounding rubric
+    # asked whether a claim was supported by «something someone said in the
+    # transcript» and said in as many words that it was «not about
+    # correctness» — so a reply that put one person's words in another
+    # person's mouth passed, because the words WERE said, by someone. The
+    # named test asserts on the prompt the fold was actually given rather
+    # than on the markdown, because the clause only does anything where the
+    # model can read it; its second half reads the same prompt back for the
+    # speaker labels the rule presupposes. Next free number after R-80.
+    "R-81": "test_r81_a_quote_is_grounded_only_against_the_person_who_said_it",
+    # R-82 names the fail-closed branch rather than the happy path, because it
+    # is the clause a future change is most likely to "simplify": an empty
+    # window LOOKS like an empty room, and `nothing_found` reads as the more
+    # informative answer. It is not — `EngagementContext._recent` returns `()`
+    # for a FAILED store read too, so that simplification turns an outage into
+    # a confident denial in the middle of a group argument, which is the exact
+    # failure `who_said` was built to stop. The window-not-the-store test, the
+    # DEC-24 schema test and the span tests are named in the index row.
+    "R-82": "test_an_unread_window_is_unavailable_never_nothing_found",
+    # R-83 names the CARVE-OUT test rather than the tagging one. Both halves
+    # ship in the same `conduct.md` section bump, but only one of them is the
+    # rule: the tagging clause is a mechanism joined to a position that already
+    # existed, while the carve-out is the branch that did not exist at all —
+    # and it is the half a rewrite loses, because the paragraph it sits under
+    # reads as complete without it (the same failure mode R-53's third clause
+    # has, recorded in `test_conduct_separates_a_source_that_is_silent…`).
+    "R-83": "test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim",
 }
 
 
@@ -738,3 +766,132 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     # The position must NOT name the tool: capability's source of truth is the
     # registry, and an authored copy is a cache with no invalidation.
     assert "recall_lookups" not in conduct
+
+
+def _doctrine(name: str) -> str:
+    """Whitespace-normalised, because every doctrine file is hard-wrapped and
+    every phrase asserted below spans a line break in it."""
+    return " ".join(
+        (ROOT / "nora" / "doctrine" / f"{name}.md").read_text().split()
+    )
+
+
+def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
+    """R-83 / DEC-147. Measured 2026-08-28, live: Nora told a group member he
+    had said 「收隊」. Somebody else had. She never looked — she matched the most
+    aggressive strings in the room onto the person who was denying her — and
+    then three surfaces built for a DIFFERENT case held her there: this file's
+    own «not remembering having checked is not evidence that you did not
+    check» (DEC-112), `voice.md`'s 「冇錯就冇嘢認 … 企硬」, and `send_reply`'s
+    «never invent a mistake you did not make just to have something to
+    concede» (DEC-92). Each is right for a claim with a lookup behind it. Put
+    together they convert an UNGROUNDED assertion into a defended one, because
+    not one of them has a branch for «I never grounded this».
+
+    The branch is R-27's three states read off her own record: found is `ok`
+    and she holds it; not found — or not readable — is `unavailable`, and
+    going to look, or letting it drop, is the reply. That is R-5's temperament
+    («silence beats a wrong answer») on the contradiction path, which is the
+    one place nothing had wired it.
+
+    Pinned as a POSITION and not as the incident's nouns, the same way R-53 is,
+    so it cannot be satisfied by a sentence about 收隊:
+
+      1. holding is conditional — it is what checking bought,
+      2. a claim she cannot find herself having grounded is not one she stands
+         on, however sure it feels,
+      3. there is a real reply for that case, and it is not a defence.
+
+    THE POSITIVE CONTROL is the second half. A carve-out that ate the anti-cave
+    stance would satisfy any presence check on the three moves above while
+    quietly undoing DEC-112 and DEC-123, so the clauses that hold her on a
+    CHECKED claim are asserted still present, on both sides of the DEC-92
+    split. The tool-surface third of that armour is pinned by
+    `tests/test_tools.py::test_the_send_reply_schema_carries_the_three_reply_defects`
+    and is deliberately not re-asserted here — two copies of one literal is the
+    unguarded-copy failure this repo keeps paying for.
+
+    HONEST SCOPE: a content test, the same posture as
+    `test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache` above. It
+    measures that the position is stated, and where. It does not measure that
+    the model follows it — there is no corpus for this one — and DEC-78/DEC-92's
+    finding that prose alone does not move behaviour is untested either way.
+    """
+    conduct = _doctrine("conduct")
+    voice = _doctrine("voice")
+
+    # The carve-out lives in the section that owns whether a challenge should
+    # move her at all. `voice.md` owns how it SOUNDS and is operator-only; a
+    # copy there is the drift DEC-92's split exists to prevent.
+    section = " ".join(
+        (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+        .split("# Being contradicted", 1)[1].split("\n# ", 1)[0].split()
+    )
+
+    # 1. Holding is conditional on having checked.
+    assert "Holding is what checking buys you" in section, section
+    # 2. The branch that did not exist: no grounding, no position to stand on —
+    #    and the confidence that shows up under pressure is worth least.
+    assert "cannot find yourself having grounded" in section, section
+    assert "is not one you get to stand on" in section, section
+    assert "certainty that arrives while somebody is pushing at you" in section
+    # 3. R-5's temperament: there is a real reply, and neither branch of it is
+    #    a defence of the ungrounded claim.
+    assert "Saying you will go and look is a whole reply" in section, section
+    assert "letting it drop" in section, section
+
+    # POSITIVE CONTROL — the armour for a CHECKED claim is untouched. Delete
+    # any of these to buy the carve-out and this goes red, which is the whole
+    # point: the ask was a missing branch, not a weaker stance.
+    assert "not evidence that you did not check" in conduct
+    assert "record of what you actually looked up" in conduct
+    assert "Agreeing you invented something when you did not is not modesty" in conduct
+    assert "冇錯就冇嘢認" in voice
+    assert "企硬" in voice
+
+
+def test_the_verdict_position_names_the_mechanism_that_performs_a_tag():
+    """DEC-147's other half. `conduct.md`'s 評判 section has said since v11 that
+    the losing side is why she is there, to be told to their face and tagged
+    rather than reported on (the clauses are asserted below, in string
+    literals, so this paragraph does not become a second copy of them), and
+    `send_reply`'s schema has taught since DEC-86 that an `@` written
+    immediately before the name the room uses for somebody makes a real tag.
+    Nothing joined them: the position lived in one surface and its only
+    mechanism in another, and in the 2026-08-28 incident she addressed nobody
+    at all. 「tag 返佢」 read as a manner of speaking, which is exactly how a
+    verdict about somebody gets delivered past them.
+
+    The doctrine now says what a tag IS, in one sentence, with no worked
+    example and no name — DEC-96's rule, that every concrete example becomes a
+    closed set, applies to a handle as much as to an emoji. The example belongs
+    on the schema, where `tests/test_tools.py::
+    test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_resolves` drives it
+    through the real composer; the doctrine carries the position only.
+    """
+    section = " ".join(
+        (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+        .split("# 評判", 1)[1].split("\n# ", 1)[0].split()
+    )
+
+    # The join itself: 「tag 返佢」 is the act, not a description of one.
+    assert "「tag 返佢」唔係一個講法" in section, section
+    assert "打個 @" in section, section
+    # Against the name the ROOM uses — the same binding the composer resolves.
+    assert "個房叫佢嗰個名" in section, section
+    # And the reason, which is the position it was always attached to: without
+    # the tag she is reporting on him however hard the line lands.
+    assert "唔係同佢講" in section, section
+
+    # POSITIVE CONTROL — the verdict position it hangs off is still there. If a
+    # rewrite keeps the mechanism and loses 「唔好企喺度報導」, the sentence
+    # becomes formatting advice.
+    assert "唔好企喺度報導邊個啱邊個錯" in section, section
+
+    # The doctrine states the position and NOT the example: a handle written
+    # here would be the closed set DEC-96 measured, and the schema is where a
+    # worked one is already pinned against the composer.
+    assert not re.search(r"@\w", section), (
+        "conduct.md ships a worked @handle — that is the schema's job, and a "
+        "name in the doctrine becomes the only name she uses"
+    )
