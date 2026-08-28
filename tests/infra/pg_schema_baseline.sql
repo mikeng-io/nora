@@ -262,6 +262,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
+CREATE INDEX idx_fact_disputed ON public.fact USING btree (workspace) WHERE (disputed_at IS NOT NULL);
 CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
 CREATE INDEX idx_fact_standing ON public.fact USING btree (workspace, subject_id) WHERE (superseded_at IS NULL);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
@@ -441,6 +442,14 @@ deriver_name text NOT NULL,
 describe_model text,
 description text DEFAULT ''::text NOT NULL,
 description text NOT NULL,
+disputed_at bigint,
+disputed_at bigint,
+disputed_by text,
+disputed_by text,
+disputed_reason text,
+disputed_reason text,
+disputed_tag_id text,
+disputed_tag_id text,
 distance_m double precision NOT NULL,
 distinct_speakers integer DEFAULT 0 NOT NULL,
 due_at timestamp with time zone NOT NULL,

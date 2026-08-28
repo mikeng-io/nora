@@ -100,12 +100,23 @@ SupersedeReason = Literal["stale", "wrong", "merged"]
 # hand-copied tuple.
 AsserterJoinStatus = Literal["ok", "nothing_found", "unavailable"]
 
+# What marking a row disputed did (31 §7). `already_disputed` and
+# `already_superseded` are separate because they are different facts about the
+# row — the first means somebody got there first and the second means the row
+# has already stopped standing — and collapsing them makes a second member's
+# honest dispute look like one that was already handled. The metric's label
+# vocabulary is `get_args` of THIS.
+DisputeOutcome = Literal[
+    "ok", "already_disputed", "already_superseded", "capped", "unknown",
+]
+
 _STATUSES: frozenset[str] = frozenset(get_args(FactStatus))
 _CANDIDATE_STATUSES: frozenset[str] = frozenset(get_args(CandidateStatus))
 _WARRANT_KINDS: frozenset[str] = frozenset(get_args(WarrantKind))
 _FIDELITY_STATUSES: frozenset[str] = frozenset(get_args(FidelityStatus))
 _SUPERSEDE_REASONS: frozenset[str] = frozenset(get_args(SupersedeReason))
 ASSERTER_JOIN_STATUSES: frozenset[str] = frozenset(get_args(AsserterJoinStatus))
+DISPUTE_OUTCOMES: frozenset[str] = frozenset(get_args(DisputeOutcome))
 
 # The DB CHECK constraint this column maps to is
 # `instruction_sha256 ~ '^[0-9a-f]{64}$'` (see nora.domain.provenance); the
@@ -543,6 +554,16 @@ class Fact:
     # below is a one-directional implication, not the biconditional the other
     # supersession columns use.
     supersede_source: str | None = None
+    # The correction loop's state (31 §7). A dispute MARKS this row — it stops
+    # rendering as a STANDING CLAIM and starts rendering AS A DISPUTE. It does
+    # NOT mute it, and `is_standing` is deliberately untouched by it: muting
+    # made one message from one member remove a true row from every future
+    # turn with no way back, and that is a denial-of-service rather than a
+    # correction.
+    disputed_at: int | None = None
+    disputed_by: str | None = None
+    disputed_reason: str | None = None
+    disputed_tag_id: str | None = None
 
     def __post_init__(self) -> None:
         if not _INSTRUCTION_SHA256_RE.fullmatch(self.instruction_sha256):
@@ -630,7 +651,15 @@ class Fact:
 
     @property
     def is_standing(self) -> bool:
+        """Not superseded. **A DISPUTED row is still standing**, and that is
+        the whole reversal: it renders, marked, with who disputed it. Folding
+        `disputed_at` in here would be the mute this design refuses, hidden in
+        a property nobody would think to read."""
         return self.superseded_at is None
+
+    @property
+    def is_disputed(self) -> bool:
+        return self.disputed_at is not None
 
 
 #: What a rendered claim is ABOUT. `fact` today; `lexeme` is in the CHECK so the

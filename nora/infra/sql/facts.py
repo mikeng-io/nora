@@ -77,6 +77,7 @@ from nora.domain.facts import (
     DEFAULT_MAX_PREDICATE_CHARS,
     DEFAULT_MAX_TERM_CHARS,
     AsserterJoinStatus,
+    DisputeOutcome,
     Fact,
     FactAsserter,
     FactVerdict,
@@ -99,6 +100,8 @@ def _row_to_fact(r: Row[Any]) -> Fact:
         supersede_reason=r.supersede_reason, instruction_sha256=r.instruction_sha256,
         model=r.model, established_by=r.established_by, fidelity=r.fidelity,
         supersede_source=r.supersede_source,
+        disputed_at=r.disputed_at, disputed_by=r.disputed_by,
+        disputed_reason=r.disputed_reason, disputed_tag_id=r.disputed_tag_id,
     )
 
 
@@ -302,6 +305,116 @@ class SqlFactStore:
             {"fid": fact_id, "now": now_ms, "cid": candidate_id},
         )
         return "ok"
+
+    async def mark_disputed(
+        self, *, workspace: str, fact_id: str, person_id: str | None,
+        reason: str | None, tag_id: str, now_ms: int,
+    ) -> DisputeOutcome:
+        """Mark a standing row disputed. 31 §7's state machine, set half.
+
+        **CAS on `disputed_at IS NULL`**, then a status read to tell the two
+        failure causes apart — because `already_disputed` and
+        `already_superseded` are different facts about the row and the metric's
+        labels demand both. A single CAS cannot distinguish them, and reporting
+        the friendlier of the two is how a second member's honest dispute comes
+        to look like a row that was already handled.
+
+        A dispute on an ALREADY-SUPERSEDED row is a no-op: that row has already
+        stopped rendering as a standing claim, so there is nothing left to
+        mark. A second dispute on a disputed row is a no-op too — the second
+        asserter is recorded on the CANDIDATE it proposes, which is where
+        asserters live.
+        """
+        try:
+            UUID(fact_id)
+        except ValueError:
+            return "unknown"
+        async with self._engine.begin() as conn:
+            affected = (await conn.execute(
+                sa.update(FACT)
+                .where(
+                    FACT.c.id == fact_id,
+                    FACT.c.workspace == workspace,
+                    FACT.c.disputed_at.is_(None),
+                    FACT.c.superseded_at.is_(None),
+                )
+                .values(
+                    disputed_at=now_ms, disputed_by=person_id,
+                    disputed_reason=reason, disputed_tag_id=tag_id,
+                )
+            )).rowcount
+            if affected:
+                return "ok"
+            row = (await conn.execute(
+                sa.select(FACT.c.disputed_at, FACT.c.superseded_at)
+                .where(FACT.c.id == fact_id, FACT.c.workspace == workspace)
+            )).one_or_none()
+        if row is None:
+            return "unknown"
+        # Superseded FIRST: a row that is both has already stopped rendering as
+        # a standing claim, and that is the more informative of the two.
+        if row.superseded_at is not None:
+            return "already_superseded"
+        return "already_disputed" if row.disputed_at is not None else "unknown"
+
+    async def clear_disputed(
+        self, *, workspace: str, fact_id: str, expected_at: int,
+    ) -> bool:
+        """Clear a dispute, CAS on the value that was read. 31 §7, clear half.
+
+        **Only inside adjudication's transaction, and only on the value it
+        read.** A second member's dispute landing mid-dismissal changes
+        `disputed_at`, this CAS fails, the dismissal does NOT clear, and the
+        adjudication becomes a candidate carrying both — 30 §4's supersession
+        CAS, same shape and same reason.
+
+        Dismissal itself requires an affirmative contradiction: `not_covered`
+        never reaches here, because R-53 one level up says a source that does
+        not mention something has not denied it.
+        """
+        async with self._engine.begin() as conn:
+            affected = (await conn.execute(
+                sa.update(FACT)
+                .where(
+                    FACT.c.id == fact_id,
+                    FACT.c.workspace == workspace,
+                    FACT.c.disputed_at == expected_at,
+                )
+                .values(
+                    disputed_at=None, disputed_by=None,
+                    disputed_reason=None, disputed_tag_id=None,
+                )
+            )).rowcount
+        return bool(affected)
+
+    async def disputed_facts(
+        self, *, workspace: str, limit: int,
+    ) -> tuple[Fact, ...]:
+        """Standing rows currently disputed, oldest dispute first — the
+        priority queue's input, and the backlog §7.1 refuses to drain silently.
+
+        Oldest first because an aged dispute is the one that most needs
+        adjudicating, and because it makes the queue fair rather than
+        last-in-first-out.
+        """
+        if limit <= 0:
+            return ()
+        try:
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(
+                    sa.select(FACT)
+                    .where(
+                        FACT.c.workspace == workspace,
+                        FACT.c.disputed_at.isnot(None),
+                        FACT.c.superseded_at.is_(None),
+                    )
+                    .order_by(FACT.c.disputed_at.asc())
+                    .limit(limit)
+                )).all()
+        except Exception:
+            log.exception("disputed_facts unavailable for workspace %s", workspace)
+            return ()
+        return tuple(_row_to_fact(r) for r in rows)
 
     async def facts_asserted_by(
         self, *, workspace: str, person_id: str, limit: int,
@@ -559,6 +672,16 @@ class SqlFactStore:
                 superseded_by=replaced_by,
                 supersede_reason=because,
                 supersede_source=source,
+                # Supersession CLEARS the dispute, in the same statement that
+                # sets it (31 §7). A superseded row does not render as a
+                # standing claim, so a dispute on it is moot — and leaving the
+                # flag set would make `nora_fact_dispute_open` count resolved
+                # rows forever, which is the gauge the whole no-auto-clear
+                # argument rests on being readable.
+                disputed_at=None,
+                disputed_by=None,
+                disputed_reason=None,
+                disputed_tag_id=None,
             )
         )
         async with self._engine.begin() as conn:

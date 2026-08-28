@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "When someone contradicts something Nora remembers, the claim is marked as disputed rather than deleted.",
+  "details": [
+    "A disputed claim keeps rendering, marked, with who disputed it and what they said — she can say 'someone's told me that's wrong, I haven't confirmed it yet' rather than either repeating it or going quiet.",
+    "It is deliberately not a mute. Removing the claim would let one message from one person delete something true for everyone, indefinitely, with no way to put it back.",
+    "One correction reaches both what she knows and what she thinks a word means, because a person correcting 'big walk' is correcting both — and every sense of a word is marked, not just one, since leaving a sibling meaning standing is what let two contradictory ones coexist.",
+    "Resolving a dispute checks that nobody else disputed it in the meantime; if they did, the resolution is held rather than quietly discarding the newer objection.",
+    "Superseding a claim clears its dispute, so the backlog of open disputes stays a true count."
+  ],
+  "limitations": [
+    "Nothing recognises a contradiction automatically yet — this is the state and the rules around it. What notices one comes next."
+  ]
+}

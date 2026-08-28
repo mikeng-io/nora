@@ -31,6 +31,7 @@ from typing import cast
 from uuid import UUID, uuid4
 
 from nora.domain.facts import (
+    DisputeOutcome,
     Fact,
     FactAsserter,
     FactVerdict,
@@ -175,8 +176,58 @@ class InMemoryFactStore:
             superseded_by=replaced_by,
             supersede_reason=cast(SupersedeReason, because),
             supersede_source=source,
+            # Supersession clears the dispute, matching the SQL store: a
+            # superseded row does not render as a standing claim, so the flag
+            # would otherwise make the open-dispute gauge count resolved rows
+            # forever.
+            disputed_at=None, disputed_by=None,
+            disputed_reason=None, disputed_tag_id=None,
         )
         return 1
+
+    async def mark_disputed(
+        self, *, workspace: str, fact_id: str, person_id: str | None,
+        reason: str | None, tag_id: str, now_ms: int,
+    ) -> DisputeOutcome:
+        """The same four outcomes as the SQL store, in the same order — and the
+        order is the behaviour: superseded is reported ahead of disputed
+        because a row that is both has already stopped standing."""
+        existing = self._facts.get((workspace, fact_id))
+        if existing is None:
+            return "unknown"
+        if existing.superseded_at is not None:
+            return "already_superseded"
+        if existing.disputed_at is not None:
+            return "already_disputed"
+        self._facts[(workspace, fact_id)] = replace(
+            existing, disputed_at=now_ms, disputed_by=person_id,
+            disputed_reason=reason, disputed_tag_id=tag_id,
+        )
+        return "ok"
+
+    async def clear_disputed(
+        self, *, workspace: str, fact_id: str, expected_at: int,
+    ) -> bool:
+        existing = self._facts.get((workspace, fact_id))
+        if existing is None or existing.disputed_at != expected_at:
+            return False
+        self._facts[(workspace, fact_id)] = replace(
+            existing, disputed_at=None, disputed_by=None,
+            disputed_reason=None, disputed_tag_id=None,
+        )
+        return True
+
+    async def disputed_facts(
+        self, *, workspace: str, limit: int,
+    ) -> tuple[Fact, ...]:
+        if limit <= 0:
+            return ()
+        rows = [
+            f for (ws, _fid), f in self._facts.items()
+            if ws == workspace and f.is_disputed and f.is_standing
+        ]
+        rows.sort(key=lambda f: f.disputed_at or 0)
+        return tuple(rows[:limit])
 
     async def facts_asserted_by(
         self, *, workspace: str, person_id: str, limit: int,

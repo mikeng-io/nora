@@ -950,6 +950,19 @@ ROOM_LEXEME = sa.Table(
     # would name a pairing that never existed, an instruction that was never
     # run against that model.
     sa.Column("model", sa.Text),
+    # The correction loop reaches BOTH tiers (31 §6): one correction
+    # contradicts a lexeme row and a fact row at once. Same four columns, same
+    # meaning.
+    #
+    # **They survive `rescore` because its upsert names its columns
+    # explicitly** — `nora.infra.sql.language.SqlLanguageStore.rescore`
+    # recomputes this table from `language_observation` on every consolidation
+    # and would wipe anything it listed. That is correct behaviour arrived at
+    # by accident of an explicit list, so it has a test rather than a comment.
+    sa.Column("disputed_at", sa.BigInteger),
+    sa.Column("disputed_by", sa.Text),
+    sa.Column("disputed_reason", sa.Text),
+    sa.Column("disputed_tag_id", sa.Text),
     sa.CheckConstraint("state IN ('live','fading','stale')"),
     sa.CheckConstraint(
         "instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'",
@@ -1298,6 +1311,26 @@ FACT = sa.Table(
     # status lands (spec §13.5) — the default, not an opt-in.
     sa.Column("fidelity", sa.Text, nullable=False,
               server_default=sa.text("'tentative'")),
+    # THE CORRECTION LOOP's one new state (31 §7). A dispute MARKS a row; it
+    # does not mute it — 30 §2.1, 29 §5 and 19 §4 all decide a three-state
+    # render (standing / disputed-and-marked / gone) and only step 4's
+    # shorthand collapsed it to two. A disputed row stops rendering as a
+    # STANDING CLAIM and starts rendering AS A DISPUTE, carrying who disputed
+    # it.
+    #
+    # That is what makes a false positive survivable. Under suppression one
+    # message from one member removed a true row from every future turn for
+    # everyone in the workspace, with no way to clear it — a memory
+    # denial-of-service available to anyone in the room.
+    sa.Column("disputed_at", sa.BigInteger),
+    # The person_id of whoever disputed it. NULLABLE because an unmapped
+    # sender has no person_id at ingest and a sentinel would be one that
+    # compares equal to nobody.
+    sa.Column("disputed_by", sa.Text),
+    # What they actually claimed — step 5's input. SCREENED before it is
+    # stored: it is model-adjacent free text and this column is rendered.
+    sa.Column("disputed_reason", sa.Text),
+    sa.Column("disputed_tag_id", sa.Text),
     sa.CheckConstraint(
         "instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="fact_instruction_sha256_check",
@@ -1427,6 +1460,14 @@ FACT_PREMISE = sa.Table(
         "fact_id <> premise_fact_id",
         name="fact_premise_no_self_reference_check",
     ),
+)
+
+#: The correction loop's read: which rows in this workspace are disputed.
+#: PARTIAL, because a disputed row is the rare case and a full index would be a
+#: majority-class predicate the planner will not choose.
+IDX_FACT_DISPUTED = sa.Index(
+    "idx_fact_disputed", FACT.c.workspace,
+    postgresql_where=FACT.c.disputed_at.isnot(None),
 )
 
 IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(

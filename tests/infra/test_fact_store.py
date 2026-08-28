@@ -1094,3 +1094,171 @@ async def test_the_extent_counts_standing_rows(reader):
 
     assert await store.standing_count(workspace="ws") == 2
     assert await store.standing_count(workspace="other") == 0
+
+
+# ---------------------------------------------------------------------------
+# the `disputed` state machine — 31 §7, on BOTH implementations
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def disputable(reader):
+    """A store with one standing fact, and its id."""
+    store, seed = reader
+    await seed(FACT_A, [("miles", 41, 10)])
+    return store, FACT_A
+
+
+async def test_a_disputed_fact_is_still_standing(disputable):
+    """THE REVERSAL, and the property everything else rests on. A dispute MARKS
+    a row; it does not mute it — 30 §2.1, 29 §5 and 19 §4 all decide a
+    three-state render and only step 4's shorthand collapsed it to two.
+
+    Folding `disputed_at` into `is_standing` would be the mute this design
+    refuses, hidden in a property nobody would think to read."""
+    store, fact_id = disputable
+
+    assert await store.mark_disputed(
+        workspace="ws", fact_id=fact_id, person_id="grant",
+        reason="it's a video game", tag_id="tag-9", now_ms=NOW,
+    ) == "ok"
+
+    rows = await store.disputed_facts(workspace="ws", limit=10)
+    assert [f.id for f in rows] == [fact_id]
+    assert rows[0].is_standing is True
+    assert rows[0].is_disputed is True
+    assert rows[0].disputed_by == "grant"
+    assert rows[0].disputed_reason == "it's a video game"
+    assert rows[0].disputed_tag_id == "tag-9"
+
+
+async def test_a_second_dispute_is_a_no_op_and_says_which_kind(disputable):
+    """`already_disputed` and `already_superseded` are different facts about
+    the row, and a single CAS cannot tell them apart. Reporting the friendlier
+    of the two is how a second member's honest dispute comes to look like one
+    that was already handled."""
+    store, fact_id = disputable
+    await store.mark_disputed(
+        workspace="ws", fact_id=fact_id, person_id="grant", reason=None,
+        tag_id="tag-9", now_ms=NOW,
+    )
+
+    assert await store.mark_disputed(
+        workspace="ws", fact_id=fact_id, person_id="vic", reason=None,
+        tag_id="tag-10", now_ms=NOW + 1,
+    ) == "already_disputed"
+
+    # The first asserter is the one that holds. The second is recorded on the
+    # candidate it proposes, which is where asserters live.
+    rows = await store.disputed_facts(workspace="ws", limit=10)
+    assert rows[0].disputed_by == "grant"
+
+
+async def test_a_dispute_on_a_superseded_row_is_already_superseded(reader):
+    """That row has already stopped rendering as a standing claim, so there is
+    nothing left to mark — and it is reported ahead of `already_disputed`
+    because it is the more informative of the two."""
+    store, seed = reader
+    await seed(FACT_A, [("miles", 41, 10)])
+    await seed(FACT_B, [("miles", 42, 10)])
+    await store.supersede(
+        key="ws", target=FACT_A, replaced_by=FACT_B, because="wrong",
+        source=None, now_ms=NOW,
+    )
+
+    assert await store.mark_disputed(
+        workspace="ws", fact_id=FACT_A, person_id="grant", reason=None,
+        tag_id="tag-9", now_ms=NOW + 1,
+    ) == "already_superseded"
+
+
+async def test_a_dispute_on_an_unknown_row_is_unknown(disputable):
+    """Never `ok`. A mark that affected nothing reported as success is a
+    recogniser that believes it acted."""
+    store, _fact_id = disputable
+
+    assert await store.mark_disputed(
+        workspace="ws", fact_id="0191f2c4-0000-7000-8000-0000000000ff",
+        person_id="g", reason=None, tag_id="t", now_ms=NOW,
+    ) == "unknown"
+    assert await store.mark_disputed(
+        workspace="other", fact_id=FACT_A, person_id="g", reason=None,
+        tag_id="t", now_ms=NOW,
+    ) == "unknown"
+
+
+async def test_clearing_is_compare_and_swap_on_what_was_read(disputable):
+    """31 §7's clear half, and 30 §4's supersession CAS one column over. A
+    second member's dispute landing mid-dismissal changes `disputed_at`, the
+    CAS fails, and the dismissal does NOT clear — the adjudication becomes a
+    candidate carrying both rather than silently discarding the newer one."""
+    store, fact_id = disputable
+    await store.mark_disputed(
+        workspace="ws", fact_id=fact_id, person_id="grant", reason=None,
+        tag_id="tag-9", now_ms=NOW,
+    )
+
+    # A dismissal that read a stale value clears nothing.
+    assert await store.clear_disputed(
+        workspace="ws", fact_id=fact_id, expected_at=NOW - 1,
+    ) is False
+    assert await store.disputed_facts(workspace="ws", limit=10) != ()
+
+    # The positive control: the value that WAS read does clear it.
+    assert await store.clear_disputed(
+        workspace="ws", fact_id=fact_id, expected_at=NOW,
+    ) is True
+    assert await store.disputed_facts(workspace="ws", limit=10) == ()
+
+
+async def test_supersession_clears_the_dispute(reader):
+    """A superseded row does not render as a standing claim, so a dispute on it
+    is moot — and leaving the flag set would make the open-dispute gauge count
+    resolved rows forever, which is the reading the whole no-auto-clear
+    argument rests on."""
+    store, seed = reader
+    await seed(FACT_A, [("miles", 41, 10)])
+    await seed(FACT_B, [("miles", 42, 10)])
+    await store.mark_disputed(
+        workspace="ws", fact_id=FACT_A, person_id="grant", reason=None,
+        tag_id="tag-9", now_ms=NOW,
+    )
+    assert await store.disputed_facts(workspace="ws", limit=10) != ()
+
+    await store.supersede(
+        key="ws", target=FACT_A, replaced_by=FACT_B, because="wrong",
+        source=None, now_ms=NOW + 1,
+    )
+
+    # Asserted on the ROW, not through `disputed_facts` — that read already
+    # excludes superseded rows, so it is satisfied whether or not the column
+    # was cleared, and the first version of this test passed with the clearing
+    # deleted outright. The column is the property: a flag left set makes the
+    # open-dispute gauge count resolved rows forever.
+    row = await store.fact_by_id(workspace="ws", fact_id=FACT_A)
+    assert row is not None
+    assert row.disputed_at is None
+    assert row.disputed_by is None
+    assert row.disputed_reason is None
+    assert row.disputed_tag_id is None
+    assert await store.disputed_facts(workspace="ws", limit=10) == ()
+
+
+async def test_the_backlog_is_oldest_dispute_first(reader):
+    """An aged dispute is the one that most needs adjudicating, and oldest
+    first makes the queue fair rather than last-in-first-out."""
+    store, seed = reader
+    await seed(FACT_A, [("miles", 41, 10)])
+    await seed(FACT_B, [("miles", 42, 10)])
+    await store.mark_disputed(
+        workspace="ws", fact_id=FACT_B, person_id="g", reason=None,
+        tag_id="t", now_ms=NOW + 100,
+    )
+    await store.mark_disputed(
+        workspace="ws", fact_id=FACT_A, person_id="g", reason=None,
+        tag_id="t", now_ms=NOW,
+    )
+
+    rows = await store.disputed_facts(workspace="ws", limit=10)
+
+    assert [f.id for f in rows] == [FACT_A, FACT_B]
