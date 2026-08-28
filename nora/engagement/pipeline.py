@@ -160,6 +160,11 @@ class EngagementPipeline:
         persons: Persons,
         doctrine_store: Any,
         context_assembler: Any,
+        # Step 3 of the correction loop (31 §3). `None` while `[facts]`
+        # is off — nothing is rendered, so there is nothing to
+        # contradict — and defaulted so every existing construction
+        # site keeps working.
+        recogniser: Any = None,
         runner: AgentRunner,
         tool_registry: ToolRegistry,
         policy: Policy,
@@ -197,6 +202,7 @@ class EngagementPipeline:
         self._persons = persons
         self._doctrine_store = doctrine_store
         self._context = context_assembler
+        self._recogniser = recogniser
         self._runner = runner
         self._tool_registry = tool_registry
         # policy.toml's per-conversation MCP allowlist (spec:
@@ -540,6 +546,27 @@ class EngagementPipeline:
         ):
             await self._run_turn(request, identity, indicator)
 
+    async def _recognise(self, request: EngagementRequest) -> None:
+        """Hand the message to the recogniser, with the sender resolved.
+
+        The `person_id` is looked up here rather than inside the recogniser
+        because `Persons` is this pipeline's collaborator and resolution is one
+        definition per process. An UNMAPPED sender still disputes — refusing
+        their correction would make the loop depend on somebody having been
+        added to a config file, which is a wiring gap deciding whether a
+        correction counts.
+        """
+        if self._recogniser is None:
+            return
+        msg = request.message
+        ref = self._persons.resolve(msg.platform, msg.sender_id)
+        await self._recogniser.recognise(
+            msg=msg,
+            tag_id=request.tag_id,
+            person_id=ref.person_id if ref else None,
+            parent_is_nora=msg.quote is not None,
+        )
+
     async def _run_turn(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
     ) -> None:
@@ -583,6 +610,12 @@ class EngagementPipeline:
         # `_begin_indicator`. It is None when reactions are off, which
         # `indicate.resolve` treats as "nothing to replace".
         try:
+            # **BEFORE the context is assembled**, so a dispute this message
+            # raises reaches THIS turn's own prefill — the claim renders as a
+            # dispute on the very turn it was contradicted, rather than one
+            # turn late (31 §5). It never raises: a recogniser fault costs the
+            # correction, which is the status quo, and never the turn.
+            await self._recognise(request)
             ctx = await self._context.assemble(request=request)
             # An @-mention is a placeholder plus a parallel array, so until
             # DEC-34 every name in the transcript — including Nora's own —

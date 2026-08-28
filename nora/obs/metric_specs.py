@@ -1071,6 +1071,76 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # she rendered» and licenses nothing. Collapsing them would make
     # recognition report that nobody is talking about anything she holds
     # whenever the database hiccuped.
+    # ---- the correction loop, step 3 (31 §8) ------------------------------
+    #
+    # Step 9 of the loop is "a counter moved at every step above", and the
+    # bundle's entire forensic case is that this loop has NEVER CLOSED ONCE in
+    # production. A counter at each step is how anyone knows it did.
+    _CounterSpec(
+        "nora_dispute_targets_total",
+        "Claims put in scope by a message, by scope (direct/latent), how they "
+        "were reached (surface/quote/quote+surface) and R-27 status. **The "
+        "positive control**: every other series here is compatible with a "
+        "recogniser that never ran, and `unavailable` is what an unreadable "
+        "render ledger reports rather than an empty set.",
+        ("scope", "via", "status"),
+    ),
+    _CounterSpec(
+        "nora_dispute_classify_total",
+        "The dispute predicate's own call: ok (it found a contradiction), "
+        "nothing_found (it decided there was none — the expected answer), "
+        "unavailable (it could not be reached, or did not answer the "
+        "envelope). A model that replied with prose did not decide there was "
+        "no dispute; it failed to answer.",
+        ("status",),
+    ),
+    _CounterSpec(
+        "nora_dispute_unacted_total",
+        "Targets in scope and nothing disputed, by cause: declined (the "
+        "classifier ran and said no) or not_reached (it never ran). **The "
+        "label is what makes this readable** — without it the series reads "
+        "identically for a working recogniser on a quiet room and a broken "
+        "one, which is 02's «she recognises and does not act» made invisible "
+        "again by the instrument built to expose it.",
+        ("cause",),
+    ),
+    _CounterSpec(
+        "nora_dispute_recognised_total",
+        "Disputes raised, by tier and by which channel raised it: model (the "
+        "dedicated classifier) or deterministic (RULE-F, which fires only when "
+        "the classifier could not).",
+        ("tier", "channel"),
+    ),
+    _CounterSpec(
+        "nora_dispute_marked_total",
+        "What marking a row did, by tier and CAS outcome: ok, "
+        "already_disputed, already_superseded, capped, unknown. CAS outcomes "
+        "only — R-27's states live on `nora_dispute_targets_total`, and mixing "
+        "the two vocabularies on one label is what the instrument rules "
+        "forbid.",
+        ("tier", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_dispute_handle_refused_total",
+        "The model named something that was not a handle it was shown. A "
+        "recogniser that accepted one would be marking a row nobody put in "
+        "front of it.",
+    ),
+    _CounterSpec(
+        "nora_dispute_fanout_unresolved_total",
+        "Disputes fanned out by SURFACE because no entity id existed. 31 §6 "
+        "wants per-entity fan-out across both tiers; fact.subject_id has no "
+        "entity pointer and room_lexeme has no link to fact_entity, so this is "
+        "the only path today — and a tier that fans out correctly and one that "
+        "cannot see its siblings look identical without this.",
+    ),
+    _CounterSpec(
+        "nora_dispute_degraded_total",
+        "Recognition declined to MARK because no adjudicator has run "
+        "recently. Clearing a dispute happens only inside adjudication, so "
+        "without a live one marking would accumulate and never resolve — the "
+        "loop would be a ratchet rather than a loop.",
+    ),
     _CounterSpec(
         "nora_rendered_claim_total",
         "The render ledger by verb and outcome. verb=record: ok (rows "

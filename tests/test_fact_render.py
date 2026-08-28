@@ -222,3 +222,50 @@ def test_a_fact_in_both_slices_is_rendered_once():
         room=(f,), sender=(other,), extent=FactExtent(standing=2, shown=2),
     ))
     assert "things they told her" in both
+
+
+def _disputed(**over):
+    kw = dict(
+        id="0191f2c4-0000-7000-8000-00000000000d", workspace="nora",
+        subject_id="big walk", predicate="means", object_entity_id=None,
+        object_literal="a walking activity",
+        source_url="https://x.test/a", source_excerpt="x",
+        valid_from=1, created_at=1, instruction_sha256=DIGEST, model=MODEL,
+        established_by="tick-1", disputed_at=5, disputed_by="grant",
+        disputed_reason="it's a video game",
+    )
+    kw.update(over)
+    return Fact(**kw)
+
+
+def test_a_disputed_claim_renders_as_a_dispute_and_does_not_vanish():
+    """THE THREE-STATE RENDER — standing, disputed-and-marked, gone. 30 §2.1,
+    29 §5 and 19 §4 all decide it and only step 4's shorthand collapsed it to
+    two.
+
+    Following the shorthand would have been the mute: one message from one
+    member removing a true claim from every future turn, for everyone, with no
+    way back."""
+    out = render_facts(_view(_disputed()))
+
+    assert "a walking activity" in out
+    assert "DISPUTED by grant" in out
+    assert "it's a video game" in out
+    assert "not yet confirmed" in out
+
+
+def test_a_disputed_claim_with_no_reason_still_says_who():
+    """A deterministic mark carries no reason text, and an unmapped sender has
+    no person. Neither may render as though the claim were unchallenged."""
+    out = render_facts(_view(_disputed(disputed_reason=None, disputed_by=None)))
+
+    assert "DISPUTED by someone" in out
+    assert "None" not in out
+
+
+def test_an_undisputed_claim_carries_no_dispute_text():
+    """The positive control: a renderer that always appended the marker would
+    satisfy both tests above while making every claim look contested."""
+    out = render_facts(_view(_fact()))
+
+    assert "DISPUTED" not in out

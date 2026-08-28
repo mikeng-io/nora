@@ -373,6 +373,13 @@ NATIVELY_AUTHORED = {
     # prompt written from scratch. The upstream shape did not survive contact
     # anyway — its list variant echoes UUIDs, which `dream_screen` drops.
     "fact-entity-resolution",
+    # Step 3 of the correction loop. Like `standing-debrief`, this is read by a
+    # TAG-PATH stage rather than by a Dreamer adaptor — it lives here because
+    # this is where the bind-mounted, hot-reloading instruction text lives, and
+    # the recogniser reads it through `objective_body` and never
+    # `for_objective`, so it never gets the Dreamer's research-framed doctrine
+    # prepended to a task with no research in it.
+    "fact-dispute",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

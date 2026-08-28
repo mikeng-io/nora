@@ -63,6 +63,11 @@ _EXCERPT_MAX_CHARS = 160
 #: count conveys better than nine names.
 _MAX_RENDERED_ASSERTERS = 3
 
+#: The disputer's own words, capped like every other channel a person
+#: can write into. It is screened before it is stored; this is the
+#: render-side bound its siblings all carry.
+_DISPUTE_REASON_MAX_CHARS = 120
+
 
 def render_facts(view: FactsView) -> str:
     """The whole block, or `""` when there is nothing to say.
@@ -147,7 +152,30 @@ def _render_entry(
         f"- {escape(fact.subject_id)} {escape(fact.predicate)} "
         f"{escape(fact.object_literal)}"
     )
-    return f"{head} {_warrant(fact, asserters)}"
+    line = f"{head} {_warrant(fact, asserters)}"
+    return line if not fact.is_disputed else f"{line} {_dispute(fact)}"
+
+
+def _dispute(fact: Fact) -> str:
+    """A disputed claim renders AS A DISPUTE, carrying who said otherwise.
+
+    **This is the three-state render** 30 §2.1, 29 §5 and 19 §4 all decide:
+    standing, disputed-and-marked, gone. Only §2.1.1's step-4 shorthand
+    collapsed it to two, and following that shorthand would have been the mute
+    — one message from one member removing a true claim from every future turn,
+    with no way back.
+
+    It is also what lets her SAY it: «someone's told me that's wrong, I haven't
+    confirmed it yet» beats both repeating a wrong answer and going quiet.
+    """
+    who = escape(fact.disputed_by) if fact.disputed_by else "someone"
+    reason = (fact.disputed_reason or "").strip()
+    if not reason:
+        return f"— DISPUTED by {who}, not yet confirmed either way"
+    return (
+        f"— DISPUTED by {who}: \"{escape(reason[:_DISPUTE_REASON_MAX_CHARS])}\" "
+        "— not yet confirmed either way"
+    )
 
 
 def _warrant(fact: Fact, asserters: Mapping[str, tuple[str, ...]]) -> str:

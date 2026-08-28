@@ -64,6 +64,7 @@ from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
+from nora.engagement.recognition import Recogniser
 from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages.debrief import Completion as DebriefCompletion
 from nora.engagement.stages.debrief import Wiring as DebriefWiring
@@ -1820,6 +1821,34 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
             rebuild_after_folds=cfg.standing.rebuild_after_folds,
         )
+    # Step 3 of the correction loop (31 §3). Built only when the fact tier is
+    # on: with `[facts]` off nothing is rendered, so there is nothing a member
+    # could be contradicting and the ledger it reads is empty by construction.
+    #
+    # `adjudicator_alive` is 31 §7.2's gate. Clearing a dispute happens ONLY
+    # inside adjudication, and adjudication is a Dreamer adaptor — so with the
+    # Dreamer off, marking would accumulate and never resolve, and the loop
+    # would be a ratchet rather than a loop. It degrades to proposing instead,
+    # which is the mechanism latent scope already has.
+    recogniser = (
+        Recogniser(
+            ledger=rendered_claims,
+            facts=fact_store,
+            lexemes=language_store,
+            classifier=_LanguageModelClient(
+                client=client, model=cfg.language.model,
+                timeout_seconds=cfg.language.timeout_seconds,
+            ),
+            instruction=dreamer_instructions.objective_body("fact-dispute"),
+            metrics=metrics,
+            window_hours=cfg.facts.recognition_window_hours,
+            adjudicator_alive=cfg.dreamer.enabled,
+        )
+        if cfg.facts.enabled
+        and fact_store is not None
+        and rendered_claims is not None
+        else None
+    )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the
         # platform it arrived from, and `registry.adapters` is exactly the set
@@ -1827,6 +1856,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         adapters=dict(registry.adapters),
         audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
+        recogniser=recogniser,
         tool_registry=tool_registry,
         # `allowlist` — policy.toml, the SAME instance the ingest pipeline
         # already checked this conversation is admitted under (DEC-18). This
