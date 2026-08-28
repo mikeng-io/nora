@@ -428,6 +428,20 @@ total_tokens = 120000
 output_tokens = 8000
 timeout_seconds = 300
 
+# Pass 6, entity-resolution adjudication. Sized like the EXTRACTOR, not like
+# the adjudicator: it is tool-free and single-shot, and its whole input is a
+# short list of names against a short list of candidates. Deciding whether two
+# names mean one thing is a judgement about the two names, not research — a
+# pass that could search would be tempted to settle `HKO` by reading a page,
+# which is the adjudicator's job on a CLAIM and not this one's on a NAME.
+#
+# UNMEASURED, like its neighbours.
+[dreamer.budgets.fact-entity-resolution]
+turns = 2
+total_tokens = 20000
+output_tokens = 2000
+timeout_seconds = 60
+
 [obs.logging]
 level = "INFO"
 path = "data/nora.log"
@@ -864,20 +878,39 @@ verify_known_entities = true
 # max_rendered_exchanges = 4
 
 [facts]
-# The fact tier's gate (docs/superpowers/specs/2026-08-20-fact-tier-design.md).
-# Nothing writes a fact yet — the schema and the <facts> block ship dormant —
-# so this section is a flag and three bounds for a future adaptor, not a
-# running subsystem today. Stays off with this first deployment of the
-# schema, the same "off at first" period [language] shipped in.
+# The knowledge tier's gate (design/dreamer-agent-loop/, decision index
+# DEC-144/R-77/R-78/R-79). **This section is now a running subsystem behind a
+# flag, not a placeholder.** The text here said "nothing writes a fact yet —
+# a flag and three bounds for a future adaptor" long after three adaptors
+# wrote and nine knobs existed; it was the one file an operator reads and it
+# was the last one corrected (review finding, 2026-08-28).
+#
+# What `enabled = true` switches on, so the flag is readable before it is
+# flipped rather than after:
+#   - extraction, adjudication and entity resolution, three Dreamer adaptors
+#     on the background tick;
+#   - the <facts> block in every tag's prefill, bounded by the two render
+#     caps below;
+#   - the correction loop on the REPLY PATH — recognition runs before context
+#     assembly and holds the conversation's slot for up to
+#     `dispute_classify_timeout_seconds`, which is why that value is inside
+#     [standing] max_slot_hold_seconds' startup gate.
+#
 # ALL-OFF (2026-08-23, operator instruction: "turn off ALL dreamer").
 # Everything the background tiers have written is wrong or unverified
 # (963 messages -> 2 rows, both wrong), and the substrate contract they
 # write against landed only today (design/dreamer-agent-loop/21).
 # Nothing writes until that contract is built against.
 enabled = false
-# max_adjudications_per_tick = 10
-# max_rendered_facts = 8
-# retention_days = 180
+# max_adjudications_per_tick = 10   # research loops per tick — the cost knob
+# max_room_facts = 8                # render cap: facts about the room
+# max_sender_facts = 4              # render cap: facts about the sender
+# recognition_window_hours = 24     # how far back a correction may reach
+# dispute_classify_timeout_seconds = 8.0   # ON THE REPLY PATH — see above
+# retention_days = 180              # how long a settled candidate is kept
+# veto_file = ""                    # operator-owned "not a thing" list (21 §10)
+# max_term_chars = 200              # operating cap, enforced at every write
+# max_predicate_chars = 100         # operating cap, enforced at every write
 
 [tools.mcp.pulse]
 enabled = true

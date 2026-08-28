@@ -64,6 +64,7 @@ from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
+from nora.engagement.recognition import Recogniser
 from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages.debrief import Completion as DebriefCompletion
 from nora.engagement.stages.debrief import Wiring as DebriefWiring
@@ -75,9 +76,10 @@ from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
-from nora.infra.sql.facts import SqlFactStore
+from nora.infra.sql.facts import SqlFactStore, oversized_terms
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
@@ -87,6 +89,7 @@ from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.infra.sql.rendered_claims import SqlRenderedClaimStore
 from nora.infra.sql.room_portrait import SqlRoomPortraitStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
@@ -94,6 +97,7 @@ from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
+from nora.infra.veto_list import load_veto_list
 from nora.infra.vision import StickerInterpreter, VisionClient, derive_vision_timeout
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
@@ -109,7 +113,11 @@ from nora.instructions.frontmatter import InstructionError
 from nora.language.consolidator import LanguageConsolidator
 from nora.language.exchange_consolidator import ExchangeConsolidator
 from nora.language.exchange_observer import ExchangePatternObserver
-from nora.language.fact_adaptor import FactAdaptor, FactCandidateAdaptor
+from nora.language.fact_adaptor import (
+    FactAdaptor,
+    FactCandidateAdaptor,
+    FactEntityResolutionAdaptor,
+)
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.note_revisitor import NoteRevisitor
 from nora.language.observer import LexemeObserver
@@ -560,6 +568,11 @@ class Dependencies:
     # agent's event tools use, rather than a second `GatheringService` over the
     # same store.
     events: GatheringService
+    # The render ledger, or `None` while `[facts]` is off. Exposed here
+    # only so the retention sweep can prune it — 31 §3.1's trigger, which
+    # is the one that already exists rather than a new loop. LAST and
+    # defaulted, so every existing construction site keeps working.
+    rendered_claims: SqlRenderedClaimStore | None = None
 
 
 async def build_dependencies(cfg: Config) -> Dependencies:
@@ -715,9 +728,71 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # Ships OFF, and flipping it before an adaptor writes anything would make
     # `config.toml` assert a subsystem is running when none is — the defect
     # class this tier exists to prevent, committed by its own switch.
-    fact_store: SqlFactStore | None = (
-        SqlFactStore(engine) if cfg.facts.enabled else None
+    # ONE entity store for the process, built here rather than inside the
+    # Dreamer block, because `21-substrate-contract.md` §4 makes it the fact
+    # SINK's collaborator and not only pass 6's: the sink upserts the entities
+    # an edge implies, in the same transaction that writes the edge. It was
+    # built only for the Dreamer, which is why that sentence was true of the
+    # document and false of the code.
+    fact_entities: SqlEntityStore | None = (
+        SqlEntityStore(
+            engine, veto_extra=load_veto_list(cfg.facts.veto_file),
+            metrics=metrics,
+        ) if cfg.facts.enabled else None
     )
+    fact_store: SqlFactStore | None = (
+        SqlFactStore(
+            engine,
+            max_term_chars=cfg.facts.max_term_chars,
+            max_predicate_chars=cfg.facts.max_predicate_chars,
+            entities=fact_entities,
+            metrics=metrics,
+        ) if cfg.facts.enabled else None
+    )
+    # The render ledger (31 §3), wired only when the tier is on: with `[facts]`
+    # off nothing is rendered, so there is nothing to record and a store here
+    # would be a table that only ever holds zero rows. Named rather than
+    # inlined because the retention sweep needs it too.
+    rendered_claims: SqlRenderedClaimStore | None = (
+        SqlRenderedClaimStore(
+            engine,
+            window_hours=cfg.facts.recognition_window_hours,
+            metrics=metrics,
+        )
+        if cfg.facts.enabled else None
+    )
+    if fact_store is not None:
+        # 30 §5: a cap that only refuses a CONFIG above its ceiling leaves
+        # oversized rows satisfying the database CHECK while defeating the
+        # prompt budget the cap exists to protect. Lowering the knob below rows
+        # that already exist must be visible at startup, naming them — not
+        # discovered later as a tier that quietly kept rendering what the
+        # operator just said was too big.
+        # Inside `fact_store is not None`, so a lowered cap with `[facts]
+        # enabled = false` is accepted silently — deliberate, because a dark
+        # tier renders nothing and its rows defeat no prompt budget, and stated
+        # here because it is a real gap in the guarantee otherwise.
+        try:
+            oversized = await oversized_terms(
+                engine,
+                max_term_chars=cfg.facts.max_term_chars,
+                max_predicate_chars=cfg.facts.max_predicate_chars,
+            )
+        except Exception as exc:
+            # Every neighbouring step converts to `StartupError`; a raw
+            # `OperationalError` escaping from here would be the one boot
+            # failure in this function with no operator-readable message.
+            raise StartupError(f"[facts] cap check failed: {exc}") from exc
+        if oversized:
+            raise StartupError(
+                "[facts] caps are below rows that already exist "
+                f"(max_term_chars={cfg.facts.max_term_chars}, "
+                f"max_predicate_chars={cfg.facts.max_predicate_chars}). "
+                "Raise the caps or remove these rows; they will not be "
+                "truncated, because silently shortening a recorded claim to "
+                "satisfy a knob is worse than not starting:\n  "
+                + "\n  ".join(oversized)
+            )
     exchange_store: SqlExchangeStore | None = (
         SqlExchangeStore(engine, metrics=metrics) if cfg.language.enabled else None
     )
@@ -932,7 +1007,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # the note tier above uses — two tiers keyed on `Conversation.workspace`
         # must not each carry their own idea of what a room's workspace is.
         facts=fact_store,
-        max_rendered_facts=cfg.facts.max_rendered_facts,
+        # The render ledger, wired only when the tier is on: with `[facts]`
+        # off nothing is rendered, so there is nothing to record and a store
+        # here would be a table that only ever holds zero rows.
+        rendered=rendered_claims,
+        max_room_facts=cfg.facts.max_room_facts,
+        max_sender_facts=cfg.facts.max_sender_facts,
         # Standing's READ half. `None` while `[standing] enabled = false`, the
         # shipped default, so `<standing>` renders nothing. Unlike `notes`/
         # `facts` beside it this needs no `policy=` at all: a position is keyed
@@ -1754,6 +1834,40 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
             rebuild_after_folds=cfg.standing.rebuild_after_folds,
         )
+    # Step 3 of the correction loop (31 §3). Built only when the fact tier is
+    # on: with `[facts]` off nothing is rendered, so there is nothing a member
+    # could be contradicting and the ledger it reads is empty by construction.
+    #
+    # `adjudicator_alive` is 31 §7.2's gate. Clearing a dispute happens ONLY
+    # inside adjudication, and adjudication is a Dreamer adaptor — so with the
+    # Dreamer off, marking would accumulate and never resolve, and the loop
+    # would be a ratchet rather than a loop. It degrades to proposing instead,
+    # which is the mechanism latent scope already has.
+    recogniser = (
+        Recogniser(
+            ledger=rendered_claims,
+            facts=fact_store,
+            lexemes=language_store,
+            classifier=_LanguageModelClient(
+                client=client, model=cfg.language.model,
+                # `[facts]`, not `[language]`. This call is on the REPLY PATH
+                # and `[language] timeout_seconds` is 120 because it bounds a
+                # Dreamer tick; inherited here it was two minutes of silence
+                # ahead of a live answer. 31 §5's own key, and it is in the
+                # startup slot-hold gate beside `[standing]`'s.
+                timeout_seconds=cfg.facts.dispute_classify_timeout_seconds,
+            ),
+            classify_timeout_seconds=cfg.facts.dispute_classify_timeout_seconds,
+            instruction=dreamer_instructions.objective_body(Recogniser.objective),
+            metrics=metrics,
+            window_hours=cfg.facts.recognition_window_hours,
+            adjudicator_alive=cfg.dreamer.enabled,
+        )
+        if cfg.facts.enabled
+        and fact_store is not None
+        and rendered_claims is not None
+        else None
+    )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the
         # platform it arrived from, and `registry.adapters` is exactly the set
@@ -1761,6 +1875,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         adapters=dict(registry.adapters),
         audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
+        recogniser=recogniser,
         tool_registry=tool_registry,
         # `allowlist` — policy.toml, the SAME instance the ingest pipeline
         # already checked this conversation is admitted under (DEC-18). This
@@ -2013,7 +2128,38 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # an operator turning on the research loop has not thereby asked for a
         # fact store to start filling.
         if cfg.facts.enabled and fact_store is not None:
-            fact_candidates = SqlFactCandidateStore(engine)
+            # The roster is `identity.toml`'s person ids. It is what lets the
+            # sink REFUSE a claim whose subject is somebody in the room (25
+            # §2.4) — the objective's first exclusion, measured broken at five
+            # person-claims in six edges with the roster supplied to the model.
+            fact_candidates = SqlFactCandidateStore(
+                engine,
+                roster=frozenset(persons.by_person),
+                # Every name the group calls them. `PersonRef.aliases` is
+                # operator-authored (阿Miles, 米高, a handle) and its own note
+                # says it must never resolve who a message is FROM — refusing
+                # on one is the opposite direction and the safe one.
+                roster_names=frozenset(
+                    name
+                    for ref in persons.by_person.values()
+                    for name in (ref.name, ref.first_name, ref.last_name,
+                                 *ref.aliases)
+                    if name
+                ),
+                max_term_chars=cfg.facts.max_term_chars,
+                max_predicate_chars=cfg.facts.max_predicate_chars,
+                metrics=metrics,
+            )
+            # The SAME instance the fact sink writes through (§4), not a
+            # second one: two stores over one table is two veto lists loaded
+            # from one file at two moments, and the promotion pass and the
+            # sink would be able to disagree about what is a thing.
+            if fact_entities is None:  # pragma: no cover - `cfg.facts.enabled`
+                raise RuntimeError(
+                    "the entity store is built with the fact store under the "
+                    "same flag; reaching here means that pairing was broken"
+                )
+
             dream_adaptors = (
                 # PHASE A, scope-keyed: it reads one room's message batch.
                 # `workspace_for` is not a convenience — the extractor's KEY is
@@ -2032,6 +2178,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         for conv in allowlist.conversations
                         if conv.primary_id and conv.workspace
                     }.get,
+                    max_term_chars=cfg.facts.max_term_chars,
+                    max_predicate_chars=cfg.facts.max_predicate_chars,
                 ),
                 # PHASE B, workspace-keyed and watermark-free: its input is the
                 # candidate table, not a message batch.
@@ -2039,7 +2187,23 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     facts=fact_store,
                     candidates=fact_candidates,
                     max_adjudications_per_tick=cfg.facts.max_adjudications_per_tick,
+                    max_term_chars=cfg.facts.max_term_chars,
+                    max_predicate_chars=cfg.facts.max_predicate_chars,
+                    # Pass 3 rides the adjudication tick: degree changes only
+                    # when a fact lands, so this is exactly when there is
+                    # something new to promote.
+                    entities=fact_entities,
                     metrics=metrics,
+                ),
+                # PASS 6, workspace-keyed and watermark-free like the
+                # adjudicator: its input is the entity table and the candidate
+                # queue, not a message batch. It is the half of resolution that
+                # needs judgement (21 §5); the deterministic half already ran
+                # in the sink, on the SUBJECT end of every fact written —
+                # `SqlFactStore._resolve_subjects`, through the same
+                # `fact_entities` instance this adaptor holds.
+                FactEntityResolutionAdaptor(
+                    entities=fact_entities, metrics=metrics,
                 ),
             )
         # The note tier's REVISITOR, on the same two-gate rule the fact tier
@@ -2163,6 +2327,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         verify_tool_subsets(dream_adaptors, tools=dream_tools)
 
     return Dependencies(
+        rendered_claims=rendered_claims,
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         dispatcher=dispatcher, adapter=adapter, registry=registry,

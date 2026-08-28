@@ -29,6 +29,7 @@ dependencies = [
     "discord-py[voice]>=2.7.1",
     "yt-dlp>=2026.8.19",
     "boto3>=1.43.62",
+    "pgvector>=0.5.0",
 ]
 
 [project.optional-dependencies]

@@ -46,7 +46,6 @@ defaults are not. The store was SQLite until the 2026-08-07 migration
 from __future__ import annotations
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql as pg
 
 # The one domain import this module makes, and it is deliberate. `tag_trace`'s
 # own outcome CHECK spells its six values out as a literal beside a comment
@@ -57,8 +56,19 @@ from sqlalchemy.dialects import postgresql as pg
 # the migrations, which DO hardcode the number (a migration that read a live
 # constant would change meaning under a later edit), so moving the constant
 # fails the parity gate loudly instead of drifting.
+from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects import postgresql as pg
+
+from nora.domain.facts import (
+    FACT_PREDICATE_CEILING_CHARS,
+    FACT_TERM_CEILING_CHARS,
+)
 from nora.domain.notes import NOTE_BODY_CEILING_CHARS
 from nora.domain.standing import STANDING_BODY_CEILING_CHARS
+
+#: bge-m3's width, MEASURED against the live endpoint on 2026-08-28 rather
+#: than read off a model card. The migration reads this same constant.
+EMBEDDING_DIMENSIONS = 1024
 
 METADATA = sa.MetaData()
 
@@ -946,6 +956,19 @@ ROOM_LEXEME = sa.Table(
     # would name a pairing that never existed, an instruction that was never
     # run against that model.
     sa.Column("model", sa.Text),
+    # The correction loop reaches BOTH tiers (31 §6): one correction
+    # contradicts a lexeme row and a fact row at once. Same four columns, same
+    # meaning.
+    #
+    # **They survive `rescore` because its upsert names its columns
+    # explicitly** — `nora.infra.sql.language.SqlLanguageStore.rescore`
+    # recomputes this table from `language_observation` on every consolidation
+    # and would wipe anything it listed. That is correct behaviour arrived at
+    # by accident of an explicit list, so it has a test rather than a comment.
+    sa.Column("disputed_at", sa.BigInteger),
+    sa.Column("disputed_by", sa.Text),
+    sa.Column("disputed_reason", sa.Text),
+    sa.Column("disputed_tag_id", sa.Text),
     sa.CheckConstraint("state IN ('live','fading','stale')"),
     sa.CheckConstraint(
         "instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'",
@@ -1206,6 +1229,19 @@ FACT_CANDIDATE = sa.Table(
     sa.CheckConstraint(
         "length(btrim(model)) > 0", name="fact_candidate_model_is_named_check",
     ),
+    # The same two ceilings as `fact`, because a candidate becomes a fact and a
+    # term that cannot be stored as one must not be storable as the other —
+    # otherwise the refusal lands at adjudication, after the research loop has
+    # already been spent.
+    sa.CheckConstraint(
+        f"length(subject_id) <= {FACT_TERM_CEILING_CHARS} "
+        f"and length(object) <= {FACT_TERM_CEILING_CHARS}",
+        name="fact_candidate_term_fits_the_ceiling_check",
+    ),
+    sa.CheckConstraint(
+        f"length(predicate) <= {FACT_PREDICATE_CEILING_CHARS}",
+        name="fact_candidate_predicate_fits_the_ceiling_check",
+    ),
     sa.UniqueConstraint("workspace", "subject_id", "predicate", "object",
                         name="fact_candidate_triple_key"),
 )
@@ -1218,8 +1254,25 @@ FACT = sa.Table(
     sa.Column("workspace", sa.Text, nullable=False),
     sa.Column("subject_id", sa.Text, nullable=False),
     sa.Column("predicate", sa.Text, nullable=False),
-    sa.Column("object_entity_id", sa.Text),
-    sa.Column("object_literal", sa.Text),
+    # 2026-08-28 (migration 0039): an ADDITIVE, nullable resolution pointer —
+    # `21-substrate-contract.md` §10 relaxing §6.5. It was `sa.Text` against a
+    # `uuid` PK with NO foreign key, so the "node reference" half of the old
+    # exactly-one CHECK referenced nothing: a second free-text column wearing
+    # an id's name. It is now the type it claims to be, and the FK is what
+    # makes it one.
+    sa.Column(
+        "object_entity_id",
+        pg.UUID(as_uuid=False),
+        sa.ForeignKey("fact_entity.id", name="fact_object_entity_id_fkey"),
+    ),
+    # NOT NULL as of 0039. The old `(object_entity_id is null) <>
+    # (object_literal is null)` forced promotion to DESTROY the surface string
+    # the room actually used, and broke the negative cache on the way past:
+    # dedup compares `object_literal`, an entity-object fact had it NULL, and
+    # `NULL = 'x'` is NULL — so the claim was never deduped and was
+    # re-adjudicated every tick forever. Keeping the literal fixes both by
+    # removing the state that caused them, rather than by adding a branch.
+    sa.Column("object_literal", sa.Text, nullable=False),
     # 2026-08-21: the warrant axis. `warrant_kind` names WHAT kind of
     # evidence backs the row; `source_url`/`source_excerpt` are no longer
     # unconditionally NOT NULL (see the two CHECKs below) because a fact can
@@ -1264,6 +1317,26 @@ FACT = sa.Table(
     # status lands (spec §13.5) — the default, not an opt-in.
     sa.Column("fidelity", sa.Text, nullable=False,
               server_default=sa.text("'tentative'")),
+    # THE CORRECTION LOOP's one new state (31 §7). A dispute MARKS a row; it
+    # does not mute it — 30 §2.1, 29 §5 and 19 §4 all decide a three-state
+    # render (standing / disputed-and-marked / gone) and only step 4's
+    # shorthand collapsed it to two. A disputed row stops rendering as a
+    # STANDING CLAIM and starts rendering AS A DISPUTE, carrying who disputed
+    # it.
+    #
+    # That is what makes a false positive survivable. Under suppression one
+    # message from one member removed a true row from every future turn for
+    # everyone in the workspace, with no way to clear it — a memory
+    # denial-of-service available to anyone in the room.
+    sa.Column("disputed_at", sa.BigInteger),
+    # The person_id of whoever disputed it. NULLABLE because an unmapped
+    # sender has no person_id at ingest and a sentinel would be one that
+    # compares equal to nobody.
+    sa.Column("disputed_by", sa.Text),
+    # What they actually claimed — step 5's input. SCREENED before it is
+    # stored: it is model-adjacent free text and this column is rendered.
+    sa.Column("disputed_reason", sa.Text),
+    sa.Column("disputed_tag_id", sa.Text),
     sa.CheckConstraint(
         "instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="fact_instruction_sha256_check",
@@ -1283,10 +1356,6 @@ FACT = sa.Table(
         "length(btrim(model)) > 0",
         name="fact_model_is_named_check",
     ),
-    sa.CheckConstraint(
-        "(object_entity_id is null) <> (object_literal is null)",
-        name="fact_one_object_check",
-    ),
     # Biconditional, not an implication: a fact is either standing (both
     # NULL) or superseded (both set). `superseded_at` set alone would hide
     # the row from `Fact.is_standing` and `idx_fact_standing` with no record
@@ -1299,6 +1368,20 @@ FACT = sa.Table(
     sa.CheckConstraint(
         "warrant_kind in ('source', 'premises', 'observation', 'stated')",
         name="fact_warrant_kind_check",
+    ),
+    # The CEILING, not the operating cap — `[facts] max_term_chars` /
+    # `max_predicate_chars` are the knobs and are enforced at every write. This
+    # is the backstop under them, and the number comes from
+    # `nora.domain.facts` so the migration, the dataclass and this file cannot
+    # drift into agreeing with each other and with nothing else.
+    sa.CheckConstraint(
+        f"length(subject_id) <= {FACT_TERM_CEILING_CHARS} "
+        f"and length(object_literal) <= {FACT_TERM_CEILING_CHARS}",
+        name="fact_term_fits_the_ceiling_check",
+    ),
+    sa.CheckConstraint(
+        f"length(predicate) <= {FACT_PREDICATE_CEILING_CHARS}",
+        name="fact_predicate_fits_the_ceiling_check",
     ),
     # Each source column is set if and only if warrant_kind = 'source' — two
     # separate CHECKs, not one combined predicate, so each is independently
@@ -1361,11 +1444,19 @@ IDX_FACT_STANDING = sa.Index(
 FACT_PREMISE = sa.Table(
     "fact_premise",
     METADATA,
+    # CASCADE on both ends as of 0040. `30-review-response.md` §7 makes
+    # run-scoped rollback — "void everything run X wrote" — a supported
+    # operation, and a subsystem whose writer is a model with no human in the
+    # loop needs an undo. Without this, deleting a fact is blocked by its
+    # premise rows before `fact_asserter`'s own cascade ever runs, so that
+    # cascade's stated justification did not hold.
     sa.Column("fact_id", pg.UUID(as_uuid=False),
-              sa.ForeignKey("fact.id", name="fact_premise_fact_id_fkey"),
+              sa.ForeignKey("fact.id", name="fact_premise_fact_id_fkey",
+                            ondelete="CASCADE"),
               primary_key=True),
     sa.Column("premise_fact_id", pg.UUID(as_uuid=False),
-              sa.ForeignKey("fact.id", name="fact_premise_premise_fact_id_fkey"),
+              sa.ForeignKey("fact.id", name="fact_premise_premise_fact_id_fkey",
+                            ondelete="CASCADE"),
               primary_key=True),
     # The one cycle cheap to rule out at the row level: a fact cannot be its
     # own premise. Longer cycles (A premises B premises A) are NOT detected
@@ -1377,9 +1468,200 @@ FACT_PREMISE = sa.Table(
     ),
 )
 
+#: The correction loop's read: which rows in this workspace are disputed.
+#: PARTIAL, because a disputed row is the rare case and a full index would be a
+#: majority-class predicate the planner will not choose.
+IDX_FACT_DISPUTED = sa.Index(
+    "idx_fact_disputed", FACT.c.workspace,
+    postgresql_where=FACT.c.disputed_at.isnot(None),
+)
+
 IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(
     "idx_fact_premise_premise_fact_id", FACT_PREMISE.c.premise_fact_id,
 )
+
+
+# THE EMBEDDING SEAM (24 §7.5, migration 0044). ONE table for every tier, not
+# one per tier — 24 §1's whole argument is that this is one seam and not three.
+#
+# **`kind` is an open string, never an enum.** A closed set means the fifth
+# tier ships with a schema change and a CHECK edit before it can store its
+# first vector. The exchange tier's closed act set is right for ACTS, which are
+# a vocabulary; `kind` is a REGISTRY, and registries stay open.
+#
+# **`row_key` is TEXT**, for `rendered_claim`'s reason one table over: it holds
+# different tiers' keys, and `room_lexeme`'s is three TEXT columns with no
+# surrogate id.
+#
+# **One column per DIMENSION, routed by kind** (24 §7.5). `vector(N)` fixes N at
+# DDL time, so a future tier bringing its own model adds a COLUMN rather than a
+# type — and the "declare three things and write no schema" bar holds for any
+# tier reusing an existing dimension. `v1024` is bge-m3, and 1024 is MEASURED
+# against the live endpoint rather than read off a model card.
+#
+# **`fingerprint` is the re-embedding predicate** (25 §5): model identity and
+# the exact text embedded. One comparison — `fingerprint <> current` — catches a
+# model swap and a changed row, with no second mechanism and no ordering trap.
+EMBEDDING = sa.Table(
+    "embedding",
+    METADATA,
+    sa.Column("kind", sa.Text, primary_key=True),
+    sa.Column("row_key", sa.Text, primary_key=True),
+    # The scope a search is allowed to cross. `workspace` for a fact, a
+    # conversation for a lexeme — the seam does not care which, only that a
+    # reader can filter by it, because a retrieval verb that could not would
+    # be R-49's relay in a new place.
+    sa.Column("scope", sa.Text, nullable=False),
+    # What was embedded, kept so a stale vector can be explained rather than
+    # merely detected.
+    sa.Column("text", sa.Text, nullable=False),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column("fingerprint", sa.Text, nullable=False),
+    sa.Column("embedded_at", sa.BigInteger, nullable=False),
+    sa.Column("v1024", Vector(EMBEDDING_DIMENSIONS)),
+    sa.CheckConstraint(
+        "length(btrim(text)) > 0", name="embedding_text_is_present_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(model)) > 0", name="embedding_model_is_named_check",
+    ),
+)
+
+#: The dense channel's index. HNSW rather than IVFFlat: it needs no training
+#: pass over existing rows, which matters for a table that starts empty and
+#: grows slowly — an IVFFlat index built on nothing has useless lists forever.
+#: `vector_cosine_ops` because 23 §6 ranks on cosine distance.
+IDX_EMBEDDING_V1024 = sa.Index(
+    "idx_embedding_v1024", EMBEDDING.c.v1024,
+    postgresql_using="hnsw",
+    postgresql_ops={"v1024": "vector_cosine_ops"},
+)
+
+#: The scope filter every read applies before ranking.
+IDX_EMBEDDING_SCOPE = sa.Index(
+    "idx_embedding_scope", EMBEDDING.c.kind, EMBEDDING.c.scope,
+)
+
+
+# WHAT SHE RENDERED, and the only reason it exists is that step 3 of the
+# correction loop says "a claim Nora just RENDERED" and nothing recorded that
+# (`design/dreamer-agent-loop/31-recognition.md` §3, migration 0042).
+#
+# `TagTrace` keeps the turn's messages and transcript; it does not keep which
+# rows went into the prefill. Recovering them by parsing the `<facts>` block
+# back out of a stored prefill would be INTERPRETING TWICE — the spine's first
+# rule, and the way two copies drift. So the render site records it, because
+# that is the one place the row ids are already in hand.
+#
+# **This table is also the measurement.** Without it, "Nora rendered it" is an
+# assumption; with it, it is a read. That is the difference between a `measure`
+# step and a proxy.
+#
+# **UPSERT, one row per rendered claim per conversation.** Keyed on the tag too,
+# it would write a fresh row for the same claim on every consecutive tag — forty
+# rows for one fact in an active conversation, read back with `DISTINCT ON` —
+# for provenance `tag_trace` already carries. `last_tag_id` says which turn last
+# put the row in scope and is deliberately NOT part of the key.
+#
+# **`row_key` is TEXT, not uuid.** A fact's is its uuid; a lexeme's is its
+# composite key, because `room_lexeme`'s primary key is three TEXT columns and
+# it has no surrogate id — deliberately, since the compound key is the fix for a
+# real overwrite bug. A `uuid` column here would have been unimplementable for
+# half the rows it is specified to hold.
+#
+# **A WORKING SET, not an audit trail.** Pruned on the recognition window; the
+# audit trail is the Langfuse trace and the `tag_trace` row.
+RENDERED_CLAIM = sa.Table(
+    "rendered_claim",
+    METADATA,
+    sa.Column("conversation_id", sa.Text, primary_key=True),
+    sa.Column("kind", sa.Text, primary_key=True),
+    sa.Column("row_key", sa.Text, primary_key=True),
+    # What a later message is matched against — `fact.subject_id` for a fact,
+    # `room_lexeme.canonical_form` for a lexeme.
+    sa.Column("surface", sa.Text, nullable=False),
+    # Facts only. A lexeme is conversation-keyed and has no workspace, and a
+    # sentinel would be a workspace that compares equal to nothing.
+    sa.Column("workspace", sa.Text),
+    sa.Column("last_tag_id", sa.Text, nullable=False),
+    sa.Column("last_rendered_at", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        "kind in ('fact', 'lexeme')", name="rendered_claim_kind_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(surface)) > 0",
+        name="rendered_claim_surface_is_named_check",
+    ),
+)
+
+#: The one read this table exists to serve: everything this conversation
+#: rendered inside the window, newest first.
+IDX_RENDERED_CLAIM_WINDOW = sa.Index(
+    "idx_rendered_claim_window",
+    RENDERED_CLAIM.c.conversation_id,
+    sa.text("last_rendered_at DESC"),
+)
+
+
+# WHO said it — `21-substrate-contract.md` §7's whole answer (migration 0040).
+# `established_by` records the RUN that produced a fact; nothing anywhere
+# recorded the HUMAN who claimed it, and for a tier whose job is belief that is
+# the wrong direction: corroboration and disagreement are properties of who
+# said it. Occurrence count alone conflates «one person said it three times»
+# (emphasis) with «three people said it once» (consensus), and the ranking that
+# decides what is worth adjudicating treated them identically.
+#
+# **A junction, not an array column, and the repo already argued this once.**
+# `fact_premise` exists rather than a `premise_ids` array because "which facts
+# depend on this one" is an unindexable array-containment scan with the array
+# and an indexed lookup with the table. The asserter question has the same
+# reverse direction — «what has Grant been telling us» — so it gets the same
+# answer, and `IDX_FACT_ASSERTER_PERSON` below is that direction.
+#
+# **The grain is (fact, person, message), the finest that loses nothing.**
+# Three people once is three rows over three persons; one person three times is
+# three rows over one. Anything coarser destroys exactly the distinction the
+# table exists to preserve. NOTE for whoever implements `fidelity = 'proven'`
+# (§10: "a second independent asserter"): `count(distinct person_id) >= 2` is
+# NOT sufficient on its own — a claim spanning two messages by two speakers in
+# ONE episode produces two persons from a single sighting, which is
+# collaboration, not corroboration.
+#
+# **No FOREIGN KEY on `message_id`, deliberately**, the same call
+# `standing.consumed_verdict_tag` makes: `prune_all` deletes messages by
+# conversation, and a pruned message must not delete the attribution. Who said
+# a thing is a fixed historical fact; the message is the evidence, and losing
+# the evidence does not unmake the assertion. A dangling id reads as "said in a
+# message no longer retained", which is the correct answer.
+FACT_ASSERTER = sa.Table(
+    "fact_asserter",
+    METADATA,
+    sa.Column("fact_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("fact.id", name="fact_asserter_fact_id_fkey",
+                            ondelete="CASCADE"),
+              primary_key=True),
+    # The Honcho peer (A2/DEC-14), never a platform account: one human with two
+    # accounts is one asserter, and a per-account grain would read as two
+    # people corroborating each other.
+    sa.Column("person_id", sa.Text, primary_key=True),
+    # `messages.id` is `sa.Integer` (INT4 Identity), so this matches it rather
+    # than widening — a mismatch here is a silent cast in every join.
+    sa.Column("message_id", sa.Integer, primary_key=True),
+    sa.Column("asserted_at", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        "length(btrim(person_id)) > 0",
+        name="fact_asserter_person_is_named_check",
+    ),
+)
+
+# **No index on `person_id` yet, deliberately.** §7.4's argument is that the
+# JUNCTION SHAPE makes «what has Grant been telling us» indexable where an
+# array column would not — and that stays true. But no code path filters this
+# table by `person_id` today; `asserters()` reads by the primary-key prefix.
+# An index with no query is a write cost paid for a read nobody makes, which is
+# «a declared metric with no call site» wearing different clothes. It arrives
+# with 19 §5's sender-scoped verb, which is what will actually issue that
+# query.
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,12 @@ from pydantic import (
     model_validator,
 )
 
+from nora.domain.facts import (
+    DEFAULT_MAX_PREDICATE_CHARS,
+    DEFAULT_MAX_TERM_CHARS,
+    FACT_PREDICATE_CEILING_CHARS,
+    FACT_TERM_CEILING_CHARS,
+)
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -1352,21 +1358,23 @@ class FactsConfig(BaseModel):
     turn reads.
 
     **The workspace startup check the design doc's §7 argued for was CUT**
-    (operator, 2026-08-20): the store's read (`standing_facts`, Task 3 of the
-    fact-tier plan, not yet built) is specified to scope `WHERE workspace =
-    ...` in SQL, so once it exists a fact will not be able to reach a room
-    outside its own workspace regardless of what a startup refusal would add
-    on top — the property is meant to be structural, not something this
-    section asserts. Until that store lands there is no `standing_facts` to
-    read at all, so this only holds when the deferred reader is finally
-    built matching the spec.
+    (operator, 2026-08-20): the store's read scopes `WHERE workspace = ...` in
+    SQL, so a fact cannot reach a room outside its own workspace regardless of
+    what a startup refusal would add on top — the property is structural, not
+    something this section asserts. `SqlFactStore.standing_facts` is built and
+    does scope that way; what keeps the tier dark in production is `enabled`
+    below, not a missing reader.
 
     `max_adjudications_per_tick = 10`: the Phase B cap — one research loop
     (search + classify) per surviving candidate is the expensive step, same
     shape and same default as `LanguageConfig.verify_max_candidates`, which
     bounds the analogous (search + classify) round trip for slang.
 
-    `max_rendered_facts = 8`: the RENDER cap on the `<facts>` block, the same
+    `max_room_facts = 8` / `max_sender_facts = 4`: 19 §6's two render caps, one
+    per slice. The ROOM slice is the working set — more than eight and the
+    block competes with the transcript it sits beside. The SENDER slice is the
+    narrowest and the most often empty, and four is enough to ground «you told
+    us…». They replace one `max_rendered_facts`, which was the same
     per-turn-cost argument as `LanguageConfig.max_rendered_lexemes` (6) and
     `max_rendered_exchanges` (4) — this block sits in the same uncached
     volatile tail, and a fact line additionally carries a source URL and an
@@ -1382,8 +1390,86 @@ class FactsConfig(BaseModel):
 
     enabled: bool = False
     max_adjudications_per_tick: int = Field(default=10, ge=1)
-    max_rendered_facts: int = Field(default=8, ge=1)
+    max_room_facts: int = Field(default=8, ge=1)
+    max_sender_facts: int = Field(default=4, ge=1)
     retention_days: int = Field(default=180, ge=1)
+    # The OPERATING caps on the tier's model-authored strings (25 §9.1). Both
+    # columns were uncapped, which is the note-body defect on a JOIN KEY:
+    # `fact_candidate_triple_key` is `(workspace, subject_id, predicate,
+    # object)` and the adjudicator maps a verdict back to its candidate by that
+    # triple, so an unbounded subject is an unbounded index entry on the one
+    # column every read path uses.
+    #
+    # 200 for a term because the promotion veto already refuses anything over
+    # 64 as "a sentence, not a thing" — 200 leaves room for a descriptive
+    # object while keeping the index key small, and anything approaching it is
+    # a claim the extractor should have split.
+    #
+    # These are ENFORCED AT EVERY WRITE, not merely validated here: 30 §5's
+    # correction is that a scheme which only refuses a config above its ceiling
+    # leaves oversized rows satisfying the CHECK while defeating the prompt
+    # budget the cap exists to protect.
+    # 21 §10's operator-owned veto list: the extra object strings THIS room
+    # decides are not things, one per line, blank lines and `#` comments
+    # ignored. Its CONTENTS are configuration; its existence, ownership and
+    # versioning are the design's decision. Absent by default, and an absent
+    # file vetoes nothing extra — the rules in code are the floor and this only
+    # narrows what promotes.
+    # 31 §3.4's window: how far back a message may reach when deciding what
+    # Nora "just rendered". Twenty-four hours because a correction arrives
+    # either in the same sitting or after somebody looked something up
+    # overnight, and because it is the horizon over which a claim she rendered
+    # is still a thing a member could be reacting to. The ledger is pruned at
+    # TWICE this, so a row is still readable for one window after it stops
+    # being eligible — which is what lets the prune be a background sweep
+    # rather than a precise deletion.
+    #
+    # Reversal condition: the age distribution of the quote-replies that
+    # resolve, which is readable from the ledger itself.
+    recognition_window_hours: int = Field(default=24, ge=1)
+    veto_file: Path | None = None
+    # 31 §5's own key, and it exists because the classifier runs on the REPLY
+    # PATH — awaited in `_run_turn` before context assembly, holding the
+    # conversation's slot, ahead of every word she says.
+    #
+    # Without it the classifier was built with `[language] timeout_seconds`,
+    # which is **120** because it bounds a DREAMER call in a background tick
+    # where a slow model costs a tick and nothing else. Inherited onto this
+    # path it is two minutes of silence in a live room before she answers.
+    # `[standing]`, the other stage that holds this slot, bounds itself at 20
+    # and made the total a startup gate; this walked past that gate entirely.
+    #
+    # 8 seconds because the call is one short classification over at most
+    # `max_targets` one-line claims — not research, not a fold — and because
+    # the fallback is not silence: a timeout is `unavailable`, RULE-F still
+    # runs, and the correction is caught on the deterministic channel or lost.
+    # Losing a correction costs the status quo; two minutes of dead air costs
+    # the turn.
+    dispute_classify_timeout_seconds: float = Field(default=8.0, gt=0)
+    max_term_chars: int = Field(default=DEFAULT_MAX_TERM_CHARS, ge=1)
+    max_predicate_chars: int = Field(default=DEFAULT_MAX_PREDICATE_CHARS, ge=1)
+
+    @model_validator(mode="after")
+    def _caps_stay_under_the_database_ceilings(self) -> FactsConfig:
+        """`StandingConfig`'s validator, one tier over and for the same reason:
+        a ceiling is DDL and cannot be raised from config, so a value above it
+        would be refused by Postgres at write time — which is a crash in a
+        background tick nobody is watching rather than a message at startup."""
+        for name, value, ceiling, check in (
+            ("max_term_chars", self.max_term_chars,
+             FACT_TERM_CEILING_CHARS, "fact_term_fits_the_ceiling_check"),
+            ("max_predicate_chars", self.max_predicate_chars,
+             FACT_PREDICATE_CEILING_CHARS,
+             "fact_predicate_fits_the_ceiling_check"),
+        ):
+            if value > ceiling:
+                raise ValueError(
+                    f"[facts] {name} = {value} is above the database ceiling "
+                    f"of {ceiling} ({check}). The ceiling is DDL and cannot be "
+                    f"raised from config; every write above it would be "
+                    f"refused by Postgres."
+                )
+        return self
 
 
 class StandingConfig(BaseModel):
@@ -1564,7 +1650,15 @@ class StandingConfig(BaseModel):
     # impossible to get wrong silently, not to relitigate `[llm]`'s own timeout,
     # which was raised to 120 deliberately on 2026-08-08. Lower it and the
     # startup refusal tells the operator exactly which numbers no longer fit.
-    max_slot_hold_seconds: float = Field(default=45.0, gt=0)
+    # 45 -> 60 (2026-08-28). 45 was 20 + 5 x 5 EXACTLY, so the default budget
+    # sat on the default hold with nothing between them: a second stage
+    # arriving on the same slot — recognition, 8s — made a config with no
+    # `[standing]` section refuse to start, which is a default that cannot be
+    # left alone. 60 leaves seven seconds of headroom, so the next stage on
+    # this slot fails the GATE with a number to reason about rather than
+    # failing every deployment that never set the key. The deployment sets 150
+    # explicitly and is unaffected.
+    max_slot_hold_seconds: float = Field(default=60.0, gt=0)
 
     @model_validator(mode="after")
     def _max_chars_stays_under_the_database_ceiling(self) -> StandingConfig:
@@ -2418,6 +2512,24 @@ class Config(BaseModel):
             # wrong on the page, which is the argument this validator exists
             # to enforce.
             self.standing.timeout_seconds
+            # Recognition holds the SAME slot — `EngagementPipeline._run_turn`
+            # awaits `_recognise` before context assembly — so its model call
+            # belongs in this sum for the same reason `[standing]`'s does. It
+            # was absent, and the classifier inherited `[language]`'s 120s
+            # Dreamer ceiling, which is how a background timeout ended up
+            # ahead of a live reply (review finding, 2026-08-28).
+            #
+            # UNGATED on `[facts] enabled`, matching the argument this
+            # validator already makes for `[standing]`: the moment a tier is
+            # switched on is the worst time to discover the budget meant
+            # something else.
+            #
+            # The store awaits on the recognition path — the ledger read and
+            # up to `max_targets` marks — are NOT in this sum, because nothing
+            # bounds them and a number invented for them would be the fourth
+            # wrong arity this validator has already been through. That is a
+            # gap and it is written down as one.
+            + self.facts.dispute_classify_timeout_seconds
             # FIVE. The stage holds five bounded store awaits:
             # `store_verdict.latest` (the trigger's read), `store.read` (the
             # prior), `store.write` (the revised position), `store_verdict.save`
@@ -2432,6 +2544,8 @@ class Config(BaseModel):
                 f"[standing] would hold a conversation's slot for up to "
                 f"{hold:g}s — [standing] timeout_seconds "
                 f"({self.standing.timeout_seconds:g})"
+                f" + [facts] dispute_classify_timeout_seconds "
+                f"({self.facts.dispute_classify_timeout_seconds:g})"
                 f" + {STANDING_STORE_CALLS_PER_FOLD} x store_timeout_seconds "
                 f"({self.standing.store_timeout_seconds:g}) — which is over "
                 f"[standing] max_slot_hold_seconds "

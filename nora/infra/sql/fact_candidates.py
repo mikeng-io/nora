@@ -1,8 +1,12 @@
 """`SqlFactCandidateStore` — the candidate tier's `DreamSink` +
 `FactCandidateReader`, over SQLAlchemy Core. Sibling of
 `nora.infra.sql.facts.SqlFactStore` and built to the same shape; like it,
-there is no writer above it yet (`nora.dreamer` has no fact adaptor), so it
-exists today to be exercised by `tests/infra/test_fact_candidate_store.py`
+`nora.language.fact_adaptor.FactCandidateAdaptor` is the writer above it, and
+this store is where the tier's two REFUSALS live — a claim about somebody in
+the room, and a term over the operating cap. This header said "no writer yet"
+long after one existed, which is the same stale claim `SqlFactStore`'s header
+carried; the tier is DISABLED, not unwritten. Also exercised by
+`tests/infra/test_fact_candidate_store.py`
 and to be wired into a real adaptor later without changing shape.
 
 **Why `fact_candidate` exists at all** (spec §5.1 — this is the whole
@@ -59,12 +63,21 @@ joining `tests/contract/test_dream_sink_contract.py`: this store was dropping
 the DEC-125/DEC-126 pair every `Proposal` already carried, which is provenance
 thrown away at the one place it is free to keep.)
 
-**`observed_in` holds the MESSAGE the claim was seen in, not the key** (flagged
+**`observed_in` holds the MESSAGES the claim was seen in, not the key** (flagged
 2026-08-21, and the one place this store departs from the instruction it was
 built to). §5's Phase A is "read the window, emit candidate triples **with the
-turn each came from**", and `CandidateClaim.message_id` is that turn; each
-sighting merges its message id in, so the column accumulates the distinct turns
-a claim was asserted across and `occurrence_count` counts them. The
+turn each came from**", and `CandidateClaim.message_ids` are those turns; each
+sighting merges its message ids in, so the column accumulates the distinct
+turns a claim was asserted across.
+
+**`occurrence_count` does NOT count them, and since plural `message_ids` it
+never did.** It counts SIGHTINGS — `propose` calls — while `observed_in` counts
+turns, and one sighting can now carry several (D31: an episode is a
+conversational chunk, so a claim asserted across two messages is one sighting
+with two ids). The two numbers came apart and the distinction is load-bearing
+downstream: `pending`'s seen-once drop and its recurrence ranking both key on
+`occurrence_count`, so a claim made across three turns of one episode is
+correctly treated as one sighting rather than as three people agreeing. The
 alternative — taking it from `key` — holds only for a SCOPE-keyed sink: this
 one is workspace-keyed (DEC-105, and `DreamSink`'s own docstring says so),
 so `observed_in = (key,)` would write the same constant into every row in the
@@ -110,6 +123,8 @@ rank that is deliberately NOT implemented.
 
 from __future__ import annotations
 
+import logging
+from collections import Counter
 from collections.abc import Sequence
 from typing import Any, Literal, get_args
 from uuid import UUID, uuid4
@@ -119,9 +134,18 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.facts import CandidateClaim, FactCandidate
+from nora.domain.facts import (
+    DEFAULT_MAX_PREDICATE_CHARS,
+    DEFAULT_MAX_TERM_CHARS,
+    CandidateClaim,
+    FactCandidate,
+    normalise_name,
+    refuse_over_operating_caps,
+)
 from nora.domain.ports import Proposal
 from nora.infra.sql.schema import FACT, FACT_CANDIDATE, FACT_ENTITY
+
+log = logging.getLogger(__name__)
 
 # The two statuses `supersede` may write. NOT `CandidateStatus` itself:
 # `pending` is a legal status for a ROW and an illegal reason for a
@@ -151,8 +175,57 @@ class SqlFactCandidateStore:
     arrives on `propose`/`supersede`, not here.
     """
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(
+        self, engine: AsyncEngine, *,
+        roster: frozenset[str] = frozenset(),
+        roster_names: frozenset[str] = frozenset(),
+        max_term_chars: int = DEFAULT_MAX_TERM_CHARS,
+        max_predicate_chars: int = DEFAULT_MAX_PREDICATE_CHARS,
+        metrics: Any = None,
+    ) -> None:
+        """`roster` is the `person_id`s `identity.toml` knows and
+        `roster_names` is every name the group calls them — their display name,
+        their first and last names, and the operator-authored aliases (阿Miles,
+        米高, a handle). Either one refuses a claim about that person (25 §2.4).
+
+        **Both, because an id-only match is the half that does not work.** A
+        claim about a person in SUBJECT position is a fact about a human being
+        living in the wrong tier — those belong to Honcho and its peer cards,
+        and the knowledge tier holding them is the shape the design refuses.
+        Matching only `person_id` leaves the entire class reachable through the
+        name everybody actually uses.
+
+        **EXACT after normalisation, never a prefix or a substring**, and this
+        stage earned that rule: the promotion veto's month abbreviations
+        matched any word starting with them, so `mar` refused "Marco's car" and
+        `may` refused "maybe". A display name like "May", "Sky" or "Grace"
+        under a prefix match would eat ordinary words — and over-refusing is
+        not free, because it silently deletes legitimate facts.
+
+        **These names are used to REFUSE, never to resolve.** `PersonRef`'s own
+        note is that aliases must never decide who a message is FROM — a
+        display name is spoofable and a sender is authenticated by platform id
+        alone. Refusing on one is the safe direction: the worst it costs is a
+        claim about a thing that shares a person's name.
+
+        `metrics` is injected and never imported, the shape `SqlPresenceStore`
+        uses. All three default to empty/None so a contract-suite fixture still
+        builds this from a bare `AsyncEngine` — and an empty roster refuses
+        NOTHING, which is the correct degradation: a sink that refused
+        everything because nobody wired the roster would be a worse failure
+        than the one it guards against, and it would look exactly like a quiet
+        room.
+        """
         self._engine = engine
+        self._roster_ids = frozenset(
+            normalise_name(p) for p in roster if p.strip()
+        )
+        self._roster_names = frozenset(
+            normalise_name(n) for n in roster_names if n.strip()
+        ) - self._roster_ids
+        self._max_term_chars = max_term_chars
+        self._max_predicate_chars = max_predicate_chars
+        self._metrics = metrics
 
     async def propose(
         self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
@@ -179,6 +252,7 @@ class SqlFactCandidateStore:
         all-or-nothing.
         """
         rows: list[dict[str, Any]] = []
+        refused: Counter[str] = Counter()
         for p in proposals:
             if not isinstance(p.payload, CandidateClaim):
                 raise TypeError(
@@ -186,6 +260,52 @@ class SqlFactCandidateStore:
                     f"CandidateClaim payload, got {type(p.payload).__name__}"
                 )
             claim = p.payload
+            # 25 §2.4 / 21 §2. The extraction objective's FIRST exclusion is
+            # "anything about a person in this room", and a probe measured the
+            # model breaking it at five person-claims in six edges WITH the
+            # roster supplied and a Person type declared. So the boundary is
+            # checkable and NOT enforced by the prompt, and 17 §7's rule
+            # applies: refuse loudly, never accept and forget.
+            #
+            # **The SUBJECT only.** A person in OBJECT position is 21 §2's own
+            # worked example of a legitimate claim — "Grant's wedding is on
+            # the 9th" is a claim about an event, not about Grant's
+            # disposition. The restriction bites on predicates ABOUT a person,
+            # which is what a person-subject triple is.
+            over = refuse_over_operating_caps(
+                subject=claim.subject, predicate=claim.predicate,
+                obj=claim.object, max_term_chars=self._max_term_chars,
+                max_predicate_chars=self._max_predicate_chars,
+            )
+            if over is not None:
+                # DROPPED here, where the fact store RAISES, and the asymmetry
+                # is the tier's own: a candidate is one sighting of one claim
+                # and losing it costs a re-extraction, while a verdict has
+                # already spent a research loop. Counted, because a silent drop
+                # reads as "the model found nothing".
+                refused["over_cap"] += 1
+                log.info(
+                    "fact candidate dropped: %s is over the operating cap "
+                    "(workspace=%s)", over, key,
+                )
+                continue
+            subject = normalise_name(claim.subject)
+            reason = (
+                "person_id" if subject in self._roster_ids
+                else "display_name" if subject in self._roster_names
+                else None
+            )
+            if reason is not None:
+                # Counted BY REASON so the two are separate series. If matching
+                # on a name over-refuses, this counter is how anyone finds out;
+                # if it never fires, that is worth knowing too — an id-only
+                # match would have looked identical from outside.
+                refused[reason] += 1
+                log.info(
+                    "fact candidate refused: subject %r is a roster person "
+                    "(matched on %s, workspace=%s)", claim.subject, reason, key,
+                )
+                continue
             rows.append({
                 "id": str(uuid4()),
                 "workspace": key,
@@ -195,13 +315,26 @@ class SqlFactCandidateStore:
                 "first_seen_at": now_ms,
                 "last_seen_at": now_ms,
                 "occurrence_count": 1,
-                "observed_in": [str(claim.message_id)],
+                # `dict.fromkeys`, not a set: the merge below promises "never
+                # duplicate" and the FIRST insert was exempt from it, so
+                # `[41, 41]` wrote `{41,41}` and contradicted the invariant
+                # one statement later. Order-preserving so the array is
+                # stable rather than set-arbitrary.
+                "observed_in": list(
+                    dict.fromkeys(str(i) for i in claim.message_ids)
+                ),
                 "status": "pending",
                 "attempts": 0,
                 "established_by": p.established_by,
                 "instruction_sha256": p.instruction_sha256,
                 "model": p.model,
             })
+        if self._metrics is not None:
+            for reason, count in refused.items():
+                self._metrics.inc(
+                    "nora_fact_person_claim_refused_total", float(count),
+                    matched=reason,
+                )
         if not rows:
             return ()
         ids: list[str] = []
@@ -316,7 +449,30 @@ class SqlFactCandidateStore:
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
-        return result.rowcount
+        settled = int(result.rowcount)
+        # `nora_fact_candidates_total`'s FIRST call site. It has been declared
+        # since the tier shipped and emitted nowhere, which renders as a series
+        # that is genuinely always zero — and it is named exactly as though it
+        # answers «did the tier produce anything», so a null from it is
+        # indistinguishable from a null from a tier that never ran. That is
+        # CLAUDE.md's rule about reading an instrument before checking it can
+        # measure the thing, and this counter could not.
+        #
+        # HERE, on the settle, because this is the only per-candidate EVENT in
+        # the tier. The declaration's original vocabulary (already_known /
+        # noise / deferred) describes properties of the standing pending queue,
+        # which a counter cannot carry: incrementing it from a census counts
+        # reads x rows rather than rows, which is a bug this branch already
+        # fixed once elsewhere. The queue's shape is a GAUGE's job and
+        # `nora_fact_entity_unresolved` is how that is done here.
+        #
+        # Zero is not counted: `supersede` is idempotent by design and a
+        # re-fire over settled work legitimately affects no rows.
+        if settled and self._metrics is not None:
+            self._metrics.inc(
+                "nora_fact_candidates_total", float(settled), outcome=because,
+            )
+        return settled
 
     async def pending(
         self, *, workspace: str, limit: int,
@@ -386,11 +542,17 @@ class SqlFactCandidateStore:
             )
             .exists()
         )
-        # `is_distinct_from`, not `!=`: a fact whose object is an ENTITY has
-        # a NULL `object_literal`, and `null != 'x'` is NULL — which would
-        # quietly rank a genuine contradiction as an ordinary candidate. No
-        # writer produces that shape today; the operator is what keeps this
-        # true when one does.
+        # `is_distinct_from`, not `!=`, and it is now a BELT rather than the
+        # load-bearing part. Before migration 0039 an entity-object fact had
+        # `object_literal` NULL; `null = 'x'` is NULL, so the dedup predicate
+        # above never fired for it and the claim was re-adjudicated every tick
+        # forever, ranking FIRST each time because this predicate then read it
+        # as a contradiction of its own candidate. 0039 made `object_literal`
+        # NOT NULL — the literal always carries the words and the entity id is
+        # an additive pointer beside it — so the NULL that caused it cannot
+        # occur. `is_distinct_from` stays because a three-valued comparison
+        # that degrades to a two-valued one costs nothing and the column's
+        # nullability is a schema fact, not an invariant this query controls.
         contradicts_a_fact = (
             sa.select(sa.literal(1))
             .where(
@@ -413,6 +575,27 @@ class SqlFactCandidateStore:
             )
             .exists()
         )
+        # `nora_fact_entity_unresolved_total`'s FIRST call site. It has been
+        # declared with none since the tier shipped, which renders as a series
+        # that is genuinely always zero — and it is the tier's ONLY instrument
+        # for the entity problem, so the one thing that could observe
+        # fragmentation could not observe anything (02's seventh blind layer,
+        # found while writing the contract that depends on it).
+        #
+        # Counted HERE rather than at the drop, because a subject that resolves
+        # to nothing is a reading about the tier whether or not this particular
+        # candidate also happened to be seen twice. Pending rows only: a
+        # settled candidate's subject is somebody else's problem.
+        unresolved_stmt = (
+            sa.select(sa.func.count())
+            .select_from(c)
+            .where(
+                c.c.workspace == workspace,
+                c.c.status == "pending",
+                sa.not_(subject_resolves),
+            )
+        )
+
         stmt = (
             sa.select(c)
             .where(
@@ -430,6 +613,20 @@ class SqlFactCandidateStore:
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
+            unresolved = (await conn.execute(unresolved_stmt)).scalar_one()
+        # Same connection as the read it describes: a count taken against a
+        # different snapshot would be a number about a moment nothing else
+        # observed.
+        # A GAUGE, not a counter, and set unconditionally including at zero.
+        # This is a census of the pending queue taken on every read; adding it
+        # to a monotonic counter measured how often the queue was READ rather
+        # than how much of it is unresolved. 0 says the read ran and everything
+        # resolved; absent says the tier has never read this workspace.
+        if self._metrics is not None:
+            self._metrics.gauge(
+                "nora_fact_entity_unresolved", float(unresolved),
+                workspace=workspace,
+            )
         return tuple(_row_to_candidate(r) for r in rows)
 
     async def candidate_by_id(

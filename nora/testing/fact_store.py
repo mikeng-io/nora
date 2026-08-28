@@ -28,9 +28,15 @@ import itertools
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from nora.domain.facts import Fact, FactVerdict, SupersedeReason
+from nora.domain.facts import (
+    DisputeOutcome,
+    Fact,
+    FactAsserter,
+    FactVerdict,
+    SupersedeReason,
+)
 from nora.domain.ports import Proposal
 
 _counter = itertools.count(1)
@@ -89,6 +95,7 @@ class InMemoryFactStore:
     constructor."""
 
     _facts: dict[tuple[str, str], Fact] = field(default_factory=dict)
+    _asserters: list[FactAsserter] = field(default_factory=list)
 
     async def propose(
         self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
@@ -169,8 +176,123 @@ class InMemoryFactStore:
             superseded_by=replaced_by,
             supersede_reason=cast(SupersedeReason, because),
             supersede_source=source,
+            # Supersession clears the dispute, matching the SQL store: a
+            # superseded row does not render as a standing claim, so the flag
+            # would otherwise make the open-dispute gauge count resolved rows
+            # forever.
+            disputed_at=None, disputed_by=None,
+            disputed_reason=None, disputed_tag_id=None,
         )
         return 1
+
+    async def mark_disputed(
+        self, *, workspace: str, fact_id: str, person_id: str | None,
+        reason: str | None, tag_id: str, now_ms: int,
+    ) -> DisputeOutcome:
+        """The same four outcomes as the SQL store, in the same order — and the
+        order is the behaviour: superseded is reported ahead of disputed
+        because a row that is both has already stopped standing."""
+        existing = self._facts.get((workspace, fact_id))
+        if existing is None:
+            return "unknown"
+        if existing.superseded_at is not None:
+            return "already_superseded"
+        if existing.disputed_at is not None:
+            return "already_disputed"
+        self._facts[(workspace, fact_id)] = replace(
+            existing, disputed_at=now_ms, disputed_by=person_id,
+            disputed_reason=reason, disputed_tag_id=tag_id,
+        )
+        return "ok"
+
+    async def clear_disputed(
+        self, *, workspace: str, fact_id: str, expected_at: int,
+    ) -> bool:
+        existing = self._facts.get((workspace, fact_id))
+        if existing is None or existing.disputed_at != expected_at:
+            return False
+        self._facts[(workspace, fact_id)] = replace(
+            existing, disputed_at=None, disputed_by=None,
+            disputed_reason=None, disputed_tag_id=None,
+        )
+        return True
+
+    async def disputed_facts(
+        self, *, workspace: str, limit: int,
+    ) -> tuple[Fact, ...]:
+        if limit <= 0:
+            return ()
+        rows = [
+            f for (ws, _fid), f in self._facts.items()
+            if ws == workspace and f.is_disputed and f.is_standing
+        ]
+        rows.sort(key=lambda f: f.disputed_at or 0)
+        return tuple(rows[:limit])
+
+    async def facts_asserted_by(
+        self, *, workspace: str, person_id: str, limit: int,
+    ) -> tuple[Fact, ...]:
+        """The sender slice, over whatever `seed_asserters` recorded. Same
+        clamp as `standing_facts` and for the same reason: the double must
+        degrade the way the real store does, or a test that passes here fails
+        against Postgres."""
+        if limit <= 0:
+            return ()
+        mine = {
+            a.fact_id for a in self._asserters if a.person_id == person_id
+        }
+        matches = [
+            f for (ws, fid), f in self._facts.items()
+            if ws == workspace and fid in mine and f.is_standing
+        ]
+        matches.sort(key=lambda f: f.created_at, reverse=True)
+        return tuple(matches[:limit])
+
+    async def standing_subjects(self, *, workspace: str) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(
+            f.subject_id for (ws, _fid), f in self._facts.items()
+            if ws == workspace and f.is_standing
+        ))
+
+    async def standing_count(self, *, workspace: str) -> int:
+        return sum(
+            1 for (ws, _fid), f in self._facts.items()
+            if ws == workspace and f.is_standing
+        )
+
+    async def asserters(self, *, fact_id: str) -> tuple[FactAsserter, ...]:
+        """Reads back what `seed_asserters` put in, oldest first.
+
+        **This double does NOT perform the attribution join, and that is
+        stated rather than left to be discovered.** `SqlFactStore._attribute`
+        walks `fact_candidate.observed_in -> messages.person_id`, two tables
+        this class does not hold; reproducing it here would mean reproducing
+        an unmapped sender, a pruned message and a missing candidate, and a
+        double that got any of them subtly wrong would make a green test a
+        claim about the double. So the JOIN is asserted against real Postgres
+        only (`tests/infra/test_fact_store.py`), and what is shared here is
+        the READ — which does branch, on a malformed id and on ordering, and
+        matches production on both.
+        """
+        try:
+            UUID(fact_id)
+        except ValueError:
+            return ()
+        rows = [a for a in self._asserters if a.fact_id == fact_id]
+        rows.sort(key=lambda a: (a.asserted_at, a.message_id))
+        return tuple(rows)
+
+    def seed_fact(self, fact: Fact) -> None:
+        """Test seam for a fact this double did not `propose`. Its SQL sibling
+        gets one for free from the FK that refuses an orphan asserter; without
+        it here, the two halves of `facts_asserted_by` answered differently."""
+        self._facts[(fact.workspace, fact.id)] = fact
+
+    def seed_asserters(self, *asserters: FactAsserter) -> None:
+        """Test seam for `asserters`, and the only writer this double has for
+        them — a production `propose` writes them through SQL the double
+        cannot run."""
+        self._asserters.extend(asserters)
 
     async def standing_facts(
         self, *, workspace: str, subject_ids: Sequence[str], limit: int,

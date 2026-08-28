@@ -32,14 +32,28 @@ from nora.agent.registry import ToolRegistry
 from nora.doctrine.loader import DoctrineStore
 from nora.obs.metrics import Metrics
 
-# MUST track `docker-compose.yml`'s `db` image. Production runs PostgreSQL 18
-# (`postgres:18-alpine`, musl); this was pinned to 16 while it did, which made
-# `tests/infra/test_schema_parity.py` — the gate every migration passes through
-# — validate against a major version behind the thing it guards, and made
-# `scripts/gen_pg_baseline.py` generate its oracle there too. Found 2026-08-20
-# by the fact-store workstream while measuring Apache AGE availability.
-# `test_the_test_container_tracks_the_deployment` pins the two together.
-PG_IMAGE = "postgres:18-alpine"
+# MUST track `docker-compose.yml`'s `db` image, and
+# `test_the_test_container_tracks_the_deployment` is what pins the two
+# together. It was pinned to 16 while production ran 18, which made
+# `tests/infra/test_schema_parity.py` — the gate every migration passes
+# through — validate against a major version behind the thing it guards, and
+# made `scripts/gen_pg_baseline.py` generate its oracle there too. Found
+# 2026-08-20 by the fact-store workstream while measuring Apache AGE.
+#
+# **2026-08-28: `postgres:18-alpine` -> `pgvector/pgvector:pg18`**, with the
+# deployment, and the reason the swap needed doing at all is the same class of
+# bug one layer down. Alpine is musl and this image is Debian/glibc, and the
+# two sort `en_US.utf8` DIFFERENTLY — so the sixty-nine collation-dependent
+# indexes built under musl gave silently wrong range scans when read under
+# glibc. Not a crash: wrong answers. `REINDEX DATABASE` after the swap is what
+# repairs it, and it was run against the live database with all 71 index
+# definitions verified md5-identical afterwards.
+#
+# The test container tracking the deployment is also what makes the `vector`
+# extension available here at all: `postgres:18-alpine` does not carry it, so
+# every migration touching a vector column would fail in CI while working in
+# production — the oracle disagreeing with the thing it guards, again.
+PG_IMAGE = "pgvector/pgvector:pg18"
 
 # The runtime_context values the shipped doctrine is read with in tests. They
 # are module constants rather than inline literals because

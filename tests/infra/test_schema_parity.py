@@ -324,17 +324,26 @@ def test_the_test_container_tracks_the_deployment():
     compose = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text(
         encoding="utf-8"
     )
-    deployed = re.search(r"image:\s*(postgres:(\d+)[\w.-]*)", compose)
+    # Matches `postgres:18-alpine` AND `pgvector/pgvector:pg18` — the
+    # deployment moved to the second on 2026-08-28 and a regex that only knew
+    # the first would have failed OPEN, asserting nothing while looking like a
+    # gate. The major version is the group either way.
+    deployed = re.search(
+        r"image:\s*(?:postgres:(\d+)[\w.-]*|[\w./-]*pgvector[\w./-]*:pg(\d+))",
+        compose,
+    )
     assert deployed is not None, "no postgres image found in docker-compose.yml"
+    deployed_major = deployed.group(1) or deployed.group(2)
 
-    tested = re.match(r"postgres:(\d+)", PG_IMAGE)
+    tested = re.search(r"(?:postgres:|:pg)(\d+)", PG_IMAGE)
     assert tested is not None, f"PG_IMAGE is not a postgres image: {PG_IMAGE!r}"
 
-    assert tested.group(1) == deployed.group(2), (
-        f"the test suite runs {PG_IMAGE} but the deployment runs "
-        f"{deployed.group(1)}. This gate's oracle must not be a major version "
-        f"away from what it guards — bump tests/conftest.py's PG_IMAGE and "
-        f"regenerate the baseline with scripts/gen_pg_baseline.py."
+    assert tested.group(1) == deployed_major, (
+        f"the test suite runs {PG_IMAGE} but the deployment runs major "
+        f"version {deployed_major}. This gate's oracle must not be a major "
+        f"version away from what it guards — bump tests/conftest.py's "
+        f"PG_IMAGE and regenerate the baseline with "
+        f"scripts/gen_pg_baseline.py."
     )
 
 

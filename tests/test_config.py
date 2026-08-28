@@ -20,6 +20,10 @@ from nora.config import (
     SpeechConfig,
     load,
 )
+from nora.domain.facts import (
+    FACT_PREDICATE_CEILING_CHARS,
+    FACT_TERM_CEILING_CHARS,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -476,7 +480,8 @@ def test_the_facts_section_is_optional_and_ships_inert(toml_path):
 
     assert cfg.facts.enabled is False
     assert cfg.facts.max_adjudications_per_tick == 10
-    assert cfg.facts.max_rendered_facts == 8
+    assert cfg.facts.max_room_facts == 8
+    assert cfg.facts.max_sender_facts == 4
     assert cfg.facts.retention_days == 180
 
 
@@ -488,7 +493,7 @@ def test_the_notes_section_is_optional_and_ships_inert(toml_path):
     `<notes>` block out of every tag until somebody decides otherwise.
 
     One field only, and the ABSENCE is the assertion worth making: there is no
-    render cap here, unlike `[facts].max_rendered_facts`. §5.1 makes the index
+    render cap here, unlike `[facts]`' two slice caps. §5.1 makes the index
     uncapped on purpose — a note missing from it is invisible to her, and
     invisible is indistinguishable from absent — so a top-N knob would be a
     supported way to reintroduce that failure. The per-entry caps in
@@ -1001,12 +1006,12 @@ def test_the_declared_budgets_parse_into_bounded_budgets(toml_path):
     budgets = load(toml_path).dreamer.budgets
     # Pinned, so ADDING an adaptor is a decision rather than an omission —
     # `budget_for` falls back to the defaults for an unknown key silently, so
-    # an adaptor with no block runs on numbers nobody chose. `fact-candidates`
-    # and `fact-adjudication` are the two that exist today; the two `room_*`
-    # are Phase 3's migration targets and name nothing yet.
+    # an adaptor with no block runs on numbers nobody chose. The three `fact-*`
+    # are the adaptors that exist today; the two `room_*` are Phase 3's
+    # migration targets and name nothing yet.
     assert set(budgets) == {
         "room_language", "room_exchange",
-        "fact-candidates", "fact-adjudication",
+        "fact-candidates", "fact-adjudication", "fact-entity-resolution",
     }
     for name, budget in budgets.items():
         assert budget.turns > 0, name
@@ -1124,7 +1129,7 @@ def test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_pa
     times: 2x store calls when there were two, then four, then five, and then
     an `[llm] timeout_seconds` term that bounds nothing here at all.
 
-    44 is one second under the real hold (20 + 5 x 5).
+    44 is under the real hold (20 + 8 + 5 x 5 = 53).
     """
     # `count=0` on `re.sub` means replace ALL, not none — so the line that used
     # to sit here flipped every `enabled = false` in the file (~18 sections:
@@ -1152,8 +1157,14 @@ def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
 
     Falsification: put `self.llm.timeout_seconds` back in the sum and this
     refuses to start.
+
+    53, not 45: the real hold gained recognition's classify timeout when that
+    stage stopped inheriting `[language]`'s 120s Dreamer ceiling. The number
+    here is the WHOLE hold, deliberately — set to exactly what the sum is, so
+    a term added to it or dropped from it reddens this test as well as the
+    one below.
     """
-    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "45.0")
+    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "53.0")
     # `timeout_seconds` appears in ten sections, so this one is scoped to
     # `[llm]` by hand — `_set_key` deliberately refuses an ambiguous key rather
     # than silently editing the first or all of them.
@@ -1167,7 +1178,7 @@ def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
 
     cfg = load(toml_path)
     assert cfg.llm.timeout_seconds == 600.0, "the edit did not land"
-    assert cfg.standing.max_slot_hold_seconds == 45.0
+    assert cfg.standing.max_slot_hold_seconds == 53.0
 
 
 def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):
@@ -1225,4 +1236,88 @@ def test_the_standing_window_may_equal_the_reply_window(toml_path):
     over = text[:i] + text[i:].replace("window = 40", "window = 41", 1)
     toml_path.write_text(over)
     with pytest.raises(ConfigError, match="context_window"):
+        load(toml_path)
+
+
+def test_a_fact_term_cap_above_the_database_ceiling_refuses_to_start(toml_path):
+    """`[standing] max_chars`' refusal, one tier over and for the same reason:
+    `fact_term_fits_the_ceiling_check` is DDL and cannot be a knob, so a config
+    above it means every fact the adjudicator writes is refused by Postgres —
+    in a background tick nobody is watching, rather than at boot."""
+    text = toml_path.read_text()
+    i = text.index("[facts]")
+    toml_path.write_text(
+        text[:i] + text[i:].replace(
+            "enabled = false",
+            f"enabled = false\nmax_term_chars = {FACT_TERM_CEILING_CHARS + 1}",
+            1))
+    with pytest.raises(ConfigError, match="ceiling"):
+        load(toml_path)
+
+
+def test_a_fact_predicate_cap_above_the_database_ceiling_refuses_to_start(toml_path):
+    """The second cap, asserted separately: one validator covering two fields
+    passes with either half deleted."""
+    text = toml_path.read_text()
+    i = text.index("[facts]")
+    toml_path.write_text(
+        text[:i] + text[i:].replace(
+            "enabled = false",
+            f"enabled = false\n"
+            f"max_predicate_chars = {FACT_PREDICATE_CEILING_CHARS + 1}",
+            1))
+    with pytest.raises(ConfigError, match="ceiling"):
+        load(toml_path)
+
+
+def test_fact_caps_exactly_at_their_ceilings_are_allowed(toml_path):
+    """The boundary from the accepting side: the ceiling is the largest value a
+    writer may pass, not the first one it may not.
+
+    **The numbers are IMPORTED, not written here.** Hard-coding 800 and 200 was
+    a fourth copy of a constant migration 0041's own docstring says must never
+    be repeated — and it made the test green through a raised ceiling while no
+    longer testing a boundary at all."""
+    text = toml_path.read_text()
+    i = text.index("[facts]")
+    toml_path.write_text(
+        text[:i] + text[i:].replace(
+            "enabled = false",
+            f"enabled = false\n"
+            f"max_term_chars = {FACT_TERM_CEILING_CHARS}\n"
+            f"max_predicate_chars = {FACT_PREDICATE_CEILING_CHARS}",
+            1))
+    cfg = load(toml_path)
+    assert cfg.facts.max_term_chars == FACT_TERM_CEILING_CHARS
+    assert cfg.facts.max_predicate_chars == FACT_PREDICATE_CEILING_CHARS
+
+
+def test_the_dispute_classifier_has_its_own_timeout_and_is_in_the_slot_hold(
+    toml_path,
+):
+    """**A 120-second model call sat ahead of every reply.**
+
+    `Recogniser`'s classifier was built with `[language] timeout_seconds`,
+    which is 120 because it bounds a DREAMER call in a background tick where a
+    slow model costs a tick. Recognition runs on the REPLY PATH — awaited in
+    `_run_turn` before context assembly, holding the conversation's slot — so
+    inherited there it was two minutes of silence before she answered.
+    `[standing]`, the other stage on this slot, bounds itself at 20 and made
+    the total a startup gate; this walked past that gate because it had no key
+    of its own to put in the sum.
+
+    Asserted BOTH ways round, because the default alone would be satisfied by
+    a key nothing reads: the value is in the sum the gate enforces, so raising
+    it past the budget refuses to start.
+    """
+    cfg = load(toml_path)
+    assert cfg.facts.dispute_classify_timeout_seconds == 8.0
+    assert cfg.language.timeout_seconds != 8.0, (
+        "the two must be different values or this proves nothing about which "
+        "one the classifier is built with"
+    )
+
+    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "50.0")
+    toml_path.write_text(text)
+    with pytest.raises(ConfigError, match="dispute_classify_timeout_seconds"):
         load(toml_path)

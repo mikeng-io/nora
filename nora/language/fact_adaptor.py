@@ -47,7 +47,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Protocol
 
-from ..domain.facts import CandidateClaim, Fact, FactCandidate, FactVerdict
+from ..domain.facts import (
+    DEFAULT_MAX_PREDICATE_CHARS,
+    DEFAULT_MAX_TERM_CHARS,
+    CandidateClaim,
+    Fact,
+    FactCandidate,
+    FactVerdict,
+)
 from ..domain.models import TranscriptRow
 from ..domain.ports import DreamSink, FactCandidateReader, FactReader, Proposal
 from ..obs.metrics import Metrics
@@ -62,9 +69,17 @@ log = logging.getLogger(__name__)
 # reader. The triple fields are the strictest case: they are half of
 # `fact_candidate_triple_key`, so an over-long one is not merely a big column,
 # it is a key nobody can ever match a later sighting against.
-_MAX_SUBJECT_CHARS = 200
-_MAX_PREDICATE_CHARS = 100
-_MAX_OBJECT_CHARS = 500
+# The three triple fields take the OPERATING caps from `[facts]`, injected
+# through each adaptor's constructor — `nora.domain.facts`'
+# `DEFAULT_MAX_TERM_CHARS` (200) and `DEFAULT_MAX_PREDICATE_CHARS` (100) are
+# the defaults, and the ceilings above them are DDL. They were module
+# constants, with the object at 500 while the subject sat at 200 for no reason
+# either could state; 25 §9.1 gathers them and gives both terms one number.
+#
+# 30 §5 is why they are injected rather than read from a module: "every writer
+# validates against the CURRENT operating value". A cap that only refuses a
+# config above its ceiling leaves oversized rows satisfying the CHECK while
+# defeating the prompt budget the cap exists to protect.
 # A URL past this is not a citation, and an excerpt past it is not a quoted
 # sentence — both are the model pasting a page into a durable column.
 _MAX_SOURCE_URL_CHARS = 2_000
@@ -100,6 +115,33 @@ class _CandidateStore(DreamSink, FactCandidateReader, Protocol):
     reason `_FactStore` gives. `candidate_by_id` is deliberately NOT in this
     shape: it is that store's own surface, not the port's, and nothing here
     reads a candidate by id."""
+
+
+class _EntityPromoter(Protocol):
+    """`SqlEntityStore.promote`, seen from here. A Protocol rather than the
+    class because `nora.language` may not import `nora.infra` — the same seam
+    `_FactStore` and `_CandidateStore` above use, and the reason all three are
+    structural."""
+
+    async def promote(self, *, workspace: str, now_ms: int) -> object: ...
+
+
+class _EntityResolver(Protocol):
+    """The three verbs pass 6 needs off `SqlEntityStore`, same seam and same
+    reason. Narrower than the class on purpose: this adaptor never promotes and
+    never creates an entity, so neither verb is in the shape it is handed."""
+
+    async def unresolved_names(
+        self, *, workspace: str, limit: int,
+    ) -> tuple[str, ...]: ...
+
+    async def similar_entities(
+        self, *, workspace: str, name: str, limit: int,
+    ) -> tuple[tuple[str, str], ...]: ...
+
+    async def attach_alias(
+        self, *, workspace: str, entity_id: str, alias: str,
+    ) -> bool: ...
 
 
 def _text(value: object, *, limit: int) -> str | None:
@@ -195,9 +237,13 @@ class FactCandidateAdaptor:
         *,
         candidates: DreamSink,
         workspace_for: Callable[[str], str | None],
+        max_term_chars: int = DEFAULT_MAX_TERM_CHARS,
+        max_predicate_chars: int = DEFAULT_MAX_PREDICATE_CHARS,
     ) -> None:
         self._candidates = candidates
         self._workspace_for = workspace_for
+        self._max_term_chars = max_term_chars
+        self._max_predicate_chars = max_predicate_chars
         # Per key, written by `inputs` and read by `accept` — the only channel
         # there is between them, because `DreamAdaptor.accept` takes no batch.
         # Keyed by `key` and not a bare attribute because `dream_loop`
@@ -212,12 +258,17 @@ class FactCandidateAdaptor:
         when it says "the integer id of the message the claim was asserted
         in, exactly as it appears in the batch you were given".
 
+        The claim's attribution is PLURAL (`CandidateClaim.message_ids`)
+        because D31 makes an episode a conversational chunk, so a claim can
+        span turns. This render is unchanged by that: the model is still shown
+        one line per message and still copies ids off it.
+
         `TranscriptRow.body` is `str | None` — a media-only message has no
         text at all — so it is rendered as an empty body rather than assumed
         to be a string; an `inputs` that assumed one would take the tick down
         on a sticker. Such a row is still rendered, with its id, rather than
-        skipped: `accept` validates a returned `message_id` against the whole
-        BATCH, so skipping a row here would make the set the model was shown
+        skipped: `accept` validates every returned `message_ids` entry against the
+        whole BATCH, so skipping a row here would make the set the model was shown
         smaller than the set `accept` will accept from it.
 
         The speaker is deliberately absent. The objective's first exclusion is
@@ -245,14 +296,16 @@ class FactCandidateAdaptor:
 
         Two guards beyond the field types:
 
-        - **Length caps** (see `_MAX_SUBJECT_CHARS` and friends), so an
+        - **Length caps** (the injected `max_term_chars`/`max_predicate_chars`), so an
           unbounded model-authored string never reaches a durable column.
-        - **`message_id` must be IN `batch`.** The objective tells the model
-          "do not invent one, and do not use a message id that is not in the
-          batch"; an invented id points a later reader at a message that does
-          not exist, which is fabricated provenance — worse than a missing
-          entry, and the same drop `LexemeObserver._extract` makes for the
-          same reason. `accept` has no `batch` parameter, so the set of ids
+        - **EVERY `message_ids` entry must be IN `batch`.** The objective
+          tells the model "do not invent one, and do not use a message id that
+          is not in the batch"; an invented id points a later reader at a
+          message that does not exist, which is fabricated provenance — worse
+          than a missing entry, and the same drop `LexemeObserver._extract`
+          makes for the same reason. A claim with one bad id is dropped whole
+          rather than trimmed to its good ones.
+          `accept` has no `batch` parameter, so the set of ids
           this run showed is remembered by `inputs` (see `_message_ids`).
           When `inputs` has not run for this key — nothing in production, and
           the shared contract suite calling `accept` on its own — the check
@@ -263,13 +316,22 @@ class FactCandidateAdaptor:
         seen = self._message_ids.get(key)
         parsed: list[object] = []
         for item in items:
-            claim = _parse_claim(item)
+            claim = _parse_claim(
+                item, max_term=self._max_term_chars,
+                max_predicate=self._max_predicate_chars,
+            )
             if claim is None:
                 continue
-            if seen is not None and claim.message_id not in seen:
+            if seen is not None and not set(claim.message_ids) <= seen:
+                # The WHOLE claim goes, not the offending ids: a claim
+                # half-attributed to messages that exist and half to messages
+                # that do not is fabricated provenance wearing a partial
+                # answer's clothes, and a later reader cannot tell which half
+                # it is holding.
                 log.warning(
-                    "fact candidate dropped: message_id %d is not in the batch "
-                    "(scope=%s)", claim.message_id, key,
+                    "fact candidate dropped: message_ids %s are not all in "
+                    "the batch (scope=%s)",
+                    sorted(set(claim.message_ids) - seen), key,
                 )
                 continue
             parsed.append(claim)
@@ -323,25 +385,40 @@ class FactCandidateAdaptor:
         )
 
 
-def _parse_claim(item: Mapping[str, object]) -> CandidateClaim | None:
+def _parse_claim(
+    item: Mapping[str, object], *, max_term: int, max_predicate: int,
+) -> CandidateClaim | None:
     """One envelope item -> a `CandidateClaim`, or `None` if it is malformed.
 
     `_parse_item`'s shape: every failure is the same silent drop, and there is
     deliberately no partial parse — a claim missing its object is not a claim
     with an empty object.
     """
-    subject = _text(item.get("subject"), limit=_MAX_SUBJECT_CHARS)
-    predicate = _text(item.get("predicate"), limit=_MAX_PREDICATE_CHARS)
-    obj = _text(item.get("object"), limit=_MAX_OBJECT_CHARS)
+    subject = _text(item.get("subject"), limit=max_term)
+    predicate = _text(item.get("predicate"), limit=max_predicate)
+    obj = _text(item.get("object"), limit=max_term)
     if subject is None or predicate is None or obj is None:
         return None
-    try:
-        message_id = int(item["message_id"])  # type: ignore[call-overload]
-    except (KeyError, TypeError, ValueError):
+    raw = item.get("message_ids")
+    if not isinstance(raw, list) or not raw:
         return None
-    return CandidateClaim(
-        subject=subject, predicate=predicate, object=obj, message_id=message_id,
-    )
+    try:
+        # `bool` is an `int` in Python and `int(True)` is 1, so a model
+        # returning `[true]` would otherwise mint message 1 — a real message
+        # in every conversation. Refused rather than coerced.
+        ids = tuple(
+            int(v) for v in raw if not isinstance(v, bool)
+        )
+    except (TypeError, ValueError):
+        return None
+    if len(ids) != len(raw):
+        return None
+    try:
+        return CandidateClaim(
+            subject=subject, predicate=predicate, object=obj, message_ids=ids,
+        )
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -431,12 +508,18 @@ class FactAdaptor:
         candidates: _CandidateStore,
         max_adjudications_per_tick: int,
         max_standing_facts: int = DEFAULT_MAX_STANDING_FACTS,
+        max_term_chars: int = DEFAULT_MAX_TERM_CHARS,
+        max_predicate_chars: int = DEFAULT_MAX_PREDICATE_CHARS,
+        entities: _EntityPromoter | None = None,
         metrics: Metrics | None = None,
     ) -> None:
         self._facts = facts
         self._candidates = candidates
+        self._entities = entities
         self._max_adjudications = max_adjudications_per_tick
         self._max_standing_facts = max_standing_facts
+        self._max_term_chars = max_term_chars
+        self._max_predicate_chars = max_predicate_chars
         self._metrics = metrics
         self._shown: dict[str, _Shown] = {}
 
@@ -532,7 +615,10 @@ class FactAdaptor:
         shown = self._shown.get(key)
         kept: list[object] = []
         for item in items:
-            verdict, reason = _parse_verdict(item)
+            verdict, reason = _parse_verdict(
+                item, max_term=self._max_term_chars,
+                max_predicate=self._max_predicate_chars,
+            )
             if verdict is None:
                 self._skip(reason or "malformed")
                 continue
@@ -595,6 +681,18 @@ class FactAdaptor:
             if isinstance(p.payload, FactVerdict)
             and p.payload.status != "not_covered"
         ]
+        # Each proposal is stamped with the CANDIDATE it settles, from the
+        # same `_Shown` lookup `_retire_candidates` uses — so the store joins
+        # back by identity instead of re-deriving the candidate from the
+        # verdict's words. Re-deriving was wrong twice: the model rewording a
+        # claim by one character (which `_retire_candidates` documents as
+        # expected, logs, and counts) made the join miss and report a WIRING
+        # GAP, and a triple match against the whole table could hand a settled
+        # candidate's asserters to an unrelated later fact.
+        proposals = tuple(
+            replace(p, candidate_id=self._candidate_id_for(key, p.payload))
+            for p in proposals
+        )
         # Unconditional, empty batch included: `commit(key, ())` is R-27's
         # `nothing_found` and a legal call the sink may act on. A payload that
         # is not a `FactVerdict` raises `TypeError` in the store, which is the
@@ -620,7 +718,48 @@ class FactAdaptor:
                 )
 
         await self._retire_candidates(key=key, proposals=proposals, now_ms=now_ms)
+        await self._promote(key=key, wrote=bool(ids), now_ms=now_ms)
         return len(ids)
+
+    async def _promote(self, *, key: str, wrote: bool, now_ms: int) -> None:
+        """Pass 3, after the writes and OUTSIDE their transaction.
+
+        30 §4: "promotion and embedding are downstream and idempotent, keyed
+        off the fingerprint, never inside it". Inside, a promotion failure
+        would roll back an adjudication that had already spent its research
+        loop; outside, it is simply re-run next tick over a store that has not
+        changed.
+
+        **Only when this tick actually wrote a fact.** 25 §4: degree changes
+        only when a fact lands, so a tick that wrote nothing has nothing new to
+        promote — and promotion is an aggregate over the workspace, which is
+        cheap but not free, and the Dreamer fires on its own clock over rooms
+        that are mostly quiet.
+
+        A failure is CAUGHT and counted for `_supersede_fact`'s reason: the
+        facts are already written by the time this runs, so letting it reach
+        the runtime would report the whole run `unavailable` with `written=0`
+        while rows sit in the table.
+        """
+        if self._entities is None or not wrote:
+            return
+        try:
+            await self._entities.promote(workspace=key, now_ms=now_ms)
+        except Exception:
+            log.exception("fact promotion failed: workspace=%s", key)
+            self._skip("promotion_failed")
+
+    def _candidate_id_for(self, key: str, payload: object) -> str | None:
+        """The candidate a verdict settles, or `None`. ONE lookup, used by both
+        the stamp above and `_retire_candidates` — they were two readings of
+        the same question and only one of them was against what this run
+        actually showed."""
+        shown = self._shown.get(key)
+        if shown is None or not isinstance(payload, FactVerdict):
+            return None
+        return shown.candidate_ids.get(
+            (payload.subject, payload.predicate, payload.object)
+        )
 
     async def _supersede_fact(
         self, *, key: str, verdict: FactVerdict, fact_id: str, now_ms: int,
@@ -687,16 +826,13 @@ class FactAdaptor:
         and retiring some other candidate on a near-match would settle a claim
         nobody adjudicated.
         """
-        shown = self._shown.get(key)
-        if shown is None:
+        if self._shown.get(key) is None:
             return
         for proposal in proposals:
             verdict = proposal.payload
             if not isinstance(verdict, FactVerdict):
                 continue
-            candidate_id = shown.candidate_ids.get(
-                (verdict.subject, verdict.predicate, verdict.object)
-            )
+            candidate_id = self._candidate_id_for(key, verdict)
             if candidate_id is None:
                 log.info(
                     "fact verdict settled no candidate: %r/%r (workspace=%s)",
@@ -730,7 +866,7 @@ class FactAdaptor:
 
 
 def _parse_verdict(
-    item: Mapping[str, object],
+    item: Mapping[str, object], *, max_term: int, max_predicate: int,
 ) -> tuple[FactVerdict | None, str | None]:
     """One envelope item -> `(verdict, None)` or `(None, reason)`.
 
@@ -742,9 +878,9 @@ def _parse_verdict(
     field that decides whether a source may contradict anything depend on a
     guess about what the model meant.
     """
-    subject = _text(item.get("subject"), limit=_MAX_SUBJECT_CHARS)
-    predicate = _text(item.get("predicate"), limit=_MAX_PREDICATE_CHARS)
-    obj = _text(item.get("object"), limit=_MAX_OBJECT_CHARS)
+    subject = _text(item.get("subject"), limit=max_term)
+    predicate = _text(item.get("predicate"), limit=max_predicate)
+    obj = _text(item.get("object"), limit=max_term)
     status = item.get("status")
     addresses = item.get("addresses_claim")
     if subject is None or predicate is None or obj is None:
@@ -828,11 +964,17 @@ def _render_standing(fact: Fact, *, handle: str) -> str:
     `handle`, never `fact.id`: see `_Shown.by_handle`. The id does not appear
     in the prompt at all, which is the second half of the fix — a model cannot
     echo back an identifier it was never shown.
+
+    **And that applies to the OBJECT column too.** This rendered
+    `object_entity_id` whenever `object_literal` was NULL — which, under the
+    pre-0039 exactly-one CHECK, was every entity-object fact. The one function
+    whose docstring says no identifier reaches the prompt was the function
+    putting a bare uuid in it. Since 0039 `object_literal` is NOT NULL and
+    the entity id is never rendered anywhere.
     """
-    obj = fact.object_literal if fact.object_literal is not None else (
-        fact.object_entity_id or ""
-    )
-    parts = [f"- [{handle}] {fact.subject_id} | {fact.predicate} | {obj}"]
+    parts = [
+        f"- [{handle}] {fact.subject_id} | {fact.predicate} | {fact.object_literal}"
+    ]
     if fact.source_url:
         parts.append(f"  source: {fact.source_url}")
     if fact.source_excerpt:
@@ -840,3 +982,276 @@ def _render_standing(fact: Fact, *, handle: str) -> str:
     return "\n".join(parts)
 
 
+
+
+# ---------------------------------------------------------------------------
+# Pass 6 — entity-resolution adjudication
+# ---------------------------------------------------------------------------
+
+
+#: How many unresolved names one tick puts in front of the model, and how many
+#: near-misses each carries. Both small: this pass is tool-free and single-shot,
+#: and a prompt listing forty names against ten candidates each is four hundred
+#: judgements in one call, which is how a model starts answering by pattern
+#: rather than by case.
+DEFAULT_MAX_RESOLUTIONS_PER_TICK = 8
+DEFAULT_MAX_CANDIDATES_PER_NAME = 5
+
+#: Ordinal handles, and TWO alphabets on purpose. Upstream numbers both the new
+#: entity and the existing candidates, which puts two integer spaces in one
+#: prompt and makes `1` ambiguous at a glance. Numbers name the thing being
+#: decided; letters name what it might be. It also means a handle from the
+#: wrong space is REFUSED rather than silently resolving to the wrong row.
+_NAME_HANDLES = "123456789"
+_ENTITY_HANDLES = "abcdefghijklmnopqrstuvwxyz"
+
+
+@dataclass(frozen=True)
+class EntityResolution:
+    """One decision: this name IS another way of writing that entity.
+
+    Only the positive case is a value. A `null` verdict — no match, or unsure —
+    produces NOTHING, because there is nothing to write: the name simply stays
+    unresolved, which is the state it was already in. Representing "no" as a
+    row would make the negative case indistinguishable from a decision to keep
+    two things apart forever, and 21 §5's whole argument is that a split is
+    provisional and a merge is not.
+    """
+
+    name: str
+    entity_id: str
+
+
+@dataclass(frozen=True)
+class _Offered:
+    """What ONE resolution run put in front of the model, remembered by
+    `inputs` for `accept` to check against — `_Shown`'s shape, one pass over,
+    and the same rule: the model may only name something it was shown.
+
+    `entity_ids` maps a LETTER to a real `fact_entity.id`. The id never appears
+    in the prompt, so a model cannot echo one back and `dream_screen` has
+    nothing to drop.
+    """
+
+    names: dict[str, str]
+    entity_ids: dict[str, dict[str, str]]
+
+
+class FactEntityResolutionAdaptor:
+    """Pass 6: decide the near-misses the deterministic pass surfaced.
+
+    **This is the half of resolution that needs judgement** (21 §5). The
+    deterministic half runs in the sink on every write — normalise, look up the
+    canonical name and the aliases — and handles the overwhelming majority for
+    free. What reaches here is what exact matching cannot settle: an
+    abbreviation, a synonym, a spelling the trigram channel found but nothing
+    could prove.
+
+    **Its only write is attaching an ALIAS**, never merging two entity rows.
+    §5: two entities wrongly kept apart is a missing edge, fixable later; two
+    wrongly merged is a corrupted node that has absorbed both sets of edges,
+    and unmerging needs provenance §8 leaves open. So the irreversible
+    operation is not available to this pass at all — not discouraged, absent.
+
+    **Workspace-keyed and watermark-free**, like the adjudicator: its input is
+    the entity table and the candidate queue, not a message batch.
+
+    **Tool-free.** Deciding whether two names mean one thing is a judgement
+    about the two names, not research — and a pass that could search would be
+    tempted to settle `HKO` by reading a page, which is the adjudicator's job
+    on a claim, not this one's on a name.
+    """
+
+    name = "fact-entity-resolution"
+    key_kind = "workspace"
+    uses_watermark = False
+    objective = "fact-entity-resolution"
+    envelope_key = "resolutions"
+    tools: frozenset[str] = frozenset()
+
+    def __init__(
+        self,
+        *,
+        entities: _EntityResolver,
+        max_resolutions_per_tick: int = DEFAULT_MAX_RESOLUTIONS_PER_TICK,
+        max_candidates_per_name: int = DEFAULT_MAX_CANDIDATES_PER_NAME,
+        metrics: Metrics | None = None,
+    ) -> None:
+        self._entities = entities
+        self._max_resolutions = max_resolutions_per_tick
+        self._max_candidates = max_candidates_per_name
+        self._metrics = metrics
+        self._offered: dict[str, _Offered] = {}
+
+    async def inputs(self, *, key: str, batch: Sequence[TranscriptRow]) -> str:
+        """The unresolved names, each under the entities it might be another
+        way of writing. `batch` is unused — this adaptor is workspace-keyed and
+        reads the store, not a message window.
+
+        **Blank when nothing is unresolved, or when nothing resembles
+        anything.** The runtime skips the model on a blank input, which is the
+        difference between a quiet workspace costing nothing and costing one
+        call per tick forever. A name with no near-misses is not offered at
+        all: there is nothing for the model to choose between, and asking would
+        invite it to invent one.
+        """
+        names = await self._entities.unresolved_names(
+            workspace=key, limit=self._max_resolutions,
+        )
+        offered_names: dict[str, str] = {}
+        offered_entities: dict[str, dict[str, str]] = {}
+        blocks: list[str] = []
+        for name in names:
+            handle = _NAME_HANDLES[len(offered_names)]
+            candidates = await self._entities.similar_entities(
+                workspace=key, name=name, limit=self._max_candidates,
+            )
+            if not candidates:
+                continue
+            offered_names[handle] = name
+            by_letter = {
+                _ENTITY_HANDLES[i]: entity_id
+                for i, (entity_id, _canonical) in enumerate(candidates)
+            }
+            offered_entities[handle] = by_letter
+            lines = [f"[{handle}] {name}"]
+            lines += [
+                f"    [{_ENTITY_HANDLES[i]}] {canonical}"
+                for i, (_entity_id, canonical) in enumerate(candidates)
+            ]
+            blocks.append("\n".join(lines))
+            if len(offered_names) >= len(_NAME_HANDLES):
+                break
+
+        self._offered[key] = _Offered(
+            names=offered_names, entity_ids=offered_entities,
+        )
+        if not blocks:
+            return ""
+        self._inc("nora_fact_resolution_offered_total", value=len(offered_names))
+        return "Names to resolve:\n\n" + "\n\n".join(blocks)
+
+    async def accept(
+        self, *, key: str, items: Sequence[Mapping[str, object]]
+    ) -> Sequence[object]:
+        """Typed parse into `EntityResolution`, dropping anything the model was
+        not shown.
+
+        **A `null` entity produces no value at all**, which is the expected and
+        most common answer. It is counted, because a pass that decided "no"
+        forty times and a pass that never ran look identical from the outside.
+
+        A handle from the wrong alphabet, or one this run did not render, is
+        dropped and counted — `_Shown`'s rule, one pass over: the model may
+        only name something it was shown, and a resolution naming a row nobody
+        put in front of it is a guess with a merge attached.
+        """
+        offered = self._offered.get(key)
+        kept: list[object] = []
+        for item in items:
+            resolution = _parse_resolution(item)
+            if resolution is None:
+                self._inc("nora_fact_resolutions_total", status="malformed")
+                continue
+            name_handle, entity_handle = resolution
+            if entity_handle is None:
+                self._inc("nora_fact_resolutions_total", status="split")
+                continue
+            if offered is None:
+                # `inputs` did not run for this key, so there is NO MAP from
+                # handles to values and nothing here can be resolved.
+                #
+                # This branch used to keep `EntityResolution(name="1",
+                # entity_id="a")` — the model's raw ordinal handles — and count
+                # it `merged`. `commit` then handed `"a"` to `attach_alias`
+                # against a `pg.UUID` column: an invalid-UUID error, the tick
+                # reporting `unavailable`, and the merge counter already moved.
+                # It was the one place in this tier where "the model may only
+                # name something it was shown" was not enforced, and it turned
+                # an unshown handle into a write.
+                #
+                # `unknown_handle` is the honest label and it is the same one
+                # the miss below uses: in both cases the handle names nothing
+                # this run rendered. The distinction between "no map" and "not
+                # in the map" is an internal one, and splitting the label would
+                # make an operator learn our call order to read the series.
+                log.warning(
+                    "entity resolution dropped: [%s]->[%s] arrived with no "
+                    "record of what this run rendered (workspace=%s)",
+                    name_handle, entity_handle, key,
+                )
+                self._inc("nora_fact_resolutions_total", status="unknown_handle")
+                continue
+            name = offered.names.get(name_handle)
+            entity_id = offered.entity_ids.get(name_handle, {}).get(entity_handle)
+            if name is None or entity_id is None:
+                log.warning(
+                    "entity resolution dropped: [%s]->[%s] names nothing this "
+                    "run rendered (workspace=%s)",
+                    name_handle, entity_handle, key,
+                )
+                self._inc("nora_fact_resolutions_total", status="unknown_handle")
+                continue
+            self._inc("nora_fact_resolutions_total", status="merged")
+            kept.append(EntityResolution(name=name, entity_id=entity_id))
+        return tuple(kept)
+
+    async def commit(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
+    ) -> int:
+        """Attach each resolved name as an alias. Returns rows changed.
+
+        An alias already present returns False from the store and is not
+        counted — a re-run of a decision already made is not a second decision,
+        and counting it would make a loop that re-fires look like a loop that
+        is learning.
+        """
+        written = 0
+        for proposal in proposals:
+            resolution = proposal.payload
+            if not isinstance(resolution, EntityResolution):
+                raise TypeError(
+                    f"FactEntityResolutionAdaptor.commit only accepts an "
+                    f"EntityResolution payload, got "
+                    f"{type(resolution).__name__}"
+                )
+            if await self._entities.attach_alias(
+                workspace=key, entity_id=resolution.entity_id,
+                alias=resolution.name,
+            ):
+                written += 1
+        if written:
+            self._inc("nora_fact_aliases_attached_total", value=written)
+        return written
+
+    def _inc(self, name: str, value: float = 1.0, **labels: object) -> None:
+        if self._metrics is not None:
+            self._metrics.inc(name, value, **labels)
+
+
+def _parse_resolution(
+    item: Mapping[str, object],
+) -> tuple[str, str | None] | None:
+    """One envelope item -> `(name_handle, entity_handle_or_None)`, or `None`
+    if it is malformed.
+
+    `entity` is `null` for the no-match case, which is a LEGAL answer and the
+    expected one — distinguished here from a malformed item, which is the model
+    not answering. A missing `entity` key is malformed; an explicit `null` is a
+    decision.
+    """
+    name = item.get("name")
+    if not isinstance(name, str) or name not in _NAME_HANDLES or len(name) != 1:
+        return None
+    if "entity" not in item:
+        return None
+    entity = item["entity"]
+    if entity is None:
+        return name, None
+    if (
+        not isinstance(entity, str)
+        or len(entity) != 1
+        or entity not in _ENTITY_HANDLES
+    ):
+        return None
+    return name, entity

@@ -17,10 +17,52 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+import unicodedata
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Literal, get_args
 
 from .provenance import INSTRUCTION_SHA256_HEX_LEN
+
+# ---------------------------------------------------------------------------
+# The tier's caps (25 §9.1, 30 §5). TWO LAYERS, doing two different jobs — the
+# shape `nora.domain.standing` established and the reason it exists.
+#
+# A CEILING is DDL. It is asserted here, in the schema's CHECK, and in the
+# migration, and all three read THESE constants rather than repeating a
+# literal: the note tier shipped `32000` hardcoded in its migration and its
+# schema, and the parity gate could not see it because both carried the same
+# wrong number — they agreed with each other and with nothing else. A ceiling
+# is not the size decision; it is the floor under every size decision an
+# operator can make, and a backstop against a config typo or a future writer
+# nobody has thought of.
+#
+# An OPERATING value is config (`[facts] max_term_chars` /
+# `max_predicate_chars`), refused above its ceiling at load, and enforced at
+# every WRITE — 30 §5's correction: the old scheme only refused a config above
+# its ceiling, which left oversized rows satisfying the CHECK while defeating
+# the prompt budget the cap exists to protect.
+
+#: `subject_id` and `object_literal`. Both were UNCAPPED, which 25 §9.1 calls
+#: the same defect as the note body and worse: the subject is a JOIN KEY, so an
+#: unbounded subject is an unbounded index entry on the one column every read
+#: path uses.
+FACT_TERM_CEILING_CHARS = 800
+
+#: `predicate`. 100 was the domain constant; the ceiling leaves room above it.
+FACT_PREDICATE_CEILING_CHARS = 200
+
+#: The default operating caps. 200 for a term because the promotion veto
+#: already refuses anything over 64 as "a sentence, not a thing" — 200 leaves
+#: room for a descriptive object while keeping the index key small, and
+#: anything approaching it is a claim the extractor should have split.
+DEFAULT_MAX_TERM_CHARS = 200
+DEFAULT_MAX_PREDICATE_CHARS = 100
+
+#: The promotion veto's length rule (21 §6.1): an object string longer than
+#: this is a sentence, not a thing, and never becomes an entity. NOT a storage
+#: cap — an over-long object is still a perfectly good literal.
+PROMOTION_MAX_OBJECT_CHARS = 64
 
 FactStatus = Literal["supported", "contradicted", "not_covered"]
 CandidateStatus = Literal["pending", "adjudicated", "not_covered"]
@@ -49,16 +91,189 @@ FidelityStatus = Literal["tentative", "proven", "deprecated"]
 # row afterwards at any price.
 SupersedeReason = Literal["stale", "wrong", "merged"]
 
+# The outcome of the `message_id -> sender_id -> person_id` join that records
+# WHO claimed a fact (21 §7.2). R-27's three states, and all three are
+# reachable — `nothing_found` («the claim's messages resolved to no person»)
+# and `unavailable` («there was no candidate to join through») are the pair
+# that must never collapse: one is a fact about the room, the other is a
+# wiring gap. The metric's label vocabulary is `get_args` of THIS, never a
+# hand-copied tuple.
+AsserterJoinStatus = Literal["ok", "nothing_found", "unavailable"]
+
+# What marking a row disputed did (31 §7). `already_disputed` and
+# `already_superseded` are separate because they are different facts about the
+# row — the first means somebody got there first and the second means the row
+# has already stopped standing — and collapsing them makes a second member's
+# honest dispute look like one that was already handled. The metric's label
+# vocabulary is `get_args` of THIS.
+DisputeOutcome = Literal[
+    "ok", "already_disputed", "already_superseded", "capped", "unknown",
+]
+
 _STATUSES: frozenset[str] = frozenset(get_args(FactStatus))
 _CANDIDATE_STATUSES: frozenset[str] = frozenset(get_args(CandidateStatus))
 _WARRANT_KINDS: frozenset[str] = frozenset(get_args(WarrantKind))
 _FIDELITY_STATUSES: frozenset[str] = frozenset(get_args(FidelityStatus))
 _SUPERSEDE_REASONS: frozenset[str] = frozenset(get_args(SupersedeReason))
+ASSERTER_JOIN_STATUSES: frozenset[str] = frozenset(get_args(AsserterJoinStatus))
+DISPUTE_OUTCOMES: frozenset[str] = frozenset(get_args(DisputeOutcome))
 
 # The DB CHECK constraint this column maps to is
 # `instruction_sha256 ~ '^[0-9a-f]{64}$'` (see nora.domain.provenance); the
 # domain must refuse everything the column would, not just the wrong length.
 _INSTRUCTION_SHA256_RE = re.compile(rf"^[0-9a-f]{{{INSTRUCTION_SHA256_HEX_LEN}}}$")
+
+
+def normalise_name(value: str) -> str:
+    """The tier's ONE normalisation for an entity name (21 §6.1).
+
+    **NFKC, strip, casefold — and nothing fuzzy.** 21 §6.1: matching is exact
+    after normalisation, never fuzzy, "for the reason 16 §4.1 already measured:
+    embeddings rank a literal misreading NEARER than a true alias, so no
+    threshold separates them. Under-merge, per §5." Two entities wrongly kept
+    apart is a missing edge — visible as a thin neighbourhood, fixable by a
+    later merge. Two wrongly merged is a corrupted node that has already
+    absorbed both sets of edges, and unmerging needs to know which edge came
+    from where.
+
+    NFKC because a code-switching room's IME emits full-width Latin, and
+    a full-width `Big Walk` and an ASCII one are the same name written on
+    two keyboards. `casefold`, not `lower`: `lower` leaves ß alone and casefold
+    does not, and the whole point is that two spellings collapse.
+
+    Internal whitespace collapses too — `house  house` and `house house` are
+    one name, and the vendored matcher's only real yield on this corpus is
+    exactly this (25 §4.1: the two "resolved" rows are exact-branch hits,
+    `lower()` plus whitespace collapse).
+
+    Exported from the DOMAIN because the sink, the promotion pass and any
+    future resolver must all use the same one. Two normalisations is two
+    definitions of identity.
+    """
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def _is_cjk(ch: str) -> bool:
+    return "\u3000" <= ch <= "\u9fff" or "\uf900" <= ch <= "\ufaff"
+
+
+def mentions(
+    haystack: str, needle: str, *, min_cjk_chars: int = 2,
+) -> bool:
+    """Does this text talk about that thing? ONE matcher, shared.
+
+    **Containment, not similarity**, and three reasons:
+
+    - The job IS containment. «Does this message talk about `big walk`» is a
+      substring question; `pg_trgm`'s `similarity()` answers a different one.
+    - A threshold nobody can calibrate is not a measurement. There is no graded
+      corpus for this room, so a number chosen here would be chosen blind and
+      would then look like evidence.
+    - Trigram is measurably weak on this room's default script — 25 §4.1, on
+      this database: 打風/打风 scores 0.200 and 香港天文台/天文台 0.250, because a
+      two-character word makes too few trigrams.
+
+    It is also **collation-independent**, which matters on a database about to
+    be reindexed under a different libc's `en_US.utf8` ordering: one fewer
+    thing that can silently change meaning across that swap.
+
+    **The boundary rule is on the ADJACENT CHARACTERS, not on the needle.** A
+    rule keyed on "Latin needles take a word boundary" is undefined for a mixed
+    needle like `Big Walk 大步行`, and Python treats CJK as word characters, so
+    `\bHKO\b` fails against 「HKO好準」 — the exact place this room's text
+    lives. A match is bounded when each adjacent character is not a letter or
+    digit of the SAME script class, with CJK its own class, so Latin abutting
+    CJK counts as bounded and `party` still does not match `art`.
+
+    **CJK gets containment DIRECTLY, above a length floor.** CJK has no word
+    boundaries at all, so a boundary rule there is not strict, it is broken:
+    「打風啦」 mentions 打風 and a boundary test rejects it because 啦 is a
+    particle, not a separator. But short needles are substrings of longer
+    compounds constantly — 大浪 inside 大浪灣, 行街 inside 行街市 (25 §4.1's own
+    examples) — so `min_cjk_chars` is the floor below which a CJK needle must
+    still land on a real boundary.
+
+    **A parameter, not a second matcher.** The two callers want different
+    recall: a retrieval slice missing a fact costs a lookup, while marking a
+    row disputed on a false positive costs a claim. One matcher with one knob
+    keeps that a calibration rather than two definitions of what "mentions"
+    means.
+
+    Both arguments are expected NORMALISED (`normalise_name`); this does not
+    normalise, so a caller cannot get one side wrong silently.
+    """
+    if not needle or not haystack:
+        return False
+    cjk_needle = all(_is_cjk(c) for c in needle if not c.isspace())
+    free = cjk_needle and len(needle.replace(" ", "")) >= min_cjk_chars
+    start = 0
+    while (i := haystack.find(needle, start)) != -1:
+        if free:
+            return True
+        before = haystack[i - 1] if i > 0 else ""
+        after_at = i + len(needle)
+        after = haystack[after_at] if after_at < len(haystack) else ""
+        if _bounded(before, needle[0]) and _bounded(after, needle[-1]):
+            return True
+        start = i + 1
+    return False
+
+
+def _bounded(neighbour: str, edge: str) -> bool:
+    """An empty neighbour is the string's end, which is always a boundary."""
+    if not neighbour or not neighbour.isalnum():
+        return True
+    # Different script classes are a boundary: `HKO` inside 「HKO好準」 is a
+    # match, and that is the case a `\b` rule gets wrong.
+    return _is_cjk(neighbour) != _is_cjk(edge)
+
+
+def refuse_over_operating_caps(
+    *, subject: str, predicate: str, obj: str,
+    max_term_chars: int, max_predicate_chars: int,
+) -> str | None:
+    """The name of the first field over its OPERATING cap, or `None`.
+
+    **This is 30 §5's "every writer validates against the current operating
+    value", and it lives here so both stores can call it.** The caps were
+    enforced only at PARSE, inside the two adaptors — which meant any other
+    `DreamSink` caller wrote past them, and the startup refusal that names rows
+    above a lowered cap was guarding a state the write path could still create.
+    Production was safe only because the two adaptors happened to be the only
+    writers, which is a fact about today rather than a property of the design.
+
+    Returns the field NAME rather than raising, so each store decides: the fact
+    store raises (a verdict that long is a caller bug, and dropping it would be
+    indistinguishable from `not_covered`), the candidate store drops and counts
+    (a candidate is one sighting and losing it costs a re-extraction). Both are
+    honest; a shared helper that chose for them would not be.
+    """
+    for name, value, cap in (
+        ("subject", subject, max_term_chars),
+        ("predicate", predicate, max_predicate_chars),
+        ("object", obj, max_term_chars),
+    ):
+        if len(value) > cap:
+            return name
+    return None
+
+
+def _check_term(field: str, value: str) -> None:
+    """The CEILING, never the operating cap. `fact_term_fits_the_ceiling_check`
+    asserts the same number in the database."""
+    if len(value) > FACT_TERM_CEILING_CHARS:
+        raise ValueError(
+            f"{field} is {len(value)} characters, over the "
+            f"{FACT_TERM_CEILING_CHARS}-character ceiling"
+        )
+
+
+def _check_predicate(value: str) -> None:
+    if len(value) > FACT_PREDICATE_CEILING_CHARS:
+        raise ValueError(
+            f"predicate is {len(value)} characters, over the "
+            f"{FACT_PREDICATE_CEILING_CHARS}-character ceiling"
+        )
 
 
 @dataclass(frozen=True)
@@ -156,7 +371,7 @@ class FactEntity:
 @dataclass(frozen=True)
 class CandidateClaim:
     """What the extraction adaptor produces: one claim somebody asserted, and
-    the message it was asserted in.
+    the messages it was asserted in.
 
     **NOT a `FactCandidate`** — that is the ROW, with an id, timestamps, an
     occurrence count and a status, none of which an adaptor can know. This is
@@ -176,7 +391,25 @@ class CandidateClaim:
     subject: str
     predicate: str
     object: str
-    message_id: int
+    # PLURAL. D31 makes an episode a conversational CHUNK, so a claim can be
+    # asserted across more than one message and the singular form could not
+    # say so — the extractor would have to pick one and the rest of the
+    # provenance would be silently dropped at the point where it is free.
+    # Non-empty: a claim with no message behind it has no provenance at all,
+    # and `observed_in` would be an empty array that reads as "seen nowhere"
+    # exactly like a row nobody wrote.
+    message_ids: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        _check_term("subject", self.subject)
+        _check_predicate(self.predicate)
+        _check_term("object", self.object)
+        if not self.message_ids:
+            raise ValueError(
+                "a CandidateClaim needs at least one message_id: a claim "
+                "nothing asserted has no provenance, and an empty "
+                "`observed_in` is indistinguishable from a row nobody wrote"
+            )
 
 
 @dataclass(frozen=True)
@@ -288,8 +521,18 @@ class Fact:
     workspace: str
     subject_id: str
     predicate: str
+    # An ADDITIVE, nullable resolution pointer as of 2026-08-28 (migration
+    # 0039, `21-substrate-contract.md` §10). Never the object on its own —
+    # `object_literal` always carries the words, so promotion RESOLVES a row
+    # instead of rewriting it, and nothing downstream has to branch on which
+    # half is present.
     object_entity_id: str | None
-    object_literal: str | None
+    # The object, always. NOT NULL in the schema and non-optional here: the
+    # old exactly-one CHECK made an entity-object fact's literal NULL, which
+    # broke the negative cache (`NULL = 'x'` is NULL, so the claim was never
+    # deduped) and made two render paths fall back to printing a bare uuid
+    # into the prompt.
+    object_literal: str
     valid_from: int
     created_at: int
     instruction_sha256: str
@@ -311,6 +554,16 @@ class Fact:
     # below is a one-directional implication, not the biconditional the other
     # supersession columns use.
     supersede_source: str | None = None
+    # The correction loop's state (31 §7). A dispute MARKS this row — it stops
+    # rendering as a STANDING CLAIM and starts rendering AS A DISPUTE. It does
+    # NOT mute it, and `is_standing` is deliberately untouched by it: muting
+    # made one message from one member remove a true row from every future
+    # turn with no way back, and that is a denial-of-service rather than a
+    # correction.
+    disputed_at: int | None = None
+    disputed_by: str | None = None
+    disputed_reason: str | None = None
+    disputed_tag_id: str | None = None
 
     def __post_init__(self) -> None:
         if not _INSTRUCTION_SHA256_RE.fullmatch(self.instruction_sha256):
@@ -319,12 +572,20 @@ class Fact:
                 "digest; a fact whose instruction is unknown is not "
                 "attributable and is refused"
             )
-        has_entity = self.object_entity_id is not None
-        has_literal = self.object_literal is not None
-        if has_entity == has_literal:
+        _check_term("subject_id", self.subject_id)
+        _check_predicate(self.predicate)
+        _check_term("object_literal", self.object_literal)
+        # Not "exactly one" any more (migration 0039): the literal is the
+        # object and the entity id is an optional pointer beside it. What is
+        # still refused is an EMPTY literal — `""` and `"   "` are non-NULL to
+        # every query asking «what does this fact say», which turns R-27's
+        # `unavailable` into a false `ok`, and the column's NOT NULL cannot
+        # see it.
+        if not self.object_literal.strip():
             raise ValueError(
-                "a fact needs exactly one object: an entity id or a literal, "
-                "never both and never neither"
+                "a fact's object_literal is the object and cannot be blank: "
+                "the entity id is an additional pointer, never a replacement "
+                "for the words the room used"
             )
         # The DB CHECK is `(superseded_by is null) = (superseded_at is
         # null)` — a biconditional, not an implication. `superseded_at` set
@@ -390,7 +651,111 @@ class Fact:
 
     @property
     def is_standing(self) -> bool:
+        """Not superseded. **A DISPUTED row is still standing**, and that is
+        the whole reversal: it renders, marked, with who disputed it. Folding
+        `disputed_at` in here would be the mute this design refuses, hidden in
+        a property nobody would think to read."""
         return self.superseded_at is None
+
+    @property
+    def is_disputed(self) -> bool:
+        return self.disputed_at is not None
+
+
+#: What a rendered claim is ABOUT. `fact` today; `lexeme` is in the CHECK so the
+#: language tier joins without a migration, and 31 §3.0 records what it needs
+#: first — `RoomLexeme` reaches the render site carrying no key at all.
+ClaimKind = Literal["fact", "lexeme"]
+CLAIM_KINDS: frozenset[str] = frozenset(get_args(ClaimKind))
+
+
+@dataclass(frozen=True)
+class RenderedClaim:
+    """One row Nora actually put in front of the model, on one turn.
+
+    A DOMAIN type rather than the store's, because the render site constructs
+    it and `nora.engagement` may not import `nora.infra` — and because it is a
+    value with no framework in it, which is this package's whole rule.
+    """
+
+    conversation_id: str
+    kind: ClaimKind
+    row_key: str
+    surface: str
+    workspace: str | None
+    last_tag_id: str
+    last_rendered_at: int
+
+
+@dataclass(frozen=True)
+class FactExtent:
+    """What the `<facts>` block did NOT show, in counts (19 §6, 23 §3).
+
+    **Not a slice of content and not optional.** Without it the block
+    reproduces the defect the recency window had: a subset presented as the
+    whole, with no signal that more exists or that a verb is worth reaching
+    for. `standing` is every standing fact in the workspace; `shown` is how
+    many reached the prompt.
+    """
+
+    standing: int
+    shown: int
+
+    @property
+    def unshown(self) -> int:
+        return max(0, self.standing - self.shown)
+
+
+@dataclass(frozen=True)
+class FactsView:
+    """One block, three labelled slices (19 §6). Not three blocks: they share a
+    header and a provenance line, and three siblings in a prompt read as three
+    unrelated systems rather than one store seen from three angles.
+
+    `asserters` is keyed by `fact_id` and is what makes a `stated` fact render
+    WITH WHO SAID IT — 30 §2.3's answer to abuse, which is not to prevent the
+    claim but to make it attributable: "*Nora, remember Grant owes me $500*"
+    rendered as a bare claim is authoritative, and rendered with its asserter
+    is a prank anyone can see.
+    """
+
+    room: tuple[Fact, ...] = ()
+    sender: tuple[Fact, ...] = ()
+    extent: FactExtent = field(default_factory=lambda: FactExtent(0, 0))
+    asserters: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class FactAsserter:
+    """WHO claimed a fact, and in which message (`21-substrate-contract.md`
+    §7).
+
+    `established_by` on `Fact` records the RUN that produced the row — the
+    tick. This records the HUMAN, which for a tier whose job is belief is the
+    axis that matters: corroboration and disagreement are properties of who
+    said a thing, and `occurrence_count` alone cannot tell «one person said it
+    three times» from «three people said it once».
+
+    **Not Honcho's axis.** Honcho holds what someone is LIKE, re-inferred
+    forever. This holds who said THIS sentence, which is a fixed historical
+    fact and is never re-inferred.
+
+    **And it is not a disclosure change.** Recording who asserted a claim is
+    not permission to say so; egress is governed exactly as before.
+    """
+
+    fact_id: str
+    person_id: str
+    message_id: int
+    asserted_at: int
+
+    def __post_init__(self) -> None:
+        if not self.person_id.strip():
+            raise ValueError(
+                "a FactAsserter names a person: '' and '   ' are non-NULL to "
+                "every query asking which claims are attributable, which "
+                "turns «I could not check» into a false «nobody»"
+            )
 
 
 @dataclass(frozen=True)

@@ -65,8 +65,9 @@ below, and the first is already global (it checks the Protocol, not a store).
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytest
 import sqlalchemy as sa
@@ -78,6 +79,7 @@ from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import FACT_ENTITY
+from nora.obs.metrics import Metrics
 from nora.testing import (
     InMemoryFactCandidateStore,
     fact_candidate_proposal_factory,
@@ -93,7 +95,7 @@ def _candidate(
     subject: str = "e1",
     predicate: str = "has",
     object: str = "v1",
-    message_id: int = 1,
+    message_ids: tuple[int, ...] = (1,),
     established_by: str = "run-1",
 ) -> Proposal:
     """A `Proposal` carrying a `CandidateClaim` — the NARROW write-side type.
@@ -102,7 +104,7 @@ def _candidate(
     to invent them (see `CandidateClaim`'s own docstring)."""
     return fact_candidate_proposal_factory(
         subject=subject, predicate=predicate, object=object,
-        message_id=message_id, established_by=established_by,
+        message_ids=message_ids, established_by=established_by,
     )
 
 
@@ -117,7 +119,6 @@ def candidate_pg_url(pg_admin) -> Iterator[str]:
     the same container and asserts a p95. A defect in one file charged to
     another, which is exactly why it read as an unrelated flake.
     """
-    import uuid
 
     import psycopg
 
@@ -155,6 +156,12 @@ class _World:
     store: object
     seed_fact: Callable[..., object]
     seed_entity: Callable[..., object]
+    # What PROMOTION does (`25-knowledge-pipeline.md` §4): points a standing
+    # fact's object at an entity, WITHOUT touching the literal. Seeding is
+    # split from resolving on purpose — production writes the literal at the
+    # sink and adds the pointer in a later pass, and a helper that did both at
+    # once would test a row shape no writer ever produces.
+    resolve_object: Callable[..., object]
 
 
 def _fact(
@@ -213,15 +220,23 @@ async def world(request) -> AsyncIterator[_World]:
         async def seed_entity(
             *, workspace: str = WS, canonical_name: str,
             aliases: tuple[str, ...] = (),
-        ) -> None:
+        ) -> str:
+            eid = f"seed-entity-{next(seq)}"
             entities.append(FactEntity(
-                id=f"seed-entity-{next(seq)}", workspace=workspace,
+                id=eid, workspace=workspace,
                 canonical_name=canonical_name, created_at=NOW, aliases=aliases,
             ))
+            return eid
+
+        async def resolve_object(*, object: str, entity_id: str) -> None:
+            for i, f in enumerate(facts):
+                if f.object_literal == object:
+                    facts[i] = replace(f, object_entity_id=entity_id)
 
         yield _World(
             store=InMemoryFactCandidateStore(facts=facts, entities=entities),
             seed_fact=seed_fact, seed_entity=seed_entity,
+            resolve_object=resolve_object,
         )
         return
 
@@ -267,17 +282,25 @@ async def world(request) -> AsyncIterator[_World]:
     async def seed_entity(
         *, workspace: str = WS, canonical_name: str,
         aliases: tuple[str, ...] = (),
-    ) -> None:
+    ) -> str:
         async with engine.begin() as conn:
-            await conn.execute(sa.insert(FACT_ENTITY).values(
-                workspace=workspace, canonical_name=canonical_name,
-                aliases=list(aliases), created_at=NOW,
-            ))
+            return str((await conn.execute(
+                sa.insert(FACT_ENTITY).values(
+                    workspace=workspace, canonical_name=canonical_name,
+                    aliases=list(aliases), created_at=NOW,
+                ).returning(FACT_ENTITY.c.id)
+            )).scalar_one())
+
+    async def resolve_object(*, object: str, entity_id: str) -> None:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text(
+                "update fact set object_entity_id = :e where object_literal = :o"
+            ), {"e": entity_id, "o": object})
 
     try:
         yield _World(
             store=SqlFactCandidateStore(engine), seed_fact=seed_fact,
-            seed_entity=seed_entity,
+            seed_entity=seed_entity, resolve_object=resolve_object,
         )
     finally:
         await engine.dispose()
@@ -376,25 +399,53 @@ async def test_a_repeat_sighting_bumps_the_same_row_rather_than_writing_a_second
 async def test_a_repeat_sighting_merges_observed_in_without_duplicating(store):
     """`observed_in` is the SET of TURNS a claim was asserted in — §5's Phase
     A emits "candidate triples with the turn each came from", and
-    `CandidateClaim.message_id` is that turn. It accumulates across sightings
+    `CandidateClaim.message_ids` are those turns. It accumulates across sightings
     and never duplicates: re-reading the same window would otherwise grow the
     array without bound for a claim nobody repeated.
 
     Asserted BOTH ways on purpose. A store that appended blindly passes an
     accumulate-only check, and a store that overwrote passes a
     no-duplicates-only check; only doing both at once catches either."""
-    await store.propose(key=WS, proposals=(_candidate(message_id=101),), now_ms=NOW)
+    await store.propose(key=WS, proposals=(_candidate(message_ids=(101,)),), now_ms=NOW)
 
     await store.propose(
-        key=WS, proposals=(_candidate(message_id=101),), now_ms=NOW + 1,
+        key=WS, proposals=(_candidate(message_ids=(101,)),), now_ms=NOW + 1,
     )
     await store.propose(
-        key=WS, proposals=(_candidate(message_id=102),), now_ms=NOW + 2,
+        key=WS, proposals=(_candidate(message_ids=(102,)),), now_ms=NOW + 2,
     )
 
     rows = await store.pending(workspace=WS, limit=10)
     assert sorted(rows[0].observed_in) == ["101", "102"]
     assert rows[0].occurrence_count == 3
+
+
+async def test_one_sighting_across_two_messages_records_both(world):
+    """D31 makes an episode a conversational CHUNK, so ONE sighting of a claim
+    can carry several turns — distinct from the repeat-sighting case above,
+    which merges across CALLS. A store that took only the first id would pass
+    every test in this file that existed before plural landed, because each of
+    them proposes one id at a time.
+
+    Both implementations, because the fake's list append and the SQL array
+    literal are two different pieces of code that must agree — this is exactly
+    where a double that quietly differs from production hides a defect."""
+    store = world.store
+    # Seen ONCE, so without a resolvable subject §5's second drop removes the
+    # row and this test would assert against an empty read — passing for a
+    # reason that has nothing to do with plural ids.
+    await world.seed_entity(canonical_name="e1")
+    await store.propose(
+        key=WS, proposals=(_candidate(message_ids=(101, 102, 103)),), now_ms=NOW,
+    )
+
+    rows = await store.pending(workspace=WS, limit=10)
+
+    assert sorted(rows[0].observed_in) == ["101", "102", "103"]
+    # The positive control: occurrence is a count of SIGHTINGS, not of
+    # messages. Three ids in one call is one sighting, and a store that
+    # conflated them would read as corroboration nobody gave.
+    assert rows[0].occurrence_count == 1
 
 
 async def test_the_proposals_provenance_lands_on_the_row(store):
@@ -407,7 +458,7 @@ async def test_the_proposals_provenance_lands_on_the_row(store):
     different value for each of the three on every call, so a store that
     swapped two of them would still be caught."""
     p = fact_candidate_proposal_factory(
-        subject="e1", predicate="has", object="v1", message_id=1,
+        subject="e1", predicate="has", object="v1", message_ids=(1,),
     )
 
     ids = await store.propose(key=WS, proposals=(p,), now_ms=NOW)
@@ -425,10 +476,10 @@ async def test_a_repeat_sighting_does_not_rewrite_the_establishing_run(store):
     would leave a row whose digest names an instruction that never produced
     it — worse than no digest, because it reads as a real one."""
     first = fact_candidate_proposal_factory(
-        subject="e1", predicate="has", object="v1", message_id=1,
+        subject="e1", predicate="has", object="v1", message_ids=(1,),
     )
     later = fact_candidate_proposal_factory(
-        subject="e1", predicate="has", object="v1", message_id=2,
+        subject="e1", predicate="has", object="v1", message_ids=(2,),
     )
     assert later.instruction_sha256 != first.instruction_sha256, (
         "the factory must vary provenance per call or this test measures nothing"
@@ -666,6 +717,67 @@ async def test_pending_drops_a_candidate_already_backed_by_a_live_fact(world):
     assert await store.pending(workspace=WS, limit=10) == ()
 
 
+async def test_pending_drops_a_candidate_backed_by_a_fact_with_a_resolved_object(
+    world,
+):
+    """The negative cache broke exactly here (`21-substrate-contract.md`
+    §6.4). Before migration 0039 a promoted object made `object_literal`
+    NULL, dedup compares that column, and `NULL = 'x'` is NULL — so the claim
+    was never deduped, was re-adjudicated every tick forever, and ranked FIRST
+    each time because the contradiction predicate then read it as
+    contradicting its own candidate.
+
+    The literal now survives promotion, so resolving an object changes nothing
+    about whether its claim is already proven. The assertion is the SAME as
+    the unresolved case one test up; what varies is only the promotion."""
+    store = world.store
+    await world.seed_entity(canonical_name="e1")
+    object_entity = await world.seed_entity(canonical_name="v1")
+    await world.seed_fact(subject="e1", object="v1")
+    await world.resolve_object(object="v1", entity_id=object_entity)
+    await store.propose(
+        key=WS, proposals=(_candidate(subject="e1", object="v1"),), now_ms=NOW,
+    )
+
+    assert await store.pending(workspace=WS, limit=10) == ()
+
+
+async def test_a_resolved_object_still_ranks_a_genuine_contradiction_first(world):
+    """The positive control for the test above, and the other half of the same
+    defect. `== ()` is also true of a store that returned nothing because the
+    seeding failed, so this asserts something only a run that RAN produces:
+    against the SAME resolved fact, a candidate proposing a DIFFERENT object
+    comes back, and comes back as a contradiction rather than as ordinary
+    recurrence."""
+    store = world.store
+    await world.seed_entity(canonical_name="e1")
+    await world.seed_entity(canonical_name="other")
+    object_entity = await world.seed_entity(canonical_name="v1")
+    await world.seed_fact(subject="e1", object="v1")
+    await world.resolve_object(object="v1", entity_id=object_entity)
+    contradiction = await store.propose(
+        key=WS, proposals=(_candidate(subject="e1", object="v2"),), now_ms=NOW,
+    )
+    # A SECOND candidate, contradicting nothing and seen more often. Without it
+    # the assertion below was a one-element list, which every possible ordering
+    # satisfies — the ranking clause could be deleted outright and the test
+    # stayed green.
+    ordinary = await store.propose(
+        key=WS,
+        proposals=(_candidate(subject="other", predicate="p", object="o"),),
+        now_ms=NOW,
+    )
+    await store.propose(
+        key=WS,
+        proposals=(_candidate(subject="other", predicate="p", object="o"),),
+        now_ms=NOW + 1,
+    )
+
+    rows = await store.pending(workspace=WS, limit=10)
+
+    assert [c.id for c in rows] == [contradiction[0], ordinary[0]]
+
+
 async def test_pending_keeps_a_candidate_whose_backing_fact_was_superseded(world):
     """The drop is on a LIVE fact, not any fact. A superseded row is history —
     the belief it recorded is no longer held, so the claim is unproven again
@@ -823,3 +935,256 @@ async def test_pending_with_a_negative_limit_clamps_to_empty(store):
 
     assert await store.pending(workspace=WS, limit=-1) == ()
     assert await store.pending(workspace=WS, limit=0) == ()
+
+
+# ---------------------------------------------------------------------------
+# the sink's own refusals and readings — SQL only, because both are the
+# STORE's behaviour and the double deliberately has neither
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def sql_sink(candidate_pg_url):
+    engine = create_sql_engine(candidate_pg_url)
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            "TRUNCATE fact_premise, fact, fact_candidate, fact_entity "
+            "RESTART IDENTITY CASCADE"
+        ))
+    metrics = Metrics()
+    try:
+        yield SqlFactCandidateStore(
+            engine,
+            roster=frozenset({"miles", "grant"}),
+            roster_names=frozenset({"Miles Novak", "阿Miles", "Grace"}),
+            metrics=metrics,
+        ), engine, metrics
+    finally:
+        await engine.dispose()
+
+
+async def test_a_claim_about_a_roster_person_is_refused_at_the_sink(sql_sink):
+    """25 §2.4. The objective's first exclusion is "anything about a person in
+    this room", and a probe measured the model breaking it at five
+    person-claims in six edges WITH the roster supplied — so the boundary is
+    checkable and not enforced by the prompt. 17 §7's rule then applies: refuse
+    loudly, never accept and forget.
+
+    The sibling claim surviving is the positive control: a sink that refused
+    everything would satisfy the first assertion on its own."""
+    store, _engine, metrics = sql_sink
+
+    ids = await store.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="MILES", predicate="likes", object="ramen"),
+            _candidate(subject="big walk", predicate="made_by", object="hh"),
+        ),
+        now_ms=NOW,
+    )
+
+    assert len(ids) == 1
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="person_id") == 1
+
+
+async def test_a_person_in_object_position_is_not_refused(sql_sink):
+    """21 §2's own worked example: "Grant's wedding is on the 9th" is a claim
+    about an EVENT with Grant in object position, not a claim about Grant's
+    disposition. The restriction bites on predicates ABOUT a person, which is
+    what a person-SUBJECT triple is — and a refusal that read both positions
+    would delete the case the design uses to explain itself."""
+    store, _engine, metrics = sql_sink
+
+    ids = await store.propose(
+        key=WS,
+        proposals=(_candidate(subject="the wedding", predicate="of",
+                              object="Grant"),),
+        now_ms=NOW,
+    )
+
+    assert len(ids) == 1
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="person_id") == 0
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="display_name") == 0
+
+
+async def test_an_empty_roster_refuses_nothing(sql_sink, candidate_pg_url):
+    """The degradation that matters. A sink whose roster nobody wired must
+    refuse NOTHING, not everything — the second would be a worse failure than
+    the one this guard exists for, and it would look identical to a quiet
+    room."""
+    engine = create_sql_engine(candidate_pg_url)
+    try:
+        store = SqlFactCandidateStore(engine)
+        ids = await store.propose(
+            key=WS,
+            proposals=(_candidate(subject="miles", predicate="likes",
+                                  object="ramen"),),
+            now_ms=NOW,
+        )
+        assert len(ids) == 1
+    finally:
+        await engine.dispose()
+
+
+async def test_an_unresolvable_subject_is_counted_not_merely_dropped(sql_sink):
+    """`nora_fact_entity_unresolved_total` was declared with ZERO call sites —
+    the tier's only instrument for the entity problem, unable to observe it.
+    This is that call site.
+
+    Two candidates, one resolvable and one not, so the number is a reading and
+    not a row count: a counter that simply reported every pending candidate
+    would pass an assertion of 1 on a one-row store."""
+    store, engine, metrics = sql_sink
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            "insert into fact_entity (id, workspace, canonical_name, "
+            "created_at) values (gen_random_uuid(), :w, 'big walk', 1)"
+        ), {"w": WS})
+    await store.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="big walk", predicate="p", object="o"),
+            _candidate(subject="who-even", predicate="p", object="o"),
+        ),
+        now_ms=NOW,
+    )
+
+    await store.pending(workspace=WS, limit=10)
+
+    assert metrics.get("nora_fact_entity_unresolved", workspace=WS) == 1
+
+
+async def test_a_claim_about_a_person_by_the_name_the_room_uses_is_refused(sql_sink):
+    """The half an id-only match misses, and the half that matters: nobody
+    writes `miles` in a sentence, they write the name the group calls him. A
+    claim about a person in subject position is a fact about a human being
+    living in the wrong tier — that is Honcho's axis, and an id-only refusal
+    leaves the entire class reachable through the ordinary name.
+
+    Counted on its OWN label, so over-refusal by name is findable rather than
+    hidden inside the id series."""
+    store, _engine, metrics = sql_sink
+
+    ids = await store.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="阿Miles", predicate="lives_in", object="TST"),
+            _candidate(subject="big walk", predicate="made_by", object="hh"),
+        ),
+        now_ms=NOW,
+    )
+
+    assert len(ids) == 1
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="display_name") == 1
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="person_id") == 0
+
+
+async def test_the_name_match_is_exact_and_never_a_prefix(sql_sink):
+    """The rule this stage earned the hard way. The promotion veto's month
+    abbreviations matched any word STARTING with them, so `mar` refused
+    "Marco's car" and `may` refused "maybe". A display name under a prefix
+    match would eat ordinary words — and over-refusing is not free, because it
+    silently deletes legitimate facts nobody will ever know were dropped.
+
+    "Grace" is on this roster; "Grace Period" and "graceful" are not people."""
+    store, _engine, metrics = sql_sink
+
+    ids = await store.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="Grace Period", predicate="is", object="30 days"),
+            _candidate(subject="gracefulness", predicate="is", object="a virtue"),
+        ),
+        now_ms=NOW,
+    )
+
+    assert len(ids) == 2
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="display_name") == 0
+    # The positive control: the exact name IS refused, so the zero above is
+    # about the prefix and not about a matcher that never fires.
+    await store.propose(
+        key=WS,
+        proposals=(_candidate(subject="grace", predicate="likes", object="x"),),
+        now_ms=NOW,
+    )
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="display_name") == 1
+
+
+async def test_a_candidate_over_the_operating_cap_is_dropped_and_counted(sql_sink):
+    """The candidate store DROPS where the fact store RAISES, and the asymmetry
+    is the tier's own: a candidate is one sighting of one claim and losing it
+    costs a re-extraction, while a verdict has already spent a research loop.
+
+    Counted either way, because a silent drop reads as "the model found
+    nothing"."""
+    _store, engine, metrics = sql_sink
+    capped = SqlFactCandidateStore(engine, max_term_chars=50, metrics=metrics)
+
+    ids = await capped.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="x" * 51, predicate="p", object="o"),
+            _candidate(subject="big walk", predicate="p", object="o"),
+        ),
+        now_ms=NOW,
+    )
+
+    assert len(ids) == 1
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="over_cap") == 1
+
+
+async def test_the_settle_counter_moves_once_per_settled_row(sql_sink):
+    """**`nora_fact_candidates_total` had no call site at all** — declared at
+    the tier's first commit and emitted nowhere, which renders as a series
+    that is genuinely always zero.
+
+    It is the instrument an operator reaches for to ask «did the tier produce
+    anything», so a null from it was indistinguishable from a null from a tier
+    that never ran — CLAUDE.md's rule about checking an instrument can measure
+    the thing before reading it, failing on the counter most likely to be read
+    first.
+
+    Labelled by the terminal status, so the two outcomes are separable: a
+    counter that lumped `not_covered` in with `adjudicated` would report a
+    tier settling work while every settle was a failure to prove anything.
+    """
+    store, _engine, metrics = sql_sink
+    ids = await store.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="big walk", predicate="made_by", object="hh"),
+            _candidate(subject="打風", predicate="means", object="a typhoon"),
+        ),
+        now_ms=NOW,
+    )
+    assert len(ids) == 2
+
+    await store.supersede(
+        key=WS, target=ids[0], replaced_by=None,
+        because="adjudicated", source=None, now_ms=NOW + 1,
+    )
+    await store.supersede(
+        key=WS, target=ids[1], replaced_by=None,
+        because="not_covered", source=None, now_ms=NOW + 1,
+    )
+
+    assert metrics.get("nora_fact_candidates_total", outcome="adjudicated") == 1
+    assert metrics.get("nora_fact_candidates_total", outcome="not_covered") == 1
+
+    # Idempotence, and it is why the increment is guarded on `rowcount`: the
+    # Dreamer loop legitimately re-fires over work it already did, and a
+    # counter that moved on a no-op would report the tier settling candidates
+    # that were settled on a previous tick.
+    await store.supersede(
+        key=WS, target=ids[0], replaced_by=None,
+        because="adjudicated", source=None, now_ms=NOW + 2,
+    )
+    assert metrics.get("nora_fact_candidates_total", outcome="adjudicated") == 1

@@ -134,7 +134,31 @@ def _render_entry(lexeme: RoomLexeme) -> str:
     return (
         f"  {canonical_form}  {sense}  「{quote}」  "
         f"{lexeme.occurrence_count}×, {lexeme.distinct_speakers} people, since {since}"  # noqa: RUF001 - the multiplication sign is the brief's own format
+        f"{_dispute(lexeme)}"
     )
+
+
+def _dispute(lexeme: RoomLexeme) -> str:
+    """The mark, appended to the entry rather than replacing it — 31 §6, and
+    the same shape `nora.language.fact_render` uses for a disputed fact.
+
+    **Marked, never muted.** Dropping the entry would hide that the room ever
+    used the word this way, and she would answer the next question about it
+    from nothing; keeping it unmarked is what she was doing before this
+    existed, and it is worse — she restated the corrected meaning as fact,
+    with `nora_dispute_targets_total` reporting `ok` while she did it.
+
+    The reason is the disputer's own words, so the model sees WHAT was
+    objected to and not merely that something was. It is escaped and capped
+    like every other free-text field in this block: it arrives from a room
+    member through the classifier and is untrusted on both counts.
+    """
+    if not lexeme.is_disputed:
+        return ""
+    reason = lexeme.disputed_reason or ""
+    if reason.strip():
+        return f"  — disputed: {escape(_truncate(reason, _SENSE_MAX_CHARS))}"
+    return "  — disputed"
 
 
 def _truncate(text: str, max_chars: int) -> str:

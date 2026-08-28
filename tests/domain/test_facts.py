@@ -120,8 +120,8 @@ def test_a_fact_requires_a_full_instruction_digest():
     with pytest.raises(ValueError, match="instruction_sha256"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             source_url="https://example.test/a", source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="deadbeef",
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
@@ -135,24 +135,63 @@ def test_a_fact_requires_a_hex_instruction_digest():
     with pytest.raises(ValueError, match="instruction_sha256"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             source_url="https://example.test/a", source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="z" * 64,
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
         )
 
 
-def test_a_fact_has_exactly_one_object():
-    with pytest.raises(ValueError, match="object"):
-        Fact(
-            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal="also this",
-            source_url="https://example.test/a", source_excerpt="x",
-            valid_from=1, created_at=1, instruction_sha256="a" * 64,
-            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
-        )
+def _fact(**over):
+    """A valid `Fact`. Named so the invariant under test is the only thing
+    varying between the cases below."""
+    kw = {
+        "id": "0191f2c4-0000-7000-8000-000000000001", "workspace": "nora",
+        "subject_id": "e1", "predicate": "has",
+        "object_entity_id": None, "object_literal": "a literal",
+        "source_url": "https://example.test/a", "source_excerpt": "x",
+        "valid_from": 1, "created_at": 1, "instruction_sha256": "a" * 64,
+        "model": "ollamacloud/deepseek-v4-flash", "established_by": "tick-1",
+    }
+    kw.update(over)
+    return Fact(**kw)
+
+
+def test_an_entity_id_and_a_literal_coexist():
+    """Migration 0039 / `21-substrate-contract.md` §10. This was refused
+    before — the exactly-one CHECK forced promotion to DESTROY the surface
+    string, which broke the negative cache (dedup compares `object_literal`,
+    and `NULL = 'x'` is NULL) and made two render paths print a bare uuid.
+    A resolved fact now carries BOTH: the words the room used, and the entity
+    they resolve to."""
+    f = _fact(
+        object_entity_id="0191f2c4-0000-7000-8000-0000000000e2",
+        object_literal="House House",
+    )
+    assert f.object_literal == "House House"
+    assert f.object_entity_id == "0191f2c4-0000-7000-8000-0000000000e2"
+
+
+def test_object_literal_is_not_optional_on_the_type():
+    """The entity id is an ADDITIVE pointer, never a replacement.
+
+    **Asserted on the ANNOTATION, not by omitting the argument.** The first
+    version of this raised `TypeError` from leaving `object_literal` out — which
+    is Python's dataclass constructor refusing a missing positional, and stays
+    true whether the field is `str` or `str | None`. It would have passed
+    against the very reversion its docstring said it protected. The type is the
+    thing that changed, so the type is the thing to read."""
+    assert Fact.__annotations__["object_literal"] == "str"
+    assert Fact.__annotations__["object_entity_id"] == "str | None"
+
+
+def test_a_blank_literal_object_is_refused():
+    """`""` and `"   "` are non-NULL to every query asking what a fact says,
+    so NOT NULL alone would turn R-27's `unavailable` into a false `ok`. The
+    column cannot see it; the domain can."""
+    with pytest.raises(ValueError, match="object_literal"):
+        _fact(object_literal="   ")
 
 
 def test_a_fact_cannot_be_superseded_at_without_a_successor():
@@ -162,8 +201,8 @@ def test_a_fact_cannot_be_superseded_at_without_a_successor():
     with pytest.raises(ValueError, match="superseded"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             source_url="https://example.test/a", source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="a" * 64,
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
@@ -175,8 +214,8 @@ def test_a_fact_cannot_name_a_successor_without_a_time():
     with pytest.raises(ValueError, match="superseded"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             source_url="https://example.test/a", source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="a" * 64,
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
@@ -188,8 +227,8 @@ def test_an_unknown_warrant_kind_is_refused():
     with pytest.raises(ValueError, match="warrant_kind"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             source_url="https://example.test/a", source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="a" * 64,
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
@@ -203,8 +242,8 @@ def test_a_source_warrant_requires_a_source_url():
     with pytest.raises(ValueError, match="source_url"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             source_url=None, source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="a" * 64,
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
@@ -215,8 +254,8 @@ def test_a_source_warrant_requires_a_source_excerpt():
     with pytest.raises(ValueError, match="source_excerpt"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             source_url="https://example.test/a", source_excerpt=None,
             valid_from=1, created_at=1, instruction_sha256="a" * 64,
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
@@ -231,8 +270,8 @@ def test_a_non_source_warrant_forbids_a_source_url():
     with pytest.raises(ValueError, match="source_url"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             warrant_kind="observation",
             source_url="https://example.test/a", source_excerpt=None,
             valid_from=1, created_at=1, instruction_sha256="a" * 64,
@@ -244,8 +283,8 @@ def test_a_non_source_warrant_forbids_a_source_excerpt():
     with pytest.raises(ValueError, match="source_excerpt"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             warrant_kind="stated",
             source_url=None, source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="a" * 64,
@@ -260,8 +299,8 @@ def test_a_premises_fact_needs_no_source_url_or_excerpt():
     exists" any more than the database can; see `FactPremise`'s docstring."""
     f = Fact(
         id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-        subject_id="e1", predicate="has", object_entity_id="e2",
-        object_literal=None,
+        subject_id="e1", predicate="has", object_entity_id=None,
+        object_literal="a literal",
         warrant_kind="premises",
         source_url=None, source_excerpt=None,
         valid_from=1, created_at=1, instruction_sha256="a" * 64,
@@ -277,8 +316,8 @@ def test_fidelity_defaults_to_tentative_not_proven():
     omitted `fidelity` must not silently read as verified."""
     f = Fact(
         id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-        subject_id="e1", predicate="has", object_entity_id="e2",
-        object_literal=None,
+        subject_id="e1", predicate="has", object_entity_id=None,
+        object_literal="a literal",
         source_url="https://example.test/a", source_excerpt="x",
         valid_from=1, created_at=1, instruction_sha256="a" * 64,
         model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
@@ -290,8 +329,8 @@ def test_an_unknown_fidelity_is_refused():
     with pytest.raises(ValueError, match="fidelity"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             source_url="https://example.test/a", source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="a" * 64,
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
@@ -306,8 +345,8 @@ def test_a_supersession_without_a_reason_is_refused():
     with pytest.raises(ValueError, match="supersede_reason"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             source_url="https://example.test/a", source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="a" * 64,
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
@@ -319,8 +358,8 @@ def test_a_reason_without_a_supersession_is_refused():
     with pytest.raises(ValueError, match="supersede_reason"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             source_url="https://example.test/a", source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="a" * 64,
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
@@ -332,8 +371,8 @@ def test_an_unknown_supersede_reason_is_refused():
     with pytest.raises(ValueError, match="supersede_reason"):
         Fact(
             id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has", object_entity_id="e2",
-            object_literal=None,
+            subject_id="e1", predicate="has", object_entity_id=None,
+            object_literal="a literal",
             source_url="https://example.test/a", source_excerpt="x",
             valid_from=1, created_at=1, instruction_sha256="a" * 64,
             model="ollamacloud/deepseek-v4-flash", established_by="tick-1",

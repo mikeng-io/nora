@@ -867,3 +867,165 @@ async def test_the_database_refuses_a_whitespace_only_model(store, record):
         await store.append_observations(scope_id="g1", observations=[
             observation(message_id=mid, model="   "),
         ])
+
+
+# ---------------------------------------------------------------------------
+# the correction loop reaches this tier too — 31 §6
+# ---------------------------------------------------------------------------
+
+
+async def test_a_dispute_marks_every_sense_of_the_form(store, record, pg_url):
+    """`room_lexeme`'s key includes `sense`, deliberately: a word acquiring a
+    second meaning gets a second row rather than overwriting the first.
+
+    So a member saying "no, big walk is a video game" is disputing the FORM.
+    Marking one sense would leave its sibling standing and unmarked — and that
+    sibling is exactly the thing that let two contradictory glosses coexist in
+    the first place, which is the failure this whole loop exists for."""
+    ids = await _seed(record, 2)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=ids[0], person_id="miles",
+                    canonical_form="big walk", sense="a walk"),
+        observation(message_id=ids[1], person_id="alice",
+                    canonical_form="Big  Walk", sense="a video game"),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+
+    marked = await store.mark_disputed(
+        scope_id="g1", surface="BIG WALK", person_id="grant",
+        reason="it's a game", tag_id="tag-9", now_ms=NOW,
+    )
+
+    # Both senses, matched on the NORMALISED form — `big walk` and `Big  Walk`
+    # are one name written two ways, which is what `normalise_name` is for.
+    assert marked == 2
+    engine = create_sql_engine(pg_url)
+    try:
+        async with engine.connect() as conn:
+            rows = (await conn.execute(sa.select(
+                ROOM_LEXEME.c.disputed_at, ROOM_LEXEME.c.disputed_by,
+            ))).all()
+    finally:
+        await engine.dispose()
+    assert [r.disputed_at for r in rows] == [NOW, NOW]
+    assert {r.disputed_by for r in rows} == {"grant"}
+
+
+async def test_a_dispute_does_not_reach_a_different_form(store, record, pg_url):
+    """The positive control for the test above: a mark that hit everything
+    would satisfy it while making the loop unable to dispute anything
+    specifically."""
+    ids = await _seed(record, 2)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=ids[0], person_id="miles",
+                    canonical_form="big walk", sense="a walk"),
+        observation(message_id=ids[1], person_id="alice",
+                    canonical_form="打風", sense="a typhoon"),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+
+    assert await store.mark_disputed(
+        scope_id="g1", surface="big walk", person_id="g", reason=None,
+        tag_id="t", now_ms=NOW,
+    ) == 1
+
+
+async def test_rescore_does_not_wipe_a_dispute(store, record, pg_url):
+    """**The one that matters, and it holds by accident of a list.**
+
+    `rescore` recomputes this table from `language_observation` on every
+    consolidation, and its upsert names its `set_` columns explicitly — so the
+    four dispute columns survive because they are absent from that list, not
+    because anything says they must be. Adding `disputed_at` to it would erase
+    every correction the room has made, silently, on the next tick.
+
+    This is the test that says so."""
+    ids = await _seed(record, 2)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=ids[0], person_id="miles",
+                    canonical_form="big walk", sense="a walk"),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    await store.mark_disputed(
+        scope_id="g1", surface="big walk", person_id="grant",
+        reason="it's a game", tag_id="tag-9", now_ms=NOW,
+    )
+
+    # A second consolidation over new evidence — the ordinary path.
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=ids[1], person_id="alice",
+                    canonical_form="big walk", sense="a walk"),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW + 1_000)
+
+    engine = create_sql_engine(pg_url)
+    try:
+        async with engine.connect() as conn:
+            row = (await conn.execute(sa.select(
+                ROOM_LEXEME.c.disputed_at, ROOM_LEXEME.c.disputed_by,
+                ROOM_LEXEME.c.occurrence_count,
+            ))).one()
+    finally:
+        await engine.dispose()
+    assert row.disputed_at == NOW
+    assert row.disputed_by == "grant"
+    # The positive control: the rescore DID run and DID update the row, so the
+    # surviving dispute is not simply an upsert that never fired.
+    assert row.occurrence_count == 2
+
+
+async def test_a_second_dispute_leaves_the_first_asserter(store, record, pg_url):
+    """Matching the fact tier: the first asserter is the one that holds, and a
+    second dispute is recorded on the candidate it proposes."""
+    ids = await _seed(record, 1)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=ids[0], person_id="miles",
+                    canonical_form="big walk", sense="a walk"),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    await store.mark_disputed(
+        scope_id="g1", surface="big walk", person_id="grant", reason=None,
+        tag_id="t1", now_ms=NOW,
+    )
+
+    assert await store.mark_disputed(
+        scope_id="g1", surface="big walk", person_id="vic", reason=None,
+        tag_id="t2", now_ms=NOW + 1,
+    ) == 0
+
+
+async def test_room_language_carries_the_dispute_out_of_the_store(store, record):
+    """**The read side of 31 §6, and it did not exist.**
+
+    `mark_disputed` wrote four columns and `room_language` selected the whole
+    row and built a `RoomLexeme` that had nowhere to put them — so the mark
+    was write-only: the correction landed in Postgres, the counter said `ok`,
+    and the prefill kept asserting the contradicted gloss. A round trip
+    through the real store is the only thing that can say otherwise; the
+    render test one layer up is satisfied by a dataclass nobody populates.
+    """
+    ids = await _seed(record, 2)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=ids[0], person_id="miles",
+                    canonical_form="big walk", sense="a walk"),
+        observation(message_id=ids[1], person_id="alice",
+                    canonical_form="打風", sense="a typhoon"),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    await store.mark_disputed(
+        scope_id="g1", surface="big walk", person_id="grant",
+        reason="it's a game", tag_id="tag-9", now_ms=NOW,
+    )
+
+    language = await store.room_language(scope_id="g1", limit=10)
+
+    by_form = {lex.canonical_form: lex for lex in language.lexemes}
+    disputed = by_form["big walk"]
+    assert disputed.is_disputed
+    assert disputed.disputed_at == NOW
+    assert disputed.disputed_by == "grant"
+    assert disputed.disputed_reason == "it's a game"
+    # The positive control, and it is the half a blanket read would fail: the
+    # OTHER lexeme in the same scope came back undisputed, so this is the row
+    # the correction named rather than every row the query returned.
+    assert not by_form["打風"].is_disputed

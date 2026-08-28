@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from .facts import Fact
+from .facts import FactsView
 from .media import MediaBlob, MediaRef
 from .notes import Note
 from .standing import Standing
@@ -318,7 +318,11 @@ class TagContext:
     # so every deployed `TagContext` holds `()` until then —
     # `nora.language.fact_render.render_facts` renders no block for that,
     # same as its siblings' empty state.
-    facts: tuple[Fact, ...] = ()
+    # 19 §6's three slices, not a flat tuple: room, sender, and an extent
+    # line that is counts only. A flat tuple could not carry the extent,
+    # and the extent is the half that stops the block being a subset
+    # presented as the whole.
+    facts: FactsView = field(default_factory=FactsView)
     # The note tier (2026-08-21 note-tier design), §5.1 — the INDEX of tracked
     # uncertainties, workspace-keyed like `facts` above and unlike every block
     # before it. Defaulted empty for the same reason all four of its siblings
@@ -434,6 +438,26 @@ class RoomLexeme:
     last_seen_ms: int
     state: str          # 'live' | 'fading' | 'stale'
     examples: tuple[LexemeExample, ...] = ()
+    #: The correction loop's mark (31 §6), and the READ SIDE of it. The
+    #: columns landed with `mark_disputed` and nothing carried them out of the
+    #: store: a member could say «no, big walk is a video game», the row was
+    #: marked, the counter reported `ok`, and the gloss kept rendering into
+    #: every tag's prefill as unqualified truth. A mark nothing reads is worse
+    #: than no mark, because the instrument says the correction landed.
+    #:
+    #: **No clearing verb, and that is not the fact tier's ratchet.**
+    #: `room_lexeme`'s key is `(scope_id, canonical_form, sense)`, so a
+    #: re-glossed word arrives as a NEW ROW rather than an update — the
+    #: corrected meaning supersedes by existing, and the disputed row stays
+    #: marked because that is what it is. `Fact` needs `clear_disputed`
+    #: because supersession there rewrites the row in place.
+    disputed_at: int | None = None
+    disputed_by: str | None = None
+    disputed_reason: str | None = None
+
+    @property
+    def is_disputed(self) -> bool:
+        return self.disputed_at is not None
 
 
 @dataclass(frozen=True)

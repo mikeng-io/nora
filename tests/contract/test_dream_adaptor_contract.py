@@ -37,7 +37,13 @@ exercising this contract.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -46,7 +52,11 @@ import pytest
 from nora.agent.registry import ToolRegistry
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.ports import DreamAdaptor, Proposal
-from nora.language.fact_adaptor import FactAdaptor, FactCandidateAdaptor
+from nora.language.fact_adaptor import (
+    FactAdaptor,
+    FactCandidateAdaptor,
+    FactEntityResolutionAdaptor,
+)
 from nora.testing.fact_candidate_store import InMemoryFactCandidateStore
 from nora.testing.fact_store import InMemoryFactStore
 
@@ -211,9 +221,9 @@ def _build_fact_candidates() -> tuple[object, object]:
 def _fact_candidate_items() -> tuple[Mapping[str, object], ...]:
     return (
         {"subject": "big walk", "predicate": "unlocked_by",
-         "object": "the four coloured towers", "message_id": 41},
+         "object": "the four coloured towers", "message_ids": [41]},
         {"subject": "big walk", "predicate": "contains",
-         "object": "a black tower", "message_id": 42},
+         "object": "a black tower", "message_ids": [42]},
     )
 
 
@@ -222,7 +232,7 @@ def _fact_candidate_malformed_item() -> Mapping[str, object]:
     # triple is half of `fact_candidate_triple_key`, so a coerced `"7"`/`"None"`
     # would be a durable key nobody can ever match back — see
     # `nora.language.fact_adaptor._text`.
-    return {"subject": 7, "predicate": None, "object": "x", "message_id": "later"}
+    return {"subject": 7, "predicate": None, "object": "x", "message_ids": "later"}
 
 
 def _build_fact_adjudication() -> tuple[object, object]:
@@ -289,6 +299,82 @@ def _spy_empty_commits(_adaptor: object, sink: object) -> int:
     return sink.empty_commits
 
 
+class _StubEntities:
+    """The entity side of pass 6, matching production WHERE THE ADAPTOR
+    BRANCHES — `similar_entities` returning nothing is what decides a name is
+    not offered, and `attach_alias` returning False for one already present is
+    the branch `commit`'s count depends on."""
+
+    def __init__(self) -> None:
+        self.attached: list[tuple[str, str]] = []
+
+    async def unresolved_names(self, *, workspace: str, limit: int):
+        return ("HKO", "big walk")[:limit]
+
+    async def similar_entities(self, *, workspace: str, name: str, limit: int):
+        rows = {
+            "HKO": (
+                ("0191f2c4-0000-7000-8000-0000000000aa",
+                 "Hong Kong Observatory"),
+                ("0191f2c4-0000-7000-8000-0000000000bb", "HK Observatory"),
+            ),
+            "big walk": (
+                ("0191f2c4-0000-7000-8000-0000000000cc", "Big Walk"),
+            ),
+        }
+        return rows.get(name, ())[:limit]
+
+    async def attach_alias(self, *, workspace: str, entity_id: str, alias: str):
+        if (entity_id, alias) in self.attached:
+            return False
+        self.attached.append((entity_id, alias))
+        return True
+
+
+def _build_fact_entity_resolution() -> tuple[object, object]:
+    entities = _StubEntities()
+    return FactEntityResolutionAdaptor(entities=entities), entities
+
+
+async def _prepare_fact_entity_resolution(adaptor: object) -> None:
+    """Call `inputs` first, which every other implementation can skip.
+
+    This adaptor's items are ORDINAL HANDLES — `{"name": "1", "entity": "a"}`
+    — and a handle means nothing except against the render that assigned it.
+    The suite calling `accept` alone is exactly the shape that produced the
+    raw-handle write: `accept` had no map, kept `EntityResolution(name="1",
+    entity_id="a")`, counted it `merged`, and `commit` handed `"a"` to a uuid
+    column. That branch now refuses, so the contract has to show the adaptor
+    what it is about to be asked about — which is what the runtime does.
+    """
+    assert isinstance(adaptor, FactEntityResolutionAdaptor)
+    await adaptor.inputs(key=KEY, batch=())
+
+
+def _fact_resolution_items() -> tuple[Mapping[str, object], ...]:
+    """Two merges, and `entity: null` deliberately absent from both.
+
+    A split is the commonest real answer and it produces NO payload — which is
+    correct, and which would make `test_accept_parses_a_legal_batch` fail on
+    working code, since that contract counts one payload per item. Same
+    reasoning as `_fact_verdict_items` leaving out `supersedes`. The split path
+    is `tests/unit/test_entity_resolution_adaptor.py`'s.
+    """
+    return (
+        {"name": "1", "entity": "a"},
+        {"name": "2", "entity": "a"},
+    )
+
+
+def _fact_resolution_malformed_item() -> Mapping[str, object]:
+    return {"name": 7, "entity": "a"}
+
+
+def _resolution_written(_adaptor: object, backing: object) -> int:
+    assert isinstance(backing, _StubEntities)
+    return len(backing.attached)
+
+
 @dataclass(frozen=True)
 class _Impl:
     """One implementation's entry.
@@ -303,7 +389,17 @@ class _Impl:
     make_items: Callable[[], Sequence[Mapping[str, object]]]
     make_malformed_item: Callable[[], Mapping[str, object]]
     written: Callable[[object, object], int]
-    empty_commits: Callable[[object, object], int]
+    #: `None` when this adaptor's `commit` reaches no sink at all. Not a skip
+    #: and not a shrug: `FactEntityResolutionAdaptor.commit` calls
+    #: `attach_alias` once per resolution and has no `DreamSink` to hand an
+    #: empty batch to, so «the empty commit reaches the sink» is a property it
+    #: cannot have rather than one it fails. The field says which, so a new
+    #: adaptor has to answer the question rather than inherit an answer.
+    empty_commits: Callable[[object, object], int] | None = None
+    #: Run after `build` and before any contract test. `accept` on an adaptor
+    #: whose parse is HANDLE-BASED is meaningless without the render that
+    #: assigned the handles — see `_prepare_fact_entity_resolution`.
+    prepare: Callable[[object], Awaitable[None]] | None = None
 
 
 IMPLEMENTATIONS: dict[str, _Impl] = {
@@ -328,6 +424,17 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
         written=_fact_written,
         empty_commits=_spy_empty_commits,
     ),
+    # CLAUDE.md: a port never gains a second implementation without a shared
+    # contract suite. This one was the third `DreamAdaptor` and it was not
+    # here — which is how the raw-handle write survived, because the only
+    # caller that reached `accept` without `inputs` was imaginary.
+    "fact-entity-resolution": _Impl(
+        build=_build_fact_entity_resolution,
+        make_items=_fact_resolution_items,
+        make_malformed_item=_fact_resolution_malformed_item,
+        written=_resolution_written,
+        prepare=_prepare_fact_entity_resolution,
+    ),
 }
 
 
@@ -335,6 +442,8 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
 async def _open(name: str) -> AsyncGenerator[tuple[object, object, _Impl]]:
     impl = IMPLEMENTATIONS[name]
     adaptor, backing = impl.build()
+    if impl.prepare is not None:
+        await impl.prepare(adaptor)
     yield adaptor, backing, impl
 
 
@@ -515,13 +624,21 @@ async def test_committing_nothing_is_a_legal_call_that_reaches_the_sink(
 
     Asserted through the sink's own counter rather than through the return
     value, because a return of 0 is exactly what "never called" would also look
-    like — which is the confusion the test exists to rule out."""
-    before = impl.empty_commits(adaptor, backing)
+    like — which is the confusion the test exists to rule out.
+
+    `impl.empty_commits is None` marks an adaptor with no sink to reach:
+    `FactEntityResolutionAdaptor.commit` calls `attach_alias` per resolution
+    and has no `DreamSink` at all, so the decay argument above does not apply
+    to it. The empty commit must still be LEGAL and still return 0 — that half
+    is asserted for every implementation."""
+    before = None if impl.empty_commits is None else impl.empty_commits(
+        adaptor, backing)
 
     written = await adaptor.commit(key=KEY, proposals=(), now_ms=1_000)
 
     assert written == 0
-    assert impl.empty_commits(adaptor, backing) == before + 1
+    if impl.empty_commits is not None:
+        assert impl.empty_commits(adaptor, backing) == before + 1
 
 
 async def test_commit_returns_rows_written_not_proposals_offered(

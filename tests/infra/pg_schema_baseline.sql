@@ -50,25 +50,32 @@
 );
 );
 );
+);
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
 ADD CONSTRAINT artifacts_slug_key UNIQUE (slug);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
+ADD CONSTRAINT embedding_pkey PRIMARY KEY (kind, row_key);
 ADD CONSTRAINT event_rsvps_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id);
 ADD CONSTRAINT event_rsvps_pkey PRIMARY KEY (event_id, person_id);
 ADD CONSTRAINT events_pkey PRIMARY KEY (id);
 ADD CONSTRAINT exchange_observation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT exchange_observation_scope_id_act_message_ids_key UNIQUE (scope_id, act, message_ids);
+ADD CONSTRAINT fact_asserter_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
+ADD CONSTRAINT fact_asserter_pkey PRIMARY KEY (fact_id, person_id, message_id);
 ADD CONSTRAINT fact_candidate_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_candidate_triple_key UNIQUE (workspace, subject_id, predicate, object);
 ADD CONSTRAINT fact_entity_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_entity_workspace_name_key UNIQUE (workspace, canonical_name);
+ADD CONSTRAINT fact_object_entity_id_fkey FOREIGN KEY (object_entity_id) REFERENCES public.fact_entity(id);
 ADD CONSTRAINT fact_pkey PRIMARY KEY (id);
-ADD CONSTRAINT fact_premise_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id);
+ADD CONSTRAINT fact_premise_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
 ADD CONSTRAINT fact_premise_pkey PRIMARY KEY (fact_id, premise_fact_id);
-ADD CONSTRAINT fact_premise_premise_fact_id_fkey FOREIGN KEY (premise_fact_id) REFERENCES public.fact(id);
+ADD CONSTRAINT fact_premise_premise_fact_id_fkey FOREIGN KEY (premise_fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
 ADD CONSTRAINT fact_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES public.fact(id);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
 ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (message_id, canonical_form, sense);
@@ -96,6 +103,7 @@ ADD CONSTRAINT presence_places_pkey PRIMARY KEY (circle_id, place_id);
 ADD CONSTRAINT presence_stays_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_trips_pkey PRIMARY KEY (id);
 ADD CONSTRAINT reminders_pkey PRIMARY KEY (id);
+ADD CONSTRAINT rendered_claim_pkey PRIMARY KEY (conversation_id, kind, row_key);
 ADD CONSTRAINT room_exchange_pkey PRIMARY KEY (scope_id, act, participants);
 ADD CONSTRAINT room_lexeme_pkey PRIMARY KEY (scope_id, canonical_form, sense);
 ADD CONSTRAINT room_portrait_pkey PRIMARY KEY (scope_id);
@@ -113,6 +121,7 @@ ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.compute_jobs
 ALTER TABLE ONLY public.consolidation_watermark
+ALTER TABLE ONLY public.embedding
 ALTER TABLE ONLY public.event_rsvps
 ALTER TABLE ONLY public.event_rsvps
 ALTER TABLE ONLY public.events
@@ -120,6 +129,9 @@ ALTER TABLE ONLY public.exchange_observation
 ALTER TABLE ONLY public.exchange_observation
 ALTER TABLE ONLY public.fact
 ALTER TABLE ONLY public.fact
+ALTER TABLE ONLY public.fact
+ALTER TABLE ONLY public.fact_asserter
+ALTER TABLE ONLY public.fact_asserter
 ALTER TABLE ONLY public.fact_candidate
 ALTER TABLE ONLY public.fact_candidate
 ALTER TABLE ONLY public.fact_entity
@@ -155,6 +167,7 @@ ALTER TABLE ONLY public.presence_places
 ALTER TABLE ONLY public.presence_stays
 ALTER TABLE ONLY public.presence_trips
 ALTER TABLE ONLY public.reminders
+ALTER TABLE ONLY public.rendered_claim
 ALTER TABLE ONLY public.room_exchange
 ALTER TABLE ONLY public.room_lexeme
 ALTER TABLE ONLY public.room_portrait
@@ -183,6 +196,7 @@ CACHE 1
 CACHE 1
 CACHE 1
 COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
+COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
 CONSTRAINT ck_compute_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'failed'::text])))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
@@ -195,18 +209,23 @@ CONSTRAINT ck_reminders_recurrence CHECK ((((recurrence = 'none'::text) AND (rec
 CONSTRAINT ck_reminders_recurrence_kind CHECK ((recurrence = ANY (ARRAY['none'::text, 'daily'::text, 'weekly'::text, 'monthly'::text, 'yearly'::text]))),
 CONSTRAINT ck_reminders_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'cancelled'::text, 'failed'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
+CONSTRAINT embedding_model_is_named_check CHECK ((length(btrim(model)) > 0)),
+CONSTRAINT embedding_text_is_present_check CHECK ((length(btrim(text)) > 0))
 CONSTRAINT exchange_observation_act_check CHECK ((act = ANY (ARRAY['insult_trade'::text, 'banter'::text, 'tease'::text, 'callback_joke'::text, 'agreement_ritual'::text, 'disagreement_ritual'::text, 'compliment_exchange'::text]))),
 CONSTRAINT exchange_observation_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT exchange_observation_message_ids_check CHECK ((array_length(message_ids, 1) >= 2)),
 CONSTRAINT exchange_observation_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
 CONSTRAINT exchange_observation_participants_check CHECK ((array_length(participants, 1) >= 2))
+CONSTRAINT fact_asserter_person_is_named_check CHECK ((length(btrim(person_id)) > 0))
 CONSTRAINT fact_candidate_instruction_sha256_check CHECK ((instruction_sha256 ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT fact_candidate_model_is_named_check CHECK ((length(btrim(model)) > 0)),
-CONSTRAINT fact_candidate_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'adjudicated'::text, 'not_covered'::text])))
+CONSTRAINT fact_candidate_predicate_fits_the_ceiling_check CHECK ((length(predicate) <= 200)),
+CONSTRAINT fact_candidate_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'adjudicated'::text, 'not_covered'::text]))),
+CONSTRAINT fact_candidate_term_fits_the_ceiling_check CHECK (((length(subject_id) <= 800) AND (length(object) <= 800)))
 CONSTRAINT fact_fidelity_check CHECK ((fidelity = ANY (ARRAY['tentative'::text, 'proven'::text, 'deprecated'::text]))),
 CONSTRAINT fact_instruction_sha256_check CHECK ((instruction_sha256 ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT fact_model_is_named_check CHECK ((length(btrim(model)) > 0)),
-CONSTRAINT fact_one_object_check CHECK (((object_entity_id IS NULL) <> (object_literal IS NULL))),
+CONSTRAINT fact_predicate_fits_the_ceiling_check CHECK ((length(predicate) <= 200)),
 CONSTRAINT fact_premise_no_self_reference_check CHECK ((fact_id <> premise_fact_id))
 CONSTRAINT fact_source_excerpt_warrant_check CHECK (((source_excerpt IS NOT NULL) = (warrant_kind = 'source'::text))),
 CONSTRAINT fact_source_url_warrant_check CHECK (((source_url IS NOT NULL) = (warrant_kind = 'source'::text))),
@@ -214,6 +233,7 @@ CONSTRAINT fact_supersede_reason_check CHECK (((supersede_reason IS NULL) OR (su
 CONSTRAINT fact_supersede_reason_is_timed_check CHECK (((supersede_reason IS NULL) = (superseded_at IS NULL))),
 CONSTRAINT fact_supersede_source_is_timed_check CHECK (((supersede_source IS NULL) OR (superseded_at IS NOT NULL))),
 CONSTRAINT fact_supersession_is_timed_check CHECK (((superseded_by IS NULL) = (superseded_at IS NULL))),
+CONSTRAINT fact_term_fits_the_ceiling_check CHECK (((length(subject_id) <= 800) AND (length(object_literal) <= 800))),
 CONSTRAINT fact_warrant_kind_check CHECK ((warrant_kind = ANY (ARRAY['source'::text, 'premises'::text, 'observation'::text, 'stated'::text])))
 CONSTRAINT language_observation_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT language_observation_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0)))
@@ -229,6 +249,8 @@ CONSTRAINT note_revision_model_is_named_check CHECK (((model IS NULL) OR (length
 CONSTRAINT note_revision_names_its_writer_check CHECK ((length(btrim(established_by)) > 0))
 CONSTRAINT note_strikes_are_not_negative_check CHECK ((strikes >= 0)),
 CONSTRAINT note_title_fits_the_index_check CHECK (((length(btrim(title)) > 0) AND (length(title) <= 60)))
+CONSTRAINT rendered_claim_kind_check CHECK ((kind = ANY (ARRAY['fact'::text, 'lexeme'::text]))),
+CONSTRAINT rendered_claim_surface_is_named_check CHECK ((length(btrim(surface)) > 0))
 CONSTRAINT room_exchange_act_check CHECK ((act = ANY (ARRAY['insult_trade'::text, 'banter'::text, 'tease'::text, 'callback_joke'::text, 'agreement_ritual'::text, 'disagreement_ritual'::text, 'compliment_exchange'::text]))),
 CONSTRAINT room_exchange_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT room_exchange_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
@@ -243,9 +265,13 @@ CONSTRAINT tag_trace_outcome_check CHECK ((outcome = ANY (ARRAY['send_reply'::te
 CONSTRAINT turn_verdict_grounded_has_no_unsupported_check CHECK ((NOT (grounded AND (cardinality(unsupported) > 0)))),
 CONSTRAINT turn_verdict_unsupported_fits_the_list_check CHECK ((cardinality(unsupported) <= 10))
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
+CREATE INDEX idx_embedding_scope ON public.embedding USING btree (kind, scope);
+CREATE INDEX idx_embedding_v1024 ON public.embedding USING hnsw (v1024 public.vector_cosine_ops);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
+CREATE INDEX idx_fact_disputed ON public.fact USING btree (workspace) WHERE (disputed_at IS NOT NULL);
 CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
 CREATE INDEX idx_fact_standing ON public.fact USING btree (workspace, subject_id) WHERE (superseded_at IS NULL);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
@@ -262,6 +288,7 @@ CREATE INDEX idx_presence_member_ts ON public.presence_fixes USING btree (circle
 CREATE INDEX idx_presence_stays_subject_ts ON public.presence_stays USING btree (subject_id, started_ts DESC);
 CREATE INDEX idx_presence_trips_subject_started ON public.presence_trips USING btree (subject_id, started_ts DESC);
 CREATE INDEX idx_reminders_due ON public.reminders USING btree (state, due_at);
+CREATE INDEX idx_rendered_claim_window ON public.rendered_claim USING btree (conversation_id, last_rendered_at DESC);
 CREATE INDEX idx_tag_trace_conversation_created ON public.tag_trace USING btree (conversation_id, created_at);
 CREATE INDEX idx_tool_call_log_conv_ts ON public.tool_call_log USING btree (conversation_id, created_at DESC);
 CREATE INDEX idx_turn_verdict_ungrounded ON public.turn_verdict USING btree (conversation_id, created_at) WHERE (grounded = false);
@@ -270,10 +297,12 @@ CREATE TABLE public.analytics_watermark (
 CREATE TABLE public.artifacts (
 CREATE TABLE public.compute_jobs (
 CREATE TABLE public.consolidation_watermark (
+CREATE TABLE public.embedding (
 CREATE TABLE public.event_rsvps (
 CREATE TABLE public.events (
 CREATE TABLE public.exchange_observation (
 CREATE TABLE public.fact (
+CREATE TABLE public.fact_asserter (
 CREATE TABLE public.fact_candidate (
 CREATE TABLE public.fact_entity (
 CREATE TABLE public.fact_premise (
@@ -297,6 +326,7 @@ CREATE TABLE public.presence_places (
 CREATE TABLE public.presence_stays (
 CREATE TABLE public.presence_trips (
 CREATE TABLE public.reminders (
+CREATE TABLE public.rendered_claim (
 CREATE TABLE public.room_exchange (
 CREATE TABLE public.room_lexeme (
 CREATE TABLE public.room_portrait (
@@ -363,6 +393,7 @@ anchor_date integer,
 anchor_entity_ids text[] DEFAULT '{}'::text[] NOT NULL,
 announced_at timestamp with time zone NOT NULL,
 artifact_id text,
+asserted_at bigint NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
 avg_speed_kmh double precision NOT NULL,
 backend_job_id text NOT NULL,
@@ -385,6 +416,7 @@ consolidator_name text NOT NULL,
 consumed_verdict_tag text,
 context text NOT NULL,
 context_sha256 text DEFAULT ''::text NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
@@ -420,12 +452,21 @@ deriver_name text NOT NULL,
 describe_model text,
 description text DEFAULT ''::text NOT NULL,
 description text NOT NULL,
+disputed_at bigint,
+disputed_at bigint,
+disputed_by text,
+disputed_by text,
+disputed_reason text,
+disputed_reason text,
+disputed_tag_id text,
+disputed_tag_id text,
 distance_m double precision NOT NULL,
 distinct_speakers integer DEFAULT 0 NOT NULL,
 due_at timestamp with time zone NOT NULL,
 duration_mad_ms bigint,
 duration_median_ms bigint,
 dwell_ms bigint DEFAULT 0 NOT NULL,
+embedded_at bigint NOT NULL,
 ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
 entity_id uuid NOT NULL
@@ -443,8 +484,10 @@ expires_at bigint
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
 fact_id uuid NOT NULL,
+fact_id uuid NOT NULL,
 fetch_token text NOT NULL,
 fidelity text DEFAULT 'tentative'::text NOT NULL,
+fingerprint text NOT NULL,
 fired_at timestamp with time zone,
 first_seen timestamp with time zone DEFAULT now() NOT NULL,
 first_seen_at bigint NOT NULL,
@@ -496,11 +539,14 @@ is_driving integer,
 is_nora integer DEFAULT 0 NOT NULL,
 kind text DEFAULT 'reminder'::text NOT NULL,
 kind text NOT NULL,
+kind text NOT NULL,
+kind text NOT NULL,
 label text,
 last_adjudicated_at bigint,
 last_cluster_id integer DEFAULT 0 NOT NULL,
 last_fix_id integer DEFAULT 0 NOT NULL,
 last_message_id integer DEFAULT 0 NOT NULL,
+last_rendered_at bigint NOT NULL,
 last_seen timestamp with time zone DEFAULT now() NOT NULL,
 last_seen_at bigint NOT NULL,
 last_seen_at bigint NOT NULL,
@@ -508,6 +554,7 @@ last_seen_at bigint NOT NULL,
 last_seen_at bigint NOT NULL,
 last_seen_ts bigint NOT NULL
 last_seen_ts bigint NOT NULL,
+last_tag_id text NOT NULL,
 last_wake_revision_id uuid,
 lat double precision NOT NULL,
 lat double precision NOT NULL,
@@ -527,8 +574,10 @@ media_type text DEFAULT ''::text NOT NULL,
 media_type text DEFAULT ''::text NOT NULL,
 media_type text NOT NULL,
 message_id integer NOT NULL,
+message_id integer NOT NULL,
 message_ids integer[] NOT NULL,
 messages jsonb NOT NULL,
+model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text,
@@ -545,8 +594,8 @@ now_playing_locator text,
 now_playing_source text,
 now_playing_title text,
 object text NOT NULL,
-object_entity_id text,
-object_literal text,
+object_entity_id uuid,
+object_literal text NOT NULL,
 observed_at bigint NOT NULL,
 observed_at bigint NOT NULL,
 observed_in text[] DEFAULT '{}'::text[] NOT NULL
@@ -567,6 +616,7 @@ participants text[] NOT NULL,
 participants text[] NOT NULL,
 paused boolean NOT NULL,
 payload jsonb,
+person_id text NOT NULL,
 person_id text NOT NULL,
 person_id text NOT NULL,
 person_id text NOT NULL,
@@ -613,10 +663,13 @@ result_url text,
 retire_reason text,
 retired_at bigint,
 revisit_at bigint,
+row_key text NOT NULL,
+row_key text NOT NULL,
 sample_count integer DEFAULT 0 NOT NULL,
 sample_count integer DEFAULT 0 NOT NULL,
 sample_count integer NOT NULL,
 saved_place_id text,
+scope text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
@@ -666,6 +719,7 @@ supersede_reason text,
 supersede_source text,
 superseded_at bigint,
 superseded_by uuid,
+surface text NOT NULL,
 surface_form text NOT NULL,
 synthesized_at bigint NOT NULL
 tag_id text NOT NULL,
@@ -673,6 +727,7 @@ tag_id text NOT NULL,
 tag_id text NOT NULL,
 task text NOT NULL,
 task_sha256 text DEFAULT ''::text NOT NULL,
+text text NOT NULL,
 text text NOT NULL,
 title text NOT NULL,
 title text NOT NULL,
@@ -695,6 +750,7 @@ updated_ts bigint NOT NULL
 updated_ts bigint NOT NULL,
 updated_ts bigint NOT NULL,
 url text NOT NULL,
+v1024 public.vector(1024),
 valid_from bigint NOT NULL,
 valid_to bigint,
 venue_address text,
@@ -716,4 +772,5 @@ workspace text NOT NULL,
 workspace text NOT NULL,
 workspace text NOT NULL,
 workspace text NOT NULL,
+workspace text,
 written_at bigint NOT NULL,

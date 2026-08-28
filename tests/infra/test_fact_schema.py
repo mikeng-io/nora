@@ -43,7 +43,60 @@ async def test_a_fact_cannot_be_written_without_a_full_instruction_digest(pg_eng
             ))
 
 
-async def test_a_fact_cannot_have_two_objects(pg_engine):
+async def _seed_entity(conn, name: str = "House House") -> str:
+    return (await conn.execute(sa.text(
+        "insert into fact_entity (id, workspace, canonical_name, created_at) "  # noqa: S608 - fixed test literals, no external input
+        f"values (gen_random_uuid(), 'nora', '{name}', 1) returning id::text"
+    ))).scalar_one()
+
+
+async def test_a_resolved_fact_carries_both_an_entity_id_and_the_literal(pg_engine):
+    """Migration 0039, reversing `fact_one_object_check`. The old CHECK forced
+    promotion to DESTROY the surface string the room used; this asserts the
+    state that was previously illegal and is now the whole point — the words
+    AND the entity they resolve to, on one row."""
+    async with pg_engine.begin() as conn:
+        entity_id = await _seed_entity(conn)
+        await conn.execute(sa.text(
+            "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+            "object_entity_id, object_literal, source_url, source_excerpt, "
+            "valid_from, created_at, instruction_sha256, model, "
+            "established_by) values "
+            f"(gen_random_uuid(), 'nora', 'e1', 'made_by', '{entity_id}', "
+            f"'house house', 'https://x.test/a', 'x', 1, 1, '{'a' * 64}', "
+            "'gpt', 'tick-1')"
+        ))
+        # Positive control: the row is really there, with both halves intact.
+        row = (await conn.execute(sa.text(
+            "select object_entity_id::text, object_literal from fact "
+            "where predicate = 'made_by'"
+        ))).one()
+        assert row[0] == entity_id
+        assert row[1] == "house house"
+
+
+async def test_a_fact_with_no_literal_object_is_refused(pg_engine):
+    """`object_literal` is NOT NULL as of 0039. An entity id alone is the row
+    shape that broke the negative cache — dedup compares `object_literal`,
+    and `NULL = 'x'` is NULL, so the claim was re-adjudicated every tick
+    forever."""
+    async with pg_engine.begin() as conn:
+        entity_id = await _seed_entity(conn)
+        with pytest.raises(sa.exc.IntegrityError):
+            await conn.execute(sa.text(
+                "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
+                "object_entity_id, source_url, source_excerpt, valid_from, "
+                "created_at, instruction_sha256, model, established_by) values "
+                f"(gen_random_uuid(), 'nora', 'e1', 'has', '{entity_id}', "
+                f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1')"
+            ))
+
+
+async def test_an_object_entity_id_naming_no_entity_is_refused(pg_engine):
+    """The defect 0039 closes: `object_entity_id` was `text` against a `uuid`
+    PK with NO foreign key, so it would accept any string and tell nobody —
+    a second free-text column wearing an id's name. Now the database refuses
+    a pointer to nothing."""
     async with pg_engine.begin() as conn:
         with pytest.raises(sa.exc.IntegrityError):
             await conn.execute(sa.text(
@@ -51,22 +104,30 @@ async def test_a_fact_cannot_have_two_objects(pg_engine):
                 "object_entity_id, object_literal, source_url, source_excerpt, "
                 "valid_from, created_at, instruction_sha256, model, "
                 "established_by) values "
-                "(gen_random_uuid(), 'nora', 'e1', 'has', 'e2', 'also', "
+                "(gen_random_uuid(), 'nora', 'e1', 'has', "
+                "'0191f2c4-0000-7000-8000-0000000000ff', 'bt', "
                 f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1')"
             ))
 
 
-async def test_a_fact_needs_at_least_one_object(pg_engine):
-    """The other half of `fact_one_object_check` — `<>` refuses two objects
-    AND zero, and only the two-object side is covered by the brief's own
-    test. A fact with neither an entity nor a literal names nothing."""
+async def test_an_object_entity_id_that_is_not_a_uuid_is_refused(pg_engine):
+    """The column is `uuid`, not `text`. Before 0039 `'House House'` was a
+    legal value here."""
     async with pg_engine.begin() as conn:
-        with pytest.raises(sa.exc.IntegrityError):
+        # `DBAPIError` PLUS the message, because the class alone cannot carry
+        # this. SQLAlchemy does not map asyncpg's
+        # `InvalidTextRepresentationError` onto `DataError`, so the bare base
+        # class is genuinely all that is raised — and that base class also
+        # covers every connection failure, which is how the first version
+        # (a redundant `(DBAPIError, IntegrityError)` tuple) would have passed
+        # against a database that was simply unreachable.
+        with pytest.raises(sa.exc.DBAPIError, match="invalid input syntax"):
             await conn.execute(sa.text(
                 "insert into fact (id, workspace, subject_id, predicate, "  # noqa: S608 - fixed test literals, no external input
-                "source_url, source_excerpt, valid_from, created_at, "
-                "instruction_sha256, model, established_by) values "
-                "(gen_random_uuid(), 'nora', 'e1', 'has', "
+                "object_entity_id, object_literal, source_url, source_excerpt, "
+                "valid_from, created_at, instruction_sha256, model, "
+                "established_by) values "
+                "(gen_random_uuid(), 'nora', 'e1', 'has', 'House House', 'bt', "
                 f"'https://x.test/a', 'x', 1, 1, '{'a' * 64}', 'gpt', 'tick-1')"
             ))
 

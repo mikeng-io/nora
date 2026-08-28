@@ -839,12 +839,20 @@ async def test_both_gates_on_builds_the_extractor_and_the_adjudicator(cfg):
     )
 
     names = [a.name for a in deps.dream_adaptors]
-    assert names == ["fact-candidates", "fact-adjudication"]
-    # The two halves are keyed DIFFERENTLY, which is the whole reason
-    # `dream_loop` had to learn to schedule per adaptor: the extractor reads one
-    # room's messages, the adjudicator settles claims for a workspace.
-    assert [a.key_kind for a in deps.dream_adaptors] == ["scope", "workspace"]
-    assert [a.uses_watermark for a in deps.dream_adaptors] == [True, False]
+    assert names == [
+        "fact-candidates", "fact-adjudication", "fact-entity-resolution",
+    ]
+    # The halves are keyed DIFFERENTLY, which is the whole reason `dream_loop`
+    # had to learn to schedule per adaptor: the extractor reads one room's
+    # messages, the adjudicator settles claims for a workspace, and pass 6
+    # reads the entity table for one — workspace-keyed and watermark-free for
+    # the adjudicator's reason, since its input is a table and not a batch.
+    assert [a.key_kind for a in deps.dream_adaptors] == [
+        "scope", "workspace", "workspace",
+    ]
+    assert [a.uses_watermark for a in deps.dream_adaptors] == [
+        True, False, False,
+    ]
 
 
 async def test_the_revisitor_needs_both_the_dreamer_and_the_notes_gate(cfg):
@@ -905,7 +913,8 @@ async def test_the_revisitor_is_additive_to_the_fact_tiers_adaptors(cfg):
     }))
 
     assert [a.name for a in deps.dream_adaptors] == [
-        "fact-candidates", "fact-adjudication", "note-revisit",
+        "fact-candidates", "fact-adjudication", "fact-entity-resolution",
+        "note-revisit",
     ]
 
 

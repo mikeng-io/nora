@@ -969,12 +969,19 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_facts_superseded_total",
         "Facts stamped superseded_at by the one verb that may do so.",
     ),
-    # Candidate selection is a COST decision, so what it dropped is the thing
-    # an operator needs to see; a silent drop reads as "nothing was there".
+    # HELP TEXT rewritten 2026-08-28, name unchanged (names are append-only;
+    # help text is not). It was written for a selection vocabulary —
+    # already_known / noise / deferred — that describes the standing pending
+    # QUEUE rather than any event, so nothing could increment it and nothing
+    # did: declared at the tier's first commit and emitted nowhere until the
+    # correction loop landed. The queue's shape is a gauge's job
+    # (`nora_fact_entity_unresolved`); this counts the settle, which is the
+    # tier's one per-candidate event, and its vocabulary is
+    # `SqlFactCandidateStore`'s own `TerminalStatus`.
     _CounterSpec(
         "nora_fact_candidates_total",
-        "Fact candidates by what selection did with them: adjudicated, "
-        "already_known, noise, deferred.",
+        "Fact candidates retired by adjudication, by the terminal status they "
+        "were retired into: adjudicated, not_covered.",
         ("outcome",),
     ),
     # HELP TEXT widened 2026-08-21, name unchanged (names are append-only;
@@ -992,13 +999,191 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "ceiling), or a verdict dropped before it could be written "
         "(malformed, invariant, unknown_supersedes, id_mismatch, "
         "supersede_failed, supersede_missed, unmatched_candidate, "
-        "retire_failed). A silent drop reads as 'we checked everything'.",
+        "retire_failed, promotion_failed). A silent drop reads as 'we checked everything'.",
         ("reason",),
     ),
+    # Pass 3, promotion (25 §4). Four series, and the last two are why the
+    # first two can be interpreted: `created` and `resolved` alone cannot tell
+    # a pass that promoted nothing because the room is sparse from one that
+    # promoted nothing because a veto is too wide, and 21 §10 names exactly
+    # that reading — "it is wrong if a substantial share of objects that
+    # should be nodes never reach degree 2" — as what would prove the whole
+    # substrate contract wrong.
     _CounterSpec(
-        "nora_fact_entity_unresolved_total",
-        "Candidate subjects that resolved to no fact_entity — the alias "
-        "problem, observed rather than assumed.",
+        "nora_fact_entities_created_total",
+        "Entities minted by promotion. An entity is never created ahead of "
+        "use: the substrate grows only where a fact actually asserted a "
+        "relation.",
+    ),
+    _CounterSpec(
+        "nora_fact_objects_resolved_total",
+        "Standing facts whose object gained an entity id. The literal is "
+        "untouched — resolution points at a thing, it does not rewrite what "
+        "the room said.",
+    ),
+    _CounterSpec(
+        "nora_fact_person_claim_refused_total",
+        "Claims refused at the sink because their subject IS somebody on the "
+        "roster or is over an operating cap, by `matched`: person_id, "
+        "display_name (their name, first "
+        "or last name, or an operator-authored alias), or over_cap. Two "
+        "roster series because an "
+        "id-only match leaves the whole class reachable through the name "
+        "everybody actually uses — and because if name-matching over-refuses, "
+        "this is how anyone finds out. Measured at five person-claims in six "
+        "edges with the roster supplied, so the prompt's exclusion is "
+        "checkable and NOT enforced — refused loudly here, never accepted and "
+        "forgotten.",
+        ("matched",),
+    ),
+    # Pass 6, entity-resolution adjudication (21 §5). `split` is the EXPECTED
+    # answer and is counted for that reason: a pass that decided "no" forty
+    # times and a pass that never ran are otherwise the same reading, and
+    # 21 §5's default-to-split means the negative case is the design working
+    # rather than the design idle.
+    _CounterSpec(
+        "nora_fact_resolutions_total",
+        "Entity-resolution verdicts by outcome: merged (a name joined an "
+        "existing entity as an alias), split (no match, or the model was "
+        "unsure — the expected answer), unknown_handle (it named something "
+        "this run never rendered), malformed.",
+        ("status",),
+    ),
+    _CounterSpec(
+        "nora_fact_resolution_offered_total",
+        "Unresolved names put in front of the model. The positive control for "
+        "the series above: every one of them is compatible with a pass that "
+        "was never asked anything.",
+    ),
+    _CounterSpec(
+        "nora_fact_aliases_attached_total",
+        "Names recorded as another spelling of an existing entity. Pass 6's "
+        "ONLY write — it never merges two entity rows, because a split is "
+        "provisional and a merge has already absorbed both sets of edges.",
+    ),
+    # R-27's three states on the attribution join (21 §7.2), and all three are
+    # reachable: `ok` wrote asserter rows, `nothing_found` found the candidate
+    # and its messages but none of them names a person (an unmapped sender),
+    # `unavailable` found no candidate to join through — or found one whose
+    # messages have been PRUNED, which is «the evidence is gone» and not
+    # «nobody said it». The middle and the last are the pair that must never
+    # collapse: one is a fact about the room and the other is a wiring gap.
+    # The render ledger (31 §3), and R-27 on both verbs. `record` failing is
+    # not a lost reply — it is counted and the reply goes out — but the NEXT
+    # turn's targeting then has to report `unavailable` rather than an empty
+    # set, and a silent failure here would make that impossible to explain.
+    #
+    # `nothing_found` on the read is «she rendered nothing about this» and
+    # licenses ruling a dispute out; `unavailable` is «I could not check what
+    # she rendered» and licenses nothing. Collapsing them would make
+    # recognition report that nobody is talking about anything she holds
+    # whenever the database hiccuped.
+    # ---- the correction loop, step 3 (31 §8) ------------------------------
+    #
+    # Step 9 of the loop is "a counter moved at every step above", and the
+    # bundle's entire forensic case is that this loop has NEVER CLOSED ONCE in
+    # production. A counter at each step is how anyone knows it did.
+    _CounterSpec(
+        "nora_dispute_targets_total",
+        "Claims put in scope by a message, by scope (direct/latent), how they "
+        "were reached (surface/quote/quote+surface) and R-27 status. **The "
+        "positive control**: every other series here is compatible with a "
+        "recogniser that never ran, and `unavailable` is what an unreadable "
+        "render ledger reports rather than an empty set.",
+        ("scope", "via", "status"),
+    ),
+    _CounterSpec(
+        "nora_dispute_classify_total",
+        "The dispute predicate's own call: ok (it found a contradiction), "
+        "nothing_found (it decided there was none — the expected answer), "
+        "unavailable (it could not be reached, or did not answer the "
+        "envelope). A model that replied with prose did not decide there was "
+        "no dispute; it failed to answer.",
+        ("status",),
+    ),
+    _CounterSpec(
+        "nora_dispute_unacted_total",
+        "Targets in scope and nothing disputed, by cause: declined (the "
+        "classifier ran and said no) or not_reached (it never ran). **The "
+        "label is what makes this readable** — without it the series reads "
+        "identically for a working recogniser on a quiet room and a broken "
+        "one, which is 02's «she recognises and does not act» made invisible "
+        "again by the instrument built to expose it.",
+        ("cause",),
+    ),
+    _CounterSpec(
+        "nora_dispute_recognised_total",
+        "Disputes raised, by tier and by which channel raised it: model (the "
+        "dedicated classifier) or deterministic (RULE-F, which fires only when "
+        "the classifier could not).",
+        ("tier", "channel"),
+    ),
+    _CounterSpec(
+        "nora_dispute_marked_total",
+        "What marking a row did, by tier and CAS outcome: ok, "
+        "already_disputed, already_superseded, capped, unknown. CAS outcomes "
+        "only — R-27's states live on `nora_dispute_targets_total`, and mixing "
+        "the two vocabularies on one label is what the instrument rules "
+        "forbid.",
+        ("tier", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_dispute_handle_refused_total",
+        "The model named something that was not a handle it was shown. A "
+        "recogniser that accepted one would be marking a row nobody put in "
+        "front of it.",
+    ),
+    _CounterSpec(
+        "nora_dispute_fanout_unresolved_total",
+        "Disputes fanned out by SURFACE because no entity id existed. 31 §6 "
+        "wants per-entity fan-out across both tiers; fact.subject_id has no "
+        "entity pointer and room_lexeme has no link to fact_entity, so this is "
+        "the only path today — and a tier that fans out correctly and one that "
+        "cannot see its siblings look identical without this.",
+    ),
+    _CounterSpec(
+        "nora_dispute_degraded_total",
+        "Recognition declined to MARK because no adjudicator has run "
+        "recently. Clearing a dispute happens only inside adjudication, so "
+        "without a live one marking would accumulate and never resolve — the "
+        "loop would be a ratchet rather than a loop.",
+    ),
+    # Pass 4, embedding (25 §5). R-27 on the service, and the middle state is a
+    # real one: an EMPTY batch is `nothing_found`. A short or mis-shaped batch
+    # is `unavailable` rather than a partial success — writing three vectors
+    # for four triples leaves the fourth looking un-embeddable forever, which
+    # is a `nothing_found` wearing a shape nobody would check.
+    _CounterSpec(
+        "nora_fact_embed_total",
+        "Embedding batches by outcome: ok, nothing_found (nothing to embed), "
+        "unavailable (the local model could not be reached, or returned a "
+        "batch that did not match its input).",
+        ("status",),
+    ),
+    _CounterSpec(
+        "nora_rendered_claim_total",
+        "The render ledger by verb and outcome. verb=record: ok (rows "
+        "written), nothing_found (the turn rendered nothing), unavailable (the "
+        "write failed, so the next turn cannot tell an empty ledger from an "
+        "unwritten one). verb=read: the same three, where nothing_found means "
+        "she rendered nothing about this conversation in the window.",
+        ("verb", "status"),
+    ),
+    _CounterSpec(
+        "nora_rendered_claim_pruned_total",
+        "Ledger rows dropped past the recognition window. This is a working "
+        "set, not an audit trail — the audit trail is the Langfuse trace and "
+        "the tag_trace row — and a working set that is never pruned is a "
+        "table nobody decided the size of.",
+    ),
+    _CounterSpec(
+        "nora_fact_asserter_total",
+        "Facts by the outcome of the message -> sender -> person join that "
+        "records WHO claimed them: ok (asserters written), nothing_found (the "
+        "claim's messages resolved to no person), unavailable (no candidate "
+        "to join through). Without this, a fact nobody can attribute and a "
+        "fact nobody has tried to attribute look identical.",
+        ("status",),
     ),
     # ---- the Dreamer runtime (substrate plan Task 2.7) --------------------
     #
@@ -1643,6 +1828,51 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "0 means the pass ran and the notebook was empty; ABSENT means the "
         "pass has not run for that workspace at all, which is the distinction "
         "that says whether the revisitor is wired.",
+        ("workspace",),
+    ),
+    # Pass 3's two LEVELS, and `nora_note_revisit_standing` immediately above
+    # is the precedent for their shape.
+    #
+    # **They were counters and that was wrong.** `promote` recomputes both from
+    # the whole standing table on every adjudication tick that wrote a fact, so
+    # adding them to a monotonic counter measured `ticks times rows` while
+    # `nora_fact_entities_created_total` measured real events — and
+    # `21-substrate-contract.md` §10's stated falsification test for the WHOLE
+    # substrate contract is the ratio between them: "it is wrong if a
+    # substantial share of objects that should be nodes never reach degree 2".
+    # That ratio was uninterpretable. A census is a level, so it is a gauge.
+    #
+    # Per workspace, because degree is counted per workspace and one unlabelled
+    # series would be last-writer-wins across them.
+    _GaugeSpec(
+        "nora_fact_objects_below_degree",
+        "Object literals that survived the veto and appear in no second edge "
+        "position, as of a workspace's last promotion pass. A node of degree "
+        "one is a string with extra steps. Against "
+        "`nora_fact_entities_created_total` this is the reading that says "
+        "whether the room is too sparse for promotion to fire at all — 21 "
+        "§10's own test for what would prove the substrate contract wrong.",
+        ("workspace",),
+    ),
+    _GaugeSpec(
+        "nora_fact_objects_vetoed",
+        "Object literals refused entity-hood by the veto as of a workspace's "
+        "last promotion pass: a date, quantity, price, duration, time of day, "
+        "leading negation, URL, or a string long enough to be a sentence "
+        "rather than a thing. Climbing against a flat below-degree says the "
+        "veto is the binding constraint, not sparsity.",
+        ("workspace",),
+    ),
+    # The alias problem, observed rather than assumed — and the first reading
+    # this tier has ever had of it. Also a level rather than a counter: it is a
+    # census of the pending queue taken on every read, and adding a census to a
+    # counter measures how often the queue was read.
+    _GaugeSpec(
+        "nora_fact_entity_unresolved",
+        "Pending candidate subjects that resolve to no fact_entity, as of a "
+        "workspace's last read. 0 means the read ran and everything resolved; "
+        "ABSENT means the tier has not read that workspace at all, which is "
+        "the distinction that says whether it is wired.",
         ("workspace",),
     ),
 )

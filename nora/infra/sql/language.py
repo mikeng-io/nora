@@ -103,6 +103,7 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.facts import normalise_name
 from nora.domain.language_scoring import score, state_for
 from nora.domain.models import LexemeCandidate, LexemeExample, RoomLanguage, RoomLexeme
 from nora.infra.sql.schema import (
@@ -432,6 +433,61 @@ class SqlLanguageStore:
             )
             await conn.execute(upsert_stmt)
 
+    async def mark_disputed(
+        self, *, scope_id: str, surface: str, person_id: str | None,
+        reason: str | None, tag_id: str, now_ms: int,
+    ) -> int:
+        """The lexeme half of the correction loop's fan-out (31 §6). Returns
+        rows marked.
+
+        **Every SENSE of the form, not one row.** `room_lexeme`'s key includes
+        `sense`, deliberately — a word acquiring a second meaning gets a second
+        row rather than overwriting the first — so a member saying "no, big
+        walk is a video game" is disputing the FORM, and marking one sense
+        would leave its sibling standing and unmarked. That sibling is the one
+        that made two contradictory glosses coexist in the first place.
+
+        **Matched on the normalised form**, `nora.domain.facts.normalise_name`,
+        the same one the fact tier and recognition use — a `LIKE` or a `lower()`
+        here would be a second definition of identity and the two would drift
+        on the first CJK case.
+
+        Already-disputed rows are left alone: the first asserter is the one
+        that holds, matching the fact tier, and a second dispute is recorded on
+        the candidate it proposes.
+        """
+        async with self._engine.begin() as conn:
+            rows = (await conn.execute(
+                sa.select(ROOM_LEXEME.c.canonical_form, ROOM_LEXEME.c.sense)
+                .where(
+                    ROOM_LEXEME.c.scope_id == scope_id,
+                    ROOM_LEXEME.c.disputed_at.is_(None),
+                )
+            )).all()
+            target = normalise_name(surface)
+            keys = [
+                (form, sense) for form, sense in rows
+                if normalise_name(form) == target
+            ]
+            if not keys:
+                return 0
+            marked = 0
+            for form, sense in keys:
+                marked += (await conn.execute(
+                    sa.update(ROOM_LEXEME)
+                    .where(
+                        ROOM_LEXEME.c.scope_id == scope_id,
+                        ROOM_LEXEME.c.canonical_form == form,
+                        ROOM_LEXEME.c.sense == sense,
+                        ROOM_LEXEME.c.disputed_at.is_(None),
+                    )
+                    .values(
+                        disputed_at=now_ms, disputed_by=person_id,
+                        disputed_reason=reason, disputed_tag_id=tag_id,
+                    )
+                )).rowcount
+        return marked
+
     async def room_language(self, *, scope_id: str, limit: int) -> RoomLanguage:
         """Satisfies `RoomLanguageReader.room_language`: NEVER raises. `except
         Exception` is deliberately broad — not `except ConnectionError` the
@@ -467,6 +523,9 @@ class SqlLanguageStore:
                     first_seen_ms=r.first_seen_at,
                     last_seen_ms=r.last_seen_at,
                     state=r.state,
+                    disputed_at=r.disputed_at,
+                    disputed_by=r.disputed_by,
+                    disputed_reason=r.disputed_reason,
                     examples=tuple(
                         LexemeExample(
                             message_id=e["message_id"],

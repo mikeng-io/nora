@@ -15,7 +15,7 @@ easy to get quietly wrong:
   the tier is asymmetric on purpose);
 - upsert on the triple `(workspace, subject_id, predicate, object)`, merging
   `observed_in` — the turns the claim was asserted in, from
-  `CandidateClaim.message_id` — without duplicating, and leaving
+  `CandidateClaim.message_ids` — without duplicating, and leaving
   `status`/`attempts`/`first_seen_at` alone, along with the provenance trio
   (`established_by`/`instruction_sha256`/`model`, migration 0027) which names
   the run that ESTABLISHED the row and which a later sighting did not;
@@ -71,7 +71,7 @@ def fact_candidate_proposal_factory(
     # `CandidateClaim`'s own field name, and renaming it here would make the
     # factory's keyword differ from the field it fills.
     object: str | None = None,
-    message_id: int | None = None,
+    message_ids: tuple[int, ...] | None = None,
     instruction_sha256: str | None = None,
     model: str | None = None,
     established_by: str | None = None,
@@ -98,7 +98,7 @@ def fact_candidate_proposal_factory(
         subject=subject if subject is not None else f"entity-{n}",
         predicate=predicate,
         object=object if object is not None else f"value-{n}",
-        message_id=message_id if message_id is not None else n,
+        message_ids=message_ids if message_ids is not None else (n,),
     )
     return Proposal(
         payload=claim,
@@ -141,7 +141,10 @@ class InMemoryFactCandidateStore:
                 )
             claim = p.payload
             triple = (key, claim.subject, claim.predicate, claim.object)
-            seen_in = str(claim.message_id)
+            # Deduped on the first insert, matching the SQL store: the
+            # merge below promises "never duplicate" and the first write
+            # was exempt from it.
+            seen_in = tuple(dict.fromkeys(str(i) for i in claim.message_ids))
             existing = self._by_triple.get(triple)
             if existing is None:
                 self._seq += 1
@@ -158,7 +161,7 @@ class InMemoryFactCandidateStore:
                     first_seen_at=now_ms,
                     last_seen_at=now_ms,
                     occurrence_count=1,
-                    observed_in=(seen_in,),
+                    observed_in=seen_in,
                     status="pending",
                     established_by=p.established_by,
                     # The DEC-125/DEC-126 pair, from the `Proposal` — migration
@@ -173,7 +176,7 @@ class InMemoryFactCandidateStore:
                 continue
             # A re-sighting: bump, move, merge — and leave `status`,
             # `attempts` and `first_seen_at` exactly where they were.
-            merged = tuple(dict.fromkeys((*existing.observed_in, seen_in)))
+            merged = tuple(dict.fromkeys((*existing.observed_in, *seen_in)))
             self._by_triple[triple] = replace(
                 existing,
                 last_seen_at=now_ms,
@@ -288,9 +291,13 @@ class InMemoryFactCandidateStore:
         )
 
     def _contradicts_a_live_fact(self, candidate: FactCandidate) -> bool:
-        # `is distinct from` in SQL, `!=` over an Optional here: a fact whose
-        # object is an entity has `object_literal is None`, which is a
-        # different object from any literal candidate.
+        # `is distinct from` in SQL, `!=` here. Since migration 0039
+        # `object_literal` is NOT NULL on both sides, so the two agree without
+        # the NULL case that used to separate them — which is the point: the
+        # production comparison and this one broke the negative cache
+        # IDENTICALLY, so the contract suite could not have caught it. A fake
+        # that mirrors the bug faithfully is the failure CLAUDE.md's
+        # fake-answers-everything-the-same-way rule is about, one level in.
         return any(
             f.object_literal != candidate.object for f in self._live_facts(candidate)
         )
