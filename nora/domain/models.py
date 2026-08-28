@@ -438,6 +438,26 @@ class RoomLexeme:
     last_seen_ms: int
     state: str          # 'live' | 'fading' | 'stale'
     examples: tuple[LexemeExample, ...] = ()
+    #: The correction loop's mark (31 §6), and the READ SIDE of it. The
+    #: columns landed with `mark_disputed` and nothing carried them out of the
+    #: store: a member could say «no, big walk is a video game», the row was
+    #: marked, the counter reported `ok`, and the gloss kept rendering into
+    #: every tag's prefill as unqualified truth. A mark nothing reads is worse
+    #: than no mark, because the instrument says the correction landed.
+    #:
+    #: **No clearing verb, and that is not the fact tier's ratchet.**
+    #: `room_lexeme`'s key is `(scope_id, canonical_form, sense)`, so a
+    #: re-glossed word arrives as a NEW ROW rather than an update — the
+    #: corrected meaning supersedes by existing, and the disputed row stays
+    #: marked because that is what it is. `Fact` needs `clear_disputed`
+    #: because supersession there rewrites the row in place.
+    disputed_at: int | None = None
+    disputed_by: str | None = None
+    disputed_reason: str | None = None
+
+    @property
+    def is_disputed(self) -> bool:
+        return self.disputed_at is not None
 
 
 @dataclass(frozen=True)

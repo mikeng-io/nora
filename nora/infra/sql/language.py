@@ -523,6 +523,9 @@ class SqlLanguageStore:
                     first_seen_ms=r.first_seen_at,
                     last_seen_ms=r.last_seen_at,
                     state=r.state,
+                    disputed_at=r.disputed_at,
+                    disputed_by=r.disputed_by,
+                    disputed_reason=r.disputed_reason,
                     examples=tuple(
                         LexemeExample(
                             message_id=e["message_id"],

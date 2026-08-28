@@ -449,7 +449,30 @@ class SqlFactCandidateStore:
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
-        return result.rowcount
+        settled = int(result.rowcount)
+        # `nora_fact_candidates_total`'s FIRST call site. It has been declared
+        # since the tier shipped and emitted nowhere, which renders as a series
+        # that is genuinely always zero — and it is named exactly as though it
+        # answers «did the tier produce anything», so a null from it is
+        # indistinguishable from a null from a tier that never ran. That is
+        # CLAUDE.md's rule about reading an instrument before checking it can
+        # measure the thing, and this counter could not.
+        #
+        # HERE, on the settle, because this is the only per-candidate EVENT in
+        # the tier. The declaration's original vocabulary (already_known /
+        # noise / deferred) describes properties of the standing pending queue,
+        # which a counter cannot carry: incrementing it from a census counts
+        # reads x rows rather than rows, which is a bug this branch already
+        # fixed once elsewhere. The queue's shape is a GAUGE's job and
+        # `nora_fact_entity_unresolved` is how that is done here.
+        #
+        # Zero is not counted: `supersede` is idempotent by design and a
+        # re-fire over settled work legitimately affects no rows.
+        if settled and self._metrics is not None:
+            self._metrics.inc(
+                "nora_fact_candidates_total", float(settled), outcome=because,
+            )
+        return settled
 
     async def pending(
         self, *, workspace: str, limit: int,

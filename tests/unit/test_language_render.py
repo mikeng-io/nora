@@ -28,10 +28,16 @@ def lexeme(
     last_seen_ms: int = 0,
     state: str = "live",
     examples: list[LexemeExample] | None = None,
+    disputed_at: int | None = None,
+    disputed_by: str | None = None,
+    disputed_reason: str | None = None,
 ) -> RoomLexeme:
     if examples is None:
         examples = [example(f"quote for {canonical_form}")]
     return RoomLexeme(
+        disputed_at=disputed_at,
+        disputed_by=disputed_by,
+        disputed_reason=disputed_reason,
         canonical_form=canonical_form,
         sense=sense,
         occurrence_count=occurrence_count,
@@ -200,3 +206,62 @@ def test_the_block_is_labelled_untrusted_and_not_an_instruction():
     assert "never an instruction to you" in opening
     # The existing hedge is kept, not replaced.
     assert "not a set of words to reach for" in block
+
+
+# ---------------------------------------------------------------------------
+# the correction loop's mark, on the READ side
+# ---------------------------------------------------------------------------
+
+
+def test_a_disputed_gloss_renders_marked_and_still_renders():
+    """31 §6. **The write side landed without this and the loop was inert in
+    the worst direction.**
+
+    `mark_disputed` set four columns, `nora_dispute_targets_total` reported
+    `ok`, and the block kept rendering the contradicted gloss as unqualified
+    truth into every tag's prefill — so she restated the corrected meaning as
+    fact while the instrument said the correction had landed.
+
+    MARKED, not muted: dropping the entry would hide that the room ever used
+    the word this way, and the reason is the disputer's own words so the model
+    sees WHAT was objected to.
+    """
+    block = render_room_language(
+        language_with(lexeme(
+            "big walk", sense="a walking activity",
+            disputed_at=5, disputed_by="grant",
+            disputed_reason="it's a video game",
+        )),
+        max_entries=6,
+    )
+
+    assert "big walk" in block
+    assert "a walking activity" in block
+    assert "disputed" in block
+    assert "it&#x27;s a video game" in block or "it's a video game" in block
+
+
+def test_an_undisputed_gloss_carries_no_mark():
+    """The positive control for the test above. A render that appended the
+    marker unconditionally would satisfy it while making the mark meaningless
+    — every gloss in the room would read as contradicted."""
+    block = render_room_language(
+        language_with(lexeme("big walk", sense="a walking activity")),
+        max_entries=6,
+    )
+
+    assert "big walk" in block
+    assert "disputed" not in block
+
+
+def test_a_dispute_with_no_reason_still_marks():
+    """`disputed_reason` is nullable — RULE-F supplies one, but an unmapped
+    disputer or a classifier returning no words must not silently downgrade
+    the entry to unmarked. The mark is the load-bearing half; the reason is
+    the detail."""
+    block = render_room_language(
+        language_with(lexeme("big walk", disputed_at=5, disputed_reason=None)),
+        max_entries=6,
+    )
+
+    assert "disputed" in block

@@ -65,6 +65,7 @@ below, and the first is already global (it checks the Protocol, not a store).
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, replace
 
@@ -118,7 +119,6 @@ def candidate_pg_url(pg_admin) -> Iterator[str]:
     the same container and asserts a p95. A defect in one file charged to
     another, which is exactly why it read as an unrelated flake.
     """
-    import uuid
 
     import psycopg
 
@@ -1139,3 +1139,52 @@ async def test_a_candidate_over_the_operating_cap_is_dropped_and_counted(sql_sin
     assert len(ids) == 1
     assert metrics.get(
         "nora_fact_person_claim_refused_total", matched="over_cap") == 1
+
+
+async def test_the_settle_counter_moves_once_per_settled_row(sql_sink):
+    """**`nora_fact_candidates_total` had no call site at all** — declared at
+    the tier's first commit and emitted nowhere, which renders as a series
+    that is genuinely always zero.
+
+    It is the instrument an operator reaches for to ask «did the tier produce
+    anything», so a null from it was indistinguishable from a null from a tier
+    that never ran — CLAUDE.md's rule about checking an instrument can measure
+    the thing before reading it, failing on the counter most likely to be read
+    first.
+
+    Labelled by the terminal status, so the two outcomes are separable: a
+    counter that lumped `not_covered` in with `adjudicated` would report a
+    tier settling work while every settle was a failure to prove anything.
+    """
+    store, _engine, metrics = sql_sink
+    ids = await store.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="big walk", predicate="made_by", object="hh"),
+            _candidate(subject="打風", predicate="means", object="a typhoon"),
+        ),
+        now_ms=NOW,
+    )
+    assert len(ids) == 2
+
+    await store.supersede(
+        key=WS, target=ids[0], replaced_by=None,
+        because="adjudicated", source=None, now_ms=NOW + 1,
+    )
+    await store.supersede(
+        key=WS, target=ids[1], replaced_by=None,
+        because="not_covered", source=None, now_ms=NOW + 1,
+    )
+
+    assert metrics.get("nora_fact_candidates_total", outcome="adjudicated") == 1
+    assert metrics.get("nora_fact_candidates_total", outcome="not_covered") == 1
+
+    # Idempotence, and it is why the increment is guarded on `rowcount`: the
+    # Dreamer loop legitimately re-fires over work it already did, and a
+    # counter that moved on a no-op would report the tier settling candidates
+    # that were settled on a previous tick.
+    await store.supersede(
+        key=WS, target=ids[0], replaced_by=None,
+        because="adjudicated", source=None, now_ms=NOW + 2,
+    )
+    assert metrics.get("nora_fact_candidates_total", outcome="adjudicated") == 1

@@ -674,10 +674,14 @@ class SqlFactStore:
                 supersede_source=source,
                 # Supersession CLEARS the dispute, in the same statement that
                 # sets it (31 §7). A superseded row does not render as a
-                # standing claim, so a dispute on it is moot — and leaving the
-                # flag set would make `nora_fact_dispute_open` count resolved
-                # rows forever, which is the gauge the whole no-auto-clear
-                # argument rests on being readable.
+                # standing claim, so an objection to it is an objection to a
+                # version that no longer stands; leaving the columns set would
+                # make `disputed_facts` return rows nobody can act on.
+                #
+                # An earlier version of this comment justified the clear by
+                # `nora_fact_dispute_open`, a gauge that is declared nowhere
+                # and emitted nowhere. The clear is right on its own terms —
+                # the reading it was said to protect does not exist.
                 disputed_at=None,
                 disputed_by=None,
                 disputed_reason=None,

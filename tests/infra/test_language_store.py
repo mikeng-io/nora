@@ -992,3 +992,40 @@ async def test_a_second_dispute_leaves_the_first_asserter(store, record, pg_url)
         scope_id="g1", surface="big walk", person_id="vic", reason=None,
         tag_id="t2", now_ms=NOW + 1,
     ) == 0
+
+
+async def test_room_language_carries_the_dispute_out_of_the_store(store, record):
+    """**The read side of 31 §6, and it did not exist.**
+
+    `mark_disputed` wrote four columns and `room_language` selected the whole
+    row and built a `RoomLexeme` that had nowhere to put them — so the mark
+    was write-only: the correction landed in Postgres, the counter said `ok`,
+    and the prefill kept asserting the contradicted gloss. A round trip
+    through the real store is the only thing that can say otherwise; the
+    render test one layer up is satisfied by a dataclass nobody populates.
+    """
+    ids = await _seed(record, 2)
+    await store.append_observations(scope_id="g1", observations=[
+        observation(message_id=ids[0], person_id="miles",
+                    canonical_form="big walk", sense="a walk"),
+        observation(message_id=ids[1], person_id="alice",
+                    canonical_form="打風", sense="a typhoon"),
+    ])
+    await store.rescore(scope_id="g1", now_ms=NOW)
+    await store.mark_disputed(
+        scope_id="g1", surface="big walk", person_id="grant",
+        reason="it's a game", tag_id="tag-9", now_ms=NOW,
+    )
+
+    language = await store.room_language(scope_id="g1", limit=10)
+
+    by_form = {lex.canonical_form: lex for lex in language.lexemes}
+    disputed = by_form["big walk"]
+    assert disputed.is_disputed
+    assert disputed.disputed_at == NOW
+    assert disputed.disputed_by == "grant"
+    assert disputed.disputed_reason == "it's a game"
+    # The positive control, and it is the half a blanket read would fail: the
+    # OTHER lexeme in the same scope came back undisputed, so this is the row
+    # the correction named rather than every row the query returned.
+    assert not by_form["打風"].is_disputed

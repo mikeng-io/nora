@@ -638,9 +638,15 @@ class TranscriptInjection:
         like evidence. It is also collation-independent, which matters on a
         database about to be reindexed under a different libc's ordering.
 
-        `standing_subjects` is bounded by the workspace, and the cost of the
-        scan is what `nora_facts_subject_scan` reports — the RESULT here is a
-        list of subjects, and a correct list is compatible with any cost.
+        `standing_subjects` is bounded by the workspace and **the cost of this
+        scan is measured by nothing.** The sentence that stood here named
+        `nora_facts_subject_scan` as reporting it; no such metric is declared
+        or emitted anywhere, so it was prose asserting a reading nobody can
+        take — at the exact point CLAUDE.md's rule applies, since the RESULT
+        here is a list of subjects and a correct list is compatible with any
+        cost. The gap is written down rather than papered over: the bound is
+        the workspace's standing-subject count, and if that grows this is
+        where it will be felt first.
         """
         haystack = normalise_name(
             " ".join([msg.body or "", *(r.body or "" for r in transcript)])

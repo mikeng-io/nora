@@ -969,12 +969,19 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_facts_superseded_total",
         "Facts stamped superseded_at by the one verb that may do so.",
     ),
-    # Candidate selection is a COST decision, so what it dropped is the thing
-    # an operator needs to see; a silent drop reads as "nothing was there".
+    # HELP TEXT rewritten 2026-08-28, name unchanged (names are append-only;
+    # help text is not). It was written for a selection vocabulary —
+    # already_known / noise / deferred — that describes the standing pending
+    # QUEUE rather than any event, so nothing could increment it and nothing
+    # did: declared at the tier's first commit and emitted nowhere until the
+    # correction loop landed. The queue's shape is a gauge's job
+    # (`nora_fact_entity_unresolved`); this counts the settle, which is the
+    # tier's one per-candidate event, and its vocabulary is
+    # `SqlFactCandidateStore`'s own `TerminalStatus`.
     _CounterSpec(
         "nora_fact_candidates_total",
-        "Fact candidates by what selection did with them: adjudicated, "
-        "already_known, noise, deferred.",
+        "Fact candidates retired by adjudication, by the terminal status they "
+        "were retired into: adjudicated, not_covered.",
         ("outcome",),
     ),
     # HELP TEXT widened 2026-08-21, name unchanged (names are append-only;
