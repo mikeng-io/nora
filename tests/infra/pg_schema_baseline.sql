@@ -70,9 +70,9 @@ ADD CONSTRAINT fact_entity_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_entity_workspace_name_key UNIQUE (workspace, canonical_name);
 ADD CONSTRAINT fact_object_entity_id_fkey FOREIGN KEY (object_entity_id) REFERENCES public.fact_entity(id);
 ADD CONSTRAINT fact_pkey PRIMARY KEY (id);
-ADD CONSTRAINT fact_premise_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id);
+ADD CONSTRAINT fact_premise_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
 ADD CONSTRAINT fact_premise_pkey PRIMARY KEY (fact_id, premise_fact_id);
-ADD CONSTRAINT fact_premise_premise_fact_id_fkey FOREIGN KEY (premise_fact_id) REFERENCES public.fact(id);
+ADD CONSTRAINT fact_premise_premise_fact_id_fkey FOREIGN KEY (premise_fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
 ADD CONSTRAINT fact_superseded_by_fkey FOREIGN KEY (superseded_by) REFERENCES public.fact(id);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
 ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (message_id, canonical_form, sense);
@@ -210,10 +210,13 @@ CONSTRAINT exchange_observation_participants_check CHECK ((array_length(particip
 CONSTRAINT fact_asserter_person_is_named_check CHECK ((length(btrim(person_id)) > 0))
 CONSTRAINT fact_candidate_instruction_sha256_check CHECK ((instruction_sha256 ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT fact_candidate_model_is_named_check CHECK ((length(btrim(model)) > 0)),
-CONSTRAINT fact_candidate_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'adjudicated'::text, 'not_covered'::text])))
+CONSTRAINT fact_candidate_predicate_fits_the_ceiling_check CHECK ((length(predicate) <= 200)),
+CONSTRAINT fact_candidate_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'adjudicated'::text, 'not_covered'::text]))),
+CONSTRAINT fact_candidate_term_fits_the_ceiling_check CHECK (((length(subject_id) <= 800) AND (length(object) <= 800)))
 CONSTRAINT fact_fidelity_check CHECK ((fidelity = ANY (ARRAY['tentative'::text, 'proven'::text, 'deprecated'::text]))),
 CONSTRAINT fact_instruction_sha256_check CHECK ((instruction_sha256 ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT fact_model_is_named_check CHECK ((length(btrim(model)) > 0)),
+CONSTRAINT fact_predicate_fits_the_ceiling_check CHECK ((length(predicate) <= 200)),
 CONSTRAINT fact_premise_no_self_reference_check CHECK ((fact_id <> premise_fact_id))
 CONSTRAINT fact_source_excerpt_warrant_check CHECK (((source_excerpt IS NOT NULL) = (warrant_kind = 'source'::text))),
 CONSTRAINT fact_source_url_warrant_check CHECK (((source_url IS NOT NULL) = (warrant_kind = 'source'::text))),
@@ -221,6 +224,7 @@ CONSTRAINT fact_supersede_reason_check CHECK (((supersede_reason IS NULL) OR (su
 CONSTRAINT fact_supersede_reason_is_timed_check CHECK (((supersede_reason IS NULL) = (superseded_at IS NULL))),
 CONSTRAINT fact_supersede_source_is_timed_check CHECK (((supersede_source IS NULL) OR (superseded_at IS NOT NULL))),
 CONSTRAINT fact_supersession_is_timed_check CHECK (((superseded_by IS NULL) = (superseded_at IS NULL))),
+CONSTRAINT fact_term_fits_the_ceiling_check CHECK (((length(subject_id) <= 800) AND (length(object_literal) <= 800))),
 CONSTRAINT fact_warrant_kind_check CHECK ((warrant_kind = ANY (ARRAY['source'::text, 'premises'::text, 'observation'::text, 'stated'::text])))
 CONSTRAINT language_observation_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
 CONSTRAINT language_observation_model_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0)))
@@ -253,7 +257,6 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
-CREATE INDEX idx_fact_asserter_person ON public.fact_asserter USING btree (person_id);
 CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
 CREATE INDEX idx_fact_standing ON public.fact USING btree (workspace, subject_id) WHERE (superseded_at IS NULL);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);

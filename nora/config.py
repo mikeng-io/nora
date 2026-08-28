@@ -21,6 +21,12 @@ from pydantic import (
     model_validator,
 )
 
+from nora.domain.facts import (
+    DEFAULT_MAX_PREDICATE_CHARS,
+    DEFAULT_MAX_TERM_CHARS,
+    FACT_PREDICATE_CEILING_CHARS,
+    FACT_TERM_CEILING_CHARS,
+)
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -1382,6 +1388,46 @@ class FactsConfig(BaseModel):
     max_adjudications_per_tick: int = Field(default=10, ge=1)
     max_rendered_facts: int = Field(default=8, ge=1)
     retention_days: int = Field(default=180, ge=1)
+    # The OPERATING caps on the tier's model-authored strings (25 §9.1). Both
+    # columns were uncapped, which is the note-body defect on a JOIN KEY:
+    # `fact_candidate_triple_key` is `(workspace, subject_id, predicate,
+    # object)` and the adjudicator maps a verdict back to its candidate by that
+    # triple, so an unbounded subject is an unbounded index entry on the one
+    # column every read path uses.
+    #
+    # 200 for a term because the promotion veto already refuses anything over
+    # 64 as "a sentence, not a thing" — 200 leaves room for a descriptive
+    # object while keeping the index key small, and anything approaching it is
+    # a claim the extractor should have split.
+    #
+    # These are ENFORCED AT EVERY WRITE, not merely validated here: 30 §5's
+    # correction is that a scheme which only refuses a config above its ceiling
+    # leaves oversized rows satisfying the CHECK while defeating the prompt
+    # budget the cap exists to protect.
+    max_term_chars: int = Field(default=DEFAULT_MAX_TERM_CHARS, ge=1)
+    max_predicate_chars: int = Field(default=DEFAULT_MAX_PREDICATE_CHARS, ge=1)
+
+    @model_validator(mode="after")
+    def _caps_stay_under_the_database_ceilings(self) -> FactsConfig:
+        """`StandingConfig`'s validator, one tier over and for the same reason:
+        a ceiling is DDL and cannot be raised from config, so a value above it
+        would be refused by Postgres at write time — which is a crash in a
+        background tick nobody is watching rather than a message at startup."""
+        for name, value, ceiling, check in (
+            ("max_term_chars", self.max_term_chars,
+             FACT_TERM_CEILING_CHARS, "fact_term_fits_the_ceiling_check"),
+            ("max_predicate_chars", self.max_predicate_chars,
+             FACT_PREDICATE_CEILING_CHARS,
+             "fact_predicate_fits_the_ceiling_check"),
+        ):
+            if value > ceiling:
+                raise ValueError(
+                    f"[facts] {name} = {value} is above the database ceiling "
+                    f"of {ceiling} ({check}). The ceiling is DDL and cannot be "
+                    f"raised from config; every write above it would be "
+                    f"refused by Postgres."
+                )
+        return self
 
 
 class StandingConfig(BaseModel):

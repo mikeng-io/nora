@@ -1,9 +1,9 @@
 """`SqlFactStore` — the fact tier's `DreamSink` + `FactReader`, over SQLAlchemy
 Core. The tier's first store (docs/superpowers/specs/2026-08-20-fact-tier-design.md);
-still no writer above it (`nora.dreamer` has no fact adaptor yet), so this
-class exists to be exercised by `tests/contract/test_dream_sink_contract.py`
-and `tests/infra/test_fact_store.py` today, and wired into a real adaptor
-later without changing shape.
+`nora.language.fact_adaptor` is the writer above it — both phases, built and
+wired. What keeps the tier dark in production is `[facts] enabled = false`,
+not a missing adaptor; this header said "no writer yet" long after one
+existed.
 
 Three behaviours belong to THIS store, not to `DreamSink` — the port stays
 general, and a store is where the type and the cardinality are known again
@@ -80,7 +80,7 @@ from nora.domain.facts import (
     FactVerdict,
 )
 from nora.domain.ports import Proposal
-from nora.infra.sql.schema import FACT, FACT_ASSERTER, FACT_CANDIDATE
+from nora.infra.sql.schema import FACT, FACT_ASSERTER
 
 log = logging.getLogger(__name__)
 
@@ -99,12 +99,73 @@ def _row_to_fact(r: Row[Any]) -> Fact:
     )
 
 
+async def oversized_terms(
+    engine: AsyncEngine, *, max_term_chars: int, max_predicate_chars: int,
+) -> tuple[str, ...]:
+    """Rows already stored that exceed the CURRENT operating caps, described
+    one per line — empty when there are none.
+
+    **This exists because refusing a config above its ceiling is not enough**
+    (`30-review-response.md` §5). Lowering `[facts] max_term_chars` below rows
+    that already exist leaves them satisfying the database CHECK — which is the
+    ceiling, not the knob — while quietly defeating the prompt budget the cap
+    was lowered to protect. The tier would keep rendering exactly the oversized
+    rows the operator just said were too big, and nothing would say so.
+
+    So the refusal is at STARTUP and it NAMES the offending rows, because
+    "lower the number and see what happens" is not a thing an operator can do
+    to a background tier nobody is watching. Truncating them instead was
+    considered and refused: silently shortening somebody's recorded claim to
+    satisfy a knob is a worse outcome than not starting.
+
+    Reads both tables, because a candidate becomes a fact.
+    """
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.text(
+                "select 'fact' as t, id::text as i, "
+                "  greatest(length(subject_id), length(object_literal)) as n, "
+                "  'term' as w "
+                "from fact "
+                "where length(subject_id) > :term or length(object_literal) > :term "
+                "union all "
+                "select 'fact', id::text, length(predicate), 'predicate' "
+                "from fact where length(predicate) > :pred "
+                "union all "
+                "select 'fact_candidate', id::text, "
+                "  greatest(length(subject_id), length(object)), 'term' "
+                "from fact_candidate "
+                "where length(subject_id) > :term or length(object) > :term "
+                "union all "
+                "select 'fact_candidate', id::text, length(predicate), 'predicate' "
+                "from fact_candidate where length(predicate) > :pred "
+                "order by 1, 2"
+            ),
+            {"term": max_term_chars, "pred": max_predicate_chars},
+        )).all()
+    # Positional, not by name: `Row.t` collides with SQLAlchemy's own tuple
+    # accessor and silently returns the whole row, which is how the first
+    # version of this produced `('fact', '<uuid>', 300, 'term') <uuid>: ...`
+    # and still satisfied a substring assertion.
+    return tuple(
+        f"{table} {row_id}: {which} is {n} characters"
+        for table, row_id, n, which in rows
+    )
+
+
 class SqlFactStore:
-    """`__init__(self, engine: AsyncEngine)` — and nothing else. No config, no
-    clock, no metrics. `now_ms` arrives on `propose`/`supersede`, not on this
-    constructor: a contract-suite fixture in another session can build this
-    class from a bare `AsyncEngine` alone and must never have to guess what
-    else it needs.
+    """`SqlFactStore(engine)` — a bare `AsyncEngine` is still enough. No
+    config, no clock; `now_ms` arrives on `propose`/`supersede`, not on this
+    constructor, so a contract-suite fixture in another session can build this
+    class without guessing what else it needs.
+
+    **`metrics` is the one addition, and it is optional.** The attribution join
+    (§7) has three states that must be told apart, and a store that could not
+    count them would leave «nobody claimed this» and «I could not check»
+    indistinguishable — the exact R-27 inversion the join exists to avoid. It
+    is INJECTED and never imported (`nora.infra` sits below `nora.obs`), and
+    optional so the promise above survives; `tests/infra/test_fact_store.py`
+    passes a real `Metrics` wherever it asserts on those states.
     """
 
     def __init__(self, engine: AsyncEngine, *, metrics: Any = None) -> None:
@@ -137,68 +198,91 @@ class SqlFactStore:
             self._metrics.inc("nora_fact_asserter_total", status=status)
 
     async def _attribute(
-        self, conn: Any, *, fact_id: str, workspace: str,
-        verdict: FactVerdict, now_ms: int,
-    ) -> None:
+        self, conn: Any, *, fact_id: str, candidate_id: str | None,
+        now_ms: int,
+    ) -> AsserterJoinStatus:
         """`message_id -> sender_id -> person_id`, in the SAME transaction as
         the fact write (`30-review-response.md` §4: fact write + candidate
         retirement + provenance rows are one boundary).
 
-        The join runs through the CANDIDATE, because that is the only row that
-        knows which messages the claim came from — `observed_in`. A verdict
-        carries the triple and nothing else, and the triple is exactly how
-        `_retire_candidates` maps a verdict back to its candidate, so this uses
-        the same key rather than inventing a second one.
+        **The join runs through the candidate BY ID**, not by re-deriving it
+        from the verdict's triple. The candidate is the only row that knows
+        which messages the claim came from (`observed_in`), and the adaptor is
+        the only thing that knows WHICH candidate a verdict settled — it holds
+        `_Shown.candidate_ids`, keyed on what this run actually put in front of
+        the model. Matching on the triple here instead was wrong in both
+        directions: the model rewording a claim by one character (which the
+        adjudicator documents as expected, logs and counts) made the join miss
+        and report a wiring gap, and a triple match against the whole table
+        could hand a settled `not_covered` candidate's asserters to an
+        unrelated later fact.
 
-        **`m.person_id is not null` is a filter, not a failure.** An unmapped
-        sender has no `person_id` at the moment of ingest, by design, and a
-        claim asserted only by unmapped senders is `nothing_found` — a real
-        finding about the room. It is NOT `unavailable`, which is reserved for
-        «there was no candidate to join through at all».
+        **Three states, and the middle one is the easiest to get wrong.**
 
-        **The `~ '^[0-9]+$'` guard is not defensive noise.** `observed_in` is
-        `text[]`; every writer in this repo puts `str(int)` in it, but a cast
-        that raises would abort the whole transaction and lose the FACT, not
-        just its attribution. A row that cannot be parsed contributes nothing
-        and is counted through the status rather than taking the write down.
+        - `ok` — asserter rows written.
+        - `nothing_found` — the messages are THERE and none of them names a
+          person. That is an unmapped sender, and it is a real finding about
+          the room (`nora_unmapped_senders_total` is the same case one layer
+          up).
+        - `unavailable` — no candidate to join through, or the candidate's
+          messages are GONE. `AuditStore.prune_all` deletes messages by
+          conversation on a schedule while `observed_in` survives it, so a
+          pruned conversation leaves a candidate whose evidence no longer
+          exists. Reporting that as «nobody claimed this» is exactly R-27's
+          forbidden inversion, and this module's own help text asserted it
+          before the distinction was measured.
+
+        **Two guards keep an attribution problem from taking the WRITE down**,
+        because the fact is the thing that matters and this runs inside its
+        transaction:
+
+        - `::bigint`, not `::int`. `messages.id` is INT4 and promotes cleanly,
+          but `observed_in` holds model-derived digits of unbounded length —
+          Python ints have no width — so `'99999999999'::int` raises «out of
+          range» and rolls the fact back with it. The `~ '^[0-9]+$'` shape
+          guard does not help: it matches any length.
+        - `length(btrim(m.person_id)) > 0`. `messages.person_id` has no
+          non-blank CHECK and `fact_asserter.person_id` does, so a blank one
+          would raise a CheckViolation and lose the fact.
         """
-        inserted = (await conn.execute(
+        if candidate_id is None:
+            return "unavailable"
+        try:
+            UUID(candidate_id)
+        except ValueError:
+            return "unavailable"
+        resolvable, named = (await conn.execute(
+            sa.text(
+                "select count(*), "
+                "  count(*) filter (where length(btrim(m.person_id)) > 0) "
+                "from fact_candidate c "
+                "cross join lateral unnest(c.observed_in) as oi(mid) "
+                "join messages m on m.id = oi.mid::bigint "
+                "where c.id = :cid and oi.mid ~ '^[0-9]+$'"
+            ),
+            {"cid": candidate_id},
+        )).one()
+        if not resolvable:
+            # Either the candidate is gone, or every message it named has been
+            # pruned. Both are «I could not check», never «nobody».
+            return "unavailable"
+        if not named:
+            return "nothing_found"
+        await conn.execute(
             sa.text(
                 "insert into fact_asserter "
                 "(fact_id, person_id, message_id, asserted_at) "
-                "select :fid, m.person_id, m.id, :now "
+                "select :fid, btrim(m.person_id), m.id, :now "
                 "from fact_candidate c "
                 "cross join lateral unnest(c.observed_in) as oi(mid) "
-                "join messages m on m.id = oi.mid::int "
-                "where c.workspace = :ws and c.subject_id = :s "
-                "  and c.predicate = :p and c.object = :o "
-                "  and oi.mid ~ '^[0-9]+$' "
-                "  and m.person_id is not null "
+                "join messages m on m.id = oi.mid::bigint "
+                "where c.id = :cid and oi.mid ~ '^[0-9]+$' "
+                "  and length(btrim(m.person_id)) > 0 "
                 "on conflict do nothing"
             ),
-            {
-                "fid": fact_id, "now": now_ms, "ws": workspace,
-                "s": verdict.subject, "p": verdict.predicate, "o": verdict.object,
-            },
-        )).rowcount
-        if inserted:
-            self._count_asserters("ok")
-            return
-        # Zero rows has two causes and they are different facts about the row.
-        # A zero-assertion is also true of a join that never ran, so this asks
-        # the database which one it was rather than reporting the friendlier
-        # of the two.
-        had_candidate = (await conn.execute(
-            sa.select(sa.literal(1)).where(
-                sa.exists().where(
-                    FACT_CANDIDATE.c.workspace == workspace,
-                    FACT_CANDIDATE.c.subject_id == verdict.subject,
-                    FACT_CANDIDATE.c.predicate == verdict.predicate,
-                    FACT_CANDIDATE.c.object == verdict.object,
-                )
-            )
-        )).scalar_one_or_none()
-        self._count_asserters("nothing_found" if had_candidate else "unavailable")
+            {"fid": fact_id, "now": now_ms, "cid": candidate_id},
+        )
+        return "ok"
 
     async def asserters(self, *, fact_id: str) -> tuple[FactAsserter, ...]:
         """Who claimed this fact, oldest first. `()` for a fact nobody could be
@@ -244,7 +328,7 @@ class SqlFactStore:
         """See the module docstring's (1) and (2). `key` is the workspace."""
         rows = []
         ids: list[str] = []
-        attributions: list[tuple[str, FactVerdict]] = []
+        attributions: list[tuple[str, str | None]] = []
         for p in proposals:
             if not isinstance(p.payload, FactVerdict):
                 raise TypeError(
@@ -273,16 +357,25 @@ class SqlFactStore:
                 "established_by": p.established_by,
             })
             ids.append(fact_id)
-            attributions.append((fact_id, verdict))
+            attributions.append((fact_id, p.candidate_id))
         if not rows:
             return ()
+        # Buffered, and emitted only AFTER the transaction commits. Counting
+        # inside it would assert attributions the database never got: a later
+        # proposal in the same batch failing rolls the whole boundary back,
+        # and the counters for the earlier ones would already have moved. It
+        # also stops a `Metrics.inc` failure from destroying the write it was
+        # only meant to measure.
+        statuses: list[AsserterJoinStatus] = []
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(FACT), rows)
-            for row, verdict in attributions:
-                await self._attribute(
-                    conn, fact_id=row, workspace=key, verdict=verdict,
+            for fact_id, candidate_id in attributions:
+                statuses.append(await self._attribute(
+                    conn, fact_id=fact_id, candidate_id=candidate_id,
                     now_ms=now_ms,
-                )
+                ))
+        for status in statuses:
+            self._count_asserters(status)
         return tuple(ids)
 
     async def supersede(

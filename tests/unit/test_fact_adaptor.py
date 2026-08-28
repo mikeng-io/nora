@@ -249,6 +249,51 @@ async def test_a_boolean_message_id_is_refused_not_coerced():
     assert parsed == ()
 
 
+async def test_the_operating_term_cap_is_the_injected_one_not_a_constant():
+    """30 §5: every writer validates against the CURRENT operating value. The
+    caps were module constants, so lowering `[facts] max_term_chars` changed
+    nothing about what the extractor accepted — the config refused itself above
+    its ceiling and enforced nothing below it.
+
+    Driven at a value that is legal under the DEFAULT (200) and refused under
+    the injected one, so a parser still reading the old constant is red."""
+    store = InMemoryFactCandidateStore()
+    adaptor = FactCandidateAdaptor(
+        candidates=store, workspace_for=lambda _: WS, max_term_chars=20,
+    )
+    await adaptor.inputs(key=SCOPE, batch=(_row(41, "a"),))
+
+    parsed = await adaptor.accept(key=SCOPE, items=(
+        {"subject": "x" * 50, "predicate": "has", "object": "v",
+         "message_ids": [41]},
+        {"subject": "short", "predicate": "has", "object": "v",
+         "message_ids": [41]},
+    ))
+
+    # The positive control is the sibling: a cap that refused everything would
+    # satisfy the first assertion on its own.
+    assert [c.subject for c in parsed] == ["short"]  # type: ignore[attr-defined]
+
+
+async def test_the_operating_predicate_cap_is_injected_too():
+    """Asserted separately from the term cap: one parameter threaded and the
+    other left as a constant passes a test that only drives one of them."""
+    store = InMemoryFactCandidateStore()
+    adaptor = FactCandidateAdaptor(
+        candidates=store, workspace_for=lambda _: WS, max_predicate_chars=5,
+    )
+    await adaptor.inputs(key=SCOPE, batch=(_row(41, "a"),))
+
+    parsed = await adaptor.accept(key=SCOPE, items=(
+        {"subject": "s", "predicate": "p" * 20, "object": "v",
+         "message_ids": [41]},
+        {"subject": "s", "predicate": "has", "object": "v",
+         "message_ids": [41]},
+    ))
+
+    assert [c.predicate for c in parsed] == ["has"]  # type: ignore[attr-defined]
+
+
 async def test_an_over_long_field_never_reaches_the_store():
     """The F14 shape: an unbounded model-authored string reaching a durable
     column — and here it would additionally become half of

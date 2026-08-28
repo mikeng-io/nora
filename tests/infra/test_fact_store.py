@@ -18,10 +18,16 @@ from __future__ import annotations
 import pytest
 import sqlalchemy as sa
 
-from nora.domain.facts import Fact, FactVerdict
+from nora.domain.facts import (
+    FACT_PREDICATE_CEILING_CHARS,
+    FACT_TERM_CEILING_CHARS,
+    Fact,
+    FactAsserter,
+    FactVerdict,
+)
 from nora.domain.ports import Proposal
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.facts import SqlFactStore
+from nora.infra.sql.facts import SqlFactStore, oversized_terms
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
 from nora.testing import InMemoryFactStore, fact_proposal_factory
@@ -39,10 +45,13 @@ def _verdict(*, subject="e1", predicate="has", object="v1", status="supported",
     )
 
 
-def _proposal(verdict: FactVerdict, *, established_by="run-1") -> Proposal:
+def _proposal(
+    verdict: FactVerdict, *, established_by="run-1", candidate_id=None,
+) -> Proposal:
     return Proposal(
         payload=verdict, instruction_sha256="a" * 64,
         model="ollamacloud/deepseek-v4-flash", established_by=established_by,
+        candidate_id=candidate_id,
     )
 
 
@@ -313,6 +322,151 @@ def test_fact_verdict_is_a_real_payload_not_a_placeholder():
 
 
 # ---------------------------------------------------------------------------
+# `asserters()` — the READ, on BOTH implementations
+# ---------------------------------------------------------------------------
+#
+# CLAUDE.md: a port never gains a second implementation — including a test fake
+# — without a shared contract suite both pass. `FactReader.asserters` gained
+# two, and the double's version was reachable from nothing: `seed_asserters`
+# and `asserters` were dead code, and its docstring's claim to "match
+# production on a malformed id and on ordering" was self-attestation. These
+# four tests are that claim, measured.
+#
+# The JOIN stays SQL-only below — it walks two tables the double does not hold
+# — but the read is shared, and the read is what a renderer calls.
+
+
+@pytest.fixture(params=["memory", "sql"])
+async def reader(request):
+    """Both implementations plus a per-implementation `seed` verb, the shape
+    `tests/infra/test_fact_candidate_store.py::_World` uses: anything the
+    shared body needs that is not on the port is supplied by the entry, never
+    hard-coded to one backing."""
+    if request.param == "memory":
+        store = InMemoryFactStore()
+
+        async def seed(fact_id, rows):
+            store.seed_asserters(*[
+                FactAsserter(
+                    fact_id=fact_id, person_id=p, message_id=m, asserted_at=t,
+                )
+                for p, m, t in rows
+            ])
+
+        yield store, seed
+        return
+
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    store = SqlFactStore(engine)
+
+    async def seed(fact_id, rows):
+        async with engine.begin() as conn:
+            # A real fact first: `fact_asserter_fact_id_fkey` refuses an
+            # orphan, and a double that let one through would be permissive
+            # where production is not.
+            await conn.execute(
+                sa.text(
+                    "insert into fact (id, workspace, subject_id, predicate, "
+                    "object_literal, source_url, source_excerpt, valid_from, "
+                    "created_at, instruction_sha256, model, established_by) "
+                    "values (:fid, 'ws', 's', 'p', 'o', 'https://x.test/a', "
+                    "'x', 1, 1, :sha, 'm', 'run') on conflict do nothing"
+                ),
+                {"fid": fact_id, "sha": "a" * 64},
+            )
+            for person_id, message_id, asserted_at in rows:
+                await conn.execute(
+                    sa.text(
+                        "insert into fact_asserter (fact_id, person_id, "
+                        "message_id, asserted_at) values (:f, :p, :m, :t)"
+                    ),
+                    {"f": fact_id, "p": person_id, "m": message_id,
+                     "t": asserted_at},
+                )
+
+    try:
+        yield store, seed
+    finally:
+        await engine.dispose()
+
+
+FACT_A = "0191f2c4-0000-7000-8000-00000000000a"
+FACT_B = "0191f2c4-0000-7000-8000-00000000000b"
+
+
+async def test_asserters_reads_back_what_was_written(reader):
+    store, seed = reader
+    await seed(FACT_A, [("miles", 41, 10)])
+
+    rows = await store.asserters(fact_id=FACT_A)
+
+    assert [(a.person_id, a.message_id, a.asserted_at) for a in rows] == [
+        ("miles", 41, 10),
+    ]
+    assert all(a.fact_id == FACT_A for a in rows)
+
+
+async def test_asserters_orders_by_time_then_message(reader):
+    """The ordering the double claimed to match and nothing checked. Seeded out
+    of order, with the alphabetical order reversed against the intended one so
+    an unsorted read or a sort on `person_id` cannot pass."""
+    store, seed = reader
+    await seed(FACT_A, [("zoe", 90, 10), ("alice", 10, 10), ("miles", 50, 5)])
+
+    rows = await store.asserters(fact_id=FACT_A)
+
+    assert [a.person_id for a in rows] == ["miles", "alice", "zoe"]
+
+
+async def test_asserters_is_scoped_to_its_fact(reader):
+    """`== ()` is also true of a store that returns nothing for everything, so
+    the positive control is the sibling fact returning its own row."""
+    store, seed = reader
+    await seed(FACT_A, [("miles", 41, 10)])
+    await seed(FACT_B, [("grant", 42, 10)])
+
+    assert [a.person_id for a in await store.asserters(fact_id=FACT_A)] == ["miles"]
+    assert [a.person_id for a in await store.asserters(fact_id=FACT_B)] == ["grant"]
+
+
+async def test_asserters_of_an_unknown_or_malformed_id_is_empty_on_both(reader):
+    """A read beside the render: a malformed id is an unknown row, not a reason
+    to take a turn down. The double must degrade the way the real store does,
+    or a test that passes against it fails against Postgres."""
+    store, seed = reader
+    await seed(FACT_A, [("miles", 41, 10)])
+
+    assert await store.asserters(fact_id="not-a-uuid") == ()
+    assert await store.asserters(
+        fact_id="0191f2c4-0000-7000-8000-0000000000ff") == ()
+    # Positive control: the store is not simply empty.
+    assert await store.asserters(fact_id=FACT_A) != ()
+
+
+async def test_the_double_refuses_a_malformed_id_its_column_type_would():
+    """The double's UUID guard, made reachable — and it is the reason it
+    exists.
+
+    Against SQL the guard is unfalsifiable: `fact.id` is a `uuid` column, so a
+    row keyed on `"not-a-uuid"` cannot be stored and the query would return
+    nothing anyway. The double is a plain list and WILL hold one, so without
+    the guard it answers a question production cannot be asked — a double
+    quietly more permissive than the store it stands in for, which is how a
+    green test becomes a claim about the double.
+    """
+    store = InMemoryFactStore()
+    store.seed_asserters(
+        FactAsserter(
+            fact_id="not-a-uuid", person_id="miles", message_id=1, asserted_at=1,
+        )
+    )
+
+    assert await store.asserters(fact_id="not-a-uuid") == ()
+
+
+# ---------------------------------------------------------------------------
 # the attribution join — SQL only, because the join IS the behaviour
 # ---------------------------------------------------------------------------
 #
@@ -355,19 +509,22 @@ async def _seed_message(engine, *, mid: int, person_id: str | None) -> None:
 
 
 async def _seed_candidate(engine, *, observed_in: list[str],
-                          subject="e1", predicate="has", object="v1") -> None:
+                          subject="e1", predicate="has", object="v1") -> str:
+    """Returns the candidate id, because the attribution join takes it by
+    IDENTITY — the adaptor stamps `Proposal.candidate_id` from what the run
+    showed the model, and the store never re-derives it from the triple."""
     async with engine.begin() as conn:
-        await conn.execute(
+        return str((await conn.execute(
             sa.text(
                 "insert into fact_candidate (id, workspace, subject_id, "
                 "predicate, object, first_seen_at, last_seen_at, observed_in, "
                 "status, established_by, instruction_sha256, model) values "
                 "(gen_random_uuid(), 'ws', :s, :p, :o, 1, 1, :oi, 'pending', "
-                "'run-seed', :sha, 'm')"
+                "'run-seed', :sha, 'm') returning id::text"
             ),
             {"s": subject, "p": predicate, "o": object, "oi": observed_in,
              "sha": "a" * 64},
-        )
+        )).scalar_one())
 
 
 async def test_the_asserters_of_a_fact_are_the_people_who_said_it(sql_store):
@@ -378,10 +535,10 @@ async def test_the_asserters_of_a_fact_are_the_people_who_said_it(sql_store):
     store, engine, metrics = sql_store
     await _seed_message(engine, mid=41, person_id="miles")
     await _seed_message(engine, mid=42, person_id="grant")
-    await _seed_candidate(engine, observed_in=["41", "42"])
+    cid = await _seed_candidate(engine, observed_in=["41", "42"])
 
     ids = await store.propose(
-        key="ws", proposals=(_proposal(_verdict()),), now_ms=NOW,
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),), now_ms=NOW,
     )
 
     rows = await store.asserters(fact_id=ids[0])
@@ -402,10 +559,10 @@ async def test_asserters_come_back_in_the_order_the_room_said_it(sql_store):
     await _seed_message(engine, mid=90, person_id="alice")
     await _seed_message(engine, mid=10, person_id="zoe")
     await _seed_message(engine, mid=50, person_id="miles")
-    await _seed_candidate(engine, observed_in=["90", "10", "50"])
+    cid = await _seed_candidate(engine, observed_in=["90", "10", "50"])
 
     ids = await store.propose(
-        key="ws", proposals=(_proposal(_verdict()),), now_ms=NOW,
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),), now_ms=NOW,
     )
 
     rows = await store.asserters(fact_id=ids[0])
@@ -422,16 +579,22 @@ async def test_three_people_once_is_not_one_person_three_times(sql_store):
         await _seed_message(engine, mid=mid, person_id=person)
     for mid in (4, 5, 6):
         await _seed_message(engine, mid=mid, person_id="miles")
-    await _seed_candidate(engine, observed_in=["1", "2", "3"])
-    await _seed_candidate(
+    consensus_cid = await _seed_candidate(engine, observed_in=["1", "2", "3"])
+    emphasis_cid = await _seed_candidate(
         engine, observed_in=["4", "5", "6"], subject="e2",
     )
 
     consensus = await store.propose(
-        key="ws", proposals=(_proposal(_verdict()),), now_ms=NOW,
+        key="ws",
+        proposals=(_proposal(_verdict(), candidate_id=consensus_cid),),
+        now_ms=NOW,
     )
     emphasis = await store.propose(
-        key="ws", proposals=(_proposal(_verdict(subject="e2")),), now_ms=NOW,
+        key="ws",
+        proposals=(
+            _proposal(_verdict(subject="e2"), candidate_id=emphasis_cid),
+        ),
+        now_ms=NOW,
     )
 
     consensus_rows = await store.asserters(fact_id=consensus[0])
@@ -449,10 +612,10 @@ async def test_an_unmapped_sender_is_nothing_found_not_a_silent_zero(sql_store):
     reserved for a wiring gap."""
     store, engine, metrics = sql_store
     await _seed_message(engine, mid=41, person_id=None)
-    await _seed_candidate(engine, observed_in=["41"])
+    cid = await _seed_candidate(engine, observed_in=["41"])
 
     ids = await store.propose(
-        key="ws", proposals=(_proposal(_verdict()),), now_ms=NOW,
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),), now_ms=NOW,
     )
 
     assert await store.asserters(fact_id=ids[0]) == ()
@@ -470,6 +633,9 @@ async def test_no_candidate_to_join_through_is_unavailable(sql_store):
     store, engine, metrics = sql_store
     await _seed_message(engine, mid=41, person_id="miles")
 
+    # No `candidate_id`: the adaptor could not map this verdict back to
+    # anything it showed, which is exactly the state that must read as «I could
+    # not check», never as «nobody said it».
     ids = await store.propose(
         key="ws", proposals=(_proposal(_verdict()),), now_ms=NOW,
     )
@@ -481,6 +647,157 @@ async def test_no_candidate_to_join_through_is_unavailable(sql_store):
         "nora_fact_asserter_total", status="nothing_found") == 0
 
 
+async def test_a_message_id_too_large_for_int4_does_not_lose_the_fact(sql_store):
+    """`messages.id` is INT4 and `observed_in` holds model-derived digits of
+    unbounded length — Python ints have no width, so the extractor can emit
+    one. `'99999999999'::int` raises «out of range» INSIDE the fact's own
+    transaction and rolls the fact back with it, and the `~ '^[0-9]+$'` shape
+    guard does not help because it matches any length. The cast is `::bigint`.
+
+    The positive control is the sibling id: the fact survives AND the
+    attribution that could be made still was."""
+    store, engine, metrics = sql_store
+    await _seed_message(engine, mid=41, person_id="miles")
+    cid = await _seed_candidate(engine, observed_in=["41", "99999999999"])
+
+    ids = await store.propose(
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),),
+        now_ms=NOW,
+    )
+
+    assert await store.fact_by_id(workspace="ws", fact_id=ids[0]) is not None
+    assert [a.person_id for a in await store.asserters(fact_id=ids[0])] == ["miles"]
+    assert metrics.get("nora_fact_asserter_total", status="ok") == 1
+
+
+async def test_a_blank_person_id_does_not_lose_the_fact(sql_store):
+    """`messages.person_id` has no non-blank CHECK; `fact_asserter.person_id`
+    does. A blank one would raise a CheckViolation inside the fact's
+    transaction and take the write down — an attribution problem destroying the
+    thing it was only meant to describe."""
+    store, engine, metrics = sql_store
+    await _seed_message(engine, mid=41, person_id="   ")
+    cid = await _seed_candidate(engine, observed_in=["41"])
+
+    ids = await store.propose(
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),),
+        now_ms=NOW,
+    )
+
+    assert await store.fact_by_id(workspace="ws", fact_id=ids[0]) is not None
+    assert await store.asserters(fact_id=ids[0]) == ()
+    # A blank is not a person, so this is the unmapped case, not a wiring gap.
+    assert metrics.get(
+        "nora_fact_asserter_total", status="nothing_found") == 1
+
+
+async def test_a_blank_person_beside_a_real_one_does_not_lose_the_fact(sql_store):
+    """The case that actually reaches the INSERT's filter. When EVERY sender is
+    blank the count guard short-circuits to `nothing_found` and the insert
+    never runs — so a blank-only claim does not exercise it, and the first
+    version of this pair proved nothing. A claim asserted by one real person
+    and one blank does: the insert runs, and without its own filter the blank
+    row raises `fact_asserter_person_is_named_check` and rolls the FACT back
+    with it."""
+    store, engine, metrics = sql_store
+    await _seed_message(engine, mid=41, person_id="miles")
+    await _seed_message(engine, mid=42, person_id="  ")
+    cid = await _seed_candidate(engine, observed_in=["41", "42"])
+
+    ids = await store.propose(
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),),
+        now_ms=NOW,
+    )
+
+    assert await store.fact_by_id(workspace="ws", fact_id=ids[0]) is not None
+    assert [a.person_id for a in await store.asserters(fact_id=ids[0])] == ["miles"]
+    assert metrics.get("nora_fact_asserter_total", status="ok") == 1
+
+
+async def test_a_pruned_conversation_is_unavailable_not_nothing_found(sql_store):
+    """`prune_all` deletes messages by conversation on a schedule while
+    `observed_in` survives it, so a pruned conversation leaves a candidate
+    whose evidence no longer exists. «The evidence is gone, I could not check»
+    is `unavailable`; reporting it as «nobody claimed this» is R-27's forbidden
+    inversion, and this module's own help text asserted it before it was
+    measured."""
+    store, engine, metrics = sql_store
+    await _seed_message(engine, mid=41, person_id="miles")
+    cid = await _seed_candidate(engine, observed_in=["41"])
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("delete from messages where id = 41"))
+
+    ids = await store.propose(
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),),
+        now_ms=NOW,
+    )
+
+    assert await store.asserters(fact_id=ids[0]) == ()
+    assert metrics.get(
+        "nora_fact_asserter_total", status="unavailable") == 1
+    assert metrics.get(
+        "nora_fact_asserter_total", status="nothing_found") == 0
+
+
+async def test_a_settled_candidate_does_not_donate_its_asserters(sql_store):
+    """The join is by IDENTITY, never by the triple. A triple match against the
+    whole table would hand this already-settled candidate's asserters to a
+    later fact that has nothing to do with it — and `not_covered` candidates,
+    which by construction produced no fact at all, sit in that table forever as
+    the negative cache."""
+    store, engine, metrics = sql_store
+    await _seed_message(engine, mid=41, person_id="miles")
+    await _seed_candidate(engine, observed_in=["41"])   # same triple, NOT named
+
+    ids = await store.propose(
+        key="ws", proposals=(_proposal(_verdict()),), now_ms=NOW,
+    )
+
+    assert await store.asserters(fact_id=ids[0]) == ()
+    assert metrics.get(
+        "nora_fact_asserter_total", status="unavailable") == 1
+
+
+async def test_a_failed_attribution_leaves_no_counter_behind(sql_store):
+    """Counting inside the transaction asserts attributions the database never
+    got: a later proposal in the same batch failing rolls the whole boundary
+    back, and the earlier ones' counters would already have moved.
+
+    Driven by a real rollback — the second verdict names a fact id that
+    violates nothing until the flush — rather than by a mock, because the
+    property under test is the ORDER of a commit and a counter."""
+    store, engine, metrics = sql_store
+    await _seed_message(engine, mid=41, person_id="miles")
+    cid = await _seed_candidate(engine, observed_in=["41"])
+
+    # `IntegrityError` specifically: a blind `Exception` would also pass on a
+    # connection failure, which proves nothing about a rollback.
+    with pytest.raises(sa.exc.IntegrityError):
+        await store.propose(
+            key="ws",
+            proposals=(
+                _proposal(_verdict(), candidate_id=cid),
+                # subject over the DDL ceiling: refused by Postgres at flush,
+                # after the first proposal's attribution has already run.
+                _proposal(
+                    _verdict(subject="x" * (FACT_TERM_CEILING_CHARS + 1)),
+                    candidate_id=cid,
+                ),
+            ),
+            now_ms=NOW,
+        )
+
+    assert metrics.get("nora_fact_asserter_total", status="ok") == 0
+    # The positive control: the same batch WITHOUT the poisoned row does move
+    # the counter, so the zero above is a rollback and not a join that never
+    # runs.
+    await store.propose(
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),),
+        now_ms=NOW,
+    )
+    assert metrics.get("nora_fact_asserter_total", status="ok") == 1
+
+
 async def test_a_pruned_message_does_not_unmake_the_attribution(sql_store):
     """No FOREIGN KEY on `message_id`, deliberately: `prune_all` deletes
     messages by conversation, and who said a thing is a fixed historical fact.
@@ -488,9 +805,9 @@ async def test_a_pruned_message_does_not_unmake_the_attribution(sql_store):
     assertion."""
     store, engine, _ = sql_store
     await _seed_message(engine, mid=41, person_id="miles")
-    await _seed_candidate(engine, observed_in=["41"])
+    cid = await _seed_candidate(engine, observed_in=["41"])
     ids = await store.propose(
-        key="ws", proposals=(_proposal(_verdict()),), now_ms=NOW,
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),), now_ms=NOW,
     )
     assert len(await store.asserters(fact_id=ids[0])) == 1
 
@@ -508,10 +825,10 @@ async def test_a_malformed_observed_in_entry_does_not_lose_the_fact(sql_store):
     positive control is that the sibling id still resolves."""
     store, engine, metrics = sql_store
     await _seed_message(engine, mid=41, person_id="miles")
-    await _seed_candidate(engine, observed_in=["41", "not-a-number"])
+    cid = await _seed_candidate(engine, observed_in=["41", "not-a-number"])
 
     ids = await store.propose(
-        key="ws", proposals=(_proposal(_verdict()),), now_ms=NOW,
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),), now_ms=NOW,
     )
 
     assert await store.fact_by_id(workspace="ws", fact_id=ids[0]) is not None
@@ -527,3 +844,118 @@ async def test_asserters_of_an_unknown_or_malformed_id_is_empty(sql_store):
     assert await store.asserters(fact_id="not-a-uuid") == ()
     assert await store.asserters(
         fact_id="0191f2c4-0000-7000-8000-0000000000ff") == ()
+
+
+# ---------------------------------------------------------------------------
+# the caps — two layers, and only the ceiling is DDL
+# ---------------------------------------------------------------------------
+
+
+async def test_a_term_over_the_ceiling_is_refused_by_the_database(pg_url):
+    """The CEILING is the backstop under every size decision an operator can
+    make — a config typo or a future writer nobody has thought of. It is DDL,
+    so it is asserted here through a raw INSERT rather than through a store
+    that would refuse first."""
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        async with engine.begin() as conn:
+            with pytest.raises(sa.exc.IntegrityError):
+                await conn.execute(
+                    sa.text(
+                        "insert into fact (id, workspace, subject_id, "
+                        "predicate, object_literal, source_url, "
+                        "source_excerpt, valid_from, created_at, "
+                        "instruction_sha256, model, established_by) values "
+                        "(gen_random_uuid(), 'ws', :s, 'has', 'v', "
+                        "'https://x.test/a', 'x', 1, 1, :sha, 'm', 'run')"
+                    ),
+                    {"s": "x" * (FACT_TERM_CEILING_CHARS + 1), "sha": "a" * 64},
+                )
+    finally:
+        await engine.dispose()
+
+
+async def test_a_candidate_term_over_the_ceiling_is_refused_too(pg_url):
+    """`fact_candidate` carries the same ceilings, because a candidate becomes
+    a fact. Without them the refusal lands at adjudication — after the research
+    loop has already been spent on the claim."""
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        async with engine.begin() as conn:
+            with pytest.raises(sa.exc.IntegrityError):
+                await conn.execute(
+                    sa.text(
+                        "insert into fact_candidate (id, workspace, "
+                        "subject_id, predicate, object, first_seen_at, "
+                        "last_seen_at, status, established_by, "
+                        "instruction_sha256, model) values "
+                        "(gen_random_uuid(), 'ws', 's', :p, 'v', 1, 1, "
+                        "'pending', 'run', :sha, 'm')"
+                    ),
+                    {"p": "p" * (FACT_PREDICATE_CEILING_CHARS + 1),
+                     "sha": "a" * 64},
+                )
+    finally:
+        await engine.dispose()
+
+
+async def test_lowering_a_cap_below_existing_rows_names_them(pg_url):
+    """30 §5: refusing a config above its ceiling is not enough. Lowering the
+    OPERATING cap below rows that already exist leaves them satisfying the
+    CHECK — which is the ceiling, not the knob — while quietly defeating the
+    prompt budget the cap was lowered to protect."""
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        store = SqlFactStore(engine)
+        await store.propose(
+            key="ws",
+            proposals=(_proposal(_verdict(subject="x" * 300)),),
+            now_ms=NOW,
+        )
+
+        offending = await oversized_terms(
+            engine, max_term_chars=200, max_predicate_chars=100,
+        )
+
+        assert len(offending) == 1
+        assert "fact " in offending[0]
+        assert "term is 300 characters" in offending[0]
+        # The positive control: the same read at the cap the row was written
+        # under finds nothing, so the assertion above is about the CAP and not
+        # about a query that always returns a row.
+        assert await oversized_terms(
+            engine, max_term_chars=800, max_predicate_chars=200,
+        ) == ()
+    finally:
+        await engine.dispose()
+
+
+async def test_an_oversized_candidate_is_named_too(pg_url):
+    """Both tables, because a candidate becomes a fact and an operator who
+    lowered the cap wants to know about the queue as well as the store."""
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                sa.text(
+                    "insert into fact_candidate (id, workspace, subject_id, "
+                    "predicate, object, first_seen_at, last_seen_at, status, "
+                    "established_by, instruction_sha256, model) values "
+                    "(gen_random_uuid(), 'ws', 's', :p, 'v', 1, 1, 'pending', "
+                    "'run', :sha, 'm')"
+                ),
+                {"p": "p" * 150, "sha": "a" * 64},
+            )
+
+        offending = await oversized_terms(
+            engine, max_term_chars=200, max_predicate_chars=100,
+        )
+
+        assert [o for o in offending if o.startswith("fact_candidate ")]
+        assert "predicate is 150 characters" in offending[0]
+    finally:
+        await engine.dispose()

@@ -47,7 +47,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Protocol
 
-from ..domain.facts import CandidateClaim, Fact, FactCandidate, FactVerdict
+from ..domain.facts import (
+    DEFAULT_MAX_PREDICATE_CHARS,
+    DEFAULT_MAX_TERM_CHARS,
+    CandidateClaim,
+    Fact,
+    FactCandidate,
+    FactVerdict,
+)
 from ..domain.models import TranscriptRow
 from ..domain.ports import DreamSink, FactCandidateReader, FactReader, Proposal
 from ..obs.metrics import Metrics
@@ -62,9 +69,17 @@ log = logging.getLogger(__name__)
 # reader. The triple fields are the strictest case: they are half of
 # `fact_candidate_triple_key`, so an over-long one is not merely a big column,
 # it is a key nobody can ever match a later sighting against.
-_MAX_SUBJECT_CHARS = 200
-_MAX_PREDICATE_CHARS = 100
-_MAX_OBJECT_CHARS = 500
+# The three triple fields take the OPERATING caps from `[facts]`, injected
+# through each adaptor's constructor — `nora.domain.facts`'
+# `DEFAULT_MAX_TERM_CHARS` (200) and `DEFAULT_MAX_PREDICATE_CHARS` (100) are
+# the defaults, and the ceilings above them are DDL. They were module
+# constants, with the object at 500 while the subject sat at 200 for no reason
+# either could state; 25 §9.1 gathers them and gives both terms one number.
+#
+# 30 §5 is why they are injected rather than read from a module: "every writer
+# validates against the CURRENT operating value". A cap that only refuses a
+# config above its ceiling leaves oversized rows satisfying the CHECK while
+# defeating the prompt budget the cap exists to protect.
 # A URL past this is not a citation, and an excerpt past it is not a quoted
 # sentence — both are the model pasting a page into a durable column.
 _MAX_SOURCE_URL_CHARS = 2_000
@@ -195,9 +210,13 @@ class FactCandidateAdaptor:
         *,
         candidates: DreamSink,
         workspace_for: Callable[[str], str | None],
+        max_term_chars: int = DEFAULT_MAX_TERM_CHARS,
+        max_predicate_chars: int = DEFAULT_MAX_PREDICATE_CHARS,
     ) -> None:
         self._candidates = candidates
         self._workspace_for = workspace_for
+        self._max_term_chars = max_term_chars
+        self._max_predicate_chars = max_predicate_chars
         # Per key, written by `inputs` and read by `accept` — the only channel
         # there is between them, because `DreamAdaptor.accept` takes no batch.
         # Keyed by `key` and not a bare attribute because `dream_loop`
@@ -221,8 +240,8 @@ class FactCandidateAdaptor:
         text at all — so it is rendered as an empty body rather than assumed
         to be a string; an `inputs` that assumed one would take the tick down
         on a sticker. Such a row is still rendered, with its id, rather than
-        skipped: `accept` validates a returned `message_id` against the whole
-        BATCH, so skipping a row here would make the set the model was shown
+        skipped: `accept` validates every returned `message_ids` entry against the
+        whole BATCH, so skipping a row here would make the set the model was shown
         smaller than the set `accept` will accept from it.
 
         The speaker is deliberately absent. The objective's first exclusion is
@@ -270,7 +289,10 @@ class FactCandidateAdaptor:
         seen = self._message_ids.get(key)
         parsed: list[object] = []
         for item in items:
-            claim = _parse_claim(item)
+            claim = _parse_claim(
+                item, max_term=self._max_term_chars,
+                max_predicate=self._max_predicate_chars,
+            )
             if claim is None:
                 continue
             if seen is not None and not set(claim.message_ids) <= seen:
@@ -336,16 +358,18 @@ class FactCandidateAdaptor:
         )
 
 
-def _parse_claim(item: Mapping[str, object]) -> CandidateClaim | None:
+def _parse_claim(
+    item: Mapping[str, object], *, max_term: int, max_predicate: int,
+) -> CandidateClaim | None:
     """One envelope item -> a `CandidateClaim`, or `None` if it is malformed.
 
     `_parse_item`'s shape: every failure is the same silent drop, and there is
     deliberately no partial parse — a claim missing its object is not a claim
     with an empty object.
     """
-    subject = _text(item.get("subject"), limit=_MAX_SUBJECT_CHARS)
-    predicate = _text(item.get("predicate"), limit=_MAX_PREDICATE_CHARS)
-    obj = _text(item.get("object"), limit=_MAX_OBJECT_CHARS)
+    subject = _text(item.get("subject"), limit=max_term)
+    predicate = _text(item.get("predicate"), limit=max_predicate)
+    obj = _text(item.get("object"), limit=max_term)
     if subject is None or predicate is None or obj is None:
         return None
     raw = item.get("message_ids")
@@ -457,12 +481,16 @@ class FactAdaptor:
         candidates: _CandidateStore,
         max_adjudications_per_tick: int,
         max_standing_facts: int = DEFAULT_MAX_STANDING_FACTS,
+        max_term_chars: int = DEFAULT_MAX_TERM_CHARS,
+        max_predicate_chars: int = DEFAULT_MAX_PREDICATE_CHARS,
         metrics: Metrics | None = None,
     ) -> None:
         self._facts = facts
         self._candidates = candidates
         self._max_adjudications = max_adjudications_per_tick
         self._max_standing_facts = max_standing_facts
+        self._max_term_chars = max_term_chars
+        self._max_predicate_chars = max_predicate_chars
         self._metrics = metrics
         self._shown: dict[str, _Shown] = {}
 
@@ -558,7 +586,10 @@ class FactAdaptor:
         shown = self._shown.get(key)
         kept: list[object] = []
         for item in items:
-            verdict, reason = _parse_verdict(item)
+            verdict, reason = _parse_verdict(
+                item, max_term=self._max_term_chars,
+                max_predicate=self._max_predicate_chars,
+            )
             if verdict is None:
                 self._skip(reason or "malformed")
                 continue
@@ -621,6 +652,18 @@ class FactAdaptor:
             if isinstance(p.payload, FactVerdict)
             and p.payload.status != "not_covered"
         ]
+        # Each proposal is stamped with the CANDIDATE it settles, from the
+        # same `_Shown` lookup `_retire_candidates` uses — so the store joins
+        # back by identity instead of re-deriving the candidate from the
+        # verdict's words. Re-deriving was wrong twice: the model rewording a
+        # claim by one character (which `_retire_candidates` documents as
+        # expected, logs, and counts) made the join miss and report a WIRING
+        # GAP, and a triple match against the whole table could hand a settled
+        # candidate's asserters to an unrelated later fact.
+        proposals = tuple(
+            replace(p, candidate_id=self._candidate_id_for(key, p.payload))
+            for p in proposals
+        )
         # Unconditional, empty batch included: `commit(key, ())` is R-27's
         # `nothing_found` and a legal call the sink may act on. A payload that
         # is not a `FactVerdict` raises `TypeError` in the store, which is the
@@ -647,6 +690,18 @@ class FactAdaptor:
 
         await self._retire_candidates(key=key, proposals=proposals, now_ms=now_ms)
         return len(ids)
+
+    def _candidate_id_for(self, key: str, payload: object) -> str | None:
+        """The candidate a verdict settles, or `None`. ONE lookup, used by both
+        the stamp above and `_retire_candidates` — they were two readings of
+        the same question and only one of them was against what this run
+        actually showed."""
+        shown = self._shown.get(key)
+        if shown is None or not isinstance(payload, FactVerdict):
+            return None
+        return shown.candidate_ids.get(
+            (payload.subject, payload.predicate, payload.object)
+        )
 
     async def _supersede_fact(
         self, *, key: str, verdict: FactVerdict, fact_id: str, now_ms: int,
@@ -713,16 +768,13 @@ class FactAdaptor:
         and retiring some other candidate on a near-match would settle a claim
         nobody adjudicated.
         """
-        shown = self._shown.get(key)
-        if shown is None:
+        if self._shown.get(key) is None:
             return
         for proposal in proposals:
             verdict = proposal.payload
             if not isinstance(verdict, FactVerdict):
                 continue
-            candidate_id = shown.candidate_ids.get(
-                (verdict.subject, verdict.predicate, verdict.object)
-            )
+            candidate_id = self._candidate_id_for(key, verdict)
             if candidate_id is None:
                 log.info(
                     "fact verdict settled no candidate: %r/%r (workspace=%s)",
@@ -756,7 +808,7 @@ class FactAdaptor:
 
 
 def _parse_verdict(
-    item: Mapping[str, object],
+    item: Mapping[str, object], *, max_term: int, max_predicate: int,
 ) -> tuple[FactVerdict | None, str | None]:
     """One envelope item -> `(verdict, None)` or `(None, reason)`.
 
@@ -768,9 +820,9 @@ def _parse_verdict(
     field that decides whether a source may contradict anything depend on a
     guess about what the model meant.
     """
-    subject = _text(item.get("subject"), limit=_MAX_SUBJECT_CHARS)
-    predicate = _text(item.get("predicate"), limit=_MAX_PREDICATE_CHARS)
-    obj = _text(item.get("object"), limit=_MAX_OBJECT_CHARS)
+    subject = _text(item.get("subject"), limit=max_term)
+    predicate = _text(item.get("predicate"), limit=max_predicate)
+    obj = _text(item.get("object"), limit=max_term)
     status = item.get("status")
     addresses = item.get("addresses_claim")
     if subject is None or predicate is None or obj is None:

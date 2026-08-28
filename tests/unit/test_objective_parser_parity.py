@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pytest
 
-from nora.language import fact_adaptor
+from nora.language import fact_adaptor, note_revisitor
 
 OBJECTIVES = Path(fact_adaptor.__file__).resolve().parents[1] / "dreamer" / "objectives"
 
@@ -49,17 +49,51 @@ def _return_examples(objective: str, envelope_key: str) -> list[dict[str, object
     (`fact-adjudication`'s `not_covered` entry carries no `source_url`), so any
     single item would understate the contract.
     """
-    text = (OBJECTIVES / f"{objective}.md").read_text(encoding="utf-8")
-    marker = "## What to return"
-    assert marker in text, f"{objective}.md has no '{marker}' section"
-    body = text.split(marker, 1)[1]
+    body = (OBJECTIVES / f"{objective}.md").read_text(encoding="utf-8")
 
-    start = body.index("{")
+    # The WHOLE file, not a `## What to return` section. That heading is the
+    # fact tier's house style; `note-revisit` states its return shape in
+    # running prose and has no such heading, so anchoring on it made this
+    # test's coverage depend on a formatting convention rather than on the
+    # contract. The discriminator is the ENVELOPE KEY the adaptor declares,
+    # which is precise: no other JSON in an objective carries it.
+    items: list[dict[str, object]] = []
+    found_envelope = False
+    for blob in _balanced_objects(body):
+        try:
+            envelope = json.loads(blob)
+        except json.JSONDecodeError:
+            # Prose containing braces, or a fragment. An objective's example is
+            # valid JSON by construction — it is what the model is told to
+            # return — so anything that will not parse is not one.
+            continue
+        if not isinstance(envelope, dict) or envelope_key not in envelope:
+            continue
+        found_envelope = True
+        items.extend(envelope[envelope_key])
+    assert found_envelope, (
+        f"{objective}.md shows no worked example carrying the envelope key "
+        f"{envelope_key!r} the adaptor declares — so the model is never shown "
+        f"the shape the parser is written against"
+    )
+    return items
+
+
+def _balanced_objects(text: str):
+    """EVERY balanced `{...}` in the text, not just the first.
+
+    Objectives show the empty case as a SECOND example (`{"candidates": []}`)
+    and show optional fields by omitting them from one entry and including
+    them in another. Reading only the first object made a field introduced
+    later invisible, and taking the first `{` unconditionally meant a brace in
+    prose ahead of the example silently broke the parse in the `json.loads`
+    direction — a green test measuring nothing.
+    """
     depth = 0
-    end = None
+    start = None
     in_string = False
     escaped = False
-    for i, ch in enumerate(body[start:], start=start):
+    for i, ch in enumerate(text):
         if in_string:
             if escaped:
                 escaped = False
@@ -71,19 +105,16 @@ def _return_examples(objective: str, envelope_key: str) -> list[dict[str, object
         if ch == '"':
             in_string = True
         elif ch == "{":
+            if depth == 0:
+                start = i
             depth += 1
         elif ch == "}":
-            depth -= 1
             if depth == 0:
-                end = i + 1
-                break
-    assert end is not None, f"{objective}.md's example JSON is unbalanced"
-    envelope = json.loads(body[start:end])
-    assert envelope_key in envelope, (
-        f"{objective}.md's example does not carry the envelope key "
-        f"{envelope_key!r} the adaptor declares"
-    )
-    return envelope[envelope_key]
+                continue
+            depth -= 1
+            if depth == 0 and start is not None:
+                yield text[start:i + 1]
+                start = None
 
 
 def _keys_read_by(fn: Callable[..., object], *, name: str = "item") -> set[str]:
@@ -119,16 +150,124 @@ def _keys_read_by(fn: Callable[..., object], *, name: str = "item") -> set[str]:
     return found
 
 
-CASES = [
-    pytest.param(
-        "fact-candidates", "candidates", fact_adaptor._parse_claim,
-        id="fact-candidates",
-    ),
-    pytest.param(
-        "fact-adjudication", "verdicts", fact_adaptor._parse_verdict,
-        id="fact-adjudication",
-    ),
-]
+#: Every module that can hold a `DreamAdaptor`. Named here rather than
+#: discovered by import-walking the package: an adaptor living somewhere else
+#: entirely is a real gap this list would miss, and `test_every_shipped_adaptor_
+#: is_covered` below is what turns that gap into a red test instead of a silent
+#: omission.
+ADAPTOR_MODULES = (fact_adaptor, note_revisitor)
+
+
+def _adaptors():
+    """(module, class) for every adaptor declaring BOTH `objective` and
+    `envelope_key` — the two fields `DreamerRuntime` actually uses to load the
+    instruction and unwrap the reply."""
+    for module in ADAPTOR_MODULES:
+        for cls in vars(module).values():
+            if (
+                isinstance(cls, type)
+                and isinstance(getattr(cls, "objective", None), str)
+                and isinstance(getattr(cls, "envelope_key", None), str)
+            ):
+                yield module, cls
+
+
+def _parsers_called_by(
+    fn: Callable[..., object], module, owner: type | None = None,
+) -> list[Callable[..., object]]:
+    """The module-level functions `fn`'s body calls, in source order.
+
+    This is what binds the checked parser to the adaptor that USES it. Without
+    it the parity check compares two artefacts and asserts nothing about
+    whether production reads either: point `accept` at a `_parse_claim_v2` and
+    leave `_parse_claim` behind, and the old check stays green while measuring
+    a function nothing calls — the exact failure this file exists to catch, one
+    level up.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        # `_parse_claim(item)` — a module-level function.
+        if isinstance(node.func, ast.Name):
+            target = getattr(module, node.func.id, None)
+        # `self._accept_one(item, ...)` — a method. The note revisitor parses
+        # this way, and a walk that only saw module-level names reported it as
+        # UNCOVERED rather than checking it, which is the same silent gap in
+        # the opposite direction.
+        elif (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "self"
+            and owner is not None
+        ):
+            target = getattr(owner, node.func.attr, None)
+        else:
+            continue
+        if _is_item_parser(target, module) and target not in out:
+            out.append(target)
+    return out
+
+
+def _is_item_parser(target: object, module) -> bool:
+    """A function in THIS module whose first real argument is one envelope
+    item.
+
+    `dataclasses.replace` and friends are module-level names too; the
+    discriminator is the SHAPE the runtime hands an adaptor. `accept` receives
+    `Sequence[Mapping[str, object]]`, and a parser takes one of those first —
+    by convention named `item`, which is also the name `_keys_read_by` walks
+    for, so anything else could not be checked even if it were included.
+    """
+    if not inspect.isfunction(target):
+        return False
+    if target.__module__ != module.__name__:
+        return False
+    params = [p for p in inspect.signature(target).parameters if p != "self"]
+    return bool(params) and params[0] == "item"
+
+
+def _cases():
+    for module, cls in _adaptors():
+        parsers = _parsers_called_by(cls.accept, module, owner=cls)
+        # An adaptor whose `accept` calls no module-level function parses
+        # inline; there is nothing to bind to and the pair is reported as
+        # uncovered rather than silently skipped.
+        for parser in parsers:
+            yield pytest.param(
+                cls.objective, cls.envelope_key, parser,
+                id=f"{cls.__name__}:{parser.__name__}",
+            )
+
+
+CASES = list(_cases())
+
+
+def test_the_case_list_is_derived_and_not_empty():
+    """The run-that-ran control for the derivation itself. An empty or
+    silently-shrinking `CASES` makes every parametrized test below vacuous, and
+    a hand-written list was exactly the hand-copied vocabulary this file's own
+    docstring outlaws."""
+    assert len(CASES) >= 3
+    assert {c.id for c in CASES} >= {
+        "FactCandidateAdaptor:_parse_claim",
+        "FactAdaptor:_parse_verdict",
+    }
+
+
+def test_every_shipped_adaptor_is_covered():
+    """A new adaptor with a new objective must not arrive with zero coverage.
+    Every class declaring an objective contributes at least one case, and every
+    objective file an adaptor names exists."""
+    covered = {c.values[0] for c in CASES}
+    for _module, cls in _adaptors():
+        assert cls.objective in covered, (
+            f"{cls.__name__} declares objective={cls.objective!r} and no case "
+            f"covers it — its `accept` calls no module-level parser this test "
+            f"can bind to"
+        )
+        assert (OBJECTIVES / f"{cls.objective}.md").is_file()
 
 
 @pytest.mark.parametrize(("objective", "envelope_key", "parser"), CASES)
@@ -147,24 +286,6 @@ def test_the_objective_declares_exactly_the_fields_the_parser_reads(
         "A field on one side only is a tier that parses cleanly and produces "
         "nothing, with every counter healthy."
     )
-
-
-@pytest.mark.parametrize(("objective", "envelope_key", "parser"), CASES)
-def test_the_extractor_names_the_objective_and_envelope_this_test_checked(
-    objective, envelope_key, parser,
-):
-    """The positive control. The test above is also satisfied by a pair of
-    files nothing loads — it compares two things without asserting either is
-    the one production uses. This binds both ends to the adaptor's own
-    declaration, so renaming `objective` or `envelope_key` on the class cannot
-    leave this suite green against the file it no longer reads."""
-    adaptors = [
-        cls for cls in vars(fact_adaptor).values()
-        if isinstance(cls, type) and getattr(cls, "objective", None) == objective
-    ]
-    assert adaptors, f"no adaptor in fact_adaptor declares objective={objective!r}"
-    assert {a.envelope_key for a in adaptors} == {envelope_key}
-    assert (OBJECTIVES / f"{objective}.md").is_file()
 
 
 def test_the_ast_walk_actually_finds_keys():

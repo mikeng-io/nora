@@ -77,7 +77,7 @@ from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
-from nora.infra.sql.facts import SqlFactStore
+from nora.infra.sql.facts import SqlFactStore, oversized_terms
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
@@ -718,6 +718,28 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     fact_store: SqlFactStore | None = (
         SqlFactStore(engine, metrics=metrics) if cfg.facts.enabled else None
     )
+    if fact_store is not None:
+        # 30 §5: a cap that only refuses a CONFIG above its ceiling leaves
+        # oversized rows satisfying the database CHECK while defeating the
+        # prompt budget the cap exists to protect. Lowering the knob below rows
+        # that already exist must be visible at startup, naming them — not
+        # discovered later as a tier that quietly kept rendering what the
+        # operator just said was too big.
+        oversized = await oversized_terms(
+            engine,
+            max_term_chars=cfg.facts.max_term_chars,
+            max_predicate_chars=cfg.facts.max_predicate_chars,
+        )
+        if oversized:
+            raise StartupError(
+                "[facts] caps are below rows that already exist "
+                f"(max_term_chars={cfg.facts.max_term_chars}, "
+                f"max_predicate_chars={cfg.facts.max_predicate_chars}). "
+                "Raise the caps or remove these rows; they will not be "
+                "truncated, because silently shortening a recorded claim to "
+                "satisfy a knob is worse than not starting:\n  "
+                + "\n  ".join(oversized)
+            )
     exchange_store: SqlExchangeStore | None = (
         SqlExchangeStore(engine, metrics=metrics) if cfg.language.enabled else None
     )
@@ -2032,6 +2054,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         for conv in allowlist.conversations
                         if conv.primary_id and conv.workspace
                     }.get,
+                    max_term_chars=cfg.facts.max_term_chars,
+                    max_predicate_chars=cfg.facts.max_predicate_chars,
                 ),
                 # PHASE B, workspace-keyed and watermark-free: its input is the
                 # candidate table, not a message batch.
@@ -2039,6 +2063,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     facts=fact_store,
                     candidates=fact_candidates,
                     max_adjudications_per_tick=cfg.facts.max_adjudications_per_tick,
+                    max_term_chars=cfg.facts.max_term_chars,
+                    max_predicate_chars=cfg.facts.max_predicate_chars,
                     metrics=metrics,
                 ),
             )

@@ -57,6 +57,10 @@ from sqlalchemy.dialects import postgresql as pg
 # the migrations, which DO hardcode the number (a migration that read a live
 # constant would change meaning under a later edit), so moving the constant
 # fails the parity gate loudly instead of drifting.
+from nora.domain.facts import (
+    FACT_PREDICATE_CEILING_CHARS,
+    FACT_TERM_CEILING_CHARS,
+)
 from nora.domain.notes import NOTE_BODY_CEILING_CHARS
 from nora.domain.standing import STANDING_BODY_CEILING_CHARS
 
@@ -1206,6 +1210,19 @@ FACT_CANDIDATE = sa.Table(
     sa.CheckConstraint(
         "length(btrim(model)) > 0", name="fact_candidate_model_is_named_check",
     ),
+    # The same two ceilings as `fact`, because a candidate becomes a fact and a
+    # term that cannot be stored as one must not be storable as the other —
+    # otherwise the refusal lands at adjudication, after the research loop has
+    # already been spent.
+    sa.CheckConstraint(
+        f"length(subject_id) <= {FACT_TERM_CEILING_CHARS} "
+        f"and length(object) <= {FACT_TERM_CEILING_CHARS}",
+        name="fact_candidate_term_fits_the_ceiling_check",
+    ),
+    sa.CheckConstraint(
+        f"length(predicate) <= {FACT_PREDICATE_CEILING_CHARS}",
+        name="fact_candidate_predicate_fits_the_ceiling_check",
+    ),
     sa.UniqueConstraint("workspace", "subject_id", "predicate", "object",
                         name="fact_candidate_triple_key"),
 )
@@ -1313,6 +1330,20 @@ FACT = sa.Table(
         "warrant_kind in ('source', 'premises', 'observation', 'stated')",
         name="fact_warrant_kind_check",
     ),
+    # The CEILING, not the operating cap — `[facts] max_term_chars` /
+    # `max_predicate_chars` are the knobs and are enforced at every write. This
+    # is the backstop under them, and the number comes from
+    # `nora.domain.facts` so the migration, the dataclass and this file cannot
+    # drift into agreeing with each other and with nothing else.
+    sa.CheckConstraint(
+        f"length(subject_id) <= {FACT_TERM_CEILING_CHARS} "
+        f"and length(object_literal) <= {FACT_TERM_CEILING_CHARS}",
+        name="fact_term_fits_the_ceiling_check",
+    ),
+    sa.CheckConstraint(
+        f"length(predicate) <= {FACT_PREDICATE_CEILING_CHARS}",
+        name="fact_predicate_fits_the_ceiling_check",
+    ),
     # Each source column is set if and only if warrant_kind = 'source' — two
     # separate CHECKs, not one combined predicate, so each is independently
     # red-on-revert testable and neither column can be set alone for a
@@ -1374,11 +1405,19 @@ IDX_FACT_STANDING = sa.Index(
 FACT_PREMISE = sa.Table(
     "fact_premise",
     METADATA,
+    # CASCADE on both ends as of 0039. `30-review-response.md` §7 makes
+    # run-scoped rollback — "void everything run X wrote" — a supported
+    # operation, and a subsystem whose writer is a model with no human in the
+    # loop needs an undo. Without this, deleting a fact is blocked by its
+    # premise rows before `fact_asserter`'s own cascade ever runs, so that
+    # cascade's stated justification did not hold.
     sa.Column("fact_id", pg.UUID(as_uuid=False),
-              sa.ForeignKey("fact.id", name="fact_premise_fact_id_fkey"),
+              sa.ForeignKey("fact.id", name="fact_premise_fact_id_fkey",
+                            ondelete="CASCADE"),
               primary_key=True),
     sa.Column("premise_fact_id", pg.UUID(as_uuid=False),
-              sa.ForeignKey("fact.id", name="fact_premise_premise_fact_id_fkey"),
+              sa.ForeignKey("fact.id", name="fact_premise_premise_fact_id_fkey",
+                            ondelete="CASCADE"),
               primary_key=True),
     # The one cycle cheap to rule out at the row level: a fact cannot be its
     # own premise. Longer cycles (A premises B premises A) are NOT detected
@@ -1446,11 +1485,14 @@ FACT_ASSERTER = sa.Table(
     ),
 )
 
-# §7.4's whole argument: «what did Grant tell us» is an indexed lookup with
-# this table and an array scan without it.
-IDX_FACT_ASSERTER_PERSON = sa.Index(
-    "idx_fact_asserter_person", FACT_ASSERTER.c.person_id,
-)
+# **No index on `person_id` yet, deliberately.** §7.4's argument is that the
+# JUNCTION SHAPE makes «what has Grant been telling us» indexable where an
+# array column would not — and that stays true. But no code path filters this
+# table by `person_id` today; `asserters()` reads by the primary-key prefix.
+# An index with no query is a write cost paid for a read nobody makes, which is
+# «a declared metric with no call site» wearing different clothes. It arrives
+# with 19 §5's sender-scoped verb, which is what will actually issue that
+# query.
 
 
 # ---------------------------------------------------------------------------

@@ -22,6 +22,46 @@ from typing import Literal, get_args
 
 from .provenance import INSTRUCTION_SHA256_HEX_LEN
 
+# ---------------------------------------------------------------------------
+# The tier's caps (25 §9.1, 30 §5). TWO LAYERS, doing two different jobs — the
+# shape `nora.domain.standing` established and the reason it exists.
+#
+# A CEILING is DDL. It is asserted here, in the schema's CHECK, and in the
+# migration, and all three read THESE constants rather than repeating a
+# literal: the note tier shipped `32000` hardcoded in its migration and its
+# schema, and the parity gate could not see it because both carried the same
+# wrong number — they agreed with each other and with nothing else. A ceiling
+# is not the size decision; it is the floor under every size decision an
+# operator can make, and a backstop against a config typo or a future writer
+# nobody has thought of.
+#
+# An OPERATING value is config (`[facts] max_term_chars` /
+# `max_predicate_chars`), refused above its ceiling at load, and enforced at
+# every WRITE — 30 §5's correction: the old scheme only refused a config above
+# its ceiling, which left oversized rows satisfying the CHECK while defeating
+# the prompt budget the cap exists to protect.
+
+#: `subject_id` and `object_literal`. Both were UNCAPPED, which 25 §9.1 calls
+#: the same defect as the note body and worse: the subject is a JOIN KEY, so an
+#: unbounded subject is an unbounded index entry on the one column every read
+#: path uses.
+FACT_TERM_CEILING_CHARS = 800
+
+#: `predicate`. 100 was the domain constant; the ceiling leaves room above it.
+FACT_PREDICATE_CEILING_CHARS = 200
+
+#: The default operating caps. 200 for a term because the promotion veto
+#: already refuses anything over 64 as "a sentence, not a thing" — 200 leaves
+#: room for a descriptive object while keeping the index key small, and
+#: anything approaching it is a claim the extractor should have split.
+DEFAULT_MAX_TERM_CHARS = 200
+DEFAULT_MAX_PREDICATE_CHARS = 100
+
+#: The promotion veto's length rule (21 §6.1): an object string longer than
+#: this is a sentence, not a thing, and never becomes an entity. NOT a storage
+#: cap — an over-long object is still a perfectly good literal.
+PROMOTION_MAX_OBJECT_CHARS = 64
+
 FactStatus = Literal["supported", "contradicted", "not_covered"]
 CandidateStatus = Literal["pending", "adjudicated", "not_covered"]
 
@@ -69,6 +109,24 @@ ASSERTER_JOIN_STATUSES: frozenset[str] = frozenset(get_args(AsserterJoinStatus))
 # `instruction_sha256 ~ '^[0-9a-f]{64}$'` (see nora.domain.provenance); the
 # domain must refuse everything the column would, not just the wrong length.
 _INSTRUCTION_SHA256_RE = re.compile(rf"^[0-9a-f]{{{INSTRUCTION_SHA256_HEX_LEN}}}$")
+
+
+def _check_term(field: str, value: str) -> None:
+    """The CEILING, never the operating cap. `fact_term_fits_the_ceiling_check`
+    asserts the same number in the database."""
+    if len(value) > FACT_TERM_CEILING_CHARS:
+        raise ValueError(
+            f"{field} is {len(value)} characters, over the "
+            f"{FACT_TERM_CEILING_CHARS}-character ceiling"
+        )
+
+
+def _check_predicate(value: str) -> None:
+    if len(value) > FACT_PREDICATE_CEILING_CHARS:
+        raise ValueError(
+            f"predicate is {len(value)} characters, over the "
+            f"{FACT_PREDICATE_CEILING_CHARS}-character ceiling"
+        )
 
 
 @dataclass(frozen=True)
@@ -196,6 +254,9 @@ class CandidateClaim:
     message_ids: tuple[int, ...]
 
     def __post_init__(self) -> None:
+        _check_term("subject", self.subject)
+        _check_predicate(self.predicate)
+        _check_term("object", self.object)
         if not self.message_ids:
             raise ValueError(
                 "a CandidateClaim needs at least one message_id: a claim "
@@ -354,6 +415,9 @@ class Fact:
                 "digest; a fact whose instruction is unknown is not "
                 "attributable and is refused"
             )
+        _check_term("subject_id", self.subject_id)
+        _check_predicate(self.predicate)
+        _check_term("object_literal", self.object_literal)
         # Not "exactly one" any more (migration 0038): the literal is the
         # object and the entity id is an optional pointer beside it. What is
         # still refused is an EMPTY literal — `""` and `"   "` are non-NULL to

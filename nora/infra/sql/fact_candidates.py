@@ -59,12 +59,21 @@ joining `tests/contract/test_dream_sink_contract.py`: this store was dropping
 the DEC-125/DEC-126 pair every `Proposal` already carried, which is provenance
 thrown away at the one place it is free to keep.)
 
-**`observed_in` holds the MESSAGE the claim was seen in, not the key** (flagged
+**`observed_in` holds the MESSAGES the claim was seen in, not the key** (flagged
 2026-08-21, and the one place this store departs from the instruction it was
 built to). §5's Phase A is "read the window, emit candidate triples **with the
 turn each came from**", and `CandidateClaim.message_ids` are those turns; each
-sighting merges its message id in, so the column accumulates the distinct turns
-a claim was asserted across and `occurrence_count` counts them. The
+sighting merges its message ids in, so the column accumulates the distinct
+turns a claim was asserted across.
+
+**`occurrence_count` does NOT count them, and since plural `message_ids` it
+never did.** It counts SIGHTINGS — `propose` calls — while `observed_in` counts
+turns, and one sighting can now carry several (D31: an episode is a
+conversational chunk, so a claim asserted across two messages is one sighting
+with two ids). The two numbers came apart and the distinction is load-bearing
+downstream: `pending`'s seen-once drop and its recurrence ranking both key on
+`occurrence_count`, so a claim made across three turns of one episode is
+correctly treated as one sighting rather than as three people agreeing. The
 alternative — taking it from `key` — holds only for a SCOPE-keyed sink: this
 one is workspace-keyed (DEC-105, and `DreamSink`'s own docstring says so),
 so `observed_in = (key,)` would write the same constant into every row in the
@@ -195,7 +204,14 @@ class SqlFactCandidateStore:
                 "first_seen_at": now_ms,
                 "last_seen_at": now_ms,
                 "occurrence_count": 1,
-                "observed_in": [str(i) for i in claim.message_ids],
+                # `dict.fromkeys`, not a set: the merge below promises "never
+                # duplicate" and the FIRST insert was exempt from it, so
+                # `[41, 41]` wrote `{41,41}` and contradicted the invariant
+                # one statement later. Order-preserving so the array is
+                # stable rather than set-arbitrary.
+                "observed_in": list(
+                    dict.fromkeys(str(i) for i in claim.message_ids)
+                ),
                 "status": "pending",
                 "attempts": 0,
                 "established_by": p.established_by,

@@ -173,19 +173,17 @@ def test_an_entity_id_and_a_literal_coexist():
     assert f.object_entity_id == "0191f2c4-0000-7000-8000-0000000000e2"
 
 
-def test_a_fact_with_no_literal_object_is_refused():
-    """The entity id is an ADDITIVE pointer, never a replacement. A row whose
-    object is only an id says nothing a reader or a renderer can use, and it
-    is the exact shape that broke dedup."""
-    with pytest.raises(TypeError):
-        Fact(  # type: ignore[call-arg]
-            id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-            subject_id="e1", predicate="has",
-            object_entity_id="0191f2c4-0000-7000-8000-0000000000e2",
-            source_url="https://example.test/a", source_excerpt="x",
-            valid_from=1, created_at=1, instruction_sha256="a" * 64,
-            model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
-        )
+def test_object_literal_is_not_optional_on_the_type():
+    """The entity id is an ADDITIVE pointer, never a replacement.
+
+    **Asserted on the ANNOTATION, not by omitting the argument.** The first
+    version of this raised `TypeError` from leaving `object_literal` out — which
+    is Python's dataclass constructor refusing a missing positional, and stays
+    true whether the field is `str` or `str | None`. It would have passed
+    against the very reversion its docstring said it protected. The type is the
+    thing that changed, so the type is the thing to read."""
+    assert Fact.__annotations__["object_literal"] == "str"
+    assert Fact.__annotations__["object_entity_id"] == "str | None"
 
 
 def test_a_blank_literal_object_is_refused():

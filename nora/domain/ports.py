@@ -1293,6 +1293,19 @@ class Proposal:
     instruction_sha256: str
     model: str
     established_by: str
+    # The candidate row this proposal SETTLES, when the adaptor knows it —
+    # adaptor-supplied, never model-authored, and never round-tripped through a
+    # prompt (it is a uuid, and `dream_screen` drops any envelope item carrying
+    # one). `None` for an adaptor with no candidate tier behind it.
+    #
+    # It exists so a sink can join back to the candidate by IDENTITY rather
+    # than by re-deriving it from the payload's words. The fact tier had the
+    # latter and it was wrong twice over: the model rewording a claim by one
+    # character — which the adjudicator's own code documents as expected and
+    # logs — made the join miss and report a WIRING GAP, and a triple match
+    # against the whole table could donate a settled candidate's provenance to
+    # an unrelated later fact.
+    candidate_id: str | None = None
 
 
 @runtime_checkable

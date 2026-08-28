@@ -1226,3 +1226,43 @@ def test_the_standing_window_may_equal_the_reply_window(toml_path):
     toml_path.write_text(over)
     with pytest.raises(ConfigError, match="context_window"):
         load(toml_path)
+
+
+def test_a_fact_term_cap_above_the_database_ceiling_refuses_to_start(toml_path):
+    """`[standing] max_chars`' refusal, one tier over and for the same reason:
+    `fact_term_fits_the_ceiling_check` is DDL and cannot be a knob, so a config
+    above it means every fact the adjudicator writes is refused by Postgres —
+    in a background tick nobody is watching, rather than at boot."""
+    text = toml_path.read_text()
+    i = text.index("[facts]")
+    toml_path.write_text(
+        text[:i] + text[i:].replace(
+            "enabled = false", "enabled = false\nmax_term_chars = 900", 1))
+    with pytest.raises(ConfigError, match="ceiling"):
+        load(toml_path)
+
+
+def test_a_fact_predicate_cap_above_the_database_ceiling_refuses_to_start(toml_path):
+    """The second cap, asserted separately: one validator covering two fields
+    passes with either half deleted."""
+    text = toml_path.read_text()
+    i = text.index("[facts]")
+    toml_path.write_text(
+        text[:i] + text[i:].replace(
+            "enabled = false", "enabled = false\nmax_predicate_chars = 201", 1))
+    with pytest.raises(ConfigError, match="ceiling"):
+        load(toml_path)
+
+
+def test_fact_caps_exactly_at_their_ceilings_are_allowed(toml_path):
+    """The boundary from the accepting side: the ceiling is the largest value a
+    writer may pass, not the first one it may not."""
+    text = toml_path.read_text()
+    i = text.index("[facts]")
+    toml_path.write_text(
+        text[:i] + text[i:].replace(
+            "enabled = false",
+            "enabled = false\nmax_term_chars = 800\nmax_predicate_chars = 200",
+            1))
+    cfg = load(toml_path)
+    assert (cfg.facts.max_term_chars, cfg.facts.max_predicate_chars) == (800, 200)

@@ -31,10 +31,13 @@ unchanged, the prompt is unchanged, the model still never sees a name.
 **A junction, not an array column**, and the repo has already made this exact
 call once: `fact_premise` exists rather than a `premise_ids` array because
 "which facts depend on this one" is an unindexable array-containment scan with
-the array and an indexed lookup with the table. `idx_fact_asserter_person` is
-the same direction for "what has this person been telling us" -- which is also
-what makes an abusive `stated` claim attributable rather than anonymous
-(`30-review-response.md` §2.3).
+the array and an indexed lookup with the table. The junction SHAPE is what makes
+"what has this person been telling us" indexable at all -- which is also what
+makes an abusive `stated` claim attributable rather than anonymous
+(`30-review-response.md` §2.3). **The index itself is deliberately NOT created
+here**: nothing filters this table by `person_id` yet, and an index with no
+query is a write cost paid for a read nobody makes. It arrives with the
+sender-scoped verb that will issue it.
 
 **Grain: (fact_id, person_id, message_id)** -- the finest that loses nothing.
 Three people once is three rows over three persons; one person three times is
@@ -87,9 +90,35 @@ def upgrade() -> None:
             name="fact_asserter_person_is_named_check",
         ),
     )
-    op.create_index("idx_fact_asserter_person", "fact_asserter", ["person_id"])
+    # `fact_premise` cascades too, from here. Without it, deleting a fact is
+    # blocked by its premise rows before `fact_asserter`'s cascade can run —
+    # so the run-scoped rollback this cascade exists for could never happen,
+    # and the justification was true of one table and false of the operation.
+    # Both tables are empty, so this is a constraint swap and nothing else.
+    op.drop_constraint("fact_premise_fact_id_fkey", "fact_premise",
+                       type_="foreignkey")
+    op.drop_constraint("fact_premise_premise_fact_id_fkey", "fact_premise",
+                       type_="foreignkey")
+    op.create_foreign_key(
+        "fact_premise_fact_id_fkey", "fact_premise", "fact",
+        ["fact_id"], ["id"], ondelete="CASCADE",
+    )
+    op.create_foreign_key(
+        "fact_premise_premise_fact_id_fkey", "fact_premise", "fact",
+        ["premise_fact_id"], ["id"], ondelete="CASCADE",
+    )
 
 
 def downgrade() -> None:
-    op.drop_index("idx_fact_asserter_person", table_name="fact_asserter")
+    op.drop_constraint("fact_premise_fact_id_fkey", "fact_premise",
+                       type_="foreignkey")
+    op.drop_constraint("fact_premise_premise_fact_id_fkey", "fact_premise",
+                       type_="foreignkey")
+    op.create_foreign_key(
+        "fact_premise_fact_id_fkey", "fact_premise", "fact", ["fact_id"], ["id"],
+    )
+    op.create_foreign_key(
+        "fact_premise_premise_fact_id_fkey", "fact_premise", "fact",
+        ["premise_fact_id"], ["id"],
+    )
     op.drop_table("fact_asserter")

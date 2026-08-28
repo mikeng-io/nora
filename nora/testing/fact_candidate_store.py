@@ -141,7 +141,10 @@ class InMemoryFactCandidateStore:
                 )
             claim = p.payload
             triple = (key, claim.subject, claim.predicate, claim.object)
-            seen_in = tuple(str(i) for i in claim.message_ids)
+            # Deduped on the first insert, matching the SQL store: the
+            # merge below promises "never duplicate" and the first write
+            # was exempt from it.
+            seen_in = tuple(dict.fromkeys(str(i) for i in claim.message_ids))
             existing = self._by_triple.get(triple)
             if existing is None:
                 self._seq += 1

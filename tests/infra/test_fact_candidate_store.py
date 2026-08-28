@@ -750,16 +750,31 @@ async def test_a_resolved_object_still_ranks_a_genuine_contradiction_first(world
     recurrence."""
     store = world.store
     await world.seed_entity(canonical_name="e1")
+    await world.seed_entity(canonical_name="other")
     object_entity = await world.seed_entity(canonical_name="v1")
     await world.seed_fact(subject="e1", object="v1")
     await world.resolve_object(object="v1", entity_id=object_entity)
-    ids = await store.propose(
+    contradiction = await store.propose(
         key=WS, proposals=(_candidate(subject="e1", object="v2"),), now_ms=NOW,
+    )
+    # A SECOND candidate, contradicting nothing and seen more often. Without it
+    # the assertion below was a one-element list, which every possible ordering
+    # satisfies — the ranking clause could be deleted outright and the test
+    # stayed green.
+    ordinary = await store.propose(
+        key=WS,
+        proposals=(_candidate(subject="other", predicate="p", object="o"),),
+        now_ms=NOW,
+    )
+    await store.propose(
+        key=WS,
+        proposals=(_candidate(subject="other", predicate="p", object="o"),),
+        now_ms=NOW + 1,
     )
 
     rows = await store.pending(workspace=WS, limit=10)
 
-    assert [c.id for c in rows] == [ids[0]]
+    assert [c.id for c in rows] == [contradiction[0], ordinary[0]]
 
 
 async def test_pending_keeps_a_candidate_whose_backing_fact_was_superseded(world):
