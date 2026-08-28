@@ -52,8 +52,8 @@ unmake the assertion. `fact_id` DOES cascade, because
 `30-review-response.md` §7 makes run-scoped rollback a supported operation and
 an orphan asserter row would outlive the fact it attributes.
 
-Revision ID: 0039_fact_asserter
-Revises: 0038_fact_object_relax
+Revision ID: 0040_fact_asserter
+Revises: 0039_fact_object_relax
 Create Date: 2026-08-28
 """
 
@@ -63,8 +63,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0039_fact_asserter"
-down_revision = "0038_fact_object_relax"
+revision = "0040_fact_asserter"
+down_revision = "0039_fact_object_relax"
 branch_labels = None
 depends_on = None
 

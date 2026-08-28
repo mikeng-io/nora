@@ -37,8 +37,8 @@ Safe on the live database: `fact` and `fact_candidate` are both empty
 existing rows and would fail loudly naming the constraint, which is the correct
 behaviour -- a silent truncation of somebody's claim is not.
 
-Revision ID: 0040_fact_term_ceilings
-Revises: 0039_fact_asserter
+Revision ID: 0041_fact_term_ceilings
+Revises: 0040_fact_asserter
 Create Date: 2026-08-28
 """
 
@@ -51,8 +51,8 @@ from nora.domain.facts import (
     FACT_TERM_CEILING_CHARS,
 )
 
-revision = "0040_fact_term_ceilings"
-down_revision = "0039_fact_asserter"
+revision = "0041_fact_term_ceilings"
+down_revision = "0040_fact_asserter"
 branch_labels = None
 depends_on = None
 

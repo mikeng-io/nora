@@ -1042,10 +1042,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec(
         "nora_fact_person_claim_refused_total",
-        "Claims refused at the sink because their subject resolves to a "
-        "person on the roster. Measured at five person-claims in six edges "
-        "with the roster supplied, so the prompt's exclusion is checkable and "
-        "NOT enforced — refused loudly here, never accepted and forgotten.",
+        "Claims refused at the sink because their subject IS somebody on the "
+        "roster, by `matched`: person_id, or display_name (their name, first "
+        "or last name, or an operator-authored alias). Two series because an "
+        "id-only match leaves the whole class reachable through the name "
+        "everybody actually uses — and because if name-matching over-refuses, "
+        "this is how anyone finds out. Measured at five person-claims in six "
+        "edges with the roster supplied, so the prompt's exclusion is "
+        "checkable and NOT enforced — refused loudly here, never accepted and "
+        "forgotten.",
+        ("matched",),
     ),
     _CounterSpec(
         "nora_fact_asserter_total",

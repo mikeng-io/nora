@@ -159,7 +159,7 @@ def _fact(**over):
 
 
 def test_an_entity_id_and_a_literal_coexist():
-    """Migration 0038 / `21-substrate-contract.md` §10. This was refused
+    """Migration 0039 / `21-substrate-contract.md` §10. This was refused
     before — the exactly-one CHECK forced promotion to DESTROY the surface
     string, which broke the negative cache (dedup compares `object_literal`,
     and `NULL = 'x'` is NULL) and made two render paths print a bare uuid.

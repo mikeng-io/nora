@@ -1235,7 +1235,7 @@ FACT = sa.Table(
     sa.Column("workspace", sa.Text, nullable=False),
     sa.Column("subject_id", sa.Text, nullable=False),
     sa.Column("predicate", sa.Text, nullable=False),
-    # 2026-08-28 (migration 0038): an ADDITIVE, nullable resolution pointer —
+    # 2026-08-28 (migration 0039): an ADDITIVE, nullable resolution pointer —
     # `21-substrate-contract.md` §10 relaxing §6.5. It was `sa.Text` against a
     # `uuid` PK with NO foreign key, so the "node reference" half of the old
     # exactly-one CHECK referenced nothing: a second free-text column wearing
@@ -1246,7 +1246,7 @@ FACT = sa.Table(
         pg.UUID(as_uuid=False),
         sa.ForeignKey("fact_entity.id", name="fact_object_entity_id_fkey"),
     ),
-    # NOT NULL as of 0038. The old `(object_entity_id is null) <>
+    # NOT NULL as of 0039. The old `(object_entity_id is null) <>
     # (object_literal is null)` forced promotion to DESTROY the surface string
     # the room actually used, and broke the negative cache on the way past:
     # dedup compares `object_literal`, an entity-object fact had it NULL, and
@@ -1405,7 +1405,7 @@ IDX_FACT_STANDING = sa.Index(
 FACT_PREMISE = sa.Table(
     "fact_premise",
     METADATA,
-    # CASCADE on both ends as of 0039. `30-review-response.md` §7 makes
+    # CASCADE on both ends as of 0040. `30-review-response.md` §7 makes
     # run-scoped rollback — "void everything run X wrote" — a supported
     # operation, and a subsystem whose writer is a model with no human in the
     # loop needs an undo. Without this, deleting a fact is blocked by its
@@ -1434,7 +1434,7 @@ IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(
 )
 
 
-# WHO said it — `21-substrate-contract.md` §7's whole answer (migration 0039).
+# WHO said it — `21-substrate-contract.md` §7's whole answer (migration 0040).
 # `established_by` records the RUN that produced a fact; nothing anywhere
 # recorded the HUMAN who claimed it, and for a tier whose job is belief that is
 # the wrong direction: corroboration and disagreement are properties of who

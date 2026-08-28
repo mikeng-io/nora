@@ -476,7 +476,7 @@ lexeme row and a fact row at once.
 > its entity group, in both tiers, **in one transaction**.
 
 **And the columns for that do not exist yet.** `fact.subject_id` is plain text
-with no entity pointer — migration 0038 gave only the *object* a real
+with no entity pointer — migration 0039 gave only the *object* a real
 foreign-keyed id — and `room_lexeme.canonical_form` has no link to
 `fact_entity` at all. So the entity fan-out needs, from pass 3:
 `fact.subject_entity_id`, and a lexeme→entity resolution. Until they land,

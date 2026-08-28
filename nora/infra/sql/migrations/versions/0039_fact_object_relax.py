@@ -51,7 +51,7 @@ first — any row whose text was not uuid-shaped would fail the cast, which is
 exactly the class of row the missing FK was admitting. Verified zero rows
 before writing this.
 
-Revision ID: 0038_fact_object_relax
+Revision ID: 0039_fact_object_relax
 Revises: 0037_standing_consumed_verdict
 Create Date: 2026-08-28
 """
@@ -62,7 +62,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0038_fact_object_relax"
+revision = "0039_fact_object_relax"
 down_revision = "0037_standing_consumed_verdict"
 branch_labels = None
 depends_on = None

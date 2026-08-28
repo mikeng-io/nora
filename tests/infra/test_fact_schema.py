@@ -51,7 +51,7 @@ async def _seed_entity(conn, name: str = "House House") -> str:
 
 
 async def test_a_resolved_fact_carries_both_an_entity_id_and_the_literal(pg_engine):
-    """Migration 0038, reversing `fact_one_object_check`. The old CHECK forced
+    """Migration 0039, reversing `fact_one_object_check`. The old CHECK forced
     promotion to DESTROY the surface string the room used; this asserts the
     state that was previously illegal and is now the whole point — the words
     AND the entity they resolve to, on one row."""
@@ -76,7 +76,7 @@ async def test_a_resolved_fact_carries_both_an_entity_id_and_the_literal(pg_engi
 
 
 async def test_a_fact_with_no_literal_object_is_refused(pg_engine):
-    """`object_literal` is NOT NULL as of 0038. An entity id alone is the row
+    """`object_literal` is NOT NULL as of 0039. An entity id alone is the row
     shape that broke the negative cache — dedup compares `object_literal`,
     and `NULL = 'x'` is NULL, so the claim was re-adjudicated every tick
     forever."""
@@ -93,7 +93,7 @@ async def test_a_fact_with_no_literal_object_is_refused(pg_engine):
 
 
 async def test_an_object_entity_id_naming_no_entity_is_refused(pg_engine):
-    """The defect 0038 closes: `object_entity_id` was `text` against a `uuid`
+    """The defect 0039 closes: `object_entity_id` was `text` against a `uuid`
     PK with NO foreign key, so it would accept any string and tell nobody —
     a second free-text column wearing an id's name. Now the database refuses
     a pointer to nothing."""
@@ -111,7 +111,7 @@ async def test_an_object_entity_id_naming_no_entity_is_refused(pg_engine):
 
 
 async def test_an_object_entity_id_that_is_not_a_uuid_is_refused(pg_engine):
-    """The column is `uuid`, not `text`. Before 0038 `'House House'` was a
+    """The column is `uuid`, not `text`. Before 0039 `'House House'` was a
     legal value here."""
     async with pg_engine.begin() as conn:
         # `DBAPIError` alone: `IntegrityError` is a subclass of it, so the

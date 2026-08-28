@@ -291,7 +291,7 @@ class InMemoryFactCandidateStore:
         )
 
     def _contradicts_a_live_fact(self, candidate: FactCandidate) -> bool:
-        # `is distinct from` in SQL, `!=` here. Since migration 0038
+        # `is distinct from` in SQL, `!=` here. Since migration 0039
         # `object_literal` is NOT NULL on both sides, so the two agree without
         # the NULL case that used to separate them — which is the point: the
         # production comparison and this one broke the negative cache

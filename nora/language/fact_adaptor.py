@@ -949,9 +949,9 @@ def _render_standing(fact: Fact, *, handle: str) -> str:
 
     **And that applies to the OBJECT column too.** This rendered
     `object_entity_id` whenever `object_literal` was NULL — which, under the
-    pre-0038 exactly-one CHECK, was every entity-object fact. The one function
+    pre-0039 exactly-one CHECK, was every entity-object fact. The one function
     whose docstring says no identifier reaches the prompt was the function
-    putting a bare uuid in it. Since 0038 `object_literal` is NOT NULL and
+    putting a bare uuid in it. Since 0039 `object_literal` is NOT NULL and
     the entity id is never rendered anywhere.
     """
     parts = [

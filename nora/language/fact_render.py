@@ -70,9 +70,9 @@ def render_facts(facts: tuple[Fact, ...]) -> str:
 def _render_entry(fact: Fact) -> str:
     """`object_literal`, and NEVER `object_entity_id` — the entity id is a
     resolution pointer, not a rendering. This once fell back to printing the
-    id column whenever the literal was NULL, which under the pre-0038 schema
+    id column whenever the literal was NULL, which under the pre-0039 schema
     was every entity-object fact, and put a bare uuid in front of the model.
-    Since 0038 the literal is NOT NULL, so there is nothing to fall back to
+    Since 0039 the literal is NOT NULL, so there is nothing to fall back to
     and no branch to get wrong."""
     excerpt = (fact.source_excerpt or "")[:_EXCERPT_MAX_CHARS]
     return (

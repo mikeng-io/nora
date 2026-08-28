@@ -721,7 +721,7 @@ async def test_pending_drops_a_candidate_backed_by_a_fact_with_a_resolved_object
     world,
 ):
     """The negative cache broke exactly here (`21-substrate-contract.md`
-    §6.4). Before migration 0038 a promoted object made `object_literal`
+    §6.4). Before migration 0039 a promoted object made `object_literal`
     NULL, dedup compares that column, and `NULL = 'x'` is NULL — so the claim
     was never deduped, was re-adjudicated every tick forever, and ranked FIRST
     each time because the contradiction predicate then read it as
@@ -954,7 +954,10 @@ async def sql_sink(candidate_pg_url):
     metrics = Metrics()
     try:
         yield SqlFactCandidateStore(
-            engine, roster=frozenset({"miles", "Grant"}), metrics=metrics,
+            engine,
+            roster=frozenset({"miles", "grant"}),
+            roster_names=frozenset({"Miles Novak", "阿Miles", "Grace"}),
+            metrics=metrics,
         ), engine, metrics
     finally:
         await engine.dispose()
@@ -981,7 +984,8 @@ async def test_a_claim_about_a_roster_person_is_refused_at_the_sink(sql_sink):
     )
 
     assert len(ids) == 1
-    assert metrics.get("nora_fact_person_claim_refused_total") == 1
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="person_id") == 1
 
 
 async def test_a_person_in_object_position_is_not_refused(sql_sink):
@@ -1000,7 +1004,10 @@ async def test_a_person_in_object_position_is_not_refused(sql_sink):
     )
 
     assert len(ids) == 1
-    assert metrics.get("nora_fact_person_claim_refused_total") == 0
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="person_id") == 0
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="display_name") == 0
 
 
 async def test_an_empty_roster_refuses_nothing(sql_sink, candidate_pg_url):
@@ -1048,3 +1055,63 @@ async def test_an_unresolvable_subject_is_counted_not_merely_dropped(sql_sink):
     await store.pending(workspace=WS, limit=10)
 
     assert metrics.get("nora_fact_entity_unresolved_total") == 1
+
+
+async def test_a_claim_about_a_person_by_the_name_the_room_uses_is_refused(sql_sink):
+    """The half an id-only match misses, and the half that matters: nobody
+    writes `miles` in a sentence, they write the name the group calls him. A
+    claim about a person in subject position is a fact about a human being
+    living in the wrong tier — that is Honcho's axis, and an id-only refusal
+    leaves the entire class reachable through the ordinary name.
+
+    Counted on its OWN label, so over-refusal by name is findable rather than
+    hidden inside the id series."""
+    store, _engine, metrics = sql_sink
+
+    ids = await store.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="阿Miles", predicate="lives_in", object="TST"),
+            _candidate(subject="big walk", predicate="made_by", object="hh"),
+        ),
+        now_ms=NOW,
+    )
+
+    assert len(ids) == 1
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="display_name") == 1
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="person_id") == 0
+
+
+async def test_the_name_match_is_exact_and_never_a_prefix(sql_sink):
+    """The rule this stage earned the hard way. The promotion veto's month
+    abbreviations matched any word STARTING with them, so `mar` refused
+    "Marco's car" and `may` refused "maybe". A display name under a prefix
+    match would eat ordinary words — and over-refusing is not free, because it
+    silently deletes legitimate facts nobody will ever know were dropped.
+
+    "Grace" is on this roster; "Grace Period" and "graceful" are not people."""
+    store, _engine, metrics = sql_sink
+
+    ids = await store.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="Grace Period", predicate="is", object="30 days"),
+            _candidate(subject="gracefulness", predicate="is", object="a virtue"),
+        ),
+        now_ms=NOW,
+    )
+
+    assert len(ids) == 2
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="display_name") == 0
+    # The positive control: the exact name IS refused, so the zero above is
+    # about the prefix and not about a matcher that never fires.
+    await store.propose(
+        key=WS,
+        proposals=(_candidate(subject="grace", predicate="likes", object="x"),),
+        now_ms=NOW,
+    )
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="display_name") == 1

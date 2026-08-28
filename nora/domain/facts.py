@@ -405,7 +405,7 @@ class Fact:
     subject_id: str
     predicate: str
     # An ADDITIVE, nullable resolution pointer as of 2026-08-28 (migration
-    # 0038, `21-substrate-contract.md` §10). Never the object on its own —
+    # 0039, `21-substrate-contract.md` §10). Never the object on its own —
     # `object_literal` always carries the words, so promotion RESOLVES a row
     # instead of rewriting it, and nothing downstream has to branch on which
     # half is present.
@@ -448,7 +448,7 @@ class Fact:
         _check_term("subject_id", self.subject_id)
         _check_predicate(self.predicate)
         _check_term("object_literal", self.object_literal)
-        # Not "exactly one" any more (migration 0038): the literal is the
+        # Not "exactly one" any more (migration 0039): the literal is the
         # object and the entity id is an optional pointer beside it. What is
         # still refused is an EMPTY literal — `""` and `"   "` are non-NULL to
         # every query asking «what does this fact say», which turns R-27's

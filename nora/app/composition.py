@@ -2043,6 +2043,17 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             fact_candidates = SqlFactCandidateStore(
                 engine,
                 roster=frozenset(persons.by_person),
+                # Every name the group calls them. `PersonRef.aliases` is
+                # operator-authored (阿Miles, 米高, a handle) and its own note
+                # says it must never resolve who a message is FROM — refusing
+                # on one is the opposite direction and the safe one.
+                roster_names=frozenset(
+                    name
+                    for ref in persons.by_person.values()
+                    for name in (ref.name, ref.first_name, ref.last_name,
+                                 *ref.aliases)
+                    if name
+                ),
                 metrics=metrics,
             )
             fact_entities = SqlEntityStore(engine, metrics=metrics)

@@ -120,6 +120,7 @@ rank that is deliberately NOT implemented.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from collections.abc import Sequence
 from typing import Any, Literal, get_args
 from uuid import UUID, uuid4
@@ -166,20 +167,49 @@ class SqlFactCandidateStore:
     def __init__(
         self, engine: AsyncEngine, *,
         roster: frozenset[str] = frozenset(),
+        roster_names: frozenset[str] = frozenset(),
         metrics: Any = None,
     ) -> None:
-        """`roster` is the set of `person_id`s `identity.toml` knows, so this
-        sink can REFUSE a claim about one of them (25 §2.4). `metrics` is
-        injected and never imported, the shape `SqlPresenceStore` uses.
+        """`roster` is the `person_id`s `identity.toml` knows and
+        `roster_names` is every name the group calls them — their display name,
+        their first and last names, and the operator-authored aliases (阿Miles,
+        米高, a handle). Either one refuses a claim about that person (25 §2.4).
 
-        Both default to empty/None so a contract-suite fixture still builds
-        this from a bare `AsyncEngine` — and an empty roster refuses nothing,
-        which is the correct degradation: a sink that refused everything
-        because nobody wired the roster would be a worse failure than the one
-        it guards against.
+        **Both, because an id-only match is the half that does not work.** A
+        claim about a person in SUBJECT position is a fact about a human being
+        living in the wrong tier — those belong to Honcho and its peer cards,
+        and the knowledge tier holding them is the shape the design refuses.
+        Matching only `person_id` leaves the entire class reachable through the
+        name everybody actually uses.
+
+        **EXACT after normalisation, never a prefix or a substring**, and this
+        stage earned that rule: the promotion veto's month abbreviations
+        matched any word starting with them, so `mar` refused "Marco's car" and
+        `may` refused "maybe". A display name like "May", "Sky" or "Grace"
+        under a prefix match would eat ordinary words — and over-refusing is
+        not free, because it silently deletes legitimate facts.
+
+        **These names are used to REFUSE, never to resolve.** `PersonRef`'s own
+        note is that aliases must never decide who a message is FROM — a
+        display name is spoofable and a sender is authenticated by platform id
+        alone. Refusing on one is the safe direction: the worst it costs is a
+        claim about a thing that shares a person's name.
+
+        `metrics` is injected and never imported, the shape `SqlPresenceStore`
+        uses. All three default to empty/None so a contract-suite fixture still
+        builds this from a bare `AsyncEngine` — and an empty roster refuses
+        NOTHING, which is the correct degradation: a sink that refused
+        everything because nobody wired the roster would be a worse failure
+        than the one it guards against, and it would look exactly like a quiet
+        room.
         """
         self._engine = engine
-        self._roster = frozenset(normalise_name(p) for p in roster if p.strip())
+        self._roster_ids = frozenset(
+            normalise_name(p) for p in roster if p.strip()
+        )
+        self._roster_names = frozenset(
+            normalise_name(n) for n in roster_names if n.strip()
+        ) - self._roster_ids
         self._metrics = metrics
 
     async def propose(
@@ -207,7 +237,7 @@ class SqlFactCandidateStore:
         all-or-nothing.
         """
         rows: list[dict[str, Any]] = []
-        refused = 0
+        refused: Counter[str] = Counter()
         for p in proposals:
             if not isinstance(p.payload, CandidateClaim):
                 raise TypeError(
@@ -227,11 +257,21 @@ class SqlFactCandidateStore:
             # the 9th" is a claim about an event, not about Grant's
             # disposition. The restriction bites on predicates ABOUT a person,
             # which is what a person-subject triple is.
-            if normalise_name(claim.subject) in self._roster:
-                refused += 1
+            subject = normalise_name(claim.subject)
+            reason = (
+                "person_id" if subject in self._roster_ids
+                else "display_name" if subject in self._roster_names
+                else None
+            )
+            if reason is not None:
+                # Counted BY REASON so the two are separate series. If matching
+                # on a name over-refuses, this counter is how anyone finds out;
+                # if it never fires, that is worth knowing too — an id-only
+                # match would have looked identical from outside.
+                refused[reason] += 1
                 log.info(
                     "fact candidate refused: subject %r is a roster person "
-                    "(workspace=%s)", claim.subject, key,
+                    "(matched on %s, workspace=%s)", claim.subject, reason, key,
                 )
                 continue
             rows.append({
@@ -257,10 +297,12 @@ class SqlFactCandidateStore:
                 "instruction_sha256": p.instruction_sha256,
                 "model": p.model,
             })
-        if refused and self._metrics is not None:
-            self._metrics.inc(
-                "nora_fact_person_claim_refused_total", float(refused),
-            )
+        if self._metrics is not None:
+            for reason, count in refused.items():
+                self._metrics.inc(
+                    "nora_fact_person_claim_refused_total", float(count),
+                    matched=reason,
+                )
         if not rows:
             return ()
         ids: list[str] = []
@@ -446,11 +488,11 @@ class SqlFactCandidateStore:
             .exists()
         )
         # `is_distinct_from`, not `!=`, and it is now a BELT rather than the
-        # load-bearing part. Before migration 0038 an entity-object fact had
+        # load-bearing part. Before migration 0039 an entity-object fact had
         # `object_literal` NULL; `null = 'x'` is NULL, so the dedup predicate
         # above never fired for it and the claim was re-adjudicated every tick
         # forever, ranking FIRST each time because this predicate then read it
-        # as a contradiction of its own candidate. 0038 made `object_literal`
+        # as a contradiction of its own candidate. 0039 made `object_literal`
         # NOT NULL — the literal always carries the words and the entity id is
         # an additive pointer beside it — so the NULL that caused it cannot
         # occur. `is_distinct_from` stays because a three-valued comparison

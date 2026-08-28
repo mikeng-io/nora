@@ -43,7 +43,7 @@ general, and a store is where the type and the cardinality are known again
 resolution (`big walk` / `Big Walk` / 大步行 → one canonical id) is a
 candidate-selection concern this class does not perform. `propose` writes
 `subject_id = payload.subject` and `object_literal = payload.object` verbatim,
-leaving `object_entity_id` NULL — which since migration 0038 is an ordinary
+leaving `object_entity_id` NULL — which since migration 0039 is an ordinary
 resolution-pending row rather than a schema violation: the literal IS the
 object, and the entity id is an additive pointer the promotion pass fills in
 later without touching the words. A fact written by this store always has
