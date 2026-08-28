@@ -16,7 +16,14 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from nora.obs.tracing import annotate, attached, capture_context, span
+from nora.obs.tracing import (
+    TRACE_KIND,
+    annotate,
+    attached,
+    build_sampler,
+    capture_context,
+    span,
+)
 
 _EXPORTER = InMemorySpanExporter()
 
@@ -27,8 +34,12 @@ def _provider():
     ignored with a warning, so a per-test provider silently leaves every test
     after the first reading the FIRST exporter. Set it once, clear between tests.
 
-    Found the hard way: these tests passed individually and failed as a file."""
-    provider = TracerProvider()
+    Found the hard way: these tests passed individually and failed as a file.
+
+    Built with `build_sampler()`, production's own rule — this file is where the
+    rule's own tests live, and a provider that sampled everything could not see
+    it at all."""
+    provider = TracerProvider(sampler=build_sampler())
     provider.add_span_processor(SimpleSpanProcessor(_EXPORTER))
     trace.set_tracer_provider(provider)
     yield
@@ -283,3 +294,137 @@ def test_capture_context_degrades_to_an_empty_context(monkeypatch):
     carrier = capture_context()
     with attached(carrier):
         pass          # must not raise
+
+
+# ---------------------------------------------------------------------------
+# R-76 — WHICH TRACES REACH THE COLLECTOR.
+#
+# Langfuse is an LLM-observability tool: a trace belongs in it when the work
+# under its root can contain a generation. Everything else — sequencing stages,
+# writing a row, counting a refusal — is plumbing, and plumbing's questions are
+# Prometheus'.
+#
+# THE DECISION IS ABOUT ROOTS, NOT ABOUT SPANS. `engagement.admission` has no
+# model call in it either and must keep being exported, because as a CHILD of a
+# trace that has one it is how a turn that ended early ends visibly at a named
+# stage. The sampler is composed under `ParentBased` so a child never
+# re-decides; the tests below pin both directions of that.
+# ---------------------------------------------------------------------------
+
+
+def test_a_plumbing_root_takes_its_whole_subtree_with_it(spans):
+    """The drop is total and it reaches descendants, not just direct children —
+    `nora/ingest/pipeline.py` is two levels deep in places and all of it must go.
+
+    POSITIVE CONTROL in the same test: an undeclared root opened right
+    afterwards IS exported, so «nothing came out» cannot be «the exporter was
+    dead».
+
+    PROBE: change `Decision.DROP` to `RECORD_AND_SAMPLE` in the sampler.
+    """
+    with (
+        span("plumbing.root", **{TRACE_KIND: "plumbing"}),
+        span("plumbing.child"),
+        span("plumbing.grandchild"),
+    ):
+        pass
+    assert spans.get_finished_spans() == ()
+
+    with span("something.undeclared"):
+        pass
+    assert [s.name for s in spans.get_finished_spans()] == ["something.undeclared"]
+
+
+def test_a_generation_root_keeps_the_plumbing_underneath_it(spans):
+    """THE HALF THAT IS EASY TO GET WRONG, and the reason this is a rule about
+    roots. A stage span with no model call in it is not the same thing as a
+    plumbing TRACE: under a root that has a generation, that stage is exactly
+    what makes an early exit legible.
+
+    A child here declares itself `plumbing` and is exported anyway, because
+    `ParentBased` never consults the delegate for a child. A sampler applied
+    per-span instead would swallow the stage spans out of the middle of a real
+    turn — every trace would have holes in it where the guards ran.
+
+    PROBE: build the provider with the bare `_PlumbingIsNotATrace()` instead of
+    `build_sampler()`'s `ParentBased(root=...)` and the child vanishes.
+    """
+    with (
+        span("turn.root", **{TRACE_KIND: "generation"}),
+        span("turn.stage", **{TRACE_KIND: "plumbing"}),
+    ):
+        pass
+
+    assert {s.name for s in spans.get_finished_spans()} == {"turn.root", "turn.stage"}
+    assert len({s.context.trace_id for s in spans.get_finished_spans()}) == 1
+
+
+def test_a_root_that_declares_nothing_is_exported(spans):
+    """FAIL-OPEN, and deliberately so. Getting this wrong towards export costs
+    noise, which is visible and complains about itself; getting it wrong towards
+    silence costs a missing trace for a model call — an invisible gap in exactly
+    the traces the rule exists to protect. A new entry point that forgets to
+    declare must show up, not disappear.
+
+    PROBE: invert the sampler's default so only `generation` is kept.
+    """
+    with span("a.new.entry.point"):
+        pass
+    assert [s.name for s in spans.get_finished_spans()] == ["a.new.entry.point"]
+
+
+def test_an_unknown_trace_kind_is_exported_and_reported(spans, caplog):
+    """The vocabulary is a `Literal` and the check is at RUNTIME, because the
+    sampler reads a value that arrives as a plain attribute. An unrecognised
+    kind is LOGGED and the trace is kept — withholding it would make a typo
+    indistinguishable from a deliberate drop, which is the one failure mode this
+    rule cannot afford.
+
+    PROBE: delete the membership check and `"plumbin"` starts silently
+    exporting — no, silently NOT dropping — with nothing said either way.
+    """
+    import logging
+
+    with (
+        caplog.at_level(logging.WARNING, logger="nora.tracing"),
+        span("typo.root", **{TRACE_KIND: "plumbin"}),
+    ):
+        pass
+
+    assert [s.name for s in spans.get_finished_spans()] == ["typo.root"]
+    assert "is not in the vocabulary" in caplog.text
+
+
+def test_the_sampler_reads_the_attributes_a_span_started_with(spans):
+    """`span` passes its attributes to `start_as_current_span` rather than
+    setting them afterwards, and that is load-bearing rather than tidy: a
+    `Sampler` is handed only the start attributes, so a `trace_kind` set one
+    line later is a kind the decision was already made without — and the code
+    would look correct while the rule never fired.
+
+    PROBE: move the attribute dict out of `start_as_current_span` back into a
+    `set_attribute` loop after `__enter__` and this reddens.
+    """
+    with span("declared.at.start", **{TRACE_KIND: "plumbing"}):
+        annotate(**{TRACE_KIND: "generation"})     # too late to matter, by design
+    assert spans.get_finished_spans() == ()
+
+
+def test_an_attribute_that_cannot_be_rendered_costs_only_itself(spans):
+    """Coercion is PER KEY. The old shape set attributes in a loop inside one
+    guard, so the first unstringable value silently abandoned every attribute
+    after it — including, now, a `trace_kind` that decides whether the trace
+    exists.
+
+    PROBE: wrap `_safe_attributes`' body in a single `try` and `keeper` is lost
+    with the broken one.
+    """
+    class Unstringable:
+        def __str__(self): raise RuntimeError("nope")
+
+    with span("partial", bad=Unstringable(), keeper="kept"):
+        pass
+
+    (recorded,) = spans.get_finished_spans()
+    assert recorded.attributes["keeper"] == "kept"
+    assert "bad" not in recorded.attributes

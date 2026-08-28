@@ -411,21 +411,62 @@ async def test_a_voice_note_transcribes_even_when_the_blob_store_cannot_be_read_
 
 
 # ---------------------------------------------------------------------------
-# WHAT THE TRACE SAYS (issue #64, ingest half).
+# WHAT AN INGEST REPORTS, AND WHERE (issue #64, then R-76).
 #
-# The root span carried a platform and a room key and nothing else, and only
-# the two REFUSING exits stamped an outcome at all — so a message that passed
-# through cleanly, which is every ambient message, produced a root with six
-# named children and no statement of what the ingest DID. In Langfuse that is
-# an empty trace, and the operator was looking at a page of them.
+# TWO INSTRUMENTS, and which one carries what is the decision under test.
 #
-# These drive the REAL pipeline and read the spans it ACTUALLY EXPORTED
-# (`exported_spans`, a real `InMemorySpanExporter` behind a real
-# `TracerProvider`). Nothing here asserts that a helper was called: a test of
-# that shape would have stayed green for the whole of the defect, because
+# An ingest contains no model call — six deterministic stages, a row, a feed —
+# so its trace is PLUMBING and never reaches Langfuse (`nora.obs.tracing`'s
+# sampler drops the root, and `ParentBased` takes the five children with it).
+# Langfuse is for traces with a generation in them; ingest is the
+# highest-volume entry point in the system and was 97 of the operator's last
+# 100 traces. What the trace used to say now lives on
+# `nora_ingest_outcomes_total`, which is a Prometheus question asked in
+# Prometheus.
+#
+# The trace is UNEXPORTED, not deleted: the pipeline still opens it and still
+# populates it, which is what makes «the collector gets nothing» a measurement
+# of the RULE rather than of an absence — a pipeline that opened no spans would
+# satisfy that assertion for the wrong reason. `unfiltered_spans` below is the
+# fixture that reads the trace production drops, so both halves are visible.
+#
+# These drive the REAL pipeline and read what it ACTUALLY EXPORTED and ACTUALLY
+# COUNTED. Nothing here asserts that a helper was called: a test of that shape
+# would have stayed green for the whole of the original defect, because
 # `_outcome` WAS being called — twice, on two of the exits, and never on the
 # one that runs a thousand times a day.
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def unfiltered_spans(monkeypatch):
+    """`exported_spans`, but WITHOUT production's sampler.
+
+    The only thing in the suite that can see an ingest trace. `exported_spans`
+    is built with `build_sampler()` so it models the deployment; this one models
+    the pipeline, so «what the ingest trace carries» and «what the collector
+    receives» can each be asserted against the thing that actually decides it.
+
+    Patches `get_tracer` and shuts its provider down on the way out, for the
+    reason `tests/conftest.py` spells out: `set_tracer_provider` is one-shot per
+    process, and a leaked provider has broken unrelated timing tests before.
+    """
+    from opentelemetry.sdk.trace import TracerProvider as _TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    from nora.obs import tracing as _tracing
+
+    exporter = InMemorySpanExporter()
+    provider = _TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(_tracing.trace, "get_tracer", provider.get_tracer)
+    try:
+        yield exporter
+    finally:
+        provider.shutdown()
 
 
 def _spans_by_name(exporter) -> dict:
@@ -433,6 +474,18 @@ def _spans_by_name(exporter) -> dict:
     for recorded in exporter.get_finished_spans():
         out.setdefault(recorded.name, []).append(recorded)
     return out
+
+
+def _only_root(exporter):
+    """The one span with no parent, or a failure that names what it found.
+
+    Identified by `parent is None` rather than by name, so a change that
+    re-parented the root reddens here instead of quietly reading a child.
+    """
+    roots = [s for s in exporter.get_finished_spans() if s.parent is None]
+    assert len(roots) == 1, \
+        f"one ingest must be exactly one trace; roots: {[s.name for s in roots]}"
+    return roots[0]
 
 
 def _root(exporter):
@@ -471,36 +524,36 @@ def _known_persons() -> Persons:
     )
 
 
-async def _drive_recorded():
-    """An ordinary ambient message: allowlisted room, no trigger. THE PATH THAT
-    HAD NOTHING."""
+async def _drive_recorded(metrics=None):
+    """An ordinary ambient message: allowlisted room, no trigger. THE AMBIENT
+    MAJORITY."""
     pipeline = _pipeline(
         memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(),
+        allowlist=_policy_of(), metrics=metrics,
     )
     return await pipeline.run(message=_msg(body="just chatting"))
 
 
-async def _drive_engaged():
+async def _drive_engaged(metrics=None):
     pipeline = _pipeline(
         memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(),
+        allowlist=_policy_of(), metrics=metrics,
     )
     return await pipeline.run(message=_msg(body="nora.000 what's up"))
 
 
-async def _drive_scope_refused():
+async def _drive_scope_refused(metrics=None):
     pipeline = _pipeline(
         memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(room="some-other-room"),
+        allowlist=_policy_of(room="some-other-room"), metrics=metrics,
     )
     return await pipeline.run(message=_msg(body="nora.000 hi"))
 
 
-async def _drive_audit_refused(monkeypatch):
+async def _drive_audit_refused(monkeypatch, metrics=None):
     store = FakeRecordStore()
 
     async def _boom(**_kwargs):
@@ -510,248 +563,235 @@ async def _drive_audit_refused(monkeypatch):
     pipeline = _pipeline(
         audit=store, memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(),
+        allowlist=_policy_of(), metrics=metrics,
     )
     return await pipeline.run(message=_msg(body="nora.000 hi"))
 
 
-async def _drive_sender_not_allowed():
+async def _drive_sender_not_allowed(metrics=None):
     pipeline = _pipeline(
         memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(persons='["someone-else"]'),
+        allowlist=_policy_of(persons='["someone-else"]'), metrics=metrics,
     )
     return await pipeline.run(message=_msg(body="nora.000 hi"))
 
 
-async def test_an_ordinary_ambient_message_says_so_on_the_root(exported_spans):
-    """THE DEFECT, as a property. A message that passes cleanly is the ambient
-    majority and it stamped NOTHING — the root said which room, and left the
-    reader to infer from six children that all of them ran.
+#: Every exit, paired with the outcome it must count. `_OUTCOMES` is checked
+#: against the KEYS of this table rather than the table being written from the
+#: vocabulary, so an outcome added without a driver — or a driver added without
+#: an outcome — reddens instead of drifting.
+def _all_drivers(monkeypatch, metrics):
+    return {
+        "recorded": lambda: _drive_recorded(metrics),
+        "engaged": lambda: _drive_engaged(metrics),
+        "scope_refused": lambda: _drive_scope_refused(metrics),
+        "sender_not_allowed": lambda: _drive_sender_not_allowed(metrics),
+        "audit_refused": lambda: _drive_audit_refused(monkeypatch, metrics),
+    }
 
-    PROBE: delete `_outcome("engaged" if decision.engage else "recorded")` in
-    `_run`'s final `else` and this reddens with the attribute simply absent.
+
+async def test_an_ingest_reaches_the_collector_with_nothing(exported_spans):
+    """R-76. THE RULE: a trace reaches Langfuse when the work under its root can
+    contain a generation. An ingest cannot — six deterministic stages, a row,
+    a feed, no model call anywhere — so none of its spans are exported.
+
+    Langfuse is an LLM-observability tool, and ingest is the highest-volume
+    entry point in the system. Measured on the live collector, 2026-08-28: 97
+    of the last 100 exported traces were ingest, and even the three that were
+    not refusals carried no generation. A collector that is 97% plumbing cannot
+    be read for the turns that matter.
+
+    TWO POSITIVE CONTROLS, because `== []` is also true of a harness that never
+    ran and of an exporter that was never live:
+
+    1. the ingest really happened — it returns a recorded message, and its
+       outcome is on the counter that replaced the trace;
+    2. the SAME fixture exports a root that does not declare itself plumbing,
+       so the drop is selective rather than total.
+
+    PROBE: delete `TRACE_KIND: "plumbing"` from the root `span(...)` call in
+    `run` and the six ingest spans come back.
     """
-    result = await _drive_recorded()
+    metrics = Metrics()
+    result = await _drive_recorded(metrics)
 
-    assert result.message is not None            # positive control: it really ran
-    root = _root(exported_spans)
-    assert root.name == "ingest"
-    assert root.attributes["nora.outcome"] == "recorded"
+    assert result.message is not None, "positive control 1: the ingest really ran"
+    assert metrics.get("nora_ingest_outcomes_total", outcome="recorded") == 1, \
+        "positive control 1: it reported itself, just not to the collector"
+    leaked = [s.name for s in exported_spans.get_finished_spans()]
+    assert leaked == [], f"an ingest reached the collector: {leaked}"
+
+    from nora.obs.tracing import span as _span
+    with _span("a-root-that-declares-nothing"):
+        pass
+    assert [s.name for s in exported_spans.get_finished_spans()] == [
+        "a-root-that-declares-nothing"
+    ], "positive control 2: the exporter is live and the drop is selective"
 
 
-async def test_a_tagged_message_is_recorded_as_engaged(exported_spans):
-    """The same attribute, a different value — so the test above is reading the
-    ingest rather than a constant. `engaged` is the ONE ingest whose story
-    continues, into the engagement trace."""
-    result = await _drive_engaged()
+async def test_no_ingest_exit_reaches_the_collector(exported_spans, monkeypatch):
+    """The same property over ALL FIVE exits, not just the ambient one. A
+    refusal, a failed audit write and a real tag are the exits most likely to be
+    argued back into the collector one at a time.
 
-    assert result.decision is not None and result.decision.engage is True
-    assert _root(exported_spans).attributes["nora.outcome"] == "engaged"
-
-
-async def test_a_denied_room_leaves_a_root_that_says_it_was_refused(exported_spans):
-    """This exit already stamped an outcome — the open question was WHERE it
-    landed, and the answer is the root. This pins it: the assertion is on the
-    span whose parent is `None`, and the child is asserted CLEAN.
-
-    PROBE: move `_outcome("scope_refused")` inside the `with span("ingest.scope")`
-    block and the outcome lands on the child — this reddens, while a test that
-    only checked «some span carries it» would stay green.
+    The positive control is the counter: every driver must be seen to have run,
+    so «nothing exported» can never pass as «nothing happened».
     """
-    result = await _drive_scope_refused()
+    from nora.ingest.pipeline import _OUTCOMES
 
-    assert result == IngestResult(message=None, decision=None)
-    root = _root(exported_spans)
-    assert root.attributes["nora.outcome"] == "scope_refused"
-    scope_child = _spans_by_name(exported_spans)["ingest.scope"][0]
-    assert "nora.outcome" not in (scope_child.attributes or {}), \
-        "the outcome belongs on the root, not on the stage that happened to run last"
+    metrics = Metrics()
+    for outcome, drive in _all_drivers(monkeypatch, metrics).items():
+        exported_spans.clear()
+        await drive()
+        leaked = [s.name for s in exported_spans.get_finished_spans()]
+        assert leaked == [], f"{outcome} reached the collector: {leaked}"
+        assert metrics.get("nora_ingest_outcomes_total", outcome=outcome) == 1, \
+            f"positive control: {outcome} did not actually run"
+
+    assert set(_all_drivers(monkeypatch, metrics)) == _OUTCOMES
 
 
-async def test_a_failed_audit_write_leaves_a_root_that_says_it_was_refused(
-    exported_spans, monkeypatch,
+async def test_the_ingest_trace_is_opened_and_populated_before_it_is_dropped(
+    unfiltered_spans,
 ):
-    """The other refusal, and the one that is a FAILURE rather than a policy
-    decision — a dropped message is exactly what an operator goes looking for."""
-    result = await _drive_audit_refused(monkeypatch)
+    """WHAT IS BEING DROPPED, read with the sampler removed.
 
-    assert result == IngestResult(message=None, decision=None)
-    root = _root(exported_spans)
-    assert root.attributes["nora.outcome"] == "audit_refused"
-    assert "nora.outcome" not in (
-        _spans_by_name(exported_spans)["ingest.audit"][0].attributes or {}
-    )
+    The trace is unexported, NOT deleted, and that distinction is load-bearing
+    twice over. It is what makes the zero-assertions above measure the rule
+    rather than an absence — the pipeline really does build a complete,
+    populated, correctly-parented trace on every message — and it is what makes
+    R-76's reversal condition one attribute rather than a re-instrumentation.
 
-
-async def test_a_refused_sender_keeps_the_trigger_it_matched(exported_spans):
-    """Two facts, deliberately on two attributes. The pipeline REPLACES the
-    decision with `sender_not_allowed`, so recording only the final disposition
-    would lose that the message was a real tag — which is the whole reason this
-    exit is interesting rather than routine.
-
-    PROBE: delete the `annotate(nora.engage_reason=...)` after the gate and the
-    second assertion reddens; delete `_outcome("sender_not_allowed")` and the
-    first does.
+    PROBE: delete the `with span("ingest", ...)` wrapper in `run` and this
+    reddens on the parenting; delete `_outcome`'s `annotate` and it reddens on
+    the outcome.
     """
-    result = await _drive_sender_not_allowed()
+    await _drive_engaged()
 
-    assert result.decision is not None and result.decision.engage is False
-    root = _root(exported_spans)
-    assert root.attributes["nora.outcome"] == "sender_not_allowed"
+    exported = unfiltered_spans.get_finished_spans()
+    assert {s.name for s in exported} == {
+        "ingest", "ingest.scope", "ingest.identity", "ingest.media",
+        "ingest.audit", "ingest.memory_feed", "ingest.gate",
+    }
+    assert len({s.context.trace_id for s in exported}) == 1
+    root = _only_root(unfiltered_spans)
+    for recorded in exported:
+        if recorded is not root:
+            assert recorded.parent.span_id == root.context.span_id
+
+    assert root.attributes["nora.trace_kind"] == "plumbing"
+    assert root.attributes["nora.outcome"] == "engaged"
     assert root.attributes["nora.engage_reason"] == "trigger_text"
-
-
-async def test_a_gate_that_degraded_closed_does_not_read_as_an_untagged_message(
-    exported_spans,
-):
-    """R-5's cost, made visible. The gate stage swallows a policy failure and
-    returns `engage=False`, so a classifier outage renders IDENTICALLY to an
-    ordinary chat message — `outcome=recorded` either way. `nora.engage_reason`
-    is the only thing that separates them.
-
-    PROBE: delete the `annotate` after `ingest.gate`.
-    """
-    class _BrokenPolicy:
-        async def should_engage(self, *, message):
-            raise RuntimeError("classifier down")
-
-    pipeline = _pipeline(
-        memory=FakeMemory(), persons=_known_persons(),
-        policy=_BrokenPolicy(), spawn=lambda c: c.close(), allowlist=_policy_of(),
-    )
-    await pipeline.run(message=_msg(body="nora.000 hi"))
-
-    root = _root(exported_spans)
-    assert root.attributes["nora.outcome"] == "recorded"
-    assert root.attributes["nora.engage_reason"] == "policy_error"
-
-
-async def test_the_root_says_what_arrived_and_whether_the_sender_is_known(
-    exported_spans,
-):
-    """The rest of «tell one trace from another at a glance». `attachments` is
-    what the PLATFORM said arrived, read before custody runs, so a slow
-    `ingest.media` child explains itself; `person_known` is a BOOL, never the
-    person_id, and it is the one thing `nora_unmapped_senders_total` cannot say
-    about THIS message.
-
-    PROBE: drop either key from the root `span(...)` call, or the `annotate`
-    after `ingest.identity`.
-    """
-    pipeline = _pipeline(
-        memory=FakeMemory(), persons=Persons(by_person={}, index={}),
-        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(),
-    )
-    msg = dataclasses.replace(
-        _msg(body="[image]"),
-        media=(MediaRef(platform_id="att1", media_type="image/jpeg", voice_note=False),),
-    )
-    await pipeline.run(message=msg)
-
-    root = _root(exported_spans)
-    assert root.attributes["nora.attachments"] == 1
+    assert root.attributes["nora.person_known"] is True
     assert root.attributes["nora.conversation_type"] == "group"
-    assert root.attributes["nora.person_known"] is False
 
 
-async def test_a_known_sender_is_reported_as_known(exported_spans):
-    """The other value of the same bool, so the assertion above reads the
-    identity stage rather than a default."""
+async def test_the_root_declares_itself_plumbing_at_span_start(unfiltered_spans):
+    """The declaration has to be an argument to `span(...)`, not an `annotate`
+    afterwards: a `Sampler` is handed only the attributes the span was STARTED
+    with, so a kind set one line later is a kind the decision was already made
+    without.
+
+    This is the half a reader cannot see from the sampler alone — it would look
+    identical, and silently never fire.
+
+    PROBE: move `TRACE_KIND: "plumbing"` out of the `span(...)` call in `run`
+    into an `annotate(...)` on the next line. This test stays green and
+    `test_an_ingest_reaches_the_collector_with_nothing` reddens, which is the
+    pair that pins it.
+    """
     await _drive_recorded()
-    assert _root(exported_spans).attributes["nora.person_known"] is True
+    root = _only_root(unfiltered_spans)
+
+    from opentelemetry.sdk.trace.sampling import Decision
+
+    from nora.obs.tracing import TRACE_KIND, _PlumbingIsNotATrace
+
+    verdict = _PlumbingIsNotATrace().should_sample(
+        None, 1, "ingest", attributes=dict(root.attributes),
+    )
+    assert verdict.decision is Decision.DROP, \
+        "the attributes the root STARTS with must be enough to decide against it"
+    assert TRACE_KIND in root.attributes
 
 
-async def test_every_exit_stamps_an_outcome_on_the_root(exported_spans, monkeypatch):
-    """The property the fix exists for, over ALL the exits at once rather than
-    one test per exit that could each be deleted separately.
+async def test_every_exit_is_counted_with_its_outcome(monkeypatch):
+    """THE REPLACEMENT INSTRUMENT. The trace said what an ingest did; the
+    counter does now, and every exit must reach it — the ambient majority
+    included, which is the exit that had nothing before issue #64 and would be
+    the easiest to lose again.
 
-    Positive control beside the presence-assertion: `ingest.scope` must have run
-    in every case, so «no outcome anywhere» cannot pass as «no ingest happened».
+    PROBE: delete any one `_outcome(...)` call in `_run` and this reddens on
+    that outcome.
     """
     from nora.ingest.pipeline import _OUTCOMES
 
-    seen = set()
-    for drive in (
-        _drive_recorded, _drive_engaged, _drive_scope_refused,
-        _drive_sender_not_allowed, lambda: _drive_audit_refused(monkeypatch),
-    ):
-        exported_spans.clear()
+    metrics = Metrics()
+    for outcome, drive in _all_drivers(monkeypatch, metrics).items():
         await drive()
-        root = _root(exported_spans)
-        assert "ingest.scope" in _spans_by_name(exported_spans), \
-            "positive control: the pipeline must actually have run"
-        assert "nora.outcome" in root.attributes, \
-            f"{drive} left a root that says nothing about what happened"
-        seen.add(root.attributes["nora.outcome"])
+        assert metrics.get("nora_ingest_outcomes_total", outcome=outcome) == 1, \
+            f"{outcome} was not counted"
 
-    assert seen <= _OUTCOMES, f"an exit invented an outcome: {seen - _OUTCOMES}"
+    assert metrics.get("nora_ingest_outcomes_total") == len(_OUTCOMES), \
+        "an exit counted twice, or one counted an outcome another exit owns"
 
 
-async def test_every_declared_outcome_is_reachable(exported_spans, monkeypatch):
-    """The vocabulary is DERIVED from the code, and this is the half that keeps
-    it honest in the other direction: a name declared in `IngestOutcome` that no
-    exit ever stamps is the span equivalent of a metric with no call site — it
-    renders as a filter value that is genuinely always empty.
+async def test_every_declared_outcome_is_reachable(monkeypatch):
+    """The vocabulary is DERIVED from the code, and this keeps it honest in the
+    other direction: a name declared in `IngestOutcome` that no exit ever
+    records is the label equivalent of a metric with no call site — it renders
+    as a filter value that is genuinely always empty.
 
-    The expected set is read off the `Literal` with `get_args`, never
-    hand-copied, so adding an outcome without an exit — or an exit without an
-    outcome — reddens here rather than drifting.
+    The expected set is read off the `Literal` with `get_args` and the observed
+    set off the RENDERED counter, never hand-copied, so adding an outcome
+    without an exit — or an exit without an outcome — reddens here.
     """
     from nora.ingest.pipeline import _OUTCOMES
 
-    seen = set()
-    for drive in (
-        _drive_recorded, _drive_engaged, _drive_scope_refused,
-        _drive_sender_not_allowed, lambda: _drive_audit_refused(monkeypatch),
-    ):
-        exported_spans.clear()
+    metrics = Metrics()
+    for drive in _all_drivers(monkeypatch, metrics).values():
         await drive()
-        seen.add(_root(exported_spans).attributes["nora.outcome"])
 
+    seen = {
+        dict(labels)["outcome"]
+        for (name, labels), value in metrics.snapshot().items()
+        if name == "nora_ingest_outcomes_total" and value
+    }
     assert seen == _OUTCOMES, (
         f"declared but unreachable: {_OUTCOMES - seen}; "
-        f"stamped but undeclared: {seen - _OUTCOMES}"
+        f"recorded but undeclared: {seen - _OUTCOMES}"
     )
 
 
-async def test_an_ingest_that_crashes_ends_on_the_root_as_an_error(
-    exported_spans, monkeypatch,
-):
-    """The sixth ending, and the reason `IngestOutcome` does not own a name for
-    it: `span` already stamps the exception type and sets the status to ERROR.
-    A crash must never be readable as one of the five ordinary outcomes.
+async def test_the_outcome_counter_says_which_platform_and_which_kind_of_room():
+    """The two dimensions that make the series readable. A stuck platform is
+    invisible in a total, and a group Nora watches and a DM are different
+    questions — these are the trace attributes worth keeping, and a label is
+    where they belong now.
+
+    PROBE: drop either label from the `metrics.inc` in `_outcome`. Both degrade
+    to `""` rather than raising (`Metrics._full_labels`), so this is the only
+    thing that would notice.
     """
-    from nora.ingest import pipeline as pipeline_module
+    metrics = Metrics()
+    await _drive_recorded(metrics)
 
-    async def _boom(**_kwargs):
-        raise RuntimeError("custody exploded")
-
-    monkeypatch.setattr(pipeline_module.media_stage, "run", _boom)
-    pipeline = _pipeline(
-        memory=FakeMemory(), persons=_known_persons(),
-        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(),
-    )
-
-    with pytest.raises(RuntimeError):
-        await pipeline.run(message=_msg(body="hi"))
-
-    root = _root(exported_spans)
-    assert root.attributes["nora.outcome"] == "RuntimeError"
-    assert root.attributes["nora.outcome"] not in pipeline_module._OUTCOMES
-    assert root.status.status_code.name == "ERROR"
+    assert metrics.get(
+        "nora_ingest_outcomes_total",
+        platform="signal", conversation_type="group", outcome="recorded",
+    ) == 1
+    assert metrics.get("nora_ingest_outcomes_total", platform="discord") == 0
 
 
-async def test_no_identifier_reaches_the_collector(exported_spans):
-    """R-73 — A TRACE IS AN EGRESS. Every attribute of every span this pipeline
-    opens is screened with the repo's own predicate, not with a reviewer's eye.
+async def test_the_outcome_counter_carries_no_identifier():
+    """R-73's floor, applied to the instrument that replaced the trace. The
+    counter's labels are three closed vocabularies — never the conversation_id
+    the span carried, which would be an unbounded label as well as an egress.
 
-    The sender is a real E.164 and the room a real Signal group key, and the
-    POSITIVE CONTROL is what makes the null result mean anything: the screen is
-    first shown to FIRE on that sender id, so «it found nothing on the spans»
-    cannot be «the screen cannot see this».
+    The POSITIVE CONTROL is what makes the null result mean anything: the screen
+    is first shown to FIRE on the sender id, so «it found nothing in the
+    metrics» cannot be «the screen cannot see this».
     """
     from nora.agent.egress import scan_identifiers
 
@@ -760,44 +800,49 @@ async def test_no_identifier_reaches_the_collector(exported_spans):
     assert scan_identifiers(sender) == "phone", \
         "positive control: the screen must be able to see this identifier"
 
+    metrics = Metrics()
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(room=room),
+        allowlist=_policy_of(room=room), metrics=metrics,
     )
-    msg = dataclasses.replace(
+    await pipeline.run(message=dataclasses.replace(
         _msg(sender_id=sender, body="nora.000 my number is " + sender),
         conversation_id=room,
-    )
-    await pipeline.run(message=msg)
+    ))
 
-    exported = exported_spans.get_finished_spans()
-    assert exported, "positive control: spans were actually exported"
-    for recorded in exported:
-        for key, value in (recorded.attributes or {}).items():
+    rendered = metrics.render()
+    assert "nora_ingest_outcomes_total" in rendered, \
+        "positive control: the counter was actually recorded"
+    for (name, labels), _value in metrics.snapshot().items():
+        if name != "nora_ingest_outcomes_total":
+            continue
+        for key, value in labels:
             assert scan_identifiers(str(value)) is None, \
-                f"{recorded.name}.{key} carries an identifier: {value!r}"
+                f"the outcome counter's {key} label carries an identifier: {value!r}"
 
 
-async def test_one_ambient_message_is_exactly_one_trace(exported_spans):
-    """The decision this change deliberately KEPT: an ingest is a unit of work
-    and it gets a trace. What it must not be is SEVERAL — every stage span
-    shares the root's trace id and there is exactly one root.
+async def test_an_undeclared_outcome_is_still_recorded_and_reported(caplog):
+    """The vocabulary check LOGS; it never withholds. Refusing to record an
+    unexpected value would leave the case least understood with no record at
+    all. `make gate`'s mypy does not reach `nora/ingest`, so this runtime check
+    is the only guard the `Literal` actually has.
 
-    PROBE: delete the `with span("ingest", ...)` wrapper in `run` and the six
-    stage spans become six rootless traces.
+    PROBE: make `_outcome` `return` early on an unknown value, or delete the
+    `log.warning`.
     """
-    await _drive_engaged()
+    import logging as _logging
 
-    exported = exported_spans.get_finished_spans()
-    names = {s.name for s in exported}
-    assert {"ingest", "ingest.scope", "ingest.identity", "ingest.media",
-            "ingest.audit", "ingest.memory_feed", "ingest.gate"} == names
-    assert len({s.context.trace_id for s in exported}) == 1
-    root = _root(exported_spans)
-    for recorded in exported:
-        if recorded is not root:
-            assert recorded.parent.span_id == root.context.span_id
+    from nora.ingest.pipeline import _outcome
+
+    metrics = Metrics()
+    with caplog.at_level(_logging.WARNING, logger="nora.ingest.pipeline"):
+        _outcome(metrics, _msg(), "something_nobody_declared")  # type: ignore[arg-type]
+
+    assert metrics.get(
+        "nora_ingest_outcomes_total", outcome="something_nobody_declared",
+    ) == 1
+    assert "not in the declared vocabulary" in caplog.text
 
 
 async def test_a_broken_tracer_never_stops_an_ingest(monkeypatch):
@@ -818,10 +863,41 @@ async def test_a_broken_tracer_never_stops_an_ingest(monkeypatch):
     monkeypatch.setattr(tracing_module.trace, "get_current_span", _boom)
 
     store = FakeRecordStore()
+    metrics = Metrics()
     pipeline = _pipeline(
         audit=store, memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(),
+        allowlist=_policy_of(), metrics=metrics,
+    )
+
+    result = await pipeline.run(message=_msg(body="nora.000 hi"))
+
+    assert result.decision is not None and result.decision.engage is True
+    assert len(store.rows) == 1, "the message must still have been recorded"
+    assert metrics.get("nora_ingest_outcomes_total", outcome="engaged") == 1, \
+        "the counter is the surviving instrument; it must still have fired"
+
+
+async def test_a_broken_counter_never_stops_an_ingest(monkeypatch):
+    """The SAME constraint on the instrument that is now load-bearing for
+    reporting. The counter took the trace's job, and it must not take the
+    trace's exemption with it: a metrics recorder that raises is still an
+    observation, and an observation must never change control flow.
+
+    PROBE: delete the `try/except` around `metrics.inc` in `_outcome` and this
+    reddens with the ingest itself failing.
+    """
+    class _BrokenMetrics(Metrics):
+        def inc(self, name, value=1.0, **labels):
+            if name == "nora_ingest_outcomes_total":
+                raise RuntimeError("registry is broken")
+            super().inc(name, value, **labels)
+
+    store = FakeRecordStore()
+    pipeline = _pipeline(
+        audit=store, memory=FakeMemory(), persons=_known_persons(),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        allowlist=_policy_of(), metrics=_BrokenMetrics(),
     )
 
     result = await pipeline.run(message=_msg(body="nora.000 hi"))
@@ -830,26 +906,37 @@ async def test_a_broken_tracer_never_stops_an_ingest(monkeypatch):
     assert len(store.rows) == 1, "the message must still have been recorded"
 
 
-async def test_an_undeclared_outcome_is_still_recorded_and_reported(
-    exported_spans, caplog,
-):
-    """The vocabulary check LOGS; it never withholds. The defect being fixed is
-    a root that says nothing, so refusing to stamp an unexpected value would
-    reintroduce exactly that for the case least understood. `make gate`'s mypy
-    does not reach `nora/ingest`, so this runtime check is the only guard the
-    `Literal` actually has.
+async def test_an_ingest_that_crashes_still_ends_on_its_own_root(unfiltered_spans):
+    """The sixth ending, and the reason `IngestOutcome` does not own a name for
+    it: `span` stamps the exception type and sets the status to ERROR itself, so
+    a crash can never be read as one of the five ordinary outcomes.
 
-    PROBE: make `_outcome` `return` early on an unknown value, or delete the
-    `log.warning`.
+    Read with the sampler removed, because that is the only place an ingest
+    trace exists — and it still matters: an unexported trace is what the
+    reversal condition would restore, so it must not be silently wrong.
     """
-    import logging as _logging
+    from nora.ingest import pipeline as pipeline_module
 
-    from nora.ingest.pipeline import _outcome
-    from nora.obs.tracing import span as _span
+    async def _boom(**_kwargs):
+        raise RuntimeError("custody exploded")
 
-    with caplog.at_level(_logging.WARNING, logger="nora.ingest.pipeline"), _span("ingest"):
-        _outcome("something_nobody_declared")      # type: ignore[arg-type]
+    monkeypatch_free_metrics = Metrics()
+    original = pipeline_module.media_stage.run
+    pipeline_module.media_stage.run = _boom  # type: ignore[assignment]
+    try:
+        pipeline = _pipeline(
+            memory=FakeMemory(), persons=_known_persons(),
+            policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+            allowlist=_policy_of(), metrics=monkeypatch_free_metrics,
+        )
+        with pytest.raises(RuntimeError):
+            await pipeline.run(message=_msg(body="hi"))
+    finally:
+        pipeline_module.media_stage.run = original  # type: ignore[assignment]
 
-    root = _root(exported_spans)
-    assert root.attributes["nora.outcome"] == "something_nobody_declared"
-    assert "not in the declared vocabulary" in caplog.text
+    root = _only_root(unfiltered_spans)
+    assert root.attributes["nora.outcome"] == "RuntimeError"
+    assert root.attributes["nora.outcome"] not in pipeline_module._OUTCOMES
+    assert root.status.status_code.name == "ERROR"
+    assert monkeypatch_free_metrics.get("nora_ingest_outcomes_total") == 0, \
+        "a crash is not one of the five outcomes and must not be counted as one"

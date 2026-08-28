@@ -443,6 +443,15 @@ RULE_TESTS = {
     # sufficient is what turns a quiet room into a swept notebook. The other
     # five grounds are named in the decision index row.
     "R-74": "test_no_retirement_is_reachable_without_evidence",
+    # R-76 names the CHILD test rather than either drop test, and that is the
+    # deliberate choice: «ingest is not exported» is the symptom everyone
+    # remembers, but the rule a future change breaks is that the decision is
+    # about ROOTS. Applying it per-span looks like a simplification, passes the
+    # ingest tests, and silently punches holes in every real turn's trace where
+    # its stages used to be. That test declares a CHILD `plumbing` under a
+    # `generation` root and requires it exported anyway; the two drop tests and
+    # the two engagement ones are named in the index row.
+    "R-76": "test_a_generation_root_keeps_the_plumbing_underneath_it",
 }
 
 

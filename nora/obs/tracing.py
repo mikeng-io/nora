@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from typing import Literal, get_args
 
 from opentelemetry import context as otel_context
 from opentelemetry import trace
@@ -24,10 +25,36 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.sdk.trace.export import SpanExporter as _SpanExporter
-from opentelemetry.trace import Status, StatusCode
+from opentelemetry.sdk.trace.sampling import (
+    Decision,
+    ParentBased,
+    Sampler,
+    SamplingResult,
+)
+from opentelemetry.trace import Link, SpanKind, Status, StatusCode
+from opentelemetry.trace.span import TraceState
 from opentelemetry.util.re import parse_env_headers
+from opentelemetry.util.types import Attributes
 
 log = logging.getLogger("nora.tracing")
+
+#: The attribute a ROOT span uses to say what kind of work is under it, and the
+#: only thing `build_sampler` reads. A CLOSED set as a `Literal` so the
+#: vocabulary is DERIVED from the code rather than hand-copied into the sampler.
+#:
+#: * `generation` — a model call can happen under this root. The trace is what
+#:   the collector exists for; it is kept whether or not this particular run
+#:   reached the model (a tag refused at admission is still a tag, and DEC-141's
+#:   whole point is that it leaves a trace SAYING it was refused).
+#: * `plumbing` — deterministic stage sequencing with no model call anywhere
+#:   under it. Never exported. Its signal belongs on a counter.
+TraceKind = Literal["generation", "plumbing"]
+
+#: The attribute name itself. `nora.` prefixed like every other attribute this
+#: module's callers set, so nothing in the collector has to know it is special.
+TRACE_KIND = "nora.trace_kind"
+
+_TRACE_KINDS: frozenset[str] = frozenset(get_args(TraceKind))
 
 #: What `capture_context` hands back and `attached` takes. Aliased here so a
 #: pipeline that carries one across a queue names THIS module rather than
@@ -35,6 +62,74 @@ log = logging.getLogger("nora.tracing")
 #: return as `Any`: a stage should not have to import a tracing vendor to hold
 #: an opaque handle it never inspects.
 TraceCarrier = Context
+
+
+class _PlumbingIsNotATrace(Sampler):
+    """THE ROOT DECISION (R-76): a trace reaches the collector when the work
+    under it can contain a generation.
+
+    Langfuse is an LLM-observability tool. Everything Nora does that is not a
+    model call — sequencing ingest stages, writing a row, resolving an
+    identity, counting a refusal — is plumbing, and plumbing's questions
+    («how many», «how often», «with what outcome») are Prometheus' questions.
+    `nora/ingest/pipeline.py` opens six spans and there is no model call under
+    any of them; it is also the highest-volume entry point in the system, so it
+    was 97 of the operator's last 100 traces (measured 2026-08-28) — a
+    collector that is 97% plumbing cannot be read for the turns that matter.
+
+    **This is a decision about ROOTS, not about every span**, and that
+    distinction is the whole design. `engagement.admission` has no generation in
+    it either, and it must keep being exported: as a CHILD of a trace that has
+    one, it is how a turn that ended before the model call ends visibly at a
+    named stage. Composed under `ParentBased`, so a child never re-decides — it
+    inherits whatever its root was given, which is also what keeps a QUEUED
+    tag's turn (re-attached to a captured context whose root span has already
+    ended) in the same trace as the root that admitted it.
+
+    **DEFAULT: EXPORT.** An undeclared root is kept, and the direction is
+    deliberate. Getting it wrong towards export costs noise, which is visible
+    and complains about itself; getting it wrong towards silence costs a
+    missing trace for a model call, which is an invisible gap in exactly the
+    traces this rule exists to protect. Only an explicit `plumbing` drops. An
+    undeclared value is LOGGED and kept, for the same reason.
+    """
+
+    def should_sample(
+        self,
+        parent_context: Context | None,
+        trace_id: int,
+        name: str,
+        kind: SpanKind | None = None,
+        attributes: Attributes = None,
+        links: Sequence[Link] | None = None,
+        trace_state: TraceState | None = None,
+    ) -> SamplingResult:
+        declared = (attributes or {}).get(TRACE_KIND)
+        if declared is not None and declared not in _TRACE_KINDS:
+            log.warning(
+                "span %s declares trace kind %r, which is not in the vocabulary %s "
+                "— exporting it anyway; add it to TraceKind",
+                name, declared, sorted(_TRACE_KINDS),
+            )
+            declared = None
+        decision = Decision.DROP if declared == "plumbing" else Decision.RECORD_AND_SAMPLE
+        return SamplingResult(decision, attributes, trace_state)
+
+    def get_description(self) -> str:
+        return "NoraPlumbingIsNotATrace"
+
+
+def build_sampler() -> Sampler:
+    """The sampler `setup_tracing` installs, exposed so a TEST provider can be
+    built with the SAME rule production runs.
+
+    `tests/conftest.py`'s `exported_spans` fixture uses this. Without it a test
+    provider would export spans production drops, and every assertion about
+    «what reaches the collector» would be measuring a provider that no
+    deployment has — the silent-match failure, in the instrument that exists to
+    find silent matches.
+    """
+    return ParentBased(root=_PlumbingIsNotATrace())
 
 
 def setup_tracing(
@@ -45,7 +140,10 @@ def setup_tracing(
         return
     try:
         span_exporter = _build_exporter(exporter, endpoint, headers_env)
-        provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
+        provider = TracerProvider(
+            resource=Resource.create({"service.name": service_name}),
+            sampler=build_sampler(),
+        )
         provider.add_span_processor(BatchSpanProcessor(span_exporter))
         trace.set_tracer_provider(provider)
     except Exception:
@@ -86,9 +184,19 @@ def span(name: str, **attributes: object) -> Iterator[None]:
 
     A no-op when tracing is off: `get_tracer` returns a non-recording tracer, so
     this costs a context manager and nothing else.
+
+    **Attributes are passed AT START, not set afterwards**, and that is what
+    makes `build_sampler`'s rule reachable at all: a `Sampler` sees only what
+    the span was started with, so a `nora.trace_kind` set one line later is a
+    kind the sampling decision has already been made without. They are coerced
+    to safe scalars FIRST (`_safe_attributes`, which drops a value it cannot
+    render rather than raising) so that a broken attribute still costs only
+    that attribute — never the span, and never the body.
     """
     try:
-        cm = trace.get_tracer("nora").start_as_current_span(name)
+        cm = trace.get_tracer("nora").start_as_current_span(
+            name, attributes=_safe_attributes(attributes),
+        )
         sp = cm.__enter__()
     except Exception:
         # ACQUISITION is guarded too, not just recording. The debrief stage runs
@@ -100,12 +208,6 @@ def span(name: str, **attributes: object) -> Iterator[None]:
         yield
         return
     try:
-        try:
-            for key, value in attributes.items():
-                safe = value if isinstance(value, (str, bool, int, float)) else str(value)
-                sp.set_attribute(key, safe)
-        except Exception:  # a broken tracer must not break a turn
-            log.debug("span attributes not recorded for %s", name, exc_info=True)
         try:
             yield
         except BaseException as exc:
@@ -124,6 +226,24 @@ def span(name: str, **attributes: object) -> Iterator[None]:
             # Same reason: a failing exporter on span end must not surface as a
             # tag failure. See the acquisition guard above.
             log.debug("span %s did not close cleanly", name, exc_info=True)
+
+
+def _safe_attributes(attributes: dict[str, object]) -> dict[str, str | bool | int | float]:
+    """Coerce to what OTel accepts, PER KEY, and never raise.
+
+    Per key rather than in one `try`, because the old shape set attributes in a
+    loop inside a single guard: the first unstringable value abandoned every
+    attribute after it, silently. A value that cannot be rendered now costs only
+    itself. (`tests/test_span_skeleton.py` drives this with a `__str__` that
+    raises.)
+    """
+    out: dict[str, str | bool | int | float] = {}
+    for key, value in attributes.items():
+        try:
+            out[key] = value if isinstance(value, (str, bool, int, float)) else str(value)
+        except Exception:  # a broken attribute must not break a turn
+            log.debug("span attribute %s not recorded", key, exc_info=True)
+    return out
 
 
 def annotate(**attributes: object) -> None:

@@ -143,6 +143,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Ambient messages from a conversation absent from policy.toml.",
         ("platform",),
     ),
+    # THE INGEST TRACE'S REPLACEMENT (R-76). An ingest contains no model call,
+    # so its trace is plumbing and never reaches Langfuse; «how did this message
+    # end» is a Prometheus question and this is where it is answered. The
+    # `outcome` label's vocabulary is `nora.ingest.pipeline.IngestOutcome`,
+    # derived there with `get_args` and checked at runtime before every
+    # increment — deliberately NOT restated in this help text, because a
+    # hand-copied vocabulary is exactly what drifts.
+    _CounterSpec(
+        "nora_ingest_outcomes_total",
+        "Ambient messages by how the ingest ended (see IngestOutcome).",
+        ("platform", "conversation_type", "outcome"),
+    ),
     _CounterSpec(
         "nora_denied_senders_total",
         "Tags from a sender not allowed in that conversation.",

@@ -146,6 +146,68 @@ different rule below.
 
 A rootless span is not a span with a missing parent. It IS a trace.
 
+### Langfuse gets the traces with a generation in them (R-76)
+
+One root per entry point says wrap everything. It does not say every entry point
+belongs in the collector, and for two weeks the codebase read it as if it did.
+
+`nora/ingest/pipeline.py` opens six spans and there is no model call under any
+of them — six deterministic stages, a row, a feed. It is also the
+highest-volume entry point in the system, so the operator's Langfuse was **97 of
+its last 100 traces from ingest** (measured 2026-08-28, across 12 rooms Nora
+does not serve). The obvious reading is a volume problem with a sampling answer,
+and DEC-142's reversal condition said exactly that. It was the wrong axis: even
+the three traces that were not refusals carried no generation, so no *fraction*
+of them belongs in an LLM-observability tool. Langfuse holds traces of model
+calls; «how many messages ended which way» is a Prometheus question and was
+always going to be answered badly by a trace.
+
+**The rule is about ROOTS, and that is the part worth getting right.**
+`engagement.admission` has no model call in it either — and it must keep being
+exported, because as a CHILD of a trace that has one it is how a turn that ended
+before the model ends visibly at a named stage. A per-span rule would leave
+every real trace with holes exactly where an early exit needs to be legible. So
+the sampler (`nora.obs.tracing.build_sampler`) is composed under `ParentBased`:
+the delegate decides roots, children inherit and never re-decide. That is also
+what keeps a QUEUED tag's turn — re-attached to a captured context whose root
+span has already ended — in the trace that admitted it.
+
+**It is «CAN contain a generation», declared on the entry point.** A sampler is
+called at root start and cannot know whether a model call will happen; and a tag
+refused at admission never reaches one, yet its trace is precisely what DEC-141
+exists to preserve («it SAYS it was rejected» rather than an unexplained stub).
+
+**Fail-open.** An undeclared root, and an unrecognised kind, are exported and
+logged. Getting it wrong towards export costs noise, which is visible and
+complains about itself; getting it wrong towards silence costs a missing trace
+for a model call — an invisible gap in exactly what the rule protects.
+
+**Nothing is lost, only moved.** `nora_ingest_outcomes_total{platform,
+conversation_type, outcome}` carries what the root carried, with `IngestOutcome`
+as its derived label vocabulary. Everything else was already counted and no
+duplicate was added: `person_known` is `nora_unmapped_senders_total` against
+`nora_messages_total`, attachments are `nora_media_custody_total`, the two
+refusals have their own counters, and `engage_reason`'s one load-bearing value —
+`policy_error`, the gate degrading closed under R-5 — is
+`nora_errors_total{stage="engage_gate"}`.
+
+**The trace is unexported, not deleted**, and that is deliberate twice over. It
+is what makes «the collector gets nothing» a measurement of the RULE rather than
+of an absence — a pipeline that opened no spans would satisfy that assertion for
+the wrong reason, and the test that reads the dropped trace with the sampler
+removed is the positive control. And it makes the reversal one attribute rather
+than a re-instrumentation.
+
+**The test provider runs production's sampler.** `tests/conftest.py`'s
+`exported_spans` is built with `build_sampler()`. A test provider that sampled
+everything would export spans the deployment drops, so every «what reaches the
+collector» assertion would be reading a provider no deployment has — the
+silent-match failure, inside the instrument that exists to find silent matches.
+
+**This holds unless** a plumbing entry point turns up whose trace an operator
+genuinely needs, which is one declaration on that root. The answer is never to
+widen it back to «export everything and sample».
+
 ### Spawned work does not inherit the caller's span
 
 `asyncio.create_task` **does** copy the current context — the repo already says
