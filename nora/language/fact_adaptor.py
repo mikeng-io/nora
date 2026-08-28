@@ -45,7 +45,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Protocol
+from typing import Any, Protocol
 
 from ..domain.facts import (
     DEFAULT_MAX_PREDICATE_CHARS,
@@ -124,6 +124,17 @@ class _EntityPromoter(Protocol):
     structural."""
 
     async def promote(self, *, workspace: str, now_ms: int) -> object: ...
+
+
+class _Sweeper(Protocol):
+    """`FactEmbedder.sweep`, seen from here — pass 4's whole surface.
+
+    A Protocol for `_EntityPromoter`'s reason: this adaptor knows that
+    something re-embeds after a write and knows nothing about how, which is
+    what lets the contract suite build it without an endpoint.
+    """
+
+    async def sweep(self, *, workspace: str, now_ms: int) -> Any: ...
 
 
 class _EntityResolver(Protocol):
@@ -511,11 +522,13 @@ class FactAdaptor:
         max_term_chars: int = DEFAULT_MAX_TERM_CHARS,
         max_predicate_chars: int = DEFAULT_MAX_PREDICATE_CHARS,
         entities: _EntityPromoter | None = None,
+        embedder: _Sweeper | None = None,
         metrics: Metrics | None = None,
     ) -> None:
         self._facts = facts
         self._candidates = candidates
         self._entities = entities
+        self._embedder = embedder
         self._max_adjudications = max_adjudications_per_tick
         self._max_standing_facts = max_standing_facts
         self._max_term_chars = max_term_chars
@@ -719,6 +732,7 @@ class FactAdaptor:
 
         await self._retire_candidates(key=key, proposals=proposals, now_ms=now_ms)
         await self._promote(key=key, wrote=bool(ids), now_ms=now_ms)
+        await self._embed(key=key, wrote=bool(ids), now_ms=now_ms)
         return len(ids)
 
     async def _promote(self, *, key: str, wrote: bool, now_ms: int) -> None:
@@ -748,6 +762,37 @@ class FactAdaptor:
         except Exception:
             log.exception("fact promotion failed: workspace=%s", key)
             self._skip("promotion_failed")
+
+    async def _embed(self, *, key: str, wrote: bool, now_ms: int) -> None:
+        """Pass 4, AFTER pass 3 and outside the writes' transaction.
+
+        **3 before 4, always** (`25` §5). The section argues it from promotion
+        rewriting the triple, which migration 0039 made untrue — promotion adds
+        `object_entity_id` and leaves `object_literal` alone, precisely so the
+        words the room used survive resolution. The ordering still holds for
+        the reason that survives: a tick that promotes and then embeds spends
+        one pass, and one that embeds then promotes leaves rows to re-embed
+        next tick.
+
+        **Only when this tick wrote a fact**, matching `_promote`. The sweep is
+        an aggregate over the workspace and the Dreamer fires on its own clock
+        over rooms that are mostly quiet; a tick that wrote nothing has nothing
+        new to embed, and a re-embed of unchanged rows is exactly what the
+        fingerprint predicate exists to skip.
+
+        Its own failure is already `unavailable` inside the sweep and never
+        raises, so there is nothing to catch here — but the count is read back
+        rather than discarded, because "the sweep ran and wrote nothing" and
+        "the sweep was never called" are the same silence otherwise.
+        """
+        if self._embedder is None or not wrote:
+            return
+        sweep = await self._embedder.sweep(workspace=key, now_ms=now_ms)
+        if sweep.status == "unavailable":
+            log.warning(
+                "fact embedding incomplete: %d of %d rows written "
+                "(workspace=%s)", sweep.embedded, sweep.stale, key,
+            )
 
     def _candidate_id_for(self, key: str, payload: object) -> str | None:
         """The candidate a verdict settles, or `None`. ONE lookup, used by both
