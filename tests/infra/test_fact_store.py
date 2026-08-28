@@ -1594,3 +1594,38 @@ async def test_an_embedded_row_is_offered_again_after_the_unembedded_ones(
     assert [f.id for f in batch] == [oldest_embed], (
         "with everything embedded, the least-recently-embedded row is next"
     )
+
+
+async def test_an_unreadable_store_reports_no_count_rather_than_zero(pg_url):
+    """**Issue #71's sharpest case**, and the one that differs in KIND from
+    its five siblings: they degrade to `()`, which is silence and which R-5
+    tolerates, while this degraded to a confident wrong NUMBER that gets
+    rendered — «0 in all, all shown» during an outage, on the one line whose
+    purpose is to say how much she has not been shown.
+
+    An unreachable URL rather than a mock, so the failure is the driver's.
+    """
+    run_migrations(pg_url)
+    broken = SqlFactStore(
+        create_sql_engine("postgresql+asyncpg://nobody@127.0.0.1:1/none"),
+    )
+
+    assert await broken.standing_count(workspace="ws-main") is None
+
+
+async def test_a_reachable_store_still_counts(pg_url):
+    """The positive control: a method that returned `None` unconditionally
+    would satisfy the test above while deleting the extent line forever."""
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        store = SqlFactStore(engine)
+        await store.propose(
+            key="ws-main",
+            proposals=[_proposal(_verdict(predicate=f"p{i}")) for i in range(3)],
+            now_ms=1_000,
+        )
+
+        assert await store.standing_count(workspace="ws-main") == 3
+    finally:
+        await engine.dispose()

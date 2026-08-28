@@ -260,7 +260,11 @@ class InMemoryFactStore:
             if ws == workspace and f.is_standing
         ))
 
-    async def standing_count(self, *, workspace: str) -> int:
+    async def standing_count(self, *, workspace: str) -> int | None:
+        """`int | None` matching production, even though this double can never
+        be unreachable: the RETURN TYPE is part of what a caller must handle,
+        and a double that narrows it lets a caller be written that would break
+        against the real store."""
         return sum(
             1 for (ws, _fid), f in self._facts.items()
             if ws == workspace and f.is_standing

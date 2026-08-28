@@ -269,3 +269,72 @@ def test_an_undisputed_claim_carries_no_dispute_text():
     out = render_facts(_view(_fact()))
 
     assert "DISPUTED" not in out
+
+
+def test_an_unreadable_extent_omits_the_line_rather_than_claiming_zero():
+    """**A wrong number is not silence** (issue #71).
+
+    `standing_count` degraded to `0` on an unreachable store while its own
+    docstring said "a wrong number here would be a claim about the size of
+    what she knows, and the honest degradation is to claim nothing" — and `0`
+    IS that claim. It renders as «0 in all, all shown», which tells her she
+    holds nothing about this room during a database outage, on the one line
+    whose entire purpose is to say how much she has NOT been shown.
+
+    Its five sibling reads degrade to `()`, which R-5 tolerates because
+    silence beats a wrong answer. This one degraded to a confident number.
+    """
+    block = render_facts(FactsView(
+        room=(_fact(),), sender=(), extent=FactExtent(standing=None, shown=1),
+    ))
+
+    assert "Big Walk" in block, "the facts she DID read still render"
+    assert "in all" not in block, (
+        "the extent line must be absent, not zero — she must not be told she "
+        "holds nothing when the truth is that nobody could count"
+    )
+
+
+def test_a_readable_extent_still_says_how_much_is_not_shown():
+    """The positive control: a render that dropped the line whenever it was
+    inconvenient would satisfy the test above while deleting the signal that
+    makes reaching for the verb a reasonable act rather than a guess."""
+    block = render_facts(FactsView(
+        room=(_fact(),), sender=(), extent=FactExtent(standing=40, shown=1),
+    ))
+
+    assert "40 in all" in block
+    assert "39 not shown" in block
+
+
+def test_an_unreadable_extent_with_no_facts_renders_no_block_at_all():
+    """**The #71 production shape, and the guard for it was locked by
+    nothing** — reverting it to `standing == 0` left 129 tests green while the
+    reverted code emits an EMPTY `<facts>` block.
+
+    An empty block is not neutral. It is a positive statement to the model
+    that she looked and holds nothing about this room, made at the moment
+    nobody could look at all — the same false claim the extent line's `0`
+    makes, in the shape that survives omitting the line.
+
+    `standing == 0` is False for `None`, so master's guard falls through, and
+    with the extent line correctly omitted the block renders with no body.
+    Both halves of the fix are needed and only one of them was asserted.
+    """
+    block = render_facts(FactsView(
+        room=(), sender=(), extent=FactExtent(standing=None, shown=0),
+    ))
+
+    assert block == "", (
+        "no facts and no readable count is nothing to say — an empty block "
+        "says she looked and found nothing"
+    )
+
+
+def test_a_readable_empty_workspace_still_renders_no_block():
+    """The positive control and the pre-existing behaviour: a workspace that
+    genuinely holds nothing renders no block either, so the test above is
+    about the `None` case rather than about emptiness."""
+    assert render_facts(FactsView(
+        room=(), sender=(), extent=FactExtent(standing=0, shown=0),
+    )) == ""

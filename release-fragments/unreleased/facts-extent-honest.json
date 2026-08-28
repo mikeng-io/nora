@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "When Nora cannot reach what she knows, she no longer says she knows nothing.",
+  "details": [
+    "The line telling her how much she holds and how much is not being shown existed to stop a handful of facts reading as the whole of what she knows. If the count could not be read, it said zero — which is the same false impression it was built to prevent, arriving through the error path.",
+    "An unreadable count now omits the line rather than printing a number. The facts she did manage to read still appear; she is simply not told a total that nobody could establish."
+  ],
+  "limitations": [
+    "This is one of six reads with the same shape and the only one that produced a NUMBER rather than silence. The other five report an empty list when they cannot look, which is quieter but still not distinguishable from having found nothing (issue #71)."
+  ]
+}

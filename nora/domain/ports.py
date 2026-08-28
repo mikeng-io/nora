@@ -1652,15 +1652,22 @@ class FactReader(Protocol):
         """
         ...
 
-    async def standing_count(self, *, workspace: str) -> int:
+    async def standing_count(self, *, workspace: str) -> int | None:
         """How many standing facts the workspace holds, for the extent line.
 
         **Counts, never rows** (19 §6, 23 §3). Without it the block is a subset
         presented as the whole, with no signal that more exists or that a verb
-        is worth reaching for — the defect the recency window had. `0` on an
-        unreachable store, for `standing_facts`' reason: a wrong number here
-        would be a claim about the size of what she knows, and the honest
-        degradation is to claim nothing.
+        is worth reaching for — the defect the recency window had.
+
+        **`None` on an unreachable store, never `0`** (issue #71). This port
+        said `0` was "the honest degradation" and that "a wrong number here
+        would be a claim about the size of what she knows" — in the same
+        paragraph, because `0` IS that claim: it renders as «0 in all, all
+        shown», telling her she holds nothing about this room during an
+        outage, on the one line whose purpose is to say how much she has NOT
+        been shown. Its five sibling reads degrade to `()`, which is silence;
+        this one degraded to a confident number, and a wrong number is not
+        silence. The render omits the line on `None`.
         """
         ...
 
