@@ -504,6 +504,10 @@ RULE_TESTS = {
     # reads as complete without it (the same failure mode R-53's third clause
     # has, recorded in `test_conduct_separates_a_source_that_is_silent…`).
     "R-83": "test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim",
+    # R-84: the music message table. The named test is the module that pins
+    # every string the table renders — a wording change to ANY music surface
+    # now has to land there, so the diff shows it.
+    "R-84": "test_now_playing_line_carries_title_and_url",
 }
 
 

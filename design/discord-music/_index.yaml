@@ -22,6 +22,7 @@ members:
   - 06-session-persistence.md
   - 07-agent-tool.md
   - 08-autoplay.md
+  - 09-message-conventions.md
 edges:
   - {src: 01-playback-and-source, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 02-control-surface, dst: 00-overview, rel: realizes, provenance: asserted}
@@ -35,6 +36,9 @@ edges:
   - {src: 07-agent-tool, dst: 02-control-surface, rel: extends, provenance: asserted}
   - {src: 08-autoplay, dst: 01-playback-and-source, rel: extends, provenance: asserted}
   - {src: 08-autoplay, dst: 03-state-and-persistence, rel: extends, provenance: asserted}
+  - {src: 09-message-conventions, dst: 02-control-surface, rel: extends, provenance: asserted}
+  - {src: 09-message-conventions, dst: 07-agent-tool, rel: extends, provenance: asserted}
+  - {src: 09-message-conventions, dst: 08-autoplay, rel: extends, provenance: asserted}
 scope:
   v1:
     - "Discord slash commands (/music play|skip|queue|pause|resume|stop|volume) as the primary control surface"
