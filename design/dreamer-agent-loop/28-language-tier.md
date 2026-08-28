@@ -307,7 +307,169 @@ the language tier was undecided — it is the most decided tier in the repo. The
 gap was that nothing in the design owned it**, so its rules lived only in code
 and its defects were quoted as anecdotes about other tiers.
 
+## 10. PARKED — the measure verb was built, reviewed, and stopped
+
+**2026-08-28, operator's call.** D34 (§4.1) was implemented, cold-reviewed, and
+**deferred** so the effort goes to Standing and the note tier. This section is
+what a cold reader needs *before* writing any code here; the branch is
+`worktree-lang-tier` @ `bd522bf`, unmerged, and the floor half is
+`worktree-lang-floor`, also unmerged.
+
+**Nothing below is speculation.** Every claim was read back from the code or the
+live database, and each says which.
+
+### 10.1 The blocker — the fail-closed state is not one the operator can leave
+
+The measure requires four fields from the model. Counted in the shipped
+`nora/dreamer/objectives/room-language.md`:
+
+```
+frame              0 occurrences
+frame_expects      0
+standard_reading   0
+reading            1   (and not in the shape the measure reads)
+```
+
+So every candidate returns `unmeasured` and **the tier writes zero rows,
+indefinitely.** That much was disclosed and intended: objective text is the
+operator's, and a tier that cannot check must say `unavailable` rather than
+write guesses.
+
+**What nobody saw is that he cannot land the wording.** Three facts, each
+verified in the tree:
+
+| fact | where |
+|---|---|
+| the body is pinned byte-for-byte | `tests/unit/test_dreamer_instructions.py::test_the_objective_file_is_the_pre_move_constant_byte_for_byte` |
+| and pinned again from the observer's side | `::test_the_extraction_prompt_still_starts_with_the_pre_move_text` |
+| `nora/dreamer` is bind-mounted **from the repo** | `docker-compose.yml:263` |
+
+An operator edit **is a repo edit**, and a repo edit has to pass the gate. The
+two pins exist for a real reason — the instruction substrate's verbatim-lift
+phase (§7.1 step a) — but until the re-partition retires them, *any* rewording
+of this objective is gate-red. **Resuming this work starts with that, not with
+the measure.**
+
+### 10.2 S2 — the one that loses data, and the precedent is nine lines away
+
+`unmeasured` drops the candidate and returns `parsed=True`, so `consolidate`
+returns `0` **exactly as a genuine empty extraction does**, and
+`nora.app.runtime._dream_once` reaches its `if batch:` arm and calls
+`advance_watermark(last_message_id=batch[-1].id)`. Those messages are never
+re-read.
+
+Under §10.1 that is **the entire group's traffic consumed by an instrument that
+is not connected.**
+
+The argument against it is already in this codebase, in
+`nora.language.consolidator.ExtractionUnparseableError`: *"this batch was never
+actually read, so it must not be treated as 'read and found nothing' by anything
+downstream, including the watermark."* The branch does the opposite for the one
+state that means precisely that.
+
+**The fix, when this resumes:** if every well-formed item dropped `unmeasured`,
+return `parsed=False` so the batch is retried rather than burned. Note the
+asymmetry — the HOLD argument (drop, and wait for the room to repeat itself) is
+right for `frame_ambiguous` and **wrong** for `unmeasured`: a room repeats its
+slang, but it does not repeat itself for an instrument that was never wired.
+
+### 10.3 §6.1.1's arithmetic, recomputed by hand — do not re-derive this
+
+The floor is on **corroboration** rather than on the score, and the numbers are
+the reason. Against `nora.domain.language_scoring` as it stands:
+
+```
+one sighting, one speaker, age 0    ->  2.26355
+two sightings,             45 days  ->  2.1257   <- BELOW the one-sighting score
+```
+
+So a score floor set to exclude a single fresh sighting **also excludes a
+twice-seen lexeme at about six weeks** — it silently becomes a second decay
+gate, with a second threshold, beside the `live`/`fading`/`stale` lifecycle that
+already owns decay. That is a measurement about the scoring function, not a
+preference, and it stays true whenever this resumes.
+
+The predicate is therefore on the counts, it lives in the `WHERE` (before
+`LIMIT`, or it under-fills the block), and `occurrence_count` is `NOT NULL` so
+nothing is swallowed by a NULL comparison.
+
+**Read back from `nora-db-1` on 2026-08-27**, not from the suite:
+
+```
+Big Walk  n=1 spk=1  2.233  live
+big walk  n=1 spk=1  2.216  live
+
+state IN ('live','fading')                           -> 2   (renders today)
+state IN ('live','fading') AND occurrence_count >= 2  -> 0   (the predicate)
+```
+
+The lexicon **visibly empties on deploy**, from two rows to none. That is the
+intended outcome — both rows are wrong — but it is what an operator will see.
+
+### 10.4 The rest of the review, one line each
+
+- **S3** — five distinct conditions all return `unmeasured` (field absent, wrong
+  type, blank, over cap, `reading` outside the set) and only the first means
+  *never asked*. A model reporting a genuine hold as `"unclear"` lands on «go
+  check your objective file». Split: no measure fields at all → `unmeasured`;
+  everything else → `measure_malformed`.
+- **S4** — a NULL body reports `frame_ungrounded`, documented as *"a fabricated
+  grounding"*. The truth is there was no body to check: `unavailable` wearing a
+  specific failure, the same R-27 inversion this node argues against elsewhere.
+- **S5** — the verbatim check caps `frame` at 200 chars and has **no floor**, so
+  `frame="e"` or `frame="的"` grounds against almost any body and defeats the
+  check's whole purpose. Needs a length floor and NFKC normalisation on both
+  sides; fullwidth/halfwidth mismatch in a mixed-script corpus is not exotic.
+- **S6** — *generalises past this tier.* Every fixture in
+  `tests/contract/test_room_consolidator_contract.py` seeded two sightings, so
+  deleting the fake's floor line left the whole suite green: **the line added
+  specifically to stop the two implementations diverging was itself untested.**
+  A double filtering differently from Postgres is this repo's most repeated
+  defect — three separate instances in three tiers on 2026-08-27, every one
+  found by a deliberate test rather than by the suite.
+- **S7** — a threshold named `_MIN_OCCURRENCES_TO_RENDER = 1` but compared with
+  `>` reads as «at least one» and means «at least two»; raising it to "at least
+  three" gets four. State it as a minimum with `>=`, from one shared constant
+  both implementations import.
+
+**S6 and S7 are already fixed and mutation-verified on
+`worktree-lang-floor`**: the threshold is
+`nora.domain.language_scoring.MIN_OCCURRENCES_TO_RENDER = 2`, both the store and
+the contract fake read that name, and
+`test_an_under_corroborated_lexeme_renders_on_neither_implementation` fails on
+either backend alone when its floor is deleted.
+
+### 10.5 What the cold review rated CLEAN — do not re-review it
+
+- `tests/unit/test_language_measure.py` is **genuinely falsifying throughout**:
+  the positive case destructures, so a hard-wired reject reddens the file, and
+  every `== 0` is paired, so none survives a raise.
+- `test_the_measure_never_runs_ahead_of_the_evidence_join` was singled out as
+  **the strongest test in the branch**, because it pins ORDERING rather than an
+  outcome.
+- The store tests falsify the threshold in **both** directions.
+- The evidence-join is sound: the body comes from the row actually cited, the
+  prompt is not truncated, and the ordering is pinned.
+
+### 10.6 What still holds, and what would reopen it
+
+The design in §4.1–§4.1.4 and §6.1.1 is **not** what the review faulted — it
+faulted the wiring and five edges. The measure's shape stands: the tier's job is
+the delta, a selectional violation carries it in one sentence, the frame types
+the result, and the grounding is the one part a model may not self-attest.
+
+*The reading that would overturn the measure itself:* a corpus where the
+selectional frame is routinely absent — a room that names its slang without ever
+using it in a sentence that discriminates. Nothing observed says it is.
+
 ## Status / Checkpoint
+
+2026-08-28 — **PARKED by the operator** (§10). Built, cold-reviewed, deferred to
+Standing and the note tier. The blocker is that the objective wording the
+measure needs is pinned byte-for-byte by two tests over a bind-mounted tree, so
+the fail-closed state is one the operator cannot leave; and `unmeasured`
+advances the watermark, burning batches the instrument never measured. Branches
+`worktree-lang-tier` @ `bd522bf` and `worktree-lang-floor`, both unmerged.
 
 2026-08-27 — **D34 (§4.1): this tier had no MEASURE verb**, and that — not the
 absence of supersession — is what produced the two contradictory live rows. Its
