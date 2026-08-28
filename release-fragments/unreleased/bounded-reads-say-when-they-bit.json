@@ -1,0 +1,17 @@
+{
+  "type": "fix",
+  "summary": "Two bounded reads now record when their limit actually cut something, instead of returning a full page indistinguishable from a clipped one.",
+  "details": [
+    "A caller passes limit=N and the callee returns a plain tuple. That return type has room for the rows and none for the cut, so the one fact the database knew - whether an N+1th row existed - was destroyed where it was known. Downstream could not tell 'there were N' from 'there were N and I stopped counting', and a reader shown a clipped slice that finds nothing reports nothing_found ('there is nothing') when the honest answer is unavailable ('I could not see all of it').",
+    "Counting the post-cut length, which several call sites already do, is not a weaker version of this measurement - it is a different one wearing its clothes. A count bounded by the limit by construction emits the identical event for 5-of-5 and 5-of-500.",
+    "nora/domain/bounds.py adds the probe: ask for limit+1, keep limit, and the extra row's existence is the answer. One row, no COUNT(*), no second statement, and unlike a companion count it cannot disagree with the rows it accompanies because it is the same snapshot. It records a BIT, not a magnitude - over-fetching by one cannot know the remainder, and a series carrying '1' from one site and '30' from another would misreport its own unit.",
+    "Wired at the two sites whose truncation poisons the most other readings: the fact-candidate adjudication queue (the only bound on the tier's write path - a capped queue is invisible from every read below it, because the row is never promoted) and the transcript window the room's subject set is built from (whose silent cut made an empty facts block ambiguous three ways).",
+    "tests/architecture/test_bounded_reads_are_counted.py is the retaining wall: it asserts the over-fetch and the cut are paired, that every site label is declared, and - the load-bearing direction - that every declared label has a real call site, since a declared-but-never-emitted label renders as a series that is always zero and reads as 'this bound never bites'."
+  ],
+  "limitations": [
+    "This closes OPERATOR visibility only, and does so class-wide because the counter fires inside the store with no caller cooperation. It does NOT close MODEL calibration: search_knowledge and note_search still hand the model a capped list marked ok with no hint that it was a ceiling. Turning the bit into text the model reads is per-site render work and follows separately.",
+    "Two of roughly seventeen bounded reads in these tiers are wired. The site vocabulary deliberately lists only what is wired, so the remaining sites are still silently truncating; the gate makes adding one cheap and makes declaring one without wiring it fail.",
+    "The bound on conclusions requested from Honcho is out of this class entirely: it is enforced by a remote API, so over-fetching by one still cannot tell whether there were 7 or 700 unless the endpoint reports a total.",
+    "Reversal condition: if this counter sits at or near the call rate for a site, sustained, the bit carries no information and that site needs a queue-depth gauge instead. The adjudication queue is the likeliest to read that way and is deliberately wired first so that reading arrives early."
+  ]
+}
