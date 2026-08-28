@@ -21,7 +21,6 @@ from pydantic import (
     model_validator,
 )
 
-from nora.domain.notes import NOTE_BODY_CEILING_CHARS
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -1695,22 +1694,14 @@ class NotesConfig(BaseModel):
     #: level, which is why the gauge exists and why the cap is generous.
     max_expired_per_tick: int = Field(default=20, ge=1, le=200)
 
-    #: 27 §5.2. The OPERATING cap on a note body, in characters. The database
-    #: carries a separate, larger ceiling (NOTE_BODY_CEILING_CHARS) and the gap is
-    #: «no writer should produce that», the CHECK says «this row is corrupt».
-    #: A body between the two means something bypassed the domain type, which
-    #: is a bug to find rather than a row to reject on read.
-    #:
-    #: It is a cap because the body is NOT injected — it is read on demand —
-    #: so the exposure is the curator, whose per-tick budget is counted in
-    #: ROWS. A row budget is only a budget if a row has a bounded size.
-    #:
-    #: `le` is the database ceiling: a configured value above it would be
-    #: unenforceable, refused by Postgres rather than by the domain, and the
-    #: operator would find out from a failed write.
-    max_body_chars: int = Field(
-        default=8000, ge=1000, le=NOTE_BODY_CEILING_CHARS,
-    )
+    # NO `max_body_chars`, and its absence is the decision. The field existed
+    # here with a twelve-line docstring and a range validator and NOTHING READ
+    # IT — the cap was `nora.domain.notes.BODY_MAX_CHARS` in four places the
+    # whole time. A knob that changes nothing is the config-file form of a
+    # declared metric with no call site. It is not threaded because the cap's
+    # own argument is that it is enforced in the TYPE, and `__post_init__`
+    # cannot see config; making the knob true would mean moving the refusal out
+    # to a store boundary to serve the knob.
 
 
 class XaiImageGenConfig(BaseModel):

@@ -89,6 +89,9 @@ CURATOR_DROPS: frozenset[str] = frozenset({
     "conflicting_merged_body",  # two different bodies for one survivor
     "body_too_long",            # a merged body over BODY_MAX_CHARS — the
                                 # objective asked for more than the cap allows
+    "shorter_than_inputs",      # a merged body shorter than the longest body
+                                # it was meant to keep — a summary, on a verb
+                                # whose whole purpose is that nothing is lost
 })
 
 #: Every value `nora_note_curator_groups_refused_total{reason}` can carry.
@@ -150,6 +153,35 @@ class _MergedBody:
 
 
 @dataclass(frozen=True)
+class _MergeOffered:
+    """The model ASKED for this group to be merged. Nothing else.
+
+    **This is the whole of HIGH 1 and it is a claim, not an outcome.** A group
+    the model answered with a merged body is a group it is telling us is ONE
+    occasion written twice — and the objective tells it to return a verdict for
+    every note it was shown, so `moot` on both members of a colliding group
+    whose date has passed is the EXPECTED answer, not an edge.
+
+    When the merge then does not land — an over-cap body, two different bodies,
+    a body naming the wrong member, a lost CAS — `commit` used to fall through
+    to the retirement loop and retire each member on its own verdict, with
+    `replaced_by=None`. Both notes leave the index, neither points at anything,
+    and the content the merge existed to preserve is reachable only by direct
+    database query. That is content loss on the NORMAL path.
+
+    So the claim is carried separately from the body: a `_MergedBody` is
+    produced only when the body survives parsing, and this is produced whenever
+    the group was named at all. `commit` protects the group on THIS, never on
+    what became of the merge.
+
+    `survivor` is the resolved note id of the group's survivor — the same
+    handle-to-id resolution every other payload carries, done once in `accept`.
+    """
+
+    survivor: str
+
+
+@dataclass(frozen=True)
 class _Shown:
     """What THIS run put in front of the model, so `accept` can refuse a
     verdict about a note the run never showed.
@@ -168,6 +200,18 @@ class _Shown:
     #: reaching the model.
     merge_groups: tuple[tuple[str, ...], ...]
     heads: Mapping[str, str]
+    #: ANY handle in a group -> that group's SURVIVOR handle. A merge-shaped
+    #: item is attributed to a group through this rather than through the
+    #: survivor set alone, because a model naming the wrong member of a real
+    #: group has still asked for that group to be merged — and `commit` must
+    #: not then retire its members one at a time.
+    group_of: Mapping[str, str]
+    #: survivor handle -> the LONGEST body in that group, in characters. The
+    #: floor a merged body has to clear (`shorter_than_inputs`): a merge that
+    #: shortens the text is a summary, and the objective's one instruction is
+    #: that nothing is lost. A property of the inputs, so the model cannot
+    #: fake it.
+    longest_body: Mapping[str, int]
 
 
 class NoteCuratorAdaptor:
@@ -340,6 +384,8 @@ class NoteCuratorAdaptor:
         # run did not render is simply absent from the map.
         by_handle: dict[str, str] = {}
         group_handles: list[tuple[str, ...]] = []
+        group_of: dict[str, str] = {}
+        longest_body: dict[str, int] = {}
         ordinal = itertools.count(1)
         for g in groups:
             handles: list[str] = []
@@ -348,6 +394,9 @@ class NoteCuratorAdaptor:
                 by_handle[handle] = note.id
                 handles.append(handle)
             group_handles.append(tuple(handles))
+            for handle in handles:
+                group_of[handle] = handles[0]
+            longest_body[handles[0]] = max(len(body) for _, body in g)
         expired_handles: list[tuple[str, Note, str]] = []
         for note, body in expired:
             handle = str(next(ordinal))
@@ -362,17 +411,30 @@ class NoteCuratorAdaptor:
                 for n in [x for g in groups for x, _ in g]
                 + [n for n, _ in expired]
             },
+            group_of=group_of,
+            longest_body=longest_body,
         )
-        if not groups and not expired:
-            return ""
-        # A LEVEL, not a running total: the reading that matters is how much
-        # of this tick's budget was spent, and a counter cannot answer it.
+        # PUBLISHED UNCONDITIONALLY, INCLUDING ZERO, and BEFORE the early
+        # return. This sat after it, so an idle tick never wrote the gauge and
+        # the series held the last busy tick's value forever — on a pass whose
+        # own docstring says idle is the overwhelming majority of ticks. A
+        # gauge that only moves upward is not a level; it is a high-water mark
+        # wearing a level's help text.
+        #
+        # `expired_all`, not `expired`: `anchored_before` FETCHED that many
+        # bodies, and the subtraction below it only decides what is rendered.
+        # Reporting the post-subtraction number under a help text that reads
+        # "against max_groups_per_tick + max_expired_per_tick" made the stated
+        # reading unreachable exactly when the expired cap binds — which is the
+        # one condition the gauge exists to show.
         if self._metrics is not None:
             self._metrics.gauge(
                 "nora_note_curator_bodies_read",
-                float(sum(len(g) for g in groups) + len(expired)),
+                float(sum(len(g) for g in groups) + len(expired_all)),
                 workspace=key,
             )
+        if not groups and not expired:
+            return ""
         return _render(
             list(zip(group_handles, groups, strict=True)),
             expired_handles,
@@ -401,12 +463,12 @@ class NoteCuratorAdaptor:
           its own grouping is the one thing this design exists to prevent, so
           it is refused rather than merged.
         """
-        shown = self._shown.get(key, _Shown({}, (), {}))
+        shown = self._shown.get(key, _Shown({}, (), {}, {}, {}))
         # BOTH shapes. A model answering about a merge group returns a
         # `merged_body`; a model answering about an expired note returns a
         # `verdict`. One item may legitimately carry both — the survivor of a
         # group whose occasion has also passed.
-        out: list[object] = list(self._merged_bodies(key=key, items=items))
+        out: list[object] = self._merged_bodies(key=key, items=items)
         for item in items:
             if "verdict" not in item:
                 # A merge-only answer is not malformed. Counting it as such
@@ -443,7 +505,7 @@ class NoteCuratorAdaptor:
 
     def _merged_bodies(
         self, *, key: str, items: Sequence[Mapping[str, object]]
-    ) -> list[_MergedBody]:
+    ) -> list[object]:
         """The merge half of `accept`, and it exists because the first version
         of this module HAD NO WAY TO PRODUCE ONE.
 
@@ -461,21 +523,54 @@ class NoteCuratorAdaptor:
         single parser accepting either would have to treat every field as
         optional and could refuse nothing.
 
+        **Returns TWO kinds of payload.** A `_MergedBody` is a body that
+        survived every check. A `_MergeOffered` is the model having NAMED a
+        group at all, and it is emitted on every path including the refusals —
+        that is HIGH 1's fix, and `_MergeOffered`'s own docstring says why a
+        refused merge must still protect its group.
+
         `not_shown_in_group` is enforced HERE, which the docstring above
         promised and the first version did not implement: merge eligibility is
-        SQL's decision, so a `merged_body` for a note that is not the survivor
+        code's decision, so a `merged_body` for a note that is not the survivor
         of a group THIS RUN selected is refused rather than merged. A model
         proposing its own grouping is the one thing this design exists to
-        prevent.
+        prevent. **A non-survivor MEMBER of a real group is still refused and
+        still protects its group** — the model got the handle wrong, not the
+        occasion.
         """
-        shown = self._shown.get(key, _Shown({}, (), {}))
+        shown = self._shown.get(key, _Shown({}, (), {}, {}, {}))
         survivors = {g[0] for g in shown.merge_groups}
-        out: list[_MergedBody] = []
+        out: list[object] = []
+        bodies: list[_MergedBody] = []
+        offered: set[str] = set()
+        # STICKY, exactly like `commit`'s verdict conflicts. `out.remove(seen)`
+        # was not: a third item repeating the FIRST body found nothing in the
+        # list, appended itself, and the merge landed with the very body the
+        # conflict had just been counted for. The instrument said refused and
+        # it merged — on the more destructive of the two paths, with the
+        # weaker of the two mechanisms.
+        conflicted: set[str] = set()
+
+        def _offer(raw_handle: object) -> None:
+            """Record that a group was named, whatever happens to the body.
+
+            Attributed through `group_of`, not through the survivor set: a
+            merged body naming the second member of a group is still a request
+            to merge that group.
+            """
+            if not isinstance(raw_handle, str):
+                return
+            survivor_handle = shown.group_of.get(raw_handle)
+            if survivor_handle is None:
+                return
+            offered.add(shown.by_handle[survivor_handle])
+
         for item in items:
             if "merged_body" not in item:
                 continue
             body = item.get("merged_body")
             note_id = item.get("note_id")
+            _offer(note_id)
             if isinstance(body, str) and len(body) > BODY_MAX_CHARS:
                 # ITS OWN REASON, not `malformed`. The remedies differ: a
                 # missing field means the model answered the wrong shape, and
@@ -516,7 +611,36 @@ class NoteCuratorAdaptor:
                     "not select; dropped")
                 continue
             resolved = shown.by_handle[note_id]
-            seen = next((m for m in out if m.note_id == resolved), None)
+            # A CODE CHECK ON A PROPERTY THE MODEL CANNOT FAKE.
+            #
+            # `group_on_anchor_key` refuses date-only merges because "relying
+            # on the model to decline is self-attestation on a destructive
+            # operation" — and the same tick then accepted the merged BODY, the
+            # thing that OVERWRITES the survivor's head, on the model's word
+            # alone. The only checks were non-blank and under the cap.
+            #
+            # The objective's one instruction is that the merged body keeps
+            # everything every note in the group knew, so it cannot be shorter
+            # than the longest thing it is keeping. A body that is, is a
+            # summary — the single failure mode this verb has, and the one
+            # nothing downstream can undo.
+            #
+            # It is a FLOOR, not an equality: the merge is meant to add. And it
+            # is deliberately not "at least the sum", because two bodies about
+            # one occasion overlap and a true merge is shorter than the
+            # concatenation.
+            if len(body) < shown.longest_body.get(note_id, 0):
+                self._inc(
+                    "nora_note_curator_dropped_total",
+                    reason="shorter_than_inputs")
+                log.warning(
+                    "note curator returned a merged body shorter than the "
+                    "longest body it was meant to keep; the group is left "
+                    "alone")
+                continue
+            if resolved in conflicted:
+                continue
+            seen = next((m for m in bodies if m.note_id == resolved), None)
             if seen is not None:
                 # THE SAME RULE AS CONFLICTING VERDICTS, on the more
                 # destructive path. Two merged bodies for one survivor was
@@ -525,7 +649,8 @@ class NoteCuratorAdaptor:
                 # cannot tell», and the fail-closed answer on a merge is to
                 # leave the group alone.
                 if seen.body != body:
-                    out.remove(seen)
+                    bodies.remove(seen)
+                    conflicted.add(resolved)
                     self._inc(
                         "nora_note_curator_dropped_total",
                         reason="conflicting_merged_body")
@@ -533,7 +658,9 @@ class NoteCuratorAdaptor:
                         "note curator returned two different merged bodies for "
                         "one survivor; the group is left alone")
                 continue
-            out.append(_MergedBody(note_id=resolved, body=body))
+            bodies.append(_MergedBody(note_id=resolved, body=body))
+        out.extend(bodies)
+        out.extend(_MergeOffered(survivor=s) for s in sorted(offered))
         return out
 
     # -- commit -------------------------------------------------------------
@@ -590,10 +717,16 @@ class NoteCuratorAdaptor:
             log.warning(
                 "note curator returned contradictory verdicts for one note; "
                 "leaving it standing")
-        shown = self._shown.get(key, _Shown({}, (), {}))
+        shown = self._shown.get(key, _Shown({}, (), {}, {}, {}))
         provenance = proposals[0] if proposals else None
         retired = 0
-        merged_groups: list[tuple[str, ...]] = []
+        # THE GROUPS THE MODEL ASKED TO MERGE, decided BEFORE any merge runs
+        # and independent of what becomes of them. See `untouchable` below.
+        offered = {
+            p.payload.survivor
+            for p in proposals
+            if isinstance(p.payload, _MergeOffered)
+        }
 
         for group in shown.merge_groups:
             survivor = shown.by_handle[group[0]]
@@ -644,26 +777,51 @@ class NoteCuratorAdaptor:
                 self._inc("nora_note_curator_total", action="merge_failed")
                 continue
             retired += count
-            merged_groups.append(
-                tuple(shown.by_handle[h] for h in group))
             self._inc("nora_note_curator_total", action="merge")
 
-        # ONLY the groups that actually merged, and the SURVIVOR is in here
-        # too. Two findings in one line:
+        # THE GROUPS THE MODEL ASKED TO MERGE, WHOLE — never the groups that
+        # actually merged. Three revisions of one rule, and the third is the
+        # one that stops content loss on the ORDINARY path:
         #
-        #   - computing this from `shown.merge_groups` unconditionally skipped
-        #     retirements for groups whose merge never ran or was REFUSED on a
-        #     lost CAS, so a tick could end with the survivor retired and the
-        #     duplicate still standing — inverted, silently.
         #   - `g[1:]` protected the duplicates and not the survivor, so a model
         #     returning a merged body for a group AND `closed` for its survivor
         #     merged into it and then retired it. The whole occasion leaves the
-        #     index, with the duplicate pointing at a retired row.
+        #     index, with the duplicate pointing at a retired row. Fixed by
+        #     including `g[0]`.
+        #   - narrowing to the groups that MERGED fixed nothing and hid the
+        #     hole. Every other outcome — an over-cap body, two different
+        #     bodies, a body naming the wrong member, a lost CAS — left the
+        #     group unprotected, and `commit` then retired each member on its
+        #     own verdict with `replaced_by=None`. That is the NORMAL path: the
+        #     objective asks for a verdict on every note it was shown, and
+        #     `inputs` calls a colliding group whose occasion has passed the
+        #     common case, so `moot` on both members is the EXPECTED answer.
+        #     Retirement is terminal in practice — `note_read` resolves against
+        #     `standing()` and `note_search` filters retired rows — so the
+        #     content the merge existed to keep became reachable only by direct
+        #     database query.
+        #   - and the narrow version was DECORATIVE besides: after a successful
+        #     merge the survivor's head has moved, so the head check below
+        #     already refuses it, and the duplicates are already retired so
+        #     `supersede` returns 0. Deleting the whole set left all 29 tests
+        #     green. A guard nothing can redden is not a guard.
+        #
+        # So the set is built from the CLAIM (`_MergeOffered`) rather than from
+        # the outcome, and it is not unioned with the merged groups: a merge
+        # only runs for a survivor a `_MergedBody` named, and every item that
+        # produces one also produces the offer, so the merged set is a strict
+        # subset. A redundant term in a guard is how the last version of this
+        # line became unfalsifiable.
         #
         # The store's own `test_merge_never_retires_the_survivor_itself` cannot
-        # see that: the curator retires it through a SEPARATE `supersede` call
-        # the store has no way to associate with the merge.
-        untouchable = {n for g in merged_groups for n in g}
+        # see any of it: the curator retires through a SEPARATE `supersede`
+        # call the store has no way to associate with the merge.
+        untouchable = {
+            shown.by_handle[h]
+            for g in shown.merge_groups
+            if shown.by_handle[g[0]] in offered
+            for h in g
+        }
         for note_id, verdict in verdicts.items():
             if verdict.verdict == "open" or note_id in untouchable:
                 continue
@@ -691,7 +849,24 @@ class NoteCuratorAdaptor:
             #
             # `_NoteStore.read` was declared for this and never called: the
             # protocol member for a check that was not wired.
-            current = await self._notes.read(workspace=key, note_id=note_id)
+            #
+            # GUARDED, AND IT WAS THE ONE AWAIT IN THIS LOOP THAT WAS NOT. The
+            # comment directly above argues that an exception escaping here
+            # discards `retired` including a merge already committed in
+            # Postgres — and then this read was added OUTSIDE the `try` that
+            # argument produced. A connection blip on the first note of the
+            # loop lost the count for merges that had already landed, and
+            # `merge_groups` reads live state, so those groups are gone next
+            # tick and the count is never recovered.
+            try:
+                current = await self._notes.read(
+                    workspace=key, note_id=note_id)
+            except Exception:
+                log.exception(
+                    "note curator could not re-read a note before retiring "
+                    "it; continuing")
+                self._inc("nora_note_curator_total", action="retire_failed")
+                continue
             if current is None or current[0].head_revision_id != shown.heads.get(
                 note_id
             ):
@@ -720,12 +895,15 @@ def _render(
     groups: Sequence[tuple[Sequence[str], Sequence[tuple[Note, str]]]],
     expired: Sequence[tuple[str, Note, str]],
 ) -> str:
-    """What the model is shown. Titles and bodies, no ids it did not need.
+    """What the model is shown. Titles and bodies, and NO NOTE IDS.
 
-    The note ids ARE included, because the objective's answer has to name what
-    it is answering about and a title is not unique — two notes about the same
-    occasion written twice is precisely the case where titles collide, and it
-    is the case this pass exists for.
+    **The `id` attribute carries a PER-TICK ORDINAL**, not a note id — see
+    `inputs` for the screen that makes that mandatory. This docstring said the
+    opposite until 2026-08-28 and argued FOR it: a title is not unique, two
+    notes about one occasion is exactly where titles collide, so the answer has
+    to name something. True — and the something is the ordinal, which is unique
+    within a tick and unaskable outside it. An argument for identifying the
+    note is not an argument for the identifier that made the whole pass inert.
 
     Bodies are rendered whole. `render_notes`' index elides them on the tag
     path because awareness is the point there; here the body IS the question,

@@ -31,16 +31,20 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 from nora.domain.notes import (
     BODY_MAX_CHARS,
     DESCRIPTION_MAX_CHARS,
+    TAG_PATH_PREFIX,
     TITLE_MAX_CHARS,
     Note,
     NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
+    anchor_key,
 )
 
 NOW = 1_755_100_000_000
@@ -110,31 +114,49 @@ def test_entities_alone_are_a_valid_anchor():
 
 def test_both_together_are_a_valid_anchor():
     note = _note(anchor_date=20261114, anchor_entity_ids=("e-grant",))
-    assert note.anchor_key == (20261114, ("e-grant",))
+    assert anchor_key(note.anchor_date, ("e-grant",)) == (
+        20261114, ("e-grant",),
+    )
 
 
 def test_the_anchor_key_is_what_merge_compares():
     """§7.1: merge eligibility is `(anchor_date, entity_set)` and nothing else —
     never topical similarity. Two weddings differ in BOTH components, so they
     are structurally ineligible to merge however alike their prose."""
-    grant = _note(anchor_date=20261114, anchor_entity_ids=("e-grant",))
-    blake = _note(anchor_date=20261010, anchor_entity_ids=("e-blake",))
-    assert grant.anchor_key != blake.anchor_key
+    assert anchor_key(20261114, ("e-grant",)) != anchor_key(
+        20261010, ("e-blake",))
 
 
 def test_the_anchor_key_ignores_entity_order():
     """Two notes anchored on the same people, listed differently, are the same
     anchor. Without this a merge candidate is missed for a reason that is an
     artifact of insertion order."""
-    a = _note(anchor_entity_ids=("e-a", "e-b"))
-    b = _note(anchor_entity_ids=("e-b", "e-a"))
-    assert a.anchor_key == b.anchor_key
+    assert anchor_key(20260101, ("e-a", "e-b")) == anchor_key(
+        20260101, ("e-b", "e-a"))
 
 
 def test_a_duplicate_entity_does_not_change_the_anchor():
-    a = _note(anchor_entity_ids=("e-a",))
-    b = _note(anchor_entity_ids=("e-a", "e-a"))
-    assert a.anchor_key == b.anchor_key
+    assert anchor_key(20260101, ("e-a",)) == anchor_key(
+        20260101, ("e-a", "e-a"))
+
+
+def test_the_anchor_key_is_not_a_property_of_the_note():
+    """**The key's entity half comes from `note_entity`, not from the column.**
+    `note.anchor_entity_ids` is what the model handed `note_create`, verbatim
+    and unresolved, and a key built from it is wrong in both directions: three
+    spellings of one wedding are three keys, and two unrelated notes that both
+    say 「wedding」 are one.
+
+    Asserted as an ABSENCE with a positive control, because the defect this
+    replaces was a property that read the wrong field — and a property that no
+    longer exists cannot be called by accident."""
+    note = _note(anchor_date=20261114, anchor_entity_ids=("wedding",))
+
+    assert not hasattr(note, "anchor_key")
+    assert note.written_anchor_entities == ("wedding",), (
+        "positive control: the written words are still readable, just not the "
+        "merge key"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -301,3 +323,28 @@ def test_both_proposal_shapes_carry_the_same_cap():
             closing_condition="c", established_in="conv-1",
             body="x" * (BODY_MAX_CHARS + 1), anchor_date=20261011,
         )
+
+
+def test_the_tag_path_prefix_has_no_second_copy_in_its_producer():
+    """**The strike reset's correctness rests on two strings matching**, and
+    they were two strings: `TAG_PATH_PREFIX` is defined here and
+    `nora/agent/tools.py` — the SOLE producer — wrote the literal `f"tag:{...}"`
+    twice without importing it.
+
+    Nothing would have failed on a rename. `is_tag_path_revision` would answer
+    False for every revision a person wrote, every note would look
+    background-authored, and §9.6's breaker would march every actively-worked
+    note to its strike ceiling — silently, because a strike has no log line.
+
+    A source check rather than a type check, because `nora/agent` is outside
+    `make gate`'s mypy scope (#61): the import is only load-bearing if nothing
+    re-types the literal beside it.
+    """
+    source = pathlib.Path("nora/agent/tools.py").read_text()
+
+    assert "TAG_PATH_PREFIX" in source, (
+        "positive control: the producer imports the constant at all"
+    )
+    assert f'f"{TAG_PATH_PREFIX}{{' not in source, (
+        "the producer re-typed the prefix instead of importing it"
+    )

@@ -73,7 +73,12 @@ from ..domain.gatherings import (
 )
 from ..domain.media import HANDLE_CHARS, GifCandidate, MediaBlob, MediaObject
 from ..domain.models import WeatherObservation
-from ..domain.notes import Note, NoteRevision, StaleNoteHeadError
+from ..domain.notes import (
+    TAG_PATH_PREFIX,
+    Note,
+    NoteRevision,
+    StaleNoteHeadError,
+)
 from ..domain.ports import (
     ComputeBackend,
     GifSource,
@@ -5057,7 +5062,8 @@ def build_tool_specs(
                 workspace=_workspace() or "", title=title, description=description,
                 uncertainty=uncertainty, closing_condition=closing_condition,
                 established_in=bound_conversation_id, body=body,
-                established_by=f"tag:{tagger.person_id}", now_ms=_now_ms(),
+                established_by=f"{TAG_PATH_PREFIX}{tagger.person_id}",
+                now_ms=_now_ms(),
                 anchor_date=anchor_date,
                 anchor_entity_ids=tuple(anchor_entities or ()),
             )
@@ -5155,7 +5161,8 @@ def build_tool_specs(
             revision = await book.append_revision(
                 workspace=_workspace() or "", note_id=note.id, body=body,
                 parent_revision_id=parent,
-                established_by=f"tag:{tagger.person_id}", now_ms=_now_ms(),
+                established_by=f"{TAG_PATH_PREFIX}{tagger.person_id}",
+                now_ms=_now_ms(),
             )
         except StaleNoteHeadError:
             # §6.3. `unavailable`, never `refused` and never applied on top:

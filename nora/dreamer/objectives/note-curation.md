@@ -6,9 +6,9 @@ applies_to: [note_curator_adaptor]
 description: >-
   The note tier's housekeeping pass. Decides, per note, whether an open question
   has CLOSED and whether two notes are the same occasion written twice. Reads
-  bodies; writes nothing itself. Merge ELIGIBILITY is decided in CODE, never by the model,
-  by comparing anchors, and is never asked of the model — the model is asked only what a body
-  says, which is the one thing SQL cannot read.
+  bodies; writes nothing itself. Merge ELIGIBILITY is decided in CODE, by
+  comparing anchors, and is never asked of the model — the model is asked only
+  what a body says, which is the one thing a key comparison cannot read.
 change_policy: operator-only
 ---
 You are tidying a notebook of **open questions** that a group of friends keeps between
@@ -64,6 +64,11 @@ do not average them. A merged body that quietly dropped one version is worse tha
 notes, because nobody can see what was lost.
 
 Do not tidy the prose. Do not summarise. The body is the thing that has to survive.
+
+A merged body that comes back **shorter than the longest note in the group** is refused by code
+and the group is left alone, because a merge that shortens the text has lost something. If you
+cannot write one body that keeps everything, say so in a `why` and return no `merged_body` for
+that group — two separate notes is the recoverable answer.
 
 ## Answering
 

@@ -71,7 +71,7 @@ from nora.domain.notes import (
     StaleNoteHeadError,
     WakeOutcome,
     group_on_anchor_key,
-    is_tag_path_revision,
+    tag_path_progressed_since_wake,
 )
 from nora.domain.ports import Proposal
 
@@ -122,6 +122,14 @@ class InMemoryNoteStore:
     notes: dict[str, Note] = field(default_factory=dict)
     revisions: dict[str, NoteRevision] = field(default_factory=dict)
     candidates: dict[tuple[str, str], NoteCandidate] = field(default_factory=dict)
+    #: `note_entity`, as a dict: note id -> RESOLVED entity ids. Empty, like
+    #: the real table, and **nothing here fills it in from
+    #: `anchor_entity_ids`.** A double that quietly resolved the model's own
+    #: strings would make merge eligible in the suite and inert in production —
+    #: the double-diverges-on-the-property-that-decides-it family, on the
+    #: property this tier's one destructive verb turns on. A test that wants an
+    #: eligible group writes this map, exactly as a SQL test inserts the rows.
+    entities: dict[str, tuple[str, ...]] = field(default_factory=dict)
     _ids: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
 
     #: **UUID-SHAPED, like the real store's.** This double minted `note-1` and
@@ -341,9 +349,19 @@ class InMemoryNoteStore:
             or note.retired_at is not None
         ):
             return None
-        head = self.revisions[note.head_revision_id]
-        moved = note.head_revision_id != note.last_wake_revision_id
-        progressed = moved and is_tag_path_revision(head.established_by)
+        # THE SPAN SINCE THE WATERMARK, not the author of the head — the same
+        # shared predicate the SQL store walks, for the reason it states: a
+        # room revision followed by a background one is progress, and both
+        # implementations used to answer «no» to it in agreement.
+        progressed = tag_path_progressed_since_wake(
+            head_revision_id=note.head_revision_id,
+            last_wake_revision_id=note.last_wake_revision_id,
+            chain={
+                r.id: (r.parent_revision_id, r.established_by)
+                for r in self.revisions.values()
+                if r.note_id == note_id
+            },
+        )
         if progressed:
             self.notes[note_id] = replace(
                 note, strikes=0, last_wake_revision_id=note.head_revision_id,
@@ -374,6 +392,7 @@ class InMemoryNoteStore:
                 (n, self.revisions[n.head_revision_id].body)
                 for n in await self.standing(workspace=workspace)
             ],
+            resolved_entities=self.entities,
             limit=limit,
         )
 

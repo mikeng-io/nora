@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import pytest
 
-from nora.domain.notes import BODY_MAX_CHARS, NoteSupersedeReason
+from nora.domain.notes import (
+    BODY_MAX_CHARS,
+    NoteSupersedeReason,
+    StaleNoteHeadError,
+)
 from nora.domain.ports import Proposal
 from nora.language.note_curator import (
-    CURATOR_ACTIONS,
     CURATOR_DROPS,
     CURATOR_GROUP_REFUSALS,
     NoteCuratorAdaptor,
@@ -28,33 +31,32 @@ TODAY = 20261001
 
 async def _seed(store: InMemoryNoteStore, *, title: str, anchor: int | None,
                 body: str = "as it stands",
-                entities: tuple[str, ...] = ("grant",)):
-    """`entities` defaults to a real anchor because a DATE-ONLY collision is
-    refused (finding 3): an anchor is `(date, entity_set)` and in production
-    the entity half is empty, so grouping on the date alone would merge
-    «Dinner, 9 Sept» with «Ada's flight to Tokyo»."""
-    return await store.create(
+                entities: tuple[str, ...] = ("grant",),
+                resolved: tuple[str, ...] | None = None):
+    """`entities` is what the WRITER typed; `resolved` is what `note_entity`
+    holds, and only the second is the merge key's second half.
+
+    They are separate parameters because they are separate things, and
+    conflating them is finding 3: 「Grant 婚禮」/「Gabe's wedding」/「婚禮」 are
+    three strings and one occasion, while two unrelated notes both saying
+    「wedding」 are one string and two occasions. `resolved` defaults to
+    mirroring `entities` so an ordinary test gets an eligible group; a test
+    about the refusal passes `resolved=()`.
+
+    The DOUBLE does not do this mirroring — `InMemoryNoteStore.entities` is
+    empty like the real table, and a double that resolved the model's own
+    strings would make merge eligible in the suite and inert in production.
+    """
+    note = await store.create(
         workspace=WS, title=title, description="one line",
         uncertainty="undecided", closing_condition="somebody decides",
         established_in="conv-1", body=body, established_by="tag:miles",
         now_ms=NOW, anchor_date=anchor, anchor_entity_ids=entities,
     )
-
-
-def _h(note) -> str:
-    """The HANDLE a curator run rendered for this note.
-
-    Tests must speak the model's language, not the store's: the model is shown
-    ordinals and never an id, so a test passing an id is testing a path
-    production cannot take. Resolved from  because the mapping is
-    per-run — which is also what makes a handle from a previous tick unaskable.
-    """
-    return next(
-        h for h, nid in _LAST_SHOWN[0].by_handle.items() if nid == note.id
-    )
-
-
-_LAST_SHOWN: list = []
+    ids = entities if resolved is None else resolved
+    if ids:
+        store.entities[note.id] = tuple(f"e-{name}" for name in ids)
+    return note
 
 
 def _h(curator, note) -> str:
@@ -198,16 +200,56 @@ async def test_bodies_read_is_published_as_a_level_per_workspace():
     assert metrics.get("nora_note_curator_bodies_read", workspace=WS) == 2
 
 
-async def test_nothing_is_read_and_nothing_published_when_there_is_no_work():
-    """Absent, not zero — the gauge says what the LAST tick spent, and a tick
-    that did no work spent nothing to say."""
+async def test_bodies_read_is_published_as_zero_on_an_idle_tick():
+    """**Zero, and PUBLISHED.** The gauge was set after `inputs`' early return,
+    so an idle tick never wrote it and the series held the last busy tick's
+    value — on a pass whose own docstring says idle is the overwhelming
+    majority of ticks. A level that only ever moves up is a high-water mark
+    wearing a level's help text, and an operator reading «2 bodies» a fortnight
+    after the last group would be reading a fossil.
+
+    Absence would be the honest answer to «the tier is off» — this call proves
+    the tier ran, so the honest answer is 0. Asserted through `snapshot()`
+    membership first, because `Metrics.get` answers 0.0 for a series that was
+    never published and would pass against the defect."""
     store = InMemoryNoteStore()
     metrics = Metrics()
 
     await _curator(store, metrics).inputs(key=WS, batch=())
 
     assert ("nora_note_curator_bodies_read", (("workspace", WS),)) \
-        not in metrics.snapshot()
+        in metrics.snapshot(), "an idle tick still says what it spent"
+    assert metrics.get("nora_note_curator_bodies_read", workspace=WS) == 0
+
+
+async def test_bodies_read_counts_what_the_store_fetched_not_what_was_shown():
+    """The gauge reads against `max_groups_per_tick + max_expired_per_tick`, so
+    it has to count the reads that spend those caps.
+
+    It reported `len(expired)` AFTER group members were subtracted out — but
+    `anchored_before(limit=max_expired)` had already fetched every one of them.
+    So the number could never reach the expired cap, and the help text's stated
+    reading («sitting at the cap means the pass is reporting nothing to do
+    about notes it never reached») was unreachable exactly when the cap binds,
+    which is the only condition it exists for.
+
+    Here the cap is 2 and it BINDS: three expired notes exist, two are read,
+    and the gauge must say 2."""
+    store = InMemoryNoteStore()
+    for day in (20260901, 20260902, 20260903):
+        await _seed(store, title=f"Dinner {day}", anchor=day,
+                    entities=(f"e{day}",))
+    metrics = Metrics()
+    curator = NoteCuratorAdaptor(
+        notes=store, today=lambda: TODAY, max_groups_per_tick=3,
+        max_expired_per_tick=2, metrics=metrics,
+    )
+
+    await curator.inputs(key=WS, batch=())
+
+    assert metrics.get("nora_note_curator_bodies_read", workspace=WS) == 2, (
+        "the expired cap bound at 2 and the gauge is what says so"
+    )
 
 
 # --- the merge half, which was UNREACHABLE until 2026-08-28 ---------------
@@ -301,6 +343,128 @@ async def test_a_merged_body_for_a_group_this_run_did_not_select_is_refused():
     assert a.id in {n.id for n in await store.standing(workspace=WS)}
 
 
+class _MergeCasLost(InMemoryNoteStore):
+    """A store whose `merge` always loses the compare-and-swap.
+
+    The tag path revising the survivor while the curator was thinking is the
+    case the CAS exists for and it is NOT an error — so this is the shape of an
+    ordinary tick, not of a fault.
+    """
+
+    async def merge(self, **kw):  # type: ignore[override]
+        raise StaleNoteHeadError("the survivor moved", observed_head=None)
+
+
+@pytest.mark.parametrize(
+    "body_for,drop_reason,action,store_factory",
+    [
+        # An over-cap body. The objective asks for "keep every concrete thing,
+        # do not summarise" over two bodies of up to the cap each, so this is
+        # the INSTRUCTED outcome rather than an edge.
+        (lambda: "x" * (BODY_MAX_CHARS + 1), "body_too_long", None,
+         InMemoryNoteStore),
+        # A body shorter than the longest input — a summary.
+        (lambda: "short", "shorter_than_inputs", None, InMemoryNoteStore),
+        # A well-formed body whose merge loses the CAS at the store.
+        (lambda: "KEEPS BOTH: Fridays and Sheung Wan, at length",
+         None, "merge_refused", _MergeCasLost),
+    ],
+    ids=["over_cap_body", "shorter_than_inputs", "lost_cas"],
+)
+async def test_a_group_the_model_asked_to_merge_is_never_retired_piecemeal(
+    body_for, drop_reason, action, store_factory,
+):
+    """**Content loss on the NORMAL path, and the reason this branch could not
+    merge.**
+
+    `untouchable` was built from the groups that ACTUALLY MERGED, so every
+    other outcome left the group unprotected and `commit` retired each member
+    on its own verdict with `replaced_by=None`. Retirement is terminal in
+    practice — `note_read` resolves against `standing()` and `note_search`
+    filters retired rows — so both bodies became reachable only by direct
+    database query, with nothing pointing at either.
+
+    And it is the ordinary answer, not a contrived one: the objective tells the
+    model to return one entry per note it was shown, and `inputs` calls a
+    colliding group whose occasion has passed "the common case rather than an
+    edge". `moot` on both members beside a merged body is what a compliant
+    model returns.
+
+    Parameterised over the three ways a merge fails to land, because the guard
+    has to key on the model's REQUEST rather than on any of the outcomes.
+    """
+    store = store_factory()
+    a = await _seed(store, title="Grant wedding", anchor=20260101,
+                    body="Ada can't do Fridays; Sai Kung ruled out.")
+    b = await _seed(store, title="Grant's wedding", anchor=20260101,
+                    body="Ben found a place in Sheung Wan.")
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "merged_body": body_for()},
+        {"note_id": _h(c, a), "verdict": "moot", "why": "the day passed"},
+        {"note_id": _h(c, b), "verdict": "moot", "why": "the day passed"},
+    ))
+
+    standing = {n.id for n in await store.standing(workspace=WS)}
+    assert standing == {a.id, b.id}, (
+        "the merge did not land, so BOTH notes stand — retiring them one at a "
+        "time throws away the content the merge existed to keep"
+    )
+    assert written == 0
+    # The positive control: the refusal was REPORTED, not silently skipped.
+    if drop_reason is not None:
+        assert metrics.get(
+            "nora_note_curator_dropped_total", reason=drop_reason) == 1
+    if action is not None:
+        assert metrics.get("nora_note_curator_total", action=action) == 1
+
+
+async def test_a_merged_body_naming_the_wrong_member_still_holds_its_group():
+    """`not_shown_in_group` fires when the handle is not the group's SURVIVOR —
+    and a non-survivor member of a real group is exactly that. The model got
+    the handle wrong; it did not get the occasion wrong, and retiring the pair
+    individually is still the unrecoverable answer."""
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20260101,
+                    body="Ada can't do Fridays.")
+    b = await _seed(store, title="Grant's wedding", anchor=20260101,
+                    body="Ben found Sheung Wan.")
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, b), "merged_body": "everything both knew, at length"},
+        {"note_id": _h(c, a), "verdict": "moot", "why": "the day passed"},
+        {"note_id": _h(c, b), "verdict": "moot", "why": "the day passed"},
+    ))
+
+    assert written == 0
+    assert {n.id for n in await store.standing(workspace=WS)} == {a.id, b.id}
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="not_shown_in_group") == 1
+
+
+async def test_a_group_nobody_asked_to_merge_is_still_retired():
+    """**The positive control for the whole guard, and it is not optional.**
+    Protecting every SELECTED group would end a tick with nothing retired, and
+    every assertion above would still pass. This is the case the narrow version
+    of the guard was written for, kept because it is real: no merged body came
+    back, so there is nothing to preserve and the verdicts stand on their own.
+    """
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20260101)
+    b = await _seed(store, title="Grant's wedding", anchor=20260101)
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "verdict": "moot", "why": "the day passed"},
+        {"note_id": _h(c, b), "verdict": "moot", "why": "the day passed"},
+    ))
+
+    assert written == 2
+    assert await store.standing(workspace=WS) == ()
+
+
 async def test_the_survivor_of_a_merge_is_never_retired_in_the_same_tick():
     """A model returning a merged body for a group AND `closed` for its
     survivor used to merge into it and then retire it — the whole occasion
@@ -324,6 +488,20 @@ async def test_the_survivor_of_a_merge_is_never_retired_in_the_same_tick():
         "the survivor stays standing; the occasion does not leave the index"
     )
     assert written == 1
+    assert metrics.get("nora_note_curator_total", action="merge") == 1, (
+        "positive control: the merge really ran"
+    )
+    # **THE GUARD, not the race check.** This assertion is what makes the test
+    # able to fail: with `untouchable` deleted the survivor still stands,
+    # because the merge moved its head and the retirement's own head check
+    # refuses it — so the note is safe and `retire_stale` fires. That reading
+    # is a lie. `retire_stale` means the TAG PATH moved a note under the
+    # curator, and an operator watching for contention would be shown a
+    # collision the curator had with itself, once per merge, forever.
+    assert metrics.get("nora_note_curator_total", action="retire_stale") == 0, (
+        "the survivor is protected BY THE GUARD; it must not reach the "
+        "retirement loop and report contention that never happened"
+    )
 
 
 async def test_a_merge_that_never_ran_does_not_suppress_its_retirements():
@@ -359,9 +537,14 @@ async def test_a_date_only_collision_is_refused_and_counted():
     The COUNT is what makes this a reading rather than a silence — without it,
     a year of a quiet curator cannot be told from a year of no duplicates."""
     store = InMemoryNoteStore()
-    await _seed(store, title="Dinner, 9 Sept", anchor=20260909, entities=())
+    # ENTITY STRINGS ARE PRESENT AND IDENTICAL, and nothing is resolved. This
+    # is the live shape: `note_create(anchor_entities=["wedding"])` is a real
+    # tool call and `note_entity` has no writer. A guard keyed on the raw
+    # column would merge these two.
+    await _seed(store, title="Dinner, 9 Sept", anchor=20260909,
+                entities=("wedding",), resolved=())
     await _seed(store, title="Ada's flight to Tokyo", anchor=20260909,
-                entities=())
+                entities=("wedding",), resolved=())
     metrics = Metrics()
 
     rendered = await _curator(store, metrics).inputs(key=WS, batch=())
@@ -370,6 +553,33 @@ async def test_a_date_only_collision_is_refused_and_counted():
     assert metrics.get(
         "nora_note_curator_groups_refused_total",
         reason="no_entity_anchor") == 1
+
+
+async def test_a_group_becomes_eligible_only_when_note_entity_resolves():
+    """**The positive control for the refusal above, and the whole of finding
+    3.** Two notes with identical model-written entity strings are refused;
+    the SAME two notes with resolved `note_entity` rows are one group.
+
+    Without this pair the refusal is indistinguishable from a curator that
+    never groups anything — and the failing direction is the one that matters:
+    keying on `note.anchor_entity_ids`, which `note_create` stores verbatim,
+    makes both halves of this test pass the first assertion and merge two
+    unrelated notes that happen to say the same word.
+    """
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20261011,
+                    entities=("wedding",), resolved=())
+    b = await _seed(store, title="Ada's flight", anchor=20261011,
+                    entities=("wedding",), resolved=())
+
+    assert "<merge_group" not in await _curator(store).inputs(key=WS, batch=())
+
+    store.entities[a.id] = ("e-grant",)
+    store.entities[b.id] = ("e-grant",)
+
+    assert "<merge_group" in await _curator(store).inputs(key=WS, batch=()), (
+        "resolved entities, and only resolved entities, make an occasion"
+    )
 
 
 async def test_entities_in_a_different_order_are_the_same_occasion():
@@ -533,7 +743,9 @@ async def test_two_merged_bodies_for_one_survivor_leave_the_group_alone():
 
     _, written = await _merge_round(store, metrics, lambda c: (
         {"note_id": _h(c, a), "merged_body": "KEEPS BOTH: Fridays, Sheung Wan"},
-        {"note_id": _h(c, a), "merged_body": "lost it"},
+        # Long enough to clear the `shorter_than_inputs` floor, so the reason
+        # under test is the CONFLICT and not the length.
+        {"note_id": _h(c, a), "merged_body": "ONLY FRIDAYS, and nothing else"},
     ))
 
     assert written == 0
@@ -545,26 +757,201 @@ async def test_two_merged_bodies_for_one_survivor_leave_the_group_alone():
     assert head[1].body == "Ada can't do Fridays.", "the original stands"
 
 
+async def test_a_third_body_repeating_the_first_does_not_revive_a_refused_merge():
+    """**The conflict was not sticky.** `out.remove(seen)` deleted the first
+    body, so a third item repeating it found nothing in the list, appended
+    itself, and the merge LANDED with the very body the conflict had just been
+    counted for. The instrument said refused; it merged — on the more
+    destructive of the two paths, with the weaker of the two mechanisms.
+    `commit`'s verdict path has had a sticky `conflicted` set all along.
+    """
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20261011,
+                    body="Ada can't do Fridays.")
+    await _seed(store, title="Grant's wedding", anchor=20261011,
+                body="Ben found Sheung Wan.")
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "merged_body": "KEEPS BOTH: Fridays, Sheung Wan"},
+        {"note_id": _h(c, a), "merged_body": "ONLY FRIDAYS, and nothing else"},
+        {"note_id": _h(c, a), "merged_body": "KEEPS BOTH: Fridays, Sheung Wan"},
+    ))
+
+    assert written == 0
+    assert metrics.get(
+        "nora_note_curator_dropped_total",
+        reason="conflicting_merged_body") == 1
+    head = await store.read(workspace=WS, note_id=a.id)
+    assert head is not None
+    assert head[1].body == "Ada can't do Fridays.", (
+        "the survivor's head is untouched; a repeat is not a tie-break"
+    )
+
+
+async def test_a_merged_body_shorter_than_its_inputs_is_refused():
+    """**A code check on a property the model cannot fake.**
+
+    `group_on_anchor_key` refuses date-only merges because relying on the model
+    to decline is self-attestation on a destructive operation — and the same
+    tick then accepted the merged BODY, the thing that overwrites the
+    survivor's head, on the model's word alone. The only checks were non-blank
+    and under the cap.
+
+    The objective says the merged body keeps everything every note knew, so it
+    cannot be shorter than the longest thing it is keeping. A body that is, is
+    a summary — the one failure mode this verb has, and nothing downstream can
+    undo it.
+    """
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20261011,
+                    body="Ada can't do Fridays and Sai Kung was ruled out.")
+    await _seed(store, title="Grant's wedding", anchor=20261011,
+                body="Ben found Sheung Wan.")
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "merged_body": "Wedding plans, still open."},
+    ))
+
+    assert written == 0
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="shorter_than_inputs") == 1
+    head = await store.read(workspace=WS, note_id=a.id)
+    assert head is not None
+    assert head[1].body == "Ada can't do Fridays and Sai Kung was ruled out."
+
+
+async def test_a_merged_body_as_long_as_its_longest_input_is_accepted():
+    """The floor, on the boundary. It is a FLOOR and not an equality, and it is
+    deliberately not "at least the sum" — two bodies about one occasion overlap
+    and an honest merge is shorter than the concatenation. Without this the
+    check could be tightened into refusing every real merge and every
+    assertion above would still pass."""
+    store = InMemoryNoteStore()
+    longest = "Ada can't do Fridays and Sai Kung was ruled out."
+    a = await _seed(store, title="Grant wedding", anchor=20261011,
+                    body=longest)
+    await _seed(store, title="Grant's wedding", anchor=20261011,
+                body="Ben found Sheung Wan.")
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "merged_body": "x" * len(longest)},
+    ))
+
+    assert written == 1, "exactly as long as the longest input is enough"
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="shorter_than_inputs") == 0
+
+
+class _ReadRaises(InMemoryNoteStore):
+    """A store whose `read` fails. A connection blip, not a bug."""
+
+    async def read(self, **kw):  # type: ignore[override]
+        raise RuntimeError("the connection went away")
+
+
+async def test_a_failed_read_before_retiring_does_not_discard_the_ticks_merges():
+    """**The one unguarded await in the loop, and it was added underneath the
+    comment arguing against exactly this.**
+
+    The retirement loop is wrapped in a `try` whose own comment says an
+    exception escaping "would discard `retired`, INCLUDING a merge that already
+    committed" — and the head-check `read` this branch added sits OUTSIDE it.
+    A connection blip on the first note loses the count for merges already
+    committed in Postgres, and `merge_groups` reads live state, so those groups
+    are gone next tick and the number is never recovered.
+
+    The merge here is REAL and already applied at the store, which is what
+    makes the lost count a lie rather than a rounding error.
+    """
+    store = _ReadRaises()
+    a = await _seed(store, title="Grant wedding", anchor=20260101,
+                    body="Ada can't do Fridays; Sai Kung ruled out.")
+    b = await _seed(store, title="Grant's wedding", anchor=20260101,
+                    body="Ben found a place in Sheung Wan.")
+    expired = await _seed(store, title="Dinner, 9 Sept", anchor=20260909,
+                          entities=("ada",), body="Nobody booked.")
+    metrics = Metrics()
+
+    _, written = await _merge_round(store, metrics, lambda c: (
+        {"note_id": _h(c, a), "merged_body":
+            "Ada can't do Fridays; Sai Kung ruled out. Ben found Sheung Wan."},
+        {"note_id": _h(c, expired), "verdict": "moot", "why": "the day passed"},
+    ))
+
+    assert written == 1, (
+        "the merge retired the duplicate and that row EXISTS — reporting 0 "
+        "here is `ok` wearing `unavailable`'s clothes"
+    )
+    assert metrics.get("nora_note_curator_total", action="retire_failed") == 1
+    standing = {n.id for n in await store.standing(workspace=WS)}
+    assert standing == {a.id, expired.id}
+    assert b.id not in standing
+
+
 # --- the label vocabularies, derived rather than hand-copied ---------------
 
 
-def test_the_help_text_names_exactly_the_actions_the_code_emits():
-    """A hand-written vocabulary in help text drifts the moment a branch adds
-    an action — and this one already had: `retire_failed` and `retire_stale`
-    were emitted for a round before the help text knew about them.
+def _curator_vocabularies():
+    """DERIVED from the adaptor's own `_VOCABULARIES` map, so a counter added
+    with a vocabulary is covered by the parity test the day it lands.
 
-    Bound to the frozenset the code increments against, so the help text cannot
-    fall behind without this failing. Checked at runtime rather than by types
-    because `nora/language` is outside `make gate`'s mypy scope (#61)."""
-    from nora.obs.metric_specs import _COUNTERS
+    The previous test covered ONE of the three counters by name, and the two it
+    left out were exactly the ones that had drifted: `conflicting_merged_body`
+    was emitted by the code and named nowhere in
+    `nora_note_curator_dropped_total`'s help text.
+    """
+    return sorted(
+        (name, label, sorted(vocab))
+        for name, (label, vocab) in
+        NoteCuratorAdaptor._VOCABULARIES.items()
+    )
+
+
+@pytest.mark.parametrize(
+    "metric,label,vocabulary", _curator_vocabularies(),
+    ids=[n for n, _, _ in _curator_vocabularies()],
+)
+def test_every_label_the_code_can_emit_is_named_in_its_help_text(
+    metric, label, vocabulary,
+):
+    """A hand-written vocabulary in help text drifts the moment a branch adds a
+    value — and both of these had: `retire_failed` and `retire_stale` were
+    emitted for a round before `nora_note_curator_total`'s text knew about
+    them, and `conflicting_merged_body` shipped emitted and unnamed.
+
+    **Word-boundary, not substring.** `"merge" in text` is satisfied by a text
+    naming only `merge_refused`, so the weaker form passed on a help text that
+    did not name the label at all — a matcher that matches too much, in the
+    test written to catch drift.
+
+    Checked at runtime rather than by types because `nora/language` is outside
+    `make gate`'s mypy scope (#61)."""
+    import re
+
+    from nora.obs.metric_specs import _COUNTERS, _GAUGES
 
     spec = next(
-        c for c in _COUNTERS if c.name == "nora_note_curator_total"
+        c for c in (*_COUNTERS, *_GAUGES) if c.name == metric
     )
-    for action in CURATOR_ACTIONS:
-        assert action in spec.help_text, (
-            f"{action!r} is emitted and the help text does not name it"
+    assert vocabulary, f"{metric} has an EMPTY vocabulary — nothing is checked"
+    for value in vocabulary:
+        assert re.search(rf"\b{re.escape(value)}\b", spec.help_text), (
+            f"{metric}{{{label}={value!r}}} is emitted and the help text does "
+            f"not name it"
         )
+
+
+def test_the_label_parity_check_can_actually_fail():
+    """The positive control for the matcher above. `\b` against a value that
+    is a PREFIX of a named one must not match — which is the exact weakness the
+    substring form had."""
+    import re
+
+    assert not re.search(r"\bmerge\b", "actions: merge_refused, merge_failed")
+    assert re.search(r"\bmerge\b", "actions: merge, merge_refused")
 
 
 def test_an_action_outside_the_vocabulary_raises_rather_than_forking_a_series():
@@ -726,7 +1113,11 @@ async def test_items_survive_the_real_dream_screen_in_the_runtimes_order():
     # would miss: surviving the screen is worthless if the handles no longer
     # name anything.
     payloads = await curator.accept(key=WS, items=kept)
-    assert len(payloads) == 2
+    # BY KIND, not by count: `accept` also emits a `_MergeOffered` marker for
+    # every group the model named, so a bare count pins an implementation
+    # detail and reddens for the wrong reason the next time one is added.
+    kinds = {type(p).__name__ for p in payloads}
+    assert {"_MergedBody", "_Verdict"} <= kinds, kinds
     written = await curator.commit(
         key=WS,
         proposals=tuple(
@@ -767,8 +1158,12 @@ async def test_a_passed_date_group_is_rendered_once_not_twice():
     )
     assert "<merge_group" in rendered, "and it is rendered AS a group"
     assert metrics.get(
-        "nora_note_curator_bodies_read", workspace=WS) == 2, (
-        "two notes, two bodies — not four"
+        "nora_note_curator_bodies_read", workspace=WS) == 4, (
+        "TWO NOTES, FOUR READS. The rendering is de-duplicated; the gauge is "
+        "not, because the gauge measures the caps and both reads spent one. "
+        "`merge_groups` fetched these two bodies and `anchored_before` fetched "
+        "them again — reporting 2 would hide half the cost of exactly the "
+        "overlap this test is about"
     )
     assert a.id  # positive control: the seed really happened
 

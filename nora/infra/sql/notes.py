@@ -88,6 +88,15 @@ it would require every anchor entity to already be a resolved canonical entity,
 and resolving `big walk` / `Big Walk` / 大步行 to one id is a candidate-selection
 concern this class does not perform. When the curator gains entity resolution it
 writes `note_entity` itself, from ids it has actually resolved.
+
+**`merge_groups` reads that empty table anyway, and that is the point.** Merge
+eligibility is `(anchor_date, resolved entity set)`, and the resolved half comes
+from `note_entity` — never from `anchor_entity_ids`, which is the model's own
+free text. So merge is inert until the join table has a writer, and
+`nora_note_curator_groups_refused_total` is the number that says what building
+one would unlock. Keying on the raw column instead would make merge fire, and
+fire wrongly in both directions: three spellings of one wedding are three keys,
+while two unrelated notes that both say 「wedding」 are one.
 """
 
 from __future__ import annotations
@@ -110,10 +119,15 @@ from nora.domain.notes import (
     StaleNoteHeadError,
     WakeOutcome,
     group_on_anchor_key,
-    is_tag_path_revision,
+    tag_path_progressed_since_wake,
 )
 from nora.domain.ports import Proposal
-from nora.infra.sql.schema import NOTE, NOTE_CANDIDATE, NOTE_REVISION
+from nora.infra.sql.schema import (
+    NOTE,
+    NOTE_CANDIDATE,
+    NOTE_ENTITY,
+    NOTE_REVISION,
+)
 
 
 def _row_to_note(r: Row[Any]) -> Note:
@@ -493,9 +507,12 @@ class SqlNoteStore:
 
         §9.6's two arms, and the qualifier that makes the breaker real:
 
-        - **head moved ON THE TAG PATH** — `strikes = 0`,
+        - **THE TAG PATH WROTE SOMETHING SINCE THE LAST WAKE** — `strikes = 0`,
           `last_wake_revision_id = head`, and `revisit_at` advances. Somebody
-          engaged with the uncertainty, which is progress.
+          engaged with the uncertainty, which is progress. It is the SPAN since
+          the watermark, not the author of the current head: a room revision
+          followed by a background one is progress, and asking who wrote the
+          head answered «no» to it.
         - **anything else** — `strikes += 1` and **`revisit_at` is NOT
           advanced**, so the note stays due and the count climbs toward the
           ceiling the caller enforces.
@@ -518,11 +535,6 @@ class SqlNoteStore:
                     NOTE.c.head_revision_id,
                     NOTE.c.strikes,
                     NOTE.c.last_wake_revision_id,
-                    NOTE_REVISION.c.established_by,
-                )
-                .join_from(
-                    NOTE, NOTE_REVISION,
-                    NOTE.c.head_revision_id == NOTE_REVISION.c.id,
                 )
                 .where(
                     NOTE.c.id == note_id,
@@ -537,8 +549,31 @@ class SqlNoteStore:
             if row is None:
                 return None
 
-            moved = row.head_revision_id != row.last_wake_revision_id
-            progressed = moved and is_tag_path_revision(row.established_by)
+            # THE SPAN, NOT THE HEAD. This joined `note_revision` on the head
+            # and asked who wrote THAT — so a room revision followed by a
+            # background one (a merge, a debrief append) read as no progress
+            # and left the watermark behind, forever. See
+            # `tag_path_progressed_since_wake`.
+            #
+            # A note's revision chain is short by construction (a body is
+            # appended to, not rewritten per turn), so it is walked in code
+            # rather than pushed down as a recursive CTE: one shape both stores
+            # run, which is what the contract suite compares.
+            chain_rows = (await conn.execute(
+                sa.select(
+                    NOTE_REVISION.c.id,
+                    NOTE_REVISION.c.parent_revision_id,
+                    NOTE_REVISION.c.established_by,
+                ).where(NOTE_REVISION.c.note_id == note_id)
+            )).all()
+            progressed = tag_path_progressed_since_wake(
+                head_revision_id=row.head_revision_id,
+                last_wake_revision_id=row.last_wake_revision_id,
+                chain={
+                    r.id: (r.parent_revision_id, r.established_by)
+                    for r in chain_rows
+                },
+            )
             if progressed:
                 values: dict[str, Any] = {
                     "strikes": 0,
@@ -611,12 +646,17 @@ class SqlNoteStore:
         revised it while the curator was thinking, the whole merge is refused
         and nothing is retired.
         """
-        revision = NoteRevision(
-            id=str(uuid4()), note_id=survivor, body=merged_body,
-            parent_revision_id=survivor_parent, written_at=now_ms,
-            established_by=established_by,
-            instruction_sha256=instruction_sha256, model=model,
-        )
+        # THE CAS DECIDES FIRST, and the ORDER of these two refusals is a
+        # contract property rather than a style choice.
+        #
+        # This built the `NoteRevision` up here, before any of it — so an
+        # over-cap merged body raised `ValueError` out of the constructor even
+        # when the survivor had already moved, while the in-memory double
+        # checked the head first and raised `StaleNoteHeadError`. One input,
+        # two exception types, and `NoteCuratorAdaptor.commit` branches on
+        # exactly that into `merge_refused` («NOT an error, the group is still
+        # a group») and `merge_failed` («a fault»). The two stores disagreed
+        # about which of two OPPOSITE readings an operator was shown.
         if not _is_uuid(survivor) or not _is_uuid(survivor_parent):
             raise StaleNoteHeadError(
                 f"survivor {survivor!r} is not a note id this store could look "
@@ -631,6 +671,33 @@ class SqlNoteStore:
             n for n in retire if _is_uuid(n) and n != survivor
         ))
         async with self._engine.begin() as conn:
+            # The head is read and LOCKED before the revision is constructed,
+            # so a lost CAS is reported as a lost CAS whatever else is wrong
+            # with the body. `_append_on_conn` re-asserts it in its UPDATE; the
+            # row is locked for the rest of this transaction, so that assertion
+            # cannot now fail — it is the insert's own guard, kept because the
+            # method is shared with `propose`.
+            observed = (await conn.execute(
+                sa.select(NOTE.c.head_revision_id).where(
+                    NOTE.c.id == survivor, NOTE.c.workspace == workspace,
+                ).with_for_update()
+            )).scalar_one_or_none()
+            if observed != survivor_parent:
+                raise StaleNoteHeadError(
+                    f"note {survivor} changed under you: this merge was "
+                    f"written against {survivor_parent}, the head is "
+                    f"{observed} — read it again"
+                    if observed is not None
+                    else f"note {survivor} is not in workspace {workspace!r} "
+                         f"— read it again",
+                    observed_head=observed,
+                )
+            revision = NoteRevision(
+                id=str(uuid4()), note_id=survivor, body=merged_body,
+                parent_revision_id=survivor_parent, written_at=now_ms,
+                established_by=established_by,
+                instruction_sha256=instruction_sha256, model=model,
+            )
             # The append FIRST, so a lost CAS refuses before anything is
             # retired. Inside one transaction the order cannot matter for
             # atomicity — it matters for which failure the caller sees, and «I
@@ -706,6 +773,14 @@ class SqlNoteStore:
         anyway, so an entity-only group today would be a group of notes
         anchored to `{}`, which is every dateless note in the workspace.
 
+        **The entity half comes from `note_entity`, not from
+        `note.anchor_entity_ids`.** That column holds whatever free text the
+        model handed `note_create`, unresolved and unvalidated, and a key built
+        from it is wrong in both directions at once — see
+        `group_on_anchor_key`. The join is a third query rather than a widened
+        first one because it is needed only for the grouping pass and only for
+        notes that have an anchor date.
+
         `limit` bounds GROUPS, not notes: the caller's budget is bodies read
         per tick, and a group is the unit it reads.
         """
@@ -746,12 +821,28 @@ class SqlNoteStore:
         )
         async with self._engine.connect() as conn:
             anchors = (await conn.execute(anchors_stmt)).all()
+            # THE RESOLVED ENTITIES, read from the registry rather than from
+            # the model's own words. `note_entity` has no writer anywhere in
+            # the system yet, so this map is empty in production and every
+            # group is refused — which is 27 §2's decision («populating
+            # note_entity is the curator's real precondition, not its flag»)
+            # showing up as behaviour instead of as prose.
+            resolved: dict[str, list[str]] = {}
+            if anchors:
+                ent_rows = (await conn.execute(
+                    sa.select(NOTE_ENTITY.c.note_id, NOTE_ENTITY.c.entity_id)
+                    .where(NOTE_ENTITY.c.note_id.in_([r.id for r in anchors]))
+                )).all()
+                for er in ent_rows:
+                    resolved.setdefault(er.note_id, []).append(er.entity_id)
             # `""` as a placeholder body: `group_on_anchor_key` reads only the
             # anchor, and the bodies are filled in below for the groups that
             # survive. Typed as the same pair so one grouping function serves
             # both callers rather than gaining a bodiless variant.
             eligible, refused = group_on_anchor_key(
-                [(_row_to_note(r), "") for r in anchors], limit=limit,
+                [(_row_to_note(r), "") for r in anchors],
+                resolved_entities=resolved,
+                limit=limit,
             )
             wanted = [n.id for g in eligible for n, _ in g]
             bodies: dict[str, str] = {}

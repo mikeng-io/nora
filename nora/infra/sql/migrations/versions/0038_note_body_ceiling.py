@@ -1,9 +1,8 @@
 """note_revision.body gains a length ceiling — 27 §5.2's database half.
 
-§5.2 decides TWO numbers and only the second lives here: *"`[notes]
-max_body_chars`, operating value **8000**, database ceiling **32000**"*. The
-operating value landed with the domain constant and the config field; this is
-the ceiling.
+§5.2 decides TWO numbers and only the second lives here: operating value
+**8000**, database ceiling **32000**. The operating value landed as the domain
+constant `BODY_MAX_CHARS`; this is the ceiling.
 
 **THE GAP BETWEEN THEM IS THE POINT, and it is why this is not simply 8000.**
 
@@ -18,9 +17,13 @@ the ceiling.
 A CHECK at 8000 would collapse those two meanings into one and destroy the
 signal: every over-cap write would look identical whether it came from a writer
 that skipped validation or from a config the operator legitimately raised.
-`NotesConfig.max_body_chars` is bounded `le=32000` for the same reason — a
-configured value above the ceiling would be unenforceable, refused by Postgres
-rather than by the domain, and the operator would find out from a failed write.
+**The operating value is NOT a config key.** §5.2 wrote it as `[notes]
+max_body_chars` and one was declared, with a range validator bounded `le=32000`
+on exactly the argument above — and nothing ever read it. It is deleted rather
+than threaded: the cap's own justification is that it is enforced in the TYPE,
+where a refusal is reviewable and names the cap, and `__post_init__` cannot see
+config. So the two numbers are two constants, one here and one in the domain,
+and `tests/infra/test_schema_parity.py` is what keeps them from drifting.
 
 **Why the body is capped at all**, since it is the one note field that is not
 injected into the prompt: the exposure is the CURATOR. It reads whole bodies per
