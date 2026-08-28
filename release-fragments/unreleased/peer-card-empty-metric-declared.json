@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "An empty peer card is now counted as an empty peer card, not reported as a failed read.",
+  "details": [
+    "nora_peer_card_empty_total was incremented by nora/engagement/context.py but never declared in nora/obs/metric_specs.py, so Metrics.inc fell past its counter branch to a bare self._gauges[name] lookup and raised KeyError. That raise happens inside _peer_card's own `except Exception`, which logs 'peer-card read failed' and increments nora_errors_total{stage=\"peer_card\"} - so the one counter whose purpose is to separate 'her card is genuinely empty' from 'the read failed' reported every genuinely empty card as a transport failure. Inverted, not merely missing.",
+    "Confirmed against the running container before the fix: the series was absent from /metrics entirely while the code that writes it runs on every tagged turn.",
+    "The instance was one line. The defect was that nothing compared call sites against the declaration tuple, so tests/architecture/test_every_recorded_metric_is_declared.py now does - resolving string literals, module-level constants and conditionals over them (132 distinct names across 204 call sites, including the private _inc/_gauge forwarding wrappers where the unchecked name was hiding)."
+  ],
+  "limitations": [
+    "The gate reads metric names statically. A call site whose name it cannot resolve - a forwarding wrapper taking `name` as a parameter - is pinned in an explicit allowlist rather than skipped, so a NEW unresolvable site fails the gate instead of passing it unchecked. A genuinely computed metric name still cannot be checked statically and would need a runtime assertion.",
+    "The gate checks metric NAMES only, not labels. Metrics._full_labels defaults a missing label to \"\" and silently drops an undeclared one, so a call site passing a label the spec does not declare is still unreported."
+  ]
+}
