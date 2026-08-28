@@ -1,6 +1,11 @@
 {
   "type": "fix",
-  "summary": "A fact's object keeps the words the room used, even after it resolves to an entity.",
-  "details": "The fact tier's schema forced a fact's object to be EITHER a literal string OR an entity reference, never both. Three consequences, all latent because nothing writes an entity object yet: resolving an object destroyed the original wording; the duplicate-claim check compares the literal, so a resolved claim was never recognised as already proven and would have been re-researched every cycle; and two render paths fell back to printing the raw entity id, putting a bare identifier in front of the model. The object is now always the literal, with the entity reference as an additional pointer beside it — and that pointer is now a real, foreign-keyed id rather than a free-text column.",
-  "issue": null
+  "summary": "A remembered fact keeps the words the room actually used, even once Nora works out what they refer to.",
+  "details": [
+    "Facts were stored so that an object could be either the original wording or a link to a known thing, never both. Working out what something referred to therefore destroyed the phrasing it was said in.",
+    "It also broke the check that stops Nora re-researching something she already knows: that check compares the stored wording, which was blank for anything she had resolved, so those claims were queued for research again on every cycle and jumped the queue each time.",
+    "Two places that show facts to Nora fell back to printing the internal reference when the wording was missing, putting a raw identifier in front of her.",
+    "Nothing had written a resolved object yet, so no stored fact was affected."
+  ],
+  "limitations": []
 }
