@@ -1600,10 +1600,15 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # pass level, which the tier's own spec names in advance.
     _GaugeSpec(
         "nora_note_curator_bodies_read",
-        "Note bodies the curator read on its last tick for a workspace, "
-        "against [notes] max_groups_per_tick + max_expired_per_tick. Sitting "
-        "at the cap means the pass is reporting 'nothing to do' about notes it "
-        "never reached.",
+        "Note bodies the curator FETCHED on its last tick for a workspace — "
+        "the notes of every eligible merge group ([notes] max_groups_per_tick "
+        "GROUPS, so several notes each) plus every expired note it read "
+        "([notes] max_expired_per_tick, one body each). Written on every tick "
+        "including an idle one, where it is 0; absent means the pass did not "
+        "run. A note in a group AND past its date is fetched twice and counted "
+        "twice, because it spends a slot in both caps. Sitting at "
+        "max_expired_per_tick means the pass is reporting 'nothing to do' "
+        "about notes it never reached.",
         ("workspace",),
     ),
     _GaugeSpec(

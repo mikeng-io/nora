@@ -1,7 +1,7 @@
 """`NoteCuratorAdaptor` — the note tier's housekeeping pass.
 
 The assertions here are mostly about what the curator REFUSES, because that is
-where this design lives: merge eligibility is decided in SQL and the model is
+where this design lives: merge eligibility is decided in CODE and the model is
 asked only what a body says, so the interesting failures are all a model
 reaching past the question it was given.
 """
@@ -321,7 +321,7 @@ async def test_the_model_is_shown_the_bodies_it_must_preserve():
 
 
 async def test_a_merged_body_for_a_group_this_run_did_not_select_is_refused():
-    """Merge eligibility is SQL's decision. A model proposing its own grouping
+    """Merge eligibility is code's decision. A model proposing its own grouping
     is the one thing this design exists to prevent, and `not_shown_in_group`
     was documented and unimplemented until 2026-08-28."""
     store = InMemoryNoteStore()

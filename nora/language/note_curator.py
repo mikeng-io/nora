@@ -3,10 +3,20 @@
 **The one rule that carries the design: merge is keyed on the ANCHOR, never on
 topical similarity, so two weddings stay two notes.** That is enforced
 structurally rather than by prompting — eligibility is
-`nora.domain.notes.group_on_anchor_key`, a pure function over `Note.anchor_key`
-that BOTH stores call, so **the model is never asked whether two notes should
-merge.** It is asked only what a body SAYS, which is the one thing a key
-comparison cannot read.
+`nora.domain.notes.group_on_anchor_key`, a pure function over
+`(anchor_date, RESOLVED entity set)` that BOTH stores call, so **the model is
+never asked whether two notes should merge.** It is asked only what a body
+SAYS, which is the one thing a key comparison cannot read.
+
+**The entity half is `note_entity`, never `note.anchor_entity_ids`.** That
+column is whatever the model handed `note_create`, verbatim and unresolved, and
+a key over it is wrong in both directions at once: 「Grant 婚禮」/「Gabe's
+wedding」/「婚禮」 are three keys and one occasion, while two unrelated notes
+that both say 「wedding」 are one key and two occasions. Since nothing writes
+`note_entity`, **merge is inert in production and every group is refused and
+counted** — 27 §2's decision showing up as behaviour rather than as prose. The
+retire half is unaffected and is the half that answers «the notebook only
+grows».
 
 It was a `GROUP BY (anchor_date, anchor_entity_ids)` until 2026-08-28 and moved
 for a reason worth keeping: Postgres compares a `text[]` by ORDER and
@@ -445,10 +455,13 @@ class NoteCuratorAdaptor:
     async def accept(
         self, *, key: str, items: Sequence[Mapping[str, object]]
     ) -> Sequence[object]:
-        """Typed parse into `_Verdict`. Drop, log, count — never guess.
+        """Typed parse into `_Verdict`, `_MergedBody` and `_MergeOffered`.
+        Drop, log, count — never guess.
 
-        Three drop reasons, all counted under
-        `nora_note_curator_dropped_total{reason}`:
+        The drop reasons, all counted under
+        `nora_note_curator_dropped_total{reason}` and all named in that
+        metric's help text (a parameterised test over `_VOCABULARIES` asserts
+        the two agree, on every counter rather than on one):
 
         - `malformed` — a field missing, of the wrong type, or a `verdict`
           outside the three the objective defines. A model writing "expired"
@@ -458,10 +471,19 @@ class NoteCuratorAdaptor:
           invent a uuid, and a retirement is a permanent removal from an index
           nobody can see the inside of. Same defence `FactAdaptor` keeps
           against a supersession of a fact it never displayed.
-        - `not_shown_in_group` — a `merged_body` for a group this run did not
-          select. Merge eligibility is SQL's decision (§9.3); a model proposing
-          its own grouping is the one thing this design exists to prevent, so
-          it is refused rather than merged.
+        - `not_shown_in_group` — a `merged_body` whose handle is not the
+          SURVIVOR of a group this run selected. Merge eligibility is code's
+          decision (§9.3); a model proposing its own grouping is the one thing
+          this design exists to prevent, so it is refused rather than merged.
+        - `body_too_long` / `shorter_than_inputs` — the merged body itself,
+          checked against the cap and against the longest body it was asked to
+          keep. See `_merged_bodies`.
+        - `conflicting_merged_body` — two different bodies for one survivor.
+
+        **Every one of them still emits `_MergeOffered` for the group.** A
+        refusal decides whether a merge may act; it does not decide whether the
+        model asked for one, and `commit` must not then take the group apart
+        note by note.
         """
         shown = self._shown.get(key, _Shown({}, (), {}, {}, {}))
         # BOTH shapes. A model answering about a merge group returns a
