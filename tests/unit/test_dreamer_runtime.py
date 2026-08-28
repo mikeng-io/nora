@@ -732,3 +732,74 @@ async def test_a_real_prompt_still_reaches_the_model(monkeypatch):
 
     assert invoked == [1]
     assert outcome.status == "ok"
+
+
+@pytest.mark.parametrize(
+    ("raw", "why"),
+    [
+        (
+            'I could not find any source about this.\n\n'
+            '{"observations": [{"term": "a"}]}',
+            "the shape production actually produced: narration, then the answer",
+        ),
+        (
+            '```json\n{"observations": [{"term": "a"}]}\n```',
+            "a fence is a preamble with a suffix",
+        ),
+        (
+            '{"observations": [{"term": "a"}]}\n\nI hope that helps.',
+            "and a trailing sentence is the same defect the other way round",
+        ),
+    ],
+)
+def test_an_envelope_preceded_by_prose_is_still_read(raw, why):
+    """**A readable answer discarded because a sentence preceded it is an
+    outage reported for a batch that WAS read**, and the watermark is held, so
+    the same batch is re-read forever while the counter says the model could
+    not be reached. That is R-27 upside down.
+
+    Measured on 2026-08-28: driving the shipped `fact-adjudication` objective
+    through its whole tool loop, the model converged at turn 6 with
+    «Search returning empty results consistently. Cannot find any source…»
+    followed by a well-formed `{"verdicts": [...]}`. Both production runs
+    failed as `no readable envelope`, at 950 and 1009 characters.
+    """
+    assert parse_envelope(raw, key="observations") == ({"term": "a"},), why
+
+
+def test_prose_with_no_envelope_at_all_is_still_none():
+    """The positive control, and the line this change must not cross: a reply
+    that never produces the envelope is still `unavailable`. What was dropped
+    is the requirement that the envelope come FIRST, not the requirement that
+    it exist."""
+    assert parse_envelope(
+        "I looked and I am not sure. Probably yes?", key="observations",
+    ) is None
+
+
+def test_an_envelope_named_in_prose_does_not_count_as_one():
+    """Keyed on the declared envelope KEY inside a balanced object, not on
+    «the first thing with braces» — so a preamble that merely talks about the
+    shape is not mistaken for it, and the real envelope after it still wins."""
+    raw = ('I would normally answer with {"note": "an example"} here.\n'
+           '{"observations": [{"term": "real"}]}')
+
+    assert parse_envelope(raw, key="observations") == ({"term": "real"},)
+
+
+def test_a_brace_inside_a_string_does_not_split_the_envelope():
+    """Brace counting is string-aware, because a `source_excerpt` quoting code
+    plainly can contain one — and a parser that split there would truncate a
+    legal answer into an unreadable one."""
+    # An UNBALANCED brace, which is what discriminates. A balanced `{x}` inside
+    # a string leaves the depth count correct by accident, so a parser with no
+    # string-awareness passes that case and this one is the test.
+    raw = ('here you go\n'
+           '{"observations": [{"term": "a", "excerpt": "the sample is {x"}]}')
+
+    items = parse_envelope(raw, key="observations")
+
+    assert items is not None, (
+        "an unbalanced brace inside a string must not end the object early"
+    )
+    assert items[0]["excerpt"] == "the sample is {x"

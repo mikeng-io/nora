@@ -313,14 +313,93 @@ def tool_subset_faults(
     return tuple(faults)
 
 
+def _balanced_objects(text: str):
+    """Every balanced `{...}` in `text`, in order, string-aware.
+
+    Brace counting rather than a regex, because a JSON object is not a regular
+    language and an object containing a brace inside a string — which a
+    `source_excerpt` quoting code plainly can — defeats any pattern short of a
+    parser. Quotes and backslash escapes are tracked for the same reason.
+    """
+    depth = 0
+    start = None
+    in_string = False
+    escaped = False
+    for i, ch in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth == 0:
+                continue
+            depth -= 1
+            if depth == 0 and start is not None:
+                yield text[start:i + 1]
+                start = None
+
+
+def _first_envelope(raw: str, *, key: str) -> dict | None:
+    """The first balanced object in `raw` that carries `key`, or `None`.
+
+    The WHOLE reply is scanned rather than only its start, because the model
+    narrates before answering (see `parse_envelope`). Keyed on the declared
+    envelope key rather than on «the first object», which is precise: a
+    preamble mentioning `{"verdicts": ...}` in prose would parse, and an
+    object that is merely the first thing with braces would not be the answer.
+    """
+    for blob in _balanced_objects(raw):
+        try:
+            data = json.loads(blob)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            continue
+        if isinstance(data, dict) and key in data:
+            return data
+    return None
+
+
 def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | None:
     """The model's raw text -> the declared key's items, or `None` for any
     shape that is not exactly `{"<key>": [ {...}, ... ]}`.
 
-    `None` means the batch was NOT READ — prose, an empty body, truncated JSON
-    and a wrong top-level key all land here, and the caller maps every one of
-    them to `unavailable`. It is deliberately NOT the same value as an empty
-    list, which is a well-formed «I looked and found nothing».
+    `None` means the batch was NOT READ — an empty body, truncated JSON and a
+    wrong top-level key all land here, and the caller maps every one of them
+    to `unavailable`. It is deliberately NOT the same value as an empty list,
+    which is a well-formed «I looked and found nothing».
+
+    **A PREAMBLE is no longer one of them**, and that change is the fix for a
+    production failure rather than a loosening. Measured 2026-08-28, driving
+    the shipped `fact-adjudication` objective through its whole tool loop:
+
+      effort=none, empty results  converged turn 6 — «Search returning empty
+                                  results consistently. Cannot find any
+                                  source... \n\n{"verdicts": [...]}»
+      effort=none, rich results   converged turn 6, same shape
+      effort=low, either          never converged in 8 turns
+
+    So the model DOES produce the envelope; it narrates first. `json.loads`
+    over the whole string then fails, the run reports `unavailable`, and the
+    watermark is held — so a batch that WAS read is re-read forever while the
+    counter says the model could not be reached. Discarding a readable answer
+    because a sentence preceded it turns a `nothing_found` into an outage,
+    which is R-27 upside down.
+
+    The strictness that matters is kept: the envelope must still be a JSON
+    object carrying the declared key, whose value is a list of mappings. What
+    is dropped is only the requirement that it be the FIRST thing in the
+    reply. The objective still tells the model to write nothing else — a
+    prompt asking for less than the parser accepts is the safe direction, and
+    it is the direction every one of these objectives already takes.
 
     Never raises. `_parse_observations`' own posture, and for the same reason:
     the alternative is one malformed response taking down a tick that four
@@ -332,11 +411,8 @@ def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | 
             len(raw), MAX_ENVELOPE_CHARS,
         )
         return None
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError, ValueError):
-        return None
-    if not isinstance(data, dict):
+    data = _first_envelope(raw, key=key)
+    if data is None:
         return None
     items = data.get(key)
     if not isinstance(items, list):
