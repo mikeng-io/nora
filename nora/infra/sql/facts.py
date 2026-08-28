@@ -835,6 +835,50 @@ class SqlFactStore:
             log.exception("recent_facts unavailable for workspace %s", workspace)
             return ()
 
+    async def embeddable(
+        self, *, workspace: str, limit: int,
+    ) -> tuple[tuple[Fact, ...], str]:
+        """Standing facts, OLDEST FIRST, for pass 4's staleness sweep.
+        Returns the rows and an R-27 status.
+
+        **Oldest first, not newest**, which is the opposite of every other
+        read in this class and is the point. The others feed a prefill block
+        where recency is the value; this feeds a BACKLOG, and newest-first
+        over a bounded batch means a workspace with more unembedded rows than
+        one batch never reaches its oldest ones — the starvation the tie-break
+        work fixed at five other sites, arriving here through the sort
+        direction rather than through a tie.
+
+        **Tie-broken on `id`**, for the same reason as its siblings: one
+        propose batch stamps every row with one `created_at`, so this ordering
+        is always choosing among equals and it feeds a LIMIT.
+
+        **A status, not a bare tuple.** This is the one read in this class
+        whose caller can act on the difference: `()` with `ok` means the
+        sweep is done and the watermark may advance, `()` with `unavailable`
+        means the sweep never ran and must not be recorded as complete. The
+        other five collapse the two and that is issue #71; this one is new, so
+        it does not inherit the defect.
+        """
+        if limit <= 0:
+            return (), "nothing_found"
+        try:
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(
+                    sa.select(FACT)
+                    .where(
+                        FACT.c.workspace == workspace,
+                        FACT.c.superseded_at.is_(None),
+                    )
+                    .order_by(FACT.c.created_at.asc(), FACT.c.id.asc())
+                    .limit(limit)
+                )).all()
+        except Exception:
+            log.exception("embeddable unavailable for workspace %s", workspace)
+            return (), "unavailable"
+        out = tuple(_row_to_fact(r) for r in rows)
+        return out, "ok" if out else "nothing_found"
+
     async def fact_by_id(self, *, workspace: str, fact_id: str) -> Fact | None:
         """History reads, including superseded rows — no `superseded_at`
         filter, unlike `standing_facts`. A `fact_id` that is not even

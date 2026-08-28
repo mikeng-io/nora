@@ -1164,6 +1164,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # counts the OUTBOUND call. A model that answered and a database that
     # accepted the answer are different failures with different remedies, and
     # one counter over both would make an operator guess which.
+    # The SWEEP, distinct from the call (`nora_fact_embed_total`) and from the
+    # store (`nora_embedding_store_total`). Three names because the three
+    # failures have three remedies: the model is down, the database refused,
+    # or the pass never ran. One counter over them would tell an operator that
+    # something went wrong and nothing about where.
+    _CounterSpec(
+        "nora_fact_embed_sweep_total",
+        "Pass 4 sweeps by outcome: ok (rows were re-embedded), nothing_found "
+        "(everything in the batch was already current — the usual steady "
+        "state), unavailable (the facts could not be read, the stored "
+        "fingerprints could not be read, or the endpoint stopped the sweep "
+        "part way; nothing about the tier's freshness follows from this run).",
+        ("status",),
+    ),
     _CounterSpec(
         "nora_embedding_store_total",
         "The embedding seam's store by verb and outcome. verb=existing: ok "

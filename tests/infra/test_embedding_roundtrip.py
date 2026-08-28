@@ -17,6 +17,13 @@ So this file is not a fix. It is the test that pins the behaviour, so that if
 anyone later adds `register_vector` to the engine because the reasoning above
 looks compelling on paper, something reddens instead of production.
 
+**Two drivers, two behaviours, one column.** Measured 2026-08-28: binding a
+vector as an EXPLICIT TEXT TYPE fails under sync psycopg — "column v1024 is of
+type vector but expression is of type character varying" — while the same
+untyped string works over asyncpg. This file covers the async side, which is
+what the application uses; every schema-parity and migration test connects over
+the sync driver, so anything hand-rolled there must not type the parameter.
+
 **The residual hazard, and it is real**: raw SQL that binds a Python list to a
 vector parameter DOES fail — `DataError: invalid input for query argument`.
 Anything hand-rolled for this column (a bulk upsert, a similarity query with a
