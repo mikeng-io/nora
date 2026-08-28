@@ -1,7 +1,9 @@
 {
   "type": "change",
   "summary": "Nora now tidies her own notebook: notes whose question is settled, or whose moment has passed, stop appearing.",
-  "details": "The note curator is switched on. Once a day per room, and after a quiet spell, it reviews notes whose occasion has gone by and retires the ones the conversation has answered or overtaken. Retiring is not deleting — a retired note stays readable, it just stops taking up room in what Nora is shown.",
+  "details": [
+    "The note curator is switched on. Once a day per room, and after a quiet spell, it reviews notes whose occasion has gone by and retires the ones the conversation has answered or overtaken. Retiring is not deleting — a retired note stays readable, it just stops taking up room in what Nora is shown."
+  ],
   "limitations": [
     "COMBINING NOTES DOES NOT HAPPEN. Two notes count as the same occasion only when they share a date AND resolve to the same people in the shared registry, and nothing writes to that registry yet — so every candidate pair is refused and counted rather than guessed at. Matching on the words the model happened to use would be wrong in both directions: three spellings of one wedding would be three occasions, and two unrelated notes that both say 'wedding' would be one.",
     "It only ever acts on notes whose date has already passed. A note about something still ahead is never touched.",
