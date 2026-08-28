@@ -1170,6 +1170,28 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # or the pass never ran. One counter over them would tell an operator that
     # something went wrong and nothing about where.
     _CounterSpec(
+        "nora_knowledge_search_total",
+        "The retrieval verb by outcome: ok (rows), nothing_found (both "
+        "channels looked and neither found anything in scope), unavailable "
+        "(at least one channel could not look and the other found nothing — "
+        "«I could not check», never «there is nothing about that»).",
+        ("status",),
+    ),
+    # PER CHANNEL as well as per call, because the two questions are different:
+    # a verb answering `nothing_found` with the dense channel unavailable is a
+    # tier that has quietly stopped answering cross-lingual questions, and the
+    # call-level counter alone cannot say so.
+    _CounterSpec(
+        "nora_knowledge_channel_total",
+        "Retrieval channels by outcome. channel=lexical: ok, nothing_found "
+        "(nothing cleared the word_similarity threshold), unavailable (the "
+        "read failed). channel=dense: the same three, where unavailable also "
+        "covers no embedding endpoint configured and an endpoint that could "
+        "not be reached — both are a channel that should have answered and "
+        "did not.",
+        ("channel", "status"),
+    ),
+    _CounterSpec(
         "nora_fact_embed_sweep_total",
         "Pass 4 sweeps by outcome: ok (rows were re-embedded), nothing_found "
         "(everything in the batch was already current — the usual steady "
