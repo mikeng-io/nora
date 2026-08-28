@@ -75,9 +75,9 @@ from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
-from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.facts import SqlFactStore, oversized_terms
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore

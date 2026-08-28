@@ -77,8 +77,8 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.obs.metrics import Metrics
 from nora.infra.sql.schema import FACT_ENTITY
+from nora.obs.metrics import Metrics
 from nora.testing import (
     InMemoryFactCandidateStore,
     fact_candidate_proposal_factory,
@@ -984,7 +984,7 @@ async def test_a_claim_about_a_roster_person_is_refused_at_the_sink(sql_sink):
     assert metrics.get("nora_fact_person_claim_refused_total") == 1
 
 
-async def test_a_person_in_OBJECT_position_is_not_refused(sql_sink):
+async def test_a_person_in_object_position_is_not_refused(sql_sink):
     """21 §2's own worked example: "Grant's wedding is on the 9th" is a claim
     about an EVENT with Grant in object position, not a claim about Grant's
     disposition. The restriction bites on predicates ABOUT a person, which is
