@@ -738,3 +738,52 @@ async def test_items_survive_the_real_dream_screen_in_the_runtimes_order():
     assert written == 2, "one merge, one retirement"
     assert [n.id for n in await store.standing(workspace=WS)] == [a.id]
     assert b.id not in {n.id for n in await store.standing(workspace=WS)}
+
+
+# --- P5: a group member is never also rendered as expired ------------------
+
+
+async def test_a_passed_date_group_is_rendered_once_not_twice():
+    """**The common case, not an edge**: retiring is ABOUT past dates, so a
+    colliding group whose occasion has passed appears in BOTH reads.
+
+    Three things went wrong when it did — double tokens, a doubled
+    `bodies_read` (the gauge that says whether the cap binds), and worst, the
+    standalone rendering invited a `closed` verdict on a group MEMBER, so if no
+    merged body came back the duplicate was retired on its own with its content
+    carried nowhere. That is the merge's whole purpose defeated by its inputs.
+    """
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20260101,
+                    body="AAA Ada can't do Fridays.")
+    await _seed(store, title="Grant's wedding", anchor=20260101,
+                body="BBB Ben found Sheung Wan.")
+    metrics = Metrics()
+
+    rendered = await _curator(store, metrics).inputs(key=WS, batch=())
+
+    assert rendered.count("AAA Ada can't do Fridays.") == 1, (
+        "the group member's body is rendered once, not twice"
+    )
+    assert "<merge_group" in rendered, "and it is rendered AS a group"
+    assert metrics.get(
+        "nora_note_curator_bodies_read", workspace=WS) == 2, (
+        "two notes, two bodies — not four"
+    )
+    assert a.id  # positive control: the seed really happened
+
+
+async def test_an_expired_note_outside_any_group_is_still_rendered():
+    """The positive control for the subtraction. Removing group members from
+    `expired` must not remove notes that were only ever expired — otherwise
+    retirement stops working entirely and the test above still passes."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Grant wedding", anchor=20260101)
+    await _seed(store, title="Grant's wedding", anchor=20260101)
+    lone = await _seed(store, title="Dinner, 9 Sept", anchor=20260909,
+                       entities=("ada",), body="CCC Nobody booked.")
+
+    rendered = await _curator(store).inputs(key=WS, batch=())
+
+    assert "CCC Nobody booked." in rendered
+    assert lone.id  # the note exists; the assertion above is about rendering

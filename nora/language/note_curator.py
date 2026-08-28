@@ -279,8 +279,30 @@ class NoteCuratorAdaptor:
                 "nora_note_curator_groups_refused_total",
                 reason="no_entity_anchor",
             )
-        expired = await self._notes.anchored_before(
+        expired_all = await self._notes.anchored_before(
             workspace=key, day=self._today(), limit=self._max_expired,
+        )
+        # A NOTE IN A MERGE GROUP IS NOT ALSO RENDERED AS EXPIRED, and this is
+        # the common case rather than an edge: retiring is ABOUT past dates, so
+        # a colliding group whose occasion has passed appears in both reads.
+        #
+        # Three things went wrong when it did. The body was rendered twice, so
+        # the tick paid double the tokens for it. `bodies_read` counted it
+        # twice, which is the gauge that says whether the cap binds. And worst,
+        # the standalone rendering invited a `closed` verdict on a group
+        # MEMBER — so if no merged body came back, the duplicate was retired on
+        # its own while its content was carried nowhere, which is the merge's
+        # whole purpose defeated by its own inputs.
+        #
+        # The group wins. A note that is one of two about the same occasion is
+        # a MERGE question first: merging keeps both bodies, and retiring one
+        # of them keeps neither. `commit`'s `untouchable` set already refuses a
+        # retirement for a note whose group merged — this is the same rule
+        # moved earlier, to where it also saves the tokens.
+        in_a_group = {n.id for g in groups for n, _ in g}
+        expired = tuple(
+            (note, body) for note, body in expired_all
+            if note.id not in in_a_group
         )
         # ORDINAL HANDLES, NOT IDS, and this is not a readability choice.
         #
