@@ -476,6 +476,15 @@ RULE_TESTS = {
     # never raises the problem it solves, so the row and this entry are the
     # only places the reason is written down.
     "R-80": "test_the_dense_read_never_mixes_two_models_geometries",
+    # R-82 names the fail-closed branch rather than the happy path, because it
+    # is the clause a future change is most likely to "simplify": an empty
+    # window LOOKS like an empty room, and `nothing_found` reads as the more
+    # informative answer. It is not — `EngagementContext._recent` returns `()`
+    # for a FAILED store read too, so that simplification turns an outage into
+    # a confident denial in the middle of a group argument, which is the exact
+    # failure `who_said` was built to stop. The window-not-the-store test, the
+    # DEC-24 schema test and the span tests are named in the index row.
+    "R-82": "test_an_unread_window_is_unavailable_never_nothing_found",
 }
 
 

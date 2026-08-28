@@ -831,6 +831,11 @@ class FirePath:
                 honcho=self._memory, deliverer=handle.deliverer, room=room,
                 question=ctx.message.body, context_window=self._context_window,
                 metrics=self._metrics,
+                # DEC-146: the same window `build_prefill` renders below. A fire
+                # turn reads a real room's real transcript, so `who_said` works
+                # here exactly as it does on a tag — and an occasion nobody asked
+                # for is precisely where an unchecked attribution would be worst.
+                transcript=ctx.transcript,
                 # The one thing that tells a tool this turn was not a tag. Task
                 # 6's `remind` refuses on it: a reminder that can set a reminder
                 # is an unbounded loop, and the conversation it would fire into
