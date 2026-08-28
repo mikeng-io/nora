@@ -221,10 +221,17 @@ async def test_both_channels_empty_is_a_real_nothing_found():
 
 async def test_no_endpoint_degrades_to_lexical_and_is_counted():
     """A deployment with no embedding endpoint is real rather than broken —
-    the verb still answers on the lexical channel. But recall drops in a
-    specific, measured way: cross-lingual and paraphrased questions stop being
-    reachable. That must be COUNTED, or a tier answering fewer questions than
-    it could does so silently."""
+    the verb still answers on the lexical channel. Recall drops in a specific,
+    measured way (cross-lingual and paraphrased questions stop being
+    reachable), which is COUNTED, or a tier answering fewer questions than it
+    could does so silently.
+
+    **`not_configured`, not `unavailable`**, and the distinction is not
+    cosmetic: `unavailable` in the status list makes the verb report
+    `unavailable` whenever nothing was found, so such a deployment could NEVER
+    truthfully say a topic is new. An install without a channel is a settled
+    fact about the install, not a failure of this call.
+    """
     metrics = Metrics()
     search = KnowledgeSearch(
         channels=_FakeChannels(lexical=(_Match("f1", "x"),)),
@@ -234,10 +241,52 @@ async def test_no_endpoint_degrades_to_lexical_and_is_counted():
     result = await search.search(scope=WS, query="big walk", limit=8)
 
     assert result.status == "ok"
+    assert result.partial is False, (
+        "a channel that does not exist in this install is not a half search"
+    )
     assert [h.row_key for h in result.hits] == ["f1"]
     assert metrics.get(
         "nora_knowledge_channel_total", channel="dense",
-        status="unavailable") == 1
+        status="not_configured") == 1
+
+
+async def test_a_lexical_only_deployment_can_still_say_a_topic_is_new():
+    """The half the previous version made impossible. With no endpoint and
+    nothing matching, the honest answer is «the room has not discussed this» —
+    and the verb returned `unavailable`, whose own tool description tells the
+    model never to read it as that."""
+    search = KnowledgeSearch(
+        channels=_FakeChannels(lexical=(), lexical_status="nothing_found"),
+        embedder=None,
+    )
+
+    result = await search.search(scope=WS, query="never mentioned", limit=8)
+
+    assert result.status == "nothing_found"
+
+
+async def test_an_embedder_that_raises_keeps_the_lexical_hits():
+    """A transient raise cost the WHOLE answer while a reported `unavailable`
+    from the same endpoint degraded gracefully — same fault, two contracts.
+    The blanket handler in `search` was catching it and discarding lexical
+    hits already in hand."""
+    class _Raising:
+        model = "bge-m3"
+
+        async def embed(self, texts):
+            raise RuntimeError("connection reset")
+
+    result = await KnowledgeSearch(
+        channels=_FakeChannels(lexical=(_Match("f1", "x"),)),
+        embedder=_Raising(),
+    ).search(scope=WS, query="q", limit=8)
+
+    assert result.status == "ok"
+    assert [h.row_key for h in result.hits] == ["f1"]
+    assert result.partial is True, (
+        "a channel that should have answered and did not makes this a half "
+        "search, and the status alone cannot say so"
+    )
 
 
 async def test_an_unreachable_endpoint_is_the_same_as_none():
@@ -303,3 +352,114 @@ async def test_the_limit_caps_what_comes_back_after_fusion_not_before():
     ).search(scope=WS, query="q", limit=3)
 
     assert len(result.hits) == 3
+
+
+class _FakeGrounding:
+    """`standing_among`, seen from the verb. Matches production where the verb
+    branches: a MISSING key is a superseded or deleted row, a present one
+    carries its dispute mark, and the status is R-27's three."""
+
+    def __init__(self, standing=None, *, status: str = "ok") -> None:
+        self._standing = dict(standing or {})
+        self._status = status
+        self.calls: list[tuple[str, ...]] = []
+
+    async def standing_among(self, *, workspace: str, fact_ids):
+        self.calls.append(tuple(fact_ids))
+        if self._status != "ok":
+            return {}, self._status
+        return {k: v for k, v in self._standing.items() if k in fact_ids}, "ok"
+
+
+async def test_a_superseded_fact_does_not_come_back_through_retrieval():
+    """**The corpus is a SECOND read path and it outlives the belief.**
+
+    Supersession stamps `superseded_at` and keeps the id; `embeddable` stops
+    OFFERING the row for re-embedding, which is right, and nothing removes the
+    vector. Both channels read the embedding table alone, so a belief the tier
+    has RETRACTED came back indistinguishable from a current one — on a verb
+    whose description tells the model everything it returns was checked.
+
+    Dropped rather than marked: a retracted belief is not a disputed one.
+    """
+    grounding = _FakeGrounding({"live": False})
+    search = KnowledgeSearch(
+        channels=_FakeChannels(
+            lexical=(_Match("live", "big walk │ means │ a walk"),
+                     _Match("retracted", "big walk │ means │ a video game")),
+        ),
+        embedder=_FakeEmbedder(), grounding=grounding,
+    )
+
+    result = await search.search(scope=WS, query="big walk", limit=8)
+
+    assert [h.row_key for h in result.hits] == ["live"]
+    assert grounding.calls, "the verb must re-ground what the corpus returned"
+
+
+async def test_a_disputed_fact_comes_back_marked_rather_than_dropped():
+    """R-79 on this read path. The `<facts>` block renders the mark; without
+    it here the second path drops it silently, which is the failure that rule
+    exists to name — a mark nothing reads is worse than no mark.
+
+    MARKED and not dropped, because dropping is muting: one member's objection
+    would delete something true for everyone, which is the reading R-79
+    reversed.
+    """
+    search = KnowledgeSearch(
+        channels=_FakeChannels(lexical=(_Match("f1", "big walk │ means │ a walk"),)),
+        embedder=_FakeEmbedder(),
+        grounding=_FakeGrounding({"f1": True}),
+    )
+
+    result = await search.search(scope=WS, query="big walk", limit=8)
+
+    assert [h.row_key for h in result.hits] == ["f1"]
+    assert result.hits[0].disputed is True
+
+
+async def test_an_undisputed_fact_carries_no_mark():
+    """The positive control: a verb that marked everything would satisfy the
+    test above while making the mark meaningless."""
+    search = KnowledgeSearch(
+        channels=_FakeChannels(lexical=(_Match("f1", "x"),)),
+        embedder=_FakeEmbedder(),
+        grounding=_FakeGrounding({"f1": False}),
+    )
+
+    result = await search.search(scope=WS, query="q", limit=8)
+
+    assert result.hits[0].disputed is False
+
+
+async def test_everything_retrieved_being_retracted_is_nothing_found():
+    """A real answer: the room discussed it and the tier no longer holds it.
+    Reporting `ok` with an empty list would be the same collapse `ok`-with-no-
+    rows always is."""
+    search = KnowledgeSearch(
+        channels=_FakeChannels(lexical=(_Match("gone", "x"),)),
+        embedder=_FakeEmbedder(), grounding=_FakeGrounding({}),
+    )
+
+    result = await search.search(scope=WS, query="q", limit=8)
+
+    assert result.hits == ()
+    assert result.status == "nothing_found"
+
+
+async def test_an_ungroundable_result_returns_nothing_rather_than_maybe():
+    """If the grounding read fails, the corpus alone cannot tell a standing
+    claim from a withdrawn one — so EVERY hit is unverifiable. Returning the
+    text anyway would answer with something the tier may have decided is no
+    longer true, on a verb that promises it was checked. Silence beats a wrong
+    answer."""
+    search = KnowledgeSearch(
+        channels=_FakeChannels(lexical=(_Match("f1", "x"),)),
+        embedder=_FakeEmbedder(),
+        grounding=_FakeGrounding(status="unavailable"),
+    )
+
+    result = await search.search(scope=WS, query="q", limit=8)
+
+    assert result.hits == ()
+    assert result.status == "unavailable"

@@ -1130,27 +1130,41 @@ async def test_the_embedding_sweep_runs_after_promotion_and_not_before():
     assert sweeper.calls == [(WS, NOW)]
 
 
-async def test_the_embedding_sweep_does_not_run_when_the_tick_wrote_nothing():
-    """Matching `_promote`: a tick that wrote no fact has nothing new to
-    embed, and the sweep is an aggregate over a workspace the Dreamer visits on
-    its own clock over rooms that are mostly quiet."""
+async def test_the_embedding_sweep_runs_even_on_a_tick_that_wrote_nothing():
+    """**It must NOT match `_promote`'s trigger, and the first version did.**
+
+    Promotion is driven by degree, which changes only when a fact lands.
+    Staleness is `fingerprint(model, text)` — and the MODEL half moves with no
+    write at all. Gated on `wrote`, a workspace that had said everything it
+    was going to say would never re-embed after a model swap, and R-80 makes
+    un-re-embedded rows INVISIBLE to retrieval: the stated degradation is
+    «`nothing_found` shrinking for a while» and the while would be unbounded.
+
+    Nothing measured it either, because a sweep that never fires emits no
+    counter — the absence is invisible in exactly the way the presence would
+    not be.
+
+    A quiet sweep is affordable: the fingerprint predicate answers
+    `nothing_found` after one indexed read and no model call, which is what
+    makes running it every tick the cheap option rather than the thorough one.
+    """
     facts, candidates = InMemoryFactStore(), InMemoryFactCandidateStore()
     order: list[str] = []
     sweeper = _RecordingSweeper(order)
+    promoter = _OrderedPromoter(order)
     adaptor = FactAdaptor(
         facts=facts, candidates=candidates, max_adjudications_per_tick=5,
-        entities=_OrderedPromoter(order), embedder=sweeper,
+        entities=promoter, embedder=sweeper,
     )
     await adaptor.inputs(key=WS, batch=())
 
     await adaptor.commit(key=WS, proposals=(), now_ms=NOW)
 
-    assert sweeper.calls == []
-    # The positive control IN THIS TEST: `== []` is also true of a `commit`
-    # that never reaches `_embed` at all, so the same adaptor is driven once
-    # more with a batch that DOES write and the call appears.
-    assert await _drive_one_write(adaptor, candidates) == 1
     assert sweeper.calls == [(WS, NOW)]
+    # The other half of the same decision, in the same test so the pair cannot
+    # drift: PROMOTION still does not run on an empty tick, because degree
+    # genuinely did not change. Two passes, two triggers, one hook.
+    assert promoter.calls == []
 
 
 async def test_an_incomplete_sweep_does_not_fail_the_tick_that_wrote():

@@ -1160,15 +1160,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "batch that did not match its input).",
         ("status",),
     ),
-    # The seam's own store, separate from `nora_fact_embed_total` above, which
-    # counts the OUTBOUND call. A model that answered and a database that
-    # accepted the answer are different failures with different remedies, and
-    # one counter over both would make an operator guess which.
-    # The SWEEP, distinct from the call (`nora_fact_embed_total`) and from the
-    # store (`nora_embedding_store_total`). Three names because the three
-    # failures have three remedies: the model is down, the database refused,
-    # or the pass never ran. One counter over them would tell an operator that
-    # something went wrong and nothing about where.
+    # THE VERB, per call. Two comment paragraphs belonging to two OTHER
+    # counters were stacked above this one — one describing the store, one the
+    # sweep — which is the shape a reader takes at face value, since a comment
+    # directly above a spec is read as being about it.
     _CounterSpec(
         "nora_knowledge_search_total",
         "The retrieval verb by outcome: ok (rows), nothing_found (both "
@@ -1185,12 +1180,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_knowledge_channel_total",
         "Retrieval channels by outcome. channel=lexical: ok, nothing_found "
         "(nothing cleared the word_similarity threshold), unavailable (the "
-        "read failed). channel=dense: the same three, where unavailable also "
-        "covers no embedding endpoint configured and an endpoint that could "
-        "not be reached — both are a channel that should have answered and "
-        "did not.",
+        "read failed). channel=dense: the same three plus not_configured — an "
+        "install with no embedding endpoint is a channel that does not exist "
+        "rather than one that failed, and collapsing the two made such a "
+        "deployment unable to ever report nothing_found.",
         ("channel", "status"),
     ),
+    # The SWEEP, distinct from the outbound call (`nora_fact_embed_total`) and
+    # from the store (`nora_embedding_store_total`). Three names because the
+    # three failures have three remedies: the model is down, the database
+    # refused, or the pass never ran. One counter over them would tell an
+    # operator something went wrong and nothing about where.
     _CounterSpec(
         "nora_fact_embed_sweep_total",
         "Pass 4 sweeps by outcome: ok (rows were re-embedded), nothing_found "
@@ -1200,6 +1200,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "part way; nothing about the tier's freshness follows from this run).",
         ("status",),
     ),
+    # The seam's own STORE, separate from `nora_fact_embed_total`, which
+    # counts the OUTBOUND call. A model that answered and a database that
+    # accepted the answer are different failures with different remedies, and
+    # one counter over both would make an operator guess which.
     _CounterSpec(
         "nora_embedding_store_total",
         "The embedding seam's store by verb and outcome. verb=existing: ok "
@@ -1984,6 +1988,21 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     # 30s and a research loop is budgeted in minutes, so this carries its own
     # set — a histogram whose every observation lands in the last bucket
     # measures nothing.
+    # Pass 4's COST, and it is a separate reading from `nora_dream_run_seconds`
+    # for a specific reason: that one is wrapped by the runtime's `wait_for`
+    # and this is not. The sweep runs inside the adjudication tick and outside
+    # that timeout — `max_rows_per_sweep / batch_size` sequential calls, each
+    # bounded only by the embedder's own client timeout — so it is the part of
+    # the tick nothing above it can cut short. Its buckets top out where a
+    # full sweep at a slow endpoint would.
+    _HistogramSpec(
+        "nora_fact_embed_sweep_seconds",
+        "Wall-clock duration of one pass-4 embedding sweep, INSIDE the "
+        "adjudication tick and outside the runtime's per-run timeout. A slow "
+        "sweep costs the workspace its next adjudications, which surfaces one "
+        "layer up as nora_dream_skipped_total{reason=\"in_flight_adaptor\"}.",
+        (0.1, 1, 5, 15, 30, 60, 120, 300),
+    ),
     _HistogramSpec(
         "nora_dream_run_seconds",
         "Wall-clock duration of one Dreamer adaptor run, by adaptor.",

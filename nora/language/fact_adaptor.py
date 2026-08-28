@@ -43,6 +43,7 @@ exception.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
@@ -774,25 +775,50 @@ class FactAdaptor:
         one pass, and one that embeds then promotes leaves rows to re-embed
         next tick.
 
-        **Only when this tick wrote a fact**, matching `_promote`. The sweep is
-        an aggregate over the workspace and the Dreamer fires on its own clock
-        over rooms that are mostly quiet; a tick that wrote nothing has nothing
-        new to embed, and a re-embed of unchanged rows is exactly what the
-        fingerprint predicate exists to skip.
+        **On EVERY tick, not only on one that wrote**, and the first version
+        got this wrong by copying `_promote`'s trigger without checking that
+        the two passes answer the same question.
+
+        Promotion is driven by degree, which changes only when a fact lands.
+        Staleness is `fingerprint(model, text)` — and the MODEL half moves with
+        no write at all. Gated on `wrote`, a workspace that had said everything
+        it was going to say would never re-embed after a model swap, and R-80
+        makes un-re-embedded rows INVISIBLE to retrieval: the stated
+        degradation is "`nothing_found` shrinking for a while", and with that
+        trigger the while is unbounded. Nothing measured it, because the sweep
+        that never fires emits no counter at all.
+
+        The cost of running it every tick is one indexed read that returns
+        nothing when the workspace is current — the fingerprint predicate is
+        exactly what makes a quiet sweep affordable, and `nothing_found` with
+        no model call is its usual answer.
 
         Its own failure is already `unavailable` inside the sweep and never
         raises, so there is nothing to catch here — but the count is read back
         rather than discarded, because "the sweep ran and wrote nothing" and
         "the sweep was never called" are the same silence otherwise.
         """
-        if self._embedder is None or not wrote:
+        if self._embedder is None:
             return
+        started = time.perf_counter()
         sweep = await self._embedder.sweep(workspace=key, now_ms=now_ms)
+        # The COST, because the instruments above measure the RESULT and a
+        # correct result is compatible with any cost. This runs INSIDE the
+        # adjudication tick and outside the runtime's `wait_for`, which wraps
+        # only the model invocation — so a slow endpoint spends the tick here
+        # and `runtime` then skips this (adaptor, key) as `in_flight_adaptor`,
+        # costing the workspace its next adjudications. That consequence is
+        # counted one layer up; this is the cause, and it was unmeasured.
+        self._observe_sweep(time.perf_counter() - started)
         if sweep.status == "unavailable":
             log.warning(
                 "fact embedding incomplete: %d of %d rows written "
                 "(workspace=%s)", sweep.embedded, sweep.stale, key,
             )
+
+    def _observe_sweep(self, seconds: float) -> None:
+        if self._metrics is not None:
+            self._metrics.observe("nora_fact_embed_sweep_seconds", seconds)
 
     def _candidate_id_for(self, key: str, payload: object) -> str | None:
         """The candidate a verdict settles, or `None`. ONE lookup, used by both

@@ -8,6 +8,7 @@ from nora.agent.markdown import render_markdown
 from nora.agent.outbound import OutboundComposer
 from nora.agent.room import Room
 from nora.agent.tools import (
+    KNOWLEDGE_SEARCH_LIMIT,
     LOAD_TRANSCRIPT_DEFAULT,
     LOAD_TRANSCRIPT_MAX,
     NATIVE_TOOL_BUDGETS,
@@ -44,6 +45,34 @@ UNREACHABLE_TRANSIT = TransitClient(
     timeout_seconds=0.5,
 )
 
+
+
+@pytest.fixture
+def wiring_with(wiring):
+    """Rebuild the tool set with one extra collaborator, reusing everything
+    `wiring` already stood up.
+
+    A separate fixture rather than parameters on `wiring`, because the point
+    of `wiring` is the DEFAULT production shape — the one where a collaborator
+    is absent — and several tests below depend on that being what they get.
+    """
+    def _build(**extra):
+        tools = build_tools(
+            store=wiring["store"], conversation_id="g1",
+            conversation_type="group", persons=wiring["persons"],
+            honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+            metrics=wiring["metrics"], room=wiring["room"],
+            transit_source=UNREACHABLE_TRANSIT,
+            question="who is here", context_window=40,
+            # The knowledge tier is workspace-scoped, so a fixture that did
+            # not name one would exercise only the no-workspace refusal —
+            # which is a real path and has its own test, and is not the path
+            # any of these are about.
+            **{"workspace_for": lambda *_a: "ws-main", **extra},
+        )
+        return {t.tool_name: t for t in tools}
+
+    return _build
 
 
 @pytest.fixture
@@ -1017,3 +1046,155 @@ async def test_generate_image_auth_maps_to_a_plain_note(wiring):
     result = await _call(tools["generate_image"], prompt="a cat")
     assert result["status"] == "unavailable"
     assert "re-authorise" in result["note"].lower()
+
+
+# ---------------------------------------------------------------------------
+# search_knowledge — the body, which appeared in tests only as a NAME
+# ---------------------------------------------------------------------------
+
+
+class _FakeKnowledge:
+    def __init__(self, hits=(), *, status="ok", partial=False) -> None:
+        from nora.language.knowledge_search import SearchResult
+        self._result = SearchResult(
+            hits=tuple(hits), status=status, partial=partial,
+        )
+        self.calls: list[dict] = []
+
+    async def search(self, *, scope, query, limit):
+        self.calls.append({"scope": scope, "query": query, "limit": limit})
+        return self._result
+
+
+def _hit(row_key="0191f2c4-0000-7000-8000-00000000000a",
+         text="big walk │ means │ a walk", *, disputed=False):
+    from nora.language.knowledge_search import Hit
+    return Hit(
+        row_key=row_key, text=text, score=0.016, channels=("lexical",),
+        disputed=disputed,
+    )
+
+
+async def test_search_knowledge_returns_no_identifier_of_any_kind(wiring_with):
+    """**The rule that caught three adaptors, and this verb had nothing
+    holding it.** Anything a model echoes back is an ordinal handle, never a
+    stored identifier — and `Hit.row_key` IS `fact.id`, a `pg.UUID`.
+
+    The comment above the return is a careful argument for why no identifier
+    is in the shape; a mutation adding one back was green across the whole
+    suite. On the Dreamer path `dream_screen` drops an envelope item carrying
+    a uuid at ITEM granularity — silently — so the leak would not announce
+    itself: the adaptor would just quietly return less.
+
+    Asserted on the SERIALISED result rather than on the shape, because a
+    uuid nested anywhere in it is the thing that matters, not which key holds
+    it.
+    """
+    uuid_ish = "0191f2c4-0000-7000-8000-00000000000a"
+    tools = wiring_with(knowledge=_FakeKnowledge(hits=(_hit(uuid_ish),)))
+
+    out = await tools["search_knowledge"]("who made big walk")
+
+    assert out["status"] == "ok"
+    assert uuid_ish not in json.dumps(out), (
+        "no stored identifier may reach a prompt; dream_screen drops such an "
+        "item silently and the tier's counters stay healthy"
+    )
+    assert out["facts"] == ["big walk │ means │ a walk"]
+
+
+async def test_search_knowledge_carries_the_dispute_mark(wiring_with):
+    """R-79 reaching the model. A claim she holds under objection must not
+    read as one she does not — the block renders the mark and this path has to
+    as well, or the second read path silently drops it."""
+    tools = wiring_with(
+        knowledge=_FakeKnowledge(hits=(_hit(disputed=True),)),
+    )
+
+    out = await tools["search_knowledge"]("big walk")
+
+    assert out["facts"] == ["big walk │ means │ a walk — disputed"]
+
+
+async def test_search_knowledge_with_no_collaborator_is_unavailable(wiring):
+    """The default wiring — the tool is granted and nothing is behind it.
+    `unavailable`, never `nothing_found`: a wiring gap is «I could not check»,
+    and reporting «there is nothing» would have her tell the room they never
+    discussed something she simply cannot search."""
+    out = await wiring["tools"]["search_knowledge"]("big walk")
+
+    assert out["status"] == "unavailable"
+
+
+async def test_search_knowledge_refuses_an_empty_query(wiring_with):
+    """`refused`, which is neither of R-27's silences: the caller can fix it
+    and call again, and telling them so is more useful than either."""
+    knowledge = _FakeKnowledge()
+    tools = wiring_with(knowledge=knowledge)
+
+    out = await tools["search_knowledge"]("   ")
+
+    assert out["status"] == "refused"
+    assert knowledge.calls == [], "an empty query must cost no search"
+
+
+async def test_search_knowledge_passes_its_own_limit_not_the_models(
+    wiring_with,
+):
+    """DEC-24: a parameter is a value the model must invent on every call, so
+    each one buys a way to get the call wrong. The limit is the tool's, and it
+    is 8 to match the room slice so the verb and the block speak in one
+    unit."""
+    knowledge = _FakeKnowledge(hits=(_hit(),))
+    tools = wiring_with(knowledge=knowledge)
+
+    await tools["search_knowledge"]("big walk")
+
+    assert knowledge.calls[0]["limit"] == KNOWLEDGE_SEARCH_LIMIT
+    assert KNOWLEDGE_SEARCH_LIMIT == 8
+
+
+async def test_search_knowledge_reports_nothing_found_as_itself(wiring_with):
+    """The answer that must survive: «the room has not discussed this» is
+    real and useful, and the tool's own description tells the model not to
+    confuse it with `unavailable`."""
+    tools = wiring_with(knowledge=_FakeKnowledge(hits=(), status="nothing_found"))
+
+    out = await tools["search_knowledge"]("never mentioned")
+
+    assert out["status"] == "nothing_found"
+
+
+async def test_search_knowledge_does_not_dress_unavailable_as_empty(
+    wiring_with,
+):
+    """The inversion this whole tier is written against, on the verb that
+    faces a user."""
+    tools = wiring_with(knowledge=_FakeKnowledge(hits=(), status="unavailable"))
+
+    out = await tools["search_knowledge"]("big walk")
+
+    assert out["status"] == "unavailable"
+    assert "facts" not in out
+
+
+async def test_search_knowledge_with_no_workspace_is_unavailable(wiring_with):
+    """**A wiring gap is «I could not check», never «there is nothing».**
+
+    A conversation policy cannot name a workspace for is one nothing was ever
+    written under — but that is a gap in the mapping, not a statement about
+    what the room has discussed, and reporting `nothing_found` would have her
+    tell them they never talked about something she cannot search for.
+
+    This branch was untested and flipping it to `nothing_found` was green: the
+    only fixture that reached the tool always supplied a workspace, and the
+    one that did not supplied no collaborator either, so it returned earlier
+    for a different reason. Two absent things covering for each other.
+    """
+    tools = wiring_with(
+        knowledge=_FakeKnowledge(hits=(_hit(),)), workspace_for=None,
+    )
+
+    out = await tools["search_knowledge"]("big walk")
+
+    assert out["status"] == "unavailable"

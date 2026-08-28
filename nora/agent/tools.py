@@ -1694,6 +1694,7 @@ def build_tool_specs(
     events: EventsCollaborator | None = None,
     notes: NoteCollaborator | None = None,
     note_workspace: Callable[[str, str], str | None] | None = None,
+    workspace_for: Callable[[str, str], str | None] | None = None,
     knowledge: KnowledgeCollaborator | None = None,
     music: MusicToolBridge | None = None,
     image_generator: ImageGenerator | None = None,
@@ -4858,13 +4859,23 @@ def build_tool_specs(
 
         Resolved per turn from `room.platform` and the bound conversation —
         never a process-wide constant. `None` means policy could not name the
-        room, and every note verb answers `unavailable` on it: reading the
-        wrong workspace's notebook is worse than reading none.
+        room, and every verb that needs one answers `unavailable` on it:
+        reading the wrong workspace's notebook is worse than reading none.
+
+        **Shared by the note tier and the knowledge tier**, because it is one
+        value — `policy.conversation(...).workspace` — and two resolvers for
+        it would be two definitions of which social unit a room belongs to.
+        `workspace_for` is the parameter; `note_workspace` is its older name,
+        still accepted so the note tier's call sites keep working. Preferring
+        one over the other rather than requiring both means the knowledge tier
+        does not silently depend on the NOTE tier being wired, which it would
+        have if it had simply read `note_workspace`.
         """
-        if note_workspace is None:
+        resolver = workspace_for or note_workspace
+        if resolver is None:
             return None
         try:
-            return note_workspace(room.platform, bound_conversation_id)
+            return resolver(room.platform, bound_conversation_id)
         except Exception:
             log.exception("note workspace resolution failed")
             return None
@@ -5028,7 +5039,14 @@ def build_tool_specs(
             # the safest shape is the one with no identifier in it at all.
             # `dream_screen` drops any item carrying a uuid, silently, and a
             # result shaped to trip it would look healthy on every counter.
-            "facts": [hit.text for hit in result.hits],
+            "facts": [
+                # The dispute mark rides WITH the text rather than as a field
+                # (R-79): the model reads one line, and a claim she holds
+                # under objection must not read as one she does not. The
+                # `<facts>` block renders it the same way.
+                f"{hit.text} — disputed" if hit.disputed else hit.text
+                for hit in result.hits
+            ],
         }
 
     async def note_search(query: str) -> dict:
@@ -5707,6 +5725,8 @@ def build_tools(
     links: LinkCarry | None = None,
     notes: NoteCollaborator | None = None,
     note_workspace: Callable[[str, str], str | None] | None = None,
+    workspace_for: Callable[[str, str], str | None] | None = None,
+    knowledge: KnowledgeCollaborator | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
     media_store: MediaObjectStore | None = None,
@@ -5730,6 +5750,7 @@ def build_tools(
         question=question, context_window=context_window, ai_peer=ai_peer,
         links=links, giphy_source=giphy_source,
         notes=notes, note_workspace=note_workspace,
+        knowledge=knowledge, workspace_for=workspace_for,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         media_store=media_store,
     )

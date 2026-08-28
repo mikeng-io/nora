@@ -569,8 +569,7 @@ READ_ONLY = frozenset({
     "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "list_events",
     "suggest_venue", "version", "search_gifs",
-    "note_read", "note_search",
-    "search_knowledge",
+    "note_read", "note_search", "search_knowledge",
     "music_status",
 })
 

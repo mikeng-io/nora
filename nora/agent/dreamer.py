@@ -194,14 +194,26 @@ WORKSPACE_SAFE_TOOLS: frozenset[str] = frozenset({
     # but a lookup is a global search of her own creations, never
     # conversation-scoped like `load_transcript`).
     "media_search",
-    # The knowledge tier's retrieval verb (`23` §9 grants it to Nora and to
-    # Dreamer adaptors alike). It is keyed on a WORKSPACE — the same unit an
-    # adjudication tick is keyed on — so it does not need a conversation, and
-    # it passes this set's actual test rather than merely fitting the label:
-    # with no workspace resolvable it answers `unavailable`, never an empty
-    # list. That is the exact failure this set exists to keep out — «I could
-    # not check» reported as «there was nothing».
-    "search_knowledge",
+    # `search_knowledge` is NOT here, and the first version of this comment
+    # claimed the opposite. `23` §9 does grant it to Dreamer adaptors, but the
+    # tool resolves its workspace through the ROOM — `workspace_for(
+    # room.platform, conversation_id)` — and `RegistryToolSource.build` hands
+    # a workspace-keyed adaptor a `Room` with no platform and the workspace in
+    # the conversation slot. Policy cannot name that, so the verb would answer
+    # `unavailable` on every call, forever.
+    #
+    # `08-state.md` §10 names this exact trap: a tier read tool for a
+    # workspace-keyed adaptor needs a key path that does not route through the
+    # room at all, because the Dreamer's key already IS the workspace and must
+    # be SUPPLIED rather than derived — "the difference between the seam
+    # working and the seam looking like it works while every call fails
+    # closed". Failing closed is right and is not the same as working.
+    #
+    # This set is an ALLOW-LIST a startup refusal reads, so listing it here
+    # would let the first adaptor declaring it past `verify_tool_subsets` with
+    # a permanently-unavailable tool — a protection three documents claim
+    # exists, which the 2026-08-21 entry in this file records as worse than
+    # one nobody claims. It goes in when the key path is supplied.
 })
 
 
