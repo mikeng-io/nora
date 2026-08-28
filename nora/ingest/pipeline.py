@@ -42,7 +42,7 @@ from nora.domain.ports import (
     Transcriber,
 )
 from nora.ingest.stickers import StickerReader
-from nora.obs.tracing import annotate, span
+from nora.obs.tracing import TRACE_KIND, annotate, span
 from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
 from nora.policy import Policy
@@ -59,7 +59,10 @@ log = logging.getLogger("nora.ingest.pipeline")
 #: EVERY way an ingest can end, as a CLOSED set. It is a `Literal` rather than a
 #: loose string so the vocabulary is DERIVED from the code — the test that says
 #: "every exit stamps an outcome" reads `get_args` off this and never
-#: hand-copies a list that could drift from the call sites.
+#: hand-copies a list that could drift from the call sites. It is also the label
+#: vocabulary of `nora_ingest_outcomes_total`, which is where an operator now
+#: READS these (R-76): the ingest trace is plumbing and is not exported, so the
+#: counter is the live instrument and the span attribute is latent.
 #:
 #: Five names over three `return` statements: the two refusals stop early, and
 #: the third return covers the three dispositions a message that got all the way
@@ -78,26 +81,37 @@ IngestOutcome = Literal[
 _OUTCOMES: frozenset[str] = frozenset(get_args(IngestOutcome))
 
 
-def _outcome(value: IngestOutcome) -> None:
-    """Stamp the ROOT span with what this ingest actually did.
+def _outcome(metrics: Any, message: NormalizedMessage, value: IngestOutcome) -> None:
+    """Record what this ingest actually did — ON A COUNTER, and on the root span
+    as well.
 
-    The root, not a child: at every call site the enclosing `with span(...)` for
-    the stage has already closed, so the current span is the one `run` opened —
-    which is the span an operator sees WITHOUT expanding anything. Verified by
-    export, not by reading (`test_ingest_pipeline.py`'s trace section asserts the
-    attribute lands on the span whose parent is `None`).
+    THE COUNTER IS THE LIVE ONE (R-76). An ingest contains no model call, so its
+    trace is plumbing and `nora.obs.tracing`'s sampler drops it before it
+    reaches the collector; «how many messages ended each way, on which platform,
+    in which kind of room» is a Prometheus question and this is where it is
+    answered. `platform` and `conversation_type` ride along because they are the
+    two dimensions that make the series readable — a room type is what separates
+    a group Nora watches from a DM, and a stuck platform is invisible in a
+    total.
 
-    Without it an exit is a trace that simply ends, which reads exactly like a
-    crash — the asymmetry `02-instrument-blindness.md` Layer 7 names. **Never
-    load-bearing**: a tracer that cannot record must not stop an ingest, which is
-    why the recording goes through `annotate` (guarded there, once, rather than
-    at each call site) and why the vocabulary check below LOGS rather than
-    raising or withholding. An unknown outcome is still stamped: the whole defect
-    being fixed is a root that says nothing, and refusing to record an unexpected
-    value would reintroduce exactly that for the case least understood.
+    THE SPAN ATTRIBUTE IS LATENT, and kept on purpose. The ingest trace is not
+    deleted, only unexported: it is opened, populated and dropped at the
+    sampler. That is what makes «ingest reaches the collector with nothing» a
+    measurement of the RULE rather than of an absence — a pipeline that opened
+    no spans would satisfy it for the wrong reason — and it is what makes the
+    reversal condition one declaration rather than a re-instrumentation.
 
-    `make gate`'s mypy does not reach `nora/ingest`, so the `Literal` annotation
-    alone is a claim rather than a check — hence the runtime membership test.
+    **Never load-bearing.** A tracer that cannot record must not stop an ingest,
+    which is why the span half goes through `annotate` (guarded there, once) —
+    and the counter half is guarded here for the same reason, because an ingest
+    runs on the listener's await path and an exception from an observation would
+    stop ingest for every conversation on the adapter.
+
+    The vocabulary check LOGS rather than raising or withholding: an unknown
+    outcome is still recorded, because refusing to record an unexpected value
+    would leave the case least understood with no record at all. `make gate`'s
+    mypy does not reach `nora/ingest`, so the `Literal` annotation alone is a
+    claim rather than a check — hence the runtime membership test.
     """
     if value not in _OUTCOMES:
         log.warning(
@@ -105,6 +119,15 @@ def _outcome(value: IngestOutcome) -> None:
             "anyway; add it to IngestOutcome",
             value, sorted(_OUTCOMES),
         )
+    try:
+        metrics.inc(
+            "nora_ingest_outcomes_total",
+            platform=message.platform,
+            conversation_type=message.conversation_type,
+            outcome=value,
+        )
+    except Exception:  # an observation must never stop an ingest
+        log.debug("ingest outcome %r not counted", value, exc_info=True)
     annotate(**{"nora.outcome": value})
 
 
@@ -197,9 +220,21 @@ class IngestPipeline:
         # custody runs — so a slow `ingest.media` child explains itself, and a
         # trace where custody dropped everything is distinguishable from one that
         # had nothing to fetch.
+        #
+        # AND IT DECLARES ITSELF PLUMBING (R-76), which is what stops all six of
+        # these spans reaching Langfuse. There is no model call anywhere under
+        # this root — six deterministic stages, a row, a feed — and Langfuse is
+        # for traces that contain a generation. Ingest is the highest-volume
+        # entry point in the system, so this one attribute is the difference
+        # between a collector an operator can read and one that is 97% messages
+        # Nora was never going to answer (measured, 2026-08-28). What the trace
+        # carried is not lost: it moved to `nora_ingest_outcomes_total`, which
+        # `_outcome` writes on every exit. The declaration must be passed HERE,
+        # at span start, because a sampler cannot see an attribute set later.
         with span(
             "ingest",
-            **{"nora.platform": message.platform,
+            **{TRACE_KIND: "plumbing",
+               "nora.platform": message.platform,
                "nora.conversation_id": message.conversation_id,
                "nora.conversation_type": message.conversation_type,
                "nora.attachments": len(message.media)},
@@ -230,7 +265,7 @@ class IngestPipeline:
         if not admitted:
             # Ends here, and ENDS VISIBLY: without the attribute an unallowlisted
             # room is a trace that simply stops, indistinguishable from a crash.
-            _outcome("scope_refused")
+            _outcome(m, message, "scope_refused")
             return IngestResult(message=None, decision=None)
 
         # Identity first, so the resolved person_id lands in the audit INSERT
@@ -264,7 +299,7 @@ class IngestPipeline:
                 message=message, audit=self._audit, metrics=m, person=person
             )
         if not recorded:
-            _outcome("audit_refused")
+            _outcome(m, message, "audit_refused")
             return IngestResult(message=None, decision=None)
         with span("ingest.memory_feed"):
             await memory_feed_stage.run(
@@ -300,11 +335,11 @@ class IngestPipeline:
                 person.person_id if person else "<unmapped>",
             )
             decision = EngageDecision(engage=False, reason="sender_not_allowed")
-            _outcome("sender_not_allowed")
+            _outcome(m, message, "sender_not_allowed")
         else:
             # The ambient majority ends `recorded`, and it is the ending that had
             # NOTHING before this change — a message that passed cleanly produced
             # a root with a room key and six children saying only that they ran.
-            _outcome("engaged" if decision.engage else "recorded")
+            _outcome(m, message, "engaged" if decision.engage else "recorded")
 
         return IngestResult(message=message, decision=decision)

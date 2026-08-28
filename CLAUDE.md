@@ -266,6 +266,11 @@ earned. They are the `measure` verb pointed at our own instruments.
 
 - **One root span per entry point, and stages are its CHILDREN.** Sibling spans
   with no root are not one trace with gaps — they are N traces.
+- **Langfuse gets the traces with a GENERATION in them; everything else is
+  Prometheus'.** A root declares `nora.trace_kind`; plumbing is dropped at the
+  sampler and its outcome ships as a counter label instead. The rule is about
+  ROOTS — a stage span with no model call is exactly what makes an early exit
+  legible under a root that has one.
 - **Spawned work does not inherit the caller's span.** `create_task` copies the
   context of the task that CALLS it, so work handed to a worker starts its own
   trace unless the intended context is captured and attached explicitly.

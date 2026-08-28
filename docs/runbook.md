@@ -147,6 +147,17 @@ is correct. To tell "quiet" from "broken":
      Nothing from it is recorded either (the room gate runs before the audit write), so
      the audit DB will show no trace of it at all. Run `nora groups` to see the group's
      name beside the id you need to add.
+
+     **Do not go looking in Langfuse for any of this.** An ingest contains no model
+     call, so its trace is plumbing and is never exported (R-76). Every ambient
+     message reports its ending on `nora_ingest_outcomes_total`, labelled by platform,
+     conversation type and outcome — that counter is where «what happened to the
+     messages» is answered, and it is the one that distinguishes an ordinary recorded
+     message from a tag, a refusal, or a dropped audit write:
+
+     ```bash
+     curl -s http://127.0.0.1:9100/metrics | grep '^nora_ingest_outcomes_total'
+     ```
    - `nora_denied_senders_total` rising → the room is allowed but the sender is not in
      that entry's `persons` list. The message **is** audited, so it is visible in
      `messages`; it just was not answered.

@@ -101,7 +101,7 @@ from nora.domain.ports import (
 from nora.domain.tag_trace import TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.obs.logging import bind_tag_id, clear_tag_id
-from nora.obs.tracing import TraceCarrier, annotate, attached, capture_context, span
+from nora.obs.tracing import TRACE_KIND, TraceCarrier, annotate, attached, capture_context, span
 from nora.persons import Persons
 from nora.policy import Policy
 from nora.tag import Debounce
@@ -352,9 +352,19 @@ class EngagementPipeline:
         # rather than just a wider `with`. It carries the three facts that make
         # the trace findable without opening a child; a REJECTED tag then leaves
         # a trace that SAYS it was rejected rather than an unexplained stub.
+        # `generation` (R-76) — the declaration that keeps this trace. A tag
+        # turn is what Langfuse is FOR: `engagement.invoke` wraps the model call
+        # and Strands' own generation spans hang under it. It is declared on the
+        # ENTRY POINT, not on the run that happened to reach the model: a tag
+        # refused at admission never gets there, and its trace is exactly the one
+        # DEC-141 exists to preserve — «it SAYS it was rejected» rather than
+        # leaving an unexplained stub. Children never re-decide (the sampler is
+        # `ParentBased`), so `engagement.admission` and the debrief's generations
+        # inherit this and nothing else has to know the rule.
         with span(
             "engagement",
-            **{"nora.tag_id": request.tag_id, "nora.platform": message.platform,
+            **{TRACE_KIND: "generation",
+               "nora.tag_id": request.tag_id, "nora.platform": message.platform,
                "nora.conversation_id": message.conversation_id},
         ):
             with span("engagement.admission"):

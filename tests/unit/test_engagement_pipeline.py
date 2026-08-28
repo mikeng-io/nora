@@ -2595,6 +2595,62 @@ async def test_a_rejected_tag_leaves_a_trace_that_says_it_was_rejected(exported_
     assert spans["engagement"][0].attributes["nora.admission"] == "REJECTED"
 
 
+async def test_a_tag_turn_still_reaches_the_collector(exported_spans):
+    """R-76's OTHER DIRECTION, and the one a fix aimed at trace volume is most
+    likely to break. Ingest stopped being exported because it has no generation
+    in it; a tag turn is the thing the collector exists for, and it must come
+    through whole — root, stages, and the invoke span the model call hangs
+    under — with the same trace id.
+
+    `exported_spans` runs production's sampler (see `tests/conftest.py`), so
+    this is a measurement of the deployed rule and not of an unfiltered
+    provider.
+
+    PROBE: declare the `engagement` root `plumbing` instead of `generation`, or
+    drop the declaration and invert the sampler's default, and this goes to
+    zero while the ingest tests stay green — which is the pair that pins the
+    rule to roots that CAN contain a generation rather than to trace volume.
+    """
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    spans = _by_name(exported_spans)
+    assert {"engagement", "engagement.admission", "engagement.turn",
+            "engagement.invoke"} <= set(spans)
+    root = spans["engagement"][0]
+    assert root.parent is None
+    assert root.attributes["nora.trace_kind"] == "generation"
+    assert len({s.context.trace_id for s in exported_spans.get_finished_spans()}) == 1
+
+
+async def test_a_tag_refused_at_admission_still_reaches_the_collector(exported_spans):
+    """THE CASE THAT DECIDES THE RULE'S SHAPE. A self-tag is dropped at
+    admission and never reaches the model, so this trace contains no generation
+    at all — and it must still be exported.
+
+    That is why the declaration is on the ENTRY POINT («work that CAN contain a
+    generation») and not on the run that happened to reach one, which a sampler
+    could not know at root-start time anyway. A refused tag is still a tag: the
+    operator asked, and DEC-141 exists so the answer is a trace that SAYS it was
+    refused rather than an unexplained stub.
+
+    PROBE: move the `generation` declaration off `run`'s root onto the invoke
+    span and this reddens while the ordinary turn above stays green.
+    """
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        adapter=_FakeAdapter(account="+852111"),
+    )
+
+    await pipeline.run(_request(_msg(sender_id="+852111")))
+    await _drain(background)
+
+    spans = _by_name(exported_spans)
+    assert "engagement.turn" not in spans, "positive control: it never reached a turn"
+    assert spans["engagement"][0].attributes["nora.admission"] == "REJECTED"
+
+
 async def test_a_queued_tag_lands_in_the_trace_that_admitted_it(exported_spans):
     """THE CONTEXT-PROPAGATION PROPERTY — the reason #64 is not a one-line wrap.
 

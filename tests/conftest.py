@@ -88,6 +88,13 @@ def exported_spans(monkeypatch) -> Iterator[Any]:
     or three» is a question only the exported ids can answer; asserting that a
     helper was called cannot see the defect at all (issue #64).
 
+    **It is built with `build_sampler()` — production's own rule.** A test
+    provider that sampled everything would export spans the deployment drops,
+    so every assertion about «what reaches the collector» would be reading a
+    provider no deployment has: the silent-match failure, inside the instrument
+    that exists to find silent matches. R-76's ingest half is invisible without
+    this, and so is the proof that the tag turn survives it.
+
     **It patches `get_tracer` rather than installing a global
     `TracerProvider`**, and that is not a style preference.
     `trace.set_tracer_provider` is ONE-SHOT per process — a second call is
@@ -107,7 +114,7 @@ def exported_spans(monkeypatch) -> Iterator[Any]:
     from nora.obs import tracing as _tracing
 
     exporter = InMemorySpanExporter()
-    provider = _TracerProvider()
+    provider = _TracerProvider(sampler=_tracing.build_sampler())
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     monkeypatch.setattr(_tracing.trace, "get_tracer", provider.get_tracer)
     try:
