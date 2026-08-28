@@ -990,6 +990,22 @@ enabled = true
 # whether that was a quiet group or a broken create path (design 27 §5.4/§6.1).
 enabled = true
 
+# The CURATOR — ON (operator, 2026-08-28). It merges notes about one occasion
+# and retires ones whose question is settled or whose moment has passed.
+#
+# What it does today is RETIRE, and only that. Merge eligibility joins
+# `note_entity`, which has no writer until entity resolution exists, so every
+# candidate group is refused and counted as `no_entity_anchor` (R-75). That is
+# not a bug and not a flag away: a merge keyed on the model's own words is
+# wrong in both directions at once — three spellings of one wedding are three
+# keys, and two unrelated notes that both say "wedding" are one — so the guard
+# refuses rather than guesses. `nora_note_curator_groups_refused_total` is the
+# number that sizes the entity writer when someone builds it.
+#
+# Retirement is not deletion. A retired note stays readable; it stops appearing
+# in what Nora is shown.
+curator_enabled = true
+
 [standing]
 # ON (operator, 2026-08-27), and this is the one optional tier whose work runs
 # INSIDE the live reply slot rather than on a background clock. After every
