@@ -19,18 +19,35 @@ from pathlib import Path
 def load_veto_list(path: Path | None) -> frozenset[str]:
     """One string per line; `#` comments and blank lines ignored.
 
-    **A missing file vetoes nothing extra rather than refusing to start**,
-    unlike `policy.toml`: the rules in code are the floor and this only NARROWS
-    what promotes, so an absent file is a room that has not needed one —
-    whereas an absent `policy.toml` would mean nobody decided who may talk to
-    her. The asymmetry is the point; both are "a file is missing" and only one
-    of them is a decision nobody made.
+    **NO PATH CONFIGURED vetoes nothing extra**, unlike `policy.toml`: the
+    rules in code are the floor and this only NARROWS what promotes, so no
+    `veto_file` is a room that has not needed one — whereas an absent
+    `policy.toml` would mean nobody decided who may talk to her. The asymmetry
+    is the point.
 
-    An unreadable file raises rather than degrading: the operator wrote a path,
-    so reading nothing from it is a wiring gap and not a choice.
+    **A PATH THAT IS NOT THERE REFUSES TO START**, and that is a different
+    case which this collapsed into the first for its whole life: `path is None
+    or not path.is_file()` treated «the operator wrote no path» and «the
+    operator wrote a path and it is not there» identically, so a bind mount
+    that failed to attach, a typo, or a broken symlink meant promotion minted
+    entities for every string the room had decided is not a thing — silently,
+    with no counter that could say so. The paragraph below already said this
+    was the intent; the code did the opposite.
+
+    A path that exists and cannot be READ raises too, from `read_text`, and
+    for the same reason: the operator wrote a path, so reading nothing from it
+    is a wiring gap and not a choice.
     """
-    if path is None or not path.is_file():
+    if path is None:
         return frozenset()
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"[facts] veto_file points at {path}, which is not a readable "
+            f"file. An absent veto list and a veto list that failed to mount "
+            f"are different facts: the first is a room that has not needed "
+            f"one, the second is every string this room decided is not a "
+            f"thing being promoted to an entity with nothing to say so."
+        )
     return frozenset(
         stripped
         for line in path.read_text(encoding="utf-8").splitlines()

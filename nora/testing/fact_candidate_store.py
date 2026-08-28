@@ -256,11 +256,18 @@ class InMemoryFactCandidateStore:
             and not self._backed_by_a_live_fact(c)
             and not (c.occurrence_count <= 1 and not self._subject_resolves(c))
         ]
+        # The FOURTH key is not decoration. `list.sort` is stable, so this
+        # double was deterministic while production was not — it returned
+        # insertion order among ties and Postgres returned any order. A
+        # contract test could pin an ordering the real store does not have,
+        # which is the double diverging where the real path BRANCHES. Both
+        # sides now break ties on `id`.
         survivors.sort(
             key=lambda c: (
                 0 if self._contradicts_a_live_fact(c) else 1,
                 -c.occurrence_count,
                 -c.last_seen_at,
+                c.id,
             )
         )
         return tuple(survivors[:limit])

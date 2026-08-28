@@ -143,7 +143,15 @@ class SqlRenderedClaimStore:
                         RENDERED_CLAIM.c.conversation_id == conversation_id,
                         RENDERED_CLAIM.c.last_rendered_at >= since_ms,
                     )
-                    .order_by(RENDERED_CLAIM.c.last_rendered_at.desc())
+                    # Tie-break. This read has no LIMIT, but recognition
+                    # caps what it targets to `max_targets` from the FRONT
+                    # of this list — and one turn writes every claim it
+                    # rendered with one `last_rendered_at`, so the four
+                    # claims a quote-reply targets varied run to run.
+                    .order_by(
+                        RENDERED_CLAIM.c.last_rendered_at.desc(),
+                        RENDERED_CLAIM.c.row_key.asc(),
+                    )
                 )).all()
         except Exception:
             log.exception(
