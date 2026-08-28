@@ -1745,11 +1745,17 @@ async def test_a_merge_runs_end_to_end_against_real_postgres(_notes_db) -> None:
             established_by="tag:miles", now_ms=NOW, anchor_date=20261011,
             anchor_entity_ids=("grant",),
         )
+        # DISTINCT created_at, and this is not tidiness — the first version of
+        # this test gave both notes NOW and failed in the suite while passing
+        # alone. The survivor is the group's (created_at, id)-first note, so on
+        # a tie the tiebreak is a uuid4 and WHICH note survives is random per
+        # run. Real notes are created at different instants; a test that ties
+        # them is asserting against a coin flip.
         dup = await store.create(
             workspace=ws, title="Grant's wedding", description="one line",
             uncertainty="which venue", closing_condition="somebody books",
             established_in="conv-1", body="Ben found Sheung Wan.",
-            established_by="tag:miles", now_ms=NOW, anchor_date=20261011,
+            established_by="tag:miles", now_ms=NOW + 1, anchor_date=20261011,
             anchor_entity_ids=("grant",),
         )
         metrics = Metrics()
