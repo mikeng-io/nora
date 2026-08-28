@@ -76,7 +76,6 @@ from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.entities import SqlEntityStore
-from nora.infra.veto_list import load_veto_list
 from nora.infra.sql.exchange import SqlExchangeStore
 from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore, oversized_terms
@@ -96,6 +95,7 @@ from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
+from nora.infra.veto_list import load_veto_list
 from nora.infra.vision import StickerInterpreter, VisionClient, derive_vision_timeout
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
