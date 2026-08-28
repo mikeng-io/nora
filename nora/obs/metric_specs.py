@@ -1690,13 +1690,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # `tests/architecture/test_every_recorded_metric_is_declared.py` now does.
     _CounterSpec(
         "nora_peer_card_empty_total",
-        "Peer-card reads that came back empty, by platform. `peer_card` "
-        "answers `[]` for a dead endpoint, a timeout, an unknown peer and a "
-        "genuinely empty card alike, so this counter cannot say WHICH — only "
-        "that the block was not rendered. Read it against "
-        "`nora_errors_total{stage=\"peer_card\"}`: that series is the read "
-        "actually throwing, and this one is the read succeeding with nothing "
-        "in it.",
+        "Peer-card reads that came back empty, by platform — i.e. tagged turns "
+        "where her card was NOT rendered into the prompt. It cannot say why: "
+        "`HonchoClient._get` catches every transport failure and returns None, "
+        "so a dead endpoint, a timeout, a 4xx, an unknown peer and a genuinely "
+        "empty card all arrive here as the same `[]`. Do NOT read this against "
+        "`nora_errors_total{stage=\"peer_card\"}` expecting the two to "
+        "partition the space — an outage lands in THIS series, not that one, "
+        "which is why that stage label stays near zero even while Honcho is "
+        "down. Separating the four needs `Recollection`'s two-axis shape on "
+        "the port, which is a port change; until then a RISING count here is "
+        "«her card stopped appearing» and nothing narrower.",
         ("platform",),
     ),
 )
