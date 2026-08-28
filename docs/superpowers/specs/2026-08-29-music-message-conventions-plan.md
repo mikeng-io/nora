@@ -73,6 +73,15 @@ Pure, typed, unit-testable without discord.py objects — the same seam
 
 ### D3 — double announcement: the agent path suppresses the system notify
 
+> **WITHDRAWN during implementation** — see
+> `design/discord-music/09-message-conventions.md` ("The announcement
+> contract"). Reading `MusicPlayerManager.play` against
+> `test_the_first_play_does_not_notify_the_channel_that_started_it` showed
+> `play()` never posts a session-start announcement: the caller's own reply
+> is already the only one. The proposed `notify_on_play` parameter would
+> have solved a problem that does not exist. Kept below as written, for the
+> record.
+
 The LLM is Nora's authored voice; when the tag path starts/queues a track,
 Nora herself says it — the system's silent `Now playing:` post is redundant
 and is what makes the two paths look like two different bots. Mechanism, not
