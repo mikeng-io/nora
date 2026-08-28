@@ -1160,6 +1160,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "batch that did not match its input).",
         ("status",),
     ),
+    # The seam's own store, separate from `nora_fact_embed_total` above, which
+    # counts the OUTBOUND call. A model that answered and a database that
+    # accepted the answer are different failures with different remedies, and
+    # one counter over both would make an operator guess which.
+    _CounterSpec(
+        "nora_embedding_store_total",
+        "The embedding seam's store by verb and outcome. verb=existing: ok "
+        "(rows found), nothing_found (none of these keys is embedded), "
+        "unavailable (the read failed, so a sweep cannot tell an unembedded "
+        "row from an unreadable one). verb=upsert: ok, nothing_found (nothing "
+        "to write). verb=nearest: the same three, where nothing_found means "
+        "no row in scope was inside the distance floor.",
+        ("verb", "status"),
+    ),
     _CounterSpec(
         "nora_rendered_claim_total",
         "The render ledger by verb and outcome. verb=record: ok (rows "
