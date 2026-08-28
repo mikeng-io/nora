@@ -1,0 +1,1 @@
+{"type":"none","reason":"Internal: adds SqlNoteStore.record_wake, the writer for note.revisit_at / strikes / last_wake_revision_id — three columns that existed since migration 0026 with a CHECK and no writer anywhere, which made the revisitor's revisit_at trigger structurally unreachable. Nothing calls it yet; the revisitor wires it separately."}

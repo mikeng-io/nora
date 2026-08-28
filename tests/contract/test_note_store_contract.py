@@ -1472,3 +1472,162 @@ async def test_the_refused_half_is_not_capped_by_limit(
     _eligible, refused = await notes.store.merge_groups(workspace=WS, limit=1)
 
     assert len(refused) == 3, "all three refusals are reported, not one"
+
+
+# --- the wake pass (§9.6) — the writer these three columns never had -------
+#
+# `revisit_at`, `strikes` and `last_wake_revision_id` existed since 0026 with a
+# CHECK and nothing anywhere set them, so the revisitor's `revisit_at` trigger
+# was structurally unreachable: every note reaching it was due by anchor date
+# alone, and an undated note was never revisited at all.
+
+
+async def test_a_wake_on_an_unchanged_note_takes_a_strike_and_does_not_reschedule(
+    notes: _Harness,
+) -> None:
+    """The no-progress arm. **`revisit_at` must NOT advance** — the note stays
+    due and the count climbs toward the ceiling the caller enforces. Advancing
+    it here would make a note that never changes wake forever on a fresh
+    schedule, which is the loop the strike exists to break."""
+    note = await _make(notes.store)
+    # A first wake establishes the baseline, so the second sees an unmoved head.
+    await notes.store.record_wake(
+        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
+    )
+
+    outcome = await notes.store.record_wake(
+        workspace=WS, note_id=note.id, next_revisit_at=NOW + 9999,
+        now_ms=NOW + 1,
+    )
+
+    assert outcome is not None
+    assert outcome.reset is False
+    assert outcome.strikes == 1
+    after = await notes.store.read(workspace=WS, note_id=note.id)
+    assert after is not None
+    assert after[0].revisit_at == NOW + 1000, (
+        "the schedule is NOT advanced by a wake that found no progress"
+    )
+
+
+async def test_a_tag_path_revision_resets_the_strike_and_reschedules(
+    notes: _Harness,
+) -> None:
+    note = await _make(notes.store)
+    await notes.store.record_wake(
+        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
+    )
+    await notes.store.record_wake(
+        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000,
+        now_ms=NOW + 1,
+    )  # strikes -> 1
+
+    moved = await notes.store.append_revision(
+        workspace=WS, note_id=note.id, body="Ada booked Sai Kung.",
+        parent_revision_id=note.head_revision_id,
+        established_by="tag:miles", now_ms=NOW + 2,
+    )
+    outcome = await notes.store.record_wake(
+        workspace=WS, note_id=note.id, next_revisit_at=NOW + 5000,
+        now_ms=NOW + 3,
+    )
+
+    assert outcome is not None
+    assert outcome.reset is True
+    assert outcome.strikes == 0
+    after = await notes.store.read(workspace=WS, note_id=note.id)
+    assert after is not None
+    assert after[0].last_wake_revision_id == moved.id
+    assert after[0].revisit_at == NOW + 5000
+
+
+async def test_a_background_passes_own_write_does_not_reset_the_strike(
+    notes: _Harness,
+) -> None:
+    """**§9.6's trap, and the whole reason the qualifier exists.** The reset
+    must be «head moved BY THE TAG PATH», not «head moved». If a background
+    pass's own writes counted, a note the revisitor keeps rewriting would reset
+    its own strike forever and the breaker would be decorative — a
+    self-referential reset is not a reset.
+
+    The spec says the mechanism *"reads correct without the qualifier and loops
+    forever with it missing"*, which is exactly what this asserts."""
+    note = await _make(notes.store)
+    await notes.store.record_wake(
+        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
+    )
+
+    # The curator revises it — a run id, not a person.
+    await notes.store.append_revision(
+        workspace=WS, note_id=note.id, body="tidied by the curator",
+        parent_revision_id=note.head_revision_id,
+        established_by="run-curator-1", now_ms=NOW + 2,
+    )
+    outcome = await notes.store.record_wake(
+        workspace=WS, note_id=note.id, next_revisit_at=NOW + 5000,
+        now_ms=NOW + 3,
+    )
+
+    assert outcome is not None
+    assert outcome.reset is False, (
+        "a background pass's own write is not progress; counting it lets a "
+        "note reset its own strike forever"
+    )
+    assert outcome.strikes == 1
+    after = await notes.store.read(workspace=WS, note_id=note.id)
+    assert after is not None
+    assert after[0].revisit_at == NOW + 1000, "and it does not reschedule"
+
+
+async def test_strikes_accumulate_across_wakes(notes: _Harness) -> None:
+    """The positive control for the two `reset is False` assertions above: they
+    are also true of a store that does nothing at all."""
+    note = await _make(notes.store)
+    seen = [
+        (await notes.store.record_wake(
+            workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000,
+            now_ms=NOW + n,
+        )).strikes
+        for n in range(4)
+    ]
+
+    assert seen == [0, 1, 2, 3], (
+        "the FIRST wake establishes the baseline and resets; the rest strike"
+    )
+
+
+async def test_a_wake_cannot_reach_another_workspaces_note(
+    notes: _Harness,
+) -> None:
+    note = await _make(notes.store)
+
+    assert await notes.store.record_wake(
+        workspace="another-workspace", note_id=note.id,
+        next_revisit_at=NOW + 1000, now_ms=NOW,
+    ) is None
+    after = await notes.store.read(workspace=WS, note_id=note.id)
+    assert after is not None
+    assert after[0].strikes == 0, "and it wrote nothing"
+
+
+async def test_a_wake_on_an_unknown_or_retired_note_reports_none(
+    notes: _Harness,
+) -> None:
+    """`None`, never a raise and never a fabricated outcome — a background pass
+    that raises on a row it does not recognise takes the whole tick down."""
+    assert await notes.store.record_wake(
+        workspace=WS, note_id="00000000-0000-0000-0000-0000000000ff",
+        next_revisit_at=NOW, now_ms=NOW,
+    ) is None
+    assert await notes.store.record_wake(
+        workspace=WS, note_id="not-a-uuid", next_revisit_at=NOW, now_ms=NOW,
+    ) is None
+
+    note = await _make(notes.store)
+    await notes.store.supersede(
+        key=WS, target=note.id, replaced_by=None,
+        because=NoteSupersedeReason.RETIRED_EXPIRED, source=None, now_ms=NOW,
+    )
+    assert await notes.store.record_wake(
+        workspace=WS, note_id=note.id, next_revisit_at=NOW, now_ms=NOW,
+    ) is None, "a retired note does not wake"

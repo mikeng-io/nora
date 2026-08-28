@@ -482,6 +482,51 @@ class NoteCreationProposal:
             )
 
 
+#: The prefix `nora.agent.tools` stamps on a revision it writes for a person.
+#: **The one thing §9.6's strike reset turns on**, and it is a prefix rather
+#: than a flag column because `established_by` already had to distinguish the
+#: writers for provenance — a second column saying the same thing is a second
+#: thing to keep in step.
+TAG_PATH_PREFIX = "tag:"
+
+
+def is_tag_path_revision(established_by: str) -> bool:
+    """Whether a revision was written by a person on the tag path.
+
+    **§9.6's trap, and the whole reason this predicate exists rather than a
+    bare `head != last_wake` comparison:** the strike reset must be «head moved
+    BY THE TAG PATH», not «head moved». If a background pass's own writes
+    counted, a note the revisitor keeps rewriting would reset its own strike
+    forever and the breaker would be decorative — a self-referential reset is
+    not a reset.
+
+    The spec states this plainly and says why: *"the mechanism reads correct
+    without the qualifier and loops forever with it missing."*
+    """
+    return established_by.startswith(TAG_PATH_PREFIX)
+
+
+@dataclass(frozen=True, slots=True)
+class WakeOutcome:
+    """What a wake did — returned so the CALLER decides what follows.
+
+    `strikes` is the count AFTER this wake. `reset` says the head had moved on
+    the tag path, so the note is making progress and the counter went back to
+    zero.
+
+    **The store does not retire at the ceiling, and that is deliberate.**
+    §9.6 says a note past K strikes "stops waking and becomes eligible for
+    dateless retirement" — ELIGIBLE, which is a judgement about what to do
+    next, not a fact about the row. Retirement is a `supersede` with a reason
+    and a `replaced_by`; hiding one inside a bookkeeping verb would make one
+    call do two things, and the destructive half would be the invisible one. So
+    the wake reports and the revisitor decides, which is also where K lives.
+    """
+
+    strikes: int
+    reset: bool
+
+
 class NoteSupersedeReason:
     """The `because` values `SqlNoteStore.supersede` accepts, and the shape of
     the tier's retirement vocabulary.

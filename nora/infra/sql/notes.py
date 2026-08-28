@@ -108,7 +108,9 @@ from nora.domain.notes import (
     NoteRevisionProposal,
     NoteSupersedeReason,
     StaleNoteHeadError,
+    WakeOutcome,
     group_on_anchor_key,
+    is_tag_path_revision,
 )
 from nora.domain.ports import Proposal
 from nora.infra.sql.schema import NOTE, NOTE_CANDIDATE, NOTE_REVISION
@@ -462,6 +464,99 @@ class SqlNoteStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return tuple((_row_to_note(r), r.body) for r in rows)
+
+    # ---- the wake pass (§9.6) ----------------------------------------------
+
+    async def record_wake(
+        self, *, workspace: str, note_id: str, next_revisit_at: int,
+        now_ms: int,
+    ) -> WakeOutcome | None:
+        """Record that the revisitor woke on this note. Returns what happened,
+        or `None` if the note is not reachable from `workspace`.
+
+        `revisit_at`, `strikes` and `last_wake_revision_id` have existed since
+        `0026` with a CHECK and **no writer anywhere**, so the revisitor's
+        `revisit_at` trigger was structurally unreachable in production: every
+        note that reached it was due by ANCHOR DATE alone, and an undated note
+        was never revisited at all. This is that writer.
+
+        **The comparison IS the decision, so it happens HERE and not in the
+        caller — and that is why there is no CAS.** A compare-and-swap would
+        have the caller assert a head it read earlier, which is exactly the
+        stale judgement this is meant to avoid: between the revisitor's read
+        and its write, the tag path may have revised the note, and that
+        revision is not an obstacle to record — it is the PROGRESS the reset
+        exists to detect. So this reads the head inside the transaction and
+        branches on it. `merge` and `propose` take a parent because they WRITE
+        content and must not overwrite; this writes only bookkeeping about a
+        head it just read.
+
+        §9.6's two arms, and the qualifier that makes the breaker real:
+
+        - **head moved ON THE TAG PATH** — `strikes = 0`,
+          `last_wake_revision_id = head`, and `revisit_at` advances. Somebody
+          engaged with the uncertainty, which is progress.
+        - **anything else** — `strikes += 1` and **`revisit_at` is NOT
+          advanced**, so the note stays due and the count climbs toward the
+          ceiling the caller enforces.
+
+        The qualifier is not decoration. If a background pass's own writes
+        counted as movement, a note the revisitor keeps rewriting would reset
+        its own strike forever — a self-referential reset is not a reset, and
+        the spec says the mechanism "reads correct without the qualifier and
+        loops forever with it missing".
+
+        **Not on `DreamSink`.** That port has two verbs and deliberately no
+        third; this is a store method the revisitor calls directly, the same
+        placement `merge` took and for the same reason.
+        """
+        if not _is_uuid(note_id):
+            return None
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(
+                sa.select(
+                    NOTE.c.head_revision_id,
+                    NOTE.c.strikes,
+                    NOTE.c.last_wake_revision_id,
+                    NOTE_REVISION.c.established_by,
+                )
+                .join_from(
+                    NOTE, NOTE_REVISION,
+                    NOTE.c.head_revision_id == NOTE_REVISION.c.id,
+                )
+                .where(
+                    NOTE.c.id == note_id,
+                    NOTE.c.workspace == workspace,
+                    NOTE.c.retired_at.is_(None),
+                )
+                # The row is write-locked for the rest of the transaction, so
+                # the branch below cannot be decided against a head another
+                # writer moves before the UPDATE lands.
+                .with_for_update()
+            )).one_or_none()
+            if row is None:
+                return None
+
+            moved = row.head_revision_id != row.last_wake_revision_id
+            progressed = moved and is_tag_path_revision(row.established_by)
+            if progressed:
+                values: dict[str, Any] = {
+                    "strikes": 0,
+                    "last_wake_revision_id": row.head_revision_id,
+                    "revisit_at": next_revisit_at,
+                }
+                strikes = 0
+            else:
+                # `strikes + 1` computed by the DATABASE, not read-then-write:
+                # two ticks racing on one note would otherwise both read N and
+                # both write N+1, losing a strike — and losing strikes is
+                # exactly how a breaker becomes decorative.
+                values = {"strikes": NOTE.c.strikes + 1}
+                strikes = int(row.strikes) + 1
+            await conn.execute(
+                sa.update(NOTE).where(NOTE.c.id == note_id).values(**values)
+            )
+        return WakeOutcome(strikes=strikes, reset=progressed)
 
     # ---- merge: the one cross-note write, in one transaction ---------------
 

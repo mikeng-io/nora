@@ -69,7 +69,9 @@ from nora.domain.notes import (
     NoteRevisionProposal,
     NoteSupersedeReason,
     StaleNoteHeadError,
+    WakeOutcome,
     group_on_anchor_key,
+    is_tag_path_revision,
 )
 from nora.domain.ports import Proposal
 
@@ -320,6 +322,36 @@ class InMemoryNoteStore:
                 retire_reason=NoteSupersedeReason.MERGED,
             )
         return len(targets)
+
+    async def record_wake(
+        self, *, workspace: str, note_id: str, next_revisit_at: int,
+        now_ms: int,
+    ) -> WakeOutcome | None:
+        """`SqlNoteStore.record_wake`.
+
+        The head is read HERE and branched on here, matching the real store —
+        a double that took the decision from its caller would agree on every
+        happy path and diverge on the one case §9.6 exists for, a background
+        pass's own write being mistaken for progress.
+        """
+        note = self.notes.get(note_id)
+        if (
+            note is None
+            or note.workspace != workspace
+            or note.retired_at is not None
+        ):
+            return None
+        head = self.revisions[note.head_revision_id]
+        moved = note.head_revision_id != note.last_wake_revision_id
+        progressed = moved and is_tag_path_revision(head.established_by)
+        if progressed:
+            self.notes[note_id] = replace(
+                note, strikes=0, last_wake_revision_id=note.head_revision_id,
+                revisit_at=next_revisit_at,
+            )
+            return WakeOutcome(strikes=0, reset=True)
+        self.notes[note_id] = replace(note, strikes=note.strikes + 1)
+        return WakeOutcome(strikes=note.strikes + 1, reset=False)
 
     async def merge_groups(
         self, *, workspace: str, limit: int,
