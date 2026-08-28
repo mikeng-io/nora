@@ -98,7 +98,7 @@ from nora.domain.ports import (
     RecordStore,
     RosterSource,
 )
-from nora.domain.tag_trace import TagTrace
+from nora.domain.tag_trace import VALID_OUTCOMES, TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.tracing import TRACE_KIND, TraceCarrier, annotate, attached, capture_context, span
@@ -123,6 +123,39 @@ log = logging.getLogger("nora.engagement.pipeline")
 # (her register); a non-Cantonese clone would override it. Carries no identifier,
 # so it passes the leak/egress scans in `Deliverer.deliver` unchanged.
 _EXHAUSTED_FALLBACK = "唔好意思，我一時搞唔掂，遲啲再問我啦 😅"  # noqa: RUF001 — Cantonese fullwidth punctuation is intended
+
+# `nora_engagement_outcomes_total`'s label vocabulary (issue: 56% of live tags
+# were ending `recovered` — DEC-93's own "tell" — with no standing counter
+# that says so; `nora_tagtrace_writes_total{outcome=...}` counts the same
+# values but only when the retention store is wired, which answers "did
+# retention get handed a trace", not "what did the turn end as" — a
+# deployment or eval composition with no store silently loses THIS signal
+# too if it rides on that one). Derived from `TagTrace.VALID_OUTCOMES`
+# itself, never hand-copied, plus the one label this module's `finally`
+# produces that `TagTrace` never does: `"unattributed"` is not a seventh
+# outcome a completed turn can end in — it is `trace is None`, meaning
+# `invoke.run` never returned, or the outer handler deliberately cleared a
+# crashed turn's placeholder rather than retain a guessed label.
+_ENGAGEMENT_METRIC_OUTCOMES: frozenset[str] = VALID_OUTCOMES | frozenset({"unattributed"})
+
+
+def _outcome_label(trace: TagTrace | None) -> str:
+    """The ONE place `nora.outcome` (the span attribute) and the
+    `nora_engagement_outcomes_total` counter read their value from, so the
+    two can never disagree about the same turn. RUNTIME check, not just
+    mypy: this module is in `make gate`'s mypy scope, but the vocabulary
+    constant above is what the metric's help text is written from, and a
+    value drifting from it is exactly the label-vocabulary failure CLAUDE.md
+    names — cheap insurance against `TagTrace` growing an outcome this
+    module forgets to fold into `_ENGAGEMENT_METRIC_OUTCOMES`.
+    """
+    label = trace.outcome if trace is not None else "unattributed"
+    if label not in _ENGAGEMENT_METRIC_OUTCOMES:
+        raise ValueError(
+            f"nora_engagement_outcomes_total outcome must be one of "
+            f"{sorted(_ENGAGEMENT_METRIC_OUTCOMES)}, got {label!r}"
+        )
+    return label
 
 
 def _notes_read_of(handle: Any) -> frozenset[str]:
@@ -1145,8 +1178,22 @@ class EngagementPipeline:
             # than retain a guessed label. Naming it keeps that state readable
             # instead of rendering as an absent attribute, which is
             # indistinguishable from the annotation never having run.
+            #
+            # THE STANDING COUNTER (this is the "56% of live tags never
+            # called send_reply" measurement, made continuous instead of a
+            # one-off Langfuse query): incremented HERE, unconditionally, on
+            # every exit path this `finally` reaches — unlike
+            # `nora_tagtrace_writes_total` a few lines up, this one does not
+            # ride on `self._tag_trace_store` being wired, because the
+            # question "what did the turn end as" must not go dark just
+            # because retention did. `send_reply` vs `recovered` is exactly
+            # DEC-93's own distinction: a rising `recovered` share means the
+            # route is not honouring `tool_choice=required`, not that the
+            # safety net is "working".
+            outcome_label = _outcome_label(trace)
+            self._metrics.inc("nora_engagement_outcomes_total", outcome=outcome_label)
             annotate(**{
-                "nora.outcome": trace.outcome if trace is not None else "unattributed",
+                "nora.outcome": outcome_label,
                 "nora.delivered": delivered,
                 "nora.stop_reason": stop_reason or "",
                 "nora.messages": messages,
