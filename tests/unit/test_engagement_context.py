@@ -1000,7 +1000,7 @@ async def test_what_was_rendered_is_recorded_for_recognition():
     assert claim.last_tag_id == "tag-1"
 
 
-async def test_only_what_was_SHOWN_is_recorded():
+async def test_only_what_was_shown_is_recorded():
     """A fact read and then not rendered is not a claim she made. Recording it
     would make "a claim Nora just rendered" mean "a claim Nora looked at", and
     a member mentioning that subject would then be correcting something she
