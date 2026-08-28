@@ -80,7 +80,12 @@ async def _objects(engine):
 
 
 @pytest.mark.parametrize("surface", [
-    "9 August", "2026-08-28", "19:30", "five", "5 gourds", "$40", "three hours",
+    "9 August", "Aug 9", "August", "2026-08-28", "19:30", "40",
+    "five", "$40", "three hours", "3 days",
+    # CJK, which the first version had NO rule for at all — so every case §6.1
+    # names was admitted the moment the room wrote it in the language it
+    # actually uses.
+    "三個月", "五蚊", "十分鐘", "兩年",
     "no black tower", "https://example.test/a", "www.example.test",
     "唔係一個地方", "冇嘢", "x" * 65,
 ])
@@ -93,12 +98,44 @@ def test_the_veto_refuses_what_is_not_a_thing(surface):
 @pytest.mark.parametrize("surface", [
     "House House", "big walk", "the black tower", "打風", "大浪灣",
     "Hong Kong Observatory", "Marco's car",
+    # Every one of these was REFUSED by the first version, which vetoed on the
+    # leading token alone: a weekday, a spelled numeral or a month name
+    # happening to start a real name. In a Hong Kong room these are not
+    # recoverable missing edges, they are permanent holes exactly where the
+    # graph is most useful.
+    "Sun Hung Kai", "Sun Yat-sen Memorial Park", "Seven Sisters",
+    "Ten Thousand Buddhas Monastery", "1881 Heritage", "May Chan",
+    "one piece",
+    # Tokenised on whitespace ONLY, never on punctuation — which is what keeps
+    # this one token rather than the two numerals it would otherwise split
+    # into.
+    "7-Eleven",
+    # The CJK arm stays narrow on purpose: each carries a character outside the
+    # numeral and unit sets.
+    "七姊妹", "十萬個為什麼",
 ])
 def test_the_veto_admits_things(surface):
     """The positive control, and it is not decoration: a veto that refused
     everything would satisfy every test above while making promotion
     structurally impossible — which is exactly the failure 21 §10 names as
     what would prove the contract wrong."""
+    assert not vetoed(surface)
+
+
+@pytest.mark.parametrize("surface", ["5 gourds", "3 towers"])
+def test_a_counted_noun_is_admitted_and_degree_is_what_stops_it(surface):
+    """Written down because it looks like a gap and is a decision.
+
+    `5 gourds` IS a quantity, and the veto lets it through: separating it from
+    `1881 Heritage` needs to know which words are nouns, and the alternative —
+    "a leading numeral plus one word" — refuses the Hong Kong entity to catch
+    the gourd. An enumeration of countable nouns is the list §6.1 says nobody
+    can finish.
+
+    **Degree is the backstop, and it is the stronger one.** A counted noun has
+    to appear in a SECOND edge position before it becomes anything, and
+    quantities do not recur that way. The veto's job is the common recurring
+    forms — a bare numeral, a price, a date — and the tail is arithmetic's."""
     assert not vetoed(surface)
 
 
@@ -206,6 +243,55 @@ async def test_degree_two_promotes_and_degree_one_does_not(store):
     assert metrics.get("nora_fact_objects_resolved_total") == 1
 
 
+async def test_a_self_referential_fact_does_not_promote_itself(store):
+    """Degree is counted over DISTINCT FACTS, not endpoints.
+
+    Counting per endpoint made one row whose subject and object normalise
+    alike — `big walk is_called Big Walk`, which is precisely the shape this
+    table exists for — reach degree 2 FROM ITSELF, minting an entity whose only
+    edge is a self-loop. §6.1's own justification is that a node of degree one
+    is a string with extra steps because there is nothing to traverse to, and a
+    self-loop is exactly that."""
+    entities, engine, _ = store
+    await _fact(engine, subject="big walk", obj="Big  Walk", predicate="is_called")
+
+    result = await entities.promote(workspace=WS, now_ms=NOW)
+
+    assert result.entities_created == 0
+    assert result.below_degree == 1
+    # The positive control: a SECOND, genuinely different fact naming the same
+    # thing does promote it, so the zero above is about the self-loop.
+    await _fact(engine, subject="melbourne", obj="big walk", predicate="hosts")
+    assert (await entities.promote(
+        workspace=WS, now_ms=NOW)).entities_created == 1
+
+
+async def test_a_new_spelling_does_not_duplicate_the_alias_array(store):
+    """`promote` passes `aliases=tuple(spellings)`, which CONTAINS the canonical
+    name it also passes — so the incoming list is not distinct from itself, and
+    a list deduped only against what is already stored grew a duplicate on
+    every pass after a new spelling became the most frequent.
+
+    The idempotence test could not see it: it never introduced a new spelling
+    between passes, which is the only way to reach the branch."""
+    entities, engine, _ = store
+    await _fact(engine, subject="s", obj="House House")
+    await _fact(engine, subject="House House", obj="Melbourne")
+    await entities.promote(workspace=WS, now_ms=NOW)
+
+    # A second spelling, now the most frequent one.
+    for _ in range(3):
+        await _fact(engine, subject="s2", obj="house house")
+    await entities.promote(workspace=WS, now_ms=NOW + 1)
+    await entities.promote(workspace=WS, now_ms=NOW + 2)
+
+    async with engine.connect() as conn:
+        aliases = (await conn.execute(
+            sa.text("select aliases from fact_entity"))).scalar_one()
+    assert len(aliases) == len(set(aliases)), aliases
+    assert set(aliases) >= {"House House", "house house"}
+
+
 async def test_promotion_keeps_the_words_the_room_used(store):
     """The property 23 §6.2 depends on: the embedded text is the rendered
     triple, and a triple whose object was eaten by canonicalisation embeds
@@ -267,7 +353,7 @@ async def test_a_vetoed_object_never_promotes_however_often_it_recurs(store):
 
     assert result.entities_created == 0
     assert result.vetoed == 1
-    assert metrics.get("nora_fact_objects_vetoed_total") == 1
+    assert metrics.get("nora_fact_objects_vetoed", workspace=WS) == 1
 
 
 async def test_promotion_is_idempotent(store):
@@ -291,6 +377,45 @@ async def test_promotion_is_idempotent(store):
             sa.text("select aliases from fact_entity"))).scalar_one()
     assert count == 1
     assert len(aliases) == len(set(aliases))
+
+
+async def test_the_census_readings_are_levels_and_do_not_accumulate(store):
+    """`vetoed` and `below_degree` are recomputed from the WHOLE standing table
+    on every pass, and promotion runs on every adjudication tick that wrote a
+    fact. As counters they measured ticks times rows while
+    `entities_created_total` measured real events — and the ratio between those
+    two is 21 §10's own test for what would prove the substrate contract wrong,
+    so it was uninterpretable.
+
+    Three passes over unchanged data must read the same number, not three times
+    it."""
+    entities, engine, metrics = store
+    await _fact(engine, subject="big walk", obj="five", predicate="gourds")
+    await _fact(engine, subject="big walk", obj="House House", predicate="made_by")
+
+    for tick in range(3):
+        await entities.promote(workspace=WS, now_ms=NOW + tick)
+
+    assert metrics.get("nora_fact_objects_vetoed", workspace=WS) == 1
+    assert metrics.get("nora_fact_objects_below_degree", workspace=WS) == 1
+    # The positive control: the EVENT counter is the one that may move, and it
+    # did not here because nothing promoted — so the two readings above are
+    # levels rather than a pass that never ran.
+    assert metrics.get("nora_fact_entities_created_total") == 0
+
+
+async def test_a_pass_that_found_none_reads_zero_rather_than_absent(store):
+    """0 means the pass ran and found none; ABSENT means it has never run for
+    this workspace. Collapsing them is how a tier that is not wired looks
+    exactly like a tier with nothing to say."""
+    entities, engine, metrics = store
+    await _fact(engine, subject="s", obj="House House")
+    await _fact(engine, subject="House House", obj="Melbourne")
+
+    await entities.promote(workspace=WS, now_ms=NOW)
+
+    assert metrics.get("nora_fact_objects_vetoed", workspace=WS) == 0
+    assert metrics.get("nora_fact_entities_created_total") == 1
 
 
 async def test_promotion_does_not_reach_a_sibling_workspace(store):

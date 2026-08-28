@@ -1404,6 +1404,13 @@ class FactsConfig(BaseModel):
     # correction is that a scheme which only refuses a config above its ceiling
     # leaves oversized rows satisfying the CHECK while defeating the prompt
     # budget the cap exists to protect.
+    # 21 §10's operator-owned veto list: the extra object strings THIS room
+    # decides are not things, one per line, blank lines and `#` comments
+    # ignored. Its CONTENTS are configuration; its existence, ownership and
+    # versioning are the design's decision. Absent by default, and an absent
+    # file vetoes nothing extra — the rules in code are the floor and this only
+    # narrows what promotes.
+    veto_file: Path | None = None
     max_term_chars: int = Field(default=DEFAULT_MAX_TERM_CHARS, ge=1)
     max_predicate_chars: int = Field(default=DEFAULT_MAX_PREDICATE_CHARS, ge=1)
 

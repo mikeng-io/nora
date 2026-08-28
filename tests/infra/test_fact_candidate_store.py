@@ -1054,7 +1054,7 @@ async def test_an_unresolvable_subject_is_counted_not_merely_dropped(sql_sink):
 
     await store.pending(workspace=WS, limit=10)
 
-    assert metrics.get("nora_fact_entity_unresolved_total") == 1
+    assert metrics.get("nora_fact_entity_unresolved", workspace=WS) == 1
 
 
 async def test_a_claim_about_a_person_by_the_name_the_room_uses_is_refused(sql_sink):
@@ -1115,3 +1115,27 @@ async def test_the_name_match_is_exact_and_never_a_prefix(sql_sink):
     )
     assert metrics.get(
         "nora_fact_person_claim_refused_total", matched="display_name") == 1
+
+
+async def test_a_candidate_over_the_operating_cap_is_dropped_and_counted(sql_sink):
+    """The candidate store DROPS where the fact store RAISES, and the asymmetry
+    is the tier's own: a candidate is one sighting of one claim and losing it
+    costs a re-extraction, while a verdict has already spent a research loop.
+
+    Counted either way, because a silent drop reads as "the model found
+    nothing"."""
+    _store, engine, metrics = sql_sink
+    capped = SqlFactCandidateStore(engine, max_term_chars=50, metrics=metrics)
+
+    ids = await capped.propose(
+        key=WS,
+        proposals=(
+            _candidate(subject="x" * 51, predicate="p", object="o"),
+            _candidate(subject="big walk", predicate="p", object="o"),
+        ),
+        now_ms=NOW,
+    )
+
+    assert len(ids) == 1
+    assert metrics.get(
+        "nora_fact_person_claim_refused_total", matched="over_cap") == 1

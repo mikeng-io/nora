@@ -763,12 +763,19 @@ async def test_a_failed_attribution_leaves_no_counter_behind(sql_store):
     got: a later proposal in the same batch failing rolls the whole boundary
     back, and the earlier ones' counters would already have moved.
 
-    Driven by a real rollback — the second verdict names a fact id that
-    violates nothing until the flush — rather than by a mock, because the
-    property under test is the ORDER of a commit and a counter."""
-    store, engine, metrics = sql_store
+    Driven by a real rollback rather than by a mock, because the property under
+    test is the ORDER of a commit and a counter.
+
+    The rollback needs a failure at the FLUSH, not at the write check — the
+    check refuses before anything is attributed. So this store is built with an
+    operating cap ABOVE the DDL ceiling, a combination config refuses and the
+    store does not, which leaves the ceiling as the only thing that fires."""
+    _configured, engine, metrics = sql_store
     await _seed_message(engine, mid=41, person_id="miles")
     cid = await _seed_candidate(engine, observed_in=["41"])
+    store = SqlFactStore(
+        engine, max_term_chars=FACT_TERM_CEILING_CHARS + 100, metrics=metrics,
+    )
 
     # `IntegrityError` specifically: a blind `Exception` would also pass on a
     # connection failure, which proves nothing about a rollback.
@@ -901,6 +908,57 @@ async def test_a_candidate_term_over_the_ceiling_is_refused_too(pg_url):
         await engine.dispose()
 
 
+async def test_the_store_refuses_a_term_over_the_operating_cap(pg_url):
+    """30 §5: "every writer validates against the CURRENT operating value".
+
+    The caps were enforced only at PARSE, inside the two adaptors — so any
+    other `DreamSink` caller wrote straight past them, and the startup refusal
+    that names rows above a lowered cap was guarding a state the write path
+    could still create. Production was safe only because those two adaptors
+    happened to be the only writers, which is a fact about today rather than a
+    property of the design.
+
+    RAISES rather than dropping: a verdict this long reached the store past an
+    adaptor that should have refused it, which is a caller bug. Dropping it
+    would be indistinguishable from `not_covered` — a fact silently not written
+    while the tick reports success."""
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        store = SqlFactStore(engine, max_term_chars=200)
+        with pytest.raises(ValueError, match="operating cap"):
+            await store.propose(
+                key="ws",
+                proposals=(_proposal(_verdict(subject="x" * 201)),),
+                now_ms=NOW,
+            )
+        # The positive control: one character under the cap writes.
+        assert len(await store.propose(
+            key="ws",
+            proposals=(_proposal(_verdict(subject="x" * 200)),),
+            now_ms=NOW,
+        )) == 1
+    finally:
+        await engine.dispose()
+
+
+async def test_the_store_refuses_a_predicate_over_its_own_operating_cap(pg_url):
+    """Asserted separately from the term cap: one check covering two fields
+    passes with either half deleted."""
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        store = SqlFactStore(engine, max_predicate_chars=10)
+        with pytest.raises(ValueError, match="operating cap"):
+            await store.propose(
+                key="ws",
+                proposals=(_proposal(_verdict(predicate="p" * 11)),),
+                now_ms=NOW,
+            )
+    finally:
+        await engine.dispose()
+
+
 async def test_lowering_a_cap_below_existing_rows_names_them(pg_url):
     """30 §5: refusing a config above its ceiling is not enough. Lowering the
     OPERATING cap below rows that already exist leaves them satisfying the
@@ -909,8 +967,12 @@ async def test_lowering_a_cap_below_existing_rows_names_them(pg_url):
     run_migrations(pg_url)
     engine = create_sql_engine(pg_url)
     try:
-        store = SqlFactStore(engine)
-        await store.propose(
+        # Written under a HIGHER cap, because that is the scenario: the row was
+        # legal when it landed and the operator lowered the knob afterwards. A
+        # store at today's cap refuses it at the write (30 §5), so this is the
+        # only way the state exists — in the test and in production alike.
+        past = SqlFactStore(engine, max_term_chars=400)
+        await past.propose(
             key="ws",
             proposals=(_proposal(_verdict(subject="x" * 300)),),
             now_ms=NOW,

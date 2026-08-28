@@ -141,6 +141,36 @@ def normalise_name(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
 
 
+def refuse_over_operating_caps(
+    *, subject: str, predicate: str, obj: str,
+    max_term_chars: int, max_predicate_chars: int,
+) -> str | None:
+    """The name of the first field over its OPERATING cap, or `None`.
+
+    **This is 30 §5's "every writer validates against the current operating
+    value", and it lives here so both stores can call it.** The caps were
+    enforced only at PARSE, inside the two adaptors — which meant any other
+    `DreamSink` caller wrote past them, and the startup refusal that names rows
+    above a lowered cap was guarding a state the write path could still create.
+    Production was safe only because the two adaptors happened to be the only
+    writers, which is a fact about today rather than a property of the design.
+
+    Returns the field NAME rather than raising, so each store decides: the fact
+    store raises (a verdict that long is a caller bug, and dropping it would be
+    indistinguishable from `not_covered`), the candidate store drops and counts
+    (a candidate is one sighting and losing it costs a re-extraction). Both are
+    honest; a shared helper that chose for them would not be.
+    """
+    for field, value, cap in (
+        ("subject", subject, max_term_chars),
+        ("predicate", predicate, max_predicate_chars),
+        ("object", obj, max_term_chars),
+    ):
+        if len(value) > cap:
+            return field
+    return None
+
+
 def _check_term(field: str, value: str) -> None:
     """The CEILING, never the operating cap. `fact_term_fits_the_ceiling_check`
     asserts the same number in the database."""

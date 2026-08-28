@@ -28,15 +28,17 @@ So it is red on either side moving alone, and green only when they agree.
 from __future__ import annotations
 
 import ast
+import importlib
 import inspect
 import json
+import pkgutil
 import textwrap
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from nora.language import fact_adaptor, note_revisitor
+from nora.language import fact_adaptor
 
 OBJECTIVES = Path(fact_adaptor.__file__).resolve().parents[1] / "dreamer" / "objectives"
 
@@ -150,19 +152,27 @@ def _keys_read_by(fn: Callable[..., object], *, name: str = "item") -> set[str]:
     return found
 
 
-#: Every module that can hold a `DreamAdaptor`. Named here rather than
-#: discovered by import-walking the package: an adaptor living somewhere else
-#: entirely is a real gap this list would miss, and `test_every_shipped_adaptor_
-#: is_covered` below is what turns that gap into a red test instead of a silent
-#: omission.
-ADAPTOR_MODULES = (fact_adaptor, note_revisitor)
+def _adaptor_modules():
+    """Every module in `nora.language` that can hold a `DreamAdaptor`,
+    DISCOVERED rather than listed.
+
+    A hand-written tuple was the hand-copied vocabulary this file exists to
+    outlaw, and it failed in the specific way the rule predicts: a new adaptor
+    in a NEW module was invisible to the coverage check as well as to the
+    parametrisation, so `test_every_shipped_adaptor_is_covered` iterated the
+    same tuple it was meant to police and could never fail. Its own docstring
+    claimed otherwise.
+    """
+    package = importlib.import_module("nora.language")
+    for info in pkgutil.iter_modules(package.__path__):
+        yield importlib.import_module(f"nora.language.{info.name}")
 
 
 def _adaptors():
     """(module, class) for every adaptor declaring BOTH `objective` and
     `envelope_key` — the two fields `DreamerRuntime` actually uses to load the
     instruction and unwrap the reply."""
-    for module in ADAPTOR_MODULES:
+    for module in _adaptor_modules():
         for cls in vars(module).values():
             if (
                 isinstance(cls, type)
@@ -257,9 +267,9 @@ def test_the_case_list_is_derived_and_not_empty():
 
 
 def test_every_shipped_adaptor_is_covered():
-    """A new adaptor with a new objective must not arrive with zero coverage.
-    Every class declaring an objective contributes at least one case, and every
-    objective file an adaptor names exists."""
+    """A new adaptor with a new objective must not arrive with zero coverage —
+    including one in a module nobody added to a list, which is the case the
+    previous hand-written tuple could not see."""
     covered = {c.values[0] for c in CASES}
     for _module, cls in _adaptors():
         assert cls.objective in covered, (

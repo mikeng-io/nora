@@ -365,6 +365,14 @@ NATIVELY_AUTHORED = {
     # byte-identity is not a property it can have. Declaring it here is the
     # deliberate one-line act this set exists to require.
     "note-revisit",
+    # Pass 6, entity-resolution adjudication. NATIVE even though its reasoning
+    # and its four worked examples are adapted from graphiti-core's
+    # `dedupe_nodes.py` (Apache-2.0 — see THIRD_PARTY_NOTICES.md): this set is
+    # about whether a pre-move FIXTURE exists to pin byte-identity against, and
+    # a prompt re-authored in this repo's format has no more of one than a
+    # prompt written from scratch. The upstream shape did not survive contact
+    # anyway — its list variant echoes UUIDs, which `dream_screen` drops.
+    "fact-entity-resolution",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

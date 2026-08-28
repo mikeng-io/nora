@@ -74,10 +74,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.facts import (
     ASSERTER_JOIN_STATUSES,
+    DEFAULT_MAX_PREDICATE_CHARS,
+    DEFAULT_MAX_TERM_CHARS,
     AsserterJoinStatus,
     Fact,
     FactAsserter,
     FactVerdict,
+    refuse_over_operating_caps,
 )
 from nora.domain.ports import Proposal
 from nora.infra.sql.schema import FACT, FACT_ASSERTER
@@ -139,6 +142,15 @@ async def oversized_terms(
                 "union all "
                 "select 'fact_candidate', id::text, length(predicate), 'predicate' "
                 "from fact_candidate where length(predicate) > :pred "
+                "union all "
+                # `fact_entity` too. Its `canonical_name` is written by
+                # promotion, which bounds it at the veto length — but the
+                # COLUMN has no ceiling and `resolve_or_create` is public, so
+                # the bound is a property of one caller rather than of the
+                # store. An operator lowering the cap wants to know about the
+                # entity table as well as the two it was named for.
+                "select 'fact_entity', id::text, length(canonical_name), 'term' "
+                "from fact_entity where length(canonical_name) > :term "
                 "order by 1, 2"
             ),
             {"term": max_term_chars, "pred": max_predicate_chars},
@@ -168,7 +180,12 @@ class SqlFactStore:
     passes a real `Metrics` wherever it asserts on those states.
     """
 
-    def __init__(self, engine: AsyncEngine, *, metrics: Any = None) -> None:
+    def __init__(
+        self, engine: AsyncEngine, *,
+        max_term_chars: int = DEFAULT_MAX_TERM_CHARS,
+        max_predicate_chars: int = DEFAULT_MAX_PREDICATE_CHARS,
+        metrics: Any = None,
+    ) -> None:
         """`metrics` is OPTIONAL and INJECTED, never imported — the same shape
         `SqlPresenceStore` and `SqlMobilityStore` use, and for the same
         import-linter reason (`nora.infra` sits below `nora.obs`).
@@ -181,6 +198,8 @@ class SqlFactStore:
         wherever it asserts on them.
         """
         self._engine = engine
+        self._max_term_chars = max_term_chars
+        self._max_predicate_chars = max_predicate_chars
         self._metrics = metrics
 
     def _count_asserters(self, status: AsserterJoinStatus) -> None:
@@ -336,6 +355,26 @@ class SqlFactStore:
                     f"got {type(p.payload).__name__}"
                 )
             verdict = p.payload
+            over = refuse_over_operating_caps(
+                subject=verdict.subject, predicate=verdict.predicate,
+                obj=verdict.object, max_term_chars=self._max_term_chars,
+                max_predicate_chars=self._max_predicate_chars,
+            )
+            if over is not None:
+                # RAISES rather than dropping: a verdict this long reached the
+                # store past an adaptor that should have refused it at parse,
+                # which is a caller bug and not a model one. Dropping it would
+                # be indistinguishable from `not_covered` — a fact silently not
+                # written while the tick reports success.
+                raise ValueError(
+                    f"SqlFactStore.propose: {over} is "
+                    f"{len(getattr(verdict, 'object' if over == 'object' else over))} "
+                    f"characters, over the operating cap. The CEILING is DDL "
+                    f"and would refuse it too, but not until the flush — and a "
+                    f"cap that only binds at the ceiling leaves oversized rows "
+                    f"satisfying the CHECK while defeating the prompt budget "
+                    f"the cap exists to protect (30 §5)."
+                )
             if verdict.status == "not_covered":
                 # (2): silence adds nothing and removes nothing — no row, no id.
                 continue

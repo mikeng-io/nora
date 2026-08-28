@@ -110,7 +110,11 @@ from nora.instructions.frontmatter import InstructionError
 from nora.language.consolidator import LanguageConsolidator
 from nora.language.exchange_consolidator import ExchangeConsolidator
 from nora.language.exchange_observer import ExchangePatternObserver
-from nora.language.fact_adaptor import FactAdaptor, FactCandidateAdaptor
+from nora.language.fact_adaptor import (
+    FactAdaptor,
+    FactCandidateAdaptor,
+    FactEntityResolutionAdaptor,
+)
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.note_revisitor import NoteRevisitor
 from nora.language.observer import LexemeObserver
@@ -147,6 +151,29 @@ from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .runtime import BackgroundTasks
 
 log = logging.getLogger("nora.app.composition")
+
+
+def _veto_list(path: Path | None) -> frozenset[str]:
+    """21 §10's operator-owned veto list, or nothing.
+
+    One string per line, `#` comments and blanks ignored. **A missing file
+    vetoes nothing extra rather than refusing to start**, unlike `policy.toml`:
+    the rules in code are the floor and this only narrows what promotes, so an
+    absent file is a room that has not needed one — whereas an absent
+    `policy.toml` would mean nobody decided who may talk to her.
+
+    An UNREADABLE file is different from an absent one and raises: the operator
+    wrote a path, so reading nothing from it is a wiring gap, not a decision.
+    """
+    if path is None:
+        return frozenset()
+    if not path.is_file():
+        return frozenset()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return frozenset(
+        stripped for line in lines
+        if (stripped := line.split("#", 1)[0].strip())
+    )
 
 
 class StartupError(Exception):
@@ -717,7 +744,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `config.toml` assert a subsystem is running when none is — the defect
     # class this tier exists to prevent, committed by its own switch.
     fact_store: SqlFactStore | None = (
-        SqlFactStore(engine, metrics=metrics) if cfg.facts.enabled else None
+        SqlFactStore(
+            engine,
+            max_term_chars=cfg.facts.max_term_chars,
+            max_predicate_chars=cfg.facts.max_predicate_chars,
+            metrics=metrics,
+        ) if cfg.facts.enabled else None
     )
     if fact_store is not None:
         # 30 §5: a cap that only refuses a CONFIG above its ceiling leaves
@@ -726,11 +758,21 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # that already exist must be visible at startup, naming them — not
         # discovered later as a tier that quietly kept rendering what the
         # operator just said was too big.
-        oversized = await oversized_terms(
-            engine,
-            max_term_chars=cfg.facts.max_term_chars,
-            max_predicate_chars=cfg.facts.max_predicate_chars,
-        )
+        # Inside `fact_store is not None`, so a lowered cap with `[facts]
+        # enabled = false` is accepted silently — deliberate, because a dark
+        # tier renders nothing and its rows defeat no prompt budget, and stated
+        # here because it is a real gap in the guarantee otherwise.
+        try:
+            oversized = await oversized_terms(
+                engine,
+                max_term_chars=cfg.facts.max_term_chars,
+                max_predicate_chars=cfg.facts.max_predicate_chars,
+            )
+        except Exception as exc:
+            # Every neighbouring step converts to `StartupError`; a raw
+            # `OperationalError` escaping from here would be the one boot
+            # failure in this function with no operator-readable message.
+            raise StartupError(f"[facts] cap check failed: {exc}") from exc
         if oversized:
             raise StartupError(
                 "[facts] caps are below rows that already exist "
@@ -2054,9 +2096,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                                  *ref.aliases)
                     if name
                 ),
+                max_term_chars=cfg.facts.max_term_chars,
+                max_predicate_chars=cfg.facts.max_predicate_chars,
                 metrics=metrics,
             )
-            fact_entities = SqlEntityStore(engine, metrics=metrics)
+            fact_entities = SqlEntityStore(
+                engine, veto_extra=_veto_list(cfg.facts.veto_file),
+                metrics=metrics,
+            )
             dream_adaptors = (
                 # PHASE A, scope-keyed: it reads one room's message batch.
                 # `workspace_for` is not a convenience — the extractor's KEY is
@@ -2091,6 +2138,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     # something new to promote.
                     entities=fact_entities,
                     metrics=metrics,
+                ),
+                # PASS 6, workspace-keyed and watermark-free like the
+                # adjudicator: its input is the entity table and the candidate
+                # queue, not a message batch. It is the half of resolution that
+                # needs judgement (21 §5); the deterministic half already ran
+                # in the sink on every write.
+                FactEntityResolutionAdaptor(
+                    entities=fact_entities, metrics=metrics,
                 ),
             )
         # The note tier's REVISITOR, on the same two-gate rule the fact tier

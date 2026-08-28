@@ -130,7 +130,14 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.facts import CandidateClaim, FactCandidate, normalise_name
+from nora.domain.facts import (
+    DEFAULT_MAX_PREDICATE_CHARS,
+    DEFAULT_MAX_TERM_CHARS,
+    CandidateClaim,
+    FactCandidate,
+    normalise_name,
+    refuse_over_operating_caps,
+)
 from nora.domain.ports import Proposal
 from nora.infra.sql.schema import FACT, FACT_CANDIDATE, FACT_ENTITY
 
@@ -168,6 +175,8 @@ class SqlFactCandidateStore:
         self, engine: AsyncEngine, *,
         roster: frozenset[str] = frozenset(),
         roster_names: frozenset[str] = frozenset(),
+        max_term_chars: int = DEFAULT_MAX_TERM_CHARS,
+        max_predicate_chars: int = DEFAULT_MAX_PREDICATE_CHARS,
         metrics: Any = None,
     ) -> None:
         """`roster` is the `person_id`s `identity.toml` knows and
@@ -210,6 +219,8 @@ class SqlFactCandidateStore:
         self._roster_names = frozenset(
             normalise_name(n) for n in roster_names if n.strip()
         ) - self._roster_ids
+        self._max_term_chars = max_term_chars
+        self._max_predicate_chars = max_predicate_chars
         self._metrics = metrics
 
     async def propose(
@@ -257,6 +268,23 @@ class SqlFactCandidateStore:
             # the 9th" is a claim about an event, not about Grant's
             # disposition. The restriction bites on predicates ABOUT a person,
             # which is what a person-subject triple is.
+            over = refuse_over_operating_caps(
+                subject=claim.subject, predicate=claim.predicate,
+                obj=claim.object, max_term_chars=self._max_term_chars,
+                max_predicate_chars=self._max_predicate_chars,
+            )
+            if over is not None:
+                # DROPPED here, where the fact store RAISES, and the asymmetry
+                # is the tier's own: a candidate is one sighting of one claim
+                # and losing it costs a re-extraction, while a verdict has
+                # already spent a research loop. Counted, because a silent drop
+                # reads as "the model found nothing".
+                refused["over_cap"] += 1
+                log.info(
+                    "fact candidate dropped: %s is over the operating cap "
+                    "(workspace=%s)", over, key,
+                )
+                continue
             subject = normalise_name(claim.subject)
             reason = (
                 "person_id" if subject in self._roster_ids
@@ -562,9 +590,15 @@ class SqlFactCandidateStore:
         # Same connection as the read it describes: a count taken against a
         # different snapshot would be a number about a moment nothing else
         # observed.
-        if unresolved and self._metrics is not None:
-            self._metrics.inc(
-                "nora_fact_entity_unresolved_total", float(unresolved),
+        # A GAUGE, not a counter, and set unconditionally including at zero.
+        # This is a census of the pending queue taken on every read; adding it
+        # to a monotonic counter measured how often the queue was READ rather
+        # than how much of it is unresolved. 0 says the read ran and everything
+        # resolved; absent says the tier has never read this workspace.
+        if self._metrics is not None:
+            self._metrics.gauge(
+                "nora_fact_entity_unresolved", float(unresolved),
+                workspace=workspace,
             )
         return tuple(_row_to_candidate(r) for r in rows)
 

@@ -995,11 +995,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "retire_failed, promotion_failed). A silent drop reads as 'we checked everything'.",
         ("reason",),
     ),
-    _CounterSpec(
-        "nora_fact_entity_unresolved_total",
-        "Candidate subjects that resolved to no fact_entity — the alias "
-        "problem, observed rather than assumed.",
-    ),
     # R-27's three states on the attribution join (21 §7.2), and all three are
     # reachable: `ok` wrote asserter rows, `nothing_found` found the candidate
     # but none of its messages resolved to a person (an unmapped sender, or a
@@ -1028,23 +1023,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "the room said.",
     ),
     _CounterSpec(
-        "nora_fact_objects_vetoed_total",
-        "Object literals refused entity-hood by the veto: a date, quantity, "
-        "price, duration, time of day, leading negation, URL, or a string "
-        "long enough to be a sentence rather than a thing.",
-    ),
-    _CounterSpec(
-        "nora_fact_objects_below_degree_total",
-        "Object literals that survived the veto and appear in no second edge "
-        "position. A node of degree one is a string with extra steps; this is "
-        "the reading that says whether the room is too sparse for promotion "
-        "to fire at all.",
-    ),
-    _CounterSpec(
         "nora_fact_person_claim_refused_total",
         "Claims refused at the sink because their subject IS somebody on the "
-        "roster, by `matched`: person_id, or display_name (their name, first "
-        "or last name, or an operator-authored alias). Two series because an "
+        "roster or is over an operating cap, by `matched`: person_id, "
+        "display_name (their name, first "
+        "or last name, or an operator-authored alias), or over_cap. Two "
+        "roster series because an "
         "id-only match leaves the whole class reachable through the name "
         "everybody actually uses — and because if name-matching over-refuses, "
         "this is how anyone finds out. Measured at five person-claims in six "
@@ -1052,6 +1036,31 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "checkable and NOT enforced — refused loudly here, never accepted and "
         "forgotten.",
         ("matched",),
+    ),
+    # Pass 6, entity-resolution adjudication (21 §5). `split` is the EXPECTED
+    # answer and is counted for that reason: a pass that decided "no" forty
+    # times and a pass that never ran are otherwise the same reading, and
+    # 21 §5's default-to-split means the negative case is the design working
+    # rather than the design idle.
+    _CounterSpec(
+        "nora_fact_resolutions_total",
+        "Entity-resolution verdicts by outcome: merged (a name joined an "
+        "existing entity as an alias), split (no match, or the model was "
+        "unsure — the expected answer), unknown_handle (it named something "
+        "this run never rendered), malformed.",
+        ("status",),
+    ),
+    _CounterSpec(
+        "nora_fact_resolution_offered_total",
+        "Unresolved names put in front of the model. The positive control for "
+        "the series above: every one of them is compatible with a pass that "
+        "was never asked anything.",
+    ),
+    _CounterSpec(
+        "nora_fact_aliases_attached_total",
+        "Names recorded as another spelling of an existing entity. Pass 6's "
+        "ONLY write — it never merges two entity rows, because a split is "
+        "provisional and a merge has already absorbed both sets of edges.",
     ),
     _CounterSpec(
         "nora_fact_asserter_total",
@@ -1705,6 +1714,51 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "0 means the pass ran and the notebook was empty; ABSENT means the "
         "pass has not run for that workspace at all, which is the distinction "
         "that says whether the revisitor is wired.",
+        ("workspace",),
+    ),
+    # Pass 3's two LEVELS, and `nora_note_revisit_standing` immediately above
+    # is the precedent for their shape.
+    #
+    # **They were counters and that was wrong.** `promote` recomputes both from
+    # the whole standing table on every adjudication tick that wrote a fact, so
+    # adding them to a monotonic counter measured `ticks times rows` while
+    # `nora_fact_entities_created_total` measured real events — and
+    # `21-substrate-contract.md` §10's stated falsification test for the WHOLE
+    # substrate contract is the ratio between them: "it is wrong if a
+    # substantial share of objects that should be nodes never reach degree 2".
+    # That ratio was uninterpretable. A census is a level, so it is a gauge.
+    #
+    # Per workspace, because degree is counted per workspace and one unlabelled
+    # series would be last-writer-wins across them.
+    _GaugeSpec(
+        "nora_fact_objects_below_degree",
+        "Object literals that survived the veto and appear in no second edge "
+        "position, as of a workspace's last promotion pass. A node of degree "
+        "one is a string with extra steps. Against "
+        "`nora_fact_entities_created_total` this is the reading that says "
+        "whether the room is too sparse for promotion to fire at all — 21 "
+        "§10's own test for what would prove the substrate contract wrong.",
+        ("workspace",),
+    ),
+    _GaugeSpec(
+        "nora_fact_objects_vetoed",
+        "Object literals refused entity-hood by the veto as of a workspace's "
+        "last promotion pass: a date, quantity, price, duration, time of day, "
+        "leading negation, URL, or a string long enough to be a sentence "
+        "rather than a thing. Climbing against a flat below-degree says the "
+        "veto is the binding constraint, not sparsity.",
+        ("workspace",),
+    ),
+    # The alias problem, observed rather than assumed — and the first reading
+    # this tier has ever had of it. Also a level rather than a counter: it is a
+    # census of the pending queue taken on every read, and adding a census to a
+    # counter measures how often the queue was read.
+    _GaugeSpec(
+        "nora_fact_entity_unresolved",
+        "Pending candidate subjects that resolve to no fact_entity, as of a "
+        "workspace's last read. 0 means the read ran and everything resolved; "
+        "ABSENT means the tier has not read that workspace at all, which is "
+        "the distinction that says whether it is wired.",
         ("workspace",),
     ),
 )
