@@ -855,12 +855,24 @@ enabled = false
 #
 # What it does when on, every [language] tick, per workspace:
 #
-#   MERGE   — notes sharing an anchor (the same anchor_date AND the same entity
-#             set) are one occasion written twice. The merged body keeps
-#             everything both said, disagreements included; the oldest note
-#             survives and the rest are retired pointing at it. ELIGIBILITY IS
-#             DECIDED IN CODE, never by the model — merge keyed on topical
-#             similarity would merge two weddings, and that is unrecoverable.
+#   MERGE   — notes sharing an anchor (the same anchor_date AND the same
+#             RESOLVED people) are one occasion written twice. The merged body
+#             keeps everything both said, disagreements included; the oldest
+#             note survives and the rest are retired pointing at it.
+#             ELIGIBILITY IS DECIDED IN CODE, never by the model — merge keyed
+#             on topical similarity would merge two weddings, and that is
+#             unrecoverable.
+#
+#             **THIS DOES NOTHING YET, and turning the flag on will not change
+#             that.** The people half is read from the note_entity registry,
+#             which nothing in the system fills in, so every candidate pair is
+#             refused and counted. Matching on the words the model typed
+#             instead was rejected: it is wrong in both directions — three
+#             spellings of one wedding read as three occasions, and two
+#             unrelated notes that both say "wedding" read as one and would be
+#             combined irreversibly. Watch
+#             nora_note_curator_groups_refused_total: it is the case for
+#             building the registry writer.
 #   RETIRE  — a note whose anchor date has passed, where the model reading the
 #             body says the question is answered ("closed") or can no longer be
 #             answered ("moot"). "Open" is the common answer and writes nothing.
