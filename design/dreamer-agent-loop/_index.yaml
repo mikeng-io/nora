@@ -53,6 +53,7 @@ members:
   - 28-language-tier.md
   - 29-authority.md
   - 30-review-response.md
+  - 31-recognition.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
