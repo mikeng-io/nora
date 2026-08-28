@@ -728,11 +728,24 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # Ships OFF, and flipping it before an adaptor writes anything would make
     # `config.toml` assert a subsystem is running when none is — the defect
     # class this tier exists to prevent, committed by its own switch.
+    # ONE entity store for the process, built here rather than inside the
+    # Dreamer block, because `21-substrate-contract.md` §4 makes it the fact
+    # SINK's collaborator and not only pass 6's: the sink upserts the entities
+    # an edge implies, in the same transaction that writes the edge. It was
+    # built only for the Dreamer, which is why that sentence was true of the
+    # document and false of the code.
+    fact_entities: SqlEntityStore | None = (
+        SqlEntityStore(
+            engine, veto_extra=load_veto_list(cfg.facts.veto_file),
+            metrics=metrics,
+        ) if cfg.facts.enabled else None
+    )
     fact_store: SqlFactStore | None = (
         SqlFactStore(
             engine,
             max_term_chars=cfg.facts.max_term_chars,
             max_predicate_chars=cfg.facts.max_predicate_chars,
+            entities=fact_entities,
             metrics=metrics,
         ) if cfg.facts.enabled else None
     )
@@ -2137,10 +2150,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 max_predicate_chars=cfg.facts.max_predicate_chars,
                 metrics=metrics,
             )
-            fact_entities = SqlEntityStore(
-                engine, veto_extra=load_veto_list(cfg.facts.veto_file),
-                metrics=metrics,
-            )
+            # The SAME instance the fact sink writes through (§4), not a
+            # second one: two stores over one table is two veto lists loaded
+            # from one file at two moments, and the promotion pass and the
+            # sink would be able to disagree about what is a thing.
+            if fact_entities is None:  # pragma: no cover - `cfg.facts.enabled`
+                raise RuntimeError(
+                    "the entity store is built with the fact store under the "
+                    "same flag; reaching here means that pairing was broken"
+                )
+
             dream_adaptors = (
                 # PHASE A, scope-keyed: it reads one room's message batch.
                 # `workspace_for` is not a convenience — the extractor's KEY is
@@ -2180,7 +2199,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 # adjudicator: its input is the entity table and the candidate
                 # queue, not a message batch. It is the half of resolution that
                 # needs judgement (21 §5); the deterministic half already ran
-                # in the sink on every write.
+                # in the sink, on the SUBJECT end of every fact written —
+                # `SqlFactStore._resolve_subjects`, through the same
+                # `fact_entities` instance this adaptor holds.
                 FactEntityResolutionAdaptor(
                     entities=fact_entities, metrics=metrics,
                 ),

@@ -6,9 +6,15 @@ and **no writer and no reader anywhere in `nora/`**. This is both.
 **Two verbs, and the split is `21-substrate-contract.md` §5's.**
 
 - `resolve_or_create` is the DETERMINISTIC half: normalise, look up
-  `canonical_name` and `aliases`, create what is missing. Free, no model, runs
-  on every write. `MERGE` semantics, which is what a graph does natively and
-  what a relational store has to do explicitly.
+  `canonical_name` and `aliases`, create what is missing. Free, no model.
+  `MERGE` semantics, which is what a graph does natively and what a relational
+  store has to do explicitly. **It runs on every FACT write, on the SUBJECT
+  end**, from `SqlFactStore._resolve_subjects` inside the edge's own
+  transaction (§4) — the sentence here used to say "on every write" while the
+  only caller was `promote`, which is the document and the code disagreeing
+  with the code losing silently. Subjects and not objects because §6 writes the
+  object as a literal and derives entity-hood later (R-78); facts and not
+  candidates because unadjudicated noise must not mint nodes.
 - `promote` is pass 3 (`25-knowledge-pipeline.md` §4): decide which object
   LITERALS have earned entity-hood, by arithmetic over the store's own
   contents. No model here either.
@@ -252,7 +258,9 @@ class SqlEntityStore:
         entities an edge implies IN THE SAME TRANSACTION that writes the edge,
         or the store can hold an edge whose endpoints do not exist and an
         entity nothing references. Atomicity is not a separate question, so
-        this cannot open its own.
+        this cannot open its own. `SqlFactStore.propose` is the caller that
+        makes that true — it passes its own `conn`, so a failed fact insert
+        rolls back the entities it implied along with it.
 
         **Alias accumulation is a set UNION, never a replace** (30 §4). A
         second sighting under a different spelling must add that spelling, not

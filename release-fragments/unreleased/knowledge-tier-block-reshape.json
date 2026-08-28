@@ -8,6 +8,6 @@
     "Facts not backed by a web page previously rendered 'source: None', which reads as a broken citation rather than as what it is. Each kind now says what actually backs it."
   ],
   "limitations": [
-    "Deciding what the conversation is about means reading the transcript before the facts rather than alongside them, which adds one database round trip to a tagged turn. Measured after this lands rather than assumed."
+    "Deciding what the conversation is about means reading the transcript before the facts rather than alongside them. The block costs five sequential database round trips per tagged turn — the subjects in play, the two slices, the total she holds, and writing down what she was shown — plus one more for each fact actually rendered. None of them run concurrently. The design's own measurement of the read half was 4.2ms; the whole figure has not been measured on live traffic and will be before the tier is switched on."
   ]
 }

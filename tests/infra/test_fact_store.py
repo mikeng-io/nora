@@ -27,6 +27,7 @@ from nora.domain.facts import (
 )
 from nora.domain.ports import Proposal
 from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.facts import SqlFactStore, oversized_terms
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
@@ -1262,3 +1263,87 @@ async def test_the_backlog_is_oldest_dispute_first(reader):
     rows = await store.disputed_facts(workspace="ws", limit=10)
 
     assert [f.id for f in rows] == [FACT_A, FACT_B]
+
+
+async def test_writing_a_fact_creates_its_subject_entity_in_the_same_transaction(
+    pg_url,
+):
+    """**`21-substrate-contract.md` §4 was three comments and no code.**
+
+    "The sink upserts the entities an edge implies, in the same transaction
+    that writes the edge" was asserted in the entity store's module docstring,
+    in `resolve_or_create`'s own docstring, and in the pass-6 wiring comment —
+    while `resolve_or_create`'s only caller was `promote` and `resolve` had no
+    caller at all. The document and the store said different things and the
+    document lost silently, which is the failure this bundle exists to
+    document.
+
+    The SUBJECT end only. §6 writes the object as a literal and derives
+    entity-hood later from degree (R-78), so resolving the object here would
+    mint a node for every string the extractor produced — exactly what that
+    rule prevents. §4 and §6 read as a contradiction until you notice they
+    are about different ends of the same edge.
+
+    The RAW spelling lands as an alias beside the normalised canonical name,
+    which is what lets `pending()`'s `subject_resolves` see a candidate
+    written `Big Walk` against a canonical `big walk`.
+    """
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        entities = SqlEntityStore(engine)
+        store = SqlFactStore(engine, entities=entities)
+
+        await store.propose(
+            key="ws-main",
+            proposals=[
+                _proposal(_verdict(subject="Big Walk", object="a walk")),
+                # The same thing spelled another way, in the same batch: one
+                # entity, both spellings recorded.
+                _proposal(_verdict(subject="big  walk", predicate="made_by",
+                                   object="House House")),
+            ],
+            now_ms=1_000,
+        )
+
+        async with engine.connect() as conn:
+            rows = (await conn.execute(sa.text(
+                "select canonical_name, aliases from fact_entity "
+                "where workspace = 'ws-main'"
+            ))).all()
+    finally:
+        await engine.dispose()
+
+    assert len(rows) == 1, f"expected one entity, got {rows}"
+    canonical, aliases = rows[0]
+    assert canonical == "big walk"
+    assert set(aliases) >= {"Big Walk", "big  walk"}
+
+
+async def test_a_fact_store_without_an_entity_store_still_writes_the_fact(pg_url):
+    """The positive control for the test above, and the degradation the
+    optional collaborator buys: a store built from a bare engine — which is
+    what a contract fixture does — writes its edge and mints no endpoint. If
+    the resolve were mandatory this would raise, and if it were silently
+    skipped for every store the test above would be satisfied by a resolve
+    that never runs at all."""
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    try:
+        store = SqlFactStore(engine)
+
+        ids = await store.propose(
+            key="ws-main",
+            proposals=[_proposal(_verdict(subject="Big Walk"))],
+            now_ms=1_000,
+        )
+
+        async with engine.connect() as conn:
+            entities = (await conn.execute(sa.text(
+                "select count(*) from fact_entity where workspace = 'ws-main'"
+            ))).scalar_one()
+    finally:
+        await engine.dispose()
+
+    assert len(ids) == 1
+    assert entities == 0

@@ -64,7 +64,7 @@ does not.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -81,9 +81,11 @@ from nora.domain.facts import (
     Fact,
     FactAsserter,
     FactVerdict,
+    normalise_name,
     refuse_over_operating_caps,
 )
 from nora.domain.ports import Proposal
+from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.schema import FACT, FACT_ASSERTER
 
 log = logging.getLogger(__name__)
@@ -187,6 +189,7 @@ class SqlFactStore:
         self, engine: AsyncEngine, *,
         max_term_chars: int = DEFAULT_MAX_TERM_CHARS,
         max_predicate_chars: int = DEFAULT_MAX_PREDICATE_CHARS,
+        entities: SqlEntityStore | None = None,
         metrics: Any = None,
     ) -> None:
         """`metrics` is OPTIONAL and INJECTED, never imported — the same shape
@@ -203,6 +206,18 @@ class SqlFactStore:
         self._engine = engine
         self._max_term_chars = max_term_chars
         self._max_predicate_chars = max_predicate_chars
+        # `21-substrate-contract.md` §4: the sink upserts the entities an edge
+        # implies, IN THE SAME TRANSACTION that writes the edge. It was three
+        # comments and no code — `resolve_or_create`'s only caller was
+        # `promote`, and `resolve` had no caller at all — so the document and
+        # the store said different things and the document lost silently.
+        #
+        # OPTIONAL, for the reason `metrics` is: a contract fixture builds this
+        # from a bare `AsyncEngine`. What that costs is that such a fixture
+        # writes edges whose subject endpoint is not created, which is the
+        # degradation the tests that care about it inject a real store to
+        # avoid.
+        self._entities = entities
         self._metrics = metrics
 
     def _count_asserters(self, status: AsserterJoinStatus) -> None:
@@ -595,6 +610,7 @@ class SqlFactStore:
         statuses: list[AsserterJoinStatus] = []
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(FACT), rows)
+            await self._resolve_subjects(conn, rows, workspace=key, now_ms=now_ms)
             for fact_id, candidate_id in attributions:
                 statuses.append(await self._attribute(
                     conn, fact_id=fact_id, candidate_id=candidate_id,
@@ -603,6 +619,54 @@ class SqlFactStore:
         for status in statuses:
             self._count_asserters(status)
         return tuple(ids)
+
+    async def _resolve_subjects(
+        self, conn: Any, rows: Sequence[Mapping[str, Any]], *,
+        workspace: str, now_ms: int,
+    ) -> None:
+        """§4's deterministic half, on the SUBJECT end, inside the edge's own
+        transaction.
+
+        **Subjects only, and that is not a shortcut.** §6 is explicit that the
+        OBJECT is always written as a literal and entity-hood for it is a
+        promotion computed later from the store's own contents (§6.1's degree
+        rule, R-78) — so resolving the object end here would mint a node for
+        every string the extractor produced, which is exactly what that rule
+        exists to prevent. §4 and §6 read as a contradiction until you notice
+        they are about different ends of the edge.
+
+        **On the FACT write, never the candidate write.** R-78: unadjudicated
+        noise must not mint nodes. A candidate is a proposal; a fact is the
+        edge, and an edge is what §4 says implies its endpoints.
+
+        Distinct SURFACES, not distinct canonical names. A batch legitimately
+        carries several verdicts about one thing, and `resolve_or_create`
+        scans the workspace's entities per call, so repeating an identical
+        spelling is pure cost. But `Big Walk` and `big  walk` normalise alike
+        and are two spellings the alias array exists to record — deduping on
+        the normalised form dropped the second one before the store could see
+        it, and left the entity able to answer "what is this" but not "how has
+        the room written it".
+
+        The RAW spelling goes in as an alias beside the normalised canonical
+        name, which is what makes `pending()`'s `subject_resolves` able to see
+        a candidate written `Big Walk` against a canonical `big walk`. Two
+        definitions of identity — one normalising, one not — is how a
+        candidate becomes unreachable from both ends.
+        """
+        if self._entities is None:
+            return
+        seen: set[str] = set()
+        for row in rows:
+            subject = str(row["subject_id"])
+            canonical = normalise_name(subject)
+            if not canonical or subject in seen:
+                continue
+            seen.add(subject)
+            await self._entities.resolve_or_create(
+                conn, workspace=workspace, canonical_name=canonical,
+                aliases=(subject,), now_ms=now_ms,
+            )
 
     async def supersede(
         self,
