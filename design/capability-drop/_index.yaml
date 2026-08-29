@@ -13,7 +13,7 @@ description: >
 status: proposed
 governance: pre-governance-input
 timestamp: '2026-08-30'
-revision: '2026-08-30 — adversarial review (Hermes delegate) run budget expired before summary; transcript findings absorbed: evals/ CAPABILITY_BLOCK surface added to 03 (run.py:74,401 + harness.py:37,269), capability() tail-sentence disposition recorded in 02 §5 (cost disclosure dies, failure register already in conduct/constraints). Second review dispatched for the formal verdict.'
+revision: '2026-08-30 — adversarial review #1 (Hermes delegate) run budget expired; transcript findings absorbed: evals/ CAPABILITY_BLOCK surface (03), capability() tail-sentence disposition (02 §5). Review #2 (glm-5.3-flash) run budget also expired; its transcript surfaced the loader''s own capability machinery (CAPABILITY_ORDER/DESCRIPTION/_capability_section, DoctrineStore capability= param + _scan append, web/doctrine endpoint pins, generated-section tests) — 03 §3/§5 completed to enumerate every consumer. Still pending: a review that completes with a formal verdict.'
 origin: "design conversation with miles, #nora 2026-08-30 — 'content 唔再要佢，然後佢裏面所有嘅 capability 本身要嘅嘢，就搬返晒入去個 tools 嘅 schema 入面'"
 members:
   - 00-overview.md
