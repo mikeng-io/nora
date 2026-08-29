@@ -180,6 +180,12 @@ class MobilityRollup:
         )
         fixes = lag_probe[:batch_limit]
 
+        # Declared before the `if fixes:` block so Speed 3's dirty-set gate
+        # below can reference it without a possibly-unbound warning; when
+        # `fixes` is empty both stay and trip lists are empty by definition.
+        new_stays: list[Stay] = []
+        new_trips: list[Trip] = []
+
         if fixes:
             # `address=` is load-bearing from Tier 5 on (Task 2): it is the
             # ONLY input `extract_trips` has for a trip's corridor
@@ -222,8 +228,6 @@ class MobilityRollup:
             # against (see `tests/unit/test_mobility.py`'s label/cluster
             # fixtures, which construct discrete per-day `Stay` objects
             # directly rather than deriving them from a raw fix stream).
-            new_stays: list[Stay] = []
-            new_trips: list[Trip] = []
             # The lowest fix id `extract_trips` refused to finalize this
             # cycle — the watermark stops one short of it below so the
             # undecided group is re-read whole next cycle instead of being
@@ -277,8 +281,7 @@ class MobilityRollup:
                 # `last_open_stay` is deliberately left unset in that case
                 # too, for the same reason: a group being held back must not
                 # also be closable as a stay by the `settled_seconds` block
-                # below (`test_a_gridlocked_drive_never_writes_a_stay_while_
-                # the_tail_is_still_movement`).
+                # below (`test_a_gridlocked_drive_writes_one_stay_once`).
                 #
                 # All three readings matter, and `None` is NOT a synonym for
                 # `False` here. `True` (still driving) never settles. `False`
@@ -297,14 +300,14 @@ class MobilityRollup:
                     chunk[-1], now_ms=now_ms,
                     settled_seconds=self._cfg.settled_seconds,
                 )
-                # `tail_dwelled` is the SECOND gate, and it exists only for
-                # the `None` case. The clock alone is not enough there: at a
-                # RESTING cadence (Life360 emits every ~10 min when still)
-                # the trailing fix is never older than `settled_seconds`, so
-                # a subject sitting at home all day would have their whole
-                # day held back as "undecided movement" — and when it finally
-                # flushed, their stationary fixes came out as 0 km/h, 0 m
-                # trips instead of a stay. Measured on
+                # `tail_dwelled` is the SECOND gate. The clock alone is not
+                # enough: at a RESTING cadence (Life360 emits every ~10 min
+                # when still) the trailing fix is never older than
+                # `settled_seconds`, so a subject sitting at home all day
+                # would have their whole day held back as "undecided
+                # movement" — and when it finally flushed, their stationary
+                # fixes came out as 0 km/h, 0 m trips instead of a stay.
+                # Measured on
                 # `test_a_repeating_commute_actually_grows_corridors_over_
                 # days`: 41 such phantom trips, and 7 stays where the fixture
                 # documents zero.
@@ -317,15 +320,29 @@ class MobilityRollup:
                 # the tail has already dwelled like a stay -> treat it as the
                 # stay-in-progress it looks like.
                 #
-                # Only for `None`. When Life360 actually says `is_driving`,
-                # that reading wins over the spatial proxy — gridlock is
-                # precisely a real drive whose tail looks spatially like a
-                # stay, and the signal is the thing bound to the real
-                # property (`test_a_gridlocked_drive_never_writes_a_stay_
-                # while_the_tail_is_still_movement`).
+                # Originally this gate applied ONLY to `is_driving is None`
+                # — "when Life360 actually says `is_driving`, that reading
+                # wins over the spatial proxy" (gridlock is a real drive
+                # whose tail looks spatially like a stay). Production
+                # evidence (issue #80) overturned that: Life360's flag is
+                # NOISY AT REST — people sitting at home produce
+                # `is_driving=True` fixes (66-100 such fixes per person at
+                # their home coordinates, verified 2026-08-29). With the
+                # flag winning over the spatial proxy, a genuine home stay
+                # whose tail fix happens to read `is_driving=True` is never
+                # settled, never closed, and its fixes are watermark-consumed
+                # forever — stays generation halted for 10 days after the
+                # 2026-08-20 trip-settlement fix wired the flag through.
+                # The spatial proxy is now the discriminator for `True` too:
+                # a tail that has already dwelled past `min_dwell_ms` is the
+                # stay-in-progress it looks like, whatever the flag says.
+                # The gridlock false-positive this admits (a real drive
+                # stuck in traffic whose tail dwells past the bar) is the
+                # accepted trade — it writes ONE stay, once, and the
+                # watermark advances past it; the flag-noise false-negative
+                # it fixes loses every stay a subject actually had.
                 tail_dwelled = (
-                    chunk[-1].is_driving is None
-                    and seg.open_stay is not None
+                    seg.open_stay is not None
                     and seg.open_stay.ended_ts - seg.open_stay.started_ts
                     >= min_dwell_ms
                 )
@@ -382,14 +399,43 @@ class MobilityRollup:
             # An open stay closes THIS cycle only once settled_seconds has
             # elapsed since its last fix (spec §3.2/§4) — a wall-clock
             # decision run_once makes, not segment_stays itself.
+            #
+            # If it does NOT close this cycle, its fixes must stay readable:
+            # the watermark advancing past them would mean the next cycle
+            # re-segments only the NEW fixes, the open stay's true arrival
+            # time is lost, and when the subject finally leaves, the radius
+            # break that would close the home group never fires (the home
+            # fixes are no longer in the batch) — the stay is silently
+            # dropped. That is the production mechanism behind issue #80:
+            # stays generation halted for 10 days because every overnight
+            # home session was consumed fix-by-fix and never closed. This is
+            # the stay-side counterpart of the trip hold below: hold the
+            # watermark to the fix immediately before the open stay's first
+            # fix, so the whole group is re-read next cycle until its fate
+            # is decided (radius break closes it, or the clock settles it).
+            stay_hold_id: int | None = None
             if last_open_stay is not None:
                 elapsed_s = (now_ms - last_open_stay.ended_ts) / 1000
+                span_ms = last_open_stay.ended_ts - last_open_stay.started_ts
                 if (
                     elapsed_s >= self._cfg.settled_seconds
-                    and last_open_stay.ended_ts - last_open_stay.started_ts
-                    >= min_dwell_ms
+                    and span_ms >= min_dwell_ms
                 ):
                     new_stays.append(last_open_stay)
+                elif span_ms >= min_dwell_ms:
+                    # A real stay-in-progress (past the same min-dwell bar
+                    # `_close` uses) that has not yet settled: hold the
+                    # watermark so its true arrival time survives until the
+                    # radius break or the clock closes it. Sub-min-dwell
+                    # open stays are NOT held — they are not stays yet, and
+                    # holding them would stall the pipeline on noise.
+                    stay_hold_id = next(
+                        (
+                            f.id for f in fixes
+                            if f.ts >= last_open_stay.started_ts
+                        ),
+                        fixes[0].id,
+                    )
             if new_stays:
                 await self._store.write_stays(new_stays)
                 for closed_stay in new_stays:
@@ -483,11 +529,15 @@ class MobilityRollup:
             # holding a group back is only not a data loss if its fixes stay
             # readable.
             #
-            # Only a TRIP hold ever reduces this below `fixes[-1].id`. An
-            # unsettled open STAY still advances the watermark past its own
-            # fixes exactly as it always has — a real but separate question
-            # about the stay-side mechanism, deliberately out of scope here
-            # (design §2.3).
+            # A TRIP hold reduces this below `fixes[-1].id` when the
+            # trailing group is undecided movement. A STAY hold (issue #80)
+            # does the same when the trailing group is an open stay that
+            # has not yet settled — its fixes must stay readable until the
+            # radius break or the clock closes it, or the stay is silently
+            # dropped (the production mechanism that halted stays for 10
+            # days). Both holds are bounded: the stay hold releases when
+            # `settled_seconds` elapses (the block above), the trip hold
+            # when the drive settles or `max_trip_duration_seconds` fires.
             #
             # Never moves backwards: every held-back fix came from `fixes`,
             # which `fixes_since` already filtered to `id > last_fix_id`, so
@@ -497,6 +547,8 @@ class MobilityRollup:
             watermark_target = fixes[-1].id
             if trip_hold_id is not None:
                 watermark_target = min(watermark_target, trip_hold_id - 1)
+            if stay_hold_id is not None:
+                watermark_target = min(watermark_target, stay_hold_id - 1)
             await self._store.advance_fix_watermark(
                 subject_id=subject_id, fix_id=watermark_target
             )
@@ -555,7 +607,13 @@ class MobilityRollup:
         # waste (spec §4.2).
         if fixes:
             new_last_cluster = fixes[-1].id
-            if new_last_cluster > last_cluster_id:
+            if new_last_cluster > last_cluster_id or new_stays:
+                # `or new_stays`: a stay closed purely by the clock (issue
+                # #80 stay-hold cycle — the batch is the SAME held fixes the
+                # previous cycle already clustered at, so the id gate alone
+                # is false) still needs clustering/labeling now, not on some
+                # unrelated future fix. Clustering is idempotent on
+                # unchanged input, so the extra run is cheap and safe.
                 clusters = cluster_places(
                     all_stays, eps_m=self._cfg.cluster_eps_m,
                     min_samples=self._cfg.cluster_min_samples,
