@@ -423,13 +423,41 @@ class MobilityRollup:
                     and span_ms >= min_dwell_ms
                 ):
                     new_stays.append(last_open_stay)
-                elif span_ms >= min_dwell_ms:
-                    # A real stay-in-progress (past the same min-dwell bar
-                    # `_close` uses) that has not yet settled: hold the
-                    # watermark so its true arrival time survives until the
-                    # radius break or the clock closes it. Sub-min-dwell
-                    # open stays are NOT held — they are not stays yet, and
-                    # holding them would stall the pipeline on noise.
+                elif elapsed_s < DWELL_CAP_MS / 1000:
+                    # Hold ANY open stay that has not yet settled — whether it
+                    # is sub-min-dwell (sparse arrival, issue #82) or past
+                    # min-dwell but not yet settled (issue #80). The old gate
+                    # held only when span >= min_dwell, which is exactly the
+                    # sparse-arrival shape that broke production: Life360's
+                    # resting cadence is one fix every 10-55 min, so each
+                    # tick sees a single new fix, the group's span stays
+                    # below min_dwell_ms, and the watermark advanced past
+                    # every fix — the group never grew, and a real overnight
+                    # home stay was consumed fix-by-fix and never written.
+                    #
+                    # The hold ceiling is DWELL_CAP_MS, NOT settled_seconds:
+                    # `_chunk_by_gap` splits the batch wherever the gap
+                    # between consecutive fixes exceeds DWELL_CAP_MS, so a
+                    # fix arriving more than DWELL_CAP_MS after the group's
+                    # last fix can never join this group — holding past that
+                    # point would only stall the watermark on a group whose
+                    # fate is already decided. settled_seconds (15 min) is
+                    # too short for this job: at a resting cadence of one
+                    # fix every 10-55 min, the clock runs past the group
+                    # between fixes, the watermark advances, and the next
+                    # fix starts a fresh one-fix group that can never reach
+                    # min_dwell — the issue #82 production shape. DWELL_CAP
+                    # (31.7 min) covers the longest inter-fix gap that can
+                    # still belong to one group, so holding to it keeps the
+                    # group readable until either the clock settles it
+                    # (span >= min_dwell AND elapsed >= settled_seconds
+                    # closes it above) or a radius break closes it.
+                    #
+                    # The cost is bounded: a subject who passes through and
+                    # never returns holds the watermark at most DWELL_CAP_MS
+                    # before the branch below advances it and the group is
+                    # dropped (span < min_dwell), so a lone drive-by fix
+                    # cannot stall the pipeline.
                     stay_hold_id = next(
                         (
                             f.id for f in fixes
@@ -437,6 +465,12 @@ class MobilityRollup:
                         ),
                         fixes[0].id,
                     )
+                # else: elapsed >= DWELL_CAP_MS/1000 but span < min_dwell_ms —
+                # the group is not a stay (never reached the dwell bar) and
+                # any future fix would start a new chunk anyway; advance the
+                # watermark and let the group go. This is the pre-#82
+                # behaviour for sub-min-dwell groups and it is correct: a
+                # lone drive-by fix must not stall the pipeline.
             if new_stays:
                 await self._store.write_stays(new_stays)
                 for closed_stay in new_stays:
