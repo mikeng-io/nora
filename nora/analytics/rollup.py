@@ -180,6 +180,12 @@ class MobilityRollup:
         )
         fixes = lag_probe[:batch_limit]
 
+        # Declared before the `if fixes:` block so Speed 3's dirty-set gate
+        # below can reference it without a possibly-unbound warning; when
+        # `fixes` is empty both stay and trip lists are empty by definition.
+        new_stays: list[Stay] = []
+        new_trips: list[Trip] = []
+
         if fixes:
             # `address=` is load-bearing from Tier 5 on (Task 2): it is the
             # ONLY input `extract_trips` has for a trip's corridor
@@ -222,8 +228,6 @@ class MobilityRollup:
             # against (see `tests/unit/test_mobility.py`'s label/cluster
             # fixtures, which construct discrete per-day `Stay` objects
             # directly rather than deriving them from a raw fix stream).
-            new_stays: list[Stay] = []
-            new_trips: list[Trip] = []
             # The lowest fix id `extract_trips` refused to finalize this
             # cycle — the watermark stops one short of it below so the
             # undecided group is re-read whole next cycle instead of being
@@ -277,8 +281,7 @@ class MobilityRollup:
                 # `last_open_stay` is deliberately left unset in that case
                 # too, for the same reason: a group being held back must not
                 # also be closable as a stay by the `settled_seconds` block
-                # below (`test_a_gridlocked_drive_never_writes_a_stay_while_
-                # the_tail_is_still_movement`).
+                # below (`test_a_gridlocked_drive_writes_one_stay_once`).
                 #
                 # All three readings matter, and `None` is NOT a synonym for
                 # `False` here. `True` (still driving) never settles. `False`
@@ -431,7 +434,7 @@ class MobilityRollup:
                             f.id for f in fixes
                             if f.ts >= last_open_stay.started_ts
                         ),
-                        fixes[-1].id,
+                        fixes[0].id,
                     )
             if new_stays:
                 await self._store.write_stays(new_stays)
@@ -604,7 +607,13 @@ class MobilityRollup:
         # waste (spec §4.2).
         if fixes:
             new_last_cluster = fixes[-1].id
-            if new_last_cluster > last_cluster_id:
+            if new_last_cluster > last_cluster_id or new_stays:
+                # `or new_stays`: a stay closed purely by the clock (issue
+                # #80 stay-hold cycle — the batch is the SAME held fixes the
+                # previous cycle already clustered at, so the id gate alone
+                # is false) still needs clustering/labeling now, not on some
+                # unrelated future fix. Clustering is idempotent on
+                # unchanged input, so the extra run is cheap and safe.
                 clusters = cluster_places(
                     all_stays, eps_m=self._cfg.cluster_eps_m,
                     min_samples=self._cfg.cluster_min_samples,

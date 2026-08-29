@@ -7,7 +7,7 @@
     "sub-min-dwell open stays are not held \u2014 they are not stays yet, and holding them would stall the pipeline on noise"
   ],
   "limitations": [
-    "a gridlocked drive whose tail dwells past min_dwell writes one stay (previously zero) \u2014 accepted trade for recovering real stays",
+    "a gridlocked drive whose tail dwells past min_dwell writes one stay (previously zero) and finalizes the drive-so-far as a trip mid-journey, splitting it into two trips; repeated stop-and-go yields N stays + N+1 trips, affecting corridor/speed stats \u2014 accepted trade for recovering real stays",
     "historical stays lost during the 10-day window are not backfilled; fixes were already watermark-consumed"
   ]
 }
