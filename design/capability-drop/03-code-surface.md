@@ -53,12 +53,24 @@ to two.
 
 ## 3. Doctrine tier machinery — `nora/doctrine/loader.py` + authored files
 
+**The loader has its OWN capability machinery beyond the kind tuple — this
+was the gap the first two review runs surfaced.** Deleting
+`ToolRegistry.capability()` alone leaves `DoctrineStore` still carrying a
+`capability:` parameter, still appending a generated section in `_scan`, and
+still enforcing the `DERIVED_KINDS`/`AUTHORITY_TERMINALS` tuples — the block
+would survive as an empty shell. The full loader surface:
+
 | file | change |
 |---|---|
-| `loader.py` `DERIVED_KINDS = ("capability", "situation")` | → `("situation",)` |
-| `loader.py` `AUTHORITY_TERMINALS` (~line 67) | remove `"capability"` → `("situation", "message-content", "tool-output")` |
-| `loader.py` module docstring (lines 6-28) | update the "capability sentences have no owner" argument — now only situation is derived |
-| `loader.py` `check_kind_boundaries` (catalogue gate) | keep — still receives `tool_names` from composition |
+| `loader.py` `DERIVED_KINDS = ("capability", "situation")` (line 60) | → `("situation",)` |
+| `loader.py` `AUTHORITY_TERMINALS = ("capability", "situation", …)` (line 67) | → `("situation", "message-content", "tool-output")` |
+| `loader.py` `CAPABILITY_ORDER = 35` (line 332) | **delete** |
+| `loader.py` `CAPABILITY_DESCRIPTION` (line 333) | **delete** |
+| `loader.py` `_capability_section()` (line 339) | **delete** — the one-section-with-no-file constructor |
+| `loader.py` `DoctrineStore.__init__` `capability: str = ""` param (line 496) | **delete param + `self._capability`** — the "empty value assembles no capability" default becomes simply "no capability exists" |
+| `loader.py` `_scan` line 557-558 (`if self._capability: sections.append(...)`) | **delete** — nothing appends a generated section; `_scan` returns only authored files |
+| `loader.py` check_kind_boundaries error strings ("Capability is generated from the registry") | reword to "tools are described by their schemas" — the gate itself survives (it prevents authored doctrine naming tools) |
+| `loader.py` module docstring (lines 6-28) | update the "capability sentences have no owner" argument — now only `situation` is derived |
 | `constraints.md` front-matter `authority_below` | drop `capability` from the list |
 | `identity.md` front-matter `authority_below` | drop `capability` |
 | `conduct.md` front-matter `authority_below` | drop `capability`; add the two behavioural rules (see `02-rules-to-conduct.md`, draft wording) |
@@ -80,7 +92,15 @@ to two.
 | `tests/test_prefill.py` header tests (~725-763) | keep — they pin `_context_header` naming no tool; their docstring references to "the capability section" need rewording |
 | `tests/test_reminder_tools.py::test_the_three_tools_are_described_to_the_model` (~504-510) | rewrite — instead of `- remind — ... in block`, assert the docstring of each tool names its routing trigger (what the when-clause used to guarantee) |
 | `tests/test_config.py::test_a_budget_below_one_refuses_to_start` (~732) | wording update ("advertised in the capability block" → "described by its schema") |
-| `tests/test_doctrine_loader.py` (~340-360) | `test_a_file_claiming_a_derived_kind_is_a_startup_failure` loops over `("capability", "situation")` → `("situation",)`; `authority_below` test strings drop capability |
+| `tests/test_doctrine_loader.py::test_a_file_claiming_a_derived_kind_is_a_startup_failure` (~347-360) | loops over `("capability", "situation")` → `("situation",)`; `authority_below` test strings drop capability |
+| `tests/test_doctrine_loader.py::test_the_generated_capability_section_joins_the_assembly_without_a_file` (~363-369) | **delete** — relies on `_store(doctrine_dir, capability=...)` (the param being removed) |
+| `tests/test_doctrine_loader.py` (~372+, "One capability section, and it is the generated one. A file at order 35") | **delete** — pins `CAPABILITY_ORDER = 35` collision, a constant being removed |
+| `tests/test_doctrine_assembly.py::test_the_capability_section_is_generated_and_sits_between_conduct_and_constraints` (~32-49) | **delete** — pins `capability=ToolRegistry().capability()` and the generated section's position |
+| `tests/test_doctrine_assembly.py::test_without_a_generated_block_there_is_no_capability_section_at_all` (~52) | **keep as the new invariant, reworded** — "no capability section at all" is now simply the always-true state; the test becomes `_store(doctrine_dir).get()` produces no capability section (which it now does without the `capability=` arg) |
+| `tests/test_composition.py::test_the_doctrine_the_root_builds_carries_the_generated_capability` (~156-171) | **delete** — pins `'<section kind="capability"'` in the root-built doctrine text |
+| `tests/web/test_api.py` (~105-115, `/app/v1/doctrine` returns `[identity, voice, silence, conduct, capability, constraints]`) | **update** — expected section list drops `"capability"` |
+| `tests/web/test_doctrine.py` (~8-11, `build_doctrine_payload` section names) | **update** — expected list drops `"capability"` |
+| `tests/unit/test_engagement_pipeline.py` (~1609, "and `capability()` are all still the production ones") | wording update — drop the `capability()` reference |
 | `tests/conftest.py` ~line 81 | drop `capability=ToolRegistry().capability()` from the doctrine fixture |
 | `tests/unit/test_tool_registry.py` | replace any `when`-presence pins with docstring-presence pins (the new gate: every registered tool's callable has a docstring). `test_the_live_only_tools...` / `test_web_search_and_web_fetch...` / `test_skills_is_not_live_only` / `test_with_mcp_live_only_matches_plain` pin the deleted helpers directly and die with them. `test_every_tool_declares_a_time_axis` (time_shiftable values) is KEPT |
 | `tests/test_acceptance_rules.py` (~756-786, DEC-92) | **rewrite, not delete** — this is the acceptance test that reads `NATIVE_TOOLS["recall_lookups"].when` and asserts `actually` / `doubted`/`guessed` / `re-running`. With the `when` field deleted, the assertion target moves to the **merged docstring** (same three phrases must survive there). Its second half (conduct.md "must NOT name the tool") is unchanged in spirit but its parenthetical — "the registry is capability's source of truth" — needs rewording, and the moved closed-world/sourcing rules in conduct.md must still not introduce tool names |
