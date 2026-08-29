@@ -81,7 +81,9 @@ api_key_env = "OMNIROUTE_API_KEY"        # env var NAME, never the value
 # `deepseek-v4-flash` and NEVER `-pro` (operator). Measured, `pro` is not better
 # at the one thing that matters here — it obeyed a forced tool_choice 2/3 where
 # flash-at-none obeyed 8/8 — so the larger model buys nothing and costs more.
-model = "ollamacloud/deepseek-v4-flash"
+# Tagged :0731 (2026-08-30) — OmniRoute catalog re-sync after restart dropped
+# the bare id; upstream only exposes the tagged variant now. See catalog-400.
+model = "ollamacloud/deepseek-v4-flash:0731"
 # The provider's per-CALL ceiling — NOT the turn's budget (see [llm.limits]
 # below, which is where the loop's budget lives). Was 4000, an unmeasured
 # number that doubled as the loop budget; measured 2026-08-06, the largest
@@ -372,7 +374,8 @@ enabled = true
 # swapping the model quietly would hide that.
 #
 # Reopen with evidence from real runs, not before.
-model = "ollamacloud/deepseek-v4-flash"
+# Tagged :0731 (2026-08-30) — same catalog-400 fix as [llm].model.
+model = "ollamacloud/deepseek-v4-flash:0731"
 # NONE, and it is the fix for the knowledge tier's first production failure
 # (2026-08-28). Reasoning is billed as COMPLETION on this model, so the effort
 # setting is a budget it spends BEFORE writing anything — and at the tier's
@@ -955,7 +958,12 @@ enabled = true
 # max_age_seconds = 86400
 # batch_limit = 400
 # max_rendered_lexemes = 6
-# model = "ollamacloud/deepseek-v4-flash"
+# Tagged :0731 (2026-08-30) — same catalog-400 fix as [llm].model. UNCOMMENTED
+# because the bare code default (`ollamacloud/deepseek-v4-flash`) 400s against
+# the live OmniRoute catalog after the re-sync; this lane feeds the dream
+# consolidator AND the reply-path dispute classifier, so the bare id cost
+# real tags on 2026-08-30 (17:40Z recognition / 18:05Z dream 400s).
+model = "ollamacloud/deepseek-v4-flash:0731"
 # timeout_seconds = 120.0
 #
 # false → true (operator, 2026-08-19). Plans 2 (exchange patterns, DEC-120)
