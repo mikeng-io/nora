@@ -1746,6 +1746,7 @@ def build_tool_specs(
     vision_cache=None,
     describe_models: Mapping[str, str] | None = None,
     describe_providers: Mapping[str, str] | None = None,
+    describe_max_bytes: Mapping[str, int] | None = None,
     search_source=None,
     weather_source=None,
     presence_source=None,
@@ -3371,6 +3372,11 @@ def build_tool_specs(
                         f"in it.",
             }
         describe_provider = (describe_providers or {}).get(modality, "omniroute")
+        # Per-modality byte ceiling: a modality that names one overrides the
+        # shared `vision_max_bytes` (image-sized) so a video clip that would
+        # otherwise hit `too_large` can still reach the describer. Absent (0)
+        # keeps the shared ceiling.
+        describe_ceiling = (describe_max_bytes or {}).get(modality, 0) or None
 
         # Cache by content hash BEFORE the blob is even decrypted: the sha256 is
         # the content, so a stored description is valid forever for it. A hit
@@ -3404,7 +3410,7 @@ def build_tool_specs(
         try:
             result = await vision_source.describe(
                 data=data, media_type=media_type, model=describe_model,
-                provider=describe_provider,
+                provider=describe_provider, max_bytes=describe_ceiling,
             )
         except Exception:
             # `VisionClient.describe` is documented never to raise (it turns
@@ -5944,6 +5950,7 @@ def build_tools(
     vision_cache=None,
     describe_models: Mapping[str, str] | None = None,
     describe_providers: Mapping[str, str] | None = None,
+    describe_max_bytes: Mapping[str, int] | None = None,
     search_source=None,
     weather_source=None,
     presence_source=None,

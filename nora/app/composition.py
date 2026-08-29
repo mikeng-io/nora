@@ -404,6 +404,30 @@ def _kimi_api_key_env(cfg: Config) -> str:
     return "KIMI_CODE_API_KEY"
 
 
+def _describe_max_bytes(cfg: Config) -> dict[str, int]:
+    """Modality → the byte ceiling ITS describer is allowed to send.
+
+    Present only when the modality's `DescriberConfig.max_bytes` is non-zero —
+    absence (0) means "inherit the VisionClient's shared `vision_max_bytes`".
+    Same enable+model gate as `_describe_models`/`_describe_providers`, so the
+    three maps cannot disagree about which modalities are live; the ceiling is
+    the one field that is allowed to vary per modality because video bytes are
+    routinely larger than any still image (an image-sized ceiling would turn
+    every real clip into `too_large`).
+    """
+    resolved: dict[str, int] = {}
+    for modality in ("image", "audio", "video"):
+        describer = cfg.media.describer_for(modality)
+        if (
+            describer is not None
+            and describer.enabled
+            and describer.model
+            and describer.max_bytes
+        ):
+            resolved[modality] = describer.max_bytes
+    return resolved
+
+
 def _compute_workspace_host_root(cfg: Config) -> Path:
     """The host-side path of whatever is bind-mounted at `store.data_dir`.
 
@@ -1792,6 +1816,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),
         describe_providers=_describe_providers(cfg),
+        describe_max_bytes=_describe_max_bytes(cfg),
         blobs=blobs, descriptions=media_descriptions, search=search_client,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,

@@ -44,6 +44,31 @@ async def test_an_unknown_hash_describes_to_none(store):
     assert await store.describe(sha256="b" * 64) is None
 
 
+async def test_an_index_placeholder_row_describes_to_none(store):
+    """The DEC-138 M4 inbound write gives every held byte a
+    `description=""` ROW before any vision model has run — the row is the
+    index entry, not a description. `describe` MUST NOT serve that
+    placeholder as a cached description, or the first `media_fetch` of an
+    undescribed medium gets ok+chars=0 and never invokes the describer
+    (the 2026-08-30 video regression: cache hit on the empty inbound row).
+    Empty and missing must be indistinguishable at the cache boundary: both
+    None."""
+    await store.remember(
+        platform="signal", token="sticker:empty:1",  # noqa: S106
+        blob=MediaBlob(sha256="e" * 64, media_type="video/mp4", size=13383492),
+        description="", model="",
+    )
+
+    assert await store.describe(sha256="e" * 64) is None
+    # And a later real description wins — the placeholder is just index.
+    await store.remember(
+        platform="signal", token="sticker:empty:1",  # noqa: S106
+        blob=MediaBlob(sha256="e" * 64, media_type="video/mp4", size=13383492),
+        description="a cat video", model="k3-256k",
+    )
+    assert await store.describe(sha256="e" * 64) == "a cat video"
+
+
 async def test_remember_makes_both_levels_hit(store):
     await store.remember(
         platform="signal", token=TOKEN, blob=BLOB,

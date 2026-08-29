@@ -36,10 +36,11 @@ class _RecordingVision:
 
     async def describe(
         self, *, data, media_type, prompt="", model="", provider="omniroute",
+        max_bytes: int | None = None,
     ):
         self.calls.append({
             "media_type": media_type, "prompt": prompt, "model": model,
-            "provider": provider,
+            "provider": provider, "max_bytes": max_bytes,
         })
         return VisionResult(available=True, description="something")
 

@@ -1141,6 +1141,16 @@ provider = "omniroute"
 enabled = true
 model = "k3-256k"
 provider = "kimi"
+# Video bytes are routinely far larger than a still image; the shared
+# `vision_max_bytes` (8 MiB, chosen for images) would turn a real clip into
+# `too_large`. Set to the SAME 100 MiB as `[media] max_bytes` — the custody
+# ceiling, i.e. "whatever Nora can receive, she can describe". A 100 MiB
+# clip is a ~133 MiB base64 body to api.kimi.com; the direct lane's per-call
+# timeout (derived from llm budgets) must cover that upload+inference. If a
+# real clip ever times out at the top of this range, the `ms://file-id`
+# upload lane (probed 2026-08-30 for larger videos) is the escape hatch —
+# base64 inline works for small clips, file-id for big ones.
+max_bytes = 104857600
 
 [analytics]
 # The presence analytics substrate (DEC-115) — the DERIVED layer over

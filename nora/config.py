@@ -398,6 +398,13 @@ class DescriberConfig(BaseModel):
     model: str = ""
     provider: Literal["omniroute", "kimi"] = "omniroute"
     api_key_env: str = ""
+    # A per-modality byte ceiling for the describer, overriding the shared
+    # `media.vision_max_bytes` (which exists for still images — "no still
+    # image worth describing is that large"). Video bytes are routinely far
+    # larger than any still, so the image-sized ceiling would turn every
+    # real clip into `too_large`; a modality that does not need more leaves
+    # this 0 and inherits the shared ceiling.
+    max_bytes: int = 0
 
 
 class DescribersConfig(BaseModel):

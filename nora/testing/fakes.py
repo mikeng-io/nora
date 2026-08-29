@@ -649,7 +649,13 @@ class FakeMediaDescriptionStore:
         self.described.append(sha256)
         if self.unavailable:
             return None
-        return self.descriptions.get(sha256)
+        description = self.descriptions.get(sha256)
+        # EMPTY description is a MISS, matching `SqlMediaDescriptionStore`: the
+        # DEC-138 M4 inbound row carries `description=""` as an index
+        # placeholder before any vision model has run, and the cache boundary
+        # must treat that as "not described yet" — never as a cached empty
+        # description that short-circuits the describer.
+        return description if description else None
 
     async def remember(
         self, *, platform: str, token: str, blob: MediaBlob,

@@ -95,6 +95,7 @@ class ToolRegistry:
         vision: VisionClient | None = None,
         describe_models: Mapping[str, str] | None = None,
         describe_providers: Mapping[str, str] | None = None,
+        describe_max_bytes: Mapping[str, int] | None = None,
         blobs: BlobStore | None = None,
         descriptions: MediaDescriptionStore | None = None,
         search: SearchProvider | None = None,
@@ -158,6 +159,10 @@ class ToolRegistry:
         # no second flag to read. Audio and video ship absent (2026-08-17 spec).
         self._describe_models = dict(describe_models or {})
         self._describe_providers = dict(describe_providers or {})
+        # Per-modality byte ceilings for the describer, present only when the
+        # modality names one (0/None = inherit the VisionClient's shared
+        # ceiling). Same VALUE-not-object split as the two maps above.
+        self._describe_max_bytes = dict(describe_max_bytes or {})
         self._blobs = blobs
         # The description cache lives HERE, once per process, for the reason the
         # transit catalogue does: keyed by content hash, a per-tag cache would
@@ -627,6 +632,7 @@ class ToolRegistry:
             vision_source=self._vision, blob_store=self._blobs,
             vision_cache=self._vision_cache, describe_models=self._describe_models,
             describe_providers=self._describe_providers,
+            describe_max_bytes=self._describe_max_bytes,
             search_source=self._search, weather_source=self._weather,
             presence_source=self._presence, presence_circles=self._circles,
             location_trusted=location_trusted,

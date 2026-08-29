@@ -55,7 +55,18 @@ class SqlMediaDescriptionStore:
         except Exception:
             log.exception("media_objects read failed; treating as a miss")
             return None
-        return None if row is None else str(row.description)
+        if row is None or not row.description:
+            # EMPTY description is a MISS, not a hit. The DEC-138 M4 inbound
+            # write (ingest/stages/media.py) gives every byte Nora takes
+            # custody of a `description=""` row BEFORE any vision model has
+            # run — the row is the index entry, not a description. Serving
+            # that placeholder as a cached description made every first
+            # `media_fetch` of an undescribed medium return ok+chars=0 and
+            # NEVER call the describer. Empty/None must reach the caller as
+            # None so `VisionCache.aget`/`media_fetch` treat it as a miss
+            # and actually describe the bytes.
+            return None
+        return str(row.description)
 
     async def remember(
         self, *, platform: str, token: str, blob: MediaBlob,
