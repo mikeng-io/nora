@@ -366,6 +366,24 @@ def _describe_models(cfg: Config) -> dict[str, str]:
     return resolved
 
 
+def _describe_providers(cfg: Config) -> dict[str, str]:
+    """Modality → the provider its describer travels through.
+
+    The same enable+model gate as `_describe_models` — a modality only appears
+    when it can actually describe — so the two maps cannot disagree about which
+    modalities are live. The provider DEFAULT is `"omniroute"` everywhere: a
+    config written before the field existed describes through the process-wide
+    gateway client exactly as before. Only a modality whose config names
+    `provider = "kimi"` routes direct.
+    """
+    resolved: dict[str, str] = {}
+    for modality in ("image", "audio", "video"):
+        describer = cfg.media.describer_for(modality)
+        if describer is not None and describer.enabled and describer.model:
+            resolved[modality] = describer.provider
+    return resolved
+
+
 def _compute_workspace_host_root(cfg: Config) -> Path:
     """The host-side path of whatever is bind-mounted at `store.data_dir`.
 
@@ -1222,8 +1240,32 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `aclose()` would dispose the engine everything else is still using).
     media_descriptions = SqlMediaDescriptionStore(engine)
     media_objects = SqlMediaObjectStore(engine)
+    # The per-modality DIRECT lanes (provider-aware describers, 2026-08-30):
+    # a describer configured `provider = "kimi"` travels through a client
+    # pointed at `api.kimi.com/coding/v1`, NOT the process-wide OmniRoute
+    # client — OmniRoute drops `video_url` content blocks (probe 2026-08-30:
+    # router prompt tokens 95 vs native 3164 for the same payload), so a
+    # video described through it would reach the model as text only. Built
+    # only when SOME describer selects kimi, so a deployment that stays on
+    # omniroute builds nothing new and needs no KIMI_CODE_API_KEY.
+    describe_providers = _describe_providers(cfg)
+    kimi_direct_client: AsyncOpenAI | None = None
+    if "kimi" in describe_providers.values():
+        from nora.agent.factory import create_client
+        kimi_api_key = os.environ.get("KIMI_CODE_API_KEY", "")
+        if not kimi_api_key:
+            log.warning(
+                "media describer provider 'kimi' selected but KIMI_CODE_API_KEY "
+                "is unset — kimi-modality describers answer unavailable",
+            )
+        else:
+            kimi_direct_client = create_client(
+                base_url="https://api.kimi.com/coding/v1",
+                api_key=kimi_api_key,
+            )
     vision_client = VisionClient(
         client=client,
+        direct_client=kimi_direct_client,
         model=cfg.media.vision_model,
         max_tokens=cfg.media.vision_max_tokens,
         reasoning_effort=cfg.media.vision_reasoning_effort,
@@ -1725,7 +1767,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "— music agent tools stay unavailable"
             )
     tool_registry = ToolRegistry(
-        route=route_client, vision=vision_client, describe_models=_describe_models(cfg),
+        route=route_client, vision=vision_client,
+        describe_models=_describe_models(cfg),
+        describe_providers=_describe_providers(cfg),
         blobs=blobs, descriptions=media_descriptions, search=search_client,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,

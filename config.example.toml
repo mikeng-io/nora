@@ -1363,14 +1363,24 @@ headers_env = ""                      # same shape/var as obs.tracing.headers_en
 # reachable route can hear or watch. Enabling either is a flag and a model name,
 # with no code change; until a probe answers that question, a voice note is
 # answered `unavailable` («I couldn't check»), never `nothing_found`.
+#
+# `provider` selects the TRANSPORT (2026-08-30): `"omniroute"` (default) keeps
+# the process-wide gateway client; `"kimi"` travels DIRECT to
+# `api.kimi.com/coding/v1` using `KIMI_CODE_API_KEY` — required for VIDEO,
+# because OmniRoute drops `video_url` content blocks (probe 2026-08-30: router
+# prompt tokens 95 vs native 3164 for the same payload). A kimi provider whose
+# key is unset answers `unavailable`, never a silent omniroute fallback.
 [media.describe.image]
 enabled = true
 model = "ollamacloud/minimax-m3"
+provider = "omniroute"
 
 [media.describe.audio]
 enabled = false
 model = ""
+provider = "omniroute"
 
 [media.describe.video]
 enabled = false
 model = ""
+provider = "omniroute"

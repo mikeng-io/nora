@@ -376,12 +376,28 @@ class DescriberConfig(BaseModel):
     Two fields and not one, because «no model named» and «switched off» are
     different states an operator reaches for differently, and both have to be
     expressible without deleting the other.
+
+    `provider` is the port selector (the `[image_gen].provider` shape, DEC-137):
+    `"omniroute"` (default) keeps the process-wide OmniRoute client — a config
+    written before this field existed must load unchanged — and `"kimi"` builds
+    a DIRECT client to `api.kimi.com/coding/v1`. The direct lane exists because
+    OmniRoute drops `video_url` content blocks (probe 2026-08-30: router prompt
+    tokens 95 vs native 3164 for the same payload); Kimi's own endpoint accepts
+    base64 video data-URIs and `ms://` file references.
+
+    `api_key_env` NAMES the env var holding the direct lane's key (DEC-8):
+    the value never lands in config.toml. Empty with `provider="kimi"` falls
+    back to `KIMI_CODE_API_KEY`. A kimi provider whose key does not resolve is
+    a wiring gap — the modality answers `unavailable` («I couldn't check»),
+    never a half-built client call.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     model: str = ""
+    provider: Literal["omniroute", "kimi"] = "omniroute"
+    api_key_env: str = ""
 
 
 class DescribersConfig(BaseModel):

@@ -209,8 +209,10 @@ class VisionClient:
         reasoning_effort: str,
         max_bytes: int,
         timeout_seconds: float,
+        direct_client: AsyncOpenAI | None = None,
     ) -> None:
         self._client = client
+        self._direct_client = direct_client
         self._model = model
         self._max_tokens = max_tokens
         self._reasoning_effort = reasoning_effort
@@ -218,7 +220,8 @@ class VisionClient:
         self._timeout = timeout_seconds
 
     async def describe(
-        self, *, data: bytes, media_type: str, prompt: str = "", model: str = ""
+        self, *, data: bytes, media_type: str, prompt: str = "", model: str = "",
+        provider: str = "omniroute",
     ) -> VisionResult:
         """MiMo's sentence about `data`, or an unavailable result. Never raises.
 
@@ -235,6 +238,15 @@ class VisionClient:
         and the prompt, not a second client. That matters for the aggregate
         timeout proof `derive_vision_timeout` makes: three clients would be
         three budgets, and three hung calls could outlast the loop.
+
+        `provider` selects the transport: `"omniroute"` (default; the process-
+        wide gateway client, `_client` — every pre-provider caller keeps its
+        exact behaviour) or `"kimi"` (the direct `_direct_client`, when one
+        was injected). A `"kimi"` provider with no direct client is a WIRING
+        GAP and answers `unavailable` — never a silent fallback to OmniRoute,
+        which would send the video bytes to a router that drops `video_url`
+        and answer with a model claiming it saw no video (R-27: an ERROR is
+        never a PASS).
         """
         # An unset prompt resolves from the blob's OWN MIME type, so the
         # modality picks its question without any caller having to know the
@@ -263,7 +275,9 @@ class VisionClient:
             # The whole retry loop is inside ONE wait_for, so even two attempts
             # cannot push the total past the derived budget (< the loop's own).
             text = await asyncio.wait_for(
-                self._describe_with_retry(block=block, prompt=prompt, model=model),
+                self._describe_with_retry(
+                    block=block, prompt=prompt, model=model, provider=provider,
+                ),
                 timeout=self._timeout,
             )
         except TimeoutError:
@@ -280,21 +294,36 @@ class VisionClient:
         return VisionResult(available=True, description=text)
 
     async def _describe_with_retry(
-        self, *, block: dict[str, object], prompt: str, model: str = ""
+        self, *, block: dict[str, object], prompt: str, model: str = "",
+        provider: str = "omniroute",
     ) -> str:
         last_exc: Exception = RuntimeError("vision retry loop did not run")
         for attempt in range(2):
             try:
-                return await self._create(block, prompt, model)
+                return await self._create(block, prompt, model, provider)
             except Exception as exc:  # noqa: BLE001 — retried once, then re-raised
                 last_exc = exc
                 log.warning("vision attempt %d failed: %s", attempt + 1, exc)
         raise last_exc
 
     async def _create(
-        self, block: dict[str, object], prompt: str, model: str = ""
+        self, block: dict[str, object], prompt: str, model: str = "",
+        provider: str = "omniroute",
     ) -> str:
-        response = await self._client.chat.completions.create(
+        # `provider` picks the TRANSPORT, not the model. A kimi request whose
+        # direct client was not injected is a wiring gap — the caller has
+        # asked for a provider the composition root did not build — and
+        # answering `unavailable` is the honest fail-closed shape (R-27).
+        # Falling back to `_client` here would be silent: the request would
+        # travel through OmniRoute, which drops `video_url` content blocks
+        # (probe 2026-08-30), and the model would answer about the text it
+        # DID receive. An ERROR reported as a PASS.
+        client = self._client
+        if provider == "kimi":
+            if self._direct_client is None:
+                raise ValueError("provider 'kimi' requested but no direct client injected")
+            client = self._direct_client
+        response = await client.chat.completions.create(
             model=model or self._model,
             max_tokens=self._max_tokens,
             # `type: ignore[list-item]` — the content block is built per

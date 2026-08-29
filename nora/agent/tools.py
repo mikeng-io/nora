@@ -1744,6 +1744,7 @@ def build_tool_specs(
     blob_store=None,
     vision_cache=None,
     describe_models: Mapping[str, str] | None = None,
+    describe_providers: Mapping[str, str] | None = None,
     search_source=None,
     weather_source=None,
     presence_source=None,
@@ -3365,6 +3366,7 @@ def build_tool_specs(
                         f"it. Do not say it was empty and do not guess what was "
                         f"in it.",
             }
+        describe_provider = (describe_providers or {}).get(modality, "omniroute")
 
         # Cache by content hash BEFORE the blob is even decrypted: the sha256 is
         # the content, so a stored description is valid forever for it. A hit
@@ -3397,7 +3399,8 @@ def build_tool_specs(
 
         try:
             result = await vision_source.describe(
-                data=data, media_type=media_type, model=describe_model
+                data=data, media_type=media_type, model=describe_model,
+                provider=describe_provider,
             )
         except Exception:
             # `VisionClient.describe` is documented never to raise (it turns
@@ -5936,6 +5939,7 @@ def build_tools(
     blob_store=None,
     vision_cache=None,
     describe_models: Mapping[str, str] | None = None,
+    describe_providers: Mapping[str, str] | None = None,
     search_source=None,
     weather_source=None,
     presence_source=None,
@@ -5968,6 +5972,7 @@ def build_tools(
         room=room, transit_source=transit_source, route_source=route_source,
         vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
         describe_models=describe_models,
+        describe_providers=describe_providers,
         search_source=search_source, weather_source=weather_source,
         presence_source=presence_source, presence_circles=presence_circles,
         location_trusted=location_trusted,

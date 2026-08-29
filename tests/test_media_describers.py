@@ -34,8 +34,13 @@ class _RecordingVision:
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    async def describe(self, *, data, media_type, prompt="", model=""):
-        self.calls.append({"media_type": media_type, "prompt": prompt, "model": model})
+    async def describe(
+        self, *, data, media_type, prompt="", model="", provider="omniroute",
+    ):
+        self.calls.append({
+            "media_type": media_type, "prompt": prompt, "model": model,
+            "provider": provider,
+        })
         return VisionResult(available=True, description="something")
 
 
@@ -117,6 +122,39 @@ async def test_an_image_still_reaches_the_image_model(wiring):
     assert recorder.calls[-1]["model"] == "m/image"
 
 
+async def test_modality_provider_is_passed_to_the_describer(wiring):
+    """The provider the modality is configured with must be the one asked FOR,
+    on the CALL — `media_fetch` cannot assume omniroute once the seam exists.
+    Reverting `provider=describe_provider` turns this red."""
+    recorder = _RecordingVision()
+    await _append_image(wiring["store"], conversation_id="g1",
+                        sha256=PNG_SHA, media_type="video/mp4")
+    tool = wiring["build"](
+        vision_source=recorder,
+        describe_models={"video": "k3-256k"},
+        describe_providers={"video": "kimi"},
+    )
+    out = await _call(tool, code=PNG_SHA[:6])
+    assert out["status"] == "ok"
+    assert recorder.calls[-1]["provider"] == "kimi"
+
+
+async def test_modality_defaults_to_omniroute_provider(wiring):
+    """A modality with no provider map entry (every pre-provider caller) still
+    travels through the gateway — the default must be explicit on the call so
+    the tool and the client cannot disagree."""
+    recorder = _RecordingVision()
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    tool = wiring["build"](
+        vision_source=recorder,
+        describe_models={"image": "m/image"},
+        # no describe_providers at all — pre-provider shape
+    )
+    out = await _call(tool, code=PNG_SHA[:6])
+    assert out["status"] == "ok"
+    assert recorder.calls[-1]["provider"] == "omniroute"
+
+
 # ---- the composition root: config -> the mapping the tool reads --------------
 
 def _cfg_with(**describe) -> Config:
@@ -148,6 +186,20 @@ def test_the_composition_root_resolves_the_legacy_alias():
     assert _describe_models(cfg) == {"image": "legacy/only"}
 
 
+def test_the_composition_root_offers_providers_only_for_live_describers():
+    """`_describe_providers` must track `_describe_models` — a modality that
+    cannot describe appears in NEITHER map, and one that can describe defaults
+    to omniroute unless the config names kimi."""
+    from nora.app.composition import _describe_providers
+
+    resolved = _describe_providers(_cfg_with(
+        image={"enabled": True, "model": "m/image"},
+        video={"enabled": True, "model": "k3-256k", "provider": "kimi"},
+        audio={"enabled": False, "model": "m/audio"},
+    ))
+    assert resolved == {"image": "omniroute", "video": "kimi"}
+
+
 # ---- the registry joint ------------------------------------------------------
 
 def test_the_registry_hands_the_describers_to_the_tool():
@@ -159,6 +211,18 @@ def test_the_registry_hands_the_describers_to_the_tool():
 
     registry = ToolRegistry(describe_models={"image": "m/image", "audio": "m/audio"})
     assert registry._describe_models == {"image": "m/image", "audio": "m/audio"}
+
+
+def test_the_registry_hands_the_providers_to_the_tool():
+    """The provider map threads alongside the model map — dropping it would
+    silently route every modality back to omniroute (which drops video_url)."""
+    from nora.agent.registry import ToolRegistry
+
+    registry = ToolRegistry(
+        describe_models={"video": "kimi-code/k3-256k"},
+        describe_providers={"video": "kimi"},
+    )
+    assert registry._describe_providers == {"video": "kimi"}
 
 
 def test_every_describable_modality_has_an_authored_prompt():

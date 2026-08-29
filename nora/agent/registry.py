@@ -94,6 +94,7 @@ class ToolRegistry:
         route: RouteClient | None = None,
         vision: VisionClient | None = None,
         describe_models: Mapping[str, str] | None = None,
+        describe_providers: Mapping[str, str] | None = None,
         blobs: BlobStore | None = None,
         descriptions: MediaDescriptionStore | None = None,
         search: SearchProvider | None = None,
@@ -156,6 +157,7 @@ class ToolRegistry:
         # so absence is the single meaning of «no describer» and the tool needs
         # no second flag to read. Audio and video ship absent (2026-08-17 spec).
         self._describe_models = dict(describe_models or {})
+        self._describe_providers = dict(describe_providers or {})
         self._blobs = blobs
         # The description cache lives HERE, once per process, for the reason the
         # transit catalogue does: keyed by content hash, a per-tag cache would
@@ -624,6 +626,7 @@ class ToolRegistry:
             room=room, transit_source=self._transit, route_source=self._route,
             vision_source=self._vision, blob_store=self._blobs,
             vision_cache=self._vision_cache, describe_models=self._describe_models,
+            describe_providers=self._describe_providers,
             search_source=self._search, weather_source=self._weather,
             presence_source=self._presence, presence_circles=self._circles,
             location_trusted=location_trusted,

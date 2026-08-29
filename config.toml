@@ -655,7 +655,10 @@ encryption_key_env = "MEDIA_ENCRYPTION_KEY"
 # `[media.describe.image] model` overrides it when both are set.
 # The sticker reader resolves through the same describer, so the two
 # image paths cannot disagree about what wrote a shared cache row.
-vision_model = "ollamacloud/minimax-m3"
+# ollamacloud/minimax-m3 → ollamacloud/glm-5.3-flash (2026-08-30, benchmark:
+# GLM 5.3 Flash 2-4s vs M3-style 5-26s per image, accuracy parity except
+# hyphens/punctuation in dense OCR — verified through OmniRoute).
+vision_model = "ollamacloud/glm-5.3-flash"
 vision_max_tokens = 1024
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608
@@ -1117,15 +1120,27 @@ enabled = true
 # answered `unavailable` («I couldn't check»), never `nothing_found`.
 [media.describe.image]
 enabled = true
-model = "ollamacloud/minimax-m3"
+# ollamacloud/minimax-m3 → ollamacloud/glm-5.3-flash (2026-08-30, benchmark:
+# 5-10x faster, accuracy parity; verified through OmniRoute).
+model = "ollamacloud/glm-5.3-flash"
+provider = "omniroute"
 
 [media.describe.audio]
 enabled = false
 model = ""
+provider = "omniroute"
 
 [media.describe.video]
-enabled = false
-model = ""
+# ENABLED 2026-08-30 — kimi DIRECT provider, NOT omniroute: OmniRoute drops
+# `video_url` content blocks (probe: router prompt 95 tokens vs native 3164
+# for the same payload), so a video through it reaches the model as text only
+# and it answers about text it did receive. `KIMI_CODE_API_KEY` must be
+# injected (docker-compose.yml) or this answers `unavailable` — never a
+# silent omniroute fallback. k3-256k over k3 (1M): same video token cost,
+# ~2x faster, half the quota (benchmark 2026-08-30).
+enabled = true
+model = "k3-256k"
+provider = "kimi"
 
 [analytics]
 # The presence analytics substrate (DEC-115) — the DERIVED layer over
