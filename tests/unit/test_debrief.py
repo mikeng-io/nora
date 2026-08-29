@@ -279,14 +279,20 @@ def test_the_objective_speaks_in_the_first_person_about_the_position():
     "you" for the position AND keep the sourcing rubric's own-words
     requirement — a regression to "the assistant" on either half is a
     regression of the fix."""
-    from pathlib import Path
+    from tests.objectives import shipped_objectives
 
-    body = Path("nora/dreamer/objectives/standing-debrief.md").read_text()
+    body = shipped_objectives().objective_body("standing-debrief")
     # The position half: first person, and the old third-person cast is gone.
     assert "You are Nora, reviewing your own finished exchange" in body
     assert "You are not the assistant who answered it" not in body
     assert "what I have committed to" in body
     assert "praise or criticism of my reply" in body
+    # No residual third-person self-reference anywhere in the body — the
+    # fold is addressed as "you" throughout, so "the assistant's" (the
+    # possessive third-person reference to the actor being reviewed) must
+    # not reappear. "You are the assistant who answered it" is the
+    # identity cast itself and stays.
+    assert "the assistant's" not in body
     # The verdict half: still about the fold's own turn, with the sourcing
     # rubric intact — the impartiality is architectural, not cast.
     assert "judge whether YOUR turn was GROUNDED" in body

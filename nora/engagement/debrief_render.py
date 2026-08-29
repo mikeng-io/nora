@@ -63,7 +63,7 @@ from nora.domain.tag_trace import TagTrace
 # where the never-silent fallback delivered `_EXHAUSTED_FALLBACK` is labelled
 # `send_reply` by `EngagementPipeline` — `recovered_delivered` is only set on
 # the DEC-93 prose-recovery branch, not on the fallback one — so the gloss
-# below tells the fold "she replied, through the send_reply tool" while the
+# below tells the fold "you replied, through the send_reply tool" while the
 # rendered `<reasoning>` shows no such call. A self-contradictory input.
 #
 # NOT fixed here, deliberately. The honest fix is a SEVENTH outcome, and
