@@ -508,6 +508,19 @@ RULE_TESTS = {
     # every string the table renders — a wording change to ANY music surface
     # now has to land there, so the diff shows it.
     "R-84": "test_now_playing_line_carries_title_and_url",
+    # R-85 (DEC-148): the send-path guard the 2026-08-28 incident had none of
+    # — R-81/R-82/R-83 (this same incident) all shipped that day and none of
+    # them COMPEL anything, because a doctrine rubric and a tool both need her
+    # to choose to use them. This one sits on `Deliverer.deliver`, the single
+    # chokepoint BOTH delivery paths pass through (`send_reply` and the
+    # DEC-93 prose-recovery branch), and refuses mechanically — substring
+    # matching against the window already in hand, no model call. The named
+    # test is the wired guard reproducing the live reply against a window
+    # shaped after the real one; `tests/test_attribution.py` covers the
+    # predicate itself, including the fail-open branch (no resolvable
+    # addressee never refuses) and the negative controls (a quote the
+    # addressee actually said, or an @-named third party, still sends).
+    "R-85": "test_r85_the_live_incident_reply_is_refused",
 }
 
 

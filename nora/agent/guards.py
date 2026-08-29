@@ -22,10 +22,15 @@ from strands.hooks import (
 
 from ..doctrine.loader import Doctrine
 from ..domain.media import MediaBlob
-from ..domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage
+from ..domain.models import (
+    ConversationTarget,
+    DeliveryStatus,
+    NormalizedMessage,
+    TranscriptRow,
+)
 from ..domain.ports import OutboundAttachment, SendResult, Styled
 from ..obs.metrics import Metrics
-from . import tool_choice
+from . import attribution, tool_choice
 from .call_ledger import CallLedger
 from .egress import LeakGuard, scan_reply
 from .links import LinkCarry
@@ -126,6 +131,8 @@ class Deliverer:
         on_delivered: DeliveredObserver | None = None,
         composer: OutboundComposer | None = None,
         links: LinkCarry | None = None,
+        tagger_person_id: str | None = None,
+        transcript: tuple[TranscriptRow, ...] = (),
     ) -> None:
         self._store = store
         self._adapter = adapter
@@ -166,6 +173,16 @@ class Deliverer:
         # where both halves of the wiring are visible at once; a `Deliverer`
         # holding its own private carrier is the inert case, not a broken one.
         self._links = links if links is not None else LinkCarry()
+        # R-85 (DEC-148): who this turn is FOR, and what she can see while
+        # answering — both default to the inert case (`None` / `()`), like
+        # `composer` above and for the same reason: an absent value makes
+        # `nora.agent.attribution.find_misattributed_quote` match nothing,
+        # which is the exact behaviour this class had before the guard
+        # existed. There is no wrong claim available to a caller that omits
+        # them — only every existing test and the offline/eval compositions
+        # staying exactly as they were.
+        self._tagger_person_id = tagger_person_id
+        self._transcript = transcript
         self._attempts = 0
         # Every `deliver()` ENTRY, whether or not it survived the guards —
         # distinct from `_attempts`, which counts the ones that reached the
@@ -382,6 +399,48 @@ class Deliverer:
             self._metrics.inc("nora_egress_blocks_total", kind=kind)
             self._metrics.inc(
                 "nora_silent_failures_total", reason="egress_block",
+                platform=self._target.platform, audience=self._audience,
+            )
+            return False
+
+        # R-85 (DEC-148) — see `nora.agent.attribution` for the property, the
+        # false-refusal measurement it shipped with, and the argument for
+        # "the tagger" as the addressee absent an explicit `@`. THE ONLY
+        # guard on this path that can look outside the reply itself: R-4/R-6/
+        # R-18 above all measure `text`/`styled.text` alone, but a wrong
+        # attribution is not a property of the string in isolation — it is a
+        # property of the string AGAINST the window, so `self._transcript`
+        # has to be in the call.
+        #
+        # BOTH forms, for the same reason R-6/R-18 above check both: a 「」
+        # span that straddles emphasis delimiters reads differently raw vs.
+        # rendered, and this predicate has no reason to be more trusting of
+        # one form than those two already decided to be.
+        #
+        # Candidates computed once from `drafted` — the `@` syntax
+        # `send_reply`'s own docstring documents is still literal text at
+        # this point, before `_compose` resolves it into a platform mention —
+        # and reused for both passes, since who counts as addressed does not
+        # change with markdown rendering.
+        addressee = attribution.addressee_candidates(
+            tagger_person_id=self._tagger_person_id,
+            transcript=self._transcript, reply_text=drafted,
+        )
+        quote = (
+            attribution.find_misattributed_quote(
+                styled.text, transcript=self._transcript, addressee=addressee)
+            or attribution.find_misattributed_quote(
+                drafted, transcript=self._transcript, addressee=addressee)
+        )
+        if quote:
+            log.error(
+                "misattribution_blocked: %r not said by the person addressed "
+                "(tag=%s)", quote, self._tag_id,
+            )
+            self._metrics.inc("nora_attribution_blocks_total")
+            self._metrics.inc("nora_guard_vetoes_total", rule="R-85")
+            self._metrics.inc(
+                "nora_silent_failures_total", reason="misattribution_block",
                 platform=self._target.platform, audience=self._audience,
             )
             return False
