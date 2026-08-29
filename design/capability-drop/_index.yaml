@@ -1,0 +1,38 @@
+kind: design_index
+title: "Capability Drop — remove the generated capability block, schema is the single source of truth"
+description: >
+  Deletes ToolRegistry.capability() and the `kind: capability` doctrine tier
+  entirely. The tool schemas (docstring-derived) already carry what Nora can
+  do and when to reach for it — measured at 85% content-word overlap between
+  the when-clauses and the docstrings. The two behavioural rules the block
+  actually carried that schemas cannot (closed-world "this list is the whole
+  of what you can do" and the sourcing nudge "own sources before the open
+  web") move into conduct.md. Result: one place describes a tool — its
+  schema — matching Hermes/Claude Code practice where no capability document
+  exists at all.
+status: proposed
+governance: pre-governance-input
+timestamp: '2026-08-30'
+revision: ''
+origin: "design conversation with miles, #nora 2026-08-30 — 'content 唔再要佢，然後佢裏面所有嘅 capability 本身要嘅嘢，就搬返晒入去個 tools 嘅 schema 入面'"
+members:
+  - 00-overview.md
+  - 01-when-stays-in-schema.md
+  - 02-rules-to-conduct.md
+  - 03-code-surface.md
+edges:
+  - {src: 01-when-stays-in-schema, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 02-rules-to-conduct, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 03-code-surface, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 03-code-surface, dst: 02-rules-to-conduct, rel: depends_on, provenance: asserted}
+scope:
+  v1:
+    - "Delete ToolRegistry.capability() and its render helpers (live_only_tools, web_tier_tools)"
+    - "Delete the `when` field from NativeTool/ToolSpec (no consumer remains after capability() dies)"
+    - "Remove `kind: capability` from the doctrine tier order (DERIVED_KINDS, AUTHORITY_TERMINALS, constraints.md/identity.md/conduct.md authority chains)"
+    - "Move the closed-world rule and the sourcing nudge into conduct.md as behavioural rules"
+    - "Merge the 2-3 genuinely incremental when-clauses into their docstrings (recall_lookups doubted/guessed trigger, create_event genuinely-NEW)"
+    - "Update every test that pins capability content (test_tool_registry, test_reminder_tools, test_prefill, test_doctrine_loader, test_config)"
+  deferred:
+    - "A future MCP tool (spec §7/§11) whose schema cannot carry a docstring — out of scope until it lands"
+    - "Re-measuring prompt size after the change (expected saving ~1.2-1.6k tokens of when-clauses; the two moved rules cost a few hundred)"
