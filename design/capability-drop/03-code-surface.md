@@ -74,6 +74,9 @@ would survive as an empty shell. The full loader surface:
 | `constraints.md` front-matter `authority_below` | drop `capability` from the list |
 | `identity.md` front-matter `authority_below` | drop `capability` |
 | `conduct.md` front-matter `authority_below` | drop `capability`; add the two behavioural rules (see `02-rules-to-conduct.md`, draft wording) |
+| `voice.md` front-matter `authority_below` (line 9: `[silence, conduct, capability, situation, …]`) | **drop `capability`** — missed by the first two reviews; the authority chain is wider than constraints/identity/conduct |
+| `silence.md` front-matter `authority_below` (line 9: `[capability, situation, …]`) | **drop `capability`** — same miss |
+| `nora/skills/navigation/SKILL.md` front-matter `authority_above: [capability]` (line 7) | **drop `capability`** — the skill's authority edge pointed at the dying tier; authority_above becomes empty (`[]`) or points at situation |
 | `constraints.md` / `identity.md` `not_here` lines | still true — "what she can find out is generated from the tool registry" becomes "what she can find out is described by the tool schemas" (optional wording update) |
 
 ## 4. Composition / eval — `nora/app/composition.py`, `nora/app/eval_support.py`
@@ -102,10 +105,13 @@ would survive as an empty shell. The full loader surface:
 | `tests/web/test_doctrine.py` (~8-11, `build_doctrine_payload` section names) | **update** — expected list drops `"capability"` |
 | `tests/test_doctrine_content.py` (~63-68, 217-220, docstrings referencing "the section is gone and what replaces it is generated (`ToolRegistry.capability()`)") | **wording update** — the "what replaces it" phrase now reads "tools are described by their schemas"; the tests themselves (`test_every_shipped_file_says_what_it_must_not_contain`) are unaffected, docstrings only |
 | `tests/test_doctrine_audiences.py` (~1-6, module docstring "received only the generated capability section") | **wording update** — docstring only; the audience tests themselves are unaffected |
+| `nora/app/fire.py` (~56, module docstring "a `LeakGuard` corpus shrunk to the capability block") | **wording update** — docstring only; with the block gone, the sentence's historical point stands but the reference dies |
+| `nora/skills/loader.py` (~6, module docstring "the generated capability block") | **wording update** — docstring only; the loader itself is unaffected |
 | `tests/unit/test_engagement_pipeline.py` (~1609, "and `capability()` are all still the production ones") | wording update — drop the `capability()` reference |
 | `tests/conftest.py` ~line 81 | drop `capability=ToolRegistry().capability()` from the doctrine fixture |
 | `tests/unit/test_tool_registry.py` | replace any `when`-presence pins with docstring-presence pins (the new gate: every registered tool's callable has a docstring). `test_the_live_only_tools...` / `test_web_search_and_web_fetch...` / `test_skills_is_not_live_only` / `test_with_mcp_live_only_matches_plain` pin the deleted helpers directly and die with them. `test_every_tool_declares_a_time_axis` (time_shiftable values) is KEPT |
 | `tests/test_acceptance_rules.py` (~756-786, DEC-92) | **rewrite, not delete** — this is the acceptance test that reads `NATIVE_TOOLS["recall_lookups"].when` and asserts `actually` / `doubted`/`guessed` / `re-running`. With the `when` field deleted, the assertion target moves to the **merged docstring** (same three phrases must survive there). Its second half (conduct.md "must NOT name the tool") is unchanged in spirit but its parenthetical — "the registry is capability's source of truth" — needs rewording, and the moved closed-world/sourcing rules in conduct.md must still not introduce tool names |
+| `tests/test_tools.py::test_read_peer_card_is_gone_from_the_table_and_the_capability_block` (~159-172) | **rewrite** — the second half asserts `"read_peer_card" not in ToolRegistry().capability()`; with `capability()` deleted, the surviving assertion is `"read_peer_card" not in NATIVE_TOOLS` (R-7 default-deny), the capability half dies |
 
 ## 6. Verification plan
 
