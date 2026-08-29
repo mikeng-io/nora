@@ -173,6 +173,12 @@ services:
       #   Unset means GIF tools are unavailable; it must be explicitly passed
       #   because Compose does not inherit host .env values into a service.
       - GIPHY_API_KEY=${GIPHY_API_KEY:-}
+      #   KIMI_CODE_API_KEY — the DIRECT media-describer lane ([media.describe.*]
+      #   provider="kimi", 2026-08-30): `api.kimi.com/coding/v1`, used for VIDEO
+      #   because OmniRoute drops `video_url` content blocks. Optional: a kimi
+      #   provider whose key is unset answers `unavailable`, never a silent
+      #   omniroute fallback — but a deployment that enables video MUST set it.
+      - KIMI_CODE_API_KEY=${KIMI_CODE_API_KEY:-}
       #   XAI_OAUTH_REFRESH_TOKEN — the xAI image-generation lane (DEC-137).
       #   Written by `nora xai-login` (device flow) into the host `.env`;
       #   passed through here so the container can refresh access tokens

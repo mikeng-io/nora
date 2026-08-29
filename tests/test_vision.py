@@ -49,6 +49,10 @@ class FakeMimo:
 
     def __init__(self) -> None:
         self.requests: list[dict] = []
+        self.auths: list[str] = []       # Authorization header per request — the
+                                         # only way a test can tell WHICH client
+                                         # (omniroute vs kimi direct) sent a call
+                                         # when both point at the same fake.
         self.fail_times = 0          # how many leading calls answer 500
         self.stall_seconds = 0.0     # how long each call sleeps before answering
         self.reply = "A red square."
@@ -56,6 +60,7 @@ class FakeMimo:
     async def completions(self, request: web.Request) -> web.Response:
         body = await request.json()
         self.requests.append(body)
+        self.auths.append(request.headers.get("Authorization", ""))
         # Behave like the real server, INCLUDING its wrong-call shapes
         # (CLAUDE.md). A body with no media is a bad request, and so is media
         # carried in the wrong content block: a real OpenAI-compatible gateway
@@ -129,6 +134,25 @@ def _client(
     return VisionClient(
         client=AsyncOpenAI(base_url=fake.url, api_key="test-key", max_retries=0),
         model="opencode-go/mimo-v2.5",
+        max_tokens=1024,
+        reasoning_effort="low",
+        max_bytes=max_bytes,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _client_kimi(
+    fake: FakeMimo, *, timeout_seconds: float = 5.0, max_bytes: int = 8 * 1024 * 1024,
+) -> VisionClient:
+    """The provider-aware shape: omniroute client + a DIRECT kimi client.
+
+    Both point at the same local fake so the test asserts WHICH one got the
+    call (the fake records requests), not what the fake answered.
+    """
+    return VisionClient(
+        client=AsyncOpenAI(base_url=fake.url, api_key="omniroute-key", max_retries=0),  # type: ignore[attr-defined]
+        direct_client=AsyncOpenAI(base_url=fake.url, api_key="kimi-key", max_retries=0),  # type: ignore[attr-defined]
+        model="kimi-code/k3-256k",
         max_tokens=1024,
         reasoning_effort="low",
         max_bytes=max_bytes,
@@ -364,3 +388,49 @@ async def test_each_modalitys_prompt_reaches_the_gateway(mimo):
     assert mimo.requests[-1]["messages"][-1]["content"][0]["text"] == DESCRIBE_PROMPTS["audio"]
     await _client(mimo).describe(data=RED_PNG, media_type="video/mp4")
     assert mimo.requests[-1]["messages"][-1]["content"][0]["text"] == DESCRIBE_PROMPTS["video"]
+
+
+# ---- provider routing (2026-08-30): kimi direct lane ------------------------
+
+async def test_a_kimi_provider_without_a_direct_client_fails_closed(mimo):
+    """A `provider="kimi"` request on a client with NO direct client is a
+    WIRING GAP — the composition root failed to inject the key — and must be
+    `unavailable`, not a silent fallback to the omniroute client. That fallback
+    is exactly how a video gets sent to a router that drops `video_url` and
+    "answers" about the text it did receive: an ERROR reported as a PASS."""
+    client = _client(mimo)  # no direct_client
+    result = await client.describe(
+        data=RED_PNG, media_type="video/mp4", provider="kimi",
+    )
+    assert result.available is False
+    assert result.reason == "error"
+    assert mimo.requests == [], "no request may travel through the wrong client"
+
+
+async def test_a_kimi_provider_uses_the_direct_client(mimo):
+    """The kimi request must hit `_direct_client`, and its body must carry the
+    same media block an omniroute request would — the transport changed, the
+    payload did not. The fake records BOTH the body and the Authorization
+    header (FakeMimo.auths); `_client_kimi` gives each client its own key, so
+    the bearer key proves WHICH client travelled — a silent regression to the
+    omniroute client would carry `Bearer omniroute-key` and go red."""
+    result = await _client_kimi(mimo).describe(
+        data=RED_PNG, media_type="video/mp4", provider="kimi",
+    )
+    assert result.available, result.reason
+    assert len(mimo.requests) == 1
+    assert "video_url" in _block_types(mimo.requests[-1])
+    auth = mimo.auths[-1] if mimo.auths else ""
+    assert "kimi-key" in auth, f"expected the kimi direct client to travel, got auth {auth!r}"
+
+
+async def test_the_default_provider_is_still_omniroute(mimo):
+    """A caller that never names a provider (every one before 2026-08-30)
+    keeps travelling through the gateway client — unchanged behaviour. The
+    bearer key carried by the request proves it used the omniroute client."""
+    result = await _client_kimi(mimo).describe(data=RED_PNG, media_type="image/png")
+    assert result.available, result.reason
+    assert len(mimo.requests) == 1
+    assert "image_url" in _block_types(mimo.requests[-1])
+    auth = mimo.auths[-1] if mimo.auths else ""
+    assert "omniroute-key" in auth, f"expected the omniroute client to travel, got auth {auth!r}"

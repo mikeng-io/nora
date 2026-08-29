@@ -60,7 +60,8 @@ class CountingVision:
         self.available = True
 
     async def describe(self, *, data: bytes, media_type: str,
-                       prompt: str = "", model: str = "") -> VisionResult:
+                       prompt: str = "", model: str = "",
+                       provider: str = "omniroute") -> VisionResult:
         self.calls += 1
         if not self.available:
             return VisionResult(available=False, reason="timeout")
@@ -106,7 +107,7 @@ async def wiring(tmp_path, pg_url):
     cache = VisionCache()
 
     def build(*, vision_source=vision, blob_store=blobs, vision_cache=cache,
-              describe_models=None):
+              describe_models=None, describe_providers=None):
         # Image-only by default, which is the shipped configuration: audio and
         # video are wired but inert until a model is named for them. A NAMED
         # model, not "": since the split an empty model means «not configured»
@@ -121,6 +122,7 @@ async def wiring(tmp_path, pg_url):
             room=room, transit_source=None,
             vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
             describe_models=describe_models,
+            describe_providers=describe_providers,
             question="what is in the photo", context_window=40,
         )
         return {t.tool_name: t for t in tools}["media_fetch"]
