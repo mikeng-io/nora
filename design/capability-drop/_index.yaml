@@ -13,7 +13,7 @@ description: >
 status: proposed
 governance: pre-governance-input
 timestamp: '2026-08-30'
-revision: ''
+revision: '2026-08-30 — adversarial review (Hermes delegate) run budget expired before summary; transcript findings absorbed: evals/ CAPABILITY_BLOCK surface added to 03 (run.py:74,401 + harness.py:37,269), capability() tail-sentence disposition recorded in 02 §5 (cost disclosure dies, failure register already in conduct/constraints). Second review dispatched for the formal verdict.'
 origin: "design conversation with miles, #nora 2026-08-30 — 'content 唔再要佢，然後佢裏面所有嘅 capability 本身要嘅嘢，就搬返晒入去個 tools 嘅 schema 入面'"
 members:
   - 00-overview.md
