@@ -37,6 +37,7 @@ from nora.domain.mobility import (
     hour_of_week,
     hour_of_week_bins,
     label_place,
+    mode_address,
     robust_z_score,
     segment_stays,
     trailing_fix_is_settled,
@@ -618,6 +619,18 @@ class MobilityRollup:
                     all_stays, eps_m=self._cfg.cluster_eps_m,
                     min_samples=self._cfg.cluster_min_samples,
                 )
+                # Issue #10 option 1: the addresses `segment_stays` computed
+                # into this cycle's stays exist ONLY in memory — the store's
+                # re-read builds them from `presence_stays`, which has no
+                # address column, so `cluster`'s members carry `address=None`
+                # (SqlMobilityStore) even though they are those same stays.
+                # Keyed by `started_ts` (unique per subject: consecutive
+                # stay groups start at the fix that broke the previous
+                # group's radius test). Only THIS cycle's addresses resolve;
+                # older stays contribute None, which `mode_address` skips.
+                new_address_by_started_ts = {
+                    s.started_ts: s.address for s in new_stays
+                }
                 for cluster in clusters:
                     total_dwell = sum(s.ended_ts - s.started_ts for s in cluster) or 1
                     lat = sum(
@@ -640,6 +653,51 @@ class MobilityRollup:
                             subject_id=subject_id, kind=result.kind
                         )
                         label = await self._label_for(lat=lat, lng=lng)
+                        # Issue #10 option 1 — the Life360 mode-address
+                        # FALLBACK. A cached Google label stays canonical
+                        # (the design decision: 2026-08-19 "Google-cache-only
+                        # labelling" relaxed, not replaced); Life360's own
+                        # free address string fills the gap when there is no
+                        # cached hit — zero new network calls, zero billing
+                        # exposure, this is a pure read of what segmentation
+                        # already built.
+                        if label is None:
+                            # Prefer the stay's own carried address, fall
+                            # back to this cycle's segmentation output for
+                            # the DB roundtrip (see the new_address_by_
+                            # started_ts note above). Fail-closed: no
+                            # addresses → no label.
+                            fallback = mode_address(
+                                s.address
+                                if s.address is not None
+                                else new_address_by_started_ts.get(s.started_ts)
+                                for s in cluster
+                            )
+                            if fallback is not None:
+                                label = fallback
+                            else:
+                                prior_label = (
+                                    existing_before[5]
+                                    if existing_before is not None
+                                    else None
+                                )
+                                if prior_label is not None:
+                                    # Sticky keep, not a recomputation: the
+                                    # upsert's UPDATE overwrites `label`
+                                    # unconditionally, and Speed 3 re-runs
+                                    # on EVERY batch of new fixes (even pure
+                                    # driving days and cycles where this
+                                    # cluster's new stays carry no address).
+                                    # Absence of NEW evidence is not
+                                    # evidence of no address — letting a
+                                    # None overwrite a label a previous
+                                    # cycle wrote would flip a labelled
+                                    # place back to unlabelled at tick
+                                    # cadence. Google-cache labels never
+                                    # hit this branch (the cache decides
+                                    # above), so the sticky value is only
+                                    # ever a previous fallback label.
+                                    label = prior_label
                         await self._store.upsert_place(
                             subject_id=subject_id, circle_id=circle_id,
                             kind=result.kind,
