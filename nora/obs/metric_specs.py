@@ -522,6 +522,26 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "honouring tool_choice=required.",
         ("platform",),
     ),
+    # Pure observability, no new behavioural rule (no DEC/R row — see the
+    # comment beside its call site). ONE turn, ONE increment, every admitted
+    # tag `_run_admitted`'s `finally` reaches — the standing replacement for
+    # a manual Langfuse `nora.outcome` query. The vocabulary is
+    # `nora.domain.tag_trace.VALID_OUTCOMES` plus `"unattributed"` (see
+    # `nora.engagement.pipeline._ENGAGEMENT_METRIC_OUTCOMES`), never restated
+    # here — same precedent as `nora_ingest_outcomes_total`. Deliberately NOT
+    # gated on the retention store the way `nora_tagtrace_writes_total` is:
+    # this answers "what did the turn end as", which must stay visible even
+    # if retention is unwired. `recovered` vs `send_reply` is DEC-93's own
+    # split — a rising `recovered` share means the route is not honouring
+    # `tool_choice=required`, not that the safety net is working.
+    _CounterSpec(
+        "nora_engagement_outcomes_total",
+        "Every admitted tag, by how the turn ended (see TagTrace.VALID_OUTCOMES "
+        "plus \"unattributed\"). recovered vs send_reply is DEC-93's tell: a "
+        "rising recovered share means the route is not honouring "
+        "tool_choice=required.",
+        ("outcome",),
+    ),
     _CounterSpec(
         "nora_presence_disclosure_waived_total",
         "whereis disclosures that PASSED only because the conversation is "

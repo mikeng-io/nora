@@ -2330,6 +2330,81 @@ async def test_every_retained_trace_is_counted_by_outcome(monkeypatch):
         metrics.observations("nora_tag_latency_seconds"))
 
 
+async def test_nora_engagement_outcomes_total_counts_a_send_reply_turn():
+    """The standing counter behind the 56%-recovered measurement: one
+    increment per admitted tag, labelled with the turn's real disposition.
+    Positive control for the ordinary path — `outcome="send_reply"` — paired
+    with the recovered/silent/no-store controls below so a `== 0` reading
+    anywhere in this file can be told apart from an instrument that never
+    fires."""
+    pipeline, metrics, _audit, _memory, background = _build_pipeline()
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.get("nora_engagement_outcomes_total", outcome="send_reply") == 1
+    assert metrics.get("nora_engagement_outcomes_total") == 1
+
+
+async def test_nora_engagement_outcomes_total_counts_a_recovered_reply_as_recovered():
+    """DEC-93's own split, on the standing counter rather than a one-off
+    Langfuse query. A reply the model wrote as prose (no `send_reply` call)
+    must land under `outcome="recovered"`, not `"send_reply"` — collapsing
+    the two is exactly what would have hidden the 56% figure this counter
+    exists to keep visible."""
+    adapter = _FakeAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.get("nora_engagement_outcomes_total", outcome="recovered") == 1
+    assert metrics.get("nora_engagement_outcomes_total", outcome="send_reply") == 0
+
+
+async def test_nora_engagement_outcomes_total_counts_a_silent_turn():
+    """The third reachable value, so `== 0` above can be trusted: a turn that
+    wrote nothing at all lands under `outcome="silent"`, the same turn
+    `nora_silent_failures_total{reason="no_send_call"}` already counts."""
+    adapter = _FakeAdapter()
+    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner([ScriptedTurn(final_text="")]),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.get("nora_engagement_outcomes_total", outcome="silent") == 1
+
+
+async def test_nora_engagement_outcomes_total_does_not_depend_on_the_trace_store():
+    """`nora_tagtrace_writes_total` only fires `if trace is not None and
+    self._tag_trace_store is not None` — it answers "did retention get
+    handed a trace", not "what did the turn end as". `nora_engagement_
+    outcomes_total` must keep answering the second question even when the
+    first goes dark (an offline/eval composition, or a deployment that has
+    not wired a store — `nora.engagement.pipeline.EngagementPipeline`'s own
+    docstring on `tag_trace_store`), because a deployment losing retention
+    must not silently lose route-health visibility along with it."""
+    pipeline, metrics, _audit, _memory, background = _build_pipeline()
+    # `_build_pipeline` always substitutes a fake store for `None` (so every
+    # OTHER scenario in this file can read `pipeline._tag_trace_store.saved`
+    # without wiring one itself) — unwiring it here has to go around that,
+    # the same way the module's own `__init__` docstring says a deployment
+    # that never wires one would arrive at `self._tag_trace_store = None`.
+    pipeline._tag_trace_store = None
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert metrics.get("nora_tagtrace_writes_total") == 0
+    assert metrics.get("nora_engagement_outcomes_total", outcome="send_reply") == 1
+
+
 class _NoteReadTool:
     """A `note_read` that answers `ok` the way every native tool here does.
 
