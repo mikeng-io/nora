@@ -77,11 +77,11 @@ from nora.domain.tag_trace import TagTrace
 # `send_reply` (14). Latent, not active — which is why it is a note and not a
 # migration.
 _OUTCOME_GLOSS: Mapping[str, str] = {
-    "send_reply": "she replied, through the send_reply tool",
-    "recovered": "she wrote a reply as prose without calling send_reply; "
-                 "the pipeline delivered it for her",
-    "silent": "she chose to say nothing — no delivery was attempted (R-5)",
-    "vetoed": "she tried to reply and every attempt was refused by a guard",
+    "send_reply": "you replied, through the send_reply tool",
+    "recovered": "you wrote a reply as prose without calling send_reply; "
+                 "the pipeline delivered it for you",
+    "silent": "you chose to say nothing — no delivery was attempted (R-5)",
+    "vetoed": "you tried to reply and every attempt was refused by a guard",
     "timeout": "the model call did not finish in time; nothing was sent",
     "llm_error": "the model call failed; nothing was sent",
 }

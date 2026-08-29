@@ -266,6 +266,33 @@ def test_the_objective_states_the_shrink_asymmetry_too():
     assert "two things of the same kind" in body
 
 
+def test_the_objective_speaks_in_the_first_person_about_the_position():
+    """The person contract (issue #78): the fold is Nora revising HER OWN
+    position, so the objective must speak in the first person about the
+    standing — a third-person cast ("you are not the assistant who answered
+    it") is what produced transcript recaps instead of positions, because an
+    observer who is not a participant has no position to revise.
+
+    The verdict half is deliberately different: it judges the turn's
+    SOURCING, and its impartiality comes from being a different call (26-
+    standing §1), not from a third-person cast. So the objective must say
+    "you" for the position AND keep the sourcing rubric's own-words
+    requirement — a regression to "the assistant" on either half is a
+    regression of the fix."""
+    from pathlib import Path
+
+    body = Path("nora/dreamer/objectives/standing-debrief.md").read_text()
+    # The position half: first person, and the old third-person cast is gone.
+    assert "You are Nora, reviewing your own finished exchange" in body
+    assert "You are not the assistant who answered it" not in body
+    assert "what I have committed to" in body
+    assert "praise or criticism of my reply" in body
+    # The verdict half: still about the fold's own turn, with the sourcing
+    # rubric intact — the impartiality is architectural, not cast.
+    assert "judge whether YOUR turn was GROUNDED" in body
+    assert "a claim about who has a source or it does not" in body
+
+
 async def test_a_second_overflow_writes_nothing_and_the_prior_position_stands():
     """§4.0's fail-closed half. Truncating here would be the silent eviction
     that turns a rolling position into a recent summary; writing the over-long

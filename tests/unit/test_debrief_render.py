@@ -121,6 +121,29 @@ def test_the_outcome_is_rendered_and_a_silence_says_it_was_a_choice():
     assert "R-5" in out
 
 
+def test_the_outcome_gloss_speaks_in_the_first_person():
+    """The person contract (issue #78), render half: the fold is Nora revising
+    HER OWN turn, so the outcome gloss must address her as "you" — a
+    third-person gloss ("she replied") is the same cast that made the
+    objective produce transcript recaps instead of positions. Every gloss
+    that names the actor must be first person; the two that name nobody
+    (timeout, llm_error) are already person-neutral and must stay that way."""
+    for outcome, expected in (
+        ("send_reply", "you replied, through the send_reply tool"),
+        ("recovered", "you wrote a reply as prose"),
+        ("silent", "you chose to say nothing"),
+        ("vetoed", "you tried to reply"),
+    ):
+        out = _render(trace=_trace(outcome=outcome))
+        assert expected in out, f"{outcome}: {expected!r} not in {out!r}"
+        assert "she " not in out and "her " not in out, (
+            f"{outcome}: third-person gloss leaked into the render"
+        )
+    for outcome in ("timeout", "llm_error"):
+        out = _render(trace=_trace(outcome=outcome))
+        assert "you " not in out, f"{outcome}: person-neutral gloss gained a person"
+
+
 def test_the_prior_block_is_present_even_when_there_is_no_prior():
     """Mapping 6, and it is §4's non-negotiable in render form. An OMITTED
     block and a block the fold failed to read look identical from inside the
