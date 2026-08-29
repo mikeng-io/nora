@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "Derived places now get a human-readable name even without a Google geocode-cache hit (issue #10 option 1): the place label falls back to the most common Life360 address string among the fixes that built the place. Zero new API calls, zero billing exposure \u2014 Life360 already sends the address on every fix; the label is computed in memory from data the rollup already reads and written through the existing label column. Typed feature rather than fix because a place being unlabelled was not broken behaviour, it was the documented absence of a capability.",
+  "details": [
+    "Label precedence is Google geocode cache first (canonical whenever the cache has a hit), Life360's address mode second \u2014 the deliberate relaxation of the 2026-08-19 Google-cache-only labelling decision",
+    "Each closed stay carries the mode of its own fixes' addresses (most frequent, first occurrence on a tie, none when no fix has an address), computed once at segmentation time",
+    "Fail-closed: no cache hit and no addressed fixes leaves the place unlabelled, never a guessed or empty label",
+    "A place that already has a label keeps it through cycles whose new fixes carry no address \u2014 absence of new evidence never wipes a written label",
+    "No geocode calls or network egress added; no schema change (the existing presence_derived_places label column is used as-is)"
+  ],
+  "limitations": [
+    "presence_stays stores no address column, so each labelling cycle sees the Life360 addresses of that cycle's new stays only; a place's label tracks the most recent evidence at the place rather than a lifetime mode of every fix that ever built it",
+    "a place that reclassifies between home and work (the Speed 2 recheck write) starts from the cache-only label again; its Life360 fallback label rebuilds on the next clustering cycle"
+  ]
+}

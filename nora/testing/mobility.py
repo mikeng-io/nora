@@ -71,7 +71,17 @@ class FakeMobilityStore:
         ]
 
     async def write_stays(self, stays: list[Stay]) -> None:
-        self._stays.extend(stays)
+        # Behavioral twin of `SqlMobilityStore.write_stays` — including the
+        # data it CANNOT persist: `presence_stays` has no address column, so
+        # the real store drops `Stay.address` on the roundtrip, and re-reads
+        # (`stays_for_subject`) come back with it as `None` (issue #10: the
+        # rollup re-attaches this cycle's addresses from its own segmentation
+        # output instead of trusting the roundtrip). The fake must drop it
+        # the same way or the place-label-fallback tests would pass on the
+        # in-memory path (reading cluster members' addresses) while the real
+        # store exercises re-attachment — decorative tests, exactly the
+        # fail-mode CLAUDE.md's fake-parity and negative-control rules name.
+        self._stays.extend(dataclasses.replace(s, address=None) for s in stays)
 
     async def stays_for_subject(self, *, subject_id: str) -> list[Stay]:
         return sorted(
