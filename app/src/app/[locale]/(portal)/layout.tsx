@@ -55,7 +55,7 @@ export default async function PortalLayout({
           of staying put — the real bug behind "the sidebar looks broken". */}
       <aside className="hidden md:flex md:h-screen md:flex-col md:gap-7 md:border-r md:border-border md:bg-bg-surface md:p-3.5">
         <div className="flex items-center justify-between gap-2 border-b border-border px-2 pb-3">
-          <span className="text-[15px] font-semibold uppercase tracking-wide">Nora</span>
+          <span className="font-display text-[15px] font-semibold uppercase tracking-wide">Nora</span>
           <LanguageSwitcher />
         </div>
 
@@ -79,7 +79,7 @@ export default async function PortalLayout({
           the top of that same scroll without needing a fixed-position
           offset hack for the content below it. */}
       <div className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-bg-surface p-3.5 md:hidden">
-        <span className="text-[15px] font-semibold tracking-tight">Nora</span>
+        <span className="font-display text-[15px] font-semibold uppercase tracking-tight">Nora</span>
         <LanguageSwitcher />
       </div>
 
