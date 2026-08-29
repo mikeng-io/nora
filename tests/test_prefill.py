@@ -763,30 +763,6 @@ def test_the_header_names_no_tool_at_all():
         )
 
 
-def test_the_generated_capability_block_names_exactly_the_tools_that_exist():
-    """Both directions at once, and against REAL specs rather than the table.
-
-    A tool missing from the block is one she may never reach for; a tool in the
-    block that no longer exists is worse, because R-7 default-denies the call
-    and she spends a turn being told by the runtime that a tool does not exist
-    which this same prompt told her it did. Neither can happen while both sides
-    are rendered from one table — this asserts they are.
-    """
-    import re
-
-    from nora.agent.registry import ToolRegistry
-    specs = ToolRegistry().specs(
-        store=None, conversation_id="g1", conversation_type="group",
-        persons=None, honcho=None, deliverer=None, metrics=None, room=None,
-    )
-    block = ToolRegistry().capability()
-    named = set(re.findall(r"^- ([a-z_]+) — ", block, re.MULTILINE))
-    assert named == {s.name for s in specs}
-    for spec in specs:
-        assert spec.when, f"{spec.name} has no `when` — say when to reach for it"
-        assert spec.when in block
-
-
 def test_the_header_explains_the_situation_not_just_the_notation():
     """Doctrine says who she IS; this says how she is being RUN. Without a
     situational model a model invents one."""

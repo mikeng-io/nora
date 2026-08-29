@@ -753,19 +753,30 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     — «call this before re-running…» — and being called a liar does not feel
     like being about to re-search.
 
-    Two halves, and BOTH must stay: the generated capability block is the only
-    place the verb is named (`registry.py::capability` — the registry is
-    capability's source of truth, so `conduct.md` must NOT name it), and
-    `conduct.md` is the only place the position lives. Revert either and this
-    goes red.
+    DEC-150 deleted the `when` clause and the capability block it fed. The
+    evidence framing survives in the tool's SCHEMA docstring — the single
+    source of truth for what the tool is for — and the position lives in
+    `conduct.md`. Revert either and this goes red.
     """
-    when = NATIVE_TOOLS["recall_lookups"].when
+    import inspect
+
+    from nora.agent import tools as tools_module
+    src = inspect.getsource(tools_module)
+    # The merged docstring is the LLM-facing one (Strands reads the callable's
+    # docstring as the schema description). Assert the evidence framing
+    # survived into it: `actually`, `doubted`/`guessed`, and the retained
+    # cost framing `re-running`.
+    start = src.find("def recall_lookups(")
+    assert start != -1, "recall_lookups callable not found in tools.py"
+    open_q = src.find('"""', start)
+    close_q = src.find('"""', open_q + 3)
+    doc = src[open_q + 3:close_q].lower()
 
     # The half DEC-92's prose could not reach: this is her EVIDENCE, not a cache.
-    assert "actually" in when.lower(), when
-    assert "doubted" in when.lower() or "guessed" in when.lower(), when
+    assert "actually" in doc, doc
+    assert "doubted" in doc or "guessed" in doc, doc
     # The original cost framing is kept, not replaced — re-running is still waste.
-    assert "re-running" in when, when
+    assert "re-running" in doc, doc
 
     conduct = (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
     section = conduct.split("# Being contradicted", 1)[1].split("\n# ", 1)[0]
@@ -780,8 +791,8 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     # Conceding a fault she does not have is a lie, not modesty.
     assert "blame turned" in contradicted, contradicted
 
-    # The position must NOT name the tool: capability's source of truth is the
-    # registry, and an authored copy is a cache with no invalidation.
+    # The position must NOT name the tool: tools are described by their schemas,
+    # and an authored copy is a cache with no invalidation.
     assert "recall_lookups" not in conduct
 
 

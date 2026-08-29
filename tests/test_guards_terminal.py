@@ -288,7 +288,7 @@ async def _drive(*, terminal, budgets=None) -> _AlwaysCallsNow:
         metrics=Metrics(),
     )
     tool = adapt(ToolSpec(name="now", description="", schema={}, call=_now,
-                          when="the stub turn needs a tool", budget=budgets["now"]))
+                          budget=budgets["now"]))
     await LiveAgentRunner(models=FixedModelSource(model), retry=RETRY).invoke(
         doctrine=_doctrine(), tools=[tool], pre_fill=[],
         guard=ReplyGuard(conversation_id="g1", budgets=budgets, terminal=terminal,

@@ -7,7 +7,7 @@ from nora.web.doctrine import build_doctrine_payload
 def test_lists_every_tag_audience_section_in_doctrine_order(doctrine_store: DoctrineStore):
     payload = build_doctrine_payload(doctrine_store=doctrine_store)
     assert [section["name"] for section in payload] == [
-        "identity", "voice", "silence", "conduct", "capability", "constraints",
+        "identity", "voice", "silence", "conduct", "constraints",
     ]
 
 

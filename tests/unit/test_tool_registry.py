@@ -3,6 +3,8 @@ one place that builds them for a tag, adapted to Strands tool objects."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from nora.agent import factory
 from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.mcp import McpToolGroup
@@ -14,6 +16,7 @@ from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
 from tests.fakes import FakeHoncho, SinkSender
 
+ROOT = Path(__file__).resolve().parents[2]
 TARGET = ConversationTarget("signal", "g1", "group")
 
 
@@ -293,24 +296,6 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
     assert {s.time_shiftable for s in specs} <= {None, False, True}
 
 
-def test_the_live_only_tools_are_the_ones_whose_answer_decays():
-    """`time_shiftable is False`, never `not time_shiftable` — the second
-    sweeps in `calculate`, whose `None` means the question has no time in it at
-    all, and would have the model told that arithmetic goes stale."""
-    # `whereis` joins (DEC-59): its answer is the LATEST fix and decays — the
-    # age rides in the result, but asked about LATER it has nothing.
-    assert ToolRegistry().live_only_tools() == ("now", "transit", "where_is")
-
-
-def test_the_capability_block_tells_her_which_tools_only_describe_now():
-    """A declared field nothing renders is decoration. §5.1's whole point is
-    that she must not quote a 112-second bus wait for a 19:30 departure, and
-    the only place that can reach her is the prompt."""
-    block = ToolRegistry().capability()
-    assert "now and transit and where_is describe this moment only" in block
-    assert "never quote one to answer about later" in block
-
-
 def test_transit_is_declared_live_only_and_not_terminal():
     from nora.agent.tools import NATIVE_TOOLS
     assert NATIVE_TOOLS["transit"].time_shiftable is False
@@ -318,50 +303,39 @@ def test_transit_is_declared_live_only_and_not_terminal():
     assert "transit" not in ToolRegistry().terminal_tools()
 
 
-def test_web_search_and_web_fetch_are_the_web_tier_tools():
-    """E1/DEC-77, extended by DEC-116: the web tier is the last-resort rank the
-    sourcing nudge names. `web_tier_tools` is derived from the table, so the
-    second web verb joined it (and the rendered sentence) automatically, table
-    order."""
-    assert ToolRegistry().web_tier_tools() == ("web_search", "web_fetch")
+def test_the_sourcing_priority_lives_in_conduct_not_a_generated_block():
+    """E1/DEC-77: the sourcing nudge moved to conduct.md with DEC-150. A
+    declared `source_tier` nothing renders is decoration; the gate found the
+    model web-searching a fact with a closer source, and the priority now
+    lives in conduct's 'What you can actually do' section."""
+    conduct = (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+    assert "prefer your own" in conduct
+    assert "open web, which is the last resort" in conduct
 
 
-def test_the_capability_block_states_the_sourcing_priority():
-    """A declared `source_tier` nothing renders is decoration (same argument as
-    the clock line). The gate found the model web-searching a fact with a closer
-    source; the only place a priority can reach her is the prompt."""
-    block = ToolRegistry().capability()
-    assert "prefer your own" in block
-    assert "web_search or web_fetch, which reach the open web and are the last " \
-           "resort" in block
-
-
-def test_the_capability_block_closes_the_world_it_opens(): # DEC-90
+def test_the_closed_world_clause_lives_in_conduct_not_a_generated_block(): # DEC-90
     """The list of tools was never stated to be the WHOLE list, and she filled
     the gap: a restaurant answer ended «講清楚我幫你睇埋使唔使訂位» — offering to
-    check a booking, which no tool here does and none is planned. That is the
-    same class as guessing a location, and the same fix DEC-28 applied to
-    `soul.md`'s knowledge claim: the sentence is only true relative to the
-    registry, so it is GENERATED beside the list rather than authored anywhere
-    that cannot see the list."""
-    block = ToolRegistry().capability()
-    assert "That list is the WHOLE of what you can do" in block
-    assert "no request you can put in on somebody's behalf" in block
-    assert "Never offer, promise or volunteer an action that is not one of the "\
-           "things above" in block
+    check a booking, which no tool here does and none is planned. DEC-150 moved
+    the rule to conduct.md; it must read exactly as strongly there."""
+    conduct = (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+    assert "That list is the WHOLE of what you can do" in conduct
+    assert "no request you can put in on somebody's behalf" in conduct
+    assert "Never offer, promise or volunteer an action that is not one of those tools" in conduct
     # The measured overclaim, and the family it belongs to, named concretely —
     # a rule stated only in the abstract is the one the model reads past.
-    assert "no booking a table" in block
+    assert "no booking a" in conduct
 
 
 def test_the_closed_world_clause_forbids_offers_not_ignorance():
-    """It must not collide with the rule right after it. She may always say she
+    """It must not collide with the rule beside it. She may always say she
     cannot find something out — `constraints.md` and `conduct.md` both insist on
-    it — so the ban is on PROMISED ACTS, and the two sentences have to be able
-    to sit next to each other without contradicting."""
-    block = ToolRegistry().capability()
-    assert "When you cannot find something out, say so in one clause" in block
-    assert block.index("That list is the WHOLE") < block.index("When you cannot find")
+    it — so the ban is on PROMISED ACTS. The two sentences sit in different
+    files now, which is exactly why they could not contradict before."""
+    conduct = (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
+    assert conduct.index("That list is the WHOLE") < conduct.index("prefer your own")
+    constraints = (ROOT / "nora" / "doctrine" / "constraints.md").read_text()
+    assert "我唔知」 and 「我查唔到」 are real" in " ".join(constraints.split())
 
 
 def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
@@ -395,10 +369,8 @@ def test_skills_is_budgeted_so_r7_admits_it_but_the_registry_does_not_build_it()
     built = {t.tool_name for t in _built_tools(registry)}
     assert "skills" not in built
     assert "skills" not in registry.tool_names()
-    assert "skills" not in registry.capability()
     # Neither terminal nor live-only — the honest fields.
     assert "skills" not in registry.terminal_tools()
-    assert "skills" not in registry.live_only_tools()
 
 
 def test_skills_declares_terminal_false_and_no_time_dimension():
@@ -466,13 +438,11 @@ def test_unauthorized_conversations_veto_message_never_names_mcp_tools():
     assert "pulse_weekly" not in message
 
 
-def test_capability_and_friends_are_unaffected_by_mcp_tools():
+def test_registry_derivations_are_unaffected_by_mcp_tools():
     plain = ToolRegistry()
     with_mcp = ToolRegistry(mcp_tools=_mcp_groups())
-    assert with_mcp.capability() == plain.capability()
     assert with_mcp.tool_names() == plain.tool_names()
     assert with_mcp.terminal_tools() == plain.terminal_tools()
-    assert with_mcp.live_only_tools() == plain.live_only_tools()
 
 
 def test_build_omits_mcp_tools_when_allowed_mcp_is_empty():

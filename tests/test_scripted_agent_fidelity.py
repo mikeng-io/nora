@@ -81,7 +81,7 @@ async def _now() -> str:
 
 def _tool():
     return adapt(ToolSpec(name="now", description="", schema={}, call=_now,
-                          when="the stub turn needs a tool", budget=1))
+                          budget=1))
 
 
 # ---- the SDK half ----------------------------------------------------------
@@ -184,7 +184,7 @@ async def test_the_double_never_runs_the_tool_it_cancelled():
         return "Thursday"
 
     tool = adapt(ToolSpec(name="now", description="", schema={}, call=_counting,
-                          when="the stub turn needs a tool", budget=1))
+                          budget=1))
     await FakeAgentRunner([ScriptedTurn(tool_calls=[("now", {}), ("now", {})])]).invoke(
         tools=[tool], guard=_guard(), limits=None,
     )
@@ -248,7 +248,7 @@ async def test_the_double_relaxes_tool_choice_after_a_terminal_verb_runs():
         ScriptedTurn(tool_calls=[("now", {})]),
     ])
     tool = adapt(ToolSpec(name="now", description="", schema={}, call=_now,
-                          when="the stub turn needs a tool", budget=2, terminal=True))
+                          budget=2, terminal=True))
     await runner.invoke(tools=[tool], guard=guard, limits=None)
     assert runner.tool_choices == ["required", "auto"]
 
@@ -259,7 +259,7 @@ async def test_each_invocation_gets_its_own_scripted_model():
     first call, which design/16 §2.1 measured as sending nothing 5/6."""
     runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("now", {})])])
     tool = adapt(ToolSpec(name="now", description="", schema={}, call=_now,
-                          when="the stub turn needs a tool", budget=2, terminal=True))
+                          budget=2, terminal=True))
     guard_kwargs = {"conversation_id": "g1", "budgets": {"now": 2}, "terminal": {"now"}}
     await runner.invoke(tools=[tool], guard=ReplyGuard(metrics=Metrics(), **guard_kwargs),
                         limits=None)

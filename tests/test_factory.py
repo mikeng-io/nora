@@ -312,7 +312,7 @@ def _read_only_tools() -> list:
     table."""
     return [
         adapt(ToolSpec(name=name, description="", schema={}, call=_look,
-                       when="the dream loop needs to look something up", budget=1))
+                       budget=1))
         for name in sorted(ToolRegistry().read_only_tools())
     ]
 

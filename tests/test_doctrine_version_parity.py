@@ -43,11 +43,11 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # paste the sha it reports. Updating the sha WITHOUT bumping the version is the
 # one move this table exists to make somebody stop and think about.
 PINNED: dict[str, tuple[int, str]] = {
-    "identity": (5, "dd8390f3c03f2848fa47a2454efd03ab3c9747037a73ade016040b1c841c5a09"),
+    "identity": (6, "dd8390f3c03f2848fa47a2454efd03ab3c9747037a73ade016040b1c841c5a09"),
     "voice": (16, "e5c28b270ce26224030ae6da34360bf67fd5c07f71ae93b431865caf5ff0e72b"),
     "silence": (1, "c5d286f8fa1cc311a7af9b7a8c6995511e0bdb61d674fcaf91bf6fdfdb0fb043"),
-    "conduct": (17, "b16ae3a9163d7422c1ad597949c98b112974f8474f341373740507bd3c875052"),
-    "constraints": (4, "1b8443de4b615ca6d53ba1708b9e159f35bfad740d0a74458be7a04e01ae11e0"),
+    "conduct": (18, "6a672265bc533ef87f3188a54d54aa6a9bb270fac11617e062f9f8eace23f526"),
+    "constraints": (5, "1b8443de4b615ca6d53ba1708b9e159f35bfad740d0a74458be7a04e01ae11e0"),
 }
 
 
