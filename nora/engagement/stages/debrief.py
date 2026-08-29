@@ -151,7 +151,7 @@ from nora.domain.turn_verdict import TurnVerdict
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import annotate, span
 
-from ..debrief_render import render_debrief_input
+from ..debrief_render import render_debrief_input, render_verdict_input
 
 log = logging.getLogger("nora.engagement.debrief")
 
@@ -208,12 +208,20 @@ class ObjectiveSource(Protocol):
     def objective_body(self, name: str) -> str: ...
 
 
-#: The objective this stage reads. `objective_body`, never `for_objective`: the
-#: latter prepends the DREAMER's doctrine, which is research-framed, and «a
-#: research-framed doctrine on a task with no research» is one of the two named
-#: causes of the 4096-token runaway that made this a plain completion in the
-#: first place.
+#: The objective the STANDING call reads. `objective_body`, never
+#: `for_objective`: the latter prepends the DREAMER's doctrine, which is
+#: research-framed, and «a research-framed doctrine on a task with no research»
+#: is one of the two named causes of the 4096-token runaway that made this a
+#: plain completion in the first place.
 OBJECTIVE = "standing-debrief"
+
+#: The objective the VERDICT call reads (issue #78 Phase 2). The fold is TWO
+#: completions under one gather — a position call and an impartial judge — and
+#: the split is the impartiality: one call that both writes the position and
+#: grades its own sourcing produced 21/21 `grounded=true`. Same injected
+#: `objective` source, same hot-reload discipline, different name; verdict text
+#: lives in `nora/dreamer/objectives/standing-verdict.md`.
+VERDICT_OBJECTIVE = "standing-verdict"
 
 #: How many BOUNDED STORE AWAITS one fold holds the conversation's slot for.
 #: `nora.config` imports this to compute the worst-case hold, so the number
@@ -349,6 +357,18 @@ def _prompt(*, instructions: str, rendered: str, max_chars: int) -> str:
     )
 
 
+def _verdict_prompt(*, instructions: str, rendered: str) -> str:
+    """Call B's prompt: the judge's objective plus the whole turn, no cap.
+
+    No `{max_chars}` sentence — that limit exists because the standing row is
+    injected into every subsequent turn, and a verdict is never injected; it is
+    read once by a re-derivation pass and discarded. Splicing a cap sentence
+    written for the position into the judge's prompt would be one more way the
+    two jobs bleed into each other.
+    """
+    return f"{instructions}\n\n{rendered}"
+
+
 def _consolidate_prompt(
     *, instructions: str, rendered: str, max_chars: int, over: str
 ) -> str:
@@ -359,19 +379,20 @@ def _consolidate_prompt(
     Nothing here decides that for it — the moment this module picks, the tier
     has silently become a recency slice.
 
-    **TWO ordering rules, and the second one was missing.** §4.0.1 states an
-    asymmetry — when Standing must shrink, what the room SAID outranks what
-    Nora concluded about it — and only the recency rule was ever written down.
-    They conflict, which is why the instruction has to say which governs: the
-    most recent thing in a position is often something SHE concluded, and the
-    oldest is often something the room said. Recency alone therefore drops the
-    room's own words first, which is the exact inversion §4.0.1 exists to
-    prevent. So the room rule is stated as the OVERRIDE and recency is scoped
-    to a tie between two things of the same kind.
+    **TWO ordering rules, and the SECOND one is the OVERRIDE.** The position
+    prefers what Nora CONCLUDED over what the room said (issue #78 Phase 2's
+    tiebreak reversal): room-said belongs in the transcript, and a shrink that
+    drops her synthesis first leaves the tier carrying other people's words
+    wearing her name. Recency alone cannot govern the tie, because the most
+    recent thing in a position is just as likely to be a room quote as one of
+    her judgements — so recency is scoped to a tie between two things of the
+    SAME KIND, and the synthesis rule outranks it when the kinds differ.
 
-    The trace-side half of §4.0.1 — `cap_messages` pinning human turns — has
-    been in `tag_trace_sanitize` all along; this is the half that did not
-    follow it into the fold (cold review, 2026-08-28).
+    The rule ran the OPPOSITE way until 2026-08-29 — «what the room SAID
+    outranks what you concluded about it» — and that phrasing is part of why a
+    recap-shaped standing row survived: the shrink was taught to prefer exactly
+    the clauses that made it a recap (the falsifier and the flip condition live
+    in `design/standing-split-fold/20-ratchet-and-tiebreak.md`).
     """
     return (
         f"{instructions}\n\n"
@@ -381,11 +402,11 @@ def _consolidate_prompt(
         f"{max_chars}-character limit, so it was NOT saved. Consolidate it now "
         f"and answer again, within the limit. Drop the oldest and least "
         f"consequential thing in it, never the most recent. "
-        f"What the room SAID outranks what you concluded about it: if the "
-        f"choice is between dropping something someone actually said and "
-        f"dropping a judgement of your own, drop your judgement — even when "
-        f"yours is the more recent of the two. Recency decides only between "
-        f"two things of the same kind.\n\n"
+        f"What you CONCLUDED outranks what the room SAID: if the choice is "
+        f"between dropping a judgement of your own and dropping something "
+        f"someone actually said, drop what they said — even when their words "
+        f"are the more recent of the two. Recency decides only between two "
+        f"things of the same kind.\n\n"
         f"Your previous answer was:\n{over}"
     )
 
@@ -414,20 +435,20 @@ def _body(raw: str) -> str | None:
 def _verdict(
     raw: str, *, tag_id: str, conversation_id: str, now_ms: int,
 ) -> TurnVerdict | None:
-    """The `TurnVerdict` out of the model's JSON, or `None`.
+    """The `TurnVerdict` out of the verdict call's JSON, or `None`.
 
-    **Its own validated shape, parsed separately from `standing`** (§7). The
-    response schema is deliberately NOT one object with optional fields: a type
-    covering both outputs makes every field optional, which means neither shape
-    is validated and the sink can refuse nothing. Two shapes, each checked on
-    its own terms.
+    **Its own validated shape, parsed from its own call's raw output** (§7).
+    The response schema is deliberately NOT one object with optional fields: a
+    type covering both outputs makes every field optional, which means neither
+    shape is validated and the sink can refuse nothing. Two shapes, each
+    checked on its own terms.
 
     **A missing or malformed verdict does not cost the position.** They are
-    different outputs of one call and the debrief's whole posture is that a
-    partial result beats none — so a fold that revised the position but wrote a
-    junk verdict still saves the position. That asymmetry is deliberate and is
-    why this returns `None` rather than raising: `None` means "no verdict this
-    turn", not "the fold failed".
+    different CALLS now (issue #78 Phase 2) and the debrief's whole posture is
+    that a partial result beats none — so a fold that revised the position but
+    got an unusable judgement still saves the position. That asymmetry is
+    deliberate and is why this returns `None` rather than raising: `None` means
+    "no verdict this turn", not "the fold failed".
 
     The construction can still raise — `TurnVerdict.__post_init__` refuses a
     grounded turn carrying unsupported claims, an over-long claim, or too many
@@ -813,6 +834,30 @@ async def _should_rebuild(
     return None
 
 
+class _FoldResult(NamedTuple):
+    """One fold's two halves, each with its own outcome (issue #78 Phase 2).
+
+    `body`, `refusal` and `raw` are the STANDING call: the parsed position
+    (or None when refused), the refusal label that names how the standing half
+    failed, and the raw answer the note proposals parse from — on the
+    consolidate retry, the answer that was actually KEPT.
+
+    `verdict_raw` and `verdict_disposition` are the VERDICT call: its raw
+    answer, and how the half finished — `""` parses, `"unavailable"` failed or
+    was cut off (the call itself or a `"length"` finish), `"skipped"` was never
+    issued because no verdict store is wired to read the answer. Disposition
+    rides out of `_fold` instead of being counted inside it so that exactly
+    ONE place decides what a no-verdict fold reports — the same store-side
+    block that already owns `absent` and `unwritten`.
+    """
+
+    body: str | None
+    refusal: str
+    raw: str
+    verdict_raw: str | None
+    verdict_disposition: str
+
+
 async def run(
     *,
     trace: TagTrace,
@@ -921,6 +966,7 @@ async def run(
             metrics.inc("nora_debrief_notes_read_total", value=len(notes_read))
 
         instructions = objective.objective_body(OBJECTIVE)
+        verdict_instructions = objective.objective_body(VERDICT_OBJECTIVE)
         # **The prior is DISCARDED AT THE RENDER, never at the read** (26 §4's
         # non-negotiable). The fold must still READ it — that is the whole
         # requirement, and `nora_debrief_prior_total` has to stay honest about
@@ -932,69 +978,134 @@ async def run(
             trace=trace, prior=None if rebuild is not None else prior,
             display_name=display_name, window=window, tz=tz,
         )
+        # The judge reads the SAME turn WITHOUT the prior (issue #78 Phase 2).
+        # Rendered, not sliced off `rendered`: the two calls must never
+        # disagree about what even happened, so the turn block is shared
+        # machinery and the prior is the standing call's rider.
+        rendered_verdict = render_verdict_input(
+            trace=trace, display_name=display_name, window=window, tz=tz,
+        )
 
-        # ONE `wait_for` around BOTH calls, not one around each: the budget the
-        # slot can afford is a total, and two independently-bounded calls add
-        # up to twice it on exactly the turn that was already slow.
-        async def _fold() -> tuple[str | None, str, str]:
-            """`(body, refusal_label, raw)`.
+        # ONE `wait_for` around the WHOLE gathered pair, not one around each:
+        # the budget the slot can afford is a total, and two independently-
+        # bounded calls add up to twice it on exactly the turn that was already
+        # slow. Inside that one budget the two calls run CONCURRENTLY —
+        # `asyncio.gather` starts both before either finishes, so the fold's
+        # wall time is max(A, B), not A + B. That is the latency argument for
+        # the split: two jobs, one wait.
+        async def _fold() -> _FoldResult:
+            """The two completions, gathered.
 
-            `raw` rides along so the VERDICT parses from the same completion
-            the position came from — one call, two outputs (§3). On the
-            consolidate retry it is the SECOND response, which is correct:
-            that is the answer that was actually accepted, and taking the
-            verdict off the refused one would pair a position with a judgement
-            of a draft nobody kept.
-            """
-            reply = await _complete(client, call="fold", trace=trace, prompt=_prompt(
-                instructions=instructions, rendered=rendered,
-                max_chars=max_chars,
-            ))
-            first = _check(reply, trace.tag_id)
-            if first[0] is None or len(first[0]) <= max_chars:
-                return first[0], first[1], reply.content
-            metrics.inc("nora_standing_overflow_refusals_total", stage="first")
-            # Its OWN span, not a second event on the first one. The retry is a
-            # different prompt producing a different answer, and a trace that
-            # folded them together would show one generation whose input does
-            # not explain its output — the shape §4.0's consolidate exists to
-            # make legible.
-            retry = await _complete(
-                client, call="consolidate", trace=trace,
-                prompt=_consolidate_prompt(
+            Call A (`_standing`) revises the position in the first person; Call
+            B (`_judge`) grades the turn's sourcing with the whole turn in view
+            and the standing prior OUT of it — the call separation is the
+            impartiality (26 §1), the structural fix a single completion could
+            not make because a model asked to write a position and then judge
+            its own sourcing in one breath does not convict itself (21/21
+            `grounded=true` was that call's own signature)."""
+            async def _standing() -> tuple[str | None, str, str]:
+                """`(body, refusal_label, raw)`.
+
+                `raw` rides along so the note proposals parse from the SAME
+                completion the position came from. On the consolidate retry it
+                is the SECOND response, which is correct: that is the answer
+                that was actually accepted, and parsing notes off the refused
+                one would pair a position with notes about a draft nobody
+                kept.
+                """
+                reply = await _complete(client, call="fold", trace=trace, prompt=_prompt(
                     instructions=instructions, rendered=rendered,
-                    max_chars=max_chars, over=first[0],
-                ),
-            )
-            second = _check(retry, trace.tag_id)
-            return second[0], second[1], retry.content
+                    max_chars=max_chars,
+                ))
+                first = _check(reply, trace.tag_id)
+                if first[0] is None or len(first[0]) <= max_chars:
+                    return first[0], first[1], reply.content
+                metrics.inc("nora_standing_overflow_refusals_total", stage="first")
+                # Its OWN span, not a second event on the first one. The retry is a
+                # different prompt producing a different answer, and a trace that
+                # folded them together would show one generation whose input does
+                # not explain its output — the shape §4.0's consolidate exists to
+                # make legible.
+                retry = await _complete(
+                    client, call="consolidate", trace=trace,
+                    prompt=_consolidate_prompt(
+                        instructions=instructions, rendered=rendered,
+                        max_chars=max_chars, over=first[0],
+                    ),
+                )
+                second = _check(retry, trace.tag_id)
+                return second[0], second[1], retry.content
 
-        body, refusal, raw = await asyncio.wait_for(
-            _fold(), timeout=timeout_seconds)
+            async def _judge() -> tuple[str | None, str]:
+                """`(verdict_raw, disposition)`.
+
+                The judge never raises into the fold: its failures degrade to
+                a `"unavailable"` disposition and the position writes anyway —
+                the verdict must never cost the position (26 §3), and with the
+                split that promise now covers a failed CALL, not only a failed
+                parse. `CancelledError` is deliberately not caught: a turn
+                being shut down is the stage's `cancelled` label, not a healthy
+                fold that happened to miss one rider."""
+                if store_verdict is None:
+                    # The verdict exists for exactly one reader — its store —
+                    # and a deployment with none would be paying a model call
+                    # for output nothing can ever read. The same inert shape
+                    # the note tier uses for `notes_sink=None`.
+                    return None, "skipped"
+                try:
+                    reply = await _complete(
+                        client, call="verdict", trace=trace,
+                        prompt=_verdict_prompt(
+                            instructions=verdict_instructions,
+                            rendered=rendered_verdict,
+                        ),
+                    )
+                except Exception:
+                    log.exception(
+                        "debrief: the verdict call failed (tag=%s); the "
+                        "position is unaffected", trace.tag_id,
+                    )
+                    return None, "unavailable"
+                if _truncated(reply, trace.tag_id, what="the verdict"):
+                    return None, "unavailable"
+                return reply.content, ""
+
+            (body, refusal, raw), (verdict_raw, verdict_disposition) = (
+                await asyncio.gather(_standing(), _judge()))
+            return _FoldResult(
+                body=body, refusal=refusal, raw=raw,
+                verdict_raw=verdict_raw, verdict_disposition=verdict_disposition,
+            )
+
+        result = await asyncio.wait_for(_fold(), timeout=timeout_seconds)
+        body, refusal, raw = result.body, result.refusal, result.raw
         if body is None:
             outcome = refusal
             return
 
-        # Parsed from the SAME completion the position came from — one call,
-        # two outputs (§3) — with its own validated shape and its own failure
-        # mode, never a widened schema with optional fields (§7).
+        # Parsed from the VERDICT call's raw output — its own call and its own
+        # validated shape now (§7), never a widened schema with optional
+        # fields.
         #
-        # **BELOW the `body is None` guard, deliberately.** `_check` refuses a
-        # `finish_reason == "length"` body BEFORE parsing, precisely because a
-        # truncated JSON document can parse into something — a shorter string,
-        # a dict missing its last key — and that «something» is an ERROR
-        # wearing a PASS. Parsing the verdict ABOVE the guard handed that same
-        # truncated text to `json.loads` anyway. It was harmless only because
-        # the result was discarded on every refusal path, which made it a
-        # loaded gun: the moment a verdict could be written on a path that did
-        # not fully succeed, a truncated body parsing to `{"grounded": true}`
-        # would become a NEVER-REWRITTEN row asserting a judgement the fold
-        # never formed. Below the guard, a refused body cannot reach the parser
-        # at all (cold review, 2026-08-28).
-        verdict = _verdict(
-            raw, tag_id=trace.tag_id, conversation_id=trace.conversation_id,
-            now_ms=now_ms,
-        )
+        # **BELOW the `body is None` guard, deliberately.** No verdict is ever
+        # written on a refusal path: a standing half that was cut off or
+        # malformed returns above this line, and the verdict half's OWN
+        # `_truncated` refusal happens before its answer reaches any parse, so
+        # a `"length"` finish anywhere is «no verdict», never a verdict. (The
+        # single-completion version of this rule parsed the verdict off the
+        # position's raw answer below the same guard; the split keeps the
+        # ordering and gives each parse only its own call's text
+        # (cold review, 2026-08-28; issue #78 Phase 2).)
+        verdict = None
+        if result.verdict_disposition == "":
+            # Narrowed by the disposition, so `_verdict`'s raw is a real
+            # answer: `unavailable` and `skipped` arrive with no text at all.
+            verdict = _verdict(
+                result.verdict_raw or "",
+                tag_id=trace.tag_id,
+                conversation_id=trace.conversation_id,
+                now_ms=now_ms,
+            )
 
         if len(body) > max_chars:
             # The second refusal. Nothing is written and the PRIOR position
@@ -1118,7 +1229,8 @@ async def run(
                         trigger=rebuild.trigger)
 
         # THE PER-TURN VERDICT, written AFTER the position and never allowed to
-        # cost it. Two outputs of one call (26 §3) with opposite cardinalities:
+        # cost it. Two CALLS' outputs (26 §3, split by issue #78 Phase 2) with
+        # opposite cardinalities:
         # `standing` is one row per conversation revised in place, this is one
         # row per turn NEVER rewritten. The split was found by a bug — per-turn
         # fields on the per-conversation row meant the re-derivation trigger
@@ -1150,6 +1262,17 @@ async def run(
                     "revised position stands", trace.tag_id,
                 )
                 metrics.inc("nora_turn_verdict_total", grounded="unwritten")
+        elif store_verdict is not None and (
+            result.verdict_disposition == "unavailable"
+        ):
+            # The judge's CALL failed or was cut off — R-27's «I could not
+            # check», on the verdict's own series, and deliberately a THIRD
+            # label rather than either neighbour: `absent` says the objective
+            # is not asking for a verdict clearly enough, `unwritten` says the
+            # store refused, this says the model call's own infrastructure
+            # did. Sustained, it is a `[standing] timeout`-shaped problem, not
+            # a prompt one.
+            metrics.inc("nora_turn_verdict_total", grounded="unavailable")
         elif store_verdict is not None:
             # The model revised the position but gave no usable verdict. A
             # reading, not a failure — a sustained rate here means the
@@ -1357,13 +1480,28 @@ async def run(
         annotate(**{"nora.debrief.outcome": outcome})
 
 
-def _check(completion: Completion, tag_id: str) -> tuple[str | None, str]:
-    """`(body, refusal_label)` — and `finish_reason` is checked FIRST.
+def _truncated(completion: Completion, tag_id: str, *, what: str) -> bool:
+    """The finish_reason-FIRST refusal, shared by BOTH calls.
 
     A `"length"` finish means the body is truncated, so it must never reach
     `json.loads`: a truncated JSON document can parse into something (a shorter
     string, a dict missing its last key) and that «something» is an ERROR
-    wearing a PASS. Refusing before the parse is what keeps the two apart.
+    wearing a PASS. `_check` and the verdict half both call this, so the two
+    calls cannot drift apart on the one failure shape whose cost is a PASS
+    wearing a refusal — the split gave the verdict its own call, not its own
+    version of this rule.
+    """
+    if completion.finish_reason == "length":
+        log.warning(
+            "debrief: %s was cut off at the output ceiling (tag=%s); not "
+            "parsing a truncated body", what, tag_id,
+        )
+        return True
+    return False
+
+
+def _check(completion: Completion, tag_id: str) -> tuple[str | None, str]:
+    """`(body, refusal_label)` for the STANDING call — `finish_reason` first.
 
     **The two failures carry DIFFERENT labels and that is the point**, even
     though both write nothing. `"unavailable"` is «the call was cut off, I
@@ -1374,11 +1512,7 @@ def _check(completion: Completion, tag_id: str) -> tuple[str | None, str]:
     is. Collapsing them would make the one instrument this stage has unable to
     tell an infrastructure problem from a prompt problem.
     """
-    if completion.finish_reason == "length":
-        log.warning(
-            "debrief: the fold was cut off at the output ceiling (tag=%s); "
-            "not parsing a truncated body", tag_id,
-        )
+    if _truncated(completion, tag_id, what="the fold"):
         return None, "unavailable"
     body = _body(completion.content)
     return (body, "") if body is not None else (None, "malformed")

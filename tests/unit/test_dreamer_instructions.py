@@ -357,6 +357,11 @@ def test_the_objective_file_is_the_pre_move_constant_byte_for_byte(objective):
 # objective a one-line, deliberate act, and leaves the lifted three pinned.
 NATIVELY_AUTHORED = {
     "fact-candidates", "fact-adjudication", "standing-debrief",
+    # Phase 2 of issue #78 split the debrief's judge into its own objective.
+    # Same directory for the same reason as `standing-debrief` below: a
+    # TAG-PATH stage's hot-reloading instruction text, read through
+    # `objective_body` and never `for_objective`.
+    "standing-verdict",
     # Written for the curator, never lifted: the note tier had no
     # background pass before it, so there is no prior prompt to have
     # moved and no fixture that could pin one.
