@@ -10,10 +10,10 @@ description: >
   web") move into conduct.md. Result: one place describes a tool — its
   schema — matching Hermes/Claude Code practice where no capability document
   exists at all.
-status: proposed
-governance: pre-governance-input
+status: implemented
+governance: approved
 timestamp: '2026-08-30'
-revision: '2026-08-30 — adversarial review #1 (Hermes delegate) run budget expired; transcript findings absorbed: evals/ CAPABILITY_BLOCK surface (03), capability() tail-sentence disposition (02 §5). Review #2 (glm-5.3-flash) run budget also expired; its transcript surfaced the loader''s own capability machinery (CAPABILITY_ORDER/DESCRIPTION/_capability_section, DoctrineStore capability= param + _scan append, web/doctrine endpoint pins, generated-section tests) — 03 §3/§5 completed to enumerate every consumer. Still pending: a review that completes with a formal verdict.'
+revision: '2026-08-30 — adversarial review #1 (Hermes delegate) run budget expired; transcript findings absorbed: evals/ CAPABILITY_BLOCK surface (03), capability() tail-sentence disposition (02 §5). Review #2 (glm-5.3-flash) run budget also expired; its transcript surfaced the loader''s own capability machinery (CAPABILITY_ORDER/DESCRIPTION/_capability_section, DoctrineStore capability= param + _scan append, web/doctrine endpoint pins, generated-section tests) — 03 §3/§5 completed to enumerate every consumer. Review #3 (Kimi, kimi_acp.py): APPROVE — all 8 verification commands passed (capability()/live_only/web_tier gone; .when only in Event serialization + historical docstring narrative; DERIVED_KINDS/AUTHORITY_TERMINALS = situation; conduct.md carries closed-world + sourcing with zero tool names; recall_lookups docstring keeps actually/doubted/guessed/re-running; CAPABILITY_BLOCK gone; authority chains clean; 100 targeted tests pass). Implemented by Prime Agent + orchestrated handover (f7eca050 core, eee3197e tests, 34178f10 DEC-92 docstring merge + version bumps, 07e1ea16 prefill docstring) — full suite 5414 passed, only pre-existing env_template failures remain. Kimi bridge bug fixed en route (10s idle select misread as timeout → idle-tolerant loop).'
 origin: "design conversation with miles, #nora 2026-08-30 — 'content 唔再要佢，然後佢裏面所有嘅 capability 本身要嘅嘢，就搬返晒入去個 tools 嘅 schema 入面'"
 members:
   - 00-overview.md
