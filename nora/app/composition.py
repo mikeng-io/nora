@@ -384,6 +384,26 @@ def _describe_providers(cfg: Config) -> dict[str, str]:
     return resolved
 
 
+def _kimi_api_key_env(cfg: Config) -> str:
+    """The env var name a kimi describer's direct lane reads its key from.
+
+    `DescriberConfig.api_key_env` NAMES the variable (DEC-8 — the value never
+    lands in config.toml); empty falls back to `KIMI_CODE_API_KEY` exactly as
+    the field's docstring promises. When several modalities select kimi, the
+    first enabled one's name wins — one direct client, one key source.
+    """
+    for modality in ("image", "audio", "video"):
+        describer = cfg.media.describer_for(modality)
+        if (
+            describer is not None
+            and describer.enabled
+            and describer.model
+            and describer.provider == "kimi"
+        ):
+            return describer.api_key_env or "KIMI_CODE_API_KEY"
+    return "KIMI_CODE_API_KEY"
+
+
 def _compute_workspace_host_root(cfg: Config) -> Path:
     """The host-side path of whatever is bind-mounted at `store.data_dir`.
 
@@ -1252,11 +1272,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     kimi_direct_client: AsyncOpenAI | None = None
     if "kimi" in describe_providers.values():
         from nora.agent.factory import create_client
-        kimi_api_key = os.environ.get("KIMI_CODE_API_KEY", "")
+        kimi_key_env = _kimi_api_key_env(cfg)
+        kimi_api_key = os.environ.get(kimi_key_env, "")
         if not kimi_api_key:
             log.warning(
-                "media describer provider 'kimi' selected but KIMI_CODE_API_KEY "
+                "media describer provider 'kimi' selected but %s "
                 "is unset — kimi-modality describers answer unavailable",
+                kimi_key_env,
             )
         else:
             kimi_direct_client = create_client(

@@ -200,6 +200,32 @@ def test_the_composition_root_offers_providers_only_for_live_describers():
     assert resolved == {"image": "omniroute", "video": "kimi"}
 
 
+def test_the_kimi_key_env_name_resolves_through_api_key_env():
+    """`_kimi_api_key_env` must honour `api_key_env` when a kimi describer
+    names one, and fall back to `KIMI_CODE_API_KEY` when it does not — the
+    contract `DescriberConfig.api_key_env`'s docstring promises (DEC-8: config
+    names the env var, never the key)."""
+    from nora.app.composition import _kimi_api_key_env
+
+    declared = _kimi_api_key_env(_cfg_with(
+        image={"enabled": True, "model": "m/image"},
+        video={"enabled": True, "model": "k3-256k",
+               "provider": "kimi", "api_key_env": "MY_KIMI_KEY"},
+    ))
+    assert declared == "MY_KIMI_KEY"
+
+    defaulted = _kimi_api_key_env(_cfg_with(
+        image={"enabled": True, "model": "m/image"},
+        video={"enabled": True, "model": "k3-256k", "provider": "kimi"},
+    ))
+    assert defaulted == "KIMI_CODE_API_KEY"
+
+    nothing_kimi = _kimi_api_key_env(_cfg_with(
+        image={"enabled": True, "model": "m/image"},
+    ))
+    assert nothing_kimi == "KIMI_CODE_API_KEY"
+
+
 # ---- the registry joint ------------------------------------------------------
 
 def test_the_registry_hands_the_describers_to_the_tool():

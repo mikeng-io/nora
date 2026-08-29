@@ -301,6 +301,10 @@ class VisionClient:
         for attempt in range(2):
             try:
                 return await self._create(block, prompt, model, provider)
+            except ValueError as exc:  # deterministic wiring gap — retrying
+                last_exc = exc          # cannot heal it (kimi without a direct
+                log.warning("vision attempt %d failed: %s", attempt + 1, exc)
+                break
             except Exception as exc:  # noqa: BLE001 — retried once, then re-raised
                 last_exc = exc
                 log.warning("vision attempt %d failed: %s", attempt + 1, exc)

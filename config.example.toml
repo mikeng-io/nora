@@ -1370,6 +1370,9 @@ headers_env = ""                      # same shape/var as obs.tracing.headers_en
 # because OmniRoute drops `video_url` content blocks (probe 2026-08-30: router
 # prompt tokens 95 vs native 3164 for the same payload). A kimi provider whose
 # key is unset answers `unavailable`, never a silent omniroute fallback.
+# `api_key_env` (optional, kimi only) NAMES the env var holding the direct
+# lane's key (DEC-8 — the value never lands here); empty falls back to
+# `KIMI_CODE_API_KEY`.
 [media.describe.image]
 enabled = true
 model = "ollamacloud/minimax-m3"
