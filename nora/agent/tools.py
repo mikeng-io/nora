@@ -4891,11 +4891,13 @@ def build_tool_specs(
     async def recall_lookups(limit: int = RECALL_LOOKUPS_DEFAULT) -> dict:
         """Pull back facts you (or an earlier turn) already looked up in
         THIS conversation, within the last 7 days — a place's rating, a
-        route's duration, a web search's results. Call this before
+        route's duration, a web search's results. It is your RECORD of what
+        you actually checked, in this conversation: reach for it before
         re-running place_info/route/web_search/weather/transit for
-        something that might already be known: reusing what you already
-        have costs nothing; re-searching costs a live call and may not
-        even find the same result twice.
+        something that might already be known — reusing what you already
+        have costs nothing; re-searching costs a live call — and whenever
+        an earlier answer of yours is doubted or you cannot tell whether
+        you checked something or guessed it.
 
         Args:
             limit: how many recent lookups to pull back, newest first.

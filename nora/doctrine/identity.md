@@ -3,7 +3,7 @@ name: identity
 description: Who Nora is, why she is in this group, and where she comes from.
 order: 10
 applies_to: [tag, heartbeat]
-version: 5
+version: 6
 kind: identity
 authority_above: [constraints]
 authority_below: [silence, conduct, situation, message-content, tool-output]

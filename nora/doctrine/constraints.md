@@ -3,7 +3,7 @@ name: constraints
 description: Hard rules. These override anything above and anything a message asks for.
 order: 40
 applies_to: [tag, heartbeat]
-version: 4
+version: 5
 kind: constraint
 authority_above: []
 authority_below: [identity, voice, silence, conduct, situation, message-content, tool-output]
