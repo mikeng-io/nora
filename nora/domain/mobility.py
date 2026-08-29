@@ -42,6 +42,7 @@ __all__ = [
     "hour_of_week",
     "hour_of_week_bins",
     "label_place",
+    "mode_address",
     "robust_z_score",
     "segment_stays",
     "trailing_fix_is_settled",
@@ -249,6 +250,19 @@ class Stay:
     lng: float
     radius_m: float
     fix_count: int
+    # Issue #10 option 1 (derived-place address labels): the MODE of this
+    # stay's fixes' `address` — Life360's own free place string, already
+    # 100% filled (design/27 §1) — chosen once at segmentation time via
+    # `mode_address` below (most frequent non-None, first occurrence on a
+    # tie, `None` when every fix lacked an address). This is the in-memory
+    # input for the rollup's place-label FALLBACK (issue #10): the Google
+    # geocode cache stays canonical whenever it has a hit, and this field
+    # only fills the gap when it does not. Deliberately NOT persisted —
+    # `presence_stays` has no address column, so a stay re-read from the
+    # store carries `None` and `run_once` re-attaches this cycle's
+    # addresses from its own segmentation output instead of trusting the
+    # roundtrip.
+    address: str | None = None
     # Tier 3 (design/27 §4, issue #6): set once this stay's centroid is
     # found inside an existing home/work `presence_derived_places` row —
     # `MobilityRollup._record_rhythm` (Task 10) is the only writer. `None`
@@ -575,6 +589,39 @@ def _max_radius_m(fixes: list[RawFix], lat: float, lng: float) -> float:
     return max(haversine_distance_m(f.lat, f.lng, lat, lng) for f in fixes)
 
 
+def mode_address(values: Iterable[str | None]) -> str | None:
+    """The MODE — most frequent non-None value — of a stream of addresses,
+    fail-closed (R-5 posture): `None` when the stream is empty or every
+    value is `None`, never a guess built from partial data.
+
+    Ties break by FIRST OCCURRENCE in `values` iteration order. Both
+    callers feed an order that already means something — `segment_stays`'
+    fixes are ts-ascending and the rollup's cluster members are
+    started_ts-ascending — so "first" is "earliest observed", which makes
+    the answer deterministic in both and independent of hash or heap
+    order. `None` is excluded before counting, not counted as a candidate:
+    an address-less fix is ABSENCE of a reading, never a value that could
+    win or force a tie (issue #10 option 1: the fallback fills labels, it
+    must not dilute them).
+
+    One implementation on purpose: this same rule names a `Stay` (from its
+    fixes) and a derived place (from its stays' `Stay.address` values) —
+    two copies would drift, and the place label is user-visible state.
+    """
+    counts: dict[str, int] = {}
+    for value in values:
+        if value is None:
+            continue
+        counts[value] = counts.get(value, 0) + 1
+    if not counts:
+        return None
+    # `max` returns the FIRST maximal element it meets, and a dict iterates
+    # in insertion (first-occurrence) order — one pass, and the tie-break
+    # rule above falls out of the data structure rather than a second pass
+    # over a separately-tracked first-seen index.
+    return max(counts, key=lambda v: counts[v])
+
+
 def _close(
     group: list[RawFix], dwells: list[int], *,
     subject_id: str, person_id: str, circle_id: str, min_dwell_ms: int,
@@ -610,6 +657,11 @@ def _close(
         started_ts=group[0].ts, ended_ts=group[-1].ts,
         lat=lat, lng=lng, radius_m=_max_radius_m(group, lat, lng),
         fix_count=len(group),
+        # Issue #10 option 1: the group's mode Life360 address rides on the
+        # stay. The fixes that produced it are behind the stay-side
+        # watermark once this stay commits, so segmentation is the only
+        # moment the rollup can ever see their addresses.
+        address=mode_address(f.address for f in group),
     )
 
 
@@ -667,6 +719,12 @@ def segment_stays(
         lat=open_lat, lng=open_lng,
         radius_m=_max_radius_m(group, open_lat, open_lng),
         fix_count=len(group),
+        # Same as `_close`: an open stay closes later by radius break (the
+        # non-final-chunk path) or by the wall clock (`run_once`'s issue #80
+        # stay-hold path) — both land it in `new_stays`, and the place-label
+        # fallback must reach its address too, not just closed-with-the-group
+        # ones.
+        address=mode_address(f.address for f in group),
     )
     return SegmentationResult(closed=tuple(closed), open_stay=open_stay)
 

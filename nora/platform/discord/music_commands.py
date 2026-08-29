@@ -300,7 +300,7 @@ class MusicCommands(app_commands.Group):
             # in the logs to explain why.
             log.exception("music play failed for guild %s", guild_id)
             await interaction.followup.send(
-                m.join_failed_line(), ephemeral=True,
+                m.join_failed_line(), ephemeral=True, silent=True,
             )
             return
         if outcome is None:
@@ -309,15 +309,15 @@ class MusicCommands(app_commands.Group):
                 guild_id,
             )
             await interaction.followup.send(
-                m.join_voice_channel_line(), ephemeral=True,
+                m.join_voice_channel_line(), ephemeral=True, silent=True,
             )
             return
         log.info("music command: /music play guild=%s -> %s", guild_id, outcome.status)
         if outcome.status == "nothing_found":
-            await interaction.followup.send(_reply_for(outcome))
+            await interaction.followup.send(_reply_for(outcome), silent=True)
             return
         controls = _NowPlayingControls(self._manager, guild_id)
-        await interaction.followup.send(_reply_for(outcome), view=controls)
+        await interaction.followup.send(_reply_for(outcome), view=controls, silent=True)
         controls.message = await interaction.original_response()
 
     @app_commands.command(name="skip", description="Skip the current track.")
@@ -329,9 +329,9 @@ class MusicCommands(app_commands.Group):
         await interaction.response.defer()
         skipped = await self._manager.skip(guild_id)
         if skipped is None:
-            await interaction.followup.send(m.nothing_playing_line())
+            await interaction.followup.send(m.nothing_playing_line(), silent=True)
             return
-        await interaction.followup.send(m.skipped_line(skipped))
+        await interaction.followup.send(m.skipped_line(skipped), silent=True)
 
     @app_commands.command(
         name="top", description="Move a queued track to play next.",
@@ -350,9 +350,9 @@ class MusicCommands(app_commands.Group):
         await interaction.response.defer()
         moved = await self._manager.top(guild_id, position)
         if moved is None:
-            await interaction.followup.send(m.nothing_queued_at_position_line())
+            await interaction.followup.send(m.nothing_queued_at_position_line(), silent=True)
             return
-        await interaction.followup.send(m.next_line(moved))
+        await interaction.followup.send(m.next_line(moved), silent=True)
 
     @app_commands.command(name="queue", description="Show what's playing and queued.")
     async def queue(self, interaction: discord.Interaction) -> None:
@@ -362,16 +362,16 @@ class MusicCommands(app_commands.Group):
         guild_id = str(interaction.guild_id)
         status = await self._manager.status(guild_id)
         if status is None or status.now_playing is None:
-            await interaction.followup.send(m.nothing_playing_line())
+            await interaction.followup.send(m.nothing_playing_line(), silent=True)
             return
         view = _QueuePaginator(self._manager, guild_id)
         content = view.render_page(status)
         if len(status.queue) <= _QUEUE_PAGE_SIZE:
             # Fits on one screen -- no buttons that would only ever sit
             # disabled.
-            await interaction.followup.send(content)
+            await interaction.followup.send(content, silent=True)
             return
-        await interaction.followup.send(content, view=view)
+        await interaction.followup.send(content, view=view, silent=True)
         view.message = await interaction.original_response()
 
     @app_commands.command(name="pause", description="Pause playback.")
@@ -382,7 +382,9 @@ class MusicCommands(app_commands.Group):
         log.info("music command: /music pause guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
         ok = await self._manager.pause(guild_id)
-        await interaction.followup.send(m.paused_line() if ok else m.nothing_playing_line())
+        await interaction.followup.send(
+            m.paused_line() if ok else m.nothing_playing_line(), silent=True,
+        )
 
     @app_commands.command(name="resume", description="Resume playback.")
     async def resume(self, interaction: discord.Interaction) -> None:
@@ -392,7 +394,9 @@ class MusicCommands(app_commands.Group):
         log.info("music command: /music resume guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
         ok = await self._manager.resume(guild_id)
-        await interaction.followup.send(m.resumed_line() if ok else m.not_paused_line())
+        await interaction.followup.send(
+            m.resumed_line() if ok else m.not_paused_line(), silent=True,
+        )
 
     @app_commands.command(name="stop", description="Stop playback, clear the queue, and leave.")
     async def stop(self, interaction: discord.Interaction) -> None:
@@ -402,7 +406,7 @@ class MusicCommands(app_commands.Group):
         log.info("music command: /music stop guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
         await self._manager.stop(guild_id)
-        await interaction.followup.send(m.stopped_line())
+        await interaction.followup.send(m.stopped_line(), silent=True)
 
     @app_commands.command(name="volume", description="Set playback volume (0-200%).")
     @app_commands.describe(percent="Volume as a percentage, 0-200 (100 = normal)")
@@ -423,12 +427,12 @@ class MusicCommands(app_commands.Group):
         # thing standing between a malformed value and MusicPlayer.
         result = await self._manager.set_volume(guild_id, percent / 100.0)
         if result is None:
-            await interaction.followup.send(m.nothing_playing_line())
+            await interaction.followup.send(m.nothing_playing_line(), silent=True)
             return
         if not result:
-            await interaction.followup.send(m.volume_out_of_range_line())
+            await interaction.followup.send(m.volume_out_of_range_line(), silent=True)
             return
-        await interaction.followup.send(m.volume_line(percent))
+        await interaction.followup.send(m.volume_line(percent), silent=True)
 
 
 async def register(

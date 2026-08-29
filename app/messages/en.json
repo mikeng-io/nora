@@ -29,6 +29,107 @@
     "discord": "Sign in with Discord",
     "denied": "That Discord account isn't on the list. Ask Miles to add it."
   },
+  "landing": {
+    "heroEyebrow": "Nora · Zone 42",
+    "heroTitle": "Nora",
+    "heroPositioning": "The group's ambient agent",
+    "heroTagline": "Always reading. Answers when you tag her.",
+    "cta": "Sign in with Discord",
+    "whatHeading": "What she is",
+    "whatBody": "Nora lives in your Signal and Discord rooms. She reads everything, remembers what matters, and stays quiet until you call her name. Built by Miles, running on his own machine — for the group, nobody else.",
+    "capabilityHeading": "What she does",
+    "capabilityBadge": "Works in chat",
+    "capability": {
+      "status": {
+        "title": "Status",
+        "description": "What's running, what's reachable."
+      },
+      "memory": {
+        "title": "Memory",
+        "description": "What she remembers about you."
+      },
+      "games": {
+        "title": "Games",
+        "description": "Game server status, who's online."
+      },
+      "map": {
+        "title": "Map",
+        "description": "Where everyone is, right now."
+      },
+      "weather": {
+        "title": "Weather",
+        "description": "Live HKO conditions."
+      },
+      "transit": {
+        "title": "Transit",
+        "description": "Next bus or train, on demand."
+      },
+      "roomWords": {
+        "title": "Room words",
+        "description": "The slang and in-jokes she's picked up."
+      },
+      "events": {
+        "title": "Events",
+        "description": "What's happening in the room."
+      }
+    },
+    "howHeading": "How she remembers",
+    "howBody": "Every message gets ingested in the background — recorded and fed to Honcho, her store for memory about people. She never answers on her own; a tag is what starts the agent loop: read context → think → reply.",
+    "techHeading": "How she's built",
+    "techIntro": "Nora isn't one prompt plus one model — she has five tiers, each storing a different kind of knowing.",
+    "tier": {
+      "memory": {
+        "title": "Memory",
+        "domain": "People",
+        "description": "Soft memory about people. Every message is fed to Honcho in the background, and the Deriver slowly builds its read of each person. She reads it back out when tagged."
+      },
+      "standing": {
+        "title": "Standing",
+        "domain": "Her position",
+        "description": "Her position in each conversation. Every finished turn, a second model — not the one that replied — reviews the whole exchange and rewrites it. Lossy by design, capped at 1200 characters."
+      },
+      "notes": {
+        "title": "Notes",
+        "domain": "Open questions",
+        "description": "Unresolved questions, tracked on purpose. Each one carries a closing condition — what would settle it — and a background curator merges, retires, and promotes them."
+      },
+      "knowledge": {
+        "title": "Knowledge",
+        "domain": "The world",
+        "description": "Facts about the world, held in a bitemporal knowledge graph. Every fact carries a warrant (source, observation, stated, premises) and a fidelity — tentative, proven, or deprecated."
+      },
+      "language": {
+        "title": "Language",
+        "domain": "Words",
+        "description": "The room's words. Lexemes carry a gloss and counts, scored and decaying — a stale term stops rendering. Exchange observations record who said what to whom."
+      }
+    },
+    "afterHeading": "After you sign in",
+    "afterBody": "Sign in to see her status, memory, game servers, and where everyone is — for the group, nobody else.",
+    "cardEyebrow": "Nora · portal",
+    "cardHeading": "Sign in",
+    "cardDek": "Sign in to see her status, memory, game servers, and where everyone is — for the group, nobody else.",
+    "cardCta": "Sign in with Discord",
+    "diffHeading": "Not another workspace agent",
+    "diffIntro": "Claude Tag lives in Slack. Kiro Crew lives in your IDE. OpenClaw lives on your machine. Nora lives in your group chat — the one place nobody else took.",
+    "diff": {
+      "1": {
+        "badge": "vs Claude Tag",
+        "title": "She remembers people, not code",
+        "description": "Other agents remember codebases, repos, and tickets. Nora remembers you — your friends, what the group said, who got married when. Social memory is a category nobody else built."
+      },
+      "2": {
+        "badge": "vs Kiro Crew",
+        "title": "Ambient doesn't mean proactive",
+        "description": "Other agents' 'ambient' means an LLM deciding when to speak up. Nora's ambient ingest is zero-LLM — pure recording, no reasoning. Knowledge is ambient; action is reactive."
+      },
+      "3": {
+        "badge": "vs OpenClaw",
+        "title": "Silence is the feature",
+        "description": "Other agents sell proactivity and full access. Nora is built the other way: silence beats a wrong answer. The most useful agent is the one that knows when not to speak."
+      }
+    }
+  },
   "status": {
     "eyebrow": "Nora · public face",
     "heading": "Status",

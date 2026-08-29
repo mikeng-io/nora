@@ -70,6 +70,7 @@
   --color-danger: var(--danger);
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --font-sans: var(--font-sans-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: var(--font-space-grotesk), var(--font-sans-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   /* Login card entrance — `both`-filled so the animation's start/end state
    * holds outside its run, not just a flash of unstyled content before it
