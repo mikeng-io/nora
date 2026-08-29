@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "All /music slash-command replies are now sent as silent notifications — no push notification or ping on Discord.",
+  "details": [
+    "Every /music command reply (play, skip, top, queue, pause, resume, stop, volume — including the error/empty states and the now-playing control panel) now passes silent=True to the interaction followup.",
+    "Previously only the auto-advance \"Now playing\" channel notification was silent; the command replies themselves still triggered a push notification on Discord.",
+    "The messages still appear in the channel as before — silent only suppresses the notification/ping, not the message."
+  ],
+  "limitations": [
+    "Nora's conversational replies (the agent path after a tag, e.g. the reply to a play_music tool call) are unchanged — they are replies to a person, not system notifications."
+  ]
+}
