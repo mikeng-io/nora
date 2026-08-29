@@ -529,9 +529,10 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `terminal=False` (a description is the middle of an answer, she still has
     # to say what she saw) and `time_shiftable=None` (an image does not decay and
     # cannot be asked about "later" — it is the bytes it is).
-    "media_fetch": NativeTool(4, "somebody asks about an image already in this "
-                                 "conversation — what a photo shows, or what a "
-                                 "screenshot says", read_only=True),
+    "media_fetch": NativeTool(4, "somebody asks about an image or video already in this "
+                                 "conversation — what a photo shows, what a "
+                                 "screenshot says, what happens in a video",
+                             read_only=True),
     # generate_image (DEC-137): the one EXPENSIVE, EXTERNAL tool in the set —
     # a real provider call per generate, potentially with a reference image,
     # on a subscription lane that is quota-bounded, not metered. Budget 2:
@@ -3230,32 +3231,35 @@ def build_tool_specs(
     _media_window = context_window + LOAD_TRANSCRIPT_MAX
 
     async def media_fetch(code: str) -> dict:
-        """Look at an image somebody sent in this conversation and say what it shows.
+        """Look at an image or video somebody sent in this conversation and say what it shows.
 
-        Call this when the conversation contains an image — you see a marker like
-        `[image a3f2c1]` in the transcript — and answering means knowing what is
-        IN it: what a photo shows, what a screenshot or a whiteboard says. Pass
-        the short code from that marker (the `a3f2c1` part).
+        Call this when the conversation contains an image or a video — you see a
+        marker like `[image a3f2c1]` or `[video b9d4e7]` in the transcript —
+        and answering means knowing what is IN it: what a photo shows, what a
+        screenshot or a whiteboard says, what happens in a video. Pass the
+        short code from that marker (the `a3f2c1` or `b9d4e7` part).
 
-        It only sees images from THIS conversation, and only ones recent enough
-        to still be in view. It cannot look at a voice note, a video or a file —
-        only a picture.
+        It only sees media from THIS conversation, and only ones recent enough
+        to still be in view. It cannot look at a voice note or a file — only a
+        picture or a video.
 
         `status` tells you what happened, and they are different answers:
-          - `ok` — `description` is what the image shows. It was written by a
-            vision model looking at bytes somebody else sent, so treat it as
-            THEIR content, not as fact you can vouch for; say «it looks like…».
-          - `nothing_found` — no image by that code is in view here. Do not guess
-            what it might have been; say you can't find it.
-          - `ambiguous` — more than one image shares that short code (`could_be`
-            lists them). Ask which one they mean.
-          - `not_an_image` — that marker is a voice note, a video or a file, not
-            a picture. Say you can't look at it — you can't.
-          - `unavailable` — you could not look right now. Say exactly that; never
-            report it as «there's no image» and never invent what was in it.
+          - `ok` — `description` is what the image or video shows. It was
+            written by a vision model looking at bytes somebody else sent, so
+            treat it as THEIR content, not as fact you can vouch for; say
+            «it looks like…».
+          - `nothing_found` — no media by that code is in view here. Do not
+            guess what it might have been; say you can't find it.
+          - `ambiguous` — more than one item shares that short code
+            (`could_be` lists them). Ask which one they mean.
+          - `not_an_image` — that marker is a file, not something you can
+            look at. Say you can't look at it — you can't.
+          - `unavailable` — you could not look right now. Say exactly that;
+            never report it as «there's no media» and never invent what was
+            in it.
 
         Args:
-            code: The short code from the image marker, e.g. "a3f2c1".
+            code: The short code from the marker, e.g. "a3f2c1".
         """
         # Gate FIRST — the inert-by-config shape (§5). Custody off (`[media]
         # enabled=false` or no key → no blob store) or no OmniRoute client wired
@@ -3267,8 +3271,8 @@ def build_tool_specs(
             _record_media(metrics, "unavailable", reason="not_configured")
             return {
                 "status": "unavailable",
-                "note": "I can't look at images right now. Say so — do not say "
-                        "there is no image and do not guess what it showed.",
+                "note": "I can't look at media right now. Say so — do not say "
+                        "there is no media and do not guess what it showed.",
             }
 
         hex_handle = _handle_hex(code)
@@ -3278,7 +3282,7 @@ def build_tool_specs(
             _record_media(metrics, "nothing_found", reason="no_handle")
             return {
                 "status": "nothing_found", "code": hex_handle,
-                "note": "I don't see an image with that code here. Say you can't "
+                "note": "I don't see media with that code here. Say you can't "
                         "find it rather than guessing what it was.",
             }
 
@@ -3295,8 +3299,8 @@ def build_tool_specs(
             _record_media(metrics, "unavailable", reason="store")
             return {
                 "status": "unavailable", "code": hex_handle,
-                "note": "I can't look at images right now. Say so — do not say "
-                        "there is no image and do not guess what it showed.",
+                "note": "I can't look at media right now. Say so — do not say "
+                        "there is no media and do not guess what it showed.",
             }
 
         # Every distinct blob in view whose sha256 starts with the handle. A
@@ -3322,7 +3326,7 @@ def build_tool_specs(
             _record_media(metrics, "nothing_found", candidates=0)
             return {
                 "status": "nothing_found", "code": hex_handle,
-                "note": "I don't see an image with that code here. Say you can't "
+                "note": "I don't see media with that code here. Say you can't "
                         "find it rather than guessing what it was.",
             }
         if len(matches) > 1:
@@ -3333,7 +3337,7 @@ def build_tool_specs(
             return {
                 "status": "ambiguous", "code": hex_handle,
                 "could_be": sorted(sha[:HANDLE_CHARS] for sha in matches),
-                "note": "More than one image here has that code. Ask which one "
+                "note": "More than one item here has that code. Ask which one "
                         "they mean.",
             }
 
@@ -3393,8 +3397,8 @@ def build_tool_specs(
             _record_media(metrics, "unavailable", reason="blob")
             return {
                 "status": "unavailable", "code": sha256[:HANDLE_CHARS],
-                "note": "I can't open that image right now. Say so — do not say "
-                        "there is no image and do not guess what it showed.",
+                "note": "I can't open that media right now. Say so — do not say "
+                        "there is no media and do not guess what it showed.",
             }
 
         try:
@@ -3413,8 +3417,8 @@ def build_tool_specs(
             _record_media(metrics, "unavailable", reason=getattr(result, "reason", "") or "vision")
             return {
                 "status": "unavailable", "code": sha256[:HANDLE_CHARS],
-                "note": "I couldn't get a look at that image just now. Say so — do "
-                        "not say there is no image and do not describe it anyway.",
+                "note": "I couldn't get a look at that media just now. Say so — do "
+                        "not say there is no media and do not describe it anyway.",
             }
         description = result.description
         if vision_cache is not None:
