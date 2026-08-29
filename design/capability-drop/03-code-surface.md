@@ -70,6 +70,7 @@ to two.
 |---|---|
 | `composition.py` line ~948 | drop `capability=ToolRegistry().capability()` from the `DoctrineStore`/`build_doctrine` call |
 | `eval_support.py` lines ~65-68 (`CAPABILITY_BLOCK`) | delete; eval assembles doctrine without the block (situation remains) |
+| `evals/run.py` lines 74, 401 + `evals/harness.py` lines 37, 269 | **delete the `CAPABILITY_BLOCK` import and the `capability=` kwarg** — both import from `nora.app.eval_support` and pass the block to their DoctrineStore; without this, the eval harness keeps assembling a doctrine the production path no longer has (the exact "silently missing a fifth of it" failure `eval_support` was built to prevent, now inverted) |
 
 ## 5. Tests
 
