@@ -194,15 +194,10 @@ def _block(block: Mapping[str, Any]) -> str:
     return ""
 
 
-def render_debrief_input(
-    *,
-    trace: TagTrace,
-    prior: Standing | None,
-    display_name: str,
-    window: int,
-    tz: tzinfo | None = None,
+def render_debrief_turn(
+    *, trace: TagTrace, display_name: str, window: int, tz: tzinfo | None = None,
 ) -> str:
-    """The whole of what the fold sees about this turn, as one block.
+    """The whole turn — outcome, transcript, reasoning — as one block.
 
     `window` is capped at `[store] context_window` and now equals it — the fold
     reads the rows the REPLY path assembled, so it can never exceed them, and
@@ -211,6 +206,54 @@ def render_debrief_input(
     until the operator overrode it on 2026-08-27: a fold reasoning from 12 rows
     judges a turn it can only see a third of. The slice is the TAIL — the rows
     nearest the turn being reviewed.
+
+    **The block both calls read, and the standing call extends.** Issue #78
+    Phase 2 splits the fold into a position call and a verdict call; the judge
+    renders EXACTLY this block, the position call prepends
+    `<standing_prior>` to it (`render_debrief_input`). Giving the judge the
+    prior would be prompt pollution in the other direction: a judge shown the
+    position it is about to write judges the position, not the turn.
+    """
+    rows = tuple(trace.transcript)[-window:] if window > 0 else ()
+    gloss = _OUTCOME_GLOSS.get(trace.outcome, trace.outcome)
+    at = datetime.fromtimestamp(trace.created_at / 1000, tz=tz).strftime(
+        "%Y-%m-%d %H:%M %Z"
+    ).strip()
+    return (
+        f'<turn outcome="{escape_attr(trace.outcome)}" at="{escape_attr(at)}">\n'
+        f"  <what_happened>{escape(gloss)}</what_happened>\n"
+        f"  <transcript>\n{_transcript(rows, display_name=display_name, tz=tz)}\n"
+        f"  </transcript>\n"
+        f"  <reasoning>\n{_reasoning(trace.messages)}\n  </reasoning>\n"
+        f"</turn>"
+    )
+
+
+def render_verdict_input(
+    *, trace: TagTrace, display_name: str, window: int, tz: tzinfo | None = None,
+) -> str:
+    """What the VERDICT call sees: the whole turn, WITHOUT the prior.
+
+    Same transcript, same reasoning, same outcome labelling as the standing
+    render — the judge sequences the SAME turn, so a different render here
+    would let the two calls disagree about what even happened. Only the prior
+    is missing, and that is the point (issue #78 Phase 2): the verdict must not
+    read the position it is about to write.
+    """
+    return render_debrief_turn(
+        trace=trace, display_name=display_name, window=window, tz=tz,
+    )
+
+
+def render_debrief_input(
+    *,
+    trace: TagTrace,
+    prior: Standing | None,
+    display_name: str,
+    window: int,
+    tz: tzinfo | None = None,
+) -> str:
+    """The whole of what the STANDING call sees — the prior plus the turn.
 
     `<standing_prior>` is emitted **even when there is none**, carrying an
     explicit "no position yet" rather than being omitted. §4.2 fixes that: an
@@ -225,17 +268,7 @@ def render_debrief_input(
         else "<standing_prior>\n(no position yet — this is the first fold for "
              "this conversation)\n</standing_prior>"
     )
-    rows = tuple(trace.transcript)[-window:] if window > 0 else ()
-    gloss = _OUTCOME_GLOSS.get(trace.outcome, trace.outcome)
-    at = datetime.fromtimestamp(trace.created_at / 1000, tz=tz).strftime(
-        "%Y-%m-%d %H:%M %Z"
-    ).strip()
-    return (
-        f"{prior_block}\n\n"
-        f'<turn outcome="{escape_attr(trace.outcome)}" at="{escape_attr(at)}">\n'
-        f"  <what_happened>{escape(gloss)}</what_happened>\n"
-        f"  <transcript>\n{_transcript(rows, display_name=display_name, tz=tz)}\n"
-        f"  </transcript>\n"
-        f"  <reasoning>\n{_reasoning(trace.messages)}\n  </reasoning>\n"
-        f"</turn>"
+    turn = render_debrief_turn(
+        trace=trace, display_name=display_name, window=window, tz=tz,
     )
+    return f"{prior_block}\n\n{turn}"

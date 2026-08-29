@@ -1,7 +1,7 @@
 ---
 type: contract
 title: "Standing — A Second Model Reviewing the Finished Exchange"
-description: "How Standing runs, how the roll works, and what it measures. A pipeline stage on the tag path — not a Dreamer adaptor — producing four outputs from one call, with the per-conversation row revised in place and the per-turn row never rewritten."
+description: "How Standing runs, how the roll works, and what it measures. A pipeline stage on the tag path — not a Dreamer adaptor — producing four outputs from TWO calls under one gather (issue #78 Phase 2: the position call and the impartial verdict call), with the per-conversation row revised in place and the per-turn row never rewritten."
 tags: [nora, standing, debrief, rolling, tag-path, measurement]
 timestamp: '2026-08-23'
 edges:
@@ -50,20 +50,30 @@ complains about.
 A debrief that only reviews successful replies measures the path that already
 works.
 
-## 3. Four outputs, one call
+## 3. Four outputs, two calls under one gather
 
-| output | cardinality | rewritten? |
-|---|---|---|
-| **`Standing`** | one row per **conversation** | **yes — in place** |
-| **`TurnVerdict`** | one row per **turn** | **never** |
-| **fact proposals** | zero or more | append-only |
-| **note proposals** | zero or more | append-only |
+| output | cardinality | rewritten? | call |
+|---|---|---|---|
+| **`Standing`** | one row per **conversation** | **yes — in place** | A (position) |
+| **`TurnVerdict`** | one row per **turn** | **never** | B (verdict) |
+| **fact proposals** | zero or more | append-only | A |
+| **note proposals** | zero or more | append-only | A |
 
 **The split between the first two is load-bearing and was found by a bug.** The
 first draft put per-turn fields on the per-conversation row — and the
 re-derivation trigger reads a flag that the *next turn had already overwritten*.
 A per-turn fact on a row revised every turn is a fact with a lifetime of one
 turn.
+
+**The call split is the impartiality (issue #78 Phase 2).** The position call
+(A) revises the standing row in the first person; the verdict call (B) judges
+the turn's sourcing with the whole turn in view and the standing prior OUT of
+it. One completion that both wrote the position and graded its own sourcing
+produced 21/21 `grounded=true` — a model asked to judge itself in the same
+breath does not convict itself. The two calls run concurrently under one
+`asyncio.gather`; the fold's wall time is max(A, B), not A + B. The verdict
+call is skipped entirely when no verdict store is wired (`store_verdict is
+None`), and a verdict failure never costs the position.
 
 **Both proposal kinds go through a sink, never a tool.** The debrief *proposes*;
 it never adjudicates. The argument against in-slot judgment applies to facts and
@@ -202,9 +212,17 @@ not binding; firing constantly means it is too small. Both are readings.
 Phase 1's `cap_messages` truncates **assistant narration only and pins human
 turns**, on the stated ground that *intent cannot be reconstructed from the work
 that followed*. The same asymmetry applies to the fold: when Standing must
-shrink, **what the room said outranks what Nora concluded about it.** A position
-is re-derivable from the transcript; the transcript is not re-derivable from the
-position.
+shrink, **what Nora concluded outranks what the room said** (reversed
+2026-08-29, issue #78 Phase 2 — see `design/standing-split-fold/20-ratchet-and-tiebreak.md`).
+The original rule ran the opposite way — «what the room said outranks what Nora
+concluded about it» — on the ground that *a position is re-derivable from the
+transcript; the transcript is not re-derivable from the position*. That ground
+is still true for the TRACE cap, which is why `cap_messages` still pins human
+turns. It does not transfer to the POSITION: the position is Nora's own
+synthesis, not a transcript, and a shrink that drops her synthesis first leaves
+the tier carrying other people's words wearing her name — the recap-shaped row
+that is the standing tier's failure mode. Room-said belongs in the transcript,
+which is retained separately; the position's job is what Nora concludes.
 
 ### 4.1 The risk this shape carries, restated
 

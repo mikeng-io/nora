@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import time
 
 import pytest
 
@@ -71,15 +72,25 @@ class _FakeSink:
 
 
 class _Objective:
+    """Answers per call: the position half and the judge half get their own
+    texts, so a prompt can be attributed to the completion that carried it."""
+
     def objective_body(self, name: str) -> str:
-        assert name == debrief.OBJECTIVE
-        return "OBJECTIVE-TEXT"
+        assert name in {debrief.OBJECTIVE, debrief.VERDICT_OBJECTIVE}
+        return "OBJECTIVE-TEXT" if name == debrief.OBJECTIVE else "VERDICT-TEXT"
 
 
-def _ok(body: str, *, grounded: bool = True, unsupported=()) -> debrief.Completion:
+def _ok(body: str) -> debrief.Completion:
+    """Call A's answer: the STANDING shape only (issue #78 Phase 2). Spilling
+    `grounded` back into this response would fake a one-completion fold back
+    into existence — the verdict has its own call, and its own helper."""
+    return debrief.Completion(json.dumps({"standing": body}), "stop")
+
+
+def _grounded(*, grounded: bool = True, unsupported=()) -> debrief.Completion:
+    """Call B's answer — its own completion since issue #78 Phase 2."""
     return debrief.Completion(json.dumps({
-        "standing": body, "grounded": grounded,
-        "unsupported": list(unsupported),
+        "grounded": grounded, "unsupported": list(unsupported),
     }), "stop")
 
 
@@ -218,43 +229,47 @@ async def test_an_over_long_fold_is_refused_and_the_model_is_asked_to_consolidat
     store, metrics, _sv = await _run(client=client, max_chars=50)
     row = await store.read(platform="signal", conversation_id="g1")
     assert row.body == "short"
-    assert len(client.prompts) == 2
+    # 1: standing first (over-long), 2: the consolidate retry. The judge is a
+    # THIRD prompt (its own call); only the standing half ever retries.
+    assert len(client.prompts) == 3
     assert "consolidate" in client.prompts[1].lower()
     assert "50-character limit" in client.prompts[1]
     assert _counter(
         metrics, "nora_standing_overflow_refusals_total", stage="first") == 1
 
 
-async def test_the_shrink_asymmetry_reaches_the_consolidate_retry():
-    """**§4.0.1's ordering rule, which shipped with only half of itself.**
+async def test_the_tiebreak_is_reversed_and_recency_scoped_in_the_retry():
+    """**§4.0.1's ordering rule, REVERSED by Phase 2 and still paired with its
+    recency scope.**
 
-    The design states an asymmetry — when Standing must shrink, what the room
-    SAID outranks what Nora concluded about it — and only the recency rule was
-    ever written into the retry. The two conflict: the most recent thing in a
-    position is often something she concluded and the oldest is often something
-    the room said, so recency ALONE drops the room's own words first. That is
-    the inversion the asymmetry exists to prevent, arrived at by omission.
+    The old rule — what the room SAID outranks what Nora concluded — taught
+    the shrink to prefer exactly the recap-shaped clauses that kept the
+    standing row an event list; the flip and its falsifier live in
+    `design/standing-split-fold/20-ratchet-and-tiebreak.md`. The position is
+    hers, so her synthesis wins against any room quote, and recency is scoped
+    to a tie between two things of the SAME KIND.
 
-    So both rules have to be present AND ordered, which is what this asserts —
-    the room rule as the override, recency scoped to a tie between two things
-    of the same kind. The trace-side half (`cap_messages` pinning human turns)
-    was implemented all along; this is the half that did not follow.
+    Asserts the reversed rule is present, the recency scope survived it, and
+    the old inversion is gone.
     """
     client = _Client(_ok("x" * 60), _ok("short"))
     await _run(client=client, max_chars=50)
     retry = client.prompts[1]
     assert "never the most recent" in retry, "the recency rule went missing"
-    assert "outranks what you concluded" in retry, (
-        "§4.0.1's asymmetry is not in the retry, so a shrink drops what the "
-        "room said before it drops Nora's own judgement"
+    assert "What you CONCLUDED outranks what the room SAID" in retry, (
+        "the reversed tiebreak is not in the retry, so a shrink could still "
+        "drop Nora's own judgement in favour of a room quote"
     )
     assert "two things of the same kind" in retry, (
-        "recency is stated unqualified, so it still overrides the asymmetry "
-        "whenever the newer item is hers"
+        "recency is stated unqualified, so it still overrides the synthesis "
+        "rule whenever the newer item is the room's"
+    )
+    assert "What the room SAID outranks what you concluded" not in retry, (
+        "the old, inverted tiebreak survived in the retry prompt"
     )
 
 
-def test_the_objective_states_the_shrink_asymmetry_too():
+def test_the_objective_states_the_synthesis_tiebreak_too():
     """The retry prompt and the objective are two texts the model sees and
     they must not disagree about which rule governs. The objective is the one
     that hot-reloads on mtime, so a drift between them is invisible until a
@@ -262,8 +277,9 @@ def test_the_objective_states_the_shrink_asymmetry_too():
     from pathlib import Path
 
     body = Path("nora/dreamer/objectives/standing-debrief.md").read_text()
-    assert "outranks what you concluded" in body
+    assert "What you CONCLUDED outranks what the room SAID" in body
     assert "two things of the same kind" in body
+    assert "What the room SAID outranks what you concluded" not in body
 
 
 def test_the_objective_speaks_in_the_first_person_about_the_position():
@@ -273,12 +289,14 @@ def test_the_objective_speaks_in_the_first_person_about_the_position():
     it") is what produced transcript recaps instead of positions, because an
     observer who is not a participant has no position to revise.
 
-    The verdict half is deliberately different: it judges the turn's
-    SOURCING, and its impartiality comes from being a different call (26-
-    standing §1), not from a third-person cast. So the objective must say
-    "you" for the position AND keep the sourcing rubric's own-words
-    requirement — a regression to "the assistant" on either half is a
-    regression of the fix."""
+    The judge is now its OWN objective (Phase 2) and is deliberately
+    different: it grades the turn's SOURCING, and its impartiality comes from
+    being a different call (26-standing §1), not from a third-person cast. So
+    the standing objective must say "you" for the position, the verdict
+    objective must keep the sourcing rubric's own-words requirement, and NEITHER
+    may carry the other's job again — a one-completion fold drifting back
+    would put the judge in the position writer's prompt.
+    """
     from tests.objectives import shipped_objectives
 
     body = shipped_objectives().objective_body("standing-debrief")
@@ -293,10 +311,44 @@ def test_the_objective_speaks_in_the_first_person_about_the_position():
     # not reappear. "You are the assistant who answered it" is the
     # identity cast itself and stays.
     assert "the assistant's" not in body
-    # The verdict half: still about the fold's own turn, with the sourcing
-    # rubric intact — the impartiality is architectural, not cast.
-    assert "judge whether YOUR turn was GROUNDED" in body
-    assert "a claim about who has a source or it does not" in body
+    # The verdict half moved OUT of the position writer's instructions in
+    # Phase 2: the sourcing rubric must not ride next to `<standing_prior>`
+    # any more.
+    assert "GROUNDED" not in body, (
+        "the judging rubric is back in the standing objective — the verdict "
+        "has its own call and its own objective"
+    )
+    verdict = shipped_objectives().objective_body(debrief.VERDICT_OBJECTIVE)
+    assert "Your ONLY job is to judge whether the turn was GROUNDED" in verdict
+    assert "a claim about who has a source or it does not" in verdict
+    # The judge does not raise notes: they ride with the standing call.
+    assert "notes" not in verdict
+
+
+def test_the_ratchet_rejudges_whole_rather_than_revising_in_place():
+    """Phase 2's ratchet (AC5): «keep its wording and change only what this
+    turn changed» is what preserved inherited third-person recap clauses —
+    Phase 1 re-voiced the rule as prose and the first post-deploy fold still
+    wrote an event list. The fold now re-judges the whole paragraph every
+    turn, and inherited clauses survive only if they still hold AND are
+    re-voiced in the fold's own voice.
+
+    Pinned on the shipped objective through the real loader, like the
+    deployment's hot-reload reads it — not on `read_text()`, which cannot
+    tell a body from an unshipped frontmatter clause."""
+    from tests.objectives import shipped_objectives
+
+    body = shipped_objectives().objective_body("standing-debrief")
+    assert "RE-JUDGE the prior position" in body, (
+        "the re-judge posture is gone — the ratchet is back to revising in "
+        "place"
+    )
+    assert "keep its wording" not in body, (
+        "the keep-its-wording ratchet survived the Phase 2 flip"
+    )
+    assert "never carried over verbatim" in body, (
+        "the re-voice rule went missing with the flip"
+    )
 
 
 async def test_a_second_overflow_writes_nothing_and_the_prior_position_stands():
@@ -450,13 +502,19 @@ async def test_the_two_calls_share_one_budget():
         async def complete(self, *, prompt: str):
             self.prompts.append(prompt)
             await asyncio.sleep(0.06)          # under a 0.10s per-call bound...
-            if len(self.prompts) == 1:
-                return _ok("x" * 60)           # ...overflows, forcing the retry
+            # Keyed on the prompt's SHAPE, not the call count: the two calls
+            # now interleave (issue #78 Phase 2), so `len(self.prompts)` at
+            # answer time is whichever task happened to resume, not which
+            # call this is. The first STANDING answer overflows, forcing the
+            # consolidate retry; the judge is never retried and needs none.
+            if "consolidate" not in prompt and "<standing_prior>" in prompt:
+                return _ok("x" * 60)
             return _ok("short")
 
-    # 0.06 + 0.06 = 0.12 > 0.10 shared. Under two INDEPENDENT 0.10s budgets both
-    # calls fit and this writes "short" — so `timeout` here is only reachable
-    # when the budget is genuinely shared.
+    # 0.06 (first standing) + 0.06 (its retry) = 0.12 > 0.10 shared. Under two
+    # INDEPENDENT 0.10s budgets both standing calls fit and the fold SUCCEEDS —
+    # so `timeout` here is only reachable when the budget is genuinely shared.
+    # The judge rides the same gather and finishes beside the first call.
     store, metrics, _sv = await _run(
         client=_SlowFirst(), max_chars=50, timeout_seconds=0.10)
     assert _counter(metrics, "nora_debrief_total", outcome="timeout") == 1, (
@@ -492,6 +550,10 @@ async def test_the_objective_text_reaches_the_prompt():
     await _run(client=client)
     assert client.prompts[0].startswith("OBJECTIVE-TEXT")
     assert "at most 1200 characters" in client.prompts[0]
+    # Phase 2: the judge's objective reaches CALL B, read fresh the same way —
+    # both objectives hot-reload, so neither may be cached.
+    assert client.prompts[1].startswith("VERDICT-TEXT")
+    assert "OBJECTIVE-TEXT" not in client.prompts[1]
 
 
 # --- the store calls are bounded too (review finding, 2026-08-27) -----------
@@ -571,14 +633,90 @@ async def test_a_cancellation_is_not_counted_as_an_error():
     assert _counter(metrics, "nora_debrief_total", outcome="error") == 0
 
 
+# --- issue #78 Phase 2: TWO completions, one fold --------------------------
+#
+# The fold was ONE model completion carrying both the position and the
+# self-judgement — the structural source of third-person recap rows and 21/21
+# `grounded=true`. It is now two completions under one `asyncio.gather`.
+
+
+async def test_the_fold_issues_two_completions_with_their_own_objectives():
+    """AC1/AC3, through the model client: exactly two completions, the
+    standing one carrying its objective and the `max_chars` cap, the judge
+    carrying its own objective and NO cap — the cap is the standing ROW's
+    constraint and a verdict is never injected into a prompt."""
+    client = _Client(_ok("a position"), _grounded())
+    await _run(client=client, max_chars=1200)
+    assert len(client.prompts) == 2, "the fold must be TWO completions"
+    assert client.prompts[0].startswith("OBJECTIVE-TEXT")
+    assert "at most 1200 characters" in client.prompts[0]
+    assert client.prompts[1].startswith("VERDICT-TEXT")
+    assert "at most 1200 characters" not in client.prompts[1]
+
+
+async def test_the_verdict_sees_the_whole_turn_and_the_standing_sees_the_prior():
+    """AC2, both shapes at once: Call B's prompt carries the turn — outcome
+    labelled, transcript, reasoning — and NEVER `<standing_prior>`; Call A's
+    prompt carries `<standing_prior>`. Handing the judge the position it is
+    about to write is the prompt pollution the split exists to remove: it
+    would grade the position, not the turn."""
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="the old position",
+        fold_count=1, updated_at=1,
+    ))
+    client = _Client(_ok("a position"), _grounded())
+    await _run(store=store, client=client)
+    standing, verdict = client.prompts[0], client.prompts[1]
+    assert "<standing_prior>" in standing
+    assert "<standing_prior>" not in verdict
+    assert 'outcome="send_reply"' in verdict
+    assert "<what_happened>" in verdict
+    assert "<transcript>" in verdict and "<reasoning>" in verdict
+    # The SAME turn labelling the standing call reads — one turn block, two
+    # consumers, no disagreement about what happened.
+    assert 'outcome="send_reply"' in standing
+
+
+async def test_the_two_calls_start_before_either_finishes():
+    """AC4, mock timing: `asyncio.gather` starts BOTH calls before either
+    ANSWERS, so the fold's wall time is max(A, B), not A + B. A sequential
+    fold — one `await` then the other — produces the SUM, and both the event
+    order and the bounded wall time below would go red under it."""
+    events: list[str] = []
+
+    class _Stagger(_Client):
+        async def complete(self, *, prompt: str):
+            events.append("start")
+            await asyncio.sleep(0.10)
+            events.append("end")
+            return (
+                _ok("a position") if "<standing_prior>" in prompt
+                else _grounded()
+            )
+
+    started = time.perf_counter()
+    await _run(client=_Stagger())
+    elapsed = time.perf_counter() - started
+    assert events == ["start", "start", "end", "end"], (
+        f"the calls did not overlap: {events} — the second completed only "
+        "after the first finished, so latency is the SUM of the two"
+    )
+    assert elapsed < 0.18, (
+        f"fold wall time was {elapsed:.3f}s — two overlapped 0.10s calls fit "
+        "comfortably under 0.18s; two sequential ones take 0.2s"
+    )
+
+
 # --- the per-turn verdict, 26 §3's second output ---------------------------
 
 async def test_a_fold_writes_the_turn_verdict_beside_the_position():
-    """Two outputs of ONE call, with opposite cardinalities: the position is
-    one row per conversation revised in place, the verdict is one row per turn
-    never rewritten."""
+    """Two CALLS' outputs (26 §3, split by issue #78 Phase 2), with opposite
+    cardinalities: the position is one row per conversation revised in place,
+    the verdict is one row per turn never rewritten."""
     store, metrics, verdicts = await _run(client=_Client(
-        _ok("a position", grounded=False, unsupported=("claimed a closing time",))))
+        _ok("a position"),
+        _grounded(grounded=False, unsupported=("claimed a closing time",))))
     assert (await store.read(platform="signal", conversation_id="g1")) is not None
     v = await verdicts.read(tag_id="tag-1")
     assert v is not None and v.grounded is False
@@ -601,19 +739,52 @@ async def test_a_verdict_failure_never_costs_the_position():
 
     store, metrics, _ = await _run(
         store_verdict=_Broken(),
-        client=_Client(_ok("a position", grounded=False, unsupported=("x",))))
+        client=_Client(_ok("a position"),
+                       _grounded(grounded=False, unsupported=("x",))))
     assert (await store.read(platform="signal", conversation_id="g1")) is not None
     assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
     assert _counter(metrics, "nora_turn_verdict_total", grounded="unwritten") == 1
 
 
+async def test_a_failing_verdict_call_never_costs_the_position():
+    """The split's own asymmetric-error invariant: the judge is a CALL now, so
+    its call can fail the way the position's ever did — and it must degrade to
+    no verdict, not to a failed fold. The position writes; the disposition
+    rides the verdict's own series, labelled `unavailable` (R-27: «I could not
+    check» — NOT `absent`, which blames the objective text for an
+    infrastructure outage).
+
+    Falsification: let `_judge` re-raise into the gather, or relabel the fold
+    from a judge failure, and this goes red."""
+    store, metrics, _ = await _run(client=_Client(
+        _ok("a position"), RuntimeError("model unreachable")))
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="unavailable") == 1
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="absent") == 0
+
+
+async def test_a_cut_off_verdict_is_unavailable_and_never_a_partial_verdict():
+    """The verdict call gets `_check`'s finish_reason-FIRST refusal too: a
+    `"length"` finish degrades to no verdict and is never parsed — a truncated
+    judge answer parsing to `{"grounded": true}` would otherwise become a
+    NEVER-REWRITTEN row asserting a judgement nobody formed."""
+    store, metrics, verdicts = await _run(client=_Client(
+        _ok("a position"),
+        debrief.Completion('{"grounded": tru', "length")))
+    assert (await store.read(platform="signal", conversation_id="g1")) is not None
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="unavailable") == 1
+    assert await verdicts.read(tag_id="tag-1") is None
+
+
 async def test_a_missing_verdict_is_absent_not_a_failure():
-    """The fold revised the position and gave no usable verdict. A READING
-    about the objective text, not a fault — and never folded in with
+    """The fold revised the position but the judge answered nothing usable. A
+    READING about the objective text, not a fault — and never folded in with
     `unwritten`, which is the database refusing (R-27: those two send the next
     investigation to different places)."""
     store, metrics, verdicts = await _run(client=_Client(
-        debrief.Completion(json.dumps({"standing": "a position"}), "stop")))
+        _ok("a position"), debrief.Completion("not json", "stop")))
     assert (await store.read(platform="signal", conversation_id="g1")) is not None
     assert await verdicts.read(tag_id="tag-1") is None
     assert _counter(metrics, "nora_turn_verdict_total", grounded="absent") == 1
@@ -627,23 +798,33 @@ async def test_a_self_contradictory_verdict_is_dropped_not_written():
     trigger reads and a trigger firing off a contradictory row is worse than
     one that never fires."""
     store, metrics, verdicts = await _run(client=_Client(
-        _ok("a position", grounded=True, unsupported=("but also this",))))
+        _ok("a position"),
+        _grounded(grounded=True, unsupported=("but also this",))))
     assert (await store.read(platform="signal", conversation_id="g1")) is not None
     assert await verdicts.read(tag_id="tag-1") is None
     assert _counter(metrics, "nora_turn_verdict_total", grounded="absent") == 1
 
 
-async def test_the_verdict_comes_from_the_answer_that_was_kept():
-    """On the consolidate retry the verdict must be parsed from the SECOND
-    completion — the one actually accepted. Taking it off the refused draft
-    would pair a position with a judgement of text nobody kept."""
+async def test_the_verdict_comes_from_the_verdict_call_not_the_standing_call():
+    """Issue #78 Phase 2's provenance rule: the two halves are different
+    completions, so the verdict parses from Call B's answer even when Call A's
+    raw answer ALSO carries a verdict-shaped payload. Provenance is asserted
+    with a DECOY — a fold that ever parses the verdict off the standing
+    completion again feeds the decoy to the store and this goes red.
+
+    (The single-completion fold tested this as «the verdict comes from the
+    kept consolidate answer»; the split removes the premise — the verdict
+    never rides on the position's completion at all.)"""
     client = _Client(
-        _ok("x" * 60, grounded=True),                      # refused: over cap
-        _ok("short", grounded=False, unsupported=("from the kept answer",)),
+        debrief.Completion(json.dumps({
+            "standing": "a position", "grounded": False,
+            "unsupported": ["decoy: parsed from the standing call"],
+        }), "stop"),
+        _grounded(grounded=False, unsupported=("parsed from the verdict call",)),
     )
-    _, _, verdicts = await _run(client=client, max_chars=50)
+    _, _, verdicts = await _run(client=client)
     v = await verdicts.read(tag_id="tag-1")
-    assert v is not None and v.unsupported == ("from the kept answer",)
+    assert v is not None and v.unsupported == ("parsed from the verdict call",)
 
 
 # --- S2's re-derivation trigger --------------------------------------------
@@ -882,8 +1063,9 @@ async def test_the_trigger_fires_on_timestamps_a_real_turn_can_produce():
     # UNGROUNDED, which is the only way a real ungrounded verdict is ever
     # written: position and verdict, one call, one clock.
     await _run(store=store, store_verdict=verdicts, metrics=metrics,
-               client=_Client(_ok("turn one", grounded=False,
-                                  unsupported=("invented a price",))),
+               client=_Client(_ok("turn one"),
+                              _grounded(grounded=False,
+                                        unsupported=("invented a price",))),
                now_ms_override=1000)
     position = await store.read(platform="signal", conversation_id="g1")
     written = await verdicts.latest_ungrounded(conversation_id="g1")
@@ -925,8 +1107,9 @@ async def test_the_rebuilt_turn_does_not_rebuild_again_on_the_next(
         return debrief.Completion(json.dumps({"standing": body}), "stop")
 
     await _run(store=store, store_verdict=verdicts, metrics=metrics,
-               client=_Client(_ok("turn one", grounded=False,
-                                  unsupported=("invented a price",))),
+               client=_Client(_ok("turn one"),
+                              _grounded(grounded=False,
+                                        unsupported=("invented a price",))),
                now_ms_override=1000)
     # Turn 2 rebuilds (verdict is as new as the position) and emits NO verdict
     # of its own, so the stale ungrounded one remains the newest there is.
@@ -1013,8 +1196,9 @@ async def test_one_unreadable_verdict_does_not_lose_the_verdict_forever():
 
     # Turn 1 — a real ungrounded verdict, written the only way one ever is.
     await _run(store=store, store_verdict=verdicts, metrics=metrics,
-               client=_Client(_ok("t1", grounded=False,
-                                  unsupported=("invented a price",))),
+               client=_Client(_ok("t1"),
+                              _grounded(grounded=False,
+                                        unsupported=("invented a price",))),
                now_ms_override=1000)
     # Turn 2 — THE INSTRUMENT IS DOWN. No rebuild, correctly; but the fold
     # succeeds and moves the position to 2000, past the verdict.
@@ -1070,8 +1254,9 @@ async def test_a_grounded_verdict_cannot_bury_an_unconsumed_ungrounded_one():
     metrics = Metrics()
 
     await _run(store=store, store_verdict=verdicts, metrics=metrics,
-               client=_Client(_ok("t1", grounded=False,
-                                  unsupported=("invented a price",))),
+               client=_Client(_ok("t1"),
+                              _grounded(grounded=False,
+                                        unsupported=("invented a price",))),
                now_ms_override=1000)
     verdicts.blind = True
     # An ORDINARY successful turn: it writes a grounded verdict of its own.
@@ -1144,8 +1329,9 @@ async def test_a_refusing_rebuild_leaves_the_verdict_unconsumed():
     store, verdicts, metrics = (
         InMemoryStandingStore(), InMemoryTurnVerdictStore(), Metrics())
     await _run(store=store, store_verdict=verdicts, metrics=metrics,
-               client=_Client(_ok("t1", grounded=False,
-                                  unsupported=("invented a price",))),
+               client=_Client(_ok("t1"),
+                              _grounded(grounded=False,
+                                        unsupported=("invented a price",))),
                now_ms_override=1000)
     for i, ts in enumerate((2000, 3000, 4000), start=2):
         # `finish_reason="length"` — the fold is refused BEFORE anything is
@@ -1205,12 +1391,17 @@ async def test_no_verdict_store_is_inert_not_a_failure():
     """`store_verdict=None` is what every deployment that has not wired one
     runs, and the stage documents it as ordinary. It had NO test: the helper
     substituted a real store for `None`, so the branch was unreachable."""
-    store, metrics, _ = await _run(
-        store_verdict=None,
-        client=_Client(_ok("a position", grounded=False, unsupported=("x",))))
+    client = _Client(_ok("a position"))
+    store, metrics, _ = await _run(store_verdict=None, client=client)
     assert await store.read(platform="signal", conversation_id="g1") is not None
     assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
     assert _counter(metrics, "nora_turn_verdict_total") == 0
+    # Phase 2: the verdict exists for exactly one reader — its store. No
+    # store wired, no judge call issued: a model call for output nothing can
+    # ever read is not thrift, it is an unread answer on the live path.
+    assert len(client.prompts) == 1, (
+        "the judge call ran with nowhere to write its answer"
+    )
 
 
 async def test_a_cancel_after_the_write_does_not_unsay_the_position():
@@ -1228,7 +1419,11 @@ async def test_a_cancel_after_the_write_does_not_unsay_the_position():
         async def save(self, *, verdict):
             raise asyncio.CancelledError
 
-    store, metrics, _ = await _run(store_verdict=_CancellingVerdicts())
+    store, metrics, _ = await _run(
+        store_verdict=_CancellingVerdicts(),
+        # A verdict is actually WRITTEN so the cancelling save is reached —
+        # an absent verdict would make the guard vacuous.
+        client=_Client(_ok("a position"), _grounded()))
 
     assert await store.read(platform="signal", conversation_id="g1") is not None
     assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
@@ -1373,9 +1568,10 @@ _NOTE = {
 
 
 def _with_notes(*notes, body: str = "a position") -> debrief.Completion:
+    """Call A's answer with notes on it — notes ride with the standing call
+    (issue #78 Phase 2), so this is the one shape that may carry them."""
     return debrief.Completion(json.dumps({
-        "standing": body, "grounded": True, "unsupported": [],
-        "notes": list(notes),
+        "standing": body, "notes": list(notes),
     }), "stop")
 
 
@@ -1391,6 +1587,25 @@ async def test_a_fold_raises_a_note_through_the_sink():
     assert len(proposal.instruction_sha256) == 64
     assert _counter(metrics, "nora_debrief_note_proposals_total",
                     outcome="proposed") == 1
+
+
+async def test_notes_parse_from_the_standing_call_not_the_verdict_call():
+    """Phase 2's note wiring: notes shared the fold's ONE raw completion with
+    the verdict; they must now parse from Call A's raw output. A judge
+    answering with notes in its JSON must not raise a single one — the
+    disposition of the verdict and of the notes are two different calls."""
+    client = _Client(
+        _ok("a position"),
+        debrief.Completion(json.dumps({
+            "grounded": True, "unsupported": [], "notes": [dict(_NOTE)],
+        }), "stop"),
+    )
+    sink = _FakeSink()
+    _, metrics, _ = await _run(client=client, notes_sink=sink)
+    assert sink.batches == []
+    assert _counter(metrics, "nora_debrief_note_proposals_total") == 0, (
+        "notes were parsed off the verdict call"
+    )
 
 
 async def test_a_note_the_turn_already_read_is_refused():
@@ -1677,6 +1892,25 @@ async def test_the_traced_prompt_is_the_prompt_the_model_was_actually_given(
     assert gen.attributes["nora.debrief.prompt_withheld"] == ""
 
 
+async def test_the_verdict_is_traced_as_a_generation_of_its_own(exported_spans):
+    """AC1 on the trace side: two generations with distinct `call=` labels.
+    Call B folded onto Call A's span would show one generation whose input
+    does not explain its output — the exact defect the consolidate retry got
+    its own span for."""
+    client = _Client(_ok("a position"),
+                     _grounded(grounded=False, unsupported=("claimed a thing",)))
+    await _run(client=client)
+
+    spans = _spans(exported_spans)
+    assert "engagement.debrief.fold" in spans
+    gen = spans["engagement.debrief.verdict"]
+    assert gen.attributes["langfuse.observation.type"] == "generation"
+    assert gen.attributes["langfuse.observation.model.name"] == "test-model"
+    assert gen.attributes["langfuse.observation.input"] == client.prompts[1]
+    assert "grounded" in gen.attributes["langfuse.observation.output"]
+    assert gen.attributes["nora.tag_id"] == "tag-1"
+
+
 async def test_the_consolidate_retry_gets_its_own_generation(exported_spans):
     """§4.0's retry is a DIFFERENT prompt producing a different answer. Folded
     onto one span it would render as a generation whose input does not explain
@@ -1887,13 +2121,16 @@ async def test_r81_a_quote_is_grounded_only_against_the_person_who_said_it():
     # The positive control: every assertion below is read off a prompt, and a
     # stage that raised before building one produces no prompt at all.
     assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
-    [prompt] = client.prompts
+    # The rubric rode the ONE fold prompt until Phase 2; it now ships to the
+    # judge (the second completion), which is the call that actually grades.
+    [standing_prompt, prompt] = client.prompts
 
     # --- axis 1: the rule the model is judging by -------------------------
     assert "speaker on the line it came from" in prompt, (
         "the rubric no longer ties a named attribution to the speaker of the "
         "line, so «someone said it» is grounding enough again"
     )
+    assert "speaker on the line it came from" not in standing_prompt
     assert "an attribution is a claim about who" in prompt, (
         "«this is about SOURCING, not about correctness» stands unqualified "
         "again, which is what let a wrong name through as a correctness quibble"
