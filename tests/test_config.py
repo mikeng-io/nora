@@ -731,7 +731,7 @@ def test_a_budget_override_naming_an_unknown_tool_refuses_to_start():
 
 def test_a_budget_below_one_refuses_to_start():
     """0 does not mean "unlimited" and does not mean "off" — R-7 would veto
-    every call, so the tool is present, advertised in the capability block, and
+    every call, so the tool is present, advertised in the schemas, and
     unreachable. Removing the tool is the honest way to do that."""
     with pytest.raises(ValidationError, match="would make the tool unreachable"):
         _llm_config(budgets={"send_reply": 0})

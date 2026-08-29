@@ -132,7 +132,7 @@ def test_header_states_what_is_already_present(R15=None):
     """R-15: the model must not go looking for context it already has.
 
     The header used to prove this by naming `load_transcript` and telling her not to
-    call it. It names no tool at all now (DEC-29) — the capability section says
+    call it. It names no tool at all now (DEC-29 + DEC-150) — the schemas say
     when to reach for one, and this block's job is to say what she is already
     holding, with the window size in it so "further back than you were shown"
     means something."""
@@ -725,8 +725,8 @@ def test_the_header_names_no_tool_at_all():
     such list in the repo. Both tests that used to guard it — "names every tool
     she has" and "names no tool she does not have" — were watching each other
     across two hand-maintained copies, which is a slower way of being wrong than
-    having one. `ToolRegistry.capability()` renders the list from the same table
-    the schemas come from, so there is no second copy to keep in step; the only
+    having one. The tool schemas are derived from the callables and cannot
+    drift, so there is no second copy to keep in step; the only
     way to regress is to start typing tool names in here again.
 
     **Two detectors, for the reason `nora.doctrine.loader` already has two.** A
@@ -753,13 +753,13 @@ def test_the_header_names_no_tool_at_all():
     for tool in NATIVE_TOOLS:
         if tool in ordinary_english:
             assert f"- {tool}:" not in header and f"`{tool}`" not in header, (
-                f"{tool} is catalogued in _context_header. The capability section is "
-                "generated from the registry; this block is situation, not capability."
+                f"{tool} is catalogued in _context_header. "
+                "This block is situation, not catalogue."
             )
             continue
         assert tool not in header, (
-            f"{tool} is named in _context_header. The capability section is "
-            "generated from the registry; this block is situation, not capability."
+            f"{tool} is named in _context_header. "
+            "This block is situation, not catalogue."
         )
 
 

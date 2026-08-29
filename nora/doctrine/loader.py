@@ -390,13 +390,14 @@ def check_authority_graph(sections: Sequence[DoctrineSection]) -> None:
     byte-identical authority fields and neither names the other, and so do
     `silence` and `conduct`. They are UNRANKED PEERS. That is not an oversight
     to correct by ranking them — design/17 §7b's own ordering writes the tier as
-    `constraint -> identity/voice -> conduct -> capability -> situation ->
-    message content -> tool output`, with `identity/voice` deliberately one
-    rung, and `kind` — the only part of the authority model design/17 §6 says
-    can be mechanised — puts `silence` and `conduct` on one rung by
-    construction, both being `kind: conduct`. Inventing an order between two
-    files that nothing reads at inference time would be asserting a fact no gate
-    could check and no measurement supports.
+    `constraint -> identity/voice -> conduct -> situation -> message content ->
+    tool output`, with `identity/voice` deliberately one rung, and `kind` — the
+    only part of the authority model design/17 §6 says can be mechanised — puts
+    `silence` and `conduct` on one rung by construction, both being
+    `kind: conduct`. (The intermediate `capability` rung that used to sit
+    between `conduct` and `situation` was deleted with DEC-150.) Inventing an
+    order between two files that nothing reads at inference time would be
+    asserting a fact no gate could check and no measurement supports.
 
     So what is declared here is a strict partial order over sections (a total
     order over TIERS, with peers inside a tier), and what is enforced is

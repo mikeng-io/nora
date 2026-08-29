@@ -152,7 +152,8 @@ def test_voice_carries_no_feminine_speech_markers():
 
 
 def test_no_doctrine_file_carries_a_tool_catalogue():
-    """The doctrine names CAPABILITIES; only `_context_header` names tools.
+    """The doctrine names CAPABILITIES in category terms; the schemas name
+    tools.
 
     This replaces `test_conduct_names_the_three_tools_and_no_others`, whose
     name promised the assertion it never made: it checked that three tools were

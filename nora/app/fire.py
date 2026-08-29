@@ -53,8 +53,8 @@ something she said; omitting it makes her memory of her own speech incomplete).
 Doctrine is read at `applies_to="heartbeat"`, which is why that audience had to
 exist before this module did: at `"tag"` it would carry the silence rules that
 are false here, and an audience that resolved to nothing would deliver with no
-persona, no constraints, and a `LeakGuard` corpus shrunk to the capability
-block.
+persona, no constraints, and a `LeakGuard` corpus carrying nothing but the
+authored sections.
 """
 
 from __future__ import annotations

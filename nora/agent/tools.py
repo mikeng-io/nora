@@ -200,10 +200,13 @@ class NativeTool:
     # "remembered" (what this household saved or told her), "web" (the open web,
     # last resort). `None` means the tool is not a fact SOURCE at all — an action
     # (`send_reply`, `remind`) or a pure function (`calculate`) — and is left out
-    # of the priority nudge. Read through `ToolRegistry.web_tier_tools()` and rendered as
-    # one sentence into the capability block, the same way `time_shiftable`
-    # renders the clock line — so declaring it is not bookkeeping: it changes
-    # what the always-on block tells the model to reach for first.
+    # of the priority nudge. The tier is load-bearing as a per-tool declaration
+    # even though the renderer (`ToolRegistry.web_tier_tools()`, which fed the
+    # capability block) died with the block (DEC-150): the sourcing rule that
+    # lived there is now conduct.md's "prefer your own… open web, last resort"
+    # sentence, and tests pin the tiers (`test_the_confusable_retrieval_tools_
+    # all_declare_a_source_tier`), so the declaration is what keeps that rule
+    # true for each tool.
     source_tier: str | None = None
     # `cacheable` is the seventh (tool-recall-log spec §2). True only for a
     # tool whose result carries no room/person-disclosure decision baked
@@ -577,11 +580,10 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `time_shiftable` is `None` for all three, like `calculate`: `remind` TAKES
     # a time, which is the opposite of being asked about one — its answer does
     # not decay and there is no "same question, different moment" to shift.
-    # The capability block is generated from this table (DEC-29), so the second
-    # clause is the ONLY place the model is told recurrence exists at all
-    # before it opens the tool. It was the missing half of the two asks DEC-85
-    # came from: she answered 「我 set 唔到 recurring 每日提嘅 reminder」 about a
-    # tool she had, because nothing here said she had it.
+    # Recurrence lives in `remind`'s schema docstring (and this table's
+    # `repeat` support); before DEC-85's fix the model answered 「我 set 唔到
+    # recurring 每日提嘅 reminder」 about a tool she had, because nothing she was
+    # shown said recurrence existed.
     "remind": NativeTool(2),
     "list_reminders": NativeTool(2, read_only=True),
     "cancel_reminder": NativeTool(2),
@@ -695,12 +697,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # is the backstop for the one case the two counters legitimately disagree (a
     # call that reached the audit write but not `record`). Never a second cap
     # checked beside this one — that is the drift DEC-10 exists to prevent.
-    # The `when` clause carries the ADDRESSEE half of DEC-88 and nothing else.
-    # This block is paid on every call and adds only "when to reach for it in
-    # this situation" (`capability()`'s docstring), so the @-form itself — the
-    # mechanism — stays in the schema description below, which the model reads
-    # in the same request and which is the surface DEC-78/DEC-82 measured as the
-    # one that moves behaviour.
+    # The addressee half of DEC-88 lives in the schema description below —
+    # "say who it is to" — which the model reads in the same request and which
+    # is the surface DEC-78/DEC-82 measured as the one that moves behaviour.
     "send_reply": NativeTool(6,
                              terminal=True),
     # THE ONLY WAY ANYTHING REACHES A ROOM OTHER THAN THIS ONE (DEC-105/R-49).

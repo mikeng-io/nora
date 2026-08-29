@@ -80,12 +80,12 @@ class ToolRegistry:
     enforces.
 
     It is DEFAULT-CONSTRUCTED rather than required. `nora.app.eval_support`
-    builds three throwaway registries purely to read `budgets()`,
-    `tool_names()` and `capability()`, none of which touches a socket — and a
-    required parameter there would either force those to invent one or tempt
-    the next author into an optional `None` that silently makes `transit`
-    answer `unavailable` forever. Constructing one costs nothing: no session
-    opens and no catalogue is fetched until a tool is actually called.
+    builds throwaway registries purely to read `budgets()` and `tool_names()`,
+    neither of which touches a socket — and a required parameter there would
+    either force those to invent one or tempt the next author into an optional
+    `None` that silently makes `transit` answer `unavailable` forever.
+    Constructing one costs nothing: no session opens and no catalogue is
+    fetched until a tool is actually called.
     """
 
     def __init__(
