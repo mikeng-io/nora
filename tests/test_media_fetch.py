@@ -61,7 +61,8 @@ class CountingVision:
 
     async def describe(self, *, data: bytes, media_type: str,
                        prompt: str = "", model: str = "",
-                       provider: str = "omniroute") -> VisionResult:
+                       provider: str = "omniroute",
+                       max_bytes: int | None = None) -> VisionResult:
         self.calls += 1
         if not self.available:
             return VisionResult(available=False, reason="timeout")
@@ -415,7 +416,8 @@ async def test_a_describe_that_raises_is_wrapped_not_propagated(wiring):
     """Belt-and-braces for `test_a_tool_never_raises_into_the_agent_loop`: even
     if the vision collaborator raises, the tool lands on `unavailable`."""
     class _Exploding:
-        async def describe(self, *, data, media_type, prompt="", model=""):
+        async def describe(self, *, data, media_type, prompt="", model="",
+                           provider="omniroute", max_bytes: int | None = None):
             raise RuntimeError("vision on fire")
 
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)

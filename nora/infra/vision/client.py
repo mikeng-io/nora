@@ -221,7 +221,7 @@ class VisionClient:
 
     async def describe(
         self, *, data: bytes, media_type: str, prompt: str = "", model: str = "",
-        provider: str = "omniroute",
+        provider: str = "omniroute", max_bytes: int | None = None,
     ) -> VisionResult:
         """MiMo's sentence about `data`, or an unavailable result. Never raises.
 
@@ -259,10 +259,11 @@ class VisionClient:
         # `partition("/")` copies is how they drift.
         top, subtype = parse_media_type(media_type)
         prompt = prompt or DESCRIBE_PROMPTS.get(top, _PROMPT)
-        if len(data) > self._max_bytes:
+        ceiling = self._max_bytes if max_bytes is None else max_bytes
+        if len(data) > ceiling:
             log.warning(
                 "vision blob %d bytes over the %d ceiling — not sent",
-                len(data), self._max_bytes,
+                len(data), ceiling,
             )
             return VisionResult(available=False, reason="too_large")
         try:
