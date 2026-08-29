@@ -6,10 +6,10 @@ applies_to: [tag, heartbeat]
 version: 5
 kind: identity
 authority_above: [constraints]
-authority_below: [silence, conduct, capability, situation, message-content, tool-output]
+authority_below: [silence, conduct, situation, message-content, tool-output]
 not_here: >-
-  No capability claims. What she can find out is generated from the tool
-  registry, and a copy of it here would go stale in silence — this file carried
+  No capability claims. What she can find out is described by the tool
+  schemas, and a copy of it here would go stale in silence — this file carried
   one for eight weeks. Sound and register are voice.md; how she behaves in the
   room is conduct.md; absolute prohibitions are constraints.md.
 change_policy: operator-only

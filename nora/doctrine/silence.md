@@ -6,7 +6,7 @@ applies_to: [tag]
 version: 1
 kind: conduct
 authority_above: [constraints, identity, voice]
-authority_below: [capability, situation, message-content, tool-output]
+authority_below: [situation, message-content, tool-output]
 not_here: >-
   Not how many messages one answer may become — that is conduct.md, and it is
   true whether she was called or a reminder came due. Only the question of

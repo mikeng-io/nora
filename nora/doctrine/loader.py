@@ -6,12 +6,14 @@ file can be promoted to a real Strands Skill without a rewrite.
 **`kind` is the field this module exists to enforce.** design/17 §2 splits the
 prompt by SOURCE OF TRUTH rather than by topic: `constraint`, `identity` and
 `conduct` are authored — a human decides and there is nothing to check them
-against — while `capability` and `situation` are derived, and any prose copy of
-those is a cache that goes stale silently. That is not a style preference. A
-capability sentence in an authored file has no owner, cannot be tested, and its
-falseness is invisible: `identity.md` (then `soul.md`) fenced what Nora knew to
-"two things, and only these" for eight weeks after three tools shipped that made
-it false, and nothing in the system could notice.
+against — while `situation` is derived, and any prose copy of it is a cache
+that goes stale silently. (The other former derived kind, `capability`, is gone
+entirely — DEC-150 dropped the generated block; tools are described by their
+schemas.) That is not a style preference. A derived sentence in an authored
+file has no owner, cannot be tested, and its falseness is invisible:
+`identity.md` (then `soul.md`) fenced what Nora knew to "two things, and only
+these" for eight weeks after three tools shipped that made it false, and
+nothing in the system could notice.
 
 `kind` is the only part of design/12 §2's authority model that CAN be
 mechanised, so it is (§6). One field feeds two consumers: the gates below read
@@ -22,7 +24,7 @@ at, instead of each file asserting its own rank in its own prose.
 The three fields that are documentation rather than gates — `not_here`,
 `change_policy`, `authority_above`/`authority_below` — are required anyway, and
 `authority_*` is checked for internal consistency. `not_here` is the boundary
-§3 says `soul.md` lacked: had it carried a line saying capability lives
+§3 says `soul.md` lacked: had it carried a line saying the derived tier lives
 elsewhere, the claim would have looked wrong the day it was written rather than
 eight weeks later. None of the three is rendered — they are for whoever opens
 the file, and the prompt pays for nothing it does not use.
@@ -53,18 +55,20 @@ _REQUIRED = (
     "kind", "authority_above", "authority_below", "not_here", "change_policy",
 )
 
-# design/17 §4. The first three are AUTHORED — a file may declare them. The last
-# two are DERIVED and have no file at all; a file claiming one is rejected in
-# `_scan`, because the whole point is that they cannot be hand-written.
+# design/17 §4. The first three are AUTHORED — a file may declare them. The
+# last one is DERIVED and has no file at all; a file claiming it is rejected in
+# `_scan`, because the whole point is that it cannot be hand-written. (The
+# former second derived kind, `capability`, was dropped by DEC-150 — tools are
+# described by their schemas.)
 AUTHORED_KINDS = ("constraint", "identity", "conduct")
-DERIVED_KINDS = ("capability", "situation")
+DERIVED_KINDS = ("situation",)
 KINDS = (*AUTHORED_KINDS, *DERIVED_KINDS)
 
 # What `authority_above`/`authority_below` may name besides another section: the
 # tail of design/17 §7b's tier order, which runs past doctrine and terminates at
 # tool output. These have no file, so they are never checked for symmetry — and
 # they are sinks, so no cycle can run through them.
-AUTHORITY_TERMINALS = ("capability", "situation", "message-content", "tool-output")
+AUTHORITY_TERMINALS = ("situation", "message-content", "tool-output")
 
 # Who may edit a file without asking. `voice.md` is the operator's — her
 # register, her teasing rules, her language policy — and until this field
@@ -271,7 +275,7 @@ def check_kind_boundaries(
 ) -> None:
     """design/17 §6: an `identity` or `conduct` file may not name a tool.
 
-    This converts "we should remember not to write capability claims in
+    This converts "we should remember not to write tool-catalogue claims in
     `identity.md`" from a convention into a gate. It is scoped to the two kinds
     whose source of truth is the operator's taste and judgement — `constraint`
     is exempt because R-14 has to be able to say `group_transcript` and
@@ -290,14 +294,14 @@ def check_kind_boundaries(
     if found:
         raise DoctrineError(
             f"{section.path.name}: a {section.kind} file may not name a tool "
-            f"({found.group(0)!r}). Capability is generated from the registry; "
+            f"({found.group(0)!r}). Tools are described by their schemas; "
             "what belongs here is who she is and how she behaves."
         )
     for tool in tool_names:
         if f"`{tool}`" in section.body:
             raise DoctrineError(
                 f"{section.path.name}: a {section.kind} file may not name a tool "
-                f"(`{tool}`). Capability is generated from the registry; what "
+                f"(`{tool}`). Tools are described by their schemas; what "
                 "belongs here is who she is and how she behaves."
             )
 
@@ -327,48 +331,6 @@ def check_normative_register(section: DoctrineSection) -> None:
                 "conduct line is a SHOULD, and identity/voice describe and use "
                 "neither — the keyword contradicts the file's kind."
             )
-
-
-CAPABILITY_ORDER = 35
-CAPABILITY_DESCRIPTION = (
-    "What you can find out, and when to reach for it. Generated from the tools "
-    "you were given — never written by hand, so it cannot be out of date."
-)
-
-
-def _capability_section(
-    body: str, authored: Sequence[DoctrineSection], dir: Path
-) -> DoctrineSection:
-    """The one section with no file (design/17 §4, §5).
-
-    `order = 35` puts it after `conduct` and before `constraints`, which is
-    where design/17 §7b's tier order puts it: constraint -> identity/voice ->
-    conduct -> capability -> situation. A file claiming order 35 collides and is
-    rejected by the existing duplicate-order rule, which is the behaviour we
-    want — there is only one capability section and it is this one.
-
-    `authority_above` is DERIVED — it is exactly the authored sections that
-    already say `capability` is below them — so the symmetry check in
-    `check_authority_graph` holds without anyone maintaining both ends, and it
-    stays holding when a fifth authored file is added. Deriving it rather than
-    hard-coding the four names is the difference between a declaration that
-    tracks the files and one that has to be remembered.
-    """
-    return DoctrineSection(
-        name="capability",
-        description=CAPABILITY_DESCRIPTION,
-        order=CAPABILITY_ORDER,
-        applies_to=("always",),
-        version=1,
-        kind="capability",
-        authority_above=tuple(s.name for s in authored if "capability" in s.authority_below),
-        authority_below=("situation", "message-content", "tool-output"),
-        not_here="Nothing is authored here at all — the registry is the source.",
-        change_policy="agent-may-edit",
-        body=body,
-        path=Path(dir) / "(generated)",
-        sha256=hashlib.sha256(body.encode("utf-8")).hexdigest(),
-    )
 
 
 def _first_authority_cycle(outranks: dict[str, tuple[str, ...]]) -> tuple[str, ...] | None:
@@ -493,7 +455,7 @@ class DoctrineStore:
     def __init__(self, dir: Path, *, strict: bool = True, reload: str = "mtime",
                  canary: str = "", display_name: str = "Nora", trigger: str = "",
                  language_hint: str = "", tool_names: Sequence[str] = (),
-                 capability: str = "", metrics: Metrics) -> None:
+                 metrics: Metrics) -> None:
         # `tool_names` is what the tool-catalogue gate checks BACKTICKED text
         # against; the structural half of that gate (bare snake_case) runs
         # whether or not it is supplied, so an omitted list narrows the check
@@ -506,13 +468,6 @@ class DoctrineStore:
         self._trigger = trigger
         self._language_hint = language_hint
         self._tool_names = tuple(tool_names)
-        # The generated `kind: capability` body (`ToolRegistry.capability()`).
-        # It arrives as a STRING rather than being read off disk because that is
-        # the whole point: there is no file, so there is nothing for anyone to
-        # hand-edit and nothing to go stale. An empty value assembles no
-        # capability section at all, which is what every test that is not about
-        # capability wants.
-        self._capability = capability
         self._cache: dict[str, Doctrine] = {}
         self._generation = 0
         # The mtime/last-good machine is `nora.instructions.reload`, shared with
@@ -542,10 +497,9 @@ class DoctrineStore:
                 section = parse_section(path)
                 if section.kind in DERIVED_KINDS:
                     raise DoctrineError(
-                        f"{path.name}: kind {section.kind!r} is DERIVED and has no "
-                        "file. Capability is generated from the tool registry and "
-                        "situation from the running turn; an authored copy of "
-                        "either is a cache with no invalidation."
+                        f"{path.name}: kind {section.kind!r} is DERIVED and has "
+                        "no file. Situation is derived from the running turn; "
+                        "an authored copy of it is a cache with no invalidation."
                     )
                 check_kind_boundaries(section, self._tool_names)
                 check_normative_register(section)
@@ -554,8 +508,6 @@ class DoctrineStore:
                 if self._strict:
                     raise
                 log.warning("skipping invalid doctrine file %s", path.name)
-        if self._capability:
-            sections.append(_capability_section(self._capability, sections, self._dir))
         by_name: dict[str, Path] = {}
         by_order: dict[int, Path] = {}
         for s in sections:

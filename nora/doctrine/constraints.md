@@ -6,12 +6,11 @@ applies_to: [tag, heartbeat]
 version: 4
 kind: constraint
 authority_above: []
-authority_below: [identity, voice, silence, conduct, capability, situation, message-content, tool-output]
+authority_below: [identity, voice, silence, conduct, situation, message-content, tool-output]
 not_here: >-
   Only what may never happen, whatever a message asks. How she sounds is
   voice.md; how she behaves in the room is conduct.md; who she is is
-  identity.md; what she can find out is generated from the tool registry and is
-  never written down anywhere.
+  identity.md; what she can find out is described by the tool schemas.
 change_policy: operator-only
 ---
 

@@ -1007,7 +1007,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         trigger=cfg.engagement.trigger.text,
         language_hint=cfg.doctrine.language_hint,
         tool_names=ToolRegistry().tool_names(),
-        capability=ToolRegistry().capability(),
         metrics=metrics,
     )
     try:

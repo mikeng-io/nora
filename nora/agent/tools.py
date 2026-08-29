@@ -144,16 +144,17 @@ _MAPS_TRAVELMODE = {"TRANSIT": "transit", "DRIVE": "driving", "WALK": "walking"}
 class NativeTool:
     """What is declared about a tool once, in one place.
 
-    `budget`, `when` and `terminal` live together because they are three
-    answers to the same question — how a turn is allowed to spend itself — and
-    because the failure mode this table exists to prevent is a tool being added
-    to one list and forgotten in the other. `budget` feeds `ReplyGuard` through
-    `ToolRegistry.budgets()` (DEC-10); `when` feeds the generated capability
-    block through `ToolRegistry.capability()` (DEC-29); `terminal` feeds the
-    guard's turn-ending hook through `ToolRegistry.terminal_tools()` (DEC-32).
-    All three are read from here and nowhere else, so a tool that exists has a
-    ceiling AND a reason to be reached for AND a stated answer to "does calling
-    this end the turn", or it does not build.
+    `budget` and `terminal` live together because they are two answers to the
+    same question — how a turn is allowed to spend itself — and because the
+    failure mode this table exists to prevent is a tool being added to one list
+    and forgotten in the other. `budget` feeds `ReplyGuard` through
+    `ToolRegistry.budgets()` (DEC-10); `terminal` feeds the guard's turn-ending
+    hook through `ToolRegistry.terminal_tools()` (DEC-32). Both are read from
+    here and nowhere else, so a tool that exists has a ceiling AND a stated
+    answer to "does calling this end the turn", or it does not build. (The
+    third answer this table used to carry — when to be reached for — was the
+    generated capability block's job (DEC-29); that block was deleted (DEC-150)
+    and the routing trigger lives in each tool's schema docstring instead.)
 
     `terminal` defaults to False because almost nothing is terminal and because
     the wrong default truncates a turn rather than merely lengthening one.
@@ -161,32 +162,32 @@ class NativeTool:
     (`design/proposed/15-gif-replies.md` §1), or a distinct feed step on the tag
     path — is a one-line edit here rather than an edit to `guards.py`.
 
-    `time_shiftable` is the fourth (design/14 §5.1), and it is the one field
+    `time_shiftable` is the third (design/14 §5.1), and it is the one field
     here that is not a boolean: `None` means the tool has no time dimension,
     `False` means its answer describes this instant and decays, `True` means it
     accepts a target time. See `nora.agent.ports.ToolSpec` for the full
-    argument. It is read through `ToolRegistry.live_only_tools()` and rendered
-    into the capability block, so declaring it is not bookkeeping — a tool
-    marked `False` is one the model is told never to quote for a later moment.
+    argument. It is load-bearing as a per-tool declaration even though the
+    renderer (`ToolRegistry.live_only_tools()`, which fed the capability block)
+    died with the block (DEC-150): the answer to "does this answer go stale"
+    is declared here, once, and
+    `tests/unit/test_tool_registry.py::test_every_tool_declares_a_time_axis`
+    pins the values.
 
-    `plugin` is the fifth (DEC-50, the activation of DEC-48). It marks a tool
+    `plugin` is the fourth (DEC-50, the activation of DEC-48). It marks a tool
     this table gives a BUDGET but does NOT itself build or describe: the
     `skills` activation tool is registered by
     `strands.vended_plugins.skills.AgentSkills` (wired in `nora.agent.factory`),
     not by `build_tool_specs`, and it advertises itself through the plugin's own
-    `<available_skills>` block, not through the generated capability block. So a
-    `plugin=True` entry is present ONLY so R-7's default-deny admits the tool
-    (`ReplyGuard` reads `NATIVE_TOOL_BUDGETS`); it is filtered out of everything
-    the registry BUILDS or RENDERS — `ToolRegistry.capability()` and
-    `tool_names()` — because a capability line naming `skills` would promise a
-    tool to the offline/eval compositions that never wire the plugin (they build
-    the capability block from this same table but supply their own runner). The
-    budget is the one thing that MUST be shared; the description is the one thing
-    that must not.
+    `<available_skills>` block. So a `plugin=True` entry is present ONLY so
+    R-7's default-deny admits the tool (`ReplyGuard` reads `NATIVE_TOOL_BUDGETS`);
+    it is filtered out of `tool_names()` (the doctrine catalogue gate) and is
+    never built or described by this registry, because the offline/eval
+    compositions never wire the plugin — promising a tool that composition does
+    not have is what the filter prevents. The budget is the one thing that MUST
+    be shared; the description is the one thing that must not.
     """
 
     budget: int
-    when: str
     terminal: bool = False
     time_shiftable: bool | None = None
     plugin: bool = False
@@ -258,9 +259,10 @@ class NativeTool:
     read_only: bool = False
 
 
-# ONE line per tool, in the order the capability block renders them. Keep each
-# `when` to a single clause: it is paid on every model call of every tag, and it
-# is not the place to restate what the schema already says.
+# ONE entry per tool, one line of declaration. The model-facing schema is each
+# callable's docstring (`adapt()` derives it); this table adds only what a
+# schema has no slot for — budget, tier, time axis, terminality — so a new tool
+# is registered by adding ONE entry here and one callable below.
 #
 # BUDGETS: the per-tool CALL budgets were DOUBLED 2026-08-08 (operator) so a
 # research-heavy turn — surveying a few sources — does not hit the R-7 ceiling
@@ -283,8 +285,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # instant by definition and is stale for any other one. It is the second
     # live-only tool and the older of the two, which is worth stating here
     # rather than letting `transit` look like a special case.
-    "now": NativeTool(4, "anything that depends on when it is — never guess the "
-                         "date or time from the transcript",
+    "now": NativeTool(4,
                       time_shiftable=False, source_tier="confirmed", read_only=True),
     # 4, and the only budget here NOT sized by what a call costs. This is the
     # cheapest tool in the set by a wide margin — a pure function over a
@@ -301,9 +302,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `time_shiftable` has no meaning for this tool in either direction, which
     # is worth stating rather than leaving ambiguous: unlike `now`, the answer
     # to `1485/7` is the same whenever it is asked.
-    "calculate": NativeTool(8, "any arithmetic at all — never work a number out in "
-                               "your head, and never state one you did not get "
-                               "from here", read_only=True),
+    "calculate": NativeTool(8, read_only=True),
     # 2, and sized the way `lookup_person` is — by model round trips, not by
     # work. One message routinely names two routes (「68X 定 K73 快啲」), and two
     # calls plus a reply still leaves half the turn. A third route in one
@@ -315,9 +314,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # hours away is confidently, checkably wrong. `route()`'s `arrive_by` is
     # what answers that question, and it is not built yet — which is exactly
     # why this field exists before it does.
-    "transit": NativeTool(4, "a Hong Kong bus or feeder route somebody named by number "
-                             "— never state a bus time you did not get from here, and "
-                             "never use it for a bus later than now",
+    "transit": NativeTool(4,
                           time_shiftable=False, source_tier="confirmed", cacheable=True,
                           read_only=True),
     # 2, sized like `transit`: one message can name a route to plan for two
@@ -331,9 +328,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # about a departure hours from now — 「夜晚八點去到」 asked at three in the
     # afternoon. `terminal=False`: a route is the middle of an answer, not the
     # end of one; she still has to say it.
-    "route": NativeTool(4, "how to travel between two places, or how long a journey "
-                           "takes — the only tool that can answer about a trip at a "
-                           "later time",
+    "route": NativeTool(4,
                         time_shiftable=True, source_tier="confirmed", cacheable=True,
                         read_only=True),
     # 2, and HELD at 2 through the budget doubling (Kimi audit 2026-08-08): each
@@ -348,27 +343,19 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # result so the model can say «20 分鐘前», but asked where someone will be
     # LATER this tool has nothing. `terminal=False`: a position is the middle of
     # an answer, never the end of one.
-    "where_is": NativeTool(2, "where somebody in this conversation is — never state "
-                             "or guess a location you did not get from here",
+    "where_is": NativeTool(2,
                           time_shiftable=False, source_tier="confirmed", read_only=True),
     # 2, sized like `route`: one message can ask after two spots («邊間好啲»),
     # each a single Google Places lookup. `time_shiftable=None`: a place's rating
     # has no time dimension the way `route` does — «幾好食» is the same question
     # whenever asked (a stale open_now is the one caveat, and Google returns it
     # fresh per call). `terminal=False`: a rating is the middle of an answer.
-    "place_info": NativeTool(4, "a place — a shop, a mall, a restaurant, a clinic — "
-                                "its rating, its price, its OPENING HOURS (幾點開/幾點"
-                                "關門) and whether it's open right now; never guess a "
-                                "rating or a time you did not get from here",
+    "place_info": NativeTool(4,
                              source_tier="confirmed", cacheable=True, read_only=True),
     # 1, like `group_members`: it lists a small fixed set for THIS room, and
     # calling it twice in a turn returns the same list. `time_shiftable=None`:
     # the household's saved names don't decay. Not terminal.
-    "saved_places": NativeTool(1, "where you or someone here lives or works — «屋企», "
-                                  "«公司», «返工», «Home», «Miles Home» — the personal "
-                                  "place-names this household saved; check whenever "
-                                  "someone asks about, or routes to, a place by a "
-                                  "personal name rather than a public one",
+    "saved_places": NativeTool(1,
                                source_tier="remembered", read_only=True),
     # DEC-146/R-82. The THIRD rung of the recall ladder and the shortest one:
     # `who_said` reads the window the prefill already rendered, `load_transcript`
@@ -400,8 +387,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # DEC-58-shaped run — identifier varying, docstrings byte-identical — showing
     # it pulling «頭先講咗啲咩» off `load_transcript` or a 「邊個話要book枱」 off
     # `search_memory`.
-    "who_said": NativeTool(4, "who said something in the messages you were ALREADY "
-                              "shown — check here before you tell anyone 「你話咗 X」",
+    "who_said": NativeTool(4,
                            source_tier="remembered", read_only=True),
     # **`load_transcript`, not `read_buffer`, and that was MEASURED, not argued
     # (DEC-58, same harness as DEC-39).** The old name was a lie — nothing is
@@ -420,8 +406,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # room_members 7/48 where group_members took 0/48 (z≈2.75, DEC-39's own
     # threshold). A name is not documentation; it is the feature the router
     # matches on.
-    "load_transcript": NativeTool(4, "something was said further back than the messages "
-                                 "you were shown",
+    "load_transcript": NativeTool(4,
                                   source_tier="remembered", read_only=True),
     # The three room-scoped tools. Every budget here is chosen against ONE
     # currency: a tool call is a model round trip (~4 s on this gateway), and
@@ -432,16 +417,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # caches the daemon read for the tag, so a second call is guaranteed to
     # return the identical answer four seconds later. Anything above 1 buys
     # nothing and can only crowd out `send_reply`.
-    "group_members": NativeTool(1, "who is in this conversation. People who have not "
-                                   "spoken are still here, and people a message names "
-                                   "may not be",
+    "group_members": NativeTool(1,
                                 source_tier="confirmed", read_only=True),
     # 2: one message routinely names two people (「阿豹同峰哥去咗邊」). The call
     # itself is a dict lookup over the cached roster — free — so the budget is
     # sized by round trips, not by work, and two lookups plus a reply still
     # leaves half the turn budget. A third name is rare enough to be worth
     # answering from what she has.
-    "lookup_person": NativeTool(4, "who a name or nickname in a message refers to",
+    "lookup_person": NativeTool(4,
                                 source_tier="remembered", read_only=True),
     # 2: same shape, but each call is also an HTTP request (~0.2 s measured).
     # Two covers the question this exists for — "what is this person like" for
@@ -466,24 +449,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # person-shaped routing collapsed onto that tool — including for a question
     # about the TRANSCRIPT, where `load_transcript` fell from 14/24 to 3/16. A name
     # is not only documentation; it is the feature the router matches on.
-    "about": NativeTool(4, "what someone is LIKE, when the answer is not in the "
-                           "conversation. «I know nothing about them yet» and «I could "
-                           "not check» are different answers; never report the second "
-                           "as the first",
+    "about": NativeTool(4,
                         source_tier="remembered", read_only=True),
     # 1, not 2: `ask_memory` REASONS (a slow dialectic call, ~14-19s), so one per
     # turn is the ceiling — a second would blow the loop budget on its own. It is
     # the escalation from `about` (retrieve), reached only when a profile lookup
     # will not answer a pieced-together question.
-    "ask_memory": NativeTool(1, "REASON about someone to answer a specific "
-                                "question that has to be pieced together, when a "
-                                "plain profile («about») is not enough — slower and "
-                                "deeper; use sparingly",
+    "ask_memory": NativeTool(1,
                              source_tier="remembered", read_only=True),
-    "search_memory": NativeTool(4, "find the exact WORDS somebody said in this "
-                                   "group, further back than load_transcript "
-                                   "reaches — a phrase or a topic; not a profile "
-                                   "(«about») and not a reasoned answer («ask_memory»)",
+    "search_memory": NativeTool(4,
                                 source_tier="remembered", read_only=True),
     # 2 (tool-recall-log spec §4): run once, notice a different `limit` is
     # needed, run once more — the same shape `ask_memory`'s own budget
@@ -512,14 +486,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # Hence the second half: this is where her own evidence lives, not merely a
     # cache. Same lesson as the `about`/`load_transcript` note above — the clause
     # the router matches on is the feature, not documentation of it.
-    "recall_lookups": NativeTool(2, "what you or an earlier turn already looked "
-                                    "up in this conversation, within the last 7 "
-                                    "days — your record of what you ACTUALLY "
-                                    "checked: reach for it before re-running "
-                                    "place_info/route/web_search/weather/transit, "
-                                    "and whenever an earlier answer of yours is "
-                                    "doubted or you cannot tell whether you "
-                                    "checked something or guessed it", read_only=True),
+    "recall_lookups": NativeTool(2, read_only=True),
     # 2, sized like the other look-it-up tools: one message can name two images
     # (a photo AND a screenshot), and two describe calls plus a reply still leave
     # the turn. The number is not what keeps two calls inside the loop budget —
@@ -529,9 +496,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `terminal=False` (a description is the middle of an answer, she still has
     # to say what she saw) and `time_shiftable=None` (an image does not decay and
     # cannot be asked about "later" — it is the bytes it is).
-    "media_fetch": NativeTool(4, "somebody asks about an image or video already in this "
-                                 "conversation — what a photo shows, what a "
-                                 "screenshot says, what happens in a video",
+    "media_fetch": NativeTool(4,
                              read_only=True),
     # generate_image (DEC-137): the one EXPENSIVE, EXTERNAL tool in the set —
     # a real provider call per generate, potentially with a reference image,
@@ -541,10 +506,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # commits an artifact to external custody (`drop`) — an act verb, never
     # claimable as read-only (the `media_fetch` cache exemption does NOT
     # extend here).
-    "generate_image": NativeTool(2, "make an image from a text prompt (and "
-                                    "optionally from a photo already in this "
-                                    "conversation — say plainly when you used "
-                                    "one)", read_only=False),
+    "generate_image": NativeTool(2, read_only=False),
     # media_search / media_send (DEC-138 — unified media index): READ side
     # of Nora's OWN stored media (source ∈ generated/fetched) — no provider
     # call, no quota. search is read-only; send delivers a stored attachment
@@ -552,22 +514,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # turn. `images_lookup`/`images_resend` were renamed here (DEC-138) so
     # the media surface stays ONE family: media_fetch (this conversation's
     # images) / media_search (Nora's library) / media_send (deliver one).
-    "media_search": NativeTool(2, "search Nora's own media library (images she "
-                                   "generated or fetched) by prompt/title "
-                                   "words; returns stored media she can resend",
+    "media_search": NativeTool(2,
                                read_only=True),
-    "media_send": NativeTool(2, "send a previously stored media object (from "
-                                "media_search) to this chat as an attachment",
+    "media_send": NativeTool(2,
                              read_only=False),
     # search returns ranked results WITH a content snippet each in a single
     # call (DEC-73, Tavily). Budget 4, sized by MODEL ROUND TRIPS — a turn may
     # search, then refine once or twice — but the doctrine tells her a couple is
     # plenty. `time_shiftable=None` (a page is not about a moment) and
     # `terminal=False` (she still has to say what she found with `send_reply`).
-    "web_search": NativeTool(4, "look something up on the web when the answer isn't in "
-                            "the conversation and isn't a bus, a route, the weather, a "
-                            "person you know, or a shop/mall's hours or rating — you get "
-                            "ranked results, each a title, a link and a content snippet",
+    "web_search": NativeTool(4,
                              source_tier="web", cacheable=True, read_only=True),
     # `web_fetch` returns on DEC-116 (Tavily `/extract`) for the case a snippet
     # doesn't cover: somebody pastes a link and wants what's actually on the
@@ -575,17 +531,13 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # rarely a reason to open more than one or two links in a turn, unlike
     # `web_search`'s refine-and-retry shape. Same `time_shiftable`/`terminal` as
     # `web_search` for the same reasons.
-    "web_fetch": NativeTool(2, "open a specific link somebody shared and read what's "
-                            "actually on the page — reach for this when a link is in "
-                            "hand or a web_search snippet isn't enough",
+    "web_fetch": NativeTool(2,
                              source_tier="web", cacheable=True, read_only=True),
     # ONE weather verb, a flag for depth (DEC-72): current conditions + warnings
     # (typhoon/rainstorm) + today's outlook always; the 9-day forecast on request.
     # Warnings ride EVERY answer so a signal in force is never missed. Budget 2 —
     # one HKO round is usually enough; a second covers a follow-up.
-    "weather": NativeTool(2, "the weather in Hong Kong — current temperature and humidity, "
-                          "any warnings in force (typhoon signal, rainstorm, very hot), "
-                          "today's outlook, and the multi-day forecast when asked",
+    "weather": NativeTool(2,
                           source_tier="confirmed", cacheable=True, read_only=True),
     # design/discord-music/07-agent-tool.md. Discord-only by construction — every
     # body checks `room.platform != "discord"` first and answers `unavailable`,
@@ -594,22 +546,17 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # a second covers "no, the other one" after a bad match. `terminal=False`
     # on all four — playing/skipping/stopping a track is the middle of a turn,
     # she still has to say what happened.
-    "play_music": NativeTool(2, "play something in the Discord voice channel you're "
-                              "already in — a search term, a video link, or a "
-                              "playlist link"),
-    "skip_music": NativeTool(2, "skip the track currently playing in this Discord "
-                              "voice channel"),
+    "play_music": NativeTool(2),
+    "skip_music": NativeTool(2),
     # `position` is the same 1-based number `/music queue` already displays
     # next to each track — never guess it, only use one someone actually
     # named or that a prior `music_status`/queue listing in this
     # conversation showed.
-    "top_music": NativeTool(2, "move a track already in the Discord voice channel's "
-                             "queue to play next, by its position number"),
-    "stop_music": NativeTool(2, "stop the music and leave the Discord voice channel"),
+    "top_music": NativeTool(2),
+    "stop_music": NativeTool(2),
     # `read_only`/`cacheable`, like `weather`: a live status read that acts on
     # nothing and discloses nothing per-person.
-    "music_status": NativeTool(2, "what's currently playing in this Discord voice "
-                                "channel", source_tier="confirmed", cacheable=True,
+    "music_status": NativeTool(2, source_tier="confirmed", cacheable=True,
                                 read_only=True),
     # The three reminder verbs (design spec §7). All 2, and the number is sized
     # by the CONVERSATION rather than by cost: none of the three leaves the host
@@ -635,34 +582,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # before it opens the tool. It was the missing half of the two asks DEC-85
     # came from: she answered 「我 set 唔到 recurring 每日提嘅 reminder」 about a
     # tool she had, because nothing here said she had it.
-    "remind": NativeTool(2, "somebody asks you to tell them something later — you "
-                            "store their own words and say them back into this "
-                            "conversation when the time comes; once, or every "
-                            "day/week/month/year until a date or a number of times"),
-    "list_reminders": NativeTool(2, "somebody asks what you are still holding for "
-                                    "this group — only this conversation's, never "
-                                    "another room's", read_only=True),
-    "cancel_reminder": NativeTool(2, "somebody calls one off — takes the id "
-                                     "list_reminders gave you, never one you made up"),
-    "create_event": NativeTool(3, "somebody is proposing a gathering — dinner, an "
-                                "outing — with a title and optionally a time and a "
-                                "venue. Check list_events for an ALREADY-OPEN "
-                                "proposed event in this conversation first — this "
-                                "is for a genuinely NEW gathering, not an update to "
-                                "one already being planned"),
-    "update_event": NativeTool(2, "new information about an event already being "
-                                "planned in this conversation — a time now settled, "
-                                "a venue now settled. Use the id list_events gave "
-                                "you"),
-    "rsvp_event": NativeTool(1, "somebody says whether they are coming — yes, no, "
-                              "or maybe — to an event already proposed here"),
-    "cancel_event": NativeTool(2, "an event already proposed here is called off"),
-    "list_events": NativeTool(1, "what gatherings are proposed or confirmed in "
-                              "THIS conversation — call this BEFORE create_event "
-                              "to check whether one is already open", read_only=True),
-    "suggest_venue": NativeTool(4, "somebody wants a venue recommendation for an "
-                                 "event already proposed here, drawn from what "
-                                 "people have said they like", read_only=True),
+    "remind": NativeTool(2),
+    "list_reminders": NativeTool(2, read_only=True),
+    "cancel_reminder": NativeTool(2),
+    "create_event": NativeTool(3),
+    "update_event": NativeTool(2),
+    "rsvp_event": NativeTool(1),
+    "cancel_event": NativeTool(2),
+    "list_events": NativeTool(1, read_only=True),
+    "suggest_venue": NativeTool(4, read_only=True),
     # THE FOUR NOTE VERBS (note-tier spec §6.4). Every budget here is sized by
     # the same currency as its neighbours — a model round trip — but the RATIO
     # between them is the load-bearing part, not the absolute numbers:
@@ -700,37 +628,19 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # room may both move, so a replayed answer would be a body that is no
     # longer the head — the "true-in-the-past returned as current" error the
     # whole tier is written to avoid.
-    "note_read": NativeTool(3, "what a note in <notes> actually SAYS — the index "
-                               "gives you its title and one line, never its "
-                               "contents, and you must read one before you can "
-                               "revise it",
+    "note_read": NativeTool(3,
                             source_tier="remembered", read_only=True),
     # `source_tier="remembered"`: what she holds, not what she is looking at.
     # Budget 2 — a question may legitimately need a follow-up search when the
     # first phrasing misses, and the verb is one database read plus one small
     # embedding call, not a research loop.
-    "search_knowledge": NativeTool(2, "a question about something this room has "
-                                      "discussed before, beyond the handful "
-                                      "<facts> shows — searches what she knows "
-                                      "by meaning as well as by words, across "
-                                      "languages",
+    "search_knowledge": NativeTool(2,
                                    source_tier="remembered", read_only=True),
-    "note_search": NativeTool(2, "something might be written down inside a note "
-                                 "whose title says nothing about it — searches "
-                                 "note contents, not the titles you can already "
-                                 "see in <notes>",
+    "note_search": NativeTool(2,
                               source_tier="remembered", read_only=True),
-    "note_create": NativeTool(1, "an open question worth carrying between "
-                                 "conversations that no note in <notes> already "
-                                 "covers — it needs what would settle it, and a "
-                                 "date or a person to hang it on"),
-    "note_update": NativeTool(2, "something new about a note you have JUST read — "
-                                 "it appends, so give the whole note back with the "
-                                 "change folded in"),
-    "make_artifact": NativeTool(1, "someone wants you to build or research "
-                                   "something and hand back a file — a report, "
-                                   "a chart, a document — not just say it in "
-                                   "chat"),
+    "note_create": NativeTool(1),
+    "note_update": NativeTool(2),
+    "make_artifact": NativeTool(1),
     # WHAT SHE IS RUNNING, and what was in each version (DEC-97). ONE verb with
     # two shapes rather than two tools (`weather`'s DEC-72 argument): "咩version"
     # and "V2 有咩" are one capability asked from two angles, and two tools would
@@ -748,9 +658,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `time_shiftable` is None, like `calculate`: the manifest cannot change
     # under a running process, so the answer is neither about this instant nor
     # shiftable to another one.
-    "version": NativeTool(2, "somebody asks which version of you is running, or what "
-                             "was in an earlier one — read it, never work it out from "
-                             "the transcript",
+    "version": NativeTool(2,
                           source_tier="confirmed", read_only=True),
     # THE ONLY TERMINAL TOOL, and **the number that caps how many messages one
     # tag may send** (verified 2026-08-06). Both facts are easy to miss from the
@@ -793,11 +701,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # mechanism — stays in the schema description below, which the model reads
     # in the same request and which is the surface DEC-78/DEC-82 measured as the
     # one that moves behaviour.
-    "send_reply": NativeTool(6, "the only way anything you write reaches the group; "
-                                "send SEVERAL when the moment wants a burst — a "
-                                "reaction, then the hit, then the twist — or when a "
-                                "second message is addressed to somebody else, such "
-                                "as putting a question to the person who knows",
+    "send_reply": NativeTool(6,
                              terminal=True),
     # THE ONLY WAY ANYTHING REACHES A ROOM OTHER THAN THIS ONE (DEC-105/R-49).
     # Budget 2, not 6: relaying is a deliberate act somebody asked for, not a
@@ -806,11 +710,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # the ASKER a `send_reply` saying what happened, and making this terminal
     # would let her relay and then go silent on the person standing in front
     # of her.
-    "send_to": NativeTool(2, "relay a message from somebody here into this "
-                             "group's room on ANOTHER platform — «tell the Signal "
-                             "lot we're starting» — naming the platform, not a "
-                             "room; it never speaks as you, it always says who "
-                             "asked"),
+    "send_to": NativeTool(2),
     # THE ACTIVATION TOOL (DEC-50, activating DEC-48). It is `plugin=True`, so
     # this entry exists for ONE reason: R-7 default-denies any tool absent from
     # `budgets()` (`guards.py`), and the `skills(skill_name)` tool is registered
@@ -838,11 +738,10 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # the defaults so the fifth field (`plugin`) is not the only one this entry
     # sets on purpose.
     "search_gifs": NativeTool(
-        1, "find described Giphy reaction GIF candidates before choosing one"
+        1
     , read_only=True),
-    "send_gif": NativeTool(1, "send a previously searched Giphy reaction GIF", terminal=True),
-    "skills": NativeTool(1, "activate a skill named in <available_skills> to load its "
-                            "full instructions before you plan",
+    "send_gif": NativeTool(1, terminal=True),
+    "skills": NativeTool(1,
                          terminal=False, time_shiftable=None, plugin=True),
 }
 
@@ -1291,7 +1190,7 @@ def _spec(name: str, call) -> ToolSpec:
     declared = NATIVE_TOOLS[name]
     return ToolSpec(
         name=name, description="", schema={}, call=call,
-        when=declared.when, budget=declared.budget, terminal=declared.terminal,
+        budget=declared.budget, terminal=declared.terminal,
         time_shiftable=declared.time_shiftable,
     )
 

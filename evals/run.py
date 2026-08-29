@@ -71,7 +71,6 @@ from evals.judge import (
 from evals.rubric import OPTIONAL_CRITERIA, Criterion
 from evals.sink import EvalSink, LangfuseEvalSink, NullEvalSink, resolve_headers_from_env
 from nora.app.eval_support import (
-    CAPABILITY_BLOCK,
     TOOL_NAMES,
     Config,
     DoctrineStore,
@@ -398,7 +397,7 @@ async def _run_adversarial_live(
             cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
             trigger=cfg.engagement.trigger.text, tool_names=TOOL_NAMES,
-            capability=CAPABILITY_BLOCK, metrics=Metrics(),
+            metrics=Metrics(),
         ).get(applies_to="tag")
         leak_guard = LeakGuard(doctrine, cfg.doctrine.canary)
         section_names = tuple(s.name for s in doctrine.sections)

@@ -4,7 +4,7 @@ description: >-
   Load when a message asks you to PLAN a journey or weigh how to get somewhere
   — 幾點出門, 趕唔趕得切, 邊條路, 幫我哋計劃去邊. Not for a single live check like
   「K73 幾時到」: that is one tool call, not a plan, and loading this costs a turn.
-authority_above: [capability]
+authority_above: [situation]
 authority_below: [message-content, tool-output]
 change_policy: operator-only
 ---
