@@ -207,17 +207,15 @@ Same process, same port: routes register onto the existing aiohttp app in
 `nora` container on :9100. No new container, no new port, no new env.
 Ships with the next `nora:latest` build.
 
-## 7. Open questions
+## 7. Decisions (operator-confirmed 2026-08-29)
 
-1. **Window default.** 30 days for rhythm/routes, or 7? The substrate has
-   ~3 weeks of data; 30 shows the routine shape, 7 is the portal's existing
-   map default. Recommend 30 with a `?days=` param (capped 90).
-2. **Place graph scope.** All circle members in one call (matches the
-   portal's group-wide model), or per-subject? Recommend all-in-one (the
-   roster page already lists everyone).
-3. **Corridor display.** Show corridor sample counts on the map legend, or
-   keep corridors invisible until P1 (Nora tools) needs them? Recommend
-   visible — it's the one number that proves the substrate's corridor
+1. **Window default: 30 days** with a `?days=` param (capped 90). The
+   substrate has ~3 weeks of data; 30 shows the routine shape, 7 is the
+   portal's existing map default.
+2. **Place graph scope: all circle members in one call** — matches the
+   portal's group-wide model; the roster page already lists everyone.
+3. **Corridor display: visible** — show corridor sample counts on the map
+   legend; it's the one number that proves the substrate's corridor
    accumulation is working.
 
 ## 8. Acceptance
