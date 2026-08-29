@@ -84,3 +84,29 @@ docstring has "It is LIVE ONLY", `where_is`'s has "forcing a fresh reading
 first so the answer is where they ARE, not where they were", `now`'s has "in
 Hong Kong time. Call this before answering anything that depends on when it
 is". No merge needed; the schema already carries it.
+
+## 5. The tail sentence — cost disclosure vanishes, failure register survives
+
+The block's last sentence has two halves:
+
+> "The things here that reach outside this conversation are live bus data and
+> routing (a paid map service). When you cannot find something out, say so in
+> one clause and move on."
+
+- **The cost disclosure ("a paid map service") is not behavioural doctrine —
+  it dies.** The turn's cost ceiling is enforced by machinery (`ReplyGuard`
+  budgets, `llm.limits.turns`), not by telling the model a map API costs
+  money. A model does not route better for knowing this; it is operator
+  information in the wrong place (prompt instead of config), and it was
+  already half-stale (the list names `transit`+`route` but not `web_fetch`,
+  which also reaches out). Deleting it loses nothing load-bearing.
+- **The failure register ("say so in one clause and move on") already lives
+  in doctrine** — `conduct.md` Honesty ("or you do not and say so"), its
+  "say it once, plainly" failure rule, and `constraints.md`'s "「我唔知」 and
+  「我查唔到」 are real answers and you give them plainly" (constraints.md:79)
+  together cover it. No merge needed; the register survives in two doctrine
+  files.
+
+This was the last unreviewed fragment of the block when the first adversarial
+review's run budget expired; this section records the finding and its
+disposition so the second review can check it in one pass.
