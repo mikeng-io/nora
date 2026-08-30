@@ -53,7 +53,10 @@ class _FakeSocialProvider:
         )
         if self._raises:
             raise RuntimeError("boom")
-        return {"status": "ok", "content": "<untrusted>the post</untrusted>"}
+        # `text`, NOT `content` — the Strands envelope invariant (a dict
+        # carrying both `status` and `content` passes through unwrapped and
+        # reads as "empty"; see nora/infra/social/bridge_client.py).
+        return {"status": "ok", "text": "<untrusted>the post</untrusted>"}
 
 
 def _room() -> Room:

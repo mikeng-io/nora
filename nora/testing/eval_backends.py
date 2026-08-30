@@ -124,10 +124,12 @@ class CannedSearchProvider:
     async def fetch(self, *, url: str) -> dict[str, Any]:
         # Same self-terminating shape as `search`: one complete-looking page so
         # `web_fetch` backs `ConvergesInBudget` for a journey that opens a link.
+        # Keyed `text`, NOT `content` — the Strands envelope invariant (a dict
+        # with `status`+`content` passes through unwrapped and reads as empty).
         return {
             "status": "ok",
             "url": url,
-            "content": (
+            "text": (
                 f"COMPLETE, CURRENT PAGE CONTENT for {url}: this is the whole of "
                 "what the page says — do not fetch it again."
             ),

@@ -156,7 +156,7 @@ class TavilySearchProvider:
 
     async def fetch(self, *, url: str) -> dict[str, Any]:
         """One page's content, capped and wrapped. NEVER raises. Three states
-        (R-27): `ok` with `content`, `nothing_found` when Tavily could not read
+        (R-27): `ok` with `text`, `nothing_found` when Tavily could not read
         the page (it landed in `failed_results`, not a transport failure of the
         CALL), `unavailable` for any transport/auth failure of the call itself —
         «I could not check», never «nothing found»."""
@@ -217,11 +217,16 @@ class TavilySearchProvider:
             return {"status": "nothing_found"}
         clamped, truncated = _clamp_chars(raw_content, self._extract_max_chars)
         # Page-controlled → wrapped `untrusted` with the source URL as
-        # provenance, the same discipline as a search snippet (R-13).
+        # provenance, the same discipline as a search snippet (R-13). The key
+        # is `text`, NOT `content` — see the bridge client's identical note:
+        # Strands passes a dict with both `status` and `content` through
+        # unchanged, so a bare-string `content` reaches the model outside the
+        # standard text-block envelope and reads as "empty". `web_search`
+        # works precisely because its dict has no `content` key.
         return {
             "status": "ok",
             "url": url,
-            "content": _wrap(url, clamped),
+            "text": _wrap(url, clamped),
             "truncated": truncated,
         }
 

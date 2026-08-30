@@ -49,7 +49,7 @@ async def test_canned_search_answers_ok():
 async def test_canned_fetch_answers_ok():
     out = await CannedSearchProvider().fetch(url="https://example.com/a")
     assert out["status"] == "ok"
-    assert out["content"]
+    assert out["text"]
 
 
 async def test_canned_place_and_transit_answer_ok():
