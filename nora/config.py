@@ -980,12 +980,14 @@ class SocialConfig(BaseModel):
     any `opencli` subprocess is spawned, so a write verb is unreachable
     whatever this config says.
 
-    `bridge_url` is the bridge's loopback address (Nora reaches the host over
-    host networking); `timeout_seconds` must exceed the bridge's own
-    subprocess timeout (~75s, over OpenCLI's 60s browser timeout);
-    `content_max_chars` clamps the retrieved text, because a tool result is
-    re-sent on every subsequent model call and what accumulates must be
-    bounded.
+    `bridge_url` is where Nora's container reaches the host-side bridge. The
+    container is on the private compose `nora` network (NOT host networking),
+    so it uses `http://host.docker.internal:19826` — the docker0 gateway the
+    bridge also binds (see `deploy/social-bridge/`). `timeout_seconds` must
+    exceed the bridge's own subprocess timeout (~75s, over OpenCLI's 60s
+    browser timeout); `content_max_chars` clamps the retrieved text, because a
+    tool result is re-sent on every subsequent model call and what accumulates
+    must be bounded.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

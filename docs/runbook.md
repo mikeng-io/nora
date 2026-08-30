@@ -677,9 +677,14 @@ Nora container, and Nora runs fine with all of them down (the tool answers
   Chrome.
 - `nora-social-bridge.service` — `python -m nora.infra.social` (unit in
   `deploy/social-bridge/`), the read-only HTTP seam the container calls on
-  `127.0.0.1:19826`. It runs the CHECKOUT's code, so it tracks master — an
-  edit on master is a deploy here after a restart. Loopback only: there is no
-  authentication on `/read`; the allowlist is the boundary.
+  `http://host.docker.internal:19826` (the docker0 gateway — Nora's container
+  is on the private `nora` compose network, not host networking). The unit
+  sets `OPENCLI_BIN=/home/norty/.local/bin/opencli` (the systemd user
+  environment has no interactive PATH) and binds `127.0.0.1` + the docker0
+  gateway `172.17.0.1` — loopback and docker0 are both host-internal, never a
+  LAN interface, because there is no authentication on `/read`; the allowlist
+  is the boundary. It runs the CHECKOUT's code, so it tracks master — an edit
+  on master is a deploy here after a restart.
 
 The virtual display is the fix, not a preference: Browser Bridge drives real
 Chrome window APIs, and GNOME RDP reports zero monitors while no client is

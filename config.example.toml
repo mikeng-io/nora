@@ -661,7 +661,13 @@ api_key_env = "TAVILY_API_KEY"   # NAMES the env var; the key never lives here (
 # read-only (site, command) mapping host-side, so no posting, liking,
 # following or deleting is reachable through it.
 enabled = false
-# bridge_url = "http://127.0.0.1:19826"  # the host bridge, loopback only
+# bridge_url = "http://host.docker.internal:19826"  # the host bridge; Nora's container is
+#                                                   # on the private compose `nora` network
+#                                                   # (not host networking), so it reaches
+#                                                   # the host at host.docker.internal — the
+#                                                   # docker0 gateway. The bridge unit binds
+#                                                   # 127.0.0.1 + that gateway (see
+#                                                   # deploy/social-bridge/).
 # timeout_seconds = 90.0                  # > the bridge's ~75s subprocess timeout
 # content_max_chars = 4000                # retrieved-text clamp (bounds re-sent tokens)
 
