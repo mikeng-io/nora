@@ -3333,6 +3333,11 @@ def build_tool_specs(
                             "do not describe what it might have shown.",
                 }
             sha256 = hashlib.sha256(data).hexdigest()
+            # URL bytes are described on the fly and NEVER stored in this
+            # conversation's media_json, so there is no reusable code to hand
+            # back — a code that cannot resolve on a later call would be a
+            # lie to the model (external audit finding, 2026-08-31).
+            serve_code: str | None = None
         else:
             # ---- code path: resolve within this conversation (§1) -------
             hex_handle = _handle_hex(code)
@@ -3406,6 +3411,7 @@ def build_tool_specs(
                 }
 
             sha256, media_type = next(iter(matches.items()))
+            serve_code = sha256[:HANDLE_CHARS]
 
         # ---- shared describe tail (both paths) ---------------------------
         # Blobs are turned away HERE, before any model call, and the two
@@ -3454,7 +3460,9 @@ def build_tool_specs(
             await vision_cache.aget(sha256) if vision_cache is not None else None
         )
         if cached_description is not None:
-            return _serve_media(sha256, cached_description, cached=True)
+            return _serve_media(
+                sha256, cached_description, cached=True, code=serve_code,
+            )
 
         if url:
             # URL path: the bytes are already in hand from the download; no
@@ -3472,7 +3480,7 @@ def build_tool_specs(
                 data = await blob_store.get(key=sha256)
             except Exception:
                 log.exception("media_fetch could not open blob %s", sha256[:HANDLE_CHARS])
-                data = None
+                data = b""
             if not data:
                 _record_media(metrics, "unavailable", reason="blob")
                 return {
@@ -3517,10 +3525,18 @@ def build_tool_specs(
             # since the split: an audio description and an image description
             # come from different models and must not be recorded as one.
             await vision_cache.aput(sha256, description, model=describe_model)
-        return _serve_media(sha256, description, cached=False)
+        return _serve_media(sha256, description, cached=False, code=serve_code)
 
-    def _serve_media(sha256: str, description: str, *, cached: bool) -> dict:
+    def _serve_media(
+        sha256: str, description: str, *, cached: bool, code: str | None = None,
+    ) -> dict:
         """The `ok` path, with the untrusted-egress screen run on EVERY serve.
+
+        `code` is the reusable short handle when the media is a BLOB this
+        conversation holds (the model can hand it back to `media_fetch`).
+        URL-fetched media is described on the fly and NEVER stored, so its
+        caller passes `code=None` — a hex code that cannot resolve on a
+        later call would be a lie to the model.
 
         The description is text a vision model wrote about bytes a group member
         sent — the trust class of a fetched web page (design/14 §2.1). It runs
@@ -3542,14 +3558,14 @@ def build_tool_specs(
             # status stays `ok` (she DID look), but the words never leave.
             _record_media(metrics, "ok", cached=cached, withheld=True)
             return {
-                "status": "ok", "code": sha256[:HANDLE_CHARS], "withheld": True,
+                "status": "ok", "code": code, "withheld": True,
                 "note": "I looked, and it has what looks like a phone number or an "
                         "ID in it, so I won't repeat what it said. Describe it only "
                         "in general terms, without the contact details.",
             }
         _record_media(metrics, "ok", cached=cached, chars=len(description))
         return {
-            "status": "ok", "code": sha256[:HANDLE_CHARS],
+            "status": "ok", "code": code,
             "description": description,
         }
 

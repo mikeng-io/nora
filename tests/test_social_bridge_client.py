@@ -251,7 +251,7 @@ async def test_result_envelope_wraps_like_web_search(bridge):
     that they come out as the standard `content: [{"text": …}]` shape.
     """
     from strands.tools.decorator import DecoratedFunctionTool
-    from nora.infra.social.bridge_client import OpenCliBridgeClient
+
 
     # The private wrapper is a plain function in the SDK; `None` is the unused
     # `self` slot (it never dereferences the instance).

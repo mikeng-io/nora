@@ -166,7 +166,10 @@ async def test_a_url_is_downloaded_and_described_like_a_code(wiring, monkeypatch
     out = await _call(wiring["build"](), url="https://x.com/pic.jpg")
     assert out["status"] == "ok"
     assert out["description"] == "A red one-pixel square."
-    assert out["code"] == PNG_SHA[:6]
+    # NO reusable code: URL bytes are never stored in this conversation's
+    # media_json, so a code the model could hand back would not resolve on a
+    # later call (external audit finding, 2026-08-31).
+    assert out["code"] is None
     assert wiring["vision"].calls == 1
 
 
@@ -236,7 +239,9 @@ async def test_a_url_describes_a_video_with_the_video_model(wiring, monkeypatch)
     async def fake_download(url: str) -> tuple[bytes, str]:
         return b"\x00\x00\x00\x18ftypmp42", "video/mp4"
     monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
-    tool = wiring["build"](describe_models={"image": "test/image-model", "video": "test/video-model"})
+    tool = wiring["build"](
+        describe_models={"image": "test/image-model", "video": "test/video-model"},
+    )
     out = await _call(tool, url="https://x.com/clip.mp4")
     assert out["status"] == "ok"
     # CountingVision records no model; a video WITHOUT a named describer is

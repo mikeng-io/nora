@@ -37,8 +37,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import Callable, Awaitable
-from typing import Any
+from collections.abc import Awaitable, Callable
 
 log = logging.getLogger("nora.vision.preprocess")
 
@@ -59,7 +58,9 @@ PREPROCESS_TIMEOUT_SECONDS = 30.0
 Runner = Callable[[list[str], float, bytes], Awaitable[tuple[int | None, bytes, bytes]]]
 
 
-async def _run(args: list[str], timeout_seconds: float, data: bytes) -> tuple[int | None, bytes, bytes]:
+async def _run(
+    args: list[str], timeout_seconds: float, data: bytes
+) -> tuple[int | None, bytes, bytes]:
     """One ffmpeg invocation as an argv vector. NEVER a shell. Never raises:
     a missing binary or a timeout is `(None, b"", b"")`. The media bytes are
     piped to ffmpeg's stdin (`-i pipe:0`), never written to a temp file.
@@ -89,7 +90,9 @@ async def _run(args: list[str], timeout_seconds: float, data: bytes) -> tuple[in
     return proc.returncode, out, err
 
 
-async def _run_video(args: list[str], timeout_seconds: float, data: bytes) -> tuple[int | None, bytes, bytes]:
+async def _run_video(
+    args: list[str], timeout_seconds: float, data: bytes
+) -> tuple[int | None, bytes, bytes]:
     """Video variant of `_run`: the input bytes land in a scratch file because
     a video container is not seekable over a pipe. The scratch file is removed
     in all paths. The OUTPUT still rides the pipe (fragmented mp4 is written
@@ -123,7 +126,7 @@ async def _run_video(args: list[str], timeout_seconds: float, data: bytes) -> tu
     return proc.returncode, out, err
 
 
-def _image_args(media_type: str, timeout_seconds: float) -> list[str]:
+def _image_args(media_type: str) -> list[str]:
     """Scale + re-encode a still image to JPEG at IMAGE_MAX_DIMENSION."""
     # `-vf scale='min(1600,iw)':-2` shrinks only when wider than the cap;
     # small sources pass through at native size (no needless re-encode loss).
@@ -139,7 +142,7 @@ def _image_args(media_type: str, timeout_seconds: float) -> list[str]:
     ]
 
 
-def _video_args(timeout_seconds: float) -> list[str]:
+def _video_args() -> list[str]:
     """Scale + re-encode a clip to ≤720p, ≤24fps, ≤120s, H.264 CRF 26."""
     return [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
@@ -178,7 +181,7 @@ async def preprocess_media(
         return data
     timeout = timeout_seconds if timeout_seconds is not None else PREPROCESS_TIMEOUT_SECONDS
     run: Runner = runner if runner is not None else _run
-    args = _image_args(media_type, timeout) if top == "image" else _video_args(timeout)
+    args = _image_args(media_type) if top == "image" else _video_args()
     if top == "video":
         run = runner if runner is not None else _run_video
     else:
@@ -203,27 +206,57 @@ URL_DOWNLOAD_TIMEOUT_SECONDS = 25.0            # < loop budget; a hang is a wedg
 URL_DOWNLOAD_MAX_REDIRECTS = 5
 
 Downloader = Callable[[str, int, float], Awaitable[tuple[bytes, str]]]
+SafeUrl = Callable[[str], Awaitable[bool]]
 
 
-async def _download(url: str, max_bytes: int, timeout_seconds: float) -> tuple[bytes, str]:
+async def _download(
+    url: str,
+    max_bytes: int,
+    timeout_seconds: float,
+    *,
+    safe: SafeUrl | None = None,
+) -> tuple[bytes, str]:
     """GET `url` with a byte ceiling and timeout. NEVER raises: any failure is
     `(b"", "")`. Returns `(data, content_type)`. Follows at most
-    URL_DOWNLOAD_MAX_REDIRECTS."""
+    URL_DOWNLOAD_MAX_REDIRECTS, EACH HOP RE-VALIDATED.
+
+    The hop-by-hop SSRF screen is the same one `web_fetch`'s link previews
+    run (`nora.infra.preview.next_hop` + `_safe`): a downloader that checked
+    only the FIRST url and then followed `Location` blindly would let a
+    public page 302 to `http://169.254.169.254/…` or a `file://` target —
+    the exact escape the redirect re-validation exists to close. `next_hop`
+    also resolves a RELATIVE `Location` against the url it came from, which
+    a bare `current = loc` would have broken into `unavailable` for every
+    CDN that redirects that way. `safe` is injectable for local-server
+    tests (CLAUDE.md test-seam policy); the default is the preview screen.
+    """
     import aiohttp
 
+    from ..preview import _safe as _preview_safe
+    from ..preview import next_hop as _preview_next_hop
+
+    check = safe if safe is not None else _preview_safe
     current = url
     try:
         async with aiohttp.ClientSession() as session:
             for _ in range(URL_DOWNLOAD_MAX_REDIRECTS + 1):
+                if not await check(current):
+                    return b"", ""
                 async with session.get(
-                    current, timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+                    current, allow_redirects=False,
+                    timeout=aiohttp.ClientTimeout(total=timeout_seconds),
                 ) as response:
-                    if response.status >= 300 and response.status < 400:
-                        loc = response.headers.get("Location")
-                        if not loc:
-                            return b"", ""
-                        current = loc
+                    hop = _preview_next_hop(
+                        response.status, response.headers.get("Location"), current,
+                    )
+                    if hop is not None:
+                        # Back round the loop, which re-runs `check` on the
+                        # NEW url. `allow_redirects=True` would have checked
+                        # the first url and connected to the last.
+                        current = hop
                         continue
+                    if response.status in (301, 302, 303, 307, 308):
+                        return b"", ""      # a redirect with no Location goes nowhere
                     if response.status != 200:
                         return b"", ""
                     content_type = response.headers.get("Content-Type", "")
@@ -236,7 +269,7 @@ async def _download(url: str, max_bytes: int, timeout_seconds: float) -> tuple[b
                         chunks.append(chunk)
                     return b"".join(chunks), content_type
             return b"", ""
-    except Exception:
+    except Exception:            # noqa: BLE001 — never raise from a download; any failure is `(b"", "")`
         return b"", ""
 
 
@@ -246,9 +279,15 @@ async def download_media(
     max_bytes: int = URL_DOWNLOAD_MAX_BYTES,
     timeout_seconds: float = URL_DOWNLOAD_TIMEOUT_SECONDS,
     downloader: Downloader | None = None,
+    safe: SafeUrl | None = None,
 ) -> tuple[bytes, str]:
     """Fetch `url` under the byte/time ceilings. NEVER raises (R-5). Returns
     `(data, content_type)`; `(b"", "")` on any failure or over-ceiling body.
-    Injection seam mirrors the preprocess runner (CLAUDE.md test-seam policy)."""
+    Injection seams mirror the preprocess runner (CLAUDE.md test-seam
+    policy); the downloader default is the SSRF-safe hop-validated `_download`."""
     run: Downloader = downloader if downloader is not None else _download
+    # `safe` is a concern of the DEFAULT hop-validating downloader only;
+    # an injected `downloader` owns its own screen (or is a test fake).
+    if downloader is None:
+        return await _download(url, max_bytes, timeout_seconds, safe=safe)
     return await run(url, max_bytes, timeout_seconds)
