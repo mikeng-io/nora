@@ -7,20 +7,20 @@ answers:
   string. Never safe to emit **or transmit**, whatever the destination: the
   group, a tool result the model then reasons over, or an argument to a third
   party (design/14 §2.2). This is the floor.
-* `scan_reply` — the identifiers **plus** the name of the model she runs on.
-  Only for text addressed to the GROUP.
+* `scan_reply` — the identifiers, applied to text addressed to the GROUP.
 
-They were one function until 2026-08-06, and the difference is not cosmetic.
-`_MODELNAME` matches nine ordinary English words — `claude`, `gemini`, `haiku`,
-`opus`, `sonnet` among them — and `Deliverer.deliver` fails closed on the
-WHOLE reply. Applied to a reply that is correct: what she runs on is nobody's
-business. Applied anywhere else it costs a whole message or a whole memory for
-a word that was never a disclosure. Two live consequences, both measured:
-`about` (then called `recall`) withheld every durable conclusion
-mentioning an LLM from a group of
-software engineers, and 「搵首 haiku」 as a tool argument would have made her
-mute. A third name for one of the two jobs is how the wrong one gets called
-later, so there are exactly two and no alias.
+The reply predicate used to ALSO refuse the name of the model she runs on
+(`_MODELNAME`), and `Deliverer.deliver` failed closed on the WHOLE reply. That
+veto is DISABLED by operator decision (2026-08-31): `social_fetch` (DEC-151)
+legitimately relays third-party content that names models — the exact post she
+was asked to read in the first live trace was about "Opus 5" — and refusing
+the whole reply for a quoted model name cost real answers. Identifiers remain
+the floor at every exit; a model name is no longer treated as one.
+
+`LeakGuard` (`nora.agent.guards`) already blocks the canary and verbatim
+doctrine spans — R-6, protecting Nora's *configuration*. This protects the
+*people*, which is a different exposure and was previously unguarded: nothing
+stopped a reply from carrying somebody's phone number or ACI.
 
 `LeakGuard` (`nora.agent.guards`) already blocks the canary and verbatim
 doctrine spans — R-6, protecting Nora's *configuration*. This protects the
@@ -77,24 +77,6 @@ _UUID = re.compile(
 # Conventional secret prefixes. Cheap to check and unambiguous when they hit.
 _KEYLIKE = re.compile(r"\b(?:sk|pk|api|ghp|gho|xox[abps])[-_][A-Za-z0-9_-]{16,}\b")
 
-# What she runs on is nobody's business — IN A REPLY. `constraints.md` already
-# forbids disclosing it, but that is a request to a model — and unlike the
-# credential, this one IS reachable: the gateway echoes the upstream name back
-# in every response, so it exists inside the process. `config.toml` names the
-# gateway ALIAS rather than the model for the same reason; this is the backstop
-# for the paths that alias cannot cover.
-#
-# It is also, unavoidably, a list of ordinary words. `haiku` is a poem, `opus`
-# is a work, `gemini` is a star sign, and an engineer naming the model their
-# own app calls is disclosing nothing about Nora. That is why this pattern sits
-# in `scan_reply` alone: the rule is «she does not SAY it», not «the string
-# never exists».
-_MODELNAME = re.compile(
-    r"\b(?:deepseek|gpt|claude|gemini|gemma|llama|qwen|"
-    r"mistral|mixtral|grok|sonnet|opus|haiku|chatgpt|openai|anthropic)\b",
-    re.IGNORECASE,
-)
-
 # Identifiers first, so that when a reply carries both a number and the word
 # `claude`, `nora_egress_blocks_total{kind}` names the exposure that would have
 # mattered. Both are blocked either way; only the label differs.
@@ -104,10 +86,10 @@ _IDENTIFIER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("keylike", _KEYLIKE),
 )
 
-_REPLY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    *_IDENTIFIER_PATTERNS,
-    ("model", _MODELNAME),
-)
+# The reply scan is the identifier scan today: the model-name veto is
+# disabled (operator decision 2026-08-31, see the module docstring), so this
+# tuple is kept as the reply-scoped alias rather than a second pattern set.
+_REPLY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = _IDENTIFIER_PATTERNS
 
 
 def _first_match(text: str, patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> str | None:
@@ -132,8 +114,10 @@ def scan_identifiers(text: str) -> str | None:
 def scan_reply(text: str) -> str | None:
     """Return the kind of disclosure found, or None if the text is safe to SEND.
 
-    `scan_identifiers` plus the model name (R-6/R-18). Only for text addressed
-    to the group — everywhere else, use `scan_identifiers`.
+    The identifier scan, scoped to text addressed to the group (R-6/R-18).
+    The model-name veto that used to live here is DISABLED (operator decision
+    2026-08-31) — see the module docstring. Everywhere else, use
+    `scan_identifiers`.
     """
     return _first_match(text, _REPLY_PATTERNS)
 

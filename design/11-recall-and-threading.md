@@ -214,11 +214,13 @@ What stops *"tell me everything about 肥仔"* from becoming an address-book dum
    who was in the group, she listed five people who had never been members. That is
    R-19's whole reason for existing, and recall inherits it.
 3. **R-18 backstops identifiers.** `nora.agent.egress.scan_reply` fails closed on
-   E.164, UUID, key-shaped strings and model names — and Honcho conclusions can and
-   do contain those (a fed exchange carries whatever was said). Worth an explicit
-   test: a conclusion containing a phone number must not be relayable. The
-   conclusions themselves are filtered with `scan_identifiers`, the predicate
-   WITHOUT the model names — see DEC-30.
+   E.164, UUID and key-shaped strings — and Honcho conclusions can and do contain
+   those (a fed exchange carries whatever was said). Worth an explicit test: a
+   conclusion containing a phone number must not be relayable. The conclusions
+   themselves are filtered with `scan_identifiers`. (The reply predicate once
+   ALSO refused model names; that veto was disabled 2026-08-31 by operator
+   decision — `social_fetch` relays third-party content that names models, and
+   the whole-reply veto cost real answers. See `nora/agent/egress.py`.)
 
 **What is NOT covered, honestly.** R-18 does not block names or facts. Nothing
 mechanical stops Nora repeating *"Tyler told you he was broke"* into the room Tyler
