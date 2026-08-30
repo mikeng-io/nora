@@ -56,7 +56,7 @@ class OpenCliBridgeClient(SocialProvider):
         self, *, platform: str, what: str, target: str, limit: int,
     ) -> dict[str, Any]:
         """One read. NEVER raises. Three states (R-27): `ok` with wrapped,
-        clamped `content` (and `url` when the bridge named one),
+        clamped `text` (and `url` when the bridge named one),
         `nothing_found` when the read ran and found nothing, `unavailable`
         for any failure of the call itself — «I could not check», never
         «nothing found»."""
@@ -108,9 +108,19 @@ class OpenCliBridgeClient(SocialProvider):
         # The content is stranger-written (R-13): wrapped `untrusted` with the
         # source as provenance. The URL rides PLAIN beside it so the model can
         # cite it in the reply — the same split as a Tavily result.
+        #
+        # The key is `text`, NOT `content`: Strands' `_wrap_tool_result`
+        # (decorator.py:673) passes a dict with both `status` AND `content`
+        # through UNCHANGED, so a bare-string `content` reaches the model
+        # outside the standard `[{"text": …}]` block — and the model reads that
+        # as "empty" (trace 67afb6920005b741b7e314561facc002). Returning the
+        # text under a non-`content` key makes Strands wrap this dict the same
+        # way it wraps `web_search`'s — the envelope the model demonstrably
+        # reads. Same invariant guards.py:513 documents: native tools return a
+        # plain dict with no `content` key.
         out: dict[str, Any] = {
             "status": "ok",
-            "content": _wrap(url or f"{platform} {what}", clamped),
+            "text": _wrap(url or f"{platform} {what}", clamped),
             "truncated": truncated,
         }
         if url is not None:

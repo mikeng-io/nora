@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "social_fetch and web_fetch results now reach the model in Strands' standard tool-result envelope. Both tools returned a dict carrying a bare-string `content` key; Strands' `_wrap_tool_result` passes a dict with BOTH `status` and `content` through UNCHANGED (decorator.py:673), so the model received `content: \"<string>\"` outside the standard `[{\"text\": …}]` text-block shape and read it as empty — even when the text was fully readable (traces 2bf6939b… and 67afb692…, where Nora kept replying 讀唔到 despite the post text being in context). The payload now rides under `text`, so Strands wraps it exactly like web_search's dict (no `content` key) — the envelope the model demonstrably reads. The 2026-08-31 renderer change (raw opencli JSON → readable post/profile text) is retained as the payload quality layer; this is the envelope fix on top.",
+  "details": [
+    "nora/infra/social/bridge_client.py: ok-envelope key `content` → `text` (renderer output still untrusted-wrapped + clamped)",
+    "nora/infra/search/tavily.py: /extract fetch key `content` → `text` (web_fetch had the identical defect — the model called even its readable page content \"empty\")",
+    "nora/testing/eval_backends.py CannedSearchProvider.fetch: same key change, matching the real provider contract",
+    "Tool docstrings (web_fetch, social_fetch) say `ok (there's text)`; regression pins feed a realistic post through the real Strands `_wrap_tool_result` and assert the final envelope is `status: success` + `content: [{text: json.dumps(dict)}]` — the same shape web_search produces"
+  ],
+  "limitations": []
+}

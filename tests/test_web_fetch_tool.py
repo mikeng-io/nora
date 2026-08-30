@@ -51,7 +51,10 @@ class _FakeSearchProvider:
         self.fetch_calls.append(url)
         if self._raises:
             raise RuntimeError("boom")
-        return {"status": "ok", "url": url, "content": "the page"}
+        # `text`, NOT `content` — same Strands-envelope invariant as the real
+        # providers (a dict carrying both `status` and `content` passes
+        # through `_wrap_tool_result` unwrapped and reads as "empty").
+        return {"status": "ok", "url": url, "text": "the page"}
 
 
 def _room() -> Room:

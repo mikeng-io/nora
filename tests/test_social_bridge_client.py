@@ -9,6 +9,7 @@ Reverting the never-raises or the untrusted wrap turns a test here red.
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 from aiohttp import web
@@ -144,25 +145,31 @@ async def _read(client: OpenCliBridgeClient) -> dict:
     return await client.read(platform="x", what="profile", target="nasa", limit=5)
 
 
-async def test_ok_content_is_wrapped_and_the_url_rides_plain(bridge):
+async def test_ok_text_is_wrapped_and_the_url_rides_plain(bridge):
     fake, client = bridge
     out = await _read(client)
     assert out["status"] == "ok"
     assert out["url"] == "https://x.com/nasa"               # url rides PLAIN
-    assert out["content"].startswith("<untrusted")           # content wrapped
-    assert "nasa" in out["content"]
+    assert out["text"].startswith("<untrusted")             # text wrapped
+    assert "nasa" in out["text"]
     # The request body is the four fields, nothing else.
     assert fake.requests[0] == {
         "platform": "x", "what": "profile", "target": "nasa", "limit": 5,
     }
+    # Strands-envelope invariant: the dict must NOT carry a `content` key.
+    # `DecoratedFunctionTool._wrap_tool_result` passes a dict with BOTH
+    # `status` and `content` through UNWRAPPED, so a bare-string `content`
+    # reaches the model outside the standard `[{"text": …}]` block and reads
+    # as "empty" — see guards.py:513's same invariant.
+    assert "content" not in out
 
 
-async def test_long_content_is_clamped_and_flagged(bridge):
+async def test_long_text_is_clamped_and_flagged(bridge):
     _fake, client = bridge
     out = await _read(client)
     assert out["truncated"] is True
     # The wrapped body carries at most the clamp (plus the untrusted envelope).
-    assert len(out["content"]) < 1800
+    assert len(out["text"]) < 1800
 
 
 async def test_content_is_readable_text_not_json_soup(bridge):
@@ -180,7 +187,7 @@ async def test_content_is_readable_text_not_json_soup(bridge):
     out = await client.read(platform="x", what="post",
                             target="2093779797512253814", limit=5)
     assert out["status"] == "ok"
-    text = out["content"]
+    text = out["text"]
     assert "opus 5 is so bad lately. complete mess" in text
     assert "https://x.com/MrAhmadAwais/status/2093779797512253814" in text
     assert "167 likes" in text
@@ -190,6 +197,60 @@ async def test_content_is_readable_text_not_json_soup(bridge):
     assert '\\"' not in text.replace("\\n", "")
 
 
+async def test_result_envelope_wraps_like_web_search(bridge):
+    """The regression pin for the REAL 2026-08-31 failure (second round).
+
+    The renderer fix made the text readable, but the model STILL said "No
+    output": `social_fetch` returned a dict bearing a bare-string `content`
+    key, and Strands' `_wrap_tool_result` (decorator.py:673) passes a dict
+    with BOTH `status` and `content` through UNCHANGED — so the model received
+    `content: "<string>"` outside the standard `[{"text": …}]` block and read
+    it as empty (trace 67afb6920005b741b7e314561facc002). `web_search` works
+    because its dict has no `content` key, so Strands wraps it. This test
+    feeds BOTH providers' ok-envelopes through the real SDK wrapper and pins
+    that they come out as the standard `content: [{"text": …}]` shape.
+    """
+    from strands.tools.decorator import DecoratedFunctionTool
+    from nora.infra.social.bridge_client import OpenCliBridgeClient
+
+    # The private wrapper is a plain function in the SDK; `None` is the unused
+    # `self` slot (it never dereferences the instance).
+    _wrap_tool_result = DecoratedFunctionTool._wrap_tool_result
+
+    async def read(client: OpenCliBridgeClient) -> dict:
+        return await client.read(platform="x", what="post",
+                                 target="2093779797512253814", limit=5)
+
+    fake, client = bridge
+    fake.mode = "realistic-post"
+    social_out = await read(client)
+
+    social_envelope = _wrap_tool_result(None, "call_x", social_out)["tool_result"]
+    # Outer Strands verdict + standard text-block content — the SAME shape
+    # web_search produces (its dict has no `content` key, so Strands wraps).
+    assert social_envelope["status"] == "success"
+    assert isinstance(social_envelope["content"], list)
+    # The inner text is the json-dumped tool dict — readable text survives as
+    # a text block the model quotes.
+    inner = json.loads(social_envelope["content"][0]["text"])
+    assert inner["status"] == "ok"
+    assert inner["text"].startswith("<untrusted")
+    assert "opus 5 is so bad lately" in inner["text"]
+
+    # web_fetch's provider must hit the same invariant (it had the identical
+    # bare-string `content` defect — trace 1 showed the model calling even its
+    # readable page content "empty").
+    fetch_out = {
+        "status": "ok",
+        "url": "https://example.com/a",
+        "text": "<untrusted source=\"https://example.com/a\">page body …</untrusted>",
+        "truncated": False,
+    }
+    fetch_envelope = _wrap_tool_result(None, "call_y", fetch_out)["tool_result"]
+    assert fetch_envelope["status"] == "success"
+    assert isinstance(fetch_envelope["content"], list)
+
+
 async def test_profile_renders_handle_bio_and_stats(bridge):
     """Profile data renders as `handle (name)` + bio + numbers — the shape a
     model quotes directly, not an object dump it has to parse."""
@@ -197,7 +258,7 @@ async def test_profile_renders_handle_bio_and_stats(bridge):
     fake.mode = "realistic-profile"
     out = await _read(client)
     assert out["status"] == "ok"
-    text = out["content"]
+    text = out["text"]
     assert "nasa (NASA)" in text
     assert "Exploration lives here." in text
     assert "100 followers" in text

@@ -161,20 +161,25 @@ async def test_country_is_never_sent(tavily):
 # ---- fetch (DEC-116, /extract) --------------------------------------------
 
 
-async def test_fetch_returns_wrapped_content_for_the_requested_url(tavily):
+async def test_fetch_returns_wrapped_text_for_the_requested_url(tavily):
     fake, provider = tavily
     out = await provider.fetch(url="https://hko.gov.hk/x")
     assert out["status"] == "ok"
     assert out["url"] == "https://hko.gov.hk/x"             # url rides PLAIN
-    assert out["content"].startswith("<untrusted")           # page wrapped
+    assert out["text"].startswith("<untrusted")             # page wrapped
     assert fake.extract_requests[0]["urls"] == ["https://hko.gov.hk/x"]
+    # Strands-envelope invariant: no bare-string `content` key. A dict with
+    # BOTH `status` and `content` passes through `_wrap_tool_result` unwrapped
+    # and reads as "empty" — web_search works because its dict has no
+    # `content` key, so Strands wraps it into `[{"text": …}]` blocks.
+    assert "content" not in out
 
 
-async def test_long_fetched_content_is_clamped_and_flagged(tavily):
+async def test_long_fetched_text_is_clamped_and_flagged(tavily):
     _fake, provider = tavily
     out = await provider.fetch(url="https://hko.gov.hk/x")
     assert out["truncated"] is True
-    assert len(out["content"]) < 3300
+    assert len(out["text"]) < 3300
 
 
 async def test_a_failed_extraction_is_nothing_found_not_unavailable(tavily):
