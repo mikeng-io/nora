@@ -751,14 +751,6 @@ class EngagementPipeline:
                 on_delivered=indicate.DeliverySettler(
                     indicator=indicator, spawn=self._spawn,
                 ),
-                # R-85 (DEC-148): the misattribution guard's own inputs — who
-                # this turn is FOR and what she can see while answering.
-                # `ctx.tagger` and `ctx.transcript` are already comprehended
-                # once for the prefill and `who_said` (DEC-146); threaded here
-                # rather than re-derived so the guard can never disagree with
-                # either.
-                tagger_person_id=ctx.tagger.person_id if ctx.tagger else None,
-                transcript=ctx.transcript,
             )
             # One `Room` per tag, constructed here and closed over by the three
             # room-scoped tools. Nothing reads the platform roster unless one

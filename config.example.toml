@@ -85,7 +85,9 @@ api_key_env = "OMNIROUTE_API_KEY"     # env var NAME, never the value
 # Pinning gives up the alias's benefit of keeping the upstream name out of her
 # process (R-18 still blocks model names from replies, so she cannot say it).
 # Determinism is worth more than the indirection.
-model = "ollamacloud/deepseek-v4-flash"
+# Tagged :0731 (2026-08-30) — OmniRoute catalog re-sync after restart dropped
+# the bare id; upstream only exposes the tagged variant now. See catalog-400.
+model = "ollamacloud/deepseek-v4-flash:0731"
 # The provider's per-CALL ceiling — NOT the turn's budget (see [llm.limits]
 # below, which is where the loop's budget lives). Was 4000, an unmeasured
 # number that doubled as the loop budget; measured 2026-08-06, the largest
@@ -167,7 +169,14 @@ reasoning_effort = "low"
 # comfortable headroom for a multi-tool turn (web_search + weather + model
 # round-trips); a normal turn is still ~10 s, so this only bounds the rare slow
 # turn (the operator: a longer wait is fine). Vision derives min(configured 20, 120×0.5).
-timeout_seconds = 120
+# SUPERSEDED 2026-08-30 by the 120 → 240 note below (vision now derives
+# min(configured 40, 240 × 0.6 / 4) = 36 s).
+# 120 → 240 (2026-08-30, operator): real 13.4 MB videos through the kimi direct
+# lane time out at the derived per-call vision budget 18 s (120 × 0.6 SHARE / 4
+# media_fetch budget). A video upload+inference cannot fit. Raising the loop to
+# 240 recomputes per_call = 240 × 0.6 / 4 = 36 s, still under `vision_timeout_seconds`
+# 40 raised alongside. Invariant budget × derived < loop still holds: 4 × 36 < 240.
+timeout_seconds = 240
 
 # The three caps around the WHOLE agent loop for one tag — all measured
 # 2026-08-06, all three previously wrong in the same direction.
@@ -338,11 +347,20 @@ timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never th
 # `[media.describe.image] model` overrides it when both are set.
 # The sticker reader resolves through the same describer, so the two
 # image paths cannot disagree about what wrote a shared cache row.
-vision_model = "ollamacloud/minimax-m3"
+# ollamacloud/minimax-m3 → ollamacloud/glm-5.3-flash (2026-08-30, benchmark:
+# GLM 5.3 Flash 2-4s vs M3-style 5-26s per image, accuracy parity except
+# hyphens/punctuation in dense OCR — verified through OmniRoute).
+vision_model = "ollamacloud/glm-5.3-flash"
 vision_max_tokens = 1024
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body
-vision_timeout_seconds = 20.0
+# 20 → 40 (2026-08-30, operator): the per-call vision budget derives as
+# min(vision_timeout_seconds, loop × 0.6 SHARE / media_fetch budget). With the
+# loop raised 120 → 240 the derived value is 240 × 0.6 / 4 = 36 s; leaving this
+# at 20 would cap the budget at 20 s and real 13.4 MB videos would keep timing
+# out. 40 keeps the configured ceiling above the derived budget so the derived
+# number is the true cap.
+vision_timeout_seconds = 40.0
 # Reading a sticker automatically at INGEST (sticker spec §6) — separate from
 # media_fetch above because the two calls have different budgets and risk.
 #
@@ -777,7 +795,9 @@ max_rendered_lexemes = 6
 # the deployment's already-working tier is reasonable, but this is a SEPARATE
 # knob for an operator who wants a cheaper or differently-tuned model for a
 # bulk classification task than for a live conversational turn.
-model = "ollamacloud/deepseek-v4-flash"
+# Tagged :0731 (2026-08-30) — same catalog-400 fix as [llm].model: the bare id
+# 400s against the live OmniRoute catalog after the re-sync.
+model = "ollamacloud/deepseek-v4-flash:0731"
 # Bounds _LanguageModelClient.complete (nora.app.composition) — matches
 # [llm].timeout_seconds's own value; every other model call in the codebase
 # is explicitly bounded and this was the one quiet exception (a hung call
@@ -1211,7 +1231,8 @@ reasoning_effort = "none"
 # swapping the model quietly would hide that.
 #
 # Reopen with evidence from real runs, not before.
-model = "ollamacloud/deepseek-v4-flash"
+# Tagged :0731 (2026-08-30) — same catalog-400 fix as [llm].model.
+model = "ollamacloud/deepseek-v4-flash:0731"
 
 # One budget block per adaptor — NOT one global ceiling: proving a fact is
 # worth more calls than glossing a word, and a single number would starve the
@@ -1370,12 +1391,15 @@ headers_env = ""                      # same shape/var as obs.tracing.headers_en
 # The per-modality describers (2026-08-17). `vision_model` above stays the
 # IMAGE model's alias, so a config written before this split keeps working.
 #
-# Audio and video ship INERT — wired, but off, with no model named. That is not
+# Audio ships INERT — wired, but off, with no model named. That is not
 # timidity: the OmniRoute catalogue advertises `vision` on 215 of its 406 models
 # and carries NO `audio` or `video` key at all, so it cannot tell us whether any
-# reachable route can hear or watch. Enabling either is a flag and a model name,
+# reachable route can hear. Enabling it is a flag and a model name,
 # with no code change; until a probe answers that question, a voice note is
 # answered `unavailable` («I couldn't check»), never `nothing_found`.
+#
+# VIDEO shipped inert under the same argument and was ENABLED 2026-08-30 via
+# the kimi direct lane — see [media.describe.video] below.
 #
 # `provider` selects the TRANSPORT (2026-08-30): `"omniroute"` (default) keeps
 # the process-wide gateway client; `"kimi"` travels DIRECT to
@@ -1388,7 +1412,9 @@ headers_env = ""                      # same shape/var as obs.tracing.headers_en
 # `KIMI_CODE_API_KEY`.
 [media.describe.image]
 enabled = true
-model = "ollamacloud/minimax-m3"
+# ollamacloud/minimax-m3 → ollamacloud/glm-5.3-flash (2026-08-30, benchmark:
+# 5-10x faster, accuracy parity; verified through OmniRoute).
+model = "ollamacloud/glm-5.3-flash"
 provider = "omniroute"
 
 [media.describe.audio]
@@ -1397,6 +1423,23 @@ model = ""
 provider = "omniroute"
 
 [media.describe.video]
-enabled = false
-model = ""
-provider = "omniroute"
+# ENABLED 2026-08-30 — kimi DIRECT provider, NOT omniroute: OmniRoute drops
+# `video_url` content blocks (probe: router prompt 95 tokens vs native 3164
+# for the same payload), so a video through it reaches the model as text only
+# and it answers about text it did receive. `KIMI_CODE_API_KEY` must be
+# injected (docker-compose.yml) or this answers `unavailable` — never a
+# silent omniroute fallback. k3-256k over k3 (1M): same video token cost,
+# ~2x faster, half the quota (benchmark 2026-08-30).
+enabled = true
+model = "k3-256k"
+provider = "kimi"
+# Video bytes are routinely far larger than a still image; the shared
+# `vision_max_bytes` (8 MiB, chosen for images) would turn a real clip into
+# `too_large`. Set to the SAME 100 MiB as `[media] max_bytes` — the custody
+# ceiling, i.e. "whatever Nora can receive, she can describe". A 100 MiB
+# clip is a ~133 MiB base64 body to api.kimi.com; the direct lane's per-call
+# timeout (derived from llm budgets) must cover that upload+inference. If a
+# real clip ever times out at the top of this range, the `ms://file-id`
+# upload lane (probed 2026-08-30 for larger videos) is the escape hatch —
+# base64 inline works for small clips, file-id for big ones.
+max_bytes = 104857600

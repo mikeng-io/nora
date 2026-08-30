@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "The send-path misattribution guard (R-85) is removed. Quoted speech in Nora's replies is no longer mechanically checked against the conversation window before sending, after the guard false-blocked correct replies that quoted a third party while addressing somebody else.",
+  "details": [
+    "The guard refused any reply whose 「corner-bracket quote」 was said in the visible window only by somebody other than the person being addressed. In live use that predicate fired on an accurate reply — quoting what a third party said IS the point of many replies — and a false block costs one silent reply the group never sees and nobody is told about.",
+    "The check, its Deliverer wiring, the tagger/transcript threading through both send paths, and the nora_attribution_blocks_total metric are all removed rather than flag-gated.",
+    "The other 2026-08-28 incident measures are untouched: the who_said tool still lets her check an attribution before making one, and the debrief's grounding rubric still scores a misattribution as ungrounded."
+  ],
+  "limitations": [
+    "Nothing on the send path now mechanically stops a reply that puts words in the wrong mouth; that failure is back to being caught only by her own who_said check and by the debrief after the fact."
+  ]
+}

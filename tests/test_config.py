@@ -211,10 +211,11 @@ def test_config_uses_the_target_shape(toml_path):
     assert cfg.store.context_window == 40
     # tiers replace default/deep, and carry their own timeout. These two track
     # the DEPLOYMENT (DEC-84's opencode-zen → ollamacloud move, and 30 → 60 →
-    # 120); `tests/test_env_template.py` is what keeps the template and
+    # 120 → 240; the model gained its `:0731` catalog tag 2026-08-30);
+    # `tests/test_env_template.py` is what keeps the template and
     # config.toml from drifting apart again.
-    assert cfg.llm.model == "ollamacloud/deepseek-v4-flash"
-    assert cfg.llm.timeout_seconds == 120
+    assert cfg.llm.model == "ollamacloud/deepseek-v4-flash:0731"
+    assert cfg.llm.timeout_seconds == 240
     assert cfg.llm.limits.turns == 20
     assert cfg.llm.max_tokens == 2000
     # engagement owns the trigger; policy is declared even though only one exists
@@ -450,6 +451,9 @@ def test_the_language_section_is_optional_and_ships_inert(toml_path):
     assert cfg.language.max_age_seconds == 86_400.0
     assert cfg.language.batch_limit == 400
     assert cfg.language.max_rendered_lexemes == 6
+    # The CODE default — deliberately NOT the deployment's `:0731` tag (the
+    # deployment carries the tag in config.toml because the bare id 400s
+    # against the re-synced OmniRoute catalog; the code default is unchanged).
     assert cfg.language.model == "ollamacloud/deepseek-v4-flash"
     assert cfg.language.timeout_seconds == 120.0
     assert cfg.language.max_rendered_lexemes < DEFAULT_ROOM_LANGUAGE_STORE_LIMIT, (
@@ -808,7 +812,7 @@ def test_an_explicit_image_model_wins_over_the_legacy_alias(toml_path):
     toml_path.write_text(re.sub(
         r'^vision_model = ".*"$', 'vision_model = "legacy/only-model"',
         toml_path.read_text(), count=1, flags=re.MULTILINE,
-    ).replace('model = "ollamacloud/minimax-m3"', 'model = "new/image-model"'))
+    ).replace('model = "ollamacloud/glm-5.3-flash"', 'model = "new/image-model"'))
     assert load(toml_path).media.describer_for("image").model == "new/image-model"
 
 
@@ -931,7 +935,8 @@ def test_the_shipped_dreamer_model_is_the_one_nora_runs(toml_path):
     SITUATED, not smarter — so this equality is asserted rather than left to
     coincidence."""
     cfg = load(toml_path)
-    assert cfg.dreamer.model == "ollamacloud/deepseek-v4-flash"
+    # Literal carries the `:0731` catalog tag the deployment moved to 2026-08-30.
+    assert cfg.dreamer.model == "ollamacloud/deepseek-v4-flash:0731"
     assert cfg.dreamer_model() == cfg.language.model
 
 
@@ -940,7 +945,7 @@ def test_an_empty_dreamer_model_still_falls_back_to_the_language_model(toml_path
     a deployment whose `config.toml` predates this field must keep loading, and
     `extra="forbid"` makes that a real constraint rather than a courtesy."""
     toml_path.write_text(toml_path.read_text().replace(
-        'model = "ollamacloud/deepseek-v4-flash"\n\n# One budget block',
+        'model = "ollamacloud/deepseek-v4-flash:0731"\n\n# One budget block',
         'model = ""\n\n# One budget block',
     ))
     cfg = load(toml_path)
@@ -954,11 +959,11 @@ def test_an_explicit_dreamer_model_overrides_the_language_model(toml_path):
     `test_an_explicit_image_model_wins_over_the_legacy_alias` guards for
     `[media]`'s own alias."""
     toml_path.write_text(toml_path.read_text().replace(
-        'model = "ollamacloud/deepseek-v4-flash"\n\n# One budget block',
+        'model = "ollamacloud/deepseek-v4-flash:0731"\n\n# One budget block',
         'model = "measured/dreamer-tier"\n\n# One budget block',
     ))
     cfg = load(toml_path)
-    assert cfg.language.model == "ollamacloud/deepseek-v4-flash"
+    assert cfg.language.model == "ollamacloud/deepseek-v4-flash:0731"
     assert cfg.dreamer_model() == "measured/dreamer-tier"
 
 

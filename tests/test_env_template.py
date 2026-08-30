@@ -233,9 +233,11 @@ def test_config_example_still_loads_through_the_config_model(tmp_path, monkeypat
     cfg = load(dst)
     # Spot-check the drifted values actually landed in the typed model, rather
     # than trusting that "it loaded" means "it loaded what we think".
-    assert cfg.llm.model == "ollamacloud/deepseek-v4-flash"
+    # Literals re-pinned 2026-08-30 to the synced template values: the model
+    # gained its `:0731` catalog tag and the loop timeout went 120 → 240.
+    assert cfg.llm.model == "ollamacloud/deepseek-v4-flash:0731"
     assert cfg.llm.reasoning_effort == "low"
-    assert cfg.llm.timeout_seconds == 120
+    assert cfg.llm.timeout_seconds == 240
 
 
 def test_both_config_files_agree_on_the_dreamer_runtime_shape(tmp_path, monkeypatch):
@@ -271,7 +273,9 @@ def test_both_config_files_agree_on_the_dreamer_runtime_shape(tmp_path, monkeypa
         "deployment's own value is an operator decision and is listed in "
         "_MAY_DIFFER."
     )
-    assert example.model == live.model == "ollamacloud/deepseek-v4-flash", (
+    # Literal re-pinned 2026-08-30: both files now carry the `:0731` catalog
+    # tag (the bare id 400s against the re-synced OmniRoute catalog).
+    assert example.model == live.model == "ollamacloud/deepseek-v4-flash:0731", (
         "the two files disagree about which model the Dreamer runs — an "
         "operator decision (2026-08-21), so it is stated, not inferred"
     )

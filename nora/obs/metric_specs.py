@@ -104,15 +104,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Replies blocked for carrying somebody's identifiers, by kind.",
         ("kind",),
     ),
-    # R-85 (DEC-148): a 「quoted」 span the current window shows was said only
-    # by somebody other than the person being addressed. No labels, like
-    # `nora_leak_blocks_total` above — one predicate, one series; the rule and
-    # reason labels on `nora_guard_vetoes_total`/`nora_silent_failures_total`
-    # already carry the cross-cutting view.
-    _CounterSpec(
-        "nora_attribution_blocks_total",
-        "Replies blocked for quoting words the window shows somebody else said.",
-    ),
     _CounterSpec("nora_doctrine_reload_failures_total", "Doctrine hot-reload failures."),
     # The Dreamer's own instruction corpus (nora/dreamer/), counted separately
     # from the doctrine's on purpose: they are different files with different
