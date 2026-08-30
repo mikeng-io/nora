@@ -33,15 +33,22 @@ from nora.domain.presence import PresenceFix, SavedPlace, WireState
 
 #: The tools these canned providers back — the set the per-journey gate checks a
 #: journey's (required + siblings) against before promoting its leakage/budget
-#: checks to hard. Kept in sync with what `build_eval_tool_registry` wires.
+#: checks to hard. Kept in sync with what `build_eval_tool_registry` wires
+#: directly AND what the harness backs through the pipeline's `memory=` slot.
 #:
-#: The memory verbs (`remember` write lane) are backed not by a class here but
-#: by the in-memory Honcho double the live run wires as its memory store
-#: (`nora.app.eval_support.build_eval_memory`): canned conclusions answer the
-#: read verbs, `conclude` records the write and lands it where those reads
-#: serve it back, and `note_create` rides the in-memory note store wired into
-#: the eval registry — so a wrong-lane write is a real `ok`, not the wiring-gap
-#: `unavailable` the F4 confound wears.
+#: The memory verbs (`remember`/`about`/`ask_memory`/`search_memory`) are NOT
+#: backed here — they are backed by the `FakeMemoryStore` the harness constructs
+#: (`evals/harness.py`), threaded as `memory=` into `build_offline_pipeline`,
+#: which the registry's `build()` passes as `honcho=`. A journey whose required
+#: or sibling set is in `BACKED_TOOLS` has its leakage/budget checks promoted to
+#: hard (F4); keeping the memory verbs here is what makes the remember/recall
+#: journeys hard-gated rather than advisory.
+#:
+#: `note_create` is likewise NOT wired here (the live harness has no note
+#: store), yet it stays in the set ON PURPOSE: it is the note-lane sibling in
+#: the remember journey's confusability cluster, and a wrong-lane call — even
+#: one that answers `unavailable` — is still a leak the gate must catch. The
+#: membership is about the GATE, not about the backend (Kimi audit F1, 2026-08-30).
 BACKED_TOOLS = frozenset(
     {
         "weather", "web_search", "web_fetch", "place_info", "route", "transit",
