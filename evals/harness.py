@@ -1,20 +1,34 @@
 """Eval harness: drives a real pipeline graph (real guards, fake db/memory/adapter)
-against a scripted turn sequence and reports what happened as a `Trajectory`, for
-the deterministic evaluators in `evals.evaluators` to grade.
+against a scripted turn sequence — or against Nora's REAL model when `live=True`
+— and reports what happened as a `Trajectory`, for the deterministic evaluators
+in `evals.evaluators` to grade.
+
+Two drive modes, mutually exclusive on `run_case`:
+
+- **Scripted (`live=False`, default)** — `script` is the scripted model turn
+  sequence, driven through `FakeAgentRunner`: offline, no network. `script=None`
+  degrades to a zero-turn silent run.
+- **Live (`live=True`)** — Nora's actual model through the actual Strands loop
+  (`nora.app.eval_support.build_live_runner` + `nora.app.agent_runner.
+  LiveAgentRunner`, which wraps `nora.agent.factory.create_agent`/`invoke` — the
+  same code path production runs), reaching the network. This is what
+  `evals/run.py --suite journeys` and the adversarial live path drive. The
+  graph around the model stays fakes (db/memory/adapter) so a live run measures
+  the MODEL's behaviour without touching a real platform or store; `--skills`
+  and `--seed-production` (see `run_case`) close specific production-shape gaps
+  on demand, still with zero writes to the real stores.
 
 Design note (this file's `run_case`/`Case` are design guidance, not pinned by
 `tests/test_evals_gate.py` — that test only exercises `Trajectory` + the evaluators):
 `run_case` builds its own pipeline graph from `nora.app.offline.build_offline_pipeline`
 plus `nora.testing`'s fakes, rather than reusing `tests/integration/harness.py` —
 `evals/` may import `nora.app` and `nora.testing` and nothing else from `nora/`, and
-may not import `tests/` at all (`tests/test_boundaries.py`). That machinery
-deliberately makes the real, live-network branch of invocation unreachable by
-construction: `run_case` always wraps whatever `script` you pass into a
-`FakeAgentRunner`. So today, `run_case` only supports the offline/scripted path:
-`script=None` degrades to a zero-turn `FakeAgentRunner` (a harmless silent run), it
-does NOT reach out to a real model. Wiring an actual live-model code path (for the
-M7 stage's `--suite all` network-requiring verification command) is out of scope for
-this task and is left for later work.
+may not import `tests/` at all (`tests/test_boundaries.py`). The live-model branch
+exists NOW (added with the `LiveAgentRunner`; the docstring's older claim that it
+"does NOT reach out to a real model" was true for the original Task 40 wiring and
+was overtaken — see `nora/app/agent_runner.py` and the `live=True` path in
+`run_case` below); what remains deferred is only per-dataset (`--suite
+trigger/no_trigger/all`) live wiring, which still runs scripted.
 
 `FakeRecordStore`/`FakeMemoryStore` replace `run_case`'s earlier real (tmp) SQLite
 audit store: nothing here is pytest-gated (see the module note above), and the
@@ -37,6 +51,7 @@ from nora.app.eval_support import (
     TOOL_NAMES,
     DoctrineStore,
     Metrics,
+    ProductionSeed,
     build_eval_tool_registry,
     build_live_runner,
     load_eval_config,
@@ -235,6 +250,8 @@ def _build_body(case: Case) -> str:
 
 async def run_case(
     case: Case, *, script: list[ScriptedTurn] | None = None, live: bool = False,
+    effort: str | None = None, seed: ProductionSeed | None = None,
+    skills_dir: str | Path | None = None,
 ) -> Trajectory:
     """Run one eval `Case` through a real pipeline graph and return the resulting
     `Trajectory`.
@@ -255,6 +272,17 @@ async def run_case(
       after the run from the `nora_tool_calls_total` metric the tools emit (see
       `_tool_calls_from_metrics` for the multiset-not-trace caveat). A live run
       needs the LLM key env set; `build_live_runner` raises otherwise.
+
+      Live-only knobs:
+      - `effort` overrides `cfg.llm.reasoning_effort` for THIS run (compare
+        effort levels without rewriting config.toml; `build_live_runner`).
+      - `seed` injects a read-only `ProductionSeed` snapshot into the fake
+        stores, so the model sees a production-shaped prompt (real transcript
+        rows, real Honcho cards/conclusions) while all writes stay fake.
+      - `skills_dir` turns the DEC-50 on-demand skill layer ON, mirroring
+        production's `cfg.doctrine.dir.parent / "skills"`. None (default)
+        leaves it inert, as before a PR — so plain gate runs measure exactly
+        what they always measured.
     """
     turns = script or []
     tool_calls = [name for turn in turns for name, _ in turn.tool_calls]
@@ -275,12 +303,38 @@ async def run_case(
 
         audit = FakeRecordStore()
         memory = FakeMemoryStore()
+        if seed is not None:
+            # Production-shape start state: real transcript rows + real Honcho
+            # read surfaces, so the model's prompt LOOKS like production's
+            # without any of this run's writes leaving the fakes. Rows are
+            # seeded through the store's append-shaped in-memory list; they
+            # must be transcript rows already remapped onto the eval room
+            # (`_EVAL_GROUP_ID`), which `build_production_seed` does.
+            for row in seed.recents:
+                audit.rows.append({
+                    "id": row.id, "platform": "signal",
+                    "conversation_id": _EVAL_GROUP_ID,
+                    "sender_id": row.sender_id, "sender_name": row.sender_name,
+                    # The seed rows carry production's RESOLVED person id (the
+                    # roster's canonical id, e.g. "miles") — never derived from
+                    # sender_id, which is the raw platform id ("+852…", Discord
+                    # snowflake) and would mis-resolve every seeded speaker.
+                    "person_id": row.person_id,
+                    "ts": row.ts, "body": row.body, "is_nora": row.is_nora,
+                    "delivery_status": row.delivery_status,
+                    "quoted_ts": row.quoted_ts, "raw_json": row.raw_json,
+                    "media_json": row.media_json,
+                })
+            memory = FakeMemoryStore(cards=dict(seed.cards))
         adapter = FakeAdapter()
         # Live mode swaps the scripted double for Nora's real, networked model;
         # everything else in the graph (db, memory, adapter) stays a fake, so a
         # live run measures the MODEL's behaviour against real doctrine+tools
         # without touching a real platform or store.
-        runner = build_live_runner(cfg) if live else FakeAgentRunner(turns)
+        runner = (
+            build_live_runner(cfg, effort=effort, skills_dir=skills_dir)
+            if live else FakeAgentRunner(turns)
+        )
         # Live mode wires the canned backends (F4) so the routing gate's siblings
         # answer `ok` and a leak is a real choice, not a fallback artifact. Scripted
         # mode keeps the bare registry — its tool_calls come from the script.

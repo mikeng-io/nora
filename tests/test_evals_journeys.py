@@ -168,7 +168,8 @@ async def _run_with_scripted(monkeypatch, trajectories, *, samples):
 
     seq = iter(trajectories)
 
-    async def fake_run_case(case, *, live=False):
+    async def fake_run_case(case, *, live=False, effort=None, skills_dir=None,
+                            seed=None):
         return next(seq)
 
     monkeypatch.setattr(run_mod, "run_case", fake_run_case)

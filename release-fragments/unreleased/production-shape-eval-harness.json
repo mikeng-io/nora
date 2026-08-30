@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "The eval harness's production-shape gap is closed and the effort/tool-use question can finally be measured honestly. The harness had ALWAYS had a live path (`run_case(..., live=True)` through the real `LiveAgentRunner`/Strands loop) but its module docstring still said 'does NOT reach out to a real model' — that drift made the whole effort-measurement methodology look scripted when it was not, and (worse) made any honest re-check impossible without editing `config.toml` between runs. Now: docstring drift fixed; `build_live_runner` / `run_case` / `--suite journeys` accept `effort=` (per-run override, the shipped config value stays untouched); `--skills` turns the DEC-50 layer on like production; `--seed-production` starts every journey from a READ-ONLY snapshot of the real Postgres transcript + Honcho peer card (built by `nora.app.eval_support.build_production_seed`, the only place the eval path may touch the live stores) injected into the fake stores — production-shaped prompt, zero contamination, reproducible.",
+  "details": [
+    "evals/harness.py: module docstring rewritten (scripted vs live modes; live was real all along), `run_case` gains `effort` / `seed` / `skills_dir` knobs, seed rows + cards land in FakeRecordStore/FakeMemoryStore exactly where the pipeline reads them",
+    "evals/run.py: module docstring corrected (trigger/no_trigger/all stay scripted; journeys/adversarial are live), `--effort {none,low,medium,high}`, `--skills`, `--seed-production` flags, `_load_production_seed` thin wrapper",
+    "nora/app/eval_support.py: `build_live_runner(cfg, *, effort=None, skills_dir=None)` — effort overrides `cfg.llm.reasoning_effort` on a frozen-pydantic copy, never mutating the shipped config; new `ProductionSeed` dataclass + `build_production_seed(cfg)` (read-only Postgres SELECT + Honcho `peer_card`, raises loudly without the deployment env to avoid silently measuring nothing)",
+    "tests/test_production_seed.py (new): offline pins — effort override leaves cfg untouched, skills_dir str→Path normalisation, seed lands in fakes, build_production_seed raises without DATABASE_URL, CLI wiring, run_case signature knobs"
+  ],
+  "limitations": [
+    "`--seed-production` needs the deployment env (DATABASE_URL set); on the host it fails loudly by design",
+    "The C2 re-run verdict (does ADR 0006's 'none' decision survive production-shape conditions?) is a live measurement, not part of this fragment"
+  ]
+}

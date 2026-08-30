@@ -4,13 +4,14 @@ Runs every case in the named suite through `evals.harness.run_case`, grades the
 resulting `Trajectory` with the deterministic hard-gate evaluators appropriate to the
 case (spec E.4), prints a pass/fail summary, and exits 0 only if everything passed.
 
-Scope note: this task (Task 40) wires the offline/scripted code path only — see
-`evals.harness`'s module docstring. Without a real model plugged in, every case here
-runs with an empty script (`run_case(case, script=None)`), so no-trigger cases pass
-trivially (nothing was ever sent) while trigger cases legitimately fail (nothing was
-ever sent, either — there's no model to produce a reply). That's an honest reflection
-of "no live model is wired up yet," not a bug: the M7 stage's live/network run of this
-same command is a separate, later, out-of-scope-for-this-task piece of work.
+Scope note: the `trigger`/`no_trigger`/`all` suites run the offline/scripted code
+path (`run_case(case, script=None)` — no model is invoked, so no-trigger cases
+pass trivially while trigger cases legitimately fail; that is the honest
+reflection of "no live model is wired for THESE suites", not a bug). The
+`journeys` suite and the `adversarial` suite run LIVE model paths (`run_case(
+..., live=True)`; see `_run_journeys_live` and `_run_adversarial_live`), and
+`--suite journeys` additionally accepts `--effort`/`--skills`/
+`--seed-production` for production-shape effort comparisons.
 
 Task 42 adds `adversarial_gate` and `detect_reveal` (spec E.4): the hard, non-weighted
 FAIL gate for the `evals/adversarial/` corpus, plus the deterministic reveal checker
@@ -76,6 +77,8 @@ from nora.app.eval_support import (
     DoctrineStore,
     LeakGuard,
     Metrics,
+    ProductionSeed,
+    build_production_seed,
     create_client,
     create_model_provider,
     is_tagged,
@@ -562,11 +565,20 @@ async def _run_suite(paths: tuple[Path, ...], *, sink: EvalSink, run_name: str) 
 _ROUTING_CHECKS = ("PathMatchesIntent", "NoSiblingLeakage", "ConvergesInBudget")
 
 
-async def _run_journeys_live(journeys=JOURNEYS, *, samples: int = 1) -> tuple[bool, list[dict]]:
+async def _run_journeys_live(
+    journeys=JOURNEYS, *, samples: int = 1,
+    effort: str | None = None, skills_dir: Path | None = None,
+    seed: ProductionSeed | None = None,
+) -> tuple[bool, list[dict]]:
     """D4 tier 2: live-run each seed journey through Nora's REAL model and grade
     its ROUTING (the intent graph, D2). This is the gate the operator runs before
     a change lands — the "intercept before live" step — and it needs the network
     (`run_case(..., live=True)`; the LLM key env must be set).
+
+    `effort`/`skills_dir`/`seed` pass through to `run_case` — the production-shape
+    run (ADR re-check) compares effort levels without rewriting config.toml and
+    starts every journey from the same read-only production snapshot; the plain
+    gate leaves them None, byte-identical to every pre-PR run.
 
     Each journey runs `samples` times and the gate binds the MAJORITY per-journey
     verdict (F8a): routing is stochastic, so n=1 both flakes a good model and
@@ -582,7 +594,8 @@ async def _run_journeys_live(journeys=JOURNEYS, *, samples: int = 1) -> tuple[bo
         runs: list[dict] = []            # hard only where the journey is fully backed (F4)
         for _ in range(samples):
             trajectory = await run_case(
-                Case(name=journey.intent.name, input=journey.message), live=True
+                Case(name=journey.intent.name, input=journey.message),
+                live=True, effort=effort, skills_dir=skills_dir, seed=seed,
             )
             graded = grade(journey, trajectory)
             runs.append({
@@ -613,8 +626,20 @@ async def _run_journeys_live(journeys=JOURNEYS, *, samples: int = 1) -> tuple[bo
 _CACHE_DIR = REPO_ROOT / ".eval-cache"
 
 
+def _load_production_seed(cfg: Config) -> ProductionSeed:
+    """Snapshot the real stores for a `--seed-production` journeys run.
+
+    Thin sync wrapper over the async `nora.app.eval_support.build_production_seed`
+    (which does the actual read-only Postgres/Honcho reads — the only place the
+    eval path touches the live stores). Raises loudly when the deployment env is
+    missing rather than silently measuring against an empty snapshot.
+    """
+    return asyncio.run(build_production_seed(cfg))
+
+
 def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
-         force: bool = False) -> int:
+         force: bool = False, effort: str | None = None,
+         with_skills: bool = False, seed_production: bool = False) -> int:
     paths = SUITES.get(suite)
     if paths is None:
         print(f"unknown suite {suite!r}; expected one of {sorted(SUITES)}", file=sys.stderr)
@@ -624,7 +649,22 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
         # cheap and the whole point is to see what the CURRENT model does). Each
         # journey runs `[evals] journey_samples` times, majority-gated (F8a).
         cfg = _load_eval_config()
-        ok, _results = asyncio.run(_run_journeys_live(samples=cfg.evals.journey_samples))
+        skills_dir = None
+        if with_skills:
+            # Production-shape: mirror production's DEC-50 wiring
+            # (`composition.build_dependencies` passes exactly this path).
+            skills_dir = cfg.doctrine.dir.parent / "skills"
+        seed = None
+        if seed_production:
+            # Production-shape: read-only snapshot of the real stores, so the
+            # model's prompt starts from what production would assemble. Needs
+            # the deployment env (DATABASE_URL + Honcho) — fails loudly here
+            # rather than silently running unseeded.
+            seed = _load_production_seed(cfg)
+        ok, _results = asyncio.run(_run_journeys_live(
+            samples=cfg.evals.journey_samples,
+            effort=effort, skills_dir=skills_dir, seed=seed,
+        ))
     elif suite == "adversarial":
         # B1: the verdict cache is ON by default — an unchanged re-run costs 0 model
         # calls. --no-cache disables it; --force re-runs every case (and refreshes it).
@@ -659,6 +699,27 @@ if __name__ == "__main__":
         "--force", action="store_true",
         help="Ignore cached verdicts and re-run every case, refreshing the cache (B1).",
     )
+    parser.add_argument(
+        "--effort", choices=["none", "low", "medium", "high"], default=None,
+        help="Override `[llm] reasoning_effort` for this journeys run only — "
+             "compare effort levels without rewriting config.toml (default: the "
+             "shipped config value).",
+    )
+    parser.add_argument(
+        "--skills", action="store_true",
+        help="Production-shape journeys run: turn the DEC-50 on-demand skill "
+             "layer ON, mirroring production's wiring (`cfg.doctrine.dir.parent "
+             "/ 'skills'`).",
+    )
+    parser.add_argument(
+        "--seed-production", action="store_true",
+        help="Production-shape journeys run: start every journey from a "
+             "read-only snapshot of the real Postgres transcript and Honcho "
+             "cards/conclusions, so the model's prompt starts from what "
+             "production would assemble. Writes still stay in the fakes.",
+    )
     args = parser.parse_args()
     sys.exit(main(args.suite, export_langfuse=args.export_langfuse,
-                  no_cache=args.no_cache, force=args.force))
+                  no_cache=args.no_cache, force=args.force,
+                  effort=args.effort, with_skills=args.skills,
+                  seed_production=args.seed_production))

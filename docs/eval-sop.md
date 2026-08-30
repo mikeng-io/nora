@@ -42,6 +42,13 @@ network'"`; run it against a reachable gateway with the LLM key set.
 # routing gate — the four real-incident journeys through the live model
 OMNIROUTE_API_KEY=… uv run python -m evals.run --suite journeys
 
+# production-shape effort comparison — same journeys, per-run effort override
+# (config.toml untouched), DEC-50 skills layer on, and each journey starts from
+# a READ-ONLY snapshot of the real Postgres transcript + Honcho peer card
+# (needs the deployment env: DATABASE_URL + Honcho reachable; never writes)
+OMNIROUTE_API_KEY=… DATABASE_URL=… uv run python -m evals.run --suite journeys \
+    --effort low --skills --seed-production
+
 # identity-grounding / injection judge gate
 OMNIROUTE_API_KEY=… uv run python -m evals.run --suite adversarial
 ```
@@ -49,6 +56,21 @@ OMNIROUTE_API_KEY=… uv run python -m evals.run --suite adversarial
 The `journeys` suite live-runs each journey (`evals/journeys.py`) and grades its
 routing (`evals/run.py::_run_journeys_live`). `journeys_gate` hard-fails on
 `HARD_ROUTING_CHECKS`; the rest is printed and advisory (see limitations).
+
+Production-shape knobs (all optional, all journeys-only):
+
+- `--effort {none,low,medium,high}` — per-run `reasoning_effort` override. The
+  mechanism that makes an ADR re-check possible without rewriting `config.toml`
+  between runs; the shipped config value stays untouched for a plain gate.
+- `--skills` — turns the DEC-50 on-demand skill layer ON, exactly as production
+  composes it (`cfg.doctrine.dir.parent / "skills"`), so the `<available_skills>`
+  block + `skills` activation tool are present in the prompt.
+- `--seed-production` — snapshots the real Postgres transcript (newest 12 rows)
+  + the eval person's Honcho peer card, read-only, and injects them into the
+  harness's FAKE stores; the model's prompt therefore starts from what
+  production would assemble while no eval write ever reaches the live stores.
+  Raises loudly if `DATABASE_URL` is unset, rather than silently measuring an
+  empty snapshot.
 
 ## The routing checks (the intent graph)
 

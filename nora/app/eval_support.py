@@ -14,9 +14,13 @@ itself is allowed to reach.
 
 from __future__ import annotations
 
+import asyncio
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
+
+import sqlalchemy as sa
 
 from nora.agent import factory
 from nora.agent.factory import create_client, create_model_provider
@@ -26,6 +30,9 @@ from nora.agent.whereis import Circle
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
+from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.infra.honcho import HonchoClient
+from nora.infra.sql.engine import create_sql_engine
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
 from nora.tag import is_tagged
@@ -75,8 +82,10 @@ __all__ = [
     "LeakGuard",
     "Metrics",
     "Persons",
+    "ProductionSeed",
     "build_eval_tool_registry",
     "build_live_runner",
+    "build_production_seed",
     "create_client",
     "create_model_provider",
     "is_tagged",
@@ -102,7 +111,10 @@ def load_eval_config(candidates: tuple[Path, ...]) -> Config:
     raise last_error
 
 
-def build_live_runner(cfg: Config) -> LiveAgentRunner:
+def build_live_runner(
+    cfg: Config, *, effort: str | None = None,
+    skills_dir: str | Path | None = None,
+) -> LiveAgentRunner:
     """Build the REAL, networked `LiveAgentRunner` — Nora's actual model — for
     the eval harness's live path (`evals.harness.run_case(..., live=True)`).
 
@@ -116,7 +128,17 @@ def build_live_runner(cfg: Config) -> LiveAgentRunner:
     deliberate difference is `skills_dir=None`: the eval/offline runners leave the
     on-demand skill layer INERT (`nora.app.agent_runner.LiveAgentRunner.__init__`
     documents this convention), so a live eval measures the doctrine+tools loop
-    without the DEC-50 skill layer. Exercising skills live is future work.
+    without the DEC-50 skill layer. A production-shape run passes the real
+    `cfg.doctrine.dir.parent / "skills"` to close that gap; exercising skills
+    live is future work when the shipped skill set stabilises.
+
+    `effort` overrides `cfg.llm.reasoning_effort` for THIS run only — the
+    drift-checking use case ("does the current harness agree with the config
+    value, or with the ADR that picked it?") must be able to compare effort
+    levels WITHOUT rewriting `config.toml` between runs (and without the
+    config-drift trap of shipping a config; the operator changed the config to
+    `low` on 2026-08-21 while the ADR still says `none`). None = use the shipped
+    config value, which is what a plain gate run wants.
 
     The model under test is `cfg.llm` (Nora's production model), NOT
     `cfg.evals.judge_model` — the judge is a separate, cheaper grader built
@@ -130,6 +152,9 @@ def build_live_runner(cfg: Config) -> LiveAgentRunner:
             f"{cfg.llm.api_key_env} is not set"
         )
     tier = cfg.llm
+    if effort is not None:
+        # `cfg.llm` is a frozen pydantic model — model_copy, not assignment.
+        tier = tier.model_copy(update={"reasoning_effort": effort})
     client = create_client(base_url=tier.base_url, api_key=api_key)
     models = factory.ModelSource(
         client=client,
@@ -141,7 +166,9 @@ def build_live_runner(cfg: Config) -> LiveAgentRunner:
     return LiveAgentRunner(
         models=models,
         retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
-        skills_dir=None,
+        # The runner's `skills_dir` is typed `Path | None`; accept str for the
+        # caller's convenience and normalize here.
+        skills_dir=Path(skills_dir) if skills_dir is not None else None,
         agent_name=cfg.agent.name,
     )
 
@@ -169,3 +196,105 @@ def build_eval_tool_registry() -> ToolRegistry:
         presence=CannedPresenceReader(),
         circles=(Circle(circle_id=EVAL_CIRCLE_ID, person_ids=frozenset({_EVAL_PERSON_ID})),),
     )
+
+
+@dataclass(frozen=True)
+class ProductionSeed:
+    """Read-only production-context snapshot an eval can start from.
+
+    `evals.harness.run_case(..., live=True, seed=...)` injects REAL production
+    context into the fake stores so the model sees a prompt SHAPE close to what
+    production assembles — real transcript rows and real Honcho cards — while
+    every write the run makes still lands in the fakes (zero contamination of
+    the live store, and reproducible across runs because the seed is a fixed
+    snapshot, not a live read).
+
+    Built by `build_production_seed` (the only place allowed to touch the real
+    stores from the eval path) or hand-built in a test. `recents` are
+    `TranscriptRow`s remapped onto the eval room's conversation id; `cards`
+    keyed by person id.
+
+    These are the read surfaces the eval path exercises (`FakeRecordStore` only
+    serves `recent(...)` and `FakeMemoryStore` serves `peer_card` from `cards`),
+    so seeding exactly those is what changes the model-visible prompt without
+    pretending the eval is something it is not.
+    """
+
+    recents: tuple[TranscriptRow, ...] = ()
+    cards: dict[str, list[str]] = field(default_factory=dict)
+
+
+async def build_production_seed(
+    cfg: Config, *, recents_limit: int = 12,
+) -> ProductionSeed:
+    """Read a production-shaped context snapshot from the REAL stores
+    (Postgres transcript + Honcho peer card), read-only, for `ProductionSeed`.
+
+    This is the one place the eval path touches the live stores, and it lives
+    HERE in `nora.app` for the boundary reason `build_live_runner` does: only
+    `nora.app` may import the infra modules (`evals/` is limited to `nora.app`
+    + `nora.testing`). It reads exactly what `TranscriptInjection` would
+    assemble in production and returns it as a fixed snapshot — the caller
+    (e.g. `evals/run.py --seed-production`) hands it to `run_case`, which
+    injects it into the FAKE stores, so no eval run ever writes to the live
+    database or Honcho.
+
+    `recents_limit` rows are taken from the transcript, newest-first across
+    EVERY conversation (a production room's id is not the eval room's, and the
+    point is a realistic prompt shape, not one exact thread), remapped onto the
+    eval room. If the deployment env is missing (`cfg.store.database_url_env`)
+    this raises rather than silently seeding an empty snapshot — a
+    `--seed-production` run without the deployment env would measure nothing.
+    """
+
+    database_url = os.environ.get(cfg.store.database_url_env, "")
+    if not database_url:
+        raise ValueError(
+            f"build_production_seed needs the deployment database: environment "
+            f"variable {cfg.store.database_url_env} is not set"
+        )
+    engine = create_sql_engine(database_url)
+    recents: list[TranscriptRow] = []
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                sa.text(
+                    "SELECT id, sender_id, sender_name, ts, body, is_nora, "
+                    "delivery_status, raw_json, quoted_ts, media_json, person_id "
+                    "FROM messages ORDER BY ts DESC LIMIT :n"
+                ),
+                {"n": recents_limit},
+            )
+            rows = result.all()
+    finally:
+        await engine.dispose()
+    for row in rows:
+        recents.append(
+            TranscriptRow(
+                id=row.id, sender_id=row.sender_id, sender_name=row.sender_name,
+                ts=row.ts, body=row.body, is_nora=bool(row.is_nora),
+                # `DeliveryStatus(...)` from the raw column string — the same
+                # decode `SqlRecordStore._row` uses, so the seed row matches a
+                # production `recent()` row exactly (`str(enum)` would be
+                # `"DeliveryStatus.PENDING"`, a value the DB never holds).
+                delivery_status=DeliveryStatus(row.delivery_status),
+                raw_json=row.raw_json, quoted_ts=row.quoted_ts,
+                media_json=row.media_json, person_id=row.person_id,
+            )
+        )
+    # Honcho peer card for the eval person, read-only. Keyed under the eval
+    # person id (`_EVAL_PERSON_ID`) because `FakeMemoryStore` is asked for that
+    # peer in the harness. A dead/missing card is a normal `[]`.
+    cards: dict[str, list[str]] = {}
+    honcho = HonchoClient(
+        cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
+    )
+    try:
+        card = await asyncio.wait_for(
+            honcho.peer_card(peer_id=_EVAL_PERSON_ID), timeout=5.0,
+        )
+        if card:
+            cards[_EVAL_PERSON_ID] = card
+    finally:
+        await honcho.aclose()
+    return ProductionSeed(recents=tuple(recents), cards=cards)
