@@ -3,11 +3,12 @@
 The `social_fetch` tool (DEC-151) reads X and Instagram through OpenCLI, which
 exists only on the host (daemon on `localhost:19825`, driving the
 authenticated Chrome from `nora-social-chrome.service` via the Browser Bridge
-extension). Nora runs in a Docker container with host networking, so this
-bridge is the seam: her tool POSTs `{platform, what, target, limit}` to
-`http://127.0.0.1:19826/read`, and this service runs
-`opencli <site> <command> <target> -f json` as a subprocess and returns the
-JSON.
+extension). Nora runs in a Docker container on the private compose `nora`
+network — NOT host networking — so this bridge is the seam: her tool POSTs
+`{platform, what, target, limit}` to `http://host.docker.internal:19826/read`
+(`host.docker.internal` is the docker0 gateway the container reaches the host
+at), and this service runs `opencli <site> <command> <target> -f json` as a
+subprocess and returns the JSON.
 
 **The bridge is the read-only security boundary.** It re-enforces its own
 frozen `(site, command)` allowlist host-side (`READ_ONLY_ALLOWLIST` in
@@ -17,15 +18,22 @@ delete`, `instagram post/like/follow/comment`, …) are unreachable through it,
 by construction, even if the model-facing tool is prompt-injected by the
 content it reads. There is no free-form command passthrough.
 
-**It binds `127.0.0.1` only.** There is no authentication on `/read`; the
-allowlist is the boundary, and loopback binding is what keeps that boundary
-from extending to anyone who can reach the port.
+**It binds `127.0.0.1` plus the docker0 gateway (`172.17.0.1`).** There is no
+authentication on `/read`; the allowlist is the boundary, and loopback is what
+keeps that boundary from extending to anyone who can reach the port. The
+docker0 gateway is added because Nora's container is not on host networking —
+docker0 is host-internal (never the LAN), and it is the address
+`host.docker.internal` resolves to inside the container. Neither bind ever
+appears on a LAN interface.
 
 **It runs the CHECKOUT's code** — `uv run --project /home/norty/workspace/nora
 python -m nora.infra.social` — so it tracks `master` the same way the running
 container's bind mounts do: an edit landing on `master` is a deploy here after
 a restart. It reads no `config.toml`; env vars only (`OPENCLI_BIN`,
-`NORA_SOCIAL_BRIDGE_PORT`).
+`NORA_SOCIAL_BRIDGE_PORT`, `NORA_SOCIAL_BRIDGE_HOST`). `OPENCLI_BIN` must name
+the real binary (`/home/norty/.local/bin/opencli`) — the systemd USER service
+environment does not carry the interactive shell's PATH, so a bare `opencli`
+fails with `FileNotFoundError`.
 
 Install (systemd **user** service, like the desktop/Chrome units):
 

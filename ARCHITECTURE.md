@@ -106,8 +106,10 @@ record. The surface is a single constrained, read-only tool, `social_fetch`
 posts, search) — never posting, liking, following, commenting or deleting. The
 boundary is enforced at the tool's closed `(platform, what)` vocabulary AND
 re-enforced by the host-side bridge's own allowlist (`nora/infra/social/
-bridge_server.py`, loopback-only, `deploy/social-bridge/`), so a write verb is
-unreachable even under prompt injection; the tool ships inert behind
+bridge_server.py`, bound to loopback + the docker0 gateway so the container —
+on the private `nora` network, not host networking — can reach it; see
+`deploy/social-bridge/`), so a write verb is unreachable even under prompt
+injection; the tool ships inert behind
 `[social] enabled`. Instagram post-by-URL is unsupported (OpenCLI 1.8.7 has no
 caption-by-URL command) and Threads support waits on a native OpenCLI adapter
 (1.8.7 has none). The virtual display itself is load-bearing rather than
