@@ -1,0 +1,13 @@
+{
+  "type": "feature",
+  "summary": "`media_fetch` is now generic: it reads an image/video from EITHER an in-conversation media code OR any http(s) URL, so whatever tool surfaced the media — platform attachments, `web_fetch`, `social_fetch`, a future tool — funnels into the same describe pipeline. Before any vision call, image/video bytes pass through an ffmpeg preprocess layer (scale + re-encode: images to ≤1600px JPEG q85, video to ≤720p @24fps ≤120s H.264), shrinking a 2K clip by ~96% and a large still by ~80% before the model sees them — fewer tokens, same answer. Custody is untouched: the encrypted original stays the stored record, and only the transport view shrinks.",
+  "details": [
+    "nora/infra/vision/preprocess.py (new): ffmpeg subprocess wrapper + byte/time-bounded URL downloader. Fail-soft by design — any ffmpeg/download failure passes the ORIGINAL through (the per-modality `max_bytes` gates still bind), never raises (R-5)",
+    "nora/agent/tools.py media_fetch: signature `(code: str = \"\", url: str = \"\")` — exactly one required; URL path runs web_fetch's egress screen (identifier/coordinate) before any download, resolves media type from Content-Type → extension → byte sniff, shares the SAME content-hash description cache as the code path, and uses the existing `[media.describe.image]` / `[media.describe.video]` model routing + `max_bytes` gates (no new config)",
+    "nora/infra/social/bridge_client.py: social_fetch renders media rows as `[image url]` / `[video url]` (+ `[poster url]`) — the marker shape media_fetch's docstring teaches, so the model can pass a tweet's image/video link straight to `media_fetch(url=…)`"
+  ],
+  "limitations": [
+    "URL downloads are capped (64 MiB, 25 s timeout, 5 redirects) — beyond that the tool answers `unavailable` honestly",
+    "Preprocess is a transport optimisation, not a guarantee: a source that ffmpeg cannot re-encode still reaches the model at original size within the per-modality byte gates"
+  ]
+}

@@ -189,6 +189,21 @@ def _render_item(item: dict) -> str:
         lines.append(" · ".join(stats))
     if item.get("url"):
         lines.append(str(item["url"]))
+    media_urls = item.get("media_urls") or []
+    posters = item.get("media_posters") or []
+    if isinstance(media_urls, list) and media_urls:
+        # Rendered as `[image https://…]` / `[video https://…]` — the same
+        # marker shape media_fetch's own docstring teaches, so the model can
+        # pass a returned media link straight to `media_fetch(url=…)` (the
+        # generic cross-tool read path, DEC-56 extension 2026-08-31). A video
+        # additionally carries `media_posters` (its preview frame) when
+        # opencli returned one; a non-empty poster list tells us which kind a
+        # URL is, so the row carries the right label.
+        is_video = bool(posters) and isinstance(posters, list)
+        for mu in media_urls[:3]:
+            lines.append(f"[video {mu}]" if is_video else f"[image {mu}]")
+        if is_video and posters:
+            lines.append(f"[poster {posters[0]}]")
     qt = item.get("quoted_tweet")
     if isinstance(qt, dict) and qt.get("text"):
         # The quoted post is often the substance (a claim the author is

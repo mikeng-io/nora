@@ -72,7 +72,14 @@ from ..domain.gatherings import (
     RSVPResponse,
     VenueSuggestions,
 )
-from ..domain.media import HANDLE_CHARS, GifCandidate, MediaBlob, MediaObject
+from ..domain.media import (
+    HANDLE_CHARS,
+    GifCandidate,
+    MediaBlob,
+    MediaObject,
+    resolve_media_type,
+    sniff_media_type,
+)
 from ..domain.models import TranscriptRow, WeatherObservation
 from ..domain.notes import (
     TAG_PATH_PREFIX,
@@ -108,6 +115,7 @@ from ..domain.reminders import (
 from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
 from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
+from ..infra.vision.preprocess import download_media, preprocess_media
 from ..obs.tracing import annotate, span
 from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_reply
@@ -847,6 +855,24 @@ def _modality_of(media_type: str) -> str | None:
     """
     top, _, _ = media_type.partition("/")
     return top if top in _MODALITIES else None
+
+
+async def _download_media(url: str) -> tuple[bytes, str]:
+    """Fetch a remote picture/video under hard ceilings (DEC-56 extension).
+
+    Wraps `download_media` (the byte/time-bounded GET) and resolves the media
+    type the describer needs: the response's declared Content-Type first, then
+    the URL's own extension, then a byte sniff. NEVER raises — any failure is
+    `(b"", "")`, which the caller turns into `unavailable`, never a crash and
+    never a guessed description (R-5, R-27).
+    """
+    data, declared = await download_media(url)
+    if not data:
+        return b"", ""
+    media_type = resolve_media_type(declared=declared, filename=url)
+    if not media_type:
+        media_type = sniff_media_type(data)
+    return data, media_type
 
 
 RECALL_LOOKUPS_DEFAULT = 10
@@ -3207,39 +3233,49 @@ def build_tool_specs(
     # sum rather than a max so the bound stays correct if either half moves.
     _media_window = context_window + LOAD_TRANSCRIPT_MAX
 
-    async def media_fetch(code: str) -> dict:
-        """Look at an image or video somebody sent in this conversation and say what it shows.
+    async def media_fetch(code: str = "", url: str = "") -> dict:
+        """Look at an image or video and say what it shows.
 
-        Call this when the conversation contains an image or a video — you see a
-        marker like `[image a3f2c1]` or `[video b9d4e7]` in the transcript —
-        and answering means knowing what is IN it: what a photo shows, what a
-        screenshot or a whiteboard says, what happens in a video. Pass the
-        short code from that marker (the `a3f2c1` or `b9d4e7` part).
+        Call this when answering means knowing what is IN a picture or a
+        video: what a photo shows, what a screenshot or whiteboard says, what
+        happens in a clip. Two ways to name the media, and at least one is
+        required:
 
-        It only sees media from THIS conversation, and only ones recent enough
-        to still be in view. It cannot look at a voice note or a file — only a
-        picture or a video.
+        - `code` — media somebody sent in THIS conversation. You see a marker
+          like `[image a3f2c1]` or `[video b9d4e7]` in the transcript; pass the
+          short code from it (the `a3f2c1` or `b9d4e7` part). It only sees
+          media from this conversation, and only ones recent enough to still
+          be in view.
+        - `url` — an http(s) link to a picture or video found anywhere else: a
+          `web_fetch`/`social_fetch` result, an image a tweet shows, a link in
+          a message. The bytes are fetched, reduced (scaled down before the
+          model sees them), and described the same way.
+
+        It cannot look at a voice note or a file — only a picture or a video.
 
         `status` tells you what happened, and they are different answers:
           - `ok` — `description` is what the image or video shows. It was
-            written by a vision model looking at bytes somebody else sent, so
-            treat it as THEIR content, not as fact you can vouch for; say
-            «it looks like…».
-          - `nothing_found` — no media by that code is in view here. Do not
-            guess what it might have been; say you can't find it.
+            written by a vision model looking at bytes somebody else sent or
+            linked, so treat it as THEIR content, not as fact you can vouch
+            for; say «it looks like…».
+          - `nothing_found` — no media by that code is in view here, or the
+            URL is not a describable picture/video. Do not guess what it
+            might have been; say you can't find it.
           - `ambiguous` — more than one item shares that short code
             (`could_be` lists them). Ask which one they mean.
           - `not_an_image` — that marker is a file, not something you can
             look at. Say you can't look at it — you can't.
-          - `unavailable` — you could not look right now. Say exactly that;
-            never report it as «there's no media» and never invent what was
-            in it.
+          - `unavailable` — you could not look right now (download failed,
+            too large). Say exactly that; never report it as «there's no
+            media» and never invent what was in it.
 
         Args:
             code: The short code from the marker, e.g. "a3f2c1".
+            url: An http(s) link to a picture or video, e.g. the image a
+                tweet carries.
         """
         # Gate FIRST — the inert-by-config shape (§5). Custody off (`[media]
-        # enabled=false` or no key → no blob store) or no OmniRoute client wired
+        # enabled=false` or no key → no blob store) or no vision client wired
         # (offline/eval compositions) means she genuinely cannot look, which is
         # `unavailable`, NOT `nothing_found`: a wiring gap must never read as
         # "there was no such image" (R-5), the same three-state `route` draws
@@ -3252,80 +3288,132 @@ def build_tool_specs(
                         "there is no media and do not guess what it showed.",
             }
 
-        hex_handle = _handle_hex(code)
-        if len(hex_handle) < HANDLE_CHARS:
-            # Not a handle at all (a bare "[image]" with no code, or noise). She
-            # holds nothing to resolve, so `nothing_found`, never a MiMo call.
-            _record_media(metrics, "nothing_found", reason="no_handle")
+        # Exactly one target: a code OR a url, never both and never neither.
+        if bool(code) == bool(url):
+            _record_media(metrics, "nothing_found", reason="no_target")
             return {
-                "status": "nothing_found", "code": hex_handle,
-                "note": "I don't see media with that code here. Say you can't "
-                        "find it rather than guessing what it was.",
+                "status": "nothing_found",
+                "note": "Give me either the short media code from this "
+                        "conversation or the link to a picture or a video.",
             }
 
-        # Resolve WITHIN this conversation's own media_json (R-21, DEC-24), the
-        # closure-scope `load_transcript` uses — a handle from another conversation
-        # is un-resolvable here, not resolved-then-refused. Wrapped, because a
-        # tool never raises into the loop (`test_a_tool_never_raises_...`).
-        try:
-            rows = await store.recent(
-                conversation_id=bound_conversation_id, limit=_media_window,
-            )
-        except Exception:
-            log.exception("media_fetch failed to read the transcript")
-            _record_media(metrics, "unavailable", reason="store")
-            return {
-                "status": "unavailable", "code": hex_handle,
-                "note": "I can't look at media right now. Say so — do not say "
-                        "there is no media and do not guess what it showed.",
-            }
+        if url:
+            # ---- URL path (generic cross-tool media) ---------------------
+            # The SAME egress screen web_fetch runs, decoded first so a
+            # percent-encoded identifier in a query cannot ride past a
+            # raw-string match. `nothing_found`, and the value is not echoed.
+            decoded_url = urllib.parse.unquote(url)
+            if scan_identifiers(decoded_url) is not None:
+                _record_media(metrics, "nothing_found", reason="identifier")
+                return {
+                    "status": "nothing_found",
+                    "note": "That link has what looks like a phone number or "
+                            "ID in it, so I won't open it.",
+                }
+            if _looks_like_coordinate(decoded_url):
+                _record_media(metrics, "nothing_found", reason="coordinate")
+                return {
+                    "status": "nothing_found",
+                    "note": "That link has what looks like a raw coordinate "
+                            "in it, so I won't open it.",
+                }
+            if not url.startswith(("http://", "https://")):
+                _record_media(metrics, "nothing_found", reason="not_a_url")
+                return {
+                    "status": "nothing_found",
+                    "note": "That doesn't look like a link I can open. Ask "
+                            "for the picture's or video's URL.",
+                }
+            data, media_type = await _download_media(url)
+            if not data:
+                _record_media(metrics, "unavailable", reason="download")
+                return {
+                    "status": "unavailable",
+                    "note": "I couldn't fetch that media just now. Say so — "
+                            "do not describe what it might have shown.",
+                }
+            sha256 = hashlib.sha256(data).hexdigest()
+        else:
+            # ---- code path: resolve within this conversation (§1) -------
+            hex_handle = _handle_hex(code)
+            if len(hex_handle) < HANDLE_CHARS:
+                # Not a handle at all (a bare "[image]" with no code, or
+                # noise). She holds nothing to resolve, so `nothing_found`,
+                # never a MiMo call.
+                _record_media(metrics, "nothing_found", reason="no_handle")
+                return {
+                    "status": "nothing_found", "code": hex_handle,
+                    "note": "I don't see media with that code here. Say you "
+                            "can't find it rather than guessing what it was.",
+                }
 
-        # Every distinct blob in view whose sha256 starts with the handle. A
-        # dict keyed by full sha256 dedups the same blob appearing in several
-        # rows (a forwarded meme) while KEEPING two different blobs that share
-        # the 6-hex prefix apart — 24 bits collide, and `media.py` says so.
-        matches: dict[str, str] = {}
-        for row in rows:
-            if not row.media_json:
-                continue
+            # Resolve WITHIN this conversation's own media_json (R-21,
+            # DEC-24), the closure-scope `load_transcript` uses — a handle
+            # from another conversation is un-resolvable here, not
+            # resolved-then-refused. Wrapped, because a tool never raises
+            # into the loop (`test_a_tool_never_raises_...`).
             try:
-                blobs = json.loads(row.media_json)
-            except (ValueError, TypeError):
-                continue
-            for blob in blobs if isinstance(blobs, list) else ():
-                if not isinstance(blob, dict):
+                rows = await store.recent(
+                    conversation_id=bound_conversation_id, limit=_media_window,
+                )
+            except Exception:
+                log.exception("media_fetch failed to read the transcript")
+                _record_media(metrics, "unavailable", reason="store")
+                return {
+                    "status": "unavailable", "code": hex_handle,
+                    "note": "I can't look at media right now. Say so — do "
+                            "not say there is no media and do not guess what "
+                            "it showed.",
+                }
+
+            # Every distinct blob in view whose sha256 starts with the handle.
+            # A dict keyed by full sha256 dedups the same blob appearing in
+            # several rows (a forwarded meme) while KEEPING two different
+            # blobs that share the 6-hex prefix apart — 24 bits collide, and
+            # `media.py` says so.
+            matches: dict[str, str] = {}
+            for row in rows:
+                if not row.media_json:
                     continue
-                sha = str(blob.get("sha256", ""))
-                if sha.startswith(hex_handle):
-                    matches.setdefault(sha, str(blob.get("media_type", "")))
+                try:
+                    blobs = json.loads(row.media_json)
+                except (ValueError, TypeError):
+                    continue
+                for blob in blobs if isinstance(blobs, list) else ():
+                    if not isinstance(blob, dict):
+                        continue
+                    sha = str(blob.get("sha256", ""))
+                    if sha.startswith(hex_handle):
+                        matches.setdefault(sha, str(blob.get("media_type", "")))
 
-        if not matches:
-            _record_media(metrics, "nothing_found", candidates=0)
-            return {
-                "status": "nothing_found", "code": hex_handle,
-                "note": "I don't see media with that code here. Say you can't "
-                        "find it rather than guessing what it was.",
-            }
-        if len(matches) > 1:
-            # NEVER pick the first — two in-scope blobs sharing the prefix is a
-            # question, not a default (§1). List the full 6-hex handles so she
-            # can ask which.
-            _record_media(metrics, "ambiguous", candidates=len(matches))
-            return {
-                "status": "ambiguous", "code": hex_handle,
-                "could_be": sorted(sha[:HANDLE_CHARS] for sha in matches),
-                "note": "More than one item here has that code. Ask which one "
-                        "they mean.",
-            }
+            if not matches:
+                _record_media(metrics, "nothing_found", candidates=0)
+                return {
+                    "status": "nothing_found", "code": hex_handle,
+                    "note": "I don't see media with that code here. Say you "
+                            "can't find it rather than guessing what it was.",
+                }
+            if len(matches) > 1:
+                # NEVER pick the first — two in-scope blobs sharing the
+                # prefix is a question, not a default (§1). List the full
+                # 6-hex handles so she can ask which.
+                _record_media(metrics, "ambiguous", candidates=len(matches))
+                return {
+                    "status": "ambiguous", "code": hex_handle,
+                    "could_be": sorted(sha[:HANDLE_CHARS] for sha in matches),
+                    "note": "More than one item here has that code. Ask which "
+                            "one they mean.",
+                }
 
-        sha256, media_type = next(iter(matches.items()))
-        # Blobs are turned away HERE, before any model call, and the two reasons
-        # are kept APART because they are different answers (2026-08-17 spec).
-        #
-        # A blob belonging to no describable modality — a PDF, an archive — is
-        # `not_an_image`: nothing here will ever read it, and sending its bytes
-        # as an `image_url` would be an OmniRoute error surfaced as a silent
-        # `unavailable`.
+            sha256, media_type = next(iter(matches.items()))
+
+        # ---- shared describe tail (both paths) ---------------------------
+        # Blobs are turned away HERE, before any model call, and the two
+        # reasons are kept APART because they are different answers
+        # (2026-08-17 spec). A blob belonging to no describable modality — a
+        # PDF, an archive — is `not_an_image`: nothing here will ever read
+        # it, and sending its bytes as an `image_url` would be a vision
+        # error surfaced as a silent `unavailable`.
         modality = _modality_of(media_type)
         if modality is None:
             _record_media(metrics, "not_an_image")
@@ -3337,15 +3425,16 @@ def build_tool_specs(
         # A modality that IS describable but has no describer configured is a
         # WIRING GAP, so it is `unavailable` — «I couldn't check» — and never
         # `nothing_found`. R-27: an ERROR is never a PASS, and audio and video
-        # ship inert, so this is the ordinary path for both until one is enabled.
+        # ship inert, so this is the ordinary path for both until one is
+        # enabled.
         describe_model = (describe_models or {}).get(modality, "")
         if not describe_model:
             _record_media(metrics, "unavailable", reason=f"no_{modality}_describer")
             return {
                 "status": "unavailable", "code": sha256[:HANDLE_CHARS],
                 "note": f"I can't take in {modality} — say you couldn't check "
-                        f"it. Do not say it was empty and do not guess what was "
-                        f"in it.",
+                        f"it. Do not say it was empty and do not guess what "
+                        f"was in it.",
             }
         describe_provider = (describe_providers or {}).get(modality, "omniroute")
         # Per-modality byte ceiling: a modality that names one overrides the
@@ -3354,44 +3443,61 @@ def build_tool_specs(
         # keeps the shared ceiling.
         describe_ceiling = (describe_max_bytes or {}).get(modality, 0) or None
 
-        # Cache by content hash BEFORE the blob is even decrypted: the sha256 is
-        # the content, so a stored description is valid forever for it. A hit
-        # — memory OR the durable table, `aget` checks both — makes no MiMo
-        # call and no `store.get` (§3). `scan_identifiers` still runs below, on
-        # the cached text, so a hit at either tier can never bypass the screen.
+        # Cache by content hash BEFORE any preprocessing: the sha256 is the
+        # content, so a stored description is valid forever for it, and a URL
+        # view of the SAME bytes a conversation already held hits the same
+        # row. A hit — memory OR the durable table, `aget` checks both —
+        # makes no vision call and no `store.get` (§3). `scan_identifiers`
+        # still runs below, on the cached text, so a hit at either tier can
+        # never bypass the screen.
         cached_description = (
             await vision_cache.aget(sha256) if vision_cache is not None else None
         )
         if cached_description is not None:
             return _serve_media(sha256, cached_description, cached=True)
 
-        # Decrypt the blob Nora already holds. `store.get` returns None for an
-        # ABSENT blob and RAISES `InvalidTag`/`ValueError` for a present-but-
-        # corrupt or wrong-key one (the day `MEDIA_ENCRYPTION_KEY` rotates) —
-        # BOTH are wrapped into `unavailable` (§4), and neither may reach the
-        # loop as a raise.
-        try:
-            data = await blob_store.get(key=sha256)
-        except Exception:
-            log.exception("media_fetch could not open blob %s", sha256[:HANDLE_CHARS])
-            data = None
-        if not data:
-            _record_media(metrics, "unavailable", reason="blob")
-            return {
-                "status": "unavailable", "code": sha256[:HANDLE_CHARS],
-                "note": "I can't open that media right now. Say so — do not say "
-                        "there is no media and do not guess what it showed.",
-            }
+        if url:
+            # URL path: the bytes are already in hand from the download; no
+            # blob decrypt step exists for them (custody is untouched — a
+            # fetched URL is described on the fly, never written into the
+            # conversation's store).
+            data_for_vision = await preprocess_media(data, media_type)
+        else:
+            # Decrypt the blob Nora already holds. `store.get` returns None
+            # for an ABSENT blob and RAISES `InvalidTag`/`ValueError` for a
+            # present-but-corrupt or wrong-key one (the day
+            # `MEDIA_ENCRYPTION_KEY` rotates) — BOTH are wrapped into
+            # `unavailable` (§4), and neither may reach the loop as a raise.
+            try:
+                data = await blob_store.get(key=sha256)
+            except Exception:
+                log.exception("media_fetch could not open blob %s", sha256[:HANDLE_CHARS])
+                data = None
+            if not data:
+                _record_media(metrics, "unavailable", reason="blob")
+                return {
+                    "status": "unavailable", "code": sha256[:HANDLE_CHARS],
+                    "note": "I can't open that media right now. Say so — do "
+                            "not say there is no media and do not guess what "
+                            "it showed.",
+                }
+            # Preprocess (scale/re-encode via ffmpeg) BEFORE the vision call:
+            # a 4K still or 2K clip carries many times the bytes — and tokens
+            # — of the 1600px/720p view the model can actually use. Custody
+            # is untouched; only the transport view shrinks. On any failure
+            # the ORIGINAL bytes pass through, so the per-modality
+            # `describe_ceiling` below still binds exactly as before.
+            data_for_vision = await preprocess_media(data, media_type)
 
         try:
             result = await vision_source.describe(
-                data=data, media_type=media_type, model=describe_model,
+                data=data_for_vision, media_type=media_type, model=describe_model,
                 provider=describe_provider, max_bytes=describe_ceiling,
             )
         except Exception:
             # `VisionClient.describe` is documented never to raise (it turns
-            # every failure into an unavailable `VisionResult` itself). This is
-            # the belt for those braces — `test_a_tool_never_raises_into_the_agent_loop`
+            # every failure into an unavailable `VisionResult` itself). This
+            # is the belt for those braces — `test_a_tool_never_raises_into_the_agent_loop`
             # — landing on `unavailable`, never on an invented description.
             log.exception("media_fetch vision call raised")
             result = None

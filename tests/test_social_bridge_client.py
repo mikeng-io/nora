@@ -101,6 +101,46 @@ class _Bridge:
                     }
                 ],
             })
+        if self.mode == "realistic-media-post":
+            return web.json_response({
+                "status": "ok",
+                "source_url": "https://x.com/i/status/2093779797512253814",
+                "data": [
+                    {
+                        "id": "2093779797512253814",
+                        "author": "MrAhmadAwais",
+                        "name": "Ahmad Awais",
+                        "text": "Look at this photo I took.",
+                        "likes": 4,
+                        "retweets": 1,
+                        "has_media": True,
+                        "media_urls": ["https://pbs.twimg.com/media/abc.jpg"],
+                        "media_posters": [],
+                        "created_at": "Sat Aug 29 19:16:18 +0000 2026",
+                        "url": "https://x.com/MrAhmadAwais/status/2093779797512253814",
+                    },
+                ],
+            })
+        if self.mode == "realistic-video-post":
+            return web.json_response({
+                "status": "ok",
+                "source_url": "https://x.com/i/status/2093779797512253814",
+                "data": [
+                    {
+                        "id": "2093779797512253814",
+                        "author": "MrAhmadAwais",
+                        "name": "Ahmad Awais",
+                        "text": "Watch this clip.",
+                        "likes": 9,
+                        "retweets": 2,
+                        "has_media": True,
+                        "media_urls": ["https://pbs.twimg.com/ext_tw_video/xyz.mp4"],
+                        "media_posters": ["https://pbs.twimg.com/media/poster.png"],
+                        "created_at": "Sat Aug 29 19:16:18 +0000 2026",
+                        "url": "https://x.com/MrAhmadAwais/status/2093779797512253814",
+                    },
+                ],
+            })
         if self.mode == "slow":
             await asyncio.sleep(5)
             return web.json_response({"status": "nothing_found"})
@@ -264,6 +304,32 @@ async def test_profile_renders_handle_bio_and_stats(bridge):
     assert "100 followers" in text
     assert "2 following" in text
     assert "https://x.com/nasa" in text
+
+
+async def test_media_urls_render_as_fetchable_markers(bridge):
+    """A post carrying media renders `[image url]` / `[video url]` rows — the
+    same marker shape media_fetch's docstring teaches, so the model can hand
+    a returned media link straight to `media_fetch(url=…)` (the generic
+    cross-tool read path, DEC-56 extension 2026-08-31)."""
+    fake, client = bridge
+    fake.mode = "realistic-media-post"
+    out = await client.read(platform="x", what="post",
+                            target="2093779797512253814", limit=5)
+    assert out["status"] == "ok"
+    text = out["text"]
+    assert "[image https://pbs.twimg.com/media/abc.jpg]" in text
+    assert "poster" not in text  # image post carries no poster
+
+
+async def test_video_media_renders_video_and_poster_markers(bridge):
+    fake, client = bridge
+    fake.mode = "realistic-video-post"
+    out = await client.read(platform="x", what="post",
+                            target="2093779797512253814", limit=5)
+    assert out["status"] == "ok"
+    text = out["text"]
+    assert "[video https://pbs.twimg.com/ext_tw_video/xyz.mp4]" in text
+    assert "[poster https://pbs.twimg.com/media/poster.png]" in text
 
 
 async def test_clamp_prefers_an_item_boundary():
