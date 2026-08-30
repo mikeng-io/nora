@@ -151,6 +151,107 @@ async def test_an_image_in_the_conversation_is_described(wiring):
     assert wiring["vision"].calls == 1
 
 
+# ---- the generic URL path (DEC-56 extension, 2026-08-31) --------------------
+# A `media_fetch(url=…)` ingestion is the cross-tool read path: ANY tool that
+# surfaces an image/video URL — social_fetch media rows, web_fetch page images,
+# a future tool — funnels into the same describe pipeline. The downloader is a
+# real byte/time-bounded GET; these tests stub `_download_media` (the module's
+# own seam) so the URL-path LOGIC is pinned without a network dependency.
+
+async def test_a_url_is_downloaded_and_described_like_a_code(wiring, monkeypatch):
+    async def fake_download(url: str) -> tuple[bytes, str]:
+        assert url == "https://x.com/pic.jpg"
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    out = await _call(wiring["build"](), url="https://x.com/pic.jpg")
+    assert out["status"] == "ok"
+    assert out["description"] == "A red one-pixel square."
+    # NO reusable code: URL bytes are never stored in this conversation's
+    # media_json, so a code the model could hand back would not resolve on a
+    # later call (external audit finding, 2026-08-31).
+    assert out["code"] is None
+    assert wiring["vision"].calls == 1
+
+
+async def test_a_url_cache_hit_makes_no_vision_call(wiring, monkeypatch):
+    """The description cache is keyed by content hash, and the URL path uses
+    the SAME key as the code path — a URL view of bytes the conversation
+    already described is a cache hit, not a second model call."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    first = await _call(wiring["build"](), code=PNG_SHA[:6])
+    assert first["status"] == "ok"
+
+    async def fake_download(url: str) -> tuple[bytes, str]:
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    second = await _call(wiring["build"](), url="https://x.com/same.jpg")
+    assert second["status"] == "ok"
+    assert second["description"] == first["description"]
+    assert wiring["vision"].calls == 1  # the code-path describe, not a second
+
+
+async def test_a_failed_download_is_unavailable_not_a_guess(wiring, monkeypatch):
+    async def fake_download(url: str) -> tuple[bytes, str]:
+        return b"", ""
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    out = await _call(wiring["build"](), url="https://x.com/dead.jpg")
+    assert out["status"] == "unavailable"
+    assert wiring["vision"].calls == 0
+
+
+async def test_a_url_with_an_identifier_is_refused_before_any_download(wiring, monkeypatch):
+    calls = []
+
+    async def fake_download(url: str) -> tuple[bytes, str]:
+        calls.append(url)
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    out = await _call(wiring["build"](), url="https://x.com/p.jpg?u=%2B85212345678")
+    assert out["status"] == "nothing_found"
+    assert calls == []  # the egress screen ran first
+
+
+async def test_a_non_http_url_is_refused(wiring, monkeypatch):
+    calls = []
+
+    async def fake_download(url: str) -> tuple[bytes, str]:
+        calls.append(url)
+        return RED_PNG, "image/jpeg"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    out = await _call(wiring["build"](), url="file:///etc/passwd")
+    assert out["status"] == "nothing_found"
+    assert calls == []
+
+
+async def test_code_and_url_together_or_neither_is_nothing_found(wiring):
+    out = await _call(wiring["build"](), code=PNG_SHA[:6], url="https://x.com/p.jpg")
+    assert out["status"] == "nothing_found"
+    assert wiring["vision"].calls == 0
+    out2 = await _call(wiring["build"]())
+    assert out2["status"] == "nothing_found"
+    assert wiring["vision"].calls == 0
+
+
+async def test_a_url_describes_a_video_with_the_video_model(wiring, monkeypatch):
+    """The URL path resolves the media type from the response and routes to
+    the per-modality describer exactly like a stored blob — a linked video
+    uses [media.describe.video]'s model, never the image default."""
+    async def fake_download(url: str) -> tuple[bytes, str]:
+        return b"\x00\x00\x00\x18ftypmp42", "video/mp4"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+    tool = wiring["build"](
+        describe_models={"image": "test/image-model", "video": "test/video-model"},
+    )
+    out = await _call(tool, url="https://x.com/clip.mp4")
+    assert out["status"] == "ok"
+    # CountingVision records no model; a video WITHOUT a named describer is
+    # `unavailable`, which the video-model wiring above must have avoided.
+    assert wiring["vision"].calls == 1
+    # And the same URL with video unconfigured is honestly `unavailable`.
+    out2 = await _call(wiring["build"](), url="https://x.com/clip.mp4")
+    assert out2["status"] == "unavailable"
+
+
 async def test_the_bracketed_marker_resolves_too(wiring):
     """The model is shown `[image a3f2c1]` and may quote the whole marker back."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
@@ -500,15 +601,25 @@ def test_the_advertised_schema_names_the_parameter_code(wiring):
     Strands and therefore bypasses the SCHEMA — the exact surface that failed.
     Renaming the parameter back turns those tests red on a TypeError, so the
     rename is guarded, but nothing asserted what is actually advertised to the
-    model. This does."""
+    model. This does.
+
+    The generic surface (DEC-56 extension, 2026-08-31) adds `url` — the
+    cross-tool read path — so the schema now advertises BOTH parameters, with
+    neither required (exactly one at call time; the tool answers
+    `nothing_found` for zero or two).
+    """
     spec = wiring["build"]().tool_spec
     schema = spec["inputSchema"]["json"]
 
-    assert schema["required"] == ["code"]
+    # Neither parameter is required (both default to ""); the tool answers
+    # `nothing_found` for zero targets or two. The JSON schema therefore
+    # carries no `required` list at all.
+    assert "required" not in schema
     assert "handle" not in schema["properties"]
-    # The description the model reads must use the same word as the parameter,
-    # or the mismatch simply returns in a new place.
+    # The description the model reads must use the same words as the
+    # parameters, or the mismatch simply returns in a new place.
     assert "code" in schema["properties"]["code"]["description"]
+    assert "http" in schema["properties"]["url"]["description"]
 
 
 # ---- StickerInterpreter (Task 11): bytes to a sentence, sticker-only ---------
