@@ -1242,11 +1242,9 @@ def _asked_about(name: str) -> dict:
     hole this closes is a phone number or an ACI arriving back inside a tool
     result — an identifier is unsafe at every exit. A MODEL NAME here is not a
     disclosure at all: the model supplied the word, so echoing it tells the
-    model nothing it did not just write, and if that word reaches the reply,
-    `Deliverer` blocks it there, which is where R-6/R-18's rule actually lives.
-    Under `scan_reply` a lookup for a person nicknamed after a poem — or any of
-    the other eight ordinary words `_MODELNAME` matches — silently lost the
-    disambiguation this field exists to provide.
+    model nothing it did not just write, and the reply predicate no longer
+    refuses model names either (the R-18 model-name veto was disabled
+    2026-08-31 — see `egress.py`), so echoing it cannot cost the message.
     """
     return {} if scan_identifiers(name) else {"asked_about": name}
 
@@ -2533,10 +2531,11 @@ def build_tool_specs(
             # legally utter is not knowledge, it is a trap: she quotes it,
             # `Deliverer` refuses the WHOLE message (R-18 fails closed), the
             # refusal still spends one of her sends, and the burst dies
-            # mid-argument with nothing on screen. Measured: 「琴日我用 claude 寫個
-            # script 好撚快」 passes `scan_identifiers` and is blocked by
-            # `scan_reply`. Filter it where the quote is CHOSEN, not where it is
-            # already too late.
+            # mid-argument with nothing on screen. The model-name veto is now
+            # disabled (2026-08-31, see `egress.py`) — a quote naming a model
+            # is deliverable — but an IDENTIFIER still is not, and that is what
+            # this filter keeps. Filter it where the quote is CHOSEN, not where
+            # it is already too late.
             if scan_reply(content) is not None:
                 withheld += 1
                 continue
@@ -3958,9 +3957,11 @@ def build_tool_specs(
         # surface, and the string is not echoed back. Revert this and a phone
         # number reaches Tavily — the `calls == []` probe is exactly that.
         #
-        # `scan_identifiers`, NOT `scan_reply`: a MODEL NAME in a query is fine
-        # (「搵首 haiku」 must work), and `scan_reply` would refuse it — the
-        # whole reason DEC-30 split the two predicates.
+        # `scan_identifiers`, NOT `scan_reply`: the two are the same set today
+        # (the reply predicate's model-name veto was disabled 2026-08-31 — see
+        # `egress.py`), and this tool filters on the floor because an
+        # identifier is unsafe at every exit. A MODEL NAME in a query is fine
+        # (「搵首 haiku」 must work).
         if scan_identifiers(query) is not None:
             _record(metrics, "web_search", "nothing_found", reason="identifier")
             return {

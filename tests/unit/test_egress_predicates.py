@@ -1,15 +1,17 @@
-"""The two egress predicates, and why one function could not be both.
+"""The two egress predicates.
 
 `scan_identifiers` is the floor: an E.164 number, an ACI/PNI, or a key-shaped
 string is unsafe *wherever* it goes — into the group, into a tool result the
 model then reasons over, or out in a tool ARGUMENT to a third party.
 
-`scan_reply` adds the name of the model she runs on. That is a REPLY-only
-concern (R-6/R-18): the group must never learn what she runs on, but
-「搵首 haiku」 and 「gemini 星座」 are ordinary things for a group of software
-engineers to say, and `Deliverer.deliver` fails closed on the WHOLE reply — so
-applying the reply predicate anywhere else costs a whole message, or a whole
-memory, for a word that was never a disclosure in the first place.
+`scan_reply` is the same identifier floor, scoped to text addressed to the
+GROUP (R-6/R-18). It once ALSO refused the name of the model she runs on
+(`_MODELNAME`) — that veto is DISABLED by operator decision (2026-08-31) after
+`social_fetch` (DEC-151) relayed third-party posts that legitimately name
+models and the whole-reply veto cost the answer (see `egress.py`). The two
+functions remain distinct names because the reply path is a different audience
+with a different fail-closed cost, even though today they check the same
+patterns.
 
 The split is the point, so every test here asserts on BOTH predicates: a test
 that only ever called one of them would pass just as well if the two were
@@ -48,13 +50,13 @@ ORDINARY = (
 
 
 @pytest.mark.parametrize("text", MODEL_WORDS)
-def test_a_model_name_passes_the_identifier_scan_and_is_refused_by_the_reply_scan(text):
-    """THE reason for the split. `_MODELNAME` matches nine words an engineer
-    says in ordinary conversation. Under the old single function these became
-    refused tool arguments and withheld memories; under `Deliverer` they still
-    must not be said."""
+def test_a_model_name_passes_both_predicates_after_the_veto_was_disabled(text):
+    """The model-name veto is OFF (operator, 2026-08-31 — see `egress.py`).
+    These words were once refused by `scan_reply` and withheld whole replies;
+    now both predicates pass them. The identifier floor is unchanged and is
+    covered by the IDENTIFIERS tests below."""
     assert scan_identifiers(text) is None, text
-    assert scan_reply(text) == "model", text
+    assert scan_reply(text) is None, text
 
 
 @pytest.mark.parametrize("kind,text", IDENTIFIERS)

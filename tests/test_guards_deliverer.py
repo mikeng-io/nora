@@ -183,7 +183,7 @@ async def test_a_refused_message_does_not_spend_one(store, doctrine):
     single bad sentence would silence a four-message reply."""
     sink = SinkSender()
     d = _deliverer(store, doctrine, sink, message_cap=2)
-    assert await d.deliver("我行緊 claude opus 呀") is False
+    assert await d.deliver("佢個號碼係 +85290000101 呀") is False
     assert d.attempts == 0
     assert await d.deliver("一") is True
     assert await d.deliver("二") is True
@@ -356,16 +356,17 @@ async def test_a_key_shaped_string_is_refused(store, doctrine):
     assert m.get("nora_egress_blocks_total", kind="keylike") == 1
 
 
-async def test_a_reply_naming_the_model_she_runs_on_is_refused(store, doctrine):
-    """The half of R-18 that is about the REPLY and only the reply. `_MODELNAME`
-    was never covered end-to-end before the predicate split, which is precisely
-    the kind of gap a split silently widens: `Deliverer` must keep using the
-    predicate that includes model names, even though `about` and the outbound
-    tool arguments now use the one that does not."""
-    ok, sink, m = await _deliver_text("我行緊 claude opus 呀", store, doctrine)
-    assert ok is False
-    assert sink.sent == [], "what she runs on must never reach the group"
-    assert m.get("nora_egress_blocks_total", kind="model") == 1
+async def test_a_reply_naming_a_model_is_delivered_after_the_veto_was_disabled(store, doctrine):
+    """The model-name veto is OFF (operator decision 2026-08-31, see
+    `egress.py`): a reply that names a model — including relaying what a
+    `social_fetch` post said about one — must reach the group. The identifier
+    floor is unchanged and is covered by the three tests above; this asserts
+    the exact regression the first live social_fetch trace hit (the reply
+    quoting "Opus 5" was refused in full)."""
+    ok, sink, m = await _deliver_text("個 post 話 Opus 5 好差", store, doctrine)
+    assert ok is True
+    assert len(sink.sent) == 1, "a reply naming a model is deliverable now"
+    assert m.get("nora_egress_blocks_total", kind="model") == 0.0
 
 
 async def test_ordinary_cantonese_with_a_bare_number_still_sends(store, doctrine):

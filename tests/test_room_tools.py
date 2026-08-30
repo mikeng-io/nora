@@ -447,11 +447,11 @@ async def test_search_memory_says_it_cannot_repeat_what_it_found_when_all_hits_a
     EGRESS filter is not «nobody said that» — the words exist and she may not
     repeat them, and saying nobody said them is false.
 
-    DEC-95 made this likely rather than theoretical: the filter moved to
-    `scan_reply`, which drops any line naming an LLM, and this is a group of
-    software engineers who say «claude» constantly."""
+    The egress filter is the identifier floor (`scan_reply`; the model-name
+    veto was disabled 2026-08-31, so a line naming an LLM is quotable now and
+    an identifier is what gets screened)."""
     honcho = FakeHoncho()
-    honcho.messages = [("miles_novak", "琴日我用 claude 寫個 script 好撚快")]
+    honcho.messages = [("miles_novak", "個 script 我 send 咗俾 +85290000101 呀")]
     metrics = Metrics()
     tools = _build(persons=persons, honcho=honcho, metrics=metrics)
 
@@ -559,16 +559,13 @@ async def test_recall_withholds_a_conclusion_that_carries_an_identifier(persons)
 
 
 async def test_recall_keeps_a_conclusion_that_merely_names_an_llm(persons):
-    """The bug the split fixes. `about` filtered conclusions through the REPLY
-    predicate, whose `_MODELNAME` pattern matches nine words — including
-    `claude`, `gemini`, `haiku` and `opus`. In a group of software engineers
-    that silently withheld a large share of everything Honcho had ever
-    concluded, and the only trace was a `withheld` count.
-
-    What the model she runs on is remains hers alone: that is a property of
-    the REPLY (R-6/R-18, `Deliverer`), not of a durable memory about a person.
-    A number in the same list is still dropped, because that one is unsafe
-    everywhere."""
+    """`about` filters conclusions through the identifier floor
+    (`scan_identifiers`), never the reply predicate, so a conclusion that
+    merely names an LLM is kept for the model to paraphrase. The old reply
+    predicate also refused model names — that veto is disabled now
+    (2026-08-31, see `egress.py`) — but this tool's choice was always the
+    floor, and a number in the same list is still dropped because that one is
+    unsafe everywhere."""
     honcho = FakeHoncho(conclusions={"miles_novak": [
         "Miles ships an app that calls Claude and Gemini",
         "Miles prefers haiku over sonnet for cheap classification",

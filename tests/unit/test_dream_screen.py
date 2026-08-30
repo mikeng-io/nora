@@ -106,20 +106,20 @@ def test_a_benign_batch_is_kept_whole_and_counts_nothing():
         {"subject": "miles", "predicate": "listens_to", "object": "gemini 星座 podcast"},
     ],
 )
-def test_a_word_scan_reply_would_refuse_is_still_kept(item):
-    """THE test that pins `scan_identifiers` over `scan_reply`, and the reason
-    it cannot be flipped back by accident.
-
-    Each item here is refused by `scan_reply` — asserted, so this test fails
-    loudly if `_MODELNAME` is ever narrowed and the pinning becomes vacuous —
-    and carries no identifier at all. A screen built on the reply predicate
-    would silently delete legitimate room language for a word that was never a
-    disclosure; the rule there is «she does not SAY it», not «the string never
-    exists in a store».
+def test_a_model_word_is_still_kept_by_the_screen(item):
+    """The screen keeps model-name words. The old pinning premise — that
+    `scan_reply` refused these words and a screen built on it would delete
+    them — is GONE: the model-name veto was disabled by operator decision
+    (2026-08-31, see `egress.py`), so the reply predicate passes them now
+    too. What remains load-bearing is the screen's own floor: it uses
+    `scan_identifiers` and keeps every word that carries no identifier, which
+    is exactly what this asserts.
     """
     text = " ".join(str(v) for v in item.values())
-    assert scan_reply(text) == "model", "premise: the reply predicate refuses this"
     assert scan_identifiers(text) is None, "premise: it carries no identifier"
+    assert scan_reply(text) is None, (
+        "the model-name veto is disabled; the reply predicate passes it"
+    )
 
     metrics = Metrics()
     kept, rejected = screen(adaptor="room_language", items=[item], metrics=metrics)

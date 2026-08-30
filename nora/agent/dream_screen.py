@@ -40,16 +40,15 @@ logged — never silently discarded, and never fatal: the run's other items stil
 land, exactly as a malformed item is dropped rather than raised on today's
 `_parse_item` path.
 
-**`scan_identifiers`, never `scan_reply`.** `scan_reply` is `scan_identifiers`
-plus the model-name pattern, and that pattern matches nine ordinary English
-words — `claude`, `gemini`, `haiku`, `opus`, `sonnet` among them. It is only
-ever right for text addressed to the GROUP, where the rule is «she does not SAY
-it». A lexeme *about* the word 「haiku」 is precisely the sort of thing this room
-coins, and screening it here would silently delete legitimate language while
-looking like a security win. `nora.agent.egress`'s own docstring says the split
-is deliberate and that a third name for either job is how the wrong one gets
-called later; this module calls the floor predicate, by that name, and the test
-suite pins the choice so it cannot be flipped by accident.
+**`scan_identifiers`, never `scan_reply`.** The reply predicate was
+`scan_identifiers` plus a model-name pattern until 2026-08-31, when that veto
+was disabled by operator decision (see `nora.agent.egress`); today the two
+functions check the same identifier set. The screen still calls the FLOOR
+predicate by name, because an identifier is unsafe at every exit while a word
+like 「haiku」 — a poem, a lexeme *about* which this room coins language — is
+precisely the sort of thing that must survive into a store. This module calls
+the floor predicate, by that name, and the test suite pins the choice so it
+cannot be flipped by accident.
 
 **A known boundary, stated rather than implied.** The screen reads STRINGS.
 Numbers cannot hide any of the four patterns on their own — `_E164` requires a

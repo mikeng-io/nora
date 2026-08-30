@@ -360,9 +360,11 @@ class Deliverer:
             return False
 
         # R-18 — see `nora.agent.egress` for why this exists and what it
-        # deliberately does not match. This is the ONE caller of `scan_reply`,
-        # the strict predicate: `text` here is addressed to the group, so the
-        # model name is a disclosure. Everywhere else uses `scan_identifiers`.
+        # deliberately does not match. This is the ONE caller of `scan_reply`:
+        # `text` here is addressed to the group, so the identifier floor
+        # applies at its strictest. (The model-name veto that made this the
+        # "strict predicate" was disabled 2026-08-31 by operator decision —
+        # `social_fetch` relays third-party content that names models.)
         #
         # BOTH forms, for the same reason R-6 above checks both — and this one is
         # the sharper case (fail-closed audit 2026-08-10). Every identifier
