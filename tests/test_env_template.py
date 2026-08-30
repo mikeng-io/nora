@@ -150,6 +150,20 @@ _MAY_DIFFER = {
     # as their neighbours above -- opted in by the operator, INERT in the
     # template until someone decides to.
     "media.rustfs.enabled", "music.enabled",
+    # `social.enabled` joins them 2026-08-31: the template ships `social_fetch`
+    # INERT (DEC-151 "explicitly on" rule — the tool reads third-party social
+    # content through an authenticated browser session), and this deployment
+    # has opted in after the live bridge wiring (PR #86/#87). NOT
+    # `timeout_seconds`/`content_max_chars` — those are the same known-good
+    # values in both files when the deployment does not override them, and a
+    # template disagreeing with them is exactly the F11 drift this test
+    # exists for.
+    "social.enabled",
+    # `social.bridge_url` is a HOST address like `llm.base_url` above: the
+    # deployment's container sits on the private compose `nora` network and
+    # reaches the bridge at host.docker.internal:19826; a fresh copy has no
+    # reason to inherit that, so the template ships the loopback default.
+    "social.bridge_url",
     # A tuned value (design/discord-music/05-crossfade-spike.md), not a
     # universal default -- 0.0 in the template is deliberately "off until
     # you choose a fade length", not a measurement this deployment drifted

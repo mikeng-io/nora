@@ -4,11 +4,14 @@ After=nora-social-chrome.service
 
 [Service]
 Type=simple
-# opencli is a node install under ~/.hermes/node (symlinked into ~/.local/bin);
-# the systemd USER service environment does NOT carry the interactive shell's
-# PATH (no ~/.local/bin), so the binary must be named explicitly or the
-# subprocess spawn fails with FileNotFoundError.
+# opencli is a node script (shebang `#!/usr/bin/env node`) under
+# ~/.hermes/node (symlinked into ~/.local/bin). The systemd USER service
+# environment does NOT carry the interactive shell's PATH (no ~/.local/bin,
+# no ~/.hermes/node/bin): the binary must be named explicitly AND node must
+# be resolvable on PATH, or the spawn fails (FileNotFoundError on `opencli`,
+# then `env: 'node': No such file or directory` once the binary is found).
 Environment=OPENCLI_BIN=/home/norty/.local/bin/opencli
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/norty/.local/bin:/home/norty/.hermes/node/bin
 # Nora's container is NOT on host networking — it is on the private compose
 # `nora` network and reaches the host via host.docker.internal, which resolves
 # to the docker0 gateway (172.17.0.1). Binding loopback alone made the bridge
