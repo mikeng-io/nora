@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 
-from nora.agent.registry import ToolRegistry
 from nora.doctrine.loader import DoctrineStore
 from nora.obs.metrics import Metrics
 from tests.test_doctrine_loader import write  # reuse the frontmatter writer

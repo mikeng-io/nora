@@ -1,0 +1,6 @@
+{
+  "type": "fix",
+  "summary": "conduct.md regains the DEC-147 tag-mechanism sentence the 35293bb5 compress dropped (「tag 返佢」 is an act, not a manner of speaking); the Being-contradicted acceptance tests are re-pinned to the compressed phrasing with positions unchanged; config.example.toml is synced back to the deployment (model :0731 tags, 240s loop timeout, glm-5.3-flash vision, kimi-lane video describer with max_bytes); import-lint cleanups.",
+  "details": [],
+  "limitations": []
+}

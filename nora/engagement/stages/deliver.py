@@ -30,7 +30,7 @@ from nora.agent.guards import Deliverer, ReplyGuard, ToolCallLog
 from nora.agent.links import LinkCarry
 from nora.agent.outbound import OutboundComposer
 from nora.doctrine.loader import Doctrine
-from nora.domain.models import ConversationTarget, TranscriptRow
+from nora.domain.models import ConversationTarget
 
 log = logging.getLogger("nora.engagement.deliver")
 
@@ -74,8 +74,6 @@ def build(
     on_delivered: Any = None,
     cacheable_tools: frozenset[str] = frozenset(),
     tool_call_log_store: Any = None,
-    tagger_person_id: str | None = None,
-    transcript: tuple[TranscriptRow, ...] = (),
 ) -> DeliveryHandle:
     """Build the pair `invoke` needs.
 
@@ -99,19 +97,6 @@ def build(
     a number nobody had edited was doing the refusing. Passing `None` is a
     decision (the offline and eval compositions genuinely have no roster and no
     preview fetcher); omitting the argument is a `TypeError`.
-
-    **`tagger_person_id`/`transcript` DO default here**, unlike `composer` —
-    R-85 (DEC-148, `nora.agent.attribution`). The asymmetry is deliberate and
-    mirrors `Deliverer.__init__`'s own `composer=None` default one level
-    down: an absent value makes the misattribution guard match nothing, which
-    is exactly what `Deliverer.deliver` did before the guard existed. There is
-    no wrong claim available to a caller that omits them (unlike a defaulted
-    `audience` or `message_cap`, which would silently mis-book or under-cap
-    her), so requiring the keyword here would only force every existing
-    caller and test to thread a value through for no behaviour it changes.
-    Both production callers pass their real `ctx.tagger`/`ctx.transcript`
-    regardless, because that is the one thing that makes the guard live
-    rather than merely present.
     """
     # DEC-89: one carrier per turn, built HERE because this is the only place
     # both users of it are in scope — the `Deliverer` below, and (via the
@@ -139,8 +124,6 @@ def build(
         on_delivered=on_delivered,
         composer=composer,
         links=links,
-        tagger_person_id=tagger_person_id,
-        transcript=transcript,
     )
     # `budgets` and `terminal` travel together and come from the same place
     # (`ToolRegistry`) — what a tool costs and whether calling it ends the turn

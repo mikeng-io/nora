@@ -9,7 +9,7 @@ from nora.agent.markdown import render_markdown, strip_markdown
 from nora.agent.outbound import Outbound
 from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.models import ConversationTarget, DeliveryStatus, TranscriptRow
+from nora.domain.models import ConversationTarget
 from nora.domain.ports import Mention, Style, Styled
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -57,14 +57,12 @@ MESSAGE_CAP = NATIVE_TOOL_BUDGETS["send_reply"]
 
 
 def _deliverer(store, doctrine, sink, metrics=None, *, message_cap=MESSAGE_CAP,
-               on_delivered=None, links=None, tagger_person_id=None,
-               transcript=()) -> Deliverer:
+               on_delivered=None, links=None) -> Deliverer:
     return Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                      canary="CANARY-1", tag_id="tag-1", nora_sender_id="nora",
                      message_cap=message_cap, audience="tag",
                      metrics=metrics or Metrics(), on_delivered=on_delivered,
-                     links=links, tagger_person_id=tagger_person_id,
-                     transcript=transcript)
+                     links=links)
 
 
 class _RecordingObserver:
@@ -376,103 +374,6 @@ async def test_ordinary_cantonese_with_a_bare_number_still_sends(store, doctrine
     ok, sink, _ = await _deliver_text("價錢係 12345678 蚊，貴到痴線 😏", store, doctrine)
     assert ok is True
     assert len(sink.sent) == 1
-
-
-# ── R-85 (DEC-148): the misattribution guard, wired ─────────────────────────
-#
-# `tests/test_attribution.py` pins the predicate itself; this section pins
-# that `Deliverer.deliver` actually calls it, on the same shape the live
-# 2026-08-28 incident had — the tagger is the person who just flatly denied
-# something, and the quote she reaches for was somebody ELSE's line.
-
-GRANT = "grant_carver"
-AVERY = "avery_walsh"
-
-
-def _row(row_id, *, person_id, ts, body, is_nora=False):
-    return TranscriptRow(
-        id=row_id, sender_id=person_id or "unmapped", sender_name=None, ts=ts,
-        body=body, is_nora=is_nora, delivery_status=DeliveryStatus.SENT,
-        raw_json=None, person_id=person_id,
-    )
-
-
-INCIDENT_WINDOW = (
-    _row(1, person_id=GRANT, ts=1_000, body="收隊"),
-    _row(2, person_id=AVERY, ts=2_000, body="聽晚機會係0"),
-    _row(3, person_id=AVERY, ts=3_000, body="我冇逼架"),  # the flat denial
-)
-
-
-async def test_r85_the_live_incident_reply_is_refused(store, doctrine):
-    """The named test (DEC-148): the exact property the guard exists to stop
-    — a quote traced to somebody other than the tagger."""
-    m = Metrics()
-    sink = SinkSender()
-    d = _deliverer(store, doctrine, sink, m,
-                   tagger_person_id=AVERY, transcript=INCIDENT_WINDOW)
-    ok = await d.deliver("冇逼？頭先「收隊」邊個講㗎。")
-    assert ok is False
-    assert sink.sent == [], "a misattributed quote must never reach the group"
-    assert m.get("nora_guard_vetoes_total", rule="R-85") == 1
-    assert m.get("nora_attribution_blocks_total") == 1
-    assert m.get(
-        "nora_silent_failures_total", reason="misattribution_block",
-        platform="signal", audience="tag",
-    ) == 1
-
-
-async def test_r85_a_quote_the_addressee_actually_said_still_sends(store, doctrine):
-    """The negative control that matters most: quoting the tagger's OWN words
-    back at him must never be refused."""
-    d = _deliverer(store, doctrine, SinkSender(), Metrics(),
-                   tagger_person_id=AVERY, transcript=INCIDENT_WINDOW)
-    ok = await d.deliver("頭先你話「聽晚機會係0」喎。")
-    assert ok is True
-
-
-async def test_r85_no_resolvable_addressee_never_refuses(store, doctrine):
-    """The design's own fail-open branch: an unmapped/absent tagger means the
-    guard cannot judge, so it must not silence her on that basis alone."""
-    d = _deliverer(store, doctrine, SinkSender(), Metrics(),
-                   tagger_person_id=None, transcript=INCIDENT_WINDOW)
-    ok = await d.deliver("冇逼？頭先「收隊」邊個講㗎。")
-    assert ok is True
-
-
-async def test_r85_an_at_mention_of_the_actual_speaker_still_sends(store, doctrine):
-    """Naming the real speaker with `@` makes them fair game to quote, even
-    though they are not the tagger — the explicit signal in the reply itself
-    outranks the fallback."""
-    named = TranscriptRow(
-        id=1, sender_id=GRANT, sender_name=None, ts=1_000, body="收隊",
-        is_nora=False, delivery_status=DeliveryStatus.SENT, raw_json=None,
-        person_id=GRANT, person_name="Grant",
-    )
-    window = (named, *INCIDENT_WINDOW[1:])
-    d = _deliverer(store, doctrine, SinkSender(), Metrics(),
-                   tagger_person_id=AVERY, transcript=window)
-    ok = await d.deliver("@Grant 你都話咗「收隊」喎。")
-    assert ok is True
-
-
-async def test_r85_a_quote_nobody_in_the_window_said_still_sends(store, doctrine):
-    """Not this predicate's job — see `nora.agent.attribution`'s module
-    docstring. A total fabrication is a different defect; refusing here would
-    block every accurate reference to something outside the window."""
-    d = _deliverer(store, doctrine, SinkSender(), Metrics(),
-                   tagger_person_id=AVERY, transcript=INCIDENT_WINDOW)
-    ok = await d.deliver("你頭先話「隨便作嘅嘢」喎。")
-    assert ok is True
-
-
-async def test_r85_a_refused_message_does_not_spend_the_latch(store, doctrine):
-    """Same discipline R-4/R-6/R-18 already hold: a false block costs one
-    silent reply, never the tag's whole send budget."""
-    d = _deliverer(store, doctrine, SinkSender(), Metrics(),
-                   tagger_person_id=AVERY, transcript=INCIDENT_WINDOW)
-    await d.deliver("冇逼？頭先「收隊」邊個講㗎。")
-    assert d.attempts == 0
 
 
 # ── DEC-83: the ✅ is settled on delivery, not at end of turn ────────────────

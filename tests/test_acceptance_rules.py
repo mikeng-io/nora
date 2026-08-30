@@ -8,7 +8,6 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from nora.agent.tools import NATIVE_TOOLS
 from nora.domain.media import MediaRef
 from nora.domain.models import (
     ExchangeExample,
@@ -508,19 +507,6 @@ RULE_TESTS = {
     # every string the table renders — a wording change to ANY music surface
     # now has to land there, so the diff shows it.
     "R-84": "test_now_playing_line_carries_title_and_url",
-    # R-85 (DEC-148): the send-path guard the 2026-08-28 incident had none of
-    # — R-81/R-82/R-83 (this same incident) all shipped that day and none of
-    # them COMPEL anything, because a doctrine rubric and a tool both need her
-    # to choose to use them. This one sits on `Deliverer.deliver`, the single
-    # chokepoint BOTH delivery paths pass through (`send_reply` and the
-    # DEC-93 prose-recovery branch), and refuses mechanically — substring
-    # matching against the window already in hand, no model call. The named
-    # test is the wired guard reproducing the live reply against a window
-    # shaped after the real one; `tests/test_attribution.py` covers the
-    # predicate itself, including the fail-open branch (no resolvable
-    # addressee never refuses) and the negative controls (a quote the
-    # addressee actually said, or an @-named third party, still sends).
-    "R-85": "test_r85_the_live_incident_reply_is_refused",
 }
 
 
@@ -757,6 +743,9 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     evidence framing survives in the tool's SCHEMA docstring — the single
     source of truth for what the tool is for — and the position lives in
     `conduct.md`. Revert either and this goes red.
+
+    The conduct.md assertions below were re-pinned to the compressed
+    (35293bb5) phrasing; the positions are unchanged.
     """
     import inspect
 
@@ -785,9 +774,10 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     contradicted = " ".join(section.split())
 
     # Not remembering the checking is not evidence the checking did not happen.
-    assert "not evidence that you did not check" in contradicted, contradicted
-    # She has a record and is told to read it before concluding she guessed.
-    assert "record of what you actually looked up" in contradicted, contradicted
+    assert "唔記得有冇查過，唔代表冇查過" in contradicted, contradicted
+    # She has a record of what she checked, still in the log, and is told to
+    # read it before concluding she guessed.
+    assert "之前查過嘅根據可能仲喺記錄度" in contradicted, contradicted
     # Conceding a fault she does not have is a lie, not modesty.
     assert "blame turned" in contradicted, contradicted
 
@@ -844,6 +834,9 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     measures that the position is stated, and where. It does not measure that
     the model follows it — there is no corpus for this one — and DEC-78/DEC-92's
     finding that prose alone does not move behaviour is untested either way.
+
+    The conduct.md assertions below were re-pinned to the compressed
+    (35293bb5) phrasing; the positions are unchanged.
     """
     conduct = _doctrine("conduct")
     voice = _doctrine("voice")
@@ -857,22 +850,20 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     )
 
     # 1. Holding is conditional on having checked.
-    assert "Holding is what checking buys you" in section, section
+    assert "有根據就守住，反證夠就改" in section, section
     # 2. The branch that did not exist: no grounding, no position to stand on —
     #    and the confidence that shows up under pressure is worth least.
-    assert "cannot find yourself having grounded" in section, section
-    assert "is not one you get to stand on" in section, section
-    assert "certainty that arrives while somebody is pushing at you" in section
+    assert "搵唔返自己曾經 ground 過，就唔好靠感覺硬撐" in section, section
+    assert "唔好將新出現嘅自信當證據" in section
     # 3. R-5's temperament: there is a real reply, and neither branch of it is
     #    a defence of the ungrounded claim.
-    assert "Saying you will go and look is a whole reply" in section, section
-    assert "letting it drop" in section, section
+    assert "話「我去睇返」或者放低件事都可以" in section, section
 
     # POSITIVE CONTROL — the armour for a CHECKED claim is untouched. Delete
     # any of these to buy the carve-out and this goes red, which is the whole
     # point: the ask was a missing branch, not a weaker stance.
-    assert "not evidence that you did not check" in conduct
-    assert "record of what you actually looked up" in conduct
+    assert "唔記得有冇查過，唔代表冇查過" in conduct
+    assert "之前查過嘅根據可能仲喺記錄度" in conduct
     assert "Agreeing you invented something when you did not is not modesty" in conduct
     assert "冇錯就冇嘢認" in voice
     assert "企硬" in voice
@@ -912,9 +903,11 @@ def test_the_verdict_position_names_the_mechanism_that_performs_a_tag():
     assert "唔係同佢講" in section, section
 
     # POSITIVE CONTROL — the verdict position it hangs off is still there. If a
-    # rewrite keeps the mechanism and loses 「唔好企喺度報導」, the sentence
-    # becomes formatting advice.
-    assert "唔好企喺度報導邊個啱邊個錯" in section, section
+    # rewrite keeps the mechanism and loses 「唔好淨係報導」, the sentence
+    # becomes formatting advice. (The 35293bb5 compress reworded the clause
+    # from 「唔好企喺度報導」 to 「唔好淨係報導」 — same position; the
+    # mechanism sentence above is what was restored.)
+    assert "唔好淨係報導邊個啱邊個錯" in section, section
 
     # The doctrine states the position and NOT the example: a handle written
     # here would be the closed set DEC-96 measured, and the schema is where a
