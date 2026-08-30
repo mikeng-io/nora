@@ -40,6 +40,10 @@ class FakeHoncho:
         # (peer_id, content) messages a test seeds for `search` to return.
         self.messages: list[tuple[str, str]] = []
         self.searches: list[str] = []
+        # (observer, observed, content) landed conclusion writes — mirrors
+        # `nora.testing.FakeMemoryStore.writes`; recorded only when the write
+        # lands, exactly as `fed` is.
+        self.writes: list[tuple[str, str, str]] = []
         self.fail = fail
 
     async def ensure_workspace(self) -> None:
@@ -56,6 +60,22 @@ class FakeHoncho:
         if self.fail:
             return False
         self.fed.append((peer_id, text, conversation_id))
+        return True
+
+    async def conclude(
+        self, *, peer_id: str, content: str, target: str,
+        workspace_id: str | None = None,
+    ) -> bool:
+        """Mirrors the port's `conclude` (keyword-only, despite this older
+        double's positional `feed` — new methods do not inherit old drift):
+        the conclusion WRITE lane. `fail=True` writes nothing and answers
+        False; a landed write records the pair and appends into
+        `conclusions` under the observed peer, so the read lane serves it
+        back."""
+        if self.fail:
+            return False
+        self.writes.append((peer_id, target, content))
+        self.conclusions.setdefault(target, []).append(content)
         return True
 
     async def peer_card(self, *, peer_id: str) -> list[str]:

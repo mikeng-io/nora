@@ -486,6 +486,56 @@ class HonchoClient:
         )
         return result is not None
 
+    async def conclude(
+        self,
+        *,
+        peer_id: str,
+        content: str,
+        target: str,
+        workspace_id: str | None = None,
+    ) -> bool:
+        """Write ONE settled fact into the conclusions store, under an
+        (observer, observed) peer pair. Best-effort: False on any failure, the
+        caller (the `remember` tool) reports `unavailable` and the reply path
+        moves on — Honcho is never load-bearing.
+
+        `peer_id` is the OBSERVER (Nora, `self._ai_peer`), `target` the
+        OBSERVED person — the exact mirror of `representation`'s pair
+        (design/24 §4), so what this writes is what `about`/`ask_memory` read
+        back over the same pair. This is the only legitimate write lane for a
+        settled fact about a person: notes are TRACKED UNCERTAINTY and the
+        fact lane excludes person descriptions by design, so before this
+        existed 「記低」 agreed out loud and landed nowhere (live incident
+        2026-08-29).
+
+        No `session_id` is sent. Recall is workspace-wide ON PURPOSE (see
+        `representation`): her model of a person blends every conversation she
+        shares with them, and disclosure is gated by the room ROSTER at the
+        tool layer — not by narrowing the memory query. Scoping the write to
+        one session would key visibility to provenance the readers never
+        filter on, so the write is stored workspace-wide too: what the write
+        lane commits, the read lane can serve, with ONE scope.
+
+        No dedup here either: Honcho's deriver owns that on its side, and a
+        repeated line costs one row, never a crash. The timeout is
+        `_feed_timeout` (2 s) for the same reason `feed` uses it: the write
+        happens INSIDE a live turn, where a hung memory service must not add
+        latency the group feels."""
+        result = await self._post(
+            self._url("/conclusions", workspace=workspace_id),
+            {
+                "conclusions": [
+                    {
+                        "content": content,
+                        "observer_id": peer_id,
+                        "observed_id": target,
+                    }
+                ]
+            },
+            self._feed_timeout,
+        )
+        return result is not None
+
     async def peer_card(self, *, peer_id: str) -> list[str]:
         """Durable recall about a peer. [] on any failure — a missing card is normal.
 

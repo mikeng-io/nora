@@ -248,6 +248,12 @@ class FakeMemoryStore:
         # (peer_id, content) messages a test seeds for `search` to return.
         self.messages: list[tuple[str, str]] = []
         self.searches: list[str] = []
+        # (observer, observed, content) landed conclusion writes — the read
+        # side serves these back out of `conclusions` (see `conclude`), and a
+        # test asserts the PAIR, not just the text: a write under the wrong
+        # peer is a memory about nobody, which is the exact bug the `remember`
+        # lane's identity refusal exists to prevent.
+        self.writes: list[tuple[str, str, str]] = []
         self.fail = fail
 
     async def ensure_workspace(self) -> None:
@@ -268,6 +274,28 @@ class FakeMemoryStore:
         if self.fail:
             return False
         self.fed.append((peer_id, text, conversation_id))
+        return True
+
+    async def conclude(
+        self, *, peer_id: str, content: str, target: str,
+        workspace_id: str | None = None,
+    ) -> bool:
+        """Mirrors `HonchoClient.conclude` — the conclusion WRITE lane behind
+        the `remember` tool, keyword-only exactly like the port (unlike
+        `tests/fakes.py`'s older `FakeHoncho`, which predates this file).
+
+        `fail=True` is the down store: False, nothing lands, no raised error —
+        the exact never-load-bearing shape the client shows the reply path. A
+        landed write records the (observer, observed, content) tuple in
+        `writes` AND APPENDS into `conclusions` under the observed peer, so the
+        read lane (`representation`/`chat`) serves it right back — the
+        remember→about loop, closed in memory, which is the whole point of the
+        write lane and the reason it must not write anywhere the readers
+        cannot see."""
+        if self.fail:
+            return False
+        self.writes.append((peer_id, target, content))
+        self.conclusions.setdefault(target, []).append(content)
         return True
 
     async def peer_card(self, *, peer_id: str) -> list[str]:

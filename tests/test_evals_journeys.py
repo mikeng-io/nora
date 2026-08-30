@@ -27,6 +27,13 @@ TRAPS = {
     "carpark_alt": "place_info",
     "mall_alt": "web_search",
     "where_work_alt": "where_is",
+    # The remember write lane (2026-08-29): a 記低 ask leaking into the NOTE
+    # lane is the fresh 「記低咗-wrote-nowhere」 family; a 「記唔記得」 recall
+    # ask answered by WRITING (remember) is the reverse leak the remember-about
+    # edge exists to catch. Both edges are in SEED_INTENT_GRAPH.
+    "remember": "note_create",
+    "remember_alt": "note_create",
+    "about_recall": "remember",
 }
 
 

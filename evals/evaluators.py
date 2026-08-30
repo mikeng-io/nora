@@ -177,6 +177,14 @@ SEED_INTENT_GRAPH = IntentGraph(
         ("about", "ask_memory"),
         ("about", "search_memory"),
         ("ask_memory", "search_memory"),
+        # the write lane (live 2026-08-29): 「記低」 a settled person-fact,
+        # 「記唔記得」 a recall ask, and the note lane that refuses person
+        # facts by design. These edges are what make a recall ask answered
+        # by WRITING — or a 記低 ask answered by reading elsewhere — visible
+        # to NoSiblingLeakage; without them the remember tool could never
+        # fail a routing eval for leaking.
+        ("remember", "about"),
+        ("remember", "note_create"),
     ]
 )
 

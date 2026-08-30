@@ -34,10 +34,19 @@ from nora.domain.presence import PresenceFix, SavedPlace, WireState
 #: The tools these canned providers back — the set the per-journey gate checks a
 #: journey's (required + siblings) against before promoting its leakage/budget
 #: checks to hard. Kept in sync with what `build_eval_tool_registry` wires.
+#:
+#: The memory verbs (`remember` write lane) are backed not by a class here but
+#: by the in-memory Honcho double the live run wires as its memory store
+#: (`nora.app.eval_support.build_eval_memory`): canned conclusions answer the
+#: read verbs, `conclude` records the write and lands it where those reads
+#: serve it back, and `note_create` rides the in-memory note store wired into
+#: the eval registry — so a wrong-lane write is a real `ok`, not the wiring-gap
+#: `unavailable` the F4 confound wears.
 BACKED_TOOLS = frozenset(
     {
         "weather", "web_search", "web_fetch", "place_info", "route", "transit",
         "where_is", "saved_places",
+        "remember", "about", "ask_memory", "search_memory", "note_create",
     }
 )
 
