@@ -96,6 +96,21 @@ constructed, invoked, and discarded once per tag. Ambient ingest is a pure,
 deterministic write path (Postgres audit + Honcho feed) with exactly one branch:
 trigger detection. See `design/00-overview.md` D1 and `design/09-decision-index.md`.
 
+**The browser boundary (OpenCLI / social reads) is outside both paths.** The
+host runs a persistent virtual desktop — Xtigervnc on display `:2` with Openbox,
+headed Chrome on that display, and OpenCLI 1.8.7 (`localhost:19825`) driving it
+through the Browser Bridge extension, all as systemd *user* services (see
+`docs/runbook.md` §10). None of it is ambient ingest: it writes nothing to the
+record, and no Nora code reaches it today. The intended surface is a single
+constrained, read-only tool, `social_fetch(url)`, accepting only X, Instagram
+and Threads post URLs — no profiles, feeds, posting, liking, following,
+commenting or deleting. That tool needs a narrow host-side bridge from the
+container to the OpenCLI daemon that is **not built yet**, and Threads support
+waits on a native OpenCLI adapter (1.8.7 has none). The virtual display itself
+is load-bearing rather than incidental: Browser Bridge drives Chrome window
+APIs, and GNOME RDP reports zero monitors while disconnected, which failed
+window creation — so RDP is optional administration only, never the runtime.
+
 ## 2. Packages — what lives here, what it may import
 
 Enforced today by five import-linter contracts (`pyproject.toml`
