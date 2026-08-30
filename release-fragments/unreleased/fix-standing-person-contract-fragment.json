@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Release-fragment schema repair only — standing-person-contract.json (from db56f1da) carried its text in `reason` instead of the `summary` a `fix` fragment requires, which failed render_release_notes.py and therefore the branch-level check_release_fragments.py gate for every branch. The text is unchanged, only restructured into summary + details. No code, config, schema or behaviour changes.",
+  "details": [],
+  "limitations": []
+}
