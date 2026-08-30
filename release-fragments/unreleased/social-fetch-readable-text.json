@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "social_fetch content is now rendered as readable text instead of a raw JSON dump, so the model can actually read X/Instagram posts. The old path json.dumps'ed the whole opencli payload and the 4000-char clamp tore it mid-record; the model received double-escaped, invalid JSON and read it as \"empty\" (trace 2bf6939b96d18d1389f0ea7f1eac99af), replying it couldn't read the post. Content is now the same readable-text shape Tavily's web_fetch returns — author, body, numbers, date, URL, quoted post — and the clamp backs off to an item boundary so the first post stays whole.",
+  "details": [
+    "nora/infra/social/bridge_client.py: new `_render_text`/`_render_item` turn opencli's JSON (thread/profile/tweets/search — both post dicts and profile dicts) into compact readable lines; `_clamp_chars` now prefers the last `\\n\\n` item separator over a mid-record cut",
+    "tests/test_social_bridge_client.py: fake data reshaped to the real opencli shapes (verified against the live bridge 2026-08-31); regression pins assert the post text rides verbatim with its URL, no double-escaped JSON reaches the model, profiles render handle+bio+stats, and clamping keeps the first item whole"
+  ],
+  "limitations": [
+    "Very long threads still clamp at content_max_chars (default 4000) — but now at a whole-post boundary with a trailing ellipsis, never mid-record"
+  ]
+}

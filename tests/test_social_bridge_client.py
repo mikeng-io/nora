@@ -14,7 +14,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nora.infra.social.bridge_client import OpenCliBridgeClient
+from nora.infra.social.bridge_client import OpenCliBridgeClient, _clamp_chars
 
 
 class _Bridge:
@@ -49,13 +49,79 @@ class _Bridge:
             return web.json_response({"status": "nothing_found"})
         if self.mode == "unavailable":
             return web.json_response({"status": "unavailable"})
+        if self.mode == "realistic-post":
+            # The exact opencli `twitter thread` shape from the live trace
+            # (2026-08-31): first item = the post, rest = replies.
+            return web.json_response({
+                "status": "ok",
+                "source_url": "https://x.com/i/status/2093779797512253814",
+                "data": [
+                    {
+                        "id": "2093779797512253814",
+                        "author": "MrAhmadAwais",
+                        "name": "Ahmad Awais",
+                        "text": "opus 5 is so bad lately. complete mess. glad "
+                                "open models exist. it failed to find bugs even "
+                                "deepseek flash discovered.",
+                        "likes": 167,
+                        "retweets": 3,
+                        "created_at": "Sat Aug 29 19:16:18 +0000 2026",
+                        "url": "https://x.com/MrAhmadAwais/status/2093779797512253814",
+                        "quoted_tweet": {
+                            "author": "OpenAI",
+                            "text": "We're ending our partnership with Cursor.",
+                        },
+                    },
+                    {
+                        "id": "2094141809891144149",
+                        "author": "jembatanaicom",
+                        "text": "@MrAhmadAwais This is exactly why single-model"
+                                " loyalty makes less sense every month.",
+                        "in_reply_to": "2093779797512253814",
+                        "created_at": "Sun Aug 30 19:14:49 +0000 2026",
+                        "url": "https://x.com/jembatanaicom/status/2094141809891144149",
+                    },
+                ],
+            })
+        if self.mode == "realistic-profile":
+            return web.json_response({
+                "status": "ok",
+                "source_url": "https://x.com/nasa",
+                "data": [
+                    {
+                        "screen_name": "nasa",
+                        "name": "NASA",
+                        "bio": "Exploration lives here.",
+                        "followers": 100,
+                        "following": 2,
+                        "tweets": 5000,
+                        "created_at": "Sat Aug 29 19:16:18 +0000 2026",
+                        "url": "https://x.com/nasa",
+                    }
+                ],
+            })
         if self.mode == "slow":
             await asyncio.sleep(5)
             return web.json_response({"status": "nothing_found"})
+        # Realistic opencli shapes (verified against the live bridge
+        # 2026-08-31): `profile` is a single-item list with `screen_name`/
+        # `bio`, `thread`/`tweets` are lists of post dicts. Long bio → clamp
+        # probe.
         return web.json_response({
             "status": "ok",
             "source_url": "https://x.com/nasa",
-            "data": {"profile": "nasa", "bio": "x" * 5000},   # long → clamp probe
+            "data": [
+                {
+                    "screen_name": "nasa",
+                    "name": "NASA",
+                    "bio": "x" * 5000,
+                    "followers": 100,
+                    "following": 2,
+                    "tweets": 5000,
+                    "created_at": "Sat Aug 29 19:16:18 +0000 2026",
+                    "url": "https://x.com/nasa",
+                }
+            ],
         })
 
 
@@ -97,6 +163,63 @@ async def test_long_content_is_clamped_and_flagged(bridge):
     assert out["truncated"] is True
     # The wrapped body carries at most the clamp (plus the untrusted envelope).
     assert len(out["content"]) < 1800
+
+
+async def test_content_is_readable_text_not_json_soup(bridge):
+    """The regression pin for the 2026-08-31 parse failure.
+
+    Before this fix, `bridge_client` json.dumps'ed the whole opencli payload
+    and the char clamp tore mid-record, so the model received `\"`-escaped JSON
+    cut at "founder @infer — and read it as "empty" (trace
+    2bf6939b96d18d1389f0ea7f1eac99af). The content must now be the post's
+    actual text verbatim, with its URL beside it — the same readable-text
+    shape Tavily's `web_fetch` returns, which the model demonstrably reads.
+    """
+    fake, client = bridge
+    fake.mode = "realistic-post"
+    out = await client.read(platform="x", what="post",
+                            target="2093779797512253814", limit=5)
+    assert out["status"] == "ok"
+    text = out["content"]
+    assert "opus 5 is so bad lately. complete mess" in text
+    assert "https://x.com/MrAhmadAwais/status/2093779797512253814" in text
+    assert "167 likes" in text
+    # The post text rides PLAIN — no double-escaped JSON junk the model has to
+    # unescape twice. (The untrusted wrapper legitimately contains quotes, but
+    # a `\"`-escape sequence from a nested json.dumps must not.)
+    assert '\\"' not in text.replace("\\n", "")
+
+
+async def test_profile_renders_handle_bio_and_stats(bridge):
+    """Profile data renders as `handle (name)` + bio + numbers — the shape a
+    model quotes directly, not an object dump it has to parse."""
+    fake, client = bridge
+    fake.mode = "realistic-profile"
+    out = await _read(client)
+    assert out["status"] == "ok"
+    text = out["content"]
+    assert "nasa (NASA)" in text
+    assert "Exploration lives here." in text
+    assert "100 followers" in text
+    assert "2 following" in text
+    assert "https://x.com/nasa" in text
+
+
+async def test_clamp_prefers_an_item_boundary():
+    """Truncation backs off to the last `\\n\\n` separator instead of tearing
+    mid-record — the first post (and its text) stays whole."""
+    text = "first post body here\n\nsecond post body here\n\nnasa (NASA)"
+    clamped, truncated = _clamp_chars(text, 40)
+    assert truncated is True
+    assert clamped.startswith("first post body here")
+    assert "second" not in clamped
+
+
+async def test_clamp_marks_truncation_when_single_item_exceeds_budget():
+    text = "x" * 5000
+    clamped, truncated = _clamp_chars(text, 100)
+    assert truncated is True
+    assert len(clamped) <= 105  # clamp + the ellipsis marker
 
 
 async def test_nothing_found_passes_through(bridge):
