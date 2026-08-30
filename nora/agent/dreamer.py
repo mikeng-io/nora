@@ -189,6 +189,10 @@ class DreamToolSource(Protocol):
 # did.
 WORKSPACE_SAFE_TOOLS: frozenset[str] = frozenset({
     "web_search", "web_fetch", "now", "calculate", "weather", "version",
+    # `social_fetch` (DEC-151): reads the open internet (public X/Instagram
+    # content) with no room state anywhere in the answer — the same shape as
+    # `web_search`/`web_fetch`, and read-only at three layers besides (R-86).
+    "social_fetch",
     # Nora's OWN generated-image library — reads her library across every
     # conversation (the store records platform/conversation as provenance,
     # but a lookup is a global search of her own creations, never

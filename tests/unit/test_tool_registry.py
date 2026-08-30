@@ -76,6 +76,8 @@ def test_the_registry_exposes_every_declared_tool():
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",
+        # social_fetch (DEC-151): READ-ONLY X/Instagram via the host bridge.
+        "social_fetch",
         "weather",
         # Discord-only music (design/discord-music/07-agent-tool.md).
         "play_music", "skip_music", "top_music", "stop_music", "music_status",
@@ -165,6 +167,9 @@ def test_budgets_match_todays_table():
         # round trip and there is rarely a reason to open more than one or two
         # links in a turn.
         "web_fetch": 2,
+        # social_fetch (DEC-151): the search/refine/fetch shape — a turn may
+        # read a post, then a profile or a search around it.
+        "social_fetch": 3,
         # One weather verb (DEC-72): current + warnings + outlook always, the
         # 9-day forecast on a flag. 2 — one HKO round usually answers, a second
         # covers a follow-up.
@@ -353,6 +358,7 @@ def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
         "weather": "confirmed", "transit": "confirmed", "route": "confirmed",
         "place_info": "confirmed", "where_is": "confirmed",
         "saved_places": "remembered", "web_search": "web", "web_fetch": "web",
+        "social_fetch": "web",
     }
     for name, tier in expected.items():
         assert NATIVE_TOOLS[name].source_tier == tier, name
@@ -501,7 +507,7 @@ def test_cacheable_tools_matches_the_declared_set():
     from nora.agent.registry import ToolRegistry
     assert ToolRegistry().cacheable_tools() == frozenset(
         {"place_info", "route", "web_search", "web_fetch", "weather", "transit",
-         "music_status"}
+         "music_status", "social_fetch"}
     )
 
 
@@ -556,6 +562,9 @@ READ_ONLY = frozenset({
     "suggest_venue", "version", "search_gifs",
     "note_read", "note_search", "search_knowledge",
     "music_status",
+    # DEC-151: social_fetch is a pure read at all three layers — the tool's
+    # closed vocabulary, the bridge's host-side allowlist, this declaration.
+    "social_fetch",
 })
 
 

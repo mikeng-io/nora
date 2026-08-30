@@ -962,6 +962,40 @@ class SearchConfig(BaseModel):
     extract_max_chars: int = Field(default=3000, ge=1)
 
 
+class SocialConfig(BaseModel):
+    """READ-ONLY X/Instagram reads for the `social_fetch` tool (DEC-151), via
+    the host-side OpenCLI bridge (`python -m nora.infra.social`, deployed as
+    `deploy/social-bridge/`).
+
+    **Optional and every field defaults**, the `RouteConfig` shape. `enabled`
+    defaults **False** and ships that way: the tool reads third-party social
+    content through an authenticated browser session, so it is off until an
+    operator turns this on AND the bridge service runs on the host. Off (or
+    the bridge down) leaves the registry without a provider and `social_fetch`
+    answers `unavailable` (R-5), never a silent empty.
+
+    KEYLESS — there is no credential, so `enabled` is the whole gate (the
+    `[preview]` shape). The read-only boundary does not live here at all: the
+    bridge re-enforces its own `(site, command)` allowlist host-side before
+    any `opencli` subprocess is spawned, so a write verb is unreachable
+    whatever this config says.
+
+    `bridge_url` is the bridge's loopback address (Nora reaches the host over
+    host networking); `timeout_seconds` must exceed the bridge's own
+    subprocess timeout (~75s, over OpenCLI's 60s browser timeout);
+    `content_max_chars` clamps the retrieved text, because a tool result is
+    re-sent on every subsequent model call and what accumulates must be
+    bounded.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    bridge_url: str = "http://127.0.0.1:19826"
+    timeout_seconds: float = Field(default=90.0, gt=0)
+    content_max_chars: int = Field(default=4000, ge=1)
+
+
 class WeatherConfig(BaseModel):
     """Current weather + forecast for the `weather` tool (DEC-72).
 
@@ -2378,6 +2412,10 @@ class Config(BaseModel):
     # turns it on AND a Tavily key is present (`api_key_env`, DEC-8/DEC-73); a
     # config.toml without a `[search]` section keeps loading.
     search: SearchConfig = SearchConfig()
+    # Optional and defaulted — see `SocialConfig`. Off (inert) unless an
+    # operator turns it on AND the host-side bridge runs (DEC-151); keyless,
+    # so `enabled` is the whole gate.
+    social: SocialConfig = SocialConfig()
     # Optional and defaulted — see `WeatherConfig`. Keyless (HK Observatory), so
     # safe to enable; ships off in the example, on in this deployment (DEC-70).
     weather: WeatherConfig = WeatherConfig()

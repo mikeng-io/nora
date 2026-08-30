@@ -138,6 +138,8 @@ def test_every_declared_tool_is_built(wiring):
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",
+        # social_fetch (DEC-151): READ-ONLY X/Instagram via the host bridge.
+        "social_fetch",
         "weather",
         # Discord-only music (design/discord-music/07-agent-tool.md).
         "play_music", "skip_music", "top_music", "stop_music", "music_status",
@@ -173,12 +175,15 @@ def test_read_peer_card_is_gone_from_the_table():
     assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
 
 
-def test_exactly_seven_tools_are_cacheable():
+def test_exactly_eight_tools_are_cacheable():
     from nora.agent.tools import NATIVE_TOOLS
     cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
     assert cacheable == {
         "place_info", "route", "web_search", "web_fetch", "weather", "transit",
-        "music_status",
+        # social_fetch (DEC-151): a public social read carries no room/person
+        # disclosure decision baked into the moment it ran — same exemption
+        # shape as `web_search`/`web_fetch`.
+        "music_status", "social_fetch",
     }
 
 
