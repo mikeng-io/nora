@@ -66,8 +66,8 @@ TOOL_NAMES = ToolRegistry().tool_names()
 
 __all__ = [
     "BACKED_TOOLS",
-    "TOOL_NAMES",
     "REPLY_GUARD_BUDGETS",
+    "TOOL_NAMES",
     "Config",
     "ConfigError",
     "Doctrine",
