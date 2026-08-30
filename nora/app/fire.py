@@ -816,14 +816,6 @@ class FirePath:
                     roster_source=self._rosters.get(occasion.platform),
                     preview_source=self._preview_source,
                 ),
-                # R-85 (DEC-148): the same misattribution guard the tag path
-                # wires, on the same window (`transcript=ctx.transcript`
-                # already threads to `who_said` a few lines below). `tagger`
-                # is `None` for an occasion nobody asked for (§12), which is
-                # exactly the "cannot resolve an addressee" case the guard
-                # fails OPEN on — see `nora.agent.attribution`.
-                tagger_person_id=tagger.person_id if tagger else None,
-                transcript=ctx.transcript,
             )
             room = Room(
                 platform=occasion.platform, conversation_id=occasion.conversation_id,
