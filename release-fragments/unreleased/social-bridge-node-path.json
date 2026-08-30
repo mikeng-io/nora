@@ -1,0 +1,8 @@
+{
+  "type": "fix",
+  "summary": "nora-social-bridge unit now also sets PATH to include node's directory (~/.local/bin, ~/.hermes/node/bin): opencli is a node script (shebang `#!/usr/bin/env node`), and the systemd USER environment carries no interactive PATH — once OPENCLI_BIN pointed at the real binary, the spawn failed next with `env: 'node': No such file or directory` (exit 127). With both env vars set, `/read` returns live post content.",
+  "details": [
+    "deploy/social-bridge/nora-social-bridge.service: Environment=PATH=...:/home/norty/.local/bin:/home/norty/.hermes/node/bin (kept OPENCLI_BIN=/home/norty/.local/bin/opencli)"
+  ],
+  "limitations": []
+}
