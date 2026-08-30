@@ -652,6 +652,19 @@ api_key_env = "TAVILY_API_KEY"   # NAMES the env var; the key never lives here (
 # extract_depth = "basic"        # "basic" (1 credit) | "advanced" (2, richer)
 # extract_max_chars = 3000        # fetched-page clamp (bounds re-sent tokens)
 
+[social]
+# social_fetch (DEC-151) — READ-ONLY X/Instagram reads via the host-side
+# OpenCLI bridge (`python -m nora.infra.social`, run as the systemd user
+# service in deploy/social-bridge/). KEYLESS, so `enabled` is the whole gate
+# (the [preview] shape). Off here for the "explicitly on" house rule; even on,
+# the tool can only construct allowlisted reads — the bridge re-enforces the
+# read-only (site, command) mapping host-side, so no posting, liking,
+# following or deleting is reachable through it.
+enabled = false
+# bridge_url = "http://127.0.0.1:19826"  # the host bridge, loopback only
+# timeout_seconds = 90.0                  # > the bridge's ~75s subprocess timeout
+# content_max_chars = 4000                # retrieved-text clamp (bounds re-sent tokens)
+
 [preview]
 # Sender-generated link previews on Nora's OUTBOUND messages: when a reply
 # carries a URL she fetches its OpenGraph tags and attaches a title/description

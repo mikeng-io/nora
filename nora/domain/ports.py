@@ -1238,6 +1238,36 @@ class SearchProvider(Protocol):
 
 
 @runtime_checkable
+class SocialProvider(Protocol):
+    """`{platform, what, target, limit} -> {status, ...}` social reads, behind
+    the `social_fetch` tool (DEC-151). NEVER raises — a transport failure of
+    the bridge call is `{"status": "unavailable"}`, never an exception into
+    the loop (R-5), and the R-27 three states apply end to end: an error is
+    never a `nothing_found`. `OpenCliBridgeClient` today; a PORT so another
+    backend (a native Threads adapter, when OpenCLI grows one) plugs in with
+    no tool change — and a second implementation means a shared contract suite
+    both pass (tests/contract/).
+
+    READ-ONLY by construction at three layers: the tool only constructs
+    allowlisted `(platform, what)` pairs (there is no free-form command
+    passthrough), the HOST-SIDE bridge re-enforces its own `(site, command)`
+    allowlist before any subprocess is spawned — that mapping is the single
+    source of truth and lives outside the container, so a write verb
+    (`twitter post/like/follow/delete`, …) is unreachable even under prompt
+    injection — and the tool's `NativeTool` entry declares `read_only=True`.
+
+    Retrieved text is stranger-written: the implementation `untrusted`-wraps
+    it (R-13) with the source URL as provenance and CLAMPS it, because a tool
+    result is re-sent on every subsequent model call. `target` is an EGRESS
+    surface, screened for identifiers/coordinates at the tool layer
+    (`nora.agent.tools`, unchanged) BEFORE it reaches here."""
+
+    async def read(
+        self, *, platform: str, what: str, target: str, limit: int,
+    ) -> dict[str, Any]: ...
+
+
+@runtime_checkable
 class LinkPreviewSource(Protocol):
     """`url -> LinkPreview | None` — the OpenGraph read behind an outbound
     preview card. **NEVER raises**, and `None` is the only failure value.

@@ -1,0 +1,12 @@
+[Unit]
+Description=Nora social read-only bridge (OpenCLI)
+After=nora-social-chrome.service
+
+[Service]
+Type=simple
+ExecStart=/home/norty/.local/bin/uv run --project /home/norty/workspace/nora python -m nora.infra.social
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

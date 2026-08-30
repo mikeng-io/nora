@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "Nora can read X (Twitter) and Instagram — a post (X only), a profile, an account's recent posts, and search — via the new read-only `social_fetch` tool, behind `[social] enabled` (ships inert by default). Reads go through a new host-side bridge service that re-enforces the read-only allowlist, so no posting, liking, following, commenting or deleting is reachable, even under prompt injection.",
+  "details": [
+    "Read-only enforced at three layers: the tool's closed (platform, what) vocabulary, the host bridge's own (site, command) allowlist re-validated before any subprocess spawns, and the tool's read_only declaration",
+    "The bridge (`python -m nora.infra.social`, deploy/social-bridge/) binds 127.0.0.1 only and runs the checkout's code, tracking master",
+    "Retrieved content is wrapped as stranger-written untrusted text with the source URL as provenance, and clamped to bound re-sent tokens"
+  ],
+  "limitations": [
+    "Threads is unsupported — OpenCLI 1.8.7 has no native Threads adapter",
+    "Instagram post-by-URL is unsupported — OpenCLI 1.8.7 has no caption-by-URL command (`social_fetch` answers `unavailable` honestly)",
+    "Instagram search finds users only, not post content",
+    "Requires the host-side bridge service (`nora-social-bridge`) running; with it down the tool answers `unavailable`"
+  ]
+}

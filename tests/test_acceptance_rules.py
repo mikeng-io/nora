@@ -507,6 +507,12 @@ RULE_TESTS = {
     # every string the table renders — a wording change to ANY music surface
     # now has to land there, so the diff shows it.
     "R-84": "test_now_playing_line_carries_title_and_url",
+    # R-86 (DEC-151): `social_fetch` is read-only at three layers, and the
+    # named test DERIVES all three from the code — the bridge's allowlist
+    # against OpenCLI's write verbs, the tool's (platform, what) vocabulary
+    # against that allowlist, and the NativeTool declaration — so a hand-edit
+    # to any one layer that drifts from the others goes red.
+    "R-86": "test_r86_social_fetch_is_read_only_at_three_layers",
 }
 
 
@@ -916,3 +922,51 @@ def test_the_verdict_position_names_the_mechanism_that_performs_a_tag():
         "conduct.md ships a worked @handle — that is the schema's job, and a "
         "name in the doctrine becomes the only name she uses"
     )
+
+
+def test_r86_social_fetch_is_read_only_at_three_layers():
+    """R-86 / DEC-151. `social_fetch` reads X and Instagram through OpenCLI,
+    whose write commands (`twitter post`/`like`/`follow`/`delete`, …) drive an
+    AUTHENTICATED browser — a model that can be prompt-injected by the very
+    content it fetches must never reach one. The read-only property is
+    enforced at three layers, and this test DERIVES all three from the code
+    (never hand-copied duplicates), so an edit to any one layer that drifts
+    from the others goes red here:
+
+    1. the tool's closed `(platform, what)` vocabulary
+       (`nora.agent.tools._SOCIAL_PLATFORMS`/`_SOCIAL_WHATS`) — there is no
+       free-form command passthrough;
+    2. the host-side bridge's allowlist
+       (`nora.infra.social.bridge_server.READ_ONLY_ALLOWLIST`), the single
+       source of truth for the argv mapping — its command slot is only ever
+       filled from the mapping's values, so no write verb is constructible
+       (the behavioural half — a refused pair never spawns — is pinned by
+       `tests/unit/test_social_bridge_server.py`);
+    3. the `NativeTool` declaration `read_only=True`, the Dreamer's ceiling.
+    """
+    from nora.agent import tools as tools_module
+    from nora.infra.social import bridge_server
+
+    # Layer 2: every command the bridge can spawn is disjoint from OpenCLI's
+    # write verbs (the set in `bridge_server.OPENCLI_WRITE_VERBS`, verified
+    # against `opencli list -f json` 1.8.7 on 2026-08-30).
+    for _site, command in bridge_server.READ_ONLY_ALLOWLIST.values():
+        assert command not in bridge_server.OPENCLI_WRITE_VERBS, (
+            f"the bridge can spawn a WRITE verb: {command}"
+        )
+
+    # Layer 1 matches layer 2 exactly: the tool's vocabulary IS the bridge's
+    # allowlist plus the one recorded limitation (`instagram post` — OpenCLI
+    # 1.8.7 has no caption-by-URL command), which the tool answers
+    # `unavailable` itself and the bridge refuses without spawning.
+    tool_pairs = {
+        (platform, what)
+        for platform in tools_module._SOCIAL_PLATFORMS
+        for what in tools_module._SOCIAL_WHATS
+    }
+    assert tool_pairs - set(bridge_server.READ_ONLY_ALLOWLIST) == (
+        tools_module._SOCIAL_UNSUPPORTED
+    )
+
+    # Layer 3: the declaration the Dreamer's ceiling is derived from.
+    assert tools_module.NATIVE_TOOLS["social_fetch"].read_only is True

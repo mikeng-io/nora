@@ -39,6 +39,7 @@ from ..domain.ports import (
     MediaObjectStore,
     MusicToolBridge,
     SearchProvider,
+    SocialProvider,
     WeatherProvider,
 )
 from ..domain.reminders import ReminderCaps, ReminderStore
@@ -99,6 +100,7 @@ class ToolRegistry:
         blobs: BlobStore | None = None,
         descriptions: MediaDescriptionStore | None = None,
         search: SearchProvider | None = None,
+        social: SocialProvider | None = None,
         weather: WeatherProvider | None = None,
         presence: PresenceReader | None = None,
         circles: tuple[Circle, ...] = (),
@@ -183,6 +185,12 @@ class ToolRegistry:
         # needed for either verb: Tavily fetches from its own servers, never
         # Nora's, whether it is handed a query or a url.
         self._search = search
+        # `social` (OpenCLI bridge, DEC-151) is NOT default-constructed either:
+        # `social_fetch` ships INERT behind `[social] enabled` (keyless — the
+        # bridge is loopback-only and holds the read-only allowlist host-side),
+        # so every composition that has not wired one leaves this None and the
+        # tool answers `unavailable` (the honest «not configured» state, R-5).
+        self._social = social
         # `weather` (HKO, DEC-72) is NOT default-constructed either, for symmetry
         # with `route`/`search`: it ships behind `[weather] enabled`, and every
         # composition that has not wired one leaves this None and `weather` answers
@@ -492,6 +500,7 @@ class ToolRegistry:
             describe_providers=self._describe_providers,
             describe_max_bytes=self._describe_max_bytes,
             search_source=self._search, weather_source=self._weather,
+            social_source=self._social,
             presence_source=self._presence, presence_circles=self._circles,
             location_trusted=location_trusted,
             refresher=self._refresher,

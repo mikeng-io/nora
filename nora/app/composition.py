@@ -1413,6 +1413,20 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "search enabled but %s is unset — web_search stays unavailable",
                 cfg.search.api_key_env,
             )
+    # `social_fetch` (OpenCLI, DEC-151) is wired ONLY when `[social] enabled` —
+    # there is NO credential, so `enabled` alone is the gate (the `[preview]`
+    # shape). Off leaves the registry without a provider and the tool answers
+    # `unavailable` (R-5). The client only ever reaches the host-side bridge
+    # over loopback; the read-only (site, command) allowlist is re-enforced
+    # THERE (`nora.infra.social.bridge_server`), outside the container.
+    social_client = None
+    if cfg.social.enabled:
+        from nora.infra.social import OpenCliBridgeClient
+        social_client = OpenCliBridgeClient(
+            bridge_url=cfg.social.bridge_url,
+            timeout_seconds=cfg.social.timeout_seconds,
+            content_max_chars=cfg.social.content_max_chars,
+        )
     # The Dreamer's own consolidator (Task 11) — built ONLY when
     # `[language] enabled`, mirroring `language_store` above (there is no
     # second consumer to leave stranded by gating it, unlike `reminders`/
@@ -1817,6 +1831,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         describe_providers=_describe_providers(cfg),
         describe_max_bytes=_describe_max_bytes(cfg),
         blobs=blobs, descriptions=media_descriptions, search=search_client,
+        social=social_client,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,
         relay=relay,

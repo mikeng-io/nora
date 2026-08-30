@@ -659,11 +659,10 @@ back to 0.14.4.1.
 
 ## 10. "The social desktop: VNC, Chrome, OpenCLI"
 
-The browser runtime for (future) social reads is three pieces on the host, all
-systemd **user** services or user installs — none of them is the Nora container,
-and Nora runs fine with all of them down. Nothing here serves a Nora feature
-yet; it exists so `social_fetch` has somewhere to land (see `ARCHITECTURE.md`
-§1's browser-boundary note).
+The browser runtime behind `social_fetch` (DEC-151) is four pieces on the
+host, all systemd **user** services or user installs — none of them is the
+Nora container, and Nora runs fine with all of them down (the tool answers
+`unavailable`). See `ARCHITECTURE.md` §1's browser-boundary note.
 
 - `nora-social-desktop.service` — `tigervncserver :2 -fg` (Xtigervnc,
   1920x1080, Openbox), VNC bound to the Tailscale interface only
@@ -676,6 +675,11 @@ yet; it exists so `social_fetch` has somewhere to land (see `ARCHITECTURE.md`
 - OpenCLI 1.8.7 — installed under `~/.hermes/node`, on PATH as `opencli`;
   daemon on `localhost:19825`, Browser Bridge extension connected to that
   Chrome.
+- `nora-social-bridge.service` — `python -m nora.infra.social` (unit in
+  `deploy/social-bridge/`), the read-only HTTP seam the container calls on
+  `127.0.0.1:19826`. It runs the CHECKOUT's code, so it tracks master — an
+  edit on master is a deploy here after a restart. Loopback only: there is no
+  authentication on `/read`; the allowlist is the boundary.
 
 The virtual display is the fix, not a preference: Browser Bridge drives real
 Chrome window APIs, and GNOME RDP reports zero monitors while no client is
@@ -686,10 +690,15 @@ changes nothing.
 **Check or restart:**
 
 ```bash
-systemctl --user status nora-social-desktop nora-social-chrome
+systemctl --user status nora-social-desktop nora-social-chrome nora-social-bridge
 systemctl --user restart nora-social-chrome        # ordinary case — extension reconnects itself
 systemctl --user restart nora-social-desktop       # display itself; Chrome is ordered after it
+systemctl --user restart nora-social-bridge        # the /read seam; cheap and safe
+curl -s http://127.0.0.1:19826/health              # {"ok": true} when the bridge is up
 ```
+
+`social_fetch` answering `unavailable` → check the bridge first (the status
+and health curl above), then `opencli doctor` (below).
 
 After any Chrome restart, confirm the Browser Bridge extension reconnected with
 `opencli doctor` (below) before assuming reads will work.
