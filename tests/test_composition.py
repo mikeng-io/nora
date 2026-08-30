@@ -167,6 +167,7 @@ async def test_the_doctrine_the_root_builds_carries_no_capability_section(cfg):
     # Assert that shape is gone: no bullet that begins with a registered tool
     # name followed by an em-dash.
     import re
+
     from nora.agent.tools import NATIVE_TOOLS
     names = "|".join(re.escape(n) for n in NATIVE_TOOLS)
     assert not re.search(rf"^- ({names}) — ", text, re.MULTILINE), "tool-catalogue line present"
