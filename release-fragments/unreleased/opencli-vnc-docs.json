@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Documentation only — README.md, ARCHITECTURE.md and docs/runbook.md now record the production OpenCLI browser runtime: persistent Xtigervnc :2 + Openbox + headed Chrome as systemd user services (RDP demoted to optional administration), and the intended read-only social_fetch(url) boundary, which is not implemented yet (nor is the host-side bridge, and Threads waits on a native OpenCLI adapter). No code, config, schema or behaviour changes.",
+  "details": [],
+  "limitations": []
+}

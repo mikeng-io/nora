@@ -186,6 +186,40 @@ operator playbook when a doctrine edit misbehaves.
 - **Honcho is best-effort** — if it's down, Nora still replies, just without durable recall.
 - Groups only. DMs and sync messages from Nora's own device are ignored on ingest.
 
+## Unattended browser/OpenCLI runtime
+
+The host also runs a persistent desktop for browser-based social reads. It is
+deliberately separate from the Nora container, and Nora runs fine with all of
+it down — nothing here is wired into her yet.
+
+- **Xtigervnc on display `:2`** (1920x1080, Openbox) as the systemd *user*
+  service `~/.config/systemd/user/nora-social-desktop.service`, started at boot
+  via user lingering. The virtual display is load-bearing: OpenCLI's Browser
+  Bridge extension drives real Chrome window APIs, and GNOME RDP reports zero
+  monitors while no client is connected, so window creation failed there. RDP
+  is now optional administration only — it is not the browser runtime, and the
+  old RDP-based workaround is retired.
+- **Headed Chrome on `DISPLAY=:2`** (`--ozone-platform=x11`, the existing
+  authenticated profile, which holds the Instagram and X sessions) as
+  `~/.config/systemd/user/nora-social-chrome.service`.
+- **OpenCLI 1.8.7** (installed under `~/.hermes/node`, daemon on
+  `localhost:19825`) with the Browser Bridge extension connected to that
+  Chrome. `opencli doctor` passes, and the extension reconnects on its own
+  after a Chrome restart.
+
+A VNC viewer connects over **Tailscale only** (`100.91.183.127:5902`, TLS) and
+may disconnect freely — Xtigervnc, Chrome and OpenCLI all stay alive. The
+viewer is for occasional visual access and login renewal, not for operation.
+The VNC password lives only in the service's private configuration; it is never
+committed.
+
+The intended Nora surface is one constrained, read-only tool —
+`social_fetch(url)`, accepting only X, Instagram and Threads post URLs: no
+profiles, no feeds, and no posting, liking, following, commenting or deleting.
+Reaching OpenCLI from the container will need a narrow host-side bridge that
+**is not implemented yet**, and Threads support waits on a native OpenCLI
+adapter (1.8.7 has none). See `docs/runbook.md` §10 for operating the desktop.
+
 ## Inspecting the buffer
 
 ```bash

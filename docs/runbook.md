@@ -656,3 +656,60 @@ back to 0.14.4.1.
   independently — but Signal unlinks devices after prolonged inactivity, and
   going standalone would require re-registering the number, which logs the phone
   out.
+
+## 10. "The social desktop: VNC, Chrome, OpenCLI"
+
+The browser runtime for (future) social reads is three pieces on the host, all
+systemd **user** services or user installs — none of them is the Nora container,
+and Nora runs fine with all of them down. Nothing here serves a Nora feature
+yet; it exists so `social_fetch` has somewhere to land (see `ARCHITECTURE.md`
+§1's browser-boundary note).
+
+- `nora-social-desktop.service` — `tigervncserver :2 -fg` (Xtigervnc,
+  1920x1080, Openbox), VNC bound to the Tailscale interface only
+  (`-interface 100.91.183.127`, port 5902, TLSVnc). Enabled with user
+  lingering, so it starts at boot with no login.
+- `nora-social-chrome.service` — headed Chrome on `DISPLAY=:2`
+  (`--ozone-platform=x11`) with the authenticated profile holding the
+  Instagram and X sessions. The unit has `Requires=`/`After=` on the desktop
+  service, so systemd already orders Chrome after `:2` exists.
+- OpenCLI 1.8.7 — installed under `~/.hermes/node`, on PATH as `opencli`;
+  daemon on `localhost:19825`, Browser Bridge extension connected to that
+  Chrome.
+
+The virtual display is the fix, not a preference: Browser Bridge drives real
+Chrome window APIs, and GNOME RDP reports zero monitors while no client is
+connected, so window creation failed under RDP. RDP is optional administration
+only now — the old RDP-based workaround is retired, and disconnecting RDP
+changes nothing.
+
+**Check or restart:**
+
+```bash
+systemctl --user status nora-social-desktop nora-social-chrome
+systemctl --user restart nora-social-chrome        # ordinary case — extension reconnects itself
+systemctl --user restart nora-social-desktop       # display itself; Chrome is ordered after it
+```
+
+After any Chrome restart, confirm the Browser Bridge extension reconnected with
+`opencli doctor` (below) before assuming reads will work.
+
+**Occasional visual access / login renewal:** connect a VNC viewer to
+`100.91.183.127:5902`. VNC listens on the Tailscale interface only — not LAN,
+not localhost — so the viewer machine must be on the tailnet. Disconnecting the
+viewer kills nothing: Xtigervnc, Chrome and OpenCLI keep running. Use this when
+a read-only probe reports `logged_in=false` for Instagram or X — log in once by
+hand in that Chrome and the session persists in the profile. The VNC password
+lives only in the service's private configuration — never paste it into the
+repo, an issue, or a chat log.
+
+**Diagnose OpenCLI:**
+
+```bash
+opencli doctor     # daemon on :19825, Browser Bridge extension connectivity
+```
+
+A passing doctor plus a logged-in profile is the whole health story today —
+read-only probes confirmed Instagram and X as `logged_in=true` after the Chrome
+migration. Threads is not checkable at all: OpenCLI 1.8.7 has no native Threads
+adapter, so Threads support is unimplemented, not broken.
