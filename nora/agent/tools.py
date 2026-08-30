@@ -642,6 +642,21 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                               source_tier="remembered", read_only=True),
     "note_create": NativeTool(1),
     "note_update": NativeTool(2),
+    # THE REMEMBER VERB — the one legitimate write lane for 記低 a settled fact
+    # about a person, an Honcho conclusion under (observer=nora, observed=
+    # tagger). Both siblings were closed to it by design: note_create is
+    # TRACKED UNCERTAINTY (never a settled fact, never a description of a
+    # person) and the fact-candidates objective excludes "anything about a
+    # person in this room" — before this tool the model was told 記低, agreed
+    # out loud, and wrote nowhere (live incident 2026-08-29, message id 1932).
+    # Budget 1, like note_create: one write answers the ask; a second is the
+    # model looping on a tool it should have trusted to have worked. Not
+    # `terminal` for the note verbs' reason, which bites harder here: the
+    # write is the MIDDLE of the turn and she still owes the room 「記低咗」.
+    # `read_only` stays False, so the Dreamer (may look, may not act) can
+    # never be granted it. `source_tier=None` like note_create: a write is
+    # not a fact SOURCE — `about`/`ask_memory` are the readers of this lane.
+    "remember": NativeTool(1),
     "make_artifact": NativeTool(1),
     # WHAT SHE IS RUNNING, and what was in each version (DEC-97). ONE verb with
     # two shapes rather than two tools (`weather`'s DEC-72 argument): "咩version"
@@ -800,6 +815,14 @@ _SYNC_POLL_INTERVAL = 1.0
 # `LOAD_TRANSCRIPT_MAX` (60) because a logged tool result is denser than
 # one transcript message.
 _MODALITIES = ("image", "audio", "video")
+
+# The conclusions endpoint's own content bound (Honcho 3.0.11 openapi.json,
+# ConclusionCreate.content: minLength 1 / maxLength 65535). Enforced at the
+# TOOL, not the client, for the same reason note_create surfaces the domain's
+# refusal sentences: a tool-level refusal says what to fix ("shorten it and
+# call again"), where the endpoint's 422 would only surface through the client
+# as a bare `unavailable` that reads like an outage.
+_CONCLUSION_MAX_CHARS = 65535
 
 
 def _modality_of(media_type: str) -> str | None:
@@ -5263,6 +5286,101 @@ def build_tool_specs(
             ],
         }
 
+    async def remember(content: str) -> dict:
+        """Record a settled fact about the person speaking — 記低.
+
+        Somebody tells you something about themselves that is now just TRUE —
+        我屋企有兩隻貓, 我下個月開始返新工 — and being able to recall it later
+        is the whole point. This writes it into your long-term memory about
+        THAT person; `about` and `ask_memory` read that same store back, so
+        what lands here is what you will "remember" tomorrow. Nothing else in
+        your toolset can write a person's settled fact: the note tier refuses
+        them (a note is tracked uncertainty, not a settled fact) and the fact
+        lane excludes descriptions of a person too.
+
+        Check what 「記低 X」 actually is before you reach for anything:
+
+        - a settled fact about the person in front of you → `remember` (this),
+        - still an open question nothing here settles → `note_create`,
+        - has a time attached, happens later → `remind`.
+
+        Three outcomes, and they are not interchangeable:
+
+        - `ok` — it is written down. THIS is the only state in which you may
+          say 「記低咗」.
+        - `refused` — the reason says what to fix; fix it and call again.
+        - `unavailable` — memory is not accepting writes right now. Say you
+          could not write it down. Never claim 「記低咗」 on a refusal or an
+          outage, and never write the thing as a note instead: a failed
+          memory write is not a note, it is a failure, and saying which one
+          it was is the honest answer.
+
+        This is not a transcript (messages are kept already), not a reminder,
+        and not a scratchpad for things somebody might decide later.
+
+        Args:
+            content: The settled fact itself, one line, in the speaker's own
+                words — 「屋企有兩隻貓」, not 「佢同我講咗好多嘢」.
+        """
+        tagger = room.tagger
+        if tagger is None:
+            # Fail-closed on identity, the same refusal `note_create` makes:
+            # without a resolved tagger there is no observed peer to attach
+            # the fact to, and a conclusion written under a guessed peer id
+            # would be a memory about nobody that `about` can never find.
+            _record(metrics, "remember", "refused", reason="no_tagger")
+            return {
+                "status": "refused",
+                "note": "I don't know who you are well enough to attach this "
+                        "to. Say you can't — don't guess.",
+            }
+        text = content.strip()
+        if not text:
+            _record(metrics, "remember", "refused", reason="empty")
+            return {
+                "status": "refused",
+                "note": "There's nothing in that to remember. Say the fact "
+                        "itself, one line.",
+            }
+        if len(text) > _CONCLUSION_MAX_CHARS:
+            # The endpoint's own bound (see `_CONCLUSION_MAX_CHARS`): refuse
+            # with the fix rather than let the write die as an `unavailable`
+            # that reads like memory being down.
+            _record(metrics, "remember", "refused", reason="too_long")
+            return {
+                "status": "refused",
+                "note": f"That's past even a long memory's limit "
+                        f"({_CONCLUSION_MAX_CHARS} characters). Say the fact "
+                        "itself, in one line — then call again.",
+            }
+        try:
+            written = await honcho.conclude(
+                peer_id=ai_peer, target=tagger.honcho_peer_id, content=text,
+            )
+        except Exception:
+            # Belt-and-braces only, the same shape `note_create` carries: the
+            # adapter/double catches everything itself, so this handler is NOT
+            # where the outage is detected. `conclude`'s False on failure is
+            # the real signal; this just keeps a raised error from becoming an
+            # ERROR dressed as a PASS (R-27).
+            log.exception("remember failed")
+            written = False
+        if not written:
+            # THE WHOLE POINT OF THREE STATES: memory got the call and could
+            # not commit it. This is `unavailable` — never a silent success,
+            # and never a fallback to the note tier (a failed conclusion is a
+            # failure; writing it somewhere else would teach tomorrow's `about`
+            # to lie by omission).
+            _record(metrics, "remember", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "My memory isn't accepting writes right now. Say so — "
+                        "don't claim you've remembered it, and don't write it "
+                        "down as a note instead.",
+            }
+        _record(metrics, "remember", "ok")
+        return {"status": "ok", "person": tagger.name}
+
     async def note_create(
         title: str, description: str, uncertainty: str, closing_condition: str,
         body: str, anchor_date: int | None = None,
@@ -5824,6 +5942,7 @@ def build_tool_specs(
         _spec("note_search", note_search),
         _spec("note_create", note_create),
         _spec("note_update", note_update),
+        _spec("remember", remember),
         _spec("make_artifact", make_artifact),
         _spec("version", version),
         _spec("send_reply", send_reply),

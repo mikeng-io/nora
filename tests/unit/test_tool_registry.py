@@ -89,6 +89,8 @@ def test_the_registry_exposes_every_declared_tool():
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
         "note_read", "note_search", "note_create", "note_update",
+        # The remember verb — the conclusion write lane (2026-08-30).
+        "remember",
         # The knowledge tier's retrieval verb (23 §9).
         "search_knowledge",
     }
@@ -211,6 +213,10 @@ def test_budgets_match_todays_table():
         # meaningful: under one `note_write` an accidental create would spend
         # the revision budget instead.
         "note_read": 3, "note_search": 2, "note_create": 1, "note_update": 2,
+        # 1, like `note_create`: one write answers the ask; a second call is the
+        # model looping on a tool it should have trusted to have worked (the
+        # remember verb's write lane, 2026-08-30).
+        "remember": 1,
         "search_knowledge": 2,
     }
 
@@ -528,6 +534,9 @@ ACT_VERBS = frozenset({
     # verb that forgets the flag fails the classification test by name; these
     # two are acts and belong here.
     "note_create", "note_update",
+    # The remember verb (2026-08-30): writing a Honcho conclusion is a write —
+    # the Dreamer may never be granted it, same as the note verbs.
+    "remember",
     # Discord-only music (design/discord-music/07-agent-tool.md) — every verb
     # but `music_status` mutates the voice session or its queue.
     "play_music", "skip_music", "top_music", "stop_music",

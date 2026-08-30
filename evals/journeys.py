@@ -83,6 +83,36 @@ SEED_JOURNEYS: tuple[Journey, ...] = (
             "context): a saved-label question answered with a location fix."
         ),
     ),
+    # The remember write lane (live 2026-08-29, message id 1932): Nora said
+    # 「記低咗」 and wrote nowhere, because 記低 had no tool at all. Journeys in
+    # BOTH directions — the write, and the recall that reads it back — because
+    # the failure the pair exists to prevent is precisely the confusion
+    # between them: answering a recall ask by writing, or an ask-to-remember
+    # by reading (or by nothing at all).
+    Journey(
+        intent=Intent(name="remember", required=frozenset({"remember"}), budget=1),
+        message="記低: 我屋企有兩隻貓",
+        note=(
+            "A settled fact about the SPEAKER, stated with 記低. Correct: the "
+            "`remember` conclusion write — the ONE lane for a person's settled "
+            "fact (a note refuses person descriptions by design, notes are "
+            "tracked uncertainty; a fact row excludes them too). The trap is "
+            "`note_create` — writing the wrong lane after agreeing out loud. "
+            "Budget 1: the write is the whole ask; she still owes the room "
+            "「記低咗」 as her reply, which is send_reply's job."
+        ),
+    ),
+    Journey(
+        intent=Intent(name="about_recall", required=frozenset({"about"}), budget=2),
+        message="記唔記得我屋企有咩動物?",
+        note=(
+            "The READ half of the same pair: a recall ask. Correct: `about` — "
+            "read back what has been concluded about the speaker. The trap is "
+            "`remember`: answering 記唔記得 by WRITING is the sibling leak the "
+            "remember-about edge exists to catch — a recall ask must never "
+            "become a write. Budget 2: one read, room for one retry."
+        ),
+    ),
 )
 
 
@@ -115,6 +145,17 @@ PARAPHRASE_JOURNEYS: tuple[Journey, ...] = (
         note=(
             "A saved-place question (the company/office this household saved) phrased "
             "as «公司地址», not «返工» — routes to `saved_places`, trap `where_is`."
+        ),
+    ),
+    Journey(
+        intent=Intent(name="remember_alt", required=frozenset({"remember"}), budget=1),
+        message="幫我記住, 我屋企有兩隻貓.",      # 記住 — a held-out phrasing, not the seed's 記低
+        note=(
+            "The remember write held out from the seed's literal trigger word: "
+            "「記住」 instead of 「記低」, same settled-person-fact intent → "
+            "`remember`, trap `note_create`. A model that only learned the seed's "
+            "phrase says 「好」 and writes nowhere; the rule generalizes or it "
+            "does not."
         ),
     ),
 )

@@ -791,6 +791,20 @@ class MemoryStore(Protocol):
         metadata: dict[str, object] | None = None,
     ) -> bool: ...
 
+    # The conclusion WRITE lane (the `remember` tool's method): one settled
+    # fact about `target`, stored as `(observer=peer_id, observed=target)` —
+    # the exact pair `representation` reads back, so what is written is
+    # readable the moment the write lands, with no second scope in between.
+    # No conversation/session key on purpose: the read lane is workspace-wide
+    # by design (see `representation`), so the write is too, and disclosure
+    # stays the room roster's job at the tool layer. Bare best-effort `bool`
+    # like `feed` — never load-bearing, never retried (see the module
+    # docstring on `feed`'s asymmetry with `SendResult`).
+    async def conclude(
+        self, *, peer_id: str, content: str, target: str,
+        workspace_id: str | None = None,
+    ) -> bool: ...
+
     async def peer_card(self, *, peer_id: str) -> list[str]: ...
 
     # `peer_id` is the OBSERVER, `target` the OBSERVED (design/24 §4). With
