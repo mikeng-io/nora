@@ -29,29 +29,11 @@ def _bodies(assembled: str) -> list[str]:
 # line landed.
 
 
-def test_the_capability_section_is_generated_and_sits_between_conduct_and_constraints():
-    """design/17 §4/§7b: constraint -> identity/voice -> conduct -> capability.
-
-    There is no file. The section exists only because the composition root hands
-    the store `ToolRegistry.capability()`, which is what makes "adding a tool
-    changes what she believes she can do" true by construction rather than by
-    somebody remembering.
-    """
-    store = DoctrineStore(SHIPPED, canary="C", strict=True,
-                          tool_names=ToolRegistry().tool_names(),
-                          capability=ToolRegistry().capability(), metrics=Metrics())
-    doctrine = store.get()
-    assert [s.name for s in doctrine.sections] == \
-        ["identity", "voice", "silence", "conduct", "capability", "constraints"]
-    generated = next(s for s in doctrine.sections if s.name == "capability")
-    assert generated.kind == "capability"
-    assert not generated.path.exists()
-    assert '<section kind="capability" name="capability"' in doctrine.doctrine_text
-
-
 def test_without_a_generated_block_there_is_no_capability_section_at_all():
     """Never a placeholder, and never a stale one. If nothing generated it, the
-    prompt says nothing about capability rather than something out of date."""
+    prompt says nothing about capability rather than something out of date.
+    DEC-150: nothing ever generates it now — this is simply the always-true
+    state, and the test is the invariant that keeps it that way."""
     doctrine = DoctrineStore(SHIPPED, canary="C", strict=True, metrics=Metrics()).get()
     assert [s.name for s in doctrine.sections] == \
         ["identity", "voice", "silence", "conduct", "constraints"]

@@ -153,22 +153,23 @@ async def test_dependencies_builds_a_games_client_when_pulse_api_token_is_set(cf
     assert deps.games_client is not None
 
 
-async def test_the_doctrine_the_root_builds_carries_the_generated_capability(cfg):
-    """DEC-29: the composition root is where the registry meets the doctrine.
+async def test_the_doctrine_the_root_builds_carries_no_capability_section(cfg):
+    """DEC-150: the composition root must no longer wire a capability block.
 
-    Everything else about the capability section is testable in isolation and
-    means nothing if this wiring is missing — the store would assemble four
-    sections, the prompt would say nothing about what she can do, and every
-    unit test would still pass. So: the REAL graph, the REAL registry, and the
-    assembled block asserted to name every registered tool.
-    """
-    from nora.agent.registry import ToolRegistry
-
+    The store assembles only the authored sections; the schema is the single
+    source of truth for what she can do. If the root starts passing a
+    capability= argument again, the generated section reappears and this
+    reddens (and `DoctrineStore` no longer even accepts the parameter)."""
     deps = await build_dependencies(cfg)
     text = deps.doctrine.doctrine_text
-    assert '<section kind="capability" name="capability"' in text
-    for name in ToolRegistry().tool_names():
-        assert f"- {name} — " in text, f"{name} is registered but not in the doctrine"
+    assert '<section kind="capability"' not in text
+    # The capability block's signature line was "- <tool> — <when clause>".
+    # Assert that shape is gone: no bullet that begins with a registered tool
+    # name followed by an em-dash.
+    import re
+    from nora.agent.tools import NATIVE_TOOLS
+    names = "|".join(re.escape(n) for n in NATIVE_TOOLS)
+    assert not re.search(rf"^- ({names}) — ", text, re.MULTILINE), "tool-catalogue line present"
 
 
 async def test_the_runtime_context_carries_the_configured_language_tag(cfg):

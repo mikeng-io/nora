@@ -110,7 +110,6 @@ async def test_doctrine_route_returns_the_shipped_sections_in_order(client):
         "voice",
         "silence",
         "conduct",
-        "capability",
         "constraints",
     ]
     assert set(body[0]) == {"name", "description", "version", "body"}

@@ -80,12 +80,12 @@ class ToolRegistry:
     enforces.
 
     It is DEFAULT-CONSTRUCTED rather than required. `nora.app.eval_support`
-    builds three throwaway registries purely to read `budgets()`,
-    `tool_names()` and `capability()`, none of which touches a socket — and a
-    required parameter there would either force those to invent one or tempt
-    the next author into an optional `None` that silently makes `transit`
-    answer `unavailable` forever. Constructing one costs nothing: no session
-    opens and no catalogue is fetched until a tool is actually called.
+    builds throwaway registries purely to read `budgets()` and `tool_names()`,
+    neither of which touches a socket — and a required parameter there would
+    either force those to invent one or tempt the next author into an optional
+    `None` that silently makes `transit` answer `unavailable` forever.
+    Constructing one costs nothing: no session opens and no catalogue is
+    fetched until a tool is actually called.
     """
 
     def __init__(
@@ -417,40 +417,6 @@ class ToolRegistry:
         """
         return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.read_only)
 
-    def live_only_tools(self) -> tuple[str, ...]:
-        """The tools whose answer describes THIS instant and nothing else (design/14 §5.1).
-
-        `time_shiftable is False`, not falsy — the field is three-valued and
-        `None` (no time dimension at all) must not land in this set. Written as
-        an identity check for that reason; `not spec.time_shiftable` would sweep
-        in `calculate` and have the model told that arithmetic goes stale.
-
-        Read by `capability()` below and nowhere else today. It is a tuple in
-        table order rather than a frozenset because the only consumer renders
-        it into a sentence, and a set would reorder that sentence between runs
-        of the same build.
-        """
-        return tuple(
-            name for name, spec in NATIVE_TOOLS.items() if spec.time_shiftable is False
-        )
-
-    def web_tier_tools(self) -> tuple[str, ...]:
-        """The tools whose answer comes from the OPEN WEB (`source_tier == "web"`),
-        in table order (E1/DEC-77).
-
-        Read by `capability()` to render the sourcing sentence — the one nudge
-        that names the last-resort tier explicitly so the priority
-        confirmed → remembered → web is stated, not merely implied. Table order,
-        a tuple, for the same reason `live_only_tools` is: its only consumer
-        renders it into a sentence and a set would reorder that sentence between
-        builds. `web` rather than the whole `source_tier` partition because the
-        sentence only needs to NAME the tier the model over-reached into; the
-        closer tiers it describes by category, and a tool that grows a second web
-        verb joins this set (and the sentence) for free."""
-        return tuple(
-            name for name, spec in NATIVE_TOOLS.items() if spec.source_tier == "web"
-        )
-
     def tool_names(self) -> tuple[str, ...]:
         """Every registered tool's name, for the doctrine loader's catalogue gate.
 
@@ -460,118 +426,10 @@ class ToolRegistry:
 
         Plugin tools (`spec.plugin`, DEC-50) are EXCLUDED: `skills` is not a tool
         this registry builds, and the catalogue gate exists to stop an authored
-        `identity`/`conduct` file naming a tool the registry generates the
-        capability copy for. `skills` is not in that capability copy (see
-        `capability()`), so it does not belong in the gate's list either."""
+        `identity`/`conduct` file naming a tool it does not have. `skills` is not
+        built or described here (see `specs()`), so it does not belong in the
+        gate's list either."""
         return tuple(name for name, spec in NATIVE_TOOLS.items() if not spec.plugin)
-
-    def capability(self) -> str:
-        """The capability section, GENERATED (design/17 §5).
-
-        The `kind: capability` body handed to `DoctrineStore`. There is no file
-        and there must never be one: capability's source of truth is the
-        registry, so any authored copy is a cache, and a cache with no
-        invalidation is how `soul.md` spent eight weeks telling Nora she knew
-        two things when she knew five.
-
-        **Not a schema dump, and the distinction is the whole design.** The
-        schemas are already in the request — measured at 1,222 tokens, 25% of
-        the call — and they state, verbatim, what each tool does and what it
-        takes. Repeating any of that here would be paid twice for nothing. This
-        block adds exactly the one thing a schema has no slot for: when to reach
-        for a tool *in this situation*. That is `NativeTool.when`, one clause
-        each, and nothing else.
-
-        Rendered from the same table `build_tool_specs` populates every
-        `ToolSpec.when` from, so the block and the tools cannot describe
-        different sets. `tests/unit/test_tool_registry.py` pins that in both
-        directions against real specs.
-
-        Plugin tools (`spec.plugin`, DEC-50) are EXCLUDED. `skills` is provided
-        by `AgentSkills` and describes itself through the plugin's own
-        `<available_skills>` block, injected only where the plugin is wired
-        (`nora.agent.factory`). This method also feeds the offline/eval
-        compositions, which build the capability block but supply their own
-        runner and never wire the plugin — a `- skills — ...` line there would
-        promise a tool that composition does not have."""
-        lines = [
-            f"- {name} — {spec.when}"
-            for name, spec in NATIVE_TOOLS.items()
-            if not spec.plugin
-        ]
-        # One sentence for `time_shiftable is False` (design/14 §5.1). It is
-        # rendered rather than hand-written for the reason the rest of this
-        # block is: `soul.md` spent eight weeks telling Nora she knew two things
-        # when she knew five, and a hand-kept list of live-only tools would rot
-        # the same way the moment `route()` lands with `arrive_by`.
-        live_only = self.live_only_tools()
-        clock = (
-            f"{' and '.join(live_only)} describe this moment only — their answers are "
-            "already wrong for any other time, so never quote one to answer about "
-            "later.\n" if live_only else ""
-        )
-        # The sourcing nudge (E1/DEC-77): a TWO-level ordering — your own sources
-        # (confirmed AND remembered, together) before the open web. Named from the
-        # `web` tier (rendered, so it cannot rot); the two closer tiers are
-        # described by category rather than enumerated, to stay one sentence in a
-        # block paid on every call. The model was web-searching a mall's hours and
-        # answering "dunno" about a saved place — a closer source existed for both.
-        #
-        # Deliberately NOT "confirmed → remembered → web": confirmed vs remembered
-        # is PROVENANCE, not precedence. Within the location cluster remembered
-        # must sometimes OUTRANK confirmed — "我邊度返工" wants the saved «work»
-        # (remembered `saved_places`) over a live GPS fix (confirmed `where_is`) —
-        # so ranking confirmed above remembered would push toward that exact trap
-        # (external review, 2026-08-10). The precedence the model needs is only
-        # own-over-web; which own source fits is the tool's own `when` clause.
-        web = self.web_tier_tools()
-        # Singular/plural agreement is not decoration here: `web_fetch` joining
-        # the tier (DEC-116) makes `web` two long, and "web_search, which
-        # reaches..." reading as a garden-path plural would be exactly the kind
-        # of sentence a model reads past.
-        web_verb = "reaches" if len(web) == 1 else "reach"
-        web_be = "is" if len(web) == 1 else "are"
-        sourcing = (
-            f"When a fact could come from more than one place, prefer your own: a "
-            f"Hong Kong thing you can confirm (the weather, a place, a bus, a route) "
-            f"and a place or person this household has named or saved both come before "
-            f"{' or '.join(web)}, which {web_verb} the open web and {web_be} the last "
-            f"resort, not the first move.\n" if web else ""
-        )
-        # The CLOSED-WORLD clause (DEC-90). The list above is what she can do,
-        # and until now nothing said it was the WHOLE of what she can do — so a
-        # restaurant answer ended «講清楚我幫你睇埋使唔使訂位», offering to check a
-        # booking, which no tool here does and none is planned. That is the same
-        # class as guessing a location: asserting a fact about the world (that
-        # she will find this out) with nothing behind it.
-        #
-        # It lives HERE rather than in an authored file for the reason the rest
-        # of this block does: the sentence is only true relative to the
-        # registry, so an authored copy would be a claim about the tool table
-        # maintained somewhere the tool table cannot reach — which is precisely
-        # how `soul.md` spent eight weeks saying she knew two things. Written in
-        # terms of "the list above" so that adding a booking tool makes it true
-        # again with no edit at all.
-        #
-        # Phrased as a rule about OFFERS, not about knowledge. She may always
-        # say she does not know something; what she may not do is promise a
-        # future act she has no way to perform. The `not_here` boundary in
-        # `conduct.md` keeps that rule out of the authored files.
-        return (
-            "These are the tools you were given. Their schemas say what each one "
-            "takes; this says when to reach for it.\n" + "\n".join(lines) + "\n"
-            + clock + sourcing +
-            "That list is the WHOLE of what you can do — there is nothing else you can "
-            "go and check, and no request you can put in on somebody's behalf. Never "
-            "offer, promise or volunteer an action that is not one of the things above: "
-            "no booking a table, no phoning anyone, no ordering, no buying, no filling "
-            "anything in, and nothing you will \"look into\" later. If someone wants one "
-            "of those, say plainly that they have to do it themselves and give them what "
-            "you DO have that helps.\n"
-            "The things here that reach outside this conversation are live bus data "
-            "and routing (a paid map service). When you cannot find something out, say "
-            "so in one clause and move on."
-        )
 
     def specs(
         self,

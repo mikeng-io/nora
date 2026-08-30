@@ -1007,7 +1007,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         trigger=cfg.engagement.trigger.text,
         language_hint=cfg.doctrine.language_hint,
         tool_names=ToolRegistry().tool_names(),
-        capability=ToolRegistry().capability(),
         metrics=metrics,
     )
     try:
@@ -1333,7 +1332,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # while the per-call timeout stayed derived from 4: 8 x 18 s = 144 s
             # against a 120 s loop, which is R-33's silent `invocation_timeout`
             # coming back. A throwaway registry is how this file already reads
-            # `tool_names()`/`capability()` above; `budgets()` is the one
+            # `tool_names()`; `budgets()` is the one
             # resolver, so this asks it.
             budget=ToolRegistry(
                 budget_overrides=cfg.llm.budgets).budgets()["media_fetch"],

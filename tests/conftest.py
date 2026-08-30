@@ -78,7 +78,6 @@ def build_test_doctrine_store() -> DoctrineStore:
         canary=DOCTRINE_CANARY, display_name=DOCTRINE_DISPLAY_NAME,
         trigger=DOCTRINE_TRIGGER, language_hint="zh-HK",
         tool_names=ToolRegistry().tool_names(),
-        capability=ToolRegistry().capability(),
         metrics=Metrics(),
     )
 

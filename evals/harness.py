@@ -34,7 +34,6 @@ from pathlib import Path
 import yaml
 
 from nora.app.eval_support import (
-    CAPABILITY_BLOCK,
     TOOL_NAMES,
     DoctrineStore,
     Metrics,
@@ -266,7 +265,7 @@ async def run_case(
         DOCTRINE_DIR, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
         canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         trigger=cfg.engagement.trigger.text, language_hint=cfg.doctrine.language_hint,
-        tool_names=TOOL_NAMES, capability=CAPABILITY_BLOCK, metrics=metrics,
+        tool_names=TOOL_NAMES, metrics=metrics,
     )
 
     with tempfile.TemporaryDirectory(prefix="nora-eval-") as tmp:

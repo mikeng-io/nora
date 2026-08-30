@@ -2,8 +2,8 @@
 demand (design/12 §1, authority item 5).
 
 **Why this is not the doctrine loader.** `nora.doctrine.loader` assembles the
-files that go into `system_prompt=` on EVERY turn: who she is, how she behaves,
-the generated capability block. A skill is the opposite shape. design/12 §1's
+files that go into `system_prompt=` on EVERY turn: who she is, how she behaves.
+A skill is the opposite shape. design/12 §1's
 placement rule is "if it is needed on every turn it is a prompt … if it is
 instructions for a domain that is usually irrelevant it is a skill", and a skill
 costs a tool call to activate (design/12 §4). So a skill's BODY must not sit in

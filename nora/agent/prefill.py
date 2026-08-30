@@ -175,12 +175,15 @@ def _context_header(context_window: int, header: str = TAG_HEADER) -> str:
     it was that `ToolSpec` had nothing to generate FROM: every native tool ships
     `description=""` and lets Strands derive the model-facing text from the
     callable's docstring, so a generated block would have been a bare name list.
-    That was a missing field, not a reason. `ToolSpec.when` is that field, and
-    the catalogue is now `ToolRegistry.capability()` — one derived section, in
-    the doctrine, from the same table the schemas come from.
+    That was a missing field, not a reason. The registry gained a per-tool
+    routing clause, and the doctrine gained one derived section generated from
+    it — same table the schemas come from. DEC-150 then deleted both: the
+    schemas already carried the routing trigger (measured 85% overlap), the
+    closed-world and sourcing rules moved to conduct.md, and the derived
+    `kind: capability` tier is gone with its loader machinery.
 
     What is left here is the only thing that was never derivable: what each
-    BLOCK in front of her is, and where she is. Situation, not capability.
+    BLOCK in front of her is, and where she is. Situation, not catalogue.
     `tests/test_prefill.py::test_the_header_names_no_tool_at_all` is what keeps
     the catalogue from growing back.
     """

@@ -148,7 +148,7 @@ def _ctx() -> TagContext:
 
 async def _run_tag(runner: LiveAgentRunner, tag: str) -> None:
     tool = adapt(ToolSpec(name="now", description="", schema={}, call=_now,
-                          when="the stub turn needs a tool", budget=2, terminal=True))
+                          budget=2, terminal=True))
     await runner.invoke(
         doctrine=_doctrine(tag), tools=[tool], pre_fill=[],
         guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,

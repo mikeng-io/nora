@@ -502,12 +502,17 @@ def test_none_of_the_three_is_a_terminal_verb():
 
 
 def test_the_three_tools_are_described_to_the_model():
-    """The capability block is generated from the same table the tools are
-    built from (DEC-29), so a tool she has but is never told when to reach for
-    is the `soul.md` failure that block exists to prevent."""
-    block = ToolRegistry().capability()
-    for name in ("remind", "list_reminders", "cancel_reminder"):
-        assert f"- {name} — " in block
+    """Each reminder tool's SCHEMA docstring must state WHEN to reach for it —
+    the schema is the single source of truth (DEC-150; the generated capability
+    block that used to carry the routing triggers is gone). The triggers must
+    be distinct per tool, not generic boilerplate."""
+    tool_calls = _tools()
+    docs = {name: (tool_calls[name].__doc__ or "") for name in
+            ("remind", "list_reminders", "cancel_reminder")}
+    # The routing trigger is the "Call this when…" / "Call off…" sentence.
+    assert "asks you to remember a thing" in docs["remind"]
+    assert "asks what's set" in docs["list_reminders"]
+    assert "by the id" in docs["cancel_reminder"]
 
 
 # ---- the counter's own documentation ----------------------------------------

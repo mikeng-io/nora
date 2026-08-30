@@ -1,9 +1,9 @@
 """Who each doctrine file is assembled for.
 
 Every authored file used to be `applies_to: [tag]`, so a non-tag turn would have
-received only the generated capability section: no identity, no voice, no
+received only the minimal non-tag sections: no identity, no voice, no
 conduct, no constraints — and `LeakGuard`'s verbatim-leak corpus (R-6) would
-have shrunk to that one block on the very path that first speaks unprompted.
+have been far thinner on the very path that first speaks unprompted.
 
 The split that makes a second audience possible is smaller than it looks.
 `# Silence is the default` was not homogeneous: its first three sentences are
@@ -47,7 +47,7 @@ def _bodies(store: DoctrineStore, audience: str) -> str:
 def test_the_heartbeat_audience_is_not_degenerate(doctrine_store):
     """All four authored files must reach a non-tag turn. Without this she
     delivers with no persona and no constraints, and LeakGuard's verbatim-leak
-    corpus shrinks to the capability block."""
+    corpus is missing the identity and conduct rules."""
     text = doctrine_store.get(applies_to="heartbeat").text
     for name in AUTHORED:
         assert f'name="{name}"' in text, f"{name} missing from the heartbeat audience"

@@ -77,29 +77,19 @@ class ToolSpec:
         `route(origin, destination, mode, arrive_by)` (design/14 §3) is the
         first, and `arrive_by` is the point of it.
 
-    `ToolRegistry.live_only_tools()` reads the `False` set and the generated
-    capability block names them, so the distinction reaches the model instead of
-    sitting in a table nothing renders.
-
-    `when` is the one thing a schema cannot say, and it has NO DEFAULT on
-    purpose (design/17 §5). The schema already states what a tool does —
-    verbatim, a few hundred tokens later in the same request, measured at 1,222
-    tokens for the set — so repeating any of that is pure cost. What it cannot
-    state is when to reach for this one *in this situation*: «people who have
-    not spoken are still here», «call it once, at the end, or nothing is sent».
-    That sentence used to be hand-written twice, in `conduct.md` and in
-    `_context_header`, with nothing keeping either in step with the registry;
-    one of them was stale by four tools when it was deleted. It is now a field
-    on the spec the schemas themselves come from, so a new tool cannot be
-    registered without saying when to use it — the constructor raises rather
-    than defaulting to silence.
+    The `False` set is the per-tool declaration that its answer describes this
+    instant and decays. Its one renderer — `ToolRegistry.live_only_tools()`,
+    which fed the generated capability block — was deleted with that block
+    (DEC-150), but the declaration stays: it is the tool's own statement, read
+    straight off the table, and
+    `tests/unit/test_tool_registry.py::test_every_tool_declares_a_time_axis`
+    pins the values.
     """
 
     name: str
     description: str
     schema: dict
     call: Callable[..., Awaitable[Any]]
-    when: str
     budget: int = 1
     terminal: bool = False
     time_shiftable: bool | None = None

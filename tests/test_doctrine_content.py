@@ -70,7 +70,7 @@ def test_every_shipped_file_says_what_it_must_not_contain():
     """
     for section in _shipped().get().sections:
         assert len(section.not_here) > 40, section.name
-        assert ".md" in section.not_here or "registry" in section.not_here, section.name
+        assert ".md" in section.not_here or "schema" in section.not_here, section.name
 
 
 def test_voice_is_the_operators_alone():
@@ -152,7 +152,8 @@ def test_voice_carries_no_feminine_speech_markers():
 
 
 def test_no_doctrine_file_carries_a_tool_catalogue():
-    """The doctrine names CAPABILITIES; only `_context_header` names tools.
+    """The doctrine names CAPABILITIES in category terms; the schemas name
+    tools.
 
     This replaces `test_conduct_names_the_three_tools_and_no_others`, whose
     name promised the assertion it never made: it checked that three tools were
@@ -216,8 +217,8 @@ def test_identity_makes_no_claim_about_what_she_can_find_out():
     It began life saying "Two things, and only these", which was true when she
     had two tools and false the day she had five, silently, for eight weeks. The
     fix in DEC-28 was to rewrite the claim; the fix here is that identity does
-    not get to make one. The section is gone and what replaces it is generated
-    (`ToolRegistry.capability()`), so the sentence has no way to be wrong.
+    not get to make one. The section is gone and what describes her reach are
+    the tool schemas (DEC-150), so the sentence has no way to be wrong.
     """
     text = (DOCTRINE_DIR / "identity.md").read_text()
     body = text.split("---", 2)[2]

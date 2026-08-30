@@ -156,20 +156,19 @@ def test_every_declared_tool_is_built(wiring):
     }
 
 
-def test_read_peer_card_is_gone_from_the_table_and_the_capability_block():
+def test_read_peer_card_is_gone_from_the_table():
     """DEC-44: `read_peer_card` was R-21's last structural violation — its only
     parameter was a raw platform id the model is never shown, and it was not
     room-scoped, so a model that guessed another person's id pulled their card
     across conversation boundaries. It is deleted. This pins the deletion in
-    both places a tool can exist: `NATIVE_TOOLS` (what makes a tool callable at
-    all — R-7 default-denies anything absent) and the generated capability
-    block the doctrine carries. Re-adding the tool turns this red."""
-    from nora.agent.registry import ToolRegistry
+    the two places a tool can exist: `NATIVE_TOOLS` (what makes a tool callable
+    at all — R-7 default-denies anything absent) and the budgets table. (The
+    capability block that used to be a third assertion was deleted in DEC-150.)
+    Re-adding the tool turns this red."""
     from nora.agent.tools import NATIVE_TOOLS
 
     assert "read_peer_card" not in NATIVE_TOOLS
     assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
-    assert "read_peer_card" not in ToolRegistry().capability()
 
 
 def test_exactly_seven_tools_are_cacheable():

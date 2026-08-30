@@ -1605,8 +1605,8 @@ async def test_recall_asks_about_the_tagging_message_without_being_told_it():
 class _RaisedCap(ToolRegistry):
     """The real registry with ONE number changed: `send_reply`'s budget.
 
-    Subclassed rather than replaced by a fake, so `build()`, `terminal_tools()`
-    and `capability()` are all still the production ones and a scenario runs
+    Subclassed rather than replaced by a fake, so `build()` and
+    `terminal_tools()` are all still the production ones and a scenario runs
     the real tools against the real guard. Raising this number is exactly what
     an operator does to enable multi-message
     (`NATIVE_TOOLS["send_reply"].budget`, DEC-32) — it is not a second cap,
