@@ -101,7 +101,7 @@ class OpenCliBridgeClient(SocialProvider):
         if "data" not in payload:
             log.warning("social bridge ok envelope carries no data")
             return dict(_UNAVAILABLE)
-        content = json.dumps(payload["data"], ensure_ascii=False)
+        content = _render_text(payload["data"])
         clamped, truncated = _clamp_chars(content, self._content_max_chars)
         url = payload.get("source_url")
         url = str(url) if url else None
@@ -118,11 +118,93 @@ class OpenCliBridgeClient(SocialProvider):
         return out
 
 
+def _render_text(data: Any) -> str:
+    """opencli's JSON → compact readable text (what the model reads natively).
+
+    The bridge returns opencli's raw parser output — for `thread` a list of
+    post dicts (first = the post, rest of the thread), for `profile` a
+    single-item list, for `tweets`/`search` a list. json.dumps-ing that to the
+    model buries it under two layers of escaping, and a raw char clamp tears
+    mid-record, so the model reads "empty". This renders the same data as the
+    few lines a person would actually read; the char clamp below then cuts at
+    an item boundary rather than mid-JSON.
+    """
+    items = data if isinstance(data, list) else [data]
+    parts = []
+    for item in items:
+        if not isinstance(item, dict):
+            parts.append(str(item))
+            continue
+        parts.append(_render_item(item))
+    return "\n\n".join(p for p in parts if p)
+
+
+def _render_item(item: dict) -> str:
+    """One opencli item → readable lines, unknown keys ignored gracefully.
+
+    Both post items (`author`, `text`, `likes`, …) and profile items
+    (`screen_name`, `bio`, `followers`, …) reduce to the same shape: who ·
+    what they say · the numbers · when · the URL. Keys present in one kind are
+    simply absent in the other, so a single tolerant renderer serves all of
+    `what` rather than four kind-specific formatters drifting apart.
+    """
+    handle = item.get("author") or item.get("screen_name")
+    name = item.get("name")
+    if handle and name and name != handle:
+        head = f"{handle} ({name})"
+    elif handle:
+        head = str(handle)
+    elif name:
+        head = str(name)
+    else:
+        head = ""
+    if item.get("verified"):
+        head = f"{head} ✓" if head else "verified"
+    body = item.get("text") or item.get("bio") or ""
+    stats = [
+        f"{item[key]} {label}"
+        for label, key in (
+            ("likes", "likes"), ("retweets", "retweets"), ("replies", "replies"),
+            ("views", "views"), ("followers", "followers"),
+            ("following", "following"), ("tweets", "tweets"),
+        )
+        if isinstance(item.get(key), int)
+    ]
+    if item.get("location"):
+        stats.append(f"📍 {item['location']}")
+    if item.get("created_at"):
+        stats.append(str(item["created_at"]))
+    lines = [line for line in (head, body) if line]
+    if stats:
+        lines.append(" · ".join(stats))
+    if item.get("url"):
+        lines.append(str(item["url"]))
+    qt = item.get("quoted_tweet")
+    if isinstance(qt, dict) and qt.get("text"):
+        # The quoted post is often the substance (a claim the author is
+        # replying to), so one compact line of it rides along.
+        qt_text = str(qt.get("text"))
+        qt_head = f"quoted @{qt.get('author')}" if qt.get("author") else "quoted"
+        lines.append(f"[{qt_head}: {qt_text[:200]}]")
+    return "\n".join(lines)
+
+
 def _clamp_chars(text: str, max_chars: int) -> tuple[str, bool]:
-    """Clamp `text` to `max_chars`, stating whether it was truncated."""
+    """Clamp `text` to `max_chars`, preferring an item boundary (`\\n\\n`).
+
+    Truncating mid-record is what made the raw JSON unreadable — a post's
+    `text` field severed from its closing brace. Rendered text is more
+    forgiving, but cutting at an item separator keeps the first post (and its
+    `text`) whole whenever the budget allows; the result is readable text,
+    not valid JSON, which is the point.
+    """
     if len(text) <= max_chars:
         return text, False
-    return text[:max_chars], True
+    cut = text[:max_chars]
+    sep = cut.rfind("\n\n")
+    if sep > 0:
+        cut = cut[:sep].rstrip()
+    return cut + " …", True
 
 
 _UNAVAILABLE: dict[str, Any] = {
