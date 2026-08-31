@@ -406,7 +406,7 @@ class OpenGraphPreviewSource:
             content_type = (response.headers.get("Content-Type") or "").split(";")[0].strip()
             if not content_type.lower().startswith("image/"):
                 return None
-            data = await response.content.read(self._image_max_bytes + 1)
+            data = await _read_limited(response.content, self._image_max_bytes)
         if len(data) > self._image_max_bytes:
             log.info("preview image over %d bytes, dropping it", self._image_max_bytes)
             return None
@@ -426,6 +426,28 @@ class OpenGraphPreviewSource:
             log.info("preview image body was empty, dropping it")
             return None
         return content_type, data
+
+
+async def _read_limited(stream: aiohttp.StreamReader, limit: int) -> bytes:
+    """Read a response body up to `limit` bytes, WITHOUT truncating early.
+
+    `StreamReader.read(n)` returns as soon as the FIRST buffered chunk
+    arrives — it does not wait for `n` bytes or EOF. A CDN that streams in
+    small packets would hand back a truncated body that the `len(data) >
+    limit` check below then misses. Loop until EOF or the ceiling so the
+    size check is a measurement, not a first-packet guess.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await stream.read(65536)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            return b"".join(chunks) + chunk
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 # No cookies, no auth, no referer — see the module docstring's residual-risk

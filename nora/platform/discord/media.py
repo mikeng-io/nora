@@ -131,7 +131,7 @@ class DiscordMediaSource:
                 declared = resp.content_length
                 if declared is not None and declared > self._max_bytes:
                     return MediaBytes(available=False, reason="too_large")
-                data = await resp.content.read(self._max_bytes + 1)
+                data = await _read_limited(resp.content, self._max_bytes)
         except Exception as exc:                                   # noqa: BLE001
             # Blind and narrowly scoped: every transport failure is the same
             # answer to this caller, and the port forbids raising.
@@ -144,3 +144,26 @@ class DiscordMediaSource:
             # applies to its base64.
             return MediaBytes(available=False, reason="too_large")
         return MediaBytes(available=True, data=data)
+
+
+async def _read_limited(stream: aiohttp.StreamReader, limit: int) -> bytes:
+    """Read a response body up to `limit` bytes, WITHOUT truncating early.
+
+    `StreamReader.read(n)` returns as soon as the FIRST buffered chunk
+    arrives — it does not wait for `n` bytes or EOF. Discord's CDN streams
+    attachments in ~1.4 KB packets, so `read(max_bytes + 1)` on a 2.3 MB
+    image returned 1.4 KB and the truncated body was stored as if complete
+    (DEC-118 live defect, 2026-08-31). Loop until EOF or the ceiling, so a
+    body larger than `limit` is detected by MEASUREMENT, not by luck.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await stream.read(65536)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            return b"".join(chunks) + chunk
+        chunks.append(chunk)
+    return b"".join(chunks)
