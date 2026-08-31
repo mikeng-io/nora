@@ -13,7 +13,10 @@
     "doctrine": "行為準則",
     "language": "語言",
     "chat": "傾偈",
-    "tools": "工具"
+    "tools": "工具",
+    "menu": "選單",
+    "menuDek": "去任何一頁。",
+    "close": "關閉選單"
   },
   "chat": {
     "heading": "同 Nora 傾偈",

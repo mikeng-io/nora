@@ -13,7 +13,10 @@
     "doctrine": "Doctrine",
     "language": "Language",
     "chat": "Chat",
-    "tools": "Tools"
+    "tools": "Tools",
+    "menu": "Menu",
+    "menuDek": "Jump to any page.",
+    "close": "Close menu"
   },
   "chat": {
     "heading": "Chat with Nora",
