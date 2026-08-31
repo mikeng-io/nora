@@ -54,6 +54,7 @@ members:
   - 29-authority.md
   - 30-review-response.md
   - 31-recognition.md
+  - 32-fact-dreamer-schedule.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -134,6 +135,12 @@ edges:
   - {src: 31-recognition, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
   - {src: 31-recognition, dst: 08-state, rel: corrects, provenance: asserted}
   - {src: 31-recognition, dst: 26-standing, rel: depends_on, provenance: asserted}
+  - {src: 32-fact-dreamer-schedule, dst: 22-config, rel: extends, provenance: asserted}
+  - {src: 32-fact-dreamer-schedule, dst: 23-retrieval, rel: extends, provenance: asserted}
+  - {src: 32-fact-dreamer-schedule, dst: 20-knowledge-tier, rel: extends, provenance: asserted}
+  - {src: 32-fact-dreamer-schedule, dst: 07-loop, rel: corrects, provenance: asserted}
+  - {src: 32-fact-dreamer-schedule, dst: 08-state, rel: extends, provenance: asserted}
+  - {src: 32-fact-dreamer-schedule, dst: 16-open-items, rel: closes, provenance: asserted}
 scope:
   v1:
     - "This is the KNOWLEDGE tier: write canonical entity ids, the one column four problems bottom out in"
