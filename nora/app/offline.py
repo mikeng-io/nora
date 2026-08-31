@@ -53,6 +53,7 @@ def build_offline_pipeline(
     tool_registry: ToolRegistry | None = None,
     tag_trace_store: Any = None,
     debrief_wiring: Any = None,
+    standing_event_wiring: Any = None,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
@@ -79,6 +80,7 @@ def build_offline_pipeline(
     ingest = IngestPipeline(
         audit=audit, memory=memory, persons=persons,
         policy=policy, allowlist=permissive_policy(), metrics=metrics, spawn=_spawn,
+        standing_event_wiring=standing_event_wiring,
     )
 
     tier = cfg.llm

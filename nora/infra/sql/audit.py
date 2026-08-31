@@ -178,6 +178,38 @@ class SqlRecordStore:
             rows = (await conn.execute(stmt)).all()
         return [self._row(r) for r in rows]
 
+    async def since_including_nora(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        """All rows with `id > after_id`, ASCENDING, at most `limit`.
+
+        `since`'s cursor shape WITHOUT the `is_nora` exclusion
+        (design/standing-watermark/20): the standing fold needs Nora's own
+        rows to re-judge her position, and the Dreamer's `since` must keep
+        excluding them — so the fold gets its own read rather than a flag on
+        the existing one. Same `limit <= 0` short-circuit as `since`/`recent`,
+        and for the same reason.
+        """
+        if limit <= 0:
+            return []
+        stmt = (
+            sa.select(
+                MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
+                MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
+                MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
+                MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
+            )
+            .where(
+                MESSAGES.c.conversation_id == conversation_id,
+                MESSAGES.c.id > after_id,
+            )
+            .order_by(MESSAGES.c.id.asc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [self._row(r) for r in rows]
+
     @staticmethod
     def _row(r: Any) -> TranscriptRow:
         """The shared column-row -> `TranscriptRow` mapping for `recent` and

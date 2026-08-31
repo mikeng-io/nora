@@ -338,6 +338,45 @@ async def test_since_returns_human_rows_ascending_after_a_cursor(store):
     assert await store.since(conversation_id="g1", after_id=ids[-1], limit=10) == []
 
 
+async def test_since_including_nora_returns_nora_rows_ascending_after_a_cursor(store):
+    """The standing fold's read (design/standing-watermark/20): the same cursor
+    shape as `since`, but Nora's OWN rows are included — the fold needs her
+    replies to re-judge her position, and `since` must keep excluding them for
+    the Dreamer. One method, one difference, and this test pins exactly that
+    difference against BOTH implementations."""
+    ids = []
+    for i, (body, is_nora) in enumerate(
+        [("a", False), ("b", True), ("c", False), ("d", True)], start=1
+    ):
+        ids.append(await store.append(
+            message=NormalizedMessage(
+                "signal", "g1", "group", "+852111", "Miles", i, body, {}),
+            is_nora=is_nora,
+        ))
+
+    rows = await store.since_including_nora(
+        conversation_id="g1", after_id=ids[0], limit=10)
+    assert [r.body for r in rows] == ["b", "c", "d"], (
+        "ascending, INCLUDING is_nora rows, after the cursor"
+    )
+
+    assert await store.since_including_nora(
+        conversation_id="g1", after_id=0, limit=0) == []
+    assert await store.since_including_nora(
+        conversation_id="g1", after_id=ids[-1], limit=10) == []
+
+
+async def test_since_including_nora_is_scoped_to_the_conversation(store):
+    """The cursor is per-conversation: another room's rows must never leak
+    into a fold's batch, exactly as `since` scopes its own read."""
+    other = await store.append(message=_msg(conv="g2", body="other"))
+    mine = await store.append(message=_msg(body="mine"), is_nora=True)
+    rows = await store.since_including_nora(
+        conversation_id="g1", after_id=0, limit=10)
+    assert [r.id for r in rows] == [mine]
+    assert other not in [r.id for r in rows]
+
+
 def test_both_implementations_satisfy_the_port():
     """`RecordStore` is `@runtime_checkable`, so this `isinstance` check verifies
     method **names only** — not signatures, not keyword-only-ness, not return

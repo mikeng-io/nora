@@ -65,6 +65,27 @@ def test_a_negative_fold_count_is_refused():
                  fold_count=-1, updated_at=1)
 
 
+def test_the_row_id_watermark_is_a_row_id_or_none():
+    """The fold's row-id watermark (design/standing-watermark/20), and the
+    same "two null values" argument `consumed_verdict_tag` already makes:
+    `None` means "never folded — read from the beginning" (D5), so `0` would
+    be a second spelling of that state that compares unequal to it — and
+    messages ids start at 1 anyway. A watermark satisfiable by accident is how
+    a conversation re-reads from the beginning on every fold.
+    """
+    assert Standing(platform="signal", conversation_id="g1", body="x",
+                    fold_count=1, updated_at=1).last_folded_row_id is None
+    ok = Standing(platform="signal", conversation_id="g1", body="x",
+                  fold_count=1, updated_at=1, last_folded_row_id=42)
+    assert ok.last_folded_row_id == 42
+    with pytest.raises(ValueError, match="row id or None"):
+        Standing(platform="signal", conversation_id="g1", body="x",
+                 fold_count=1, updated_at=1, last_folded_row_id=0)
+    with pytest.raises(ValueError, match="row id or None"):
+        Standing(platform="signal", conversation_id="g1", body="x",
+                 fold_count=1, updated_at=1, last_folded_row_id=-1)
+
+
 def test_no_position_renders_no_block_at_all():
     """`None` is not "an empty opinion". A conversation Nora has not folded has
     no position, and rendering an empty `<standing/>` would tell the model she

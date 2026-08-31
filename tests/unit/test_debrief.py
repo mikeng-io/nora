@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.provenance import instruction_sha256
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
@@ -26,7 +26,7 @@ from nora.domain.turn_verdict import TurnVerdict
 from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import span
-from nora.testing import InMemoryStandingStore, InMemoryTurnVerdictStore
+from nora.testing import FakeRecordStore, InMemoryStandingStore, InMemoryTurnVerdictStore
 from tests.objectives import shipped_objectives
 
 pytestmark = pytest.mark.asyncio
@@ -117,11 +117,12 @@ def _trace_with_tag(tag_id: str) -> TagTrace:
 _UNSET = object()
 
 
-async def _run(*, store=None, store_verdict=_UNSET, client=None, metrics=None, max_chars=1200,
-               timeout_seconds=5.0, store_timeout_seconds=5.0,
+async def _run(*, store=None, store_verdict=_UNSET, client=None, metrics=None,
+               max_chars=1200, timeout_seconds=5.0, store_timeout_seconds=5.0,
                rebuild_after_folds=20, notes_read=frozenset(),
                now_ms_override=None, notes_sink=_UNSET,
-               workspace_of=None, trace=None) -> tuple:
+               workspace_of=None, trace=None, record_store=None,
+               fold_batch=200) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
     # `_UNSET`, not `None`: `None` is a REAL state the stage documents as
     # "the ordinary state on any deployment that has not wired one", and a
@@ -134,7 +135,9 @@ async def _run(*, store=None, store_verdict=_UNSET, client=None, metrics=None, m
         platform="signal", store=store, store_verdict=store_verdict,
         client=client if client is not None else _Client(_ok("a position")),
         objective=_Objective(), metrics=metrics, display_name="Nora",
-        max_chars=max_chars, window=40, timeout_seconds=timeout_seconds,
+        record_store=record_store if record_store is not None else FakeRecordStore(),
+        max_chars=max_chars, fold_batch=fold_batch,
+        timeout_seconds=timeout_seconds,
         store_timeout_seconds=store_timeout_seconds,
         rebuild_after_folds=rebuild_after_folds, notes_read=notes_read,
         notes_sink=(_FakeSink() if notes_sink is _UNSET else notes_sink),
@@ -980,6 +983,57 @@ async def test_a_rebuild_resets_the_fold_count():
                rebuild_after_folds=20)
     row = await store.read(platform="signal", conversation_id="g1")
     assert row is not None and row.fold_count == 1
+
+
+async def test_a_normal_fold_advances_the_watermark_to_the_last_row_read():
+    """design/standing-watermark/20: the fold reads `since_including_nora`
+    since the prior's watermark and advances it to the LAST row of the batch —
+    written in the SAME statement as the position. NULL watermark reads from
+    the beginning (D5: no backfill)."""
+    store = await _with_prior(3, body="the carried position")
+    record = FakeRecordStore()
+    # 5 rows since the watermark (NULL -> from the beginning), fold_batch 200:
+    for i in range(1, 6):
+        await record.append(message=NormalizedMessage(
+            "signal", "g1", "group", "+852111", "Miles", i, f"m{i}", {}))
+    await _run(store=store, record_store=record)
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None
+    assert row.last_folded_row_id == 5, (
+        "a normal fold advances the watermark to the last row it read"
+    )
+    assert row.fold_count == 4  # fold_count still increments as today
+
+
+async def test_a_rebuild_does_not_advance_the_watermark():
+    """Re-derivation (the `ungrounded` / `ceiling` trigger) re-reads the SAME
+    stretch — it must NOT advance the watermark, or it would skip the stretch
+    it was re-deriving (50-review finding D). The write carries the prior's
+    watermark forward unchanged."""
+    store = await _with_prior(20, body="the carried position")
+    object.__setattr__(
+        (await store.read(platform="signal", conversation_id="g1")),
+        "last_folded_row_id", 42,
+    ) if False else None
+    # Write a prior WITH a watermark directly, then force an ungrounded rebuild.
+    store = InMemoryStandingStore()
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="the carried position",
+        fold_count=20, updated_at=100, consumed_verdict_tag=None,
+        last_folded_row_id=42))
+    record = FakeRecordStore()
+    for i in range(1, 4):
+        await record.append(message=NormalizedMessage(
+            "signal", "g1", "group", "+852111", "Miles", i, f"m{i}", {}))
+    await _run(
+        store=store, store_verdict=await _with_verdict(grounded=False),
+        record_store=record, rebuild_after_folds=20,
+    )
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.consumed_verdict_tag == "earlier"
+    assert row.last_folded_row_id == 42, (
+        "a rebuild re-reads the same stretch and must NOT advance the watermark"
+    )
 
 
 async def test_an_unreadable_verdict_store_does_not_rebuild():
@@ -2144,9 +2198,10 @@ async def test_r81_a_quote_is_grounded_only_against_the_person_who_said_it():
         trace=_misattribution_trace(), platform="signal",
         store=InMemoryStandingStore(), store_verdict=InMemoryTurnVerdictStore(),
         client=client, objective=_ShippedObjective(), metrics=metrics,
-        display_name="Nora", max_chars=1200, window=40, timeout_seconds=5.0,
-        store_timeout_seconds=5.0, rebuild_after_folds=20,
-        notes_read=frozenset(), notes_sink=_FakeSink(),
+        display_name="Nora", max_chars=1200,
+        record_store=FakeRecordStore(), fold_batch=200,
+        timeout_seconds=5.0, store_timeout_seconds=5.0,
+        rebuild_after_folds=20, notes_read=frozenset(), notes_sink=_FakeSink(),
         workspace_of=lambda p, c: "ws", now_ms=1_756_398_902_000,
     )
     # The positive control: every assertion below is read off a prompt, and a

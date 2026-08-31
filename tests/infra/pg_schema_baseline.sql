@@ -386,6 +386,7 @@ act text NOT NULL,
 act text NOT NULL,
 added_at timestamp with time zone NOT NULL,
 added_by_person_id text NOT NULL,
+address text
 address text NOT NULL,
 address text,
 aliases text[] DEFAULT '{}'::text[] NOT NULL,
@@ -545,6 +546,7 @@ label text,
 last_adjudicated_at bigint,
 last_cluster_id integer DEFAULT 0 NOT NULL,
 last_fix_id integer DEFAULT 0 NOT NULL,
+last_folded_row_id bigint,
 last_message_id integer DEFAULT 0 NOT NULL,
 last_rendered_at bigint NOT NULL,
 last_seen timestamp with time zone DEFAULT now() NOT NULL,
@@ -745,7 +747,7 @@ updated_at bigint NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone NOT NULL,
-updated_ms bigint NOT NULL
+updated_ms bigint NOT NULL,
 updated_ts bigint NOT NULL
 updated_ts bigint NOT NULL,
 updated_ts bigint NOT NULL,

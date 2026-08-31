@@ -194,18 +194,36 @@ def _block(block: Mapping[str, Any]) -> str:
     return ""
 
 
+def _fold_rows(
+    trace: TagTrace, since_rows: Sequence[TranscriptRow],
+) -> tuple[TranscriptRow, ...]:
+    """The transcript the tag-path fold actually sees: the watermark batch
+    (`since_rows`, read via `RecordStore.since_including_nora`) PLUS the
+    turn's own rows (`trace.transcript`), deduped by id and ascending.
+
+    The event check fires BEFORE the tag reply (design/standing-watermark/10),
+    so an event fold may have already advanced the watermark past the turn's
+    rows before this fold runs — `since_rows` would then start AFTER the turn,
+    and the fold would review a turn it cannot see. The turn's own rows are
+    therefore always included, even when the batch already covers them (D8).
+    """
+    by_id = {row.id: row for row in since_rows}
+    by_id.update({row.id: row for row in trace.transcript})
+    return tuple(sorted(by_id.values(), key=lambda r: r.id))
+
+
 def render_debrief_turn(
-    *, trace: TagTrace, display_name: str, window: int, tz: tzinfo | None = None,
+    *, trace: TagTrace, display_name: str, since_rows: Sequence[TranscriptRow] = (),
+    tz: tzinfo | None = None,
 ) -> str:
     """The whole turn — outcome, transcript, reasoning — as one block.
 
-    `window` is capped at `[store] context_window` and now equals it — the fold
-    reads the rows the REPLY path assembled, so it can never exceed them, and
-    `Config._the_standing_window_fits_the_transcript_it_folds` refuses a larger
-    value rather than letting the number lie. It WAS deliberately smaller (S3)
-    until the operator overrode it on 2026-08-27: a fold reasoning from 12 rows
-    judges a turn it can only see a third of. The slice is the TAIL — the rows
-    nearest the turn being reviewed.
+    `since_rows` is the watermark batch: every row since the last fold's
+    `last_folded_row_id`, read via `RecordStore.since_including_nora` and
+    capped at `[standing] fold_batch` (design/standing-watermark/20). The
+    transcript is that batch PLUS the turn's own rows (`trace.transcript`),
+    deduped by id — see `_fold_rows` for why the turn's rows must always be
+    present.
 
     **The block both calls read, and the standing call extends.** Issue #78
     Phase 2 splits the fold into a position call and a verdict call; the judge
@@ -214,7 +232,7 @@ def render_debrief_turn(
     prior would be prompt pollution in the other direction: a judge shown the
     position it is about to write judges the position, not the turn.
     """
-    rows = tuple(trace.transcript)[-window:] if window > 0 else ()
+    rows = _fold_rows(trace, since_rows)
     gloss = _OUTCOME_GLOSS.get(trace.outcome, trace.outcome)
     at = datetime.fromtimestamp(trace.created_at / 1000, tz=tz).strftime(
         "%Y-%m-%d %H:%M %Z"
@@ -230,7 +248,8 @@ def render_debrief_turn(
 
 
 def render_verdict_input(
-    *, trace: TagTrace, display_name: str, window: int, tz: tzinfo | None = None,
+    *, trace: TagTrace, display_name: str, since_rows: Sequence[TranscriptRow] = (),
+    tz: tzinfo | None = None,
 ) -> str:
     """What the VERDICT call sees: the whole turn, WITHOUT the prior.
 
@@ -238,10 +257,12 @@ def render_verdict_input(
     render — the judge sequences the SAME turn, so a different render here
     would let the two calls disagree about what even happened. Only the prior
     is missing, and that is the point (issue #78 Phase 2): the verdict must not
-    read the position it is about to write.
+    read the position it is about to write. `since_rows` is the SAME watermark
+    batch the standing call reads (D4: the two calls must not disagree about
+    what happened).
     """
     return render_debrief_turn(
-        trace=trace, display_name=display_name, window=window, tz=tz,
+        trace=trace, display_name=display_name, since_rows=since_rows, tz=tz,
     )
 
 
@@ -250,7 +271,7 @@ def render_debrief_input(
     trace: TagTrace,
     prior: Standing | None,
     display_name: str,
-    window: int,
+    since_rows: Sequence[TranscriptRow] = (),
     tz: tzinfo | None = None,
 ) -> str:
     """The whole of what the STANDING call sees — the prior plus the turn.
@@ -269,6 +290,51 @@ def render_debrief_input(
              "this conversation)\n</standing_prior>"
     )
     turn = render_debrief_turn(
-        trace=trace, display_name=display_name, window=window, tz=tz,
+        trace=trace, display_name=display_name, since_rows=since_rows, tz=tz,
     )
     return f"{prior_block}\n\n{turn}"
+
+
+def render_rollup_input(
+    *,
+    prior: Standing | None,
+    rows: Sequence[TranscriptRow],
+    display_name: str,
+    tz: tzinfo | None = None,
+) -> str:
+    """What the EVENT-path fold (the rollup) sees: the prior plus the batch of
+    rows since the last fold's watermark (design/standing-watermark/30).
+
+    No `<turn>` block — there IS no turn: the event fold runs after an
+    untagged stretch, so the transcript IS the batch and there is no outcome,
+    reasoning or tag to label it with. The prior block carries the same
+    always-present contract `render_debrief_input` uses — a rollup fold that
+    cannot see the prior position cannot correct it.
+    """
+    body = prior.body.strip() if prior is not None and prior.body.strip() else ""
+    prior_block = (
+        f"<standing_prior>\n{escape(body)}\n</standing_prior>"
+        if body
+        else "<standing_prior>\n(no position yet — this is the first fold for "
+             "this conversation)\n</standing_prior>"
+    )
+    transcript = _transcript(rows, display_name=display_name, tz=tz)
+    return (
+        f"{prior_block}\n\n"
+        f"<conversation>\n  <transcript>\n{transcript}\n  </transcript>\n"
+        f"</conversation>"
+    )
+
+
+def render_rollup_verdict_input(
+    *, rows: Sequence[TranscriptRow], display_name: str, tz: tzinfo | None = None,
+) -> str:
+    """What the event-path fold's VERDICT call sees: the SAME batch WITHOUT the
+    prior (D4 — the verdict must not read the position it is about to write,
+    and the two calls must not disagree about what happened).
+    """
+    transcript = _transcript(rows, display_name=display_name, tz=tz)
+    return (
+        f"<conversation>\n  <transcript>\n{transcript}\n  </transcript>\n"
+        f"</conversation>"
+    )

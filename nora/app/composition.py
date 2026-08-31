@@ -109,6 +109,7 @@ from nora.ingest.policy import (
     TriggerTextPolicy,
     VoiceNotePolicy,
 )
+from nora.ingest.stages import standing_event
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
@@ -1376,6 +1377,52 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             language=cfg.speech.stt.language,
             timeout_seconds=cfg.speech.stt.timeout_seconds,
         )
+    # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here.
+    # Every path that may speak into a conversation holds this same instance —
+    # two would be two locks and no serialisation at all. Built HERE, above the
+    # registry, because the relay below needs it and the registry needs the
+    # relay — and above the ingest pipeline, because the standing EVENT trigger
+    # (below) enqueues its folds through this same instance (D2,
+    # design/standing-watermark/10): the event fold and the tag path must
+    # serialize per conversation, and two slots objects would be two locks.
+    slots = ConversationSlots(
+        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
+    )
+
+    # The event-driven standing fold (design/standing-watermark/10), wired like
+    # `debrief.Wiring` below but gated on `[standing] event_enabled` rather
+    # than `enabled`: OFF (default) leaves the ingest stage inert — only the
+    # tag path folds, which is strictly better than pre-bundle. ON, every
+    # message triggers a spawned check that folds when the accumulator reaches
+    # fold_batch. Same client/objective as the debrief — the event fold is the
+    # same fold, minus the turn.
+    standing_event_wiring: Any | None = None
+    if cfg.standing.enabled and cfg.standing.event_enabled:
+        standing_event_wiring = standing_event.Wiring(
+            store=standing_store,
+            record_store=audit,
+            client=_DebriefModelClient(
+                client=client,
+                model=cfg.standing.model or cfg.llm.model,
+                timeout_seconds=cfg.standing.timeout_seconds,
+                reasoning_effort=_reasoning_effort(
+                    cfg.standing.reasoning_effort or cfg.llm.reasoning_effort,
+                    source=(
+                        "[standing] reasoning_effort"
+                        if cfg.standing.reasoning_effort
+                        else "[llm] reasoning_effort (inherited)"
+                    ),
+                ),
+            ),
+            objective=dreamer_instructions,
+            slots=slots,
+            display_name=cfg.doctrine.display_name,
+            fold_batch=cfg.standing.fold_batch,
+            rollup_max_folds=cfg.standing.rollup_max_folds,
+            timeout_seconds=cfg.standing.timeout_seconds,
+            store_timeout_seconds=cfg.standing.store_timeout_seconds,
+            max_chars=cfg.standing.max_chars,
+        )
     ingest = IngestPipeline(
         audit=audit, memory=memory, persons=persons,
         policy=policy, allowlist=allowlist, metrics=metrics, spawn=_spawn,
@@ -1384,6 +1431,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         stickers=sticker_reader, transcriber=transcriber,
         language=cfg.speech.stt.language,
         max_description_chars=cfg.media.sticker_description_max_chars,
+        standing_event_wiring=standing_event_wiring,
     )
     # `web_search`/`web_fetch` (Tavily, DEC-73/DEC-116) are wired ONLY when
     # `[search] enabled` AND a key is present — the `route`-keyless gate. Off (or
@@ -1771,15 +1819,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     games_client = None
     if pulse_api_token := os.environ.get("PULSE_API_TOKEN"):
         games_client = PulseGamesClient(token=pulse_api_token)
-    # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here.
-    # Every path that may speak into a conversation holds this same instance —
-    # two would be two locks and no serialisation at all. Built HERE, above the
-    # registry, because the relay below needs it and the registry needs the
-    # relay.
-    slots = ConversationSlots(
-        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
-    )
-
     # DEC-105: the cross-room relay. It does NOT send — it occasions a fire
     # turn into the destination (DEC-99's ruling), so R-1b's three links hold
     # and the relayed message is audited into the room it lands in.
@@ -2008,8 +2047,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 ),
             ),
             objective=dreamer_instructions,
+            record_store=audit,
             max_chars=cfg.standing.max_chars,
-            window=cfg.standing.window,
+            fold_batch=cfg.standing.fold_batch,
             timeout_seconds=cfg.standing.timeout_seconds,
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
             rebuild_after_folds=cfg.standing.rebuild_after_folds,

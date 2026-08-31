@@ -106,10 +106,12 @@ async def store(request: Any) -> AsyncIterator[_StandingStore]:
 def _standing(body: str = "They are picking a restaurant.", *,
               platform: str = PLATFORM, conversation_id: str = CONV,
               fold_count: int = 1, updated_at: int = NOW,
-              consumed_verdict_tag: str | None = None) -> Standing:
+              consumed_verdict_tag: str | None = None,
+              last_folded_row_id: int | None = None) -> Standing:
     return Standing(platform=platform, conversation_id=conversation_id,
                     body=body, fold_count=fold_count, updated_at=updated_at,
-                    consumed_verdict_tag=consumed_verdict_tag)
+                    consumed_verdict_tag=consumed_verdict_tag,
+                    last_folded_row_id=last_folded_row_id)
 
 
 async def test_a_conversation_with_no_position_reads_as_none(store):
@@ -167,6 +169,72 @@ async def test_the_watermark_round_trips_including_its_null(store):
     await store.write(standing=_standing(consumed_verdict_tag=None))
     row = await store.read(platform=PLATFORM, conversation_id=CONV)
     assert row is not None and row.consumed_verdict_tag is None
+
+
+async def test_the_row_id_watermark_round_trips_including_its_null(store):
+    """The fold's row-id watermark (design/standing-watermark/20), both states.
+    `None` is the ONLY "never folded" — the cold-start case, which reads from
+    the beginning — and must survive the round trip as itself: a null that read
+    back as `0` would compare unequal to `None` and equal to another `0`, which
+    is a watermark satisfiable by accident (the same argument migration 0037
+    made for `consumed_verdict_tag`).
+
+    A store that dropped the column would pass the write/read tests above —
+    it round-trips everything else — and the event trigger would then re-read
+    the whole conversation from the beginning on every message. That is the
+    latch, restored below the type.
+    """
+    await store.write(standing=_standing(last_folded_row_id=None))
+    row = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert row is not None and row.last_folded_row_id is None
+
+    await store.write(standing=_standing(last_folded_row_id=12345))
+    row = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert row is not None and row.last_folded_row_id == 12345
+
+    # And BACK to null. The upsert names the column in its `set_`, so a revise
+    # that carried no watermark clears it rather than silently keeping the
+    # previous row's value.
+    await store.write(standing=_standing(last_folded_row_id=None))
+    row = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert row is not None and row.last_folded_row_id is None
+
+
+async def test_the_row_id_watermark_advances_with_the_position_in_one_write(store):
+    """20-watermark-read's atomicity: the fold's write sets `body` and
+    `last_folded_row_id` in ONE statement, so a crash between the two can never
+    leave a position that claims to have read further than it did. On the store
+    contract that means: after one `write`, BOTH fields carry the new values —
+    a store that wrote the body and dropped the watermark would fail this the
+    way the trigger would fail in production."""
+    await store.write(standing=_standing("position one", last_folded_row_id=10))
+    await store.write(standing=_standing("position two", last_folded_row_id=25))
+    row = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert row is not None
+    assert row.body == "position two"
+    assert row.last_folded_row_id == 25
+
+
+async def test_a_refused_write_advances_neither_body_nor_watermark(store):
+    """A fold that fails advances NEITHER the position NOR the watermark: the
+    write is refused before either can land (the body exceeds the ceiling, so
+    `standing_body_fits_the_ceiling_check` refuses the whole statement). A
+    store that advanced the watermark on a refused write would skip the stretch
+    it never folded — the exact defect the watermark exists to prevent.
+
+    `object.__setattr__` bypasses the domain type exactly as the sibling
+    ceiling test does: this manufactures the state a writer that bypassed the
+    type would produce, which is the only state the DB CHECK exists for.
+    """
+    await store.write(standing=_standing("the prior position", last_folded_row_id=10))
+    smuggled = _standing("x" * 10, last_folded_row_id=99)
+    object.__setattr__(smuggled, "body", "x" * (STANDING_BODY_CEILING_CHARS + 1))
+    with pytest.raises(Exception):  # noqa: B017 — IntegrityError (sql) vs ValueError (memory)
+        await store.write(standing=smuggled)
+    row = await store.read(platform=PLATFORM, conversation_id=CONV)
+    assert row is not None
+    assert row.body == "the prior position"
+    assert row.last_folded_row_id == 10
 
 
 async def test_the_key_is_platform_and_conversation(store):

@@ -54,6 +54,7 @@ class SqlStandingStore:
             fold_count=row.fold_count,
             updated_at=row.updated_at,
             consumed_verdict_tag=row.consumed_verdict_tag,
+            last_folded_row_id=row.last_folded_row_id,
         )
 
     async def write(self, *, standing: Standing) -> None:
@@ -64,6 +65,7 @@ class SqlStandingStore:
             fold_count=standing.fold_count,
             updated_at=standing.updated_at,
             consumed_verdict_tag=standing.consumed_verdict_tag,
+            last_folded_row_id=standing.last_folded_row_id,
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[STANDING.c.platform, STANDING.c.conversation_id],
@@ -79,6 +81,15 @@ class SqlStandingStore:
                 # writer happens to agree with the previous row" is exactly
                 # what stops being true the first time it does not.
                 "consumed_verdict_tag": stmt.excluded.consumed_verdict_tag,
+                # The row-id watermark, same rule as the verdict watermark
+                # above: written on every upsert, never omitted, so a revise
+                # that carries the prior's watermark forward does so by
+                # decision and a fold that advanced it writes the advance in
+                # the SAME statement as the position it belongs to
+                # (design/standing-watermark/20 — the fold's write is one
+                # statement, never a position and a watermark that can drift
+                # apart).
+                "last_folded_row_id": stmt.excluded.last_folded_row_id,
             },
         )
         async with self._engine.begin() as conn:
