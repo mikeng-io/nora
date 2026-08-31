@@ -138,11 +138,25 @@ Rules:
   enforcement test derives it from the code — the same shape ADR 0007's
   structural test uses for descriptions.
 
-### 4. BCP 14 — adopt by reference, no new work
+### 4. BCP 14 — already the doctrine loader's enforcement model; adopt by reference, no new work
 
-ADR 0007 §2 **is** the RFC 2119 register split (MUST = turn correctness,
-SHOULD = style, MAY = permission), test-enforced across all 49 descriptions.
-Formal adoption is one line in ADR 0007 citing BCP 14 / RFC 8174. The
+BCP 14 is **already implemented in two layers**, and the doctrine layer is the
+stronger of the two:
+
+- **Doctrine files** (`nora/doctrine/loader.py:93-117`): the kind taxonomy is
+  read *through* RFC 2119 — `constraint` is a MUST, `conduct` is a SHOULD,
+  `identity`/`voice` describe and carry neither. `_FORBIDDEN_KEYWORDS` makes a
+  category error a **startup failure** (a `constraint` containing SHOULD-family,
+  a `conduct` containing MUST-family, or any normative keyword in
+  identity/voice), scoped to UPPERCASE per RFC 2119 §8. `MAY`/`OPTIONAL` are
+  deliberately omitted — permission is not a claim any kind's register
+  contradicts. Tests: `test_a_conduct_line_written_in_must_is_a_category_error`,
+  `test_a_descriptive_file_carrying_any_normative_keyword_is_rejected`.
+- **Tool descriptions** (ADR 0007 §2): the same register split, test-enforced
+  across all 49 descriptions.
+
+Formal adoption is one line in ADR 0007 citing BCP 14 / RFC 8174, and one line
+in the loader's comment block naming the standard it already implements. The
 proposal's example doctrine line — "a completed turn MUST produce no more than
 one user-visible response" — is **rejected**: it conflicts with DEC-95, where
 bursts are first-class (`send_reply` budget 6, MAY multiple calls). The correct
