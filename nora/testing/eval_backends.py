@@ -107,6 +107,10 @@ class CannedParkingProvider:
             "lastupdate": "2026-08-31 11:35:34",
             "status": "OPEN",
             "address": "Man Nin Street No 24, Sai Kung",
+            # carpark_alt asks «泊車貴唔貴» — vacancy alone drove a follow-up
+            # web_search for price (measured 2026-08-31). Carry the fee so
+            # the model has the whole answer in one call.
+            "fee": "HK$27/hour (Mon-Thu), HK$40/hour (Fri-Sun & PH)",
         }
 
 

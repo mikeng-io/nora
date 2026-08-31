@@ -4419,7 +4419,9 @@ Args:
         reply («大概 11:35 更新, 仲有 30 個位»), a count without its age
         reads as «right now», which you do not know. `status` is the
         operator's opening status; `address` is the street address when the
-        feed carries one. The exact spot stays private machinery — never
+        feed carries one; `fee` is the operator's rate table when the feed
+        carries one — both are bonuses, say them only when present. The exact
+        spot stays private machinery — never
         echo a parking id back at the group, never invent a number.
 
         `status`: `ok` with `parking_id`, `name`, `vacancy`, `lastupdate`,
