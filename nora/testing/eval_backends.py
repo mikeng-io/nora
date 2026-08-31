@@ -91,16 +91,18 @@ class CannedWeatherProvider:
 class CannedParkingProvider:
     """`nora.domain.ports.ParkingProvider` — a fixed vacancy, always `ok`.
 
-    Answers ANY name with the same record so the eval's carpark journey
-    (required `parking_status`) gets a real ok-shaped result and the model
-    does not re-search to budget (the canned-data artifact the search
-    provider's self-terminating content exists to avoid).
+    ECHOES the asked name back (measured 2026-08-31): a provider that
+    answers every query with a fixed "Sai Kung" record made the model
+    distrust the result for a different venue («時代廣場» → sees "Sai
+    Kung" → re-searches to budget). Echoing the name gives the model
+    grounds to accept it, the same self-terminating shape as the search
+    provider's content.
     """
 
     async def vacancy(self, *, name: str) -> dict | None:
         return {
             "parking_id": "tdc10p1",
-            "name": "Sai Kung Government Offices Carpark",
+            "name": name or "Sai Kung Government Offices Carpark",
             "vacancy": 30,
             "lastupdate": "2026-08-31 11:35:34",
             "status": "OPEN",
