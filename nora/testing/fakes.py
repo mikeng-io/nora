@@ -142,6 +142,23 @@ class FakeRecordStore:
         rows.sort(key=lambda r: r["id"])
         return [self._transcript_row(r) for r in rows[:limit]]
 
+    async def since_including_nora(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        """Mirrors `SqlRecordStore.since_including_nora`: ascending by id,
+        `is_nora` rows INCLUDED (unlike `since`), `[]` for a non-positive
+        limit. A fake that returned everything would make the contract test
+        decorative."""
+        if limit <= 0:
+            return []
+        rows = [
+            r for r in self.rows
+            if r["conversation_id"] == conversation_id
+            and r["id"] > after_id
+        ]
+        rows.sort(key=lambda r: r["id"])
+        return [self._transcript_row(r) for r in rows[:limit]]
+
     @staticmethod
     def _transcript_row(r: dict[str, Any]) -> TranscriptRow:
         """The shared row -> `TranscriptRow` mapping for `recent` and

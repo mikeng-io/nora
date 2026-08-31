@@ -513,6 +513,13 @@ RULE_TESTS = {
     # against that allowlist, and the NativeTool declaration — so a hand-edit
     # to any one layer that drifts from the others goes red.
     "R-86": "test_r86_social_fetch_is_read_only_at_three_layers",
+    # R-87 (design/standing-watermark): Standing folds read SINCE a row-id
+    # watermark (`since_including_nora`, capped at [standing] fold_batch), not
+    # the reply path's recency window — a conversation that passes 40 messages
+    # between tags must not lose the middle. The named test drives the real
+    # stage through a store holding 60 rows and asserts the fold's prompt
+    # reaches the row the old 40-row window would have clipped.
+    "R-87": "test_r87_the_standing_fold_reads_since_a_row_id_watermark",
 }
 
 
@@ -970,3 +977,85 @@ def test_r86_social_fetch_is_read_only_at_three_layers():
 
     # Layer 3: the declaration the Dreamer's ceiling is derived from.
     assert tools_module.NATIVE_TOOLS["social_fetch"].read_only is True
+
+
+async def write_prior(store) -> None:
+    from nora.domain.standing import Standing
+
+    await store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="the carried position",
+        fold_count=3, updated_at=100, consumed_verdict_tag=None,
+        last_folded_row_id=10))
+
+
+async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
+    """R-87 (design/standing-watermark). The standing fold reads
+    `since_including_nora(after_id=last_folded_row_id, limit=fold_batch)` —
+    everything since the last fold, capped at the batch — NOT the reply path's
+    recency window. The defect this fixes: a conversation that passes 40
+    messages between tags used to lose the middle, because the fold only ever
+    saw the last `window` (40) rows.
+
+    Driven through the REAL debrief stage with a prior that carries a
+    watermark of 10 and a store holding 60 rows: the fold's prompt must
+    contain rows 11-60 (the stretch since the watermark, reaching far beyond
+    any 40-row window), and the written position must advance the watermark to
+    the last row read (60). A fold that still sliced a window would show rows
+    21-60 at most and would not see rows 11-20 — the exact clipping the
+    watermark exists to remove.
+    """
+    import json
+
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+    from nora.domain.tag_trace import TagTrace
+    from nora.engagement.stages import debrief
+    from nora.testing import FakeRecordStore, InMemoryStandingStore
+
+    class _Client:
+        def __init__(self) -> None:
+            self.prompts: list[str] = []
+
+        @property
+        def model(self) -> str:
+            return "test-model"
+
+        async def complete(self, *, prompt: str) -> debrief.Completion:
+            self.prompts.append(prompt)
+            return debrief.Completion(
+                json.dumps({"standing": "the revised position"}), "stop")
+
+    class _Objective:
+        def objective_body(self, name: str) -> str:
+            assert name in {debrief.OBJECTIVE, debrief.VERDICT_OBJECTIVE}
+            return "OBJECTIVE-TEXT" if name == debrief.OBJECTIVE else "VERDICT-TEXT"
+
+    store = InMemoryStandingStore()
+    await write_prior(store)
+    record = FakeRecordStore()
+    for i in range(1, 61):
+        await record.append(message=NormalizedMessage(
+            "signal", "g1", "group", "+852111", "Miles", i, f"m{i}", {}))
+    client = _Client()
+    trace = TagTrace(
+        tag_id="tag-1", conversation_id="g1", messages=(),
+        transcript=(TranscriptRow(
+            id=60, sender_id="+852111", sender_name="Miles", ts=60,
+            body="m60", is_nora=False, delivery_status=DeliveryStatus.SENT,
+            raw_json=None),),
+        outcome="send_reply", created_at=60,
+    )
+    await debrief.run(
+        trace=trace, platform="signal", store=store,
+        store_verdict=None, notes_sink=None, workspace_of=lambda p, c: "ws",
+        client=client, objective=_Objective(), metrics=Metrics(),
+        display_name="Nora", record_store=record, max_chars=1200, fold_batch=200,
+        timeout_seconds=5.0, store_timeout_seconds=5.0,
+        rebuild_after_folds=20, now_ms=60,
+    )
+    # The prompt must reach back past any 40-row window: rows 11-20 are the
+    # stretch a window fold clipped, and they are the whole point.
+    joined = client.prompts[0]
+    assert "m11" in joined, "the fold must read the stretch since the watermark"
+    assert "m60" in joined
+    row = await store.read(platform="signal", conversation_id="g1")
+    assert row is not None and row.last_folded_row_id == 60

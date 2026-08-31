@@ -675,6 +675,20 @@ class RecordStore(Protocol):
         """
         ...
 
+    async def since_including_nora(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        """All rows with `id > after_id`, ASCENDING, at most `limit`.
+
+        Unlike `since`, this does NOT exclude Nora's own rows
+        (design/standing-watermark/20). The standing fold needs her replies to
+        re-judge her position ("I committed to...", "I answered..."); a read
+        that strips her half of the conversation shows the fold a room where
+        she never spoke. `since` stays unchanged — the Dreamer's derivation
+        reads must keep excluding her — and this is the fold's read only.
+        """
+        ...
+
     async def set_delivery_outcome(
         self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
     ) -> None: ...

@@ -42,7 +42,7 @@ prevents is invisible from either side alone: an escape after successful
 delivery would leave `completed` False, and `deliver.truncation_reason` would
 then report a partial reply on a turn that sent a whole one.
 
-**3. It holds the slot, so EVERY await in it is bounded — all four.** This
+**3. It holds the slot, so EVERY await in it is bounded — all six.** This
 docstring previously said "bounded twice" and named only the model call, and
 that was false in the way that matters: `store.read` and `store.write` sat
 OUTSIDE the `wait_for`, `create_sql_engine` sets no `command_timeout`, and both
@@ -142,8 +142,15 @@ from nora.agent.dream_screen import screen
 from nora.agent.egress import scan_identifiers
 from nora.agent.security import looks_like_coordinate
 from nora.agent.tools import note_handle
+from nora.domain.models import TranscriptRow
 from nora.domain.notes import NoteCreationProposal
-from nora.domain.ports import DreamSink, Proposal, StandingStore, TurnVerdictStore
+from nora.domain.ports import (
+    DreamSink,
+    Proposal,
+    RecordStore,
+    StandingStore,
+    TurnVerdictStore,
+)
 from nora.domain.provenance import instruction_sha256
 from nora.domain.standing import STANDING_STORE_CALLS_PER_FOLD, Standing
 from nora.domain.tag_trace import TagTrace
@@ -500,12 +507,12 @@ class Wiring:
     `max_chars` is the OPERATING cap and is config
     (`nora.domain.standing.DEFAULT_STANDING_MAX_CHARS` is its default);
     `standing_body_fits_the_ceiling_check` in the database is the absolute
-    ceiling underneath it that no config can pass. `window` is CAPPED at
-    `[store] context_window` and now equals it: the fold reads
-    `ctx.transcript`, the rows the reply path already assembled, so it can
-    never see more than she answered with. It WAS deliberately smaller (S3);
-    operator override 2026-08-27, because a fold reasoning from 12 rows judges
-    a turn it can only see a third of.
+    ceiling underneath it that no config can pass. `fold_batch` is the fold's
+    batch size: the fold reads `since_including_nora(after_id=watermark,
+    limit=fold_batch)` through `record_store` — the NEXT `fold_batch` rows
+    since the last fold's row-id watermark, not the LAST 40 rows of the reply
+    path's window (design/standing-watermark/20, D8). The 40-row window is
+    gone entirely.
     """
 
     store: StandingStore
@@ -531,8 +538,13 @@ class Wiring:
     workspace_of: Callable[[str, str], str | None]
     client: ModelClient
     objective: ObjectiveSource
+    # The RECORD store, for the fold's watermark read: the tag fold reads
+    # `since_including_nora(after_id=prior.last_folded_row_id, limit=fold_batch)`
+    # — the conversation stretch since the last fold — rather than slicing the
+    # reply path's window (design/standing-watermark/20).
+    record_store: RecordStore
     max_chars: int
-    window: int
+    fold_batch: int
     timeout_seconds: float
     store_timeout_seconds: float
     rebuild_after_folds: int
@@ -870,8 +882,9 @@ async def run(
     objective: ObjectiveSource,
     metrics: Metrics,
     display_name: str,
+    record_store: RecordStore,
     max_chars: int,
-    window: int,
+    fold_batch: int,
     timeout_seconds: float,
     store_timeout_seconds: float,
     rebuild_after_folds: int,
@@ -916,6 +929,39 @@ async def run(
             "nora_debrief_prior_total",
             prior="read" if prior is not None else "absent",
         )
+
+        # THE WATERMARK BATCH READ (design/standing-watermark/20). The fold no
+        # longer slices the reply path's window: it reads the NEXT `fold_batch`
+        # rows since the last fold's row-id watermark — including Nora's own
+        # rows, which `since` excludes and which the fold needs to re-judge her
+        # position. NULL watermark = read from the beginning (D5: no backfill —
+        # a conversation that has never folded reads its history in batches).
+        # A failed read is `unavailable`, never a fold against a guessed-empty
+        # stretch: the whole point of the watermark is that the fold SEES what
+        # arrived since it last folded, and a fold that skips the stretch is
+        # the window defect this bundle exists to remove.
+        try:
+            batch: tuple[TranscriptRow, ...] = tuple(
+                await asyncio.wait_for(
+                    record_store.since_including_nora(
+                        conversation_id=trace.conversation_id,
+                        after_id=(
+                            prior.last_folded_row_id
+                            if prior is not None
+                            and prior.last_folded_row_id is not None else 0
+                        ),
+                        limit=fold_batch,
+                    ),
+                    timeout=store_timeout_seconds,
+                )
+            )
+        except Exception:
+            log.exception(
+                "debrief: could not read the watermark batch (tag=%s); "
+                "not folding", trace.tag_id,
+            )
+            outcome = "unavailable"
+            return
 
         # S2's TRIGGER. Two conditions, and the ORDER of the check is the
         # measurement: when both hold, this is an `ungrounded` re-derivation,
@@ -976,14 +1022,16 @@ async def run(
         # which is the one thing that counter exists to tell apart.
         rendered = render_debrief_input(
             trace=trace, prior=None if rebuild is not None else prior,
-            display_name=display_name, window=window, tz=tz,
+            display_name=display_name, since_rows=batch, tz=tz,
         )
         # The judge reads the SAME turn WITHOUT the prior (issue #78 Phase 2).
         # Rendered, not sliced off `rendered`: the two calls must never
         # disagree about what even happened, so the turn block is shared
-        # machinery and the prior is the standing call's rider.
+        # machinery and the prior is the standing call's rider. The judge sees
+        # the SAME watermark batch (D4): the two calls must not disagree about
+        # what the conversation contained.
         rendered_verdict = render_verdict_input(
-            trace=trace, display_name=display_name, window=window, tz=tz,
+            trace=trace, display_name=display_name, since_rows=batch, tz=tz,
         )
 
         # ONE `wait_for` around the WHOLE gathered pair, not one around each:
@@ -1192,6 +1240,22 @@ async def run(
                 if rebuild is not None
                 and rebuild.consumed_verdict_tag is not None
                 else (prior.consumed_verdict_tag if prior is not None else None)
+            ),
+            # The ROW-ID watermark (design/standing-watermark/20), and it
+            # advances on exactly ONE condition: a NORMAL fold that read new
+            # rows. Carried forward unchanged on a rebuild (re-derivation
+            # re-reads the SAME stretch — advancing here would skip the very
+            # rows it was re-deriving, review finding D), on a first fold with
+            # nothing to read, and on every refusal path above this write
+            # (which never reaches here at all). Advanced to the last row the
+            # fold actually read — the batch is ascending, so `batch[-1]` is
+            # the furthest it saw; a batch capped at `fold_batch` leaves the
+            # rest for the next fold (the rollup's job, 30-rollup.md).
+            last_folded_row_id=(
+                (prior.last_folded_row_id if prior is not None else None)
+                if rebuild is not None
+                else (batch[-1].id if batch else (
+                    prior.last_folded_row_id if prior is not None else None))
             ),
         )
         try:

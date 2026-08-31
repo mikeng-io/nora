@@ -2005,6 +2005,14 @@ STANDING = sa.Table(
     # TAG rather than the `created_at` because a timestamp is a second proxy —
     # two verdicts can share a millisecond (migration 0037).
     sa.Column("consumed_verdict_tag", sa.Text, nullable=True),
+    # The ROW-ID watermark (design/standing-watermark/20): the `messages.id`
+    # the last fold read up to. NULLABLE, and null is the only "never folded" —
+    # the cold-start case, which reads from the beginning — for the same reason
+    # `consumed_verdict_tag` is nullable: a sentinel that could compare equal
+    # to a real row id is a watermark satisfiable by accident. Advanced in the
+    # SAME statement as the position (the fold's write is one upsert), never by
+    # a follow-up UPDATE.
+    sa.Column("last_folded_row_id", sa.BigInteger, nullable=True),
     sa.CheckConstraint(
         f"length(btrim(body)) > 0 and length(body) <= {STANDING_BODY_CEILING_CHARS}",
         name="standing_body_fits_the_ceiling_check",

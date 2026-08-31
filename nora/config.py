@@ -1619,18 +1619,15 @@ class StandingConfig(BaseModel):
     English, but **approaching 1200 tokens in a CJK-heavy room**, and this room
     is mixed by default — the cap has to be read against the denser case.
 
-    **`window = 40`, and 40 is the CEILING rather than a preference.** The
-    debrief folds `ctx.transcript` — the rows the REPLY path already assembled
-    under `[store] context_window` — so a larger value selects exactly the same
-    rows, and `_the_standing_window_fits_the_transcript_it_folds` refuses it
-    rather than letting the number lie.
-
-    It was 12, on S3's argument that revising a position needs less than
-    composing a reply. Operator override 2026-08-27: she answers with 40 rows
-    in view, so a fold reasoning from 12 judges a turn it can only see a third
-    of. Going genuinely past 40 means raising `[store] context_window`, which
-    widens EVERY reply's prompt — a per-turn cost on the live path, and not a
-    Standing decision.
+    **`fold_batch = 200`, the batch size AND the event trigger's accumulator
+    threshold — one number** (design/standing-watermark D1). The fold reads
+    `since_including_nora(after_id=watermark, limit=fold_batch)` — the NEXT
+    fold_batch rows since the last fold's row-id watermark, not the LAST 40
+    rows of the reply path's window. The 40-row window is gone entirely (D6):
+    a conversation that passes 40 messages between tags used to lose the
+    middle, and the watermark is the fix — every fold resumes where the last
+    one ended. 200 is a batch size, not a recency window, so there is
+    deliberately NO cap relationship to `[store] context_window`.
 
     **`timeout_seconds = 20`, and the number that matters is the SUM** — which
     is why the sum is a startup GATE (`max_slot_hold_seconds` below) and not a
@@ -1658,16 +1655,25 @@ class StandingConfig(BaseModel):
 
     enabled: bool = False
     max_chars: int = Field(default=DEFAULT_STANDING_MAX_CHARS, ge=1)
-    # 40, matching `[store] context_window` — the CEILING, not a preference.
-    # The debrief folds `ctx.transcript`, so it can never see more rows than the
-    # reply path assembled; `_the_standing_window_fits_the_transcript_it_folds`
-    # refuses a larger value rather than letting the number lie.
-    #
-    # It was 12, on S3's argument that revising a position needs less than
-    # composing a reply. Operator override 2026-08-27: she answers with 40 rows
-    # in view, so a fold reasoning from 12 judges a turn it can only see a
-    # third of.
-    window: int = Field(default=40, ge=1)
+    # The fold's batch size AND the event trigger's accumulator threshold —
+    # ONE number (design/standing-watermark D1). Every fold reads
+    # `since_including_nora(after_id=watermark, limit=fold_batch)`: the NEXT
+    # fold_batch rows since the last fold's watermark, not the LAST fold_batch
+    # rows. It is a batch size, not a recency window, so it deliberately has NO
+    # cap relationship to `[store] context_window` — the 40-row window is gone
+    # entirely (D6). 200 is the operator's number from the bundle's index.
+    fold_batch: int = Field(default=200, ge=1)
+    # The event-driven fold path (design/standing-watermark/10): every message
+    # that lands in a conversation triggers a standing check off the listener
+    # path, and the check folds only when the accumulator reaches `fold_batch`.
+    # OFF by default like `enabled` — a new subsystem does not switch itself
+    # on; the deployment turns it on deliberately.
+    event_enabled: bool = False
+    # The rollup's bound (design/standing-watermark/30): how many batch folds
+    # ONE spawned event fold may perform before it stops and lets the NEXT
+    # message's check continue. Bounds how long a cold-start backlog can hold
+    # the model budget in a single event.
+    rollup_max_folds: int = Field(default=5, ge=1)
     timeout_seconds: float = Field(default=20.0, gt=0)
     # The bound on the stage's TWO STORE CALLS — the read of the prior position
     # and the write of the revised one. It exists because they had no bound at
@@ -2627,33 +2633,6 @@ class Config(BaseModel):
             )
         return self
 
-    @model_validator(mode="after")
-    def _the_standing_window_fits_the_transcript_it_folds(self) -> Config:
-        """`[standing] window` can never exceed `[store] context_window`.
-
-        The debrief folds `ctx.transcript` — the rows the REPLY path already
-        assembled — so a larger value selects exactly the same rows and the
-        config would be claiming a fold it does not perform. Refused rather
-        than clamped, for the reason this repo refuses a cap with no cap and an
-        index with a hidden top-N: a knob that silently does nothing is worse
-        than no knob, because someone reads it and believes it.
-
-        **NOT gated on `enabled`**, unlike the slot-hold check below. A hold
-        that is too long costs nothing while the tier is off, but a window that
-        lies is wrong on the page whether or not it is running — and the moment
-        it IS switched on is the worst time to discover the number meant
-        something else.
-        """
-        if self.standing.window > self.store.context_window:
-            raise ValueError(
-                f"[standing] window = {self.standing.window} is larger than "
-                f"[store] context_window = {self.store.context_window}. The "
-                f"debrief folds the transcript the REPLY path assembled, so it "
-                f"can never see more rows than that — a larger value is "
-                f"silently the same number. Raise [store] context_window "
-                f"(which widens every reply's prompt) or lower this."
-            )
-        return self
 
     @model_validator(mode="after")
     def _the_standing_slot_hold_fits_its_budget(self) -> Config:
@@ -2676,13 +2655,14 @@ class Config(BaseModel):
         dominates its own budget.
 
         **NOT gated on `enabled` any more**, and the reason is its own
-        sibling's, applied consistently. `_the_standing_window_fits_the_
-        transcript_it_folds` above argues that a number which lies is wrong on
-        the page whether or not it is running, and that «the moment it IS
-        switched on is the worst time to discover it meant something else».
-        That argument is STRONGER here, not weaker: the window's failure is a
-        fold reading fewer rows, and this one's failure is a live conversation
-        that stops answering.
+        sibling's, applied consistently. The former
+        `_the_standing_window_fits_the_transcript_it_folds` (removed with the
+        `[standing] window` key, design/standing-watermark D6) argued that a
+        number which lies is wrong on the page whether or not it is running,
+        and that «the moment it IS switched on is the worst time to discover
+        it meant something else». That argument is STRONGER here, not weaker:
+        the window's failure was a fold reading fewer rows, and this one's
+        failure is a live conversation that stops answering.
 
         Gated, the trap was concrete: set `max_slot_hold_seconds = 60` while
         the tier is off (boots fine), then flip `enabled = true` — and Nora now
@@ -2721,11 +2701,13 @@ class Config(BaseModel):
             # wrong arity this validator has already been through. That is a
             # gap and it is written down as one.
             + self.facts.dispute_classify_timeout_seconds
-            # FIVE. The stage holds five bounded store awaits:
+            # SIX. The stage holds six bounded store awaits:
             # `store_verdict.latest` (the trigger's read), `store.read` (the
-            # prior), `store.write` (the revised position), `store_verdict.save`
-            # and `notes_sink.propose`. It was written as 2x when only the
-            # middle pair existed, then as 4x once the verdict landed, and each
+            # prior), `record_store.since_including_nora` (the watermark batch,
+            # design/standing-watermark/20), `store.write` (the revised
+            # position), `store_verdict.save` and `notes_sink.propose`. It was
+            # written as 2x when only the middle pair existed, then as 4x once
+            # the verdict landed, then 5x when the notes sink arrived, and each
             # time the prose disagreed with the code. The constant is the one
             # source and the stage's own test counts the awaits against it.
             + STANDING_STORE_CALLS_PER_FOLD * self.standing.store_timeout_seconds

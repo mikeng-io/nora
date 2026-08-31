@@ -987,7 +987,8 @@ async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg):
     assert wiring is not None
     assert wiring.store is deps.engagement._context._standing_store
     assert wiring.max_chars == 1200
-    assert wiring.window == 40
+    assert wiring.fold_batch == 200
+    assert wiring.record_store is deps.ingest._audit
 
 
 async def test_the_debrief_model_defaults_to_the_reply_model(cfg):

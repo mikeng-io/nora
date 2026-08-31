@@ -53,6 +53,7 @@ from .stages import identity as identity_stage
 from .stages import media as media_stage
 from .stages import memory_feed as memory_feed_stage
 from .stages import scope as scope_stage
+from .stages import standing_event as standing_event_stage
 
 log = logging.getLogger("nora.ingest.pipeline")
 
@@ -155,6 +156,7 @@ class IngestPipeline:
         transcriber: Transcriber | None = None,
         language: str = "",
         max_description_chars: int = 200,
+        standing_event_wiring: Any | None = None,
     ) -> None:
         """`media_sources`/`blobs` default to None — media custody OFF — and
         that default is a wiring state, not a design position (DEC-43).
@@ -180,6 +182,14 @@ class IngestPipeline:
         notes are transcribed inline during custody and their transcript rides
         the body beside the handle. `language` is the BCP-47 hint forwarded to
         the transcriber.
+
+        `standing_event_wiring` is the event-driven standing fold path
+        (design/standing-watermark/10): `None` (the default and every offline/
+        eval composition) leaves the stage inert. Present, every message that
+        lands in this conversation triggers a spawned check that folds when
+        the accumulator reaches `fold_batch`. Gated on `[standing]
+        event_enabled` in the composition root, like `debrief.Wiring` is gated
+        on `[standing] enabled`.
         """
         self._audit = audit
         self._memory = memory
@@ -195,6 +205,7 @@ class IngestPipeline:
         self._transcriber = transcriber
         self._language = language
         self._max_description_chars = max_description_chars
+        self._standing_event_wiring = standing_event_wiring
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
         """`message` is already normalized — the caller (the adapter's `listen()`
@@ -306,6 +317,24 @@ class IngestPipeline:
                 message=message, person=person, memory=self._memory, metrics=m,
                 spawn=self._spawn,
             )
+
+        # The standing event trigger (design/standing-watermark/10): EVERY
+        # message — tagged or not — spawns a check that reads the conversation's
+        # watermark and folds when the accumulator reaches fold_batch. Off the
+        # listener path via `spawn` (the same pattern memory_feed uses just
+        # above): the check reads two stores and may enqueue a fold, so an
+        # inline await would stall the socket read for every conversation on the
+        # adapter. `None` wiring (`[standing] event_enabled = false` or the tier
+        # off) makes this whole stage inert — and the span is INSIDE the guard
+        # so an unconfigured stage leaves the ingest trace exactly as it was:
+        # a span for a stage that cannot run would make every message's trace
+        # claim work that never happened.
+        if self._standing_event_wiring is not None:
+            with span("ingest.standing_event"):
+                await standing_event_stage.run(
+                    message=message, wiring=self._standing_event_wiring,
+                    metrics=m, spawn=self._spawn,
+                )
 
         with span("ingest.gate"):
             decision = await gate_stage.run(

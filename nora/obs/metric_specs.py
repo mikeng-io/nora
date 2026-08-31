@@ -1483,9 +1483,29 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_standing_overflow_refusals_total",
         "Standing writes refused for exceeding [standing] max_chars, by "
-        "stage: first (the model was asked to consolidate) or final "
-        "(nothing was written and the prior position stands).",
+        "stage: first (the model was asked to consolidate), final (nothing "
+        "was written and the prior position stands) or rollup (an event-path "
+        "fold refused the batch; the watermark did not advance and the next "
+        "message's check retries).",
         ("stage",),
+    ),
+    _CounterSpec(
+        "nora_standing_event_folds_total",
+        "Event-triggered standing fold ROUTINES (design/standing-watermark/10): "
+        "the accumulator reached [standing] fold_batch and an event fold was "
+        "enqueued through ConversationSlots. One per trigger firing that led "
+        "to a fold — read against nora_standing_rollup_folds_total: the gap "
+        "(rollup > event) is the backlog a cold start or a burst had to drain "
+        "in batches.",
+    ),
+    _CounterSpec(
+        "nora_standing_rollup_folds_total",
+        "Rollup folds — the BATCHES folded by the event path's rollup loop "
+        "(design/standing-watermark/30). Each increment is one fold of up to "
+        "[standing] fold_batch rows that wrote a position and advanced the "
+        "watermark. Rollup folds do NOT increment the row's fold_count (D3): "
+        "that counter stays the tag path's ceiling feed; this series is where "
+        "rollup work is counted instead.",
     ),
     # ---- the note tier (2026-08-21 note-tier design §11) -------------------
     #
@@ -1751,6 +1771,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
+    _GaugeSpec(
+        "nora_standing_watermark_gap",
+        "Rows behind a conversation's standing watermark, as the event "
+        "trigger's accumulator read measured them (design/standing-watermark/"
+        "10). Capped at [standing] fold_batch by the read's limit: a value "
+        "of fold_batch means AT LEAST a batch remains, not exactly one. Zero "
+        "or near-zero is caught up.",
+    ),
     _GaugeSpec("nora_last_event_age_seconds", "Seconds since the last ingest event."),
     # The per-platform answer to the same question, added rather than folded
     # into the line above as a label: that series is UNLABELLED on purpose —

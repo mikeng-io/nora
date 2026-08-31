@@ -1093,7 +1093,9 @@ def test_the_standing_section_is_optional_and_ships_inert(toml_path):
     cfg = load(toml_path)
     assert cfg.standing.enabled is False
     assert cfg.standing.max_chars == 1200
-    assert cfg.standing.window == 40
+    assert cfg.standing.fold_batch == 200
+    assert cfg.standing.event_enabled is False
+    assert cfg.standing.rollup_max_folds == 5
     assert cfg.standing.model == ""
 
 
@@ -1120,10 +1122,10 @@ def test_a_standing_cap_exactly_at_the_ceiling_is_allowed(toml_path):
 
 
 def test_an_unknown_standing_key_is_a_startup_failure(toml_path):
-    """`extra="forbid"`, so `windwo = 40` is a boot failure rather than a
-    silently ignored line that leaves the debrief reading forty rows."""
+    """`extra="forbid"`, so `fold_batc = 200` is a boot failure rather than a
+    silently ignored line that leaves the fold batch meaning something else."""
     toml_path.write_text(
-        toml_path.read_text().replace("window = 40", "windwo = 40"))
+        toml_path.read_text().replace("fold_batch = 200", "fold_batc = 200"))
     with pytest.raises(ConfigError):
         load(toml_path)
 
@@ -1163,13 +1165,16 @@ def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
     Falsification: put `self.llm.timeout_seconds` back in the sum and this
     refuses to start.
 
-    53, not 45: the real hold gained recognition's classify timeout when that
-    stage stopped inheriting `[language]`'s 120s Dreamer ceiling. The number
-    here is the WHOLE hold, deliberately — set to exactly what the sum is, so
-    a term added to it or dropped from it reddens this test as well as the
-    one below.
+    58, not 53: the real hold gained recognition's classify timeout (8) when
+    that stage stopped inheriting `[language]`'s 120s Dreamer ceiling, and the
+    standing fold's SIXTH store await — the watermark batch read
+    (`record_store.since_including_nora`, design/standing-watermark/20) — when
+    the fold switched from the reply path's window to the watermark read
+    (20 + 8 + 6 x 5). The number here is the WHOLE hold, deliberately — set to
+    exactly what the sum is, so a term added to it or dropped from it reddens
+    this test as well as the one below.
     """
-    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "53.0")
+    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "58.0")
     # `timeout_seconds` appears in ten sections, so this one is scoped to
     # `[llm]` by hand — `_set_key` deliberately refuses an ambiguous key rather
     # than silently editing the first or all of them.
@@ -1183,7 +1188,7 @@ def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
 
     cfg = load(toml_path)
     assert cfg.llm.timeout_seconds == 600.0, "the edit did not land"
-    assert cfg.standing.max_slot_hold_seconds == 53.0
+    assert cfg.standing.max_slot_hold_seconds == 58.0
 
 
 def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):
@@ -1202,45 +1207,32 @@ def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):
         load(toml_path)
 
 
-def test_a_standing_window_larger_than_the_reply_window_refuses_to_start(toml_path):
-    """A knob that cannot do what it says is refused, not silently clamped.
-
-    The debrief folds `ctx.transcript` — the rows the REPLY path already
-    assembled under `[store] context_window` — so `[standing] window` above
-    that number selects exactly the same rows. Accepting it would let the
-    config claim a 60-row fold while producing a 40-row one, which is the
-    silent-no-op shape this repo refuses everywhere else (an uncapped index, a
-    cap mechanism with no cap). Operator asked for 60-80 on 2026-08-27; this is
-    what makes the real ceiling visible instead of letting the number lie.
-    """
+def test_a_standing_fold_batch_bigger_than_the_reply_window_is_accepted(toml_path):
+    """The old `window` cap relationship is GONE (design/standing-watermark
+    D6): `fold_batch` is a BATCH SIZE, not a recency window — the fold reads
+    the NEXT `fold_batch` rows since its row-id watermark, which may reach
+    further back than `[store] context_window` (that is the whole point; the
+    watermark replaces the reply path's window). A value larger than
+    `context_window` must LOAD, or the new read could not do its job."""
     text = toml_path.read_text()
     i = text.index("[standing]")
     toml_path.write_text(
-        text[:i] + text[i:].replace("window = 40", "window = 80", 1))
-    with pytest.raises(ConfigError, match="context_window"):
-        load(toml_path)
+        text[:i] + text[i:].replace("fold_batch = 200", "fold_batch = 400", 1))
+    cfg = load(toml_path)
+    assert cfg.standing.fold_batch == 400
+    assert cfg.standing.fold_batch > cfg.store.context_window
 
 
-def test_the_standing_window_may_equal_the_reply_window(toml_path):
-    """The boundary from the accepting side — the fold seeing everything she
-    saw must not be off-by-one refused.
-
-    **Rewritten after review:** the first version asserted only that two config
-    defaults were equal, which passes with the validator deleted and would even
-    pass with `window = 12` if `context_window` were also 12. It pinned
-    nothing. This drives the boundary explicitly: `window == context_window`
-    must LOAD, and one more must not, so a `>=`-instead-of-`>` slip goes red.
-    """
+def test_a_standing_fold_batch_of_zero_refuses_to_start(toml_path):
+    """`fold_batch` is a batch size, so the one hard bound it has is the
+    domain one: a fold that reads zero rows is a fold that does nothing, and a
+    `ge=1` constraint is what refuses it at startup rather than at the first
+    fold."""
     text = toml_path.read_text()
     i = text.index("[standing]")
-    at_ceiling = text[:i] + text[i:].replace("window = 40", "window = 40", 1)
-    toml_path.write_text(at_ceiling)
-    cfg = load(toml_path)
-    assert cfg.standing.window == cfg.store.context_window == 40
-
-    over = text[:i] + text[i:].replace("window = 40", "window = 41", 1)
-    toml_path.write_text(over)
-    with pytest.raises(ConfigError, match="context_window"):
+    toml_path.write_text(
+        text[:i] + text[i:].replace("fold_batch = 200", "fold_batch = 0", 1))
+    with pytest.raises(ConfigError):
         load(toml_path)
 
 

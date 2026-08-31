@@ -43,7 +43,6 @@ def _render(**kw) -> str:
     kw.setdefault("trace", _trace())
     kw.setdefault("prior", None)
     kw.setdefault("display_name", "Nora")
-    kw.setdefault("window", 12)
     kw.setdefault("tz", UTC)
     return render_debrief_input(**kw)
 
@@ -171,17 +170,23 @@ def test_the_prior_body_is_rendered_when_there_is_one():
 
 # --- the window, the reasoning, and escaping -------------------------------
 
-def test_the_window_takes_the_tail_and_not_the_head():
-    """S3: its own window, smaller than the reply path's. Taking the tail is
-    the half that is easy to get backwards — the rows nearest the turn being
-    reviewed are the ones the turn is about, and a head slice would show the
-    debrief the oldest messages in the reply's own context window."""
-    rows = tuple(
-        _row(i, 1_756_000_000_000 + i * 60_000, "Miles", f"m{i}") for i in range(10)
-    )
-    out = _render(trace=_trace(rows=rows), window=3)
-    assert "m9" in out and "m8" in out and "m7" in out
-    assert "m6" not in out
+def test_the_fold_sees_the_watermark_batch_plus_the_turns_own_rows():
+    """design/standing-watermark/20 + D8: the transcript is the watermark
+    batch (`since_rows`, the rows since the last fold's row-id watermark)
+    PLUS the turn's own rows (`trace.transcript`), deduped by id and
+    ascending — the event check fires BEFORE the tag reply, so the tag fold
+    must include the turn's trace rows even when the watermark already covers
+    them."""
+    batch = (_row(1, 1_756_000_000_000, "Miles", "m1"),
+             _row(2, 1_756_000_060_000, "Miles", "m2"))
+    turn_rows = (_row(2, 1_756_000_060_000, "Miles", "m2"),   # overlap: deduped
+                 _row(3, 1_756_000_120_000, "Miles", "m3"))
+    out = _render(trace=_trace(rows=turn_rows), since_rows=batch)
+    assert "m1" in out and "m2" in out and "m3" in out
+    # deduped: m2 appears exactly once
+    assert out.count("m2") == 1
+    # ascending by id: m1 before m2 before m3
+    assert out.index("m1") < out.index("m2") < out.index("m3")
 
 
 def test_a_tool_call_and_its_result_are_rendered_as_such():
@@ -237,8 +242,7 @@ def test_the_verdict_render_is_the_turn_without_the_prior():
     shown what actually happened, not the position it is about to write. It
     is the local half of the split's impartiality argument: the prompt
     pollution the single completion had was the prior feeding the judge."""
-    out = render_verdict_input(trace=_trace(), display_name="Nora", window=12,
-                               tz=UTC)
+    out = render_verdict_input(trace=_trace(), display_name="Nora", tz=UTC)
     assert "<standing_prior>" not in out
     assert "<turn " in out
     assert "<transcript>" in out and "<reasoning>" in out
@@ -248,7 +252,7 @@ def test_the_verdict_render_sees_the_outcome_and_the_gloss():
     """The judge sequences the turn's ENDING too: a verdict about a turn must
     know how it ended (§2 — a silence is the case most worth judging)."""
     out = render_verdict_input(trace=_trace(outcome="silent"),
-                               display_name="Nora", window=12, tz=UTC)
+                               display_name="Nora", tz=UTC)
     assert 'outcome="silent"' in out
     assert "chose to say nothing" in out
 
@@ -260,16 +264,14 @@ def test_the_standing_render_is_the_prior_plus_the_same_turn_block():
     trace = _trace(rows=(_row(1, 1_756_000_920_000, "Miles", "去邊食"),),
                    messages=({"role": "assistant",
                               "content": [{"text": "我諗諗"}]},))
-    turn = render_debrief_turn(trace=trace, display_name="Nora", window=12,
-                               tz=UTC)
+    turn = render_debrief_turn(trace=trace, display_name="Nora", tz=UTC)
     standing = render_debrief_input(
         trace=trace,
         prior=Standing(platform="signal", conversation_id="g1",
                        body="old position", fold_count=1, updated_at=1),
-        display_name="Nora", window=12, tz=UTC,
+        display_name="Nora", tz=UTC,
     )
-    verdict = render_verdict_input(trace=trace, display_name="Nora", window=12,
-                                   tz=UTC)
+    verdict = render_verdict_input(trace=trace, display_name="Nora", tz=UTC)
     assert standing == "<standing_prior>\nold position\n</standing_prior>\n\n" + turn
     assert verdict == turn
     assert standing != verdict  # the whole point of the split

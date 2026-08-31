@@ -61,8 +61,10 @@ DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 
 #: How many bounded store awaits ONE fold makes, and therefore how many
 #: `store_timeout_seconds` the slot hold has to budget for: the trigger's
-#: verdict read, the prior position, the revised position, the turn verdict,
-#: and the note proposals.
+#: verdict read, the prior position, the watermark batch read
+#: (`record_store.since_including_nora` — the fold now reads the stretch
+#: since the last fold's watermark, standing-watermark 20), the revised
+#: position, the turn verdict, and the note proposals.
 #:
 #: **It lives HERE and not in the stage**, even though the stage is what makes
 #: the calls. `Config._the_standing_slot_hold_fits_its_budget` needs it, and a
@@ -75,8 +77,8 @@ DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 #:
 #: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
 #: `asyncio.wait_for` calls in the stage and asserts they match, so adding a
-#: sixth fails a test instead of silently widening the hold.
-STANDING_STORE_CALLS_PER_FOLD = 5
+#: seventh fails a test instead of silently widening the hold.
+STANDING_STORE_CALLS_PER_FOLD = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +144,13 @@ class Standing:
     fold_count: int
     updated_at: int
     consumed_verdict_tag: str | None = None
+    # The ROW-ID watermark (design/standing-watermark/20): the `messages.id`
+    # the last fold read up to. `None` means the conversation has never folded
+    # — the cold-start case, which reads from the beginning (after_id=0). The
+    # same nullable-watermark convention as `consumed_verdict_tag`: a sentinel
+    # that could compare equal to a real row id is a watermark satisfiable by
+    # accident, so the only "never folded" spelling is `None`.
+    last_folded_row_id: int | None = None
 
     def __post_init__(self) -> None:
         if not self.body or not self.body.strip():
@@ -159,3 +168,9 @@ class Standing:
             # spelling of the same state that compares unequal to it, which is
             # how a watermark starts having two null values.
             raise ValueError("consumed_verdict_tag is a tag_id or None")
+        if (self.last_folded_row_id is not None
+                and self.last_folded_row_id < 1):
+            # `None` means "never folded" and the read starts from the
+            # beginning; `0` would be a second spelling of that state that
+            # compares unequal to it, and messages ids start at 1 anyway.
+            raise ValueError("last_folded_row_id is a row id or None")
