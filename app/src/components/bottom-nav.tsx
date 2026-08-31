@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { Activity, BookOpen, CalendarDays, Gamepad2, MapPin, Sparkles, Users, MessageCircle } from "lucide-react";
+import { Activity, BookOpen, CalendarDays, Gamepad2, MapPin, Sparkles, Users, MessageCircle, Wrench } from "lucide-react";
 import { Link, usePathname } from "@/i18n/routing";
 import { MODULES } from "@/lib/modules";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,7 @@ export const ICONS: Record<string, typeof Activity> = {
   people: Users,
   events: CalendarDays,
   doctrine: BookOpen,
+  tools: Wrench,
 };
 
 // Mobile-only (md:hidden — the sidebar in (portal)/layout.tsx owns nav on

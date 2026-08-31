@@ -12,7 +12,8 @@
     "events": "Events",
     "doctrine": "Doctrine",
     "language": "Language",
-    "chat": "Chat"
+    "chat": "Chat",
+    "tools": "Tools"
   },
   "chat": {
     "heading": "Chat with Nora",
@@ -386,5 +387,20 @@
     "loading": "Loading doctrine…",
     "error": "Couldn't load her doctrine.",
     "version": "v{version}"
+  },
+  "tools": {
+    "eyebrow": "Tool Catalog",
+    "heading": "What I Can Do",
+    "dek": "Every tool the deployed agent can actually call, fresh from the live registry — a new tool shows up here with no frontend rebuild.",
+    "loading": "Loading…",
+    "error": "Couldn't load the tool catalog.",
+    "noDescription": "No description",
+    "budget": "Budget {budget}",
+    "terminal": "Ends turn",
+    "readOnly": "Read-only",
+    "writes": "Can write",
+    "cacheable": "Cacheable",
+    "sideEffect": "{state}",
+    "contract": "Contract: {contract}"
   }
 }

@@ -8,7 +8,7 @@
  */
 export interface Module {
   id: string;
-  labelKey: "status" | "memory" | "games" | "map" | "events" | "people" | "doctrine";
+  labelKey: "status" | "memory" | "games" | "map" | "events" | "people" | "doctrine" | "tools";
   href: string;
   status: "live" | "designed" | "future";
 }
@@ -26,4 +26,8 @@ export const MODULES: Module[] = [
   // Graduated out of status page's placeholder capability tiles (same as
   // skills did) once it got a real page of its own.
   { id: "doctrine", labelKey: "doctrine", href: "/doctrine", status: "live" },
+  // The live tool catalog — what the deployed agent can actually call,
+  // served fresh from /app/v1/tools so a new tool shows up with no
+  // frontend rebuild.
+  { id: "tools", labelKey: "tools", href: "/tools", status: "live" },
 ];

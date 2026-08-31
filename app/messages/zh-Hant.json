@@ -12,7 +12,8 @@
     "events": "活動",
     "doctrine": "行為準則",
     "language": "語言",
-    "chat": "傾偈"
+    "chat": "傾偈",
+    "tools": "工具"
   },
   "chat": {
     "heading": "同 Nora 傾偈",
@@ -386,5 +387,20 @@
     "loading": "載入緊行為準則…",
     "error": "連唔到佢嘅行為準則。",
     "version": "v{version}"
+  },
+  "tools": {
+    "eyebrow": "工具目錄",
+    "heading": "我可以做啲乜",
+    "dek": "呢度列出部署咗嘅 agent 真正可以call嘅所有工具，直接讀取 live registry——新工具一 deploy 就會出現，唔使重新 build。",
+    "loading": "載入中…",
+    "error": "載入工具目錄失敗。",
+    "noDescription": "冇描述",
+    "budget": "預算 {budget}",
+    "terminal": "完結回合",
+    "readOnly": "唯讀",
+    "writes": "可以寫入",
+    "cacheable": "可緩存",
+    "sideEffect": "{state}",
+    "contract": "合約：{contract}"
   }
 }

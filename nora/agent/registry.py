@@ -25,9 +25,13 @@ policy) built once per process by the composition root.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
+
+from strands.tools.decorator import FunctionToolMetadata
 
 from ..domain.compute import ComputeJobStore
 from ..domain.models import TranscriptRow
@@ -66,6 +70,8 @@ from .tools import (
     utc_now,
 )
 from .whereis import Circle, PresenceReader
+
+log = logging.getLogger("nora.agent.registry")
 
 
 class ToolRegistry:
@@ -453,6 +459,83 @@ class ToolRegistry:
         built or described here (see `specs()`), so it does not belong in the
         gate's list either."""
         return tuple(name for name, spec in NATIVE_TOOLS.items() if not spec.plugin)
+
+    def catalog(self) -> tuple[dict, ...]:
+        """Every built tool's public metadata — name, model-facing
+        description, and declared registry fields — for the web portal's
+        `/app/v1/tools` endpoint.
+
+        This is the LIVE surface: the descriptions come from the same
+        Strands introspection the agent loop derives (`FunctionToolMetadata.
+        extract_metadata`, Args-stripped), and the declared fields are read
+        straight off `NATIVE_TOOLS` — so what the portal shows IS what the
+        deployed agent can call, and a tool added on master appears here on
+        the next deploy with no frontend rebuild.
+
+        Why this method lives HERE and not in `nora.web`: the strands import
+        boundary (`tests/test_boundaries.py::test_strands_import_boundary`)
+        allows `strands` only under `nora/agent/` and `nora/compute/` — the
+        web layer must not import it. The registry already owns the tool
+        table, so it is the natural single reader.
+
+        Plugin tools are excluded by construction (`build_tool_specs` does
+        not build them). A spec whose `call` cannot be introspected keeps its
+        declared fields with `description` dropped — one bad tool must never
+        sink the endpoint (R-27), and the failure is logged server-side.
+        """
+        specs = build_tool_specs(
+            store=None,
+            conversation_id="catalog",
+            conversation_type="group",
+            persons=None,
+            honcho=None,
+            deliverer=None,
+            metrics=None,
+            room=self._catalog_room(),
+            question="",
+            context_window=40,
+            transit_source=self._transit,
+        )
+        catalog = []
+        for spec in specs:
+            declared = NATIVE_TOOLS[spec.name]
+            entry: dict = {
+                "name": spec.name,
+                "budget": declared.budget,
+                "terminal": declared.terminal,
+                "time_shiftable": declared.time_shiftable,
+                "source_tier": declared.source_tier,
+                "cacheable": declared.cacheable,
+                "read_only": declared.read_only,
+                "side_effect_state": declared.side_effect_state,
+                "idempotency": declared.idempotency,
+                "retry": declared.retry,
+                "output_contract": declared.output_contract,
+            }
+            try:
+                metadata = FunctionToolMetadata(spec.call).extract_metadata()
+                description = metadata.get("description")
+                if description:
+                    entry["description"] = description
+            except Exception:  # noqa: BLE001 — R-27: never sink the endpoint
+                log.exception("could not introspect tool %s for the catalog", spec.name)
+            catalog.append(entry)
+        return tuple(sorted(catalog, key=lambda entry: entry["name"]))
+
+    @staticmethod
+    def _catalog_room() -> Any:
+        """The minimal `Room` stand-in `build_tool_specs` reads while building.
+
+        Only the attributes the builder touches while constructing the tool
+        list matter (`platform`/`conversation_id` for the conversation-scoped
+        closures); every collaborator is `None` because no tool is CALLED
+        here (a call would be the only thing touching a socket or a roster).
+        A real `Room` is constructed per tag with a roster source — the
+        catalog needs none of it.
+        """
+        return SimpleNamespace(
+            platform="signal", conversation_id="catalog", tagger=None,
+        )
 
     def specs(
         self,
