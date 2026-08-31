@@ -173,10 +173,17 @@ SEED_INTENT_GRAPH = IntentGraph(
         ("place_info", "transit"),
         ("transit", "route"),
         ("place_info", "route"),
-        # the memory verbs
-        ("about", "ask_memory"),
-        ("about", "search_memory"),
-        ("ask_memory", "search_memory"),
+        # the memory verbs — READ-READ edges DELIBERATELY ABSENT (audit
+        # 2026-08-31): `about`/`ask_memory`/`search_memory`/`search_knowledge`
+        # are different READ verbs over the SAME store, and a model that
+        # reaches for a raw-message search before/after a profile read is doing
+        # a normal multi-step lookup, not a routing error. The old
+        # `(about, search_memory)` edge graded that reasonable behaviour as a
+        # sibling leak (about_recall 0/9: tools=['search_memory',
+        # 'search_memory', 'about', 'search_knowledge'], about served the
+        # correct conclusion and still failed NoSiblingLeakage). Only the
+        # WRITE lane is a true routing fork: answering 記唔記得 by WRITING, or
+        # a 記低 ask by reading — the pair these edges police.
         # the write lane (live 2026-08-29): 「記低」 a settled person-fact,
         # 「記唔記得」 a recall ask, and the note lane that refuses person
         # facts by design. These edges are what make a recall ask answered

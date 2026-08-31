@@ -88,12 +88,17 @@ SEED_JOURNEYS: tuple[Journey, ...] = (
     ),
     Journey(
         intent=Intent(name="where_work", required=frozenset({"saved_places"}), budget=2),
-        message="我邊度返工嚟?",  # "where is it that I work again?"
+        message="我記唔到路, 我返工嗰度叫咩名嚟?",
         note=(
             "The «work» label this household SAVED, so `saved_places`. The trap is "
             "`where_is` — the model reaching for live GPS to answer a question "
             "about a REMEMBERED place, which is the exact '我邊度返工' bug (DEC-74 "
-            "context): a saved-label question answered with a location fix."
+            "context): a saved-label question answered with a location fix. "
+            "Audit 2026-08-31: the original message «我邊度返工嚟?» was answered "
+            "from the production transcript (which contains the company name) "
+            "with zero tool calls — a prompt-shortcut, not routing. Rephrased "
+            "to ask for the LABEL (the saved place's name), which the transcript "
+            "does not contain, so the model must call `saved_places`."
         ),
     ),
     # The remember write lane (live 2026-08-29, message id 1932): Nora said
@@ -116,14 +121,18 @@ SEED_JOURNEYS: tuple[Journey, ...] = (
         ),
     ),
     Journey(
-        intent=Intent(name="about_recall", required=frozenset({"about"}), budget=2),
+        intent=Intent(name="about_recall", required=frozenset({"about"}), budget=3),
         message="記唔記得我屋企有咩動物?",
         note=(
             "The READ half of the same pair: a recall ask. Correct: `about` — "
             "read back what has been concluded about the speaker. The trap is "
             "`remember`: answering 記唔記得 by WRITING is the sibling leak the "
             "remember-about edge exists to catch — a recall ask must never "
-            "become a write. Budget 2: one read, room for one retry."
+            "become a write. Budget 3 (audit 2026-08-31): one `about` read plus "
+            "room for a legitimate multi-step lookup (`search_memory` for the "
+            "raw words, `ask_memory` for a reasoned answer) — a profile read "
+            "alone measured at up to 3 work calls and failing at 2 was a "
+            "harness artifact, not flail."
         ),
         seed={"conclusions": {"miles_novak": [
             "Miles's home has two cats — the settled fact about his pets.",
