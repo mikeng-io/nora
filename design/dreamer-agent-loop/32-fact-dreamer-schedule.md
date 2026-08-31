@@ -180,14 +180,24 @@ already refuses them):
 | Tool | Reads | Returns |
 |---|---|---|
 | `search_knowledge(query)` | `fact` hybrid (dense + lexical) | **EXISTS** (`tools.py:868`/`5959`) — but key path broken for workspace-keyed adaptors (see below) |
-| `get_fact(subject)` | `fact` where `superseded_at IS NULL` | the live facts about a subject |
-| `search_fact(query)` | `fact` + `fact_entity` | facts matching the query across the workspace |
-| `fact_premises(fact_id)` | `fact_premise` | the dependency edges — which facts this one rests on |
-| `fact_asserters(fact_id)` | `fact_asserter` | who said it, when, in which message |
-| `fact_entity(name)` | `fact_entity` | the canonical entity + aliases a name resolves to |
+| `get_knowledge(subject)` | `fact` where `superseded_at IS NULL` | the live facts about a subject |
+| `knowledge_premises(fact_id)` | `fact_premise` | the dependency edges — which facts this one rests on |
+| `knowledge_asserters(fact_id)` | `fact_asserter` | who said it, when, in which message |
+| `knowledge_entity(name)` | `fact_entity` | the canonical entity + aliases a name resolves to |
 | `note_read(title)` | `note` (live heads) | **EXISTS** (`tools.py:5793`) — expose to the Dreamer |
 | `note_search(query)` | `note` | **EXISTS** (`tools.py:5935`) — expose to the Dreamer |
 | `search_memory_workspace(query)` | Honcho, all peers in the workspace | memory excerpts across the workspace's people |
+
+**Terminology: the tier is the KNOWLEDGE tier, not the fact tier.** The
+rename happened in the design layer (`20-knowledge-tier.md` — "The name
+followed the implementation, and the name has been setting everyone's idea of
+the scope") and in the tool surface (`search_knowledge`), but the code layer
+lags: config section `[facts]`, file `facts.py`, tables `fact_*`. The new
+tools follow the knowledge vocabulary (`get_knowledge`, `knowledge_premises`,
+`knowledge_asserters`, `knowledge_entity`) to match the existing
+`search_knowledge` — a `get_fact`/`search_fact` pair would re-split a
+vocabulary the tier already unified. The tables keep their `fact_*` names
+until a migration renames them; the tool surface does not wait for that.
 
 **The fact tier is NOT a blank — it has a query surface with a key-path
 defect.** `search_knowledge` already exists and is the tier's retrieval verb
@@ -203,13 +213,13 @@ room at all, because the Dreamer's key already IS the workspace and must be
 SUPPLIED rather than derived.
 
 **So the real work is: (1) fix the key path** — `search_knowledge` (and the
-new fact tools) take the workspace from the adaptor's key, not from the room;
-**(2) expose what exists** — `search_knowledge`, `note_read`, `note_search`
-go into `WORKSPACE_SAFE_TOOLS` once the key path is supplied; **(3) add the
-graph-aware reads** — `get_fact`, `search_fact`, `fact_premises`,
-`fact_asserters`, `fact_entity` are genuinely new, wrapping `SqlFactStore`'s
-existing read methods (`asserters()` at `facts.py:532`, `standing_facts()` at
-`facts.py:783`).
+new knowledge tools) take the workspace from the adaptor's key, not from the
+room; **(2) expose what exists** — `search_knowledge`, `note_read`,
+`note_search` go into `WORKSPACE_SAFE_TOOLS` once the key path is supplied;
+**(3) add the graph-aware reads** — `get_knowledge`, `knowledge_premises`,
+`knowledge_asserters`, `knowledge_entity` are genuinely new, wrapping
+`SqlFactStore`'s existing read methods (`asserters()` at `facts.py:532`,
+`standing_facts()` at `facts.py:783`).
 
 **The graph is the point, not a flat list.** The fact tier's schema is
 already a graph — `fact_entity` (nodes), `fact_premise` (dependency edges),
@@ -265,13 +275,13 @@ attribution is the "who said it, when" the operator asked for.
    copied onto the adjudicated `fact` row when the candidate is settled — so
    the rendered `<facts>` block can say who said it and when, not only the web
    warrant.
-3. **Tool names are the operator's.** `get_fact`, `search_fact`,
-   `fact_premises`, `fact_asserters`, `fact_entity`, `note_read`,
-   `note_search`, `search_memory_workspace` — the two note tools already
-   exist under those names; the fact tools wrap `SqlFactStore`'s existing
-   read methods; the workspace memory variant reuses `search_memory`'s
-   implementation. A rename is a three-place contract change and is not made
-   by taste.
+3. **Tool names are the operator's.** `search_knowledge` (exists),
+   `get_knowledge`, `knowledge_premises`, `knowledge_asserters`,
+   `knowledge_entity`, `note_read`, `note_search`,
+   `search_memory_workspace` — the two note tools already exist under those
+   names; the knowledge tools wrap `SqlFactStore`'s existing read methods;
+   the workspace memory variant reuses `search_memory`'s implementation. A
+   rename is a three-place contract change and is not made by taste.
 
 ## 6. Reversal conditions
 
