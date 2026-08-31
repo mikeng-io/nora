@@ -44,7 +44,6 @@ from typing import Any
 from .directions import Journey, candidates_note, describe, read_journey
 from .http import post_json
 from .places import Place, PlaceResolution, PlaceResolver
-from ..parking.nearby import NearbyParking, SEARCH_RADIUS_M, search_nearby
 
 log = logging.getLogger("nora.routes")
 
@@ -294,7 +293,7 @@ class RouteClient:
 
     async def nearby_parking(
         self, *, lat: float, lng: float, radius_m: float | None = None,
-    ) -> tuple[NearbyParking, ...] | None:
+    ) -> tuple[Any, ...] | None:
         """Car parks near a point, for `find_parking`. NEVER raises.
 
         This is the FIND layer — «附近邊度有停車場» — answered from Google
@@ -304,6 +303,9 @@ class RouteClient:
         reports `unavailable`); an empty tuple = Google searched and found
         nothing nearby (honest answer, never a fabricated list).
         """
+        # Imported lazily: `parking.nearby` imports `routes.http`, which is
+        # already partially imported here — a module-level import is a cycle.
+        from ..parking.nearby import SEARCH_RADIUS_M, search_nearby
         try:
             return await search_nearby(
                 api_key=self._api_key, lat=lat, lng=lng,

@@ -31,6 +31,7 @@ from typing import Any
 from nora.domain.models import WeatherObservation
 from nora.domain.presence import PresenceFix, SavedPlace, WireState
 from nora.infra.parking.nearby import NearbyParking
+from nora.infra.parking.street import StreetParking
 
 #: The tools these canned providers back — the set the per-journey gate checks a
 #: journey's (required + siblings) against before promoting its leakage/budget
@@ -113,6 +114,21 @@ class CannedParkingProvider:
             # the model has the whole answer in one call.
             "fee": "HK$27/hour (Mon-Thu), HK$40/hour (Fri-Sun & PH)",
         }
+
+
+class CannedStreetParkingProvider:
+    """`StreetParkingClient` shape - a fixed summary, always `ok`.
+
+    Completeness matters (measured 2026-08-31): a find_parking result that
+    omits the street row would look like "no streets", so return a real
+    summary with names the model can repeat.
+    """
+
+    async def near(self, *, lat: float, lng: float, radius_m=None):
+        return StreetParking(
+            total=12, vacant=4,
+            streets=("登打士街", "上海街"),
+        )
 
 
 class CannedSearchProvider:

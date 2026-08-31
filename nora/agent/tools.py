@@ -1764,6 +1764,7 @@ def build_tool_specs(
     social_source=None,
     weather_source=None,
     parking_source=None,
+    street_parking_source=None,
     presence_source=None,
     presence_circles=(),
     location_trusted: bool = False,
@@ -4480,7 +4481,11 @@ Args:
         the live answer — do not call `parking_status` again for the same
         lot; only a lot WITHOUT vacancy in this result needs its own
         `parking_status` lookup, and `parking_status` needs the user to name
-        the spot, not «the one you just found». ALWAYS carry a quoted
+        the spot, not «the one you just found». `street_parking` (present
+        when the street-meters feed is reachable) says how many metered
+        bays are within a short walk and how many are VACANT right now, on
+        which streets — on-street parking has no name to look up, so this
+        is the answer to «街邊有冇位泊». ALWAYS carry a quoted
         vacancy's age into your
         reply («大概 11:35 更新, 仲有 30 個位»); a vacancy without its age
         reads as right now, which you do not know. `nothing_found` when
@@ -4585,8 +4590,25 @@ Args:
                     entry["vacancy"] = live.get("vacancy")
                     entry["lastupdate"] = live.get("lastupdate")
             out.append(entry)
+        result: dict[str, object] = {"status": "ok", "car_parks": out}
+        # On-street metered parking near the same point — the TD street-meters
+        # feed (hk-td-msd_1). One summary row: how many metered bays and how
+        # many VACANT, plus the street names. `Vacant` is live (the tiny
+        # occupancy CSV); absent when the feed is unreachable or not wired.
+        if street_parking_source is not None:
+            try:
+                street = await street_parking_source.near(lat=lat, lng=lng)
+            except Exception:
+                log.exception("find_parking street check failed")
+                street = None
+            if street is not None:
+                result["street_parking"] = {
+                    "total_bays": street.total,
+                    "vacant_bays": street.vacant,
+                    "streets": list(street.streets),
+                }
         _record(metrics, "find_parking", "ok", count=len(out))
-        return {"status": "ok", "car_parks": out}
+        return result
 
     def _music_sender_ids() -> frozenset[str]:
         """The tagger's raw Discord ids — `MusicToolBridge.play`'s
@@ -6440,6 +6462,7 @@ def build_tools(
     social_source=None,
     weather_source=None,
     parking_source=None,
+    street_parking_source=None,
     presence_source=None,
     presence_circles=(),
     location_trusted: bool = False,
@@ -6472,7 +6495,7 @@ def build_tools(
         describe_models=describe_models,
         describe_providers=describe_providers,
         search_source=search_source, weather_source=weather_source,
-        parking_source=parking_source,
+        parking_source=parking_source, street_parking_source=street_parking_source,
         social_source=social_source,
         presence_source=presence_source, presence_circles=presence_circles,
         location_trusted=location_trusted,

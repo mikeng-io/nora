@@ -47,7 +47,7 @@ from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.routes import RouteClient
 from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
-from ..infra.parking import ParkingClient
+from ..infra.parking import ParkingClient, StreetParkingClient
 from ..infra.version import VersionManifest
 from ..infra.vision import VisionCache, VisionClient
 from .links import LinkCarry
@@ -94,6 +94,7 @@ class ToolRegistry:
         self, *,
         transit: TransitClient | None = None,
         parking: ParkingClient | None = None,
+        street_parking: StreetParkingClient | None = None,
         route: RouteClient | None = None,
         vision: VisionClient | None = None,
         describe_models: Mapping[str, str] | None = None,
@@ -142,6 +143,12 @@ class ToolRegistry:
         # constructing a `ParkingClient` costs nothing (no session, no index
         # fetch until a tool is called).
         self._parking = parking if parking is not None else ParkingClient()
+        # `street_parking` is the same keyless TD feed family (hk-td-msd_1,
+        # the metered on-street spaces) — default-constructs for the same
+        # reasons as `parking`: no key, no cost until a tool calls it.
+        self._street_parking = (
+            street_parking if street_parking is not None else StreetParkingClient()
+        )
         # `route` is NOT default-constructed: unlike `TransitClient`, a
         # `RouteClient` needs a Google API key, and there is no keyless default
         # to fall back to. When it is None — every composition that has not
@@ -509,6 +516,7 @@ class ToolRegistry:
             describe_max_bytes=self._describe_max_bytes,
             search_source=self._search, weather_source=self._weather,
             parking_source=self._parking,
+            street_parking_source=self._street_parking,
             social_source=self._social,
             presence_source=self._presence, presence_circles=self._circles,
             location_trusted=location_trusted,

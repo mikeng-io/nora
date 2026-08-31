@@ -99,6 +99,7 @@ from nora.testing.eval_backends import (
     CannedParkingProvider,
     CannedPresenceReader,
     CannedRouteSource,
+    CannedStreetParkingProvider,
     CannedSearchProvider,
     CannedTransitSource,
     CannedWeatherProvider,

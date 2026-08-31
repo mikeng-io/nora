@@ -43,6 +43,7 @@ from nora.testing import (
     CannedPresenceReader,
     CannedRouteSource,
     CannedSearchProvider,
+    CannedStreetParkingProvider,
     CannedTransitSource,
     CannedWeatherProvider,
 )
@@ -196,6 +197,7 @@ def build_eval_tool_registry() -> ToolRegistry:
     return ToolRegistry(
         weather=CannedWeatherProvider(),
         parking=CannedParkingProvider(),
+        street_parking=CannedStreetParkingProvider(),
         search=CannedSearchProvider(),
         route=cast(Any, CannedRouteSource()),
         transit=cast(Any, CannedTransitSource()),
