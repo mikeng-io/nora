@@ -179,6 +179,7 @@ already refuses them):
 
 | Tool | Reads | Returns |
 |---|---|---|
+| `search_knowledge(query)` | `fact` hybrid (dense + lexical) | **EXISTS** (`tools.py:868`/`5959`) — but key path broken for workspace-keyed adaptors (see below) |
 | `get_fact(subject)` | `fact` where `superseded_at IS NULL` | the live facts about a subject |
 | `search_fact(query)` | `fact` + `fact_entity` | facts matching the query across the workspace |
 | `fact_premises(fact_id)` | `fact_premise` | the dependency edges — which facts this one rests on |
@@ -187,6 +188,28 @@ already refuses them):
 | `note_read(title)` | `note` (live heads) | **EXISTS** (`tools.py:5793`) — expose to the Dreamer |
 | `note_search(query)` | `note` | **EXISTS** (`tools.py:5935`) — expose to the Dreamer |
 | `search_memory_workspace(query)` | Honcho, all peers in the workspace | memory excerpts across the workspace's people |
+
+**The fact tier is NOT a blank — it has a query surface with a key-path
+defect.** `search_knowledge` already exists and is the tier's retrieval verb
+(hybrid dense + lexical, workspace-scoped, `tools.py:5959`). It is
+deliberately NOT in `WORKSPACE_SAFE_TOOLS` (`dreamer.py:201-220`): the verb
+resolves its workspace through the ROOM — `workspace_for(room.platform,
+conversation_id)` — and `RegistryToolSource.build` hands a workspace-keyed
+adaptor a `Room` with no platform and the workspace in the conversation slot.
+Policy cannot name that, so the verb answers `unavailable` on every call,
+forever. `08-state.md` §10 names this exact trap: a tier read tool for a
+workspace-keyed adaptor needs a key path that does not route through the
+room at all, because the Dreamer's key already IS the workspace and must be
+SUPPLIED rather than derived.
+
+**So the real work is: (1) fix the key path** — `search_knowledge` (and the
+new fact tools) take the workspace from the adaptor's key, not from the room;
+**(2) expose what exists** — `search_knowledge`, `note_read`, `note_search`
+go into `WORKSPACE_SAFE_TOOLS` once the key path is supplied; **(3) add the
+graph-aware reads** — `get_fact`, `search_fact`, `fact_premises`,
+`fact_asserters`, `fact_entity` are genuinely new, wrapping `SqlFactStore`'s
+existing read methods (`asserters()` at `facts.py:532`, `standing_facts()` at
+`facts.py:783`).
 
 **The graph is the point, not a flat list.** The fact tier's schema is
 already a graph — `fact_entity` (nodes), `fact_premise` (dependency edges),
@@ -204,13 +227,11 @@ adjudicator.
 path (`NativeTool` rows at `tools.py:775/786`, implementations at
 `tools.py:5793/5935`). The Dreamer gets them by adding the names to its
 `tools` set and to `WORKSPACE_SAFE_TOOLS` — the same function objects, no
-second copy. `SqlFactStore` already has `asserters()` (`facts.py:532`) and
-`standing_facts()` (`facts.py:783`) — the new tools wrap those store methods,
-not duplicate them. `search_memory_workspace` is a workspace-scoped variant
-of the room-scoped `search_memory` — the existing implementation is reused
-with a different scope argument, not copied.
+second copy. `search_memory_workspace` is a workspace-scoped variant of the
+room-scoped `search_memory` — the existing implementation is reused with a
+different scope argument, not copied.
 
-All eight are added to `WORKSPACE_SAFE_TOOLS` and declared in `NativeTool`
+All nine are added to `WORKSPACE_SAFE_TOOLS` and declared in `NativeTool`
 with `read_only=True`, `source_tier="remembered"`, bounded budgets (2–4 per
 turn).
 
