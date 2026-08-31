@@ -28,6 +28,7 @@ shapes and counts anything else as `bad_payload`; see its docstring.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 
 import pytest
@@ -452,6 +453,76 @@ async def test_discord_refuses_an_oversize_body_with_no_declared_length(aiohttp_
     got = await source.fetch(ref=MediaRef(
         platform_id="900", media_type="image/png", sticker=True,
         fetch_token="sticker:900:png"))  # noqa: S106
+
+    assert got.available is False
+    assert got.reason == "too_large"
+
+
+async def test_discord_reads_a_chunked_body_to_completion(aiohttp_server):
+    """The live defect (2026-08-31): Discord's CDN streams attachments in
+    ~1.4 KB packets, and `StreamReader.read(n)` returns as soon as the FIRST
+    buffered chunk arrives — it does not wait for `n` bytes or EOF. A 2.3 MB
+    image was stored as 1.4 KB and the truncated body passed the post-read
+    size check. This response writes the body in several small chunks, so a
+    single-shot `read(max_bytes + 1)` returns only the first chunk and this
+    test goes red; the loop must read until EOF."""
+    body = b"".join(bytes([i % 251]) * 1000 for i in range(10))  # 10 KB in 10 chunks
+
+    async def cdn(request):
+        resp = web.StreamResponse(status=200, headers={"Content-Type": "image/jpeg"})
+        await resp.prepare(request)
+        for i in range(10):
+            await resp.write(body[i * 1000:(i + 1) * 1000])
+            # A real CDN does not deliver all chunks in one flush; without
+            # this delay aiohttp coalesces the writes and `read(n)` happens
+            # to see the whole body, which is exactly why the old single-shot
+            # read passed its tests while production stored 1.4 KB of a 2.3 MB
+            # image. The delay makes the test exercise the real wire shape.
+            await asyncio.sleep(0.01)
+        await resp.write_eof()
+        return resp
+
+    app = web.Application()
+    app.router.add_get("/attachments/1/2/photo.jpg", cdn)
+    server = await aiohttp_server(app)
+    url = server.make_url("/attachments/1/2/photo.jpg")
+    source = DiscordMediaSource(
+        cdn_base="http://unused.invalid", max_bytes=1024 * 1024,
+        attachment_hosts={url.host},
+    )
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/jpeg",
+        fetch_token=f"attachment:{url}"))
+
+    assert got.available is True
+    assert got.data == body
+
+
+async def test_discord_refuses_a_chunked_body_over_the_ceiling(aiohttp_server):
+    """The same chunked path must still refuse a body that exceeds the ceiling
+    once the loop has read it all — the post-read measurement, not the
+    declared length (a StreamResponse carries none)."""
+    async def cdn(request):
+        resp = web.StreamResponse(status=200, headers={"Content-Type": "image/jpeg"})
+        await resp.prepare(request)
+        for _ in range(4):
+            await resp.write(b"x" * 1000)
+        await resp.write_eof()
+        return resp
+
+    app = web.Application()
+    app.router.add_get("/attachments/1/2/big.jpg", cdn)
+    server = await aiohttp_server(app)
+    url = server.make_url("/attachments/1/2/big.jpg")
+    source = DiscordMediaSource(
+        cdn_base="http://unused.invalid", max_bytes=2048,
+        attachment_hosts={url.host},
+    )
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/jpeg",
+        fetch_token=f"attachment:{url}"))
 
     assert got.available is False
     assert got.reason == "too_large"
