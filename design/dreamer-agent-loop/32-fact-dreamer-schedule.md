@@ -159,8 +159,9 @@ already refuses them):
 | `check_note(subject)` | `note` (live heads) | the note(s) about a subject |
 | `get_note(note_id)` | `note` + `note_revision` | one note with its revision history |
 | `search_note(query)` | `note` | notes matching the query |
+| `search_memory_workspace(query)` | Honcho, all peers in the workspace | memory excerpts across the workspace's people |
 
-All five are added to `WORKSPACE_SAFE_TOOLS` and declared in `NativeTool` with
+All six are added to `WORKSPACE_SAFE_TOOLS` and declared in `NativeTool` with
 `read_only=True`, `source_tier="remembered"`, bounded budgets (2–4 per turn).
 
 **Attribution.** `SqlFactCandidateStore.propose` joins `messages` on
@@ -180,19 +181,23 @@ attribution is the "who said it, when" the operator asked for.
 - **The write path.** Still no write tools; the model proposes, code disposes.
 - **The screen.** R-18/R-28 screening still runs before `accept`.
 
-## 5. Open questions
+## 5. Closed decisions (operator, 2026-09-01)
 
-1. **`search_memory` scope.** The operator said "search 六個人嘅 memory" —
-   the existing `search_memory` is room-scoped. The Fact Dreamer is
-   workspace-keyed. Do we (a) add a workspace-scoped variant, or (b) make the
-   fact tier scope-keyed so it can use the room tools? (a) is smaller; (b)
-   changes the tier's key kind, which is a data migration.
-2. **`get_fact`/`search_fact` naming.** The operator named them; the
-   `NativeTool` vocabulary and the objective's tool list must match exactly.
-3. **Attribution depth.** `asserted_by`/`asserted_at` on the candidate only,
-   or also carried onto the adjudicated `fact` row? The operator's complaint
-   was about the candidate; the fact row's warrant is the web source. Carrying
-   both is more provenance, more columns.
+1. **Memory search is workspace-scoped.** The Fact Dreamer is workspace-keyed;
+   "search 六個人嘅 memory" means searching the whole workspace's memory. A
+   workspace-scoped memory search tool is added alongside the five fact/note
+   tools — it searches all peers' Honcho memory in the workspace, not one
+   room's history. The existing room-scoped `search_memory` stays for the tag
+   path; the Dreamer gets the workspace variant.
+2. **Attribution carries to the fact row.** `asserted_by`/`asserted_at` are
+   written on the candidate at `propose` time (joined from `messages`), and
+   copied onto the adjudicated `fact` row when the candidate is settled — so
+   the rendered `<facts>` block can say who said it and when, not only the web
+   warrant.
+3. **Tool names are the operator's.** `get_fact`, `search_fact`, `check_note`,
+   `get_note`, `search_note` — exactly as named, in the `NativeTool` table,
+   the `WORKSPACE_SAFE_TOOLS` set, and the objective's tool list. A rename is
+   a three-place contract change and is not made by taste.
 
 ## 6. Reversal conditions
 
