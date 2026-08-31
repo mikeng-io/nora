@@ -110,7 +110,7 @@ export function PresenceMap({
   const routeHue = selectedPersonId ? hueOf(selectedPersonId) : 0;
 
   return (
-    <MapContainer center={points[0] ?? DEFAULT_CENTER} zoom={13} className="h-full w-full" scrollWheelZoom>
+    <MapContainer center={points[0] ?? DEFAULT_CENTER} zoom={13} className="isolate h-full w-full" scrollWheelZoom>
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

@@ -32,7 +32,7 @@ export function NavSheet({ open, onOpenChange }: { open: boolean; onOpenChange: 
   const liveModules = MODULES.filter((m) => m.status === "live");
 
   return (
-    <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label={t("menu")}>
+    <div className="fixed inset-0 z-[60] md:hidden" role="dialog" aria-modal="true" aria-label={t("menu")}>
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
         onClick={() => onOpenChange(false)}
@@ -71,7 +71,7 @@ export function NavSheet({ open, onOpenChange }: { open: boolean; onOpenChange: 
                 )}
               >
                 <span className="flex items-center gap-3">
-                  <Icon className="h-4.5 w-4.5 h-[18px] w-[18px]" />
+                  <Icon className="h-[18px] w-[18px]" />
                   {t(m.labelKey)}
                 </span>
                 <ChevronRight className="h-4 w-4 text-text-muted" />
