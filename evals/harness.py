@@ -75,7 +75,8 @@ DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"
 # feed (which requires a resolved `ctx.tagger`, `nora/engagement/stages/feedback.py`)
 # actually fires — matches `tests/integration/harness.py`'s own default identity.
 _IDENTITY_TOML = (
-    '[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = "+852111"\n'
+    '[persons.miles_novak]\nname = "Miles"\n'
+    '[[persons.miles_novak.signal]]\nphone = "+852111"\n'
 )
 
 # Kept in sync with config.example.toml's engagement.trigger.text — the single real
@@ -83,9 +84,10 @@ _IDENTITY_TOML = (
 TRIGGER_TEXT = "nora.000"
 
 # The harness drives `group_event(body=...)` with its DEFAULTS — conversation "g1",
-# sender "+852111" — and `_IDENTITY_TOML` maps that sender to person "miles". The
-# live-mode roster below names that one member so the room resolves to {miles}, a
-# verified subset of the eval circle (`nora.app.eval_support`), which is what lets
+# sender "+852111" — and `_IDENTITY_TOML` maps that sender to person "miles_novak",
+# the same production person id `--seed-production` reads Honcho under. The
+# live-mode roster below names that one member so the room resolves to {miles_novak},
+# a verified subset of the eval circle (`nora.app.eval_support`), which is what lets
 # `saved_places`/`where_is` disclose instead of degrading (F4). If `group_event`'s
 # defaults change, these must change with them.
 _EVAL_GROUP_ID = "g1"
@@ -325,7 +327,8 @@ async def run_case(
                     "quoted_ts": row.quoted_ts, "raw_json": row.raw_json,
                     "media_json": row.media_json,
                 })
-            memory = FakeMemoryStore(cards=dict(seed.cards))
+            memory = FakeMemoryStore(cards=dict(seed.cards),
+                                 conclusions=dict(seed.conclusions))
         adapter = FakeAdapter()
         # Live mode swaps the scripted double for Nora's real, networked model;
         # everything else in the graph (db, memory, adapter) stays a fake, so a

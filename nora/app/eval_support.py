@@ -49,10 +49,14 @@ from nora.testing import (
 from .agent_runner import LiveAgentRunner
 
 #: The single person the eval harness identity (`_IDENTITY_TOML`) maps — the
-#: harness's `+852111` sender resolves to this person_id. The eval `Circle`'s
-#: roster is exactly this, so the harness room (also just this person) is a
-#: verified subset and the R-31 disclosure gate PERMITS `where_is`/`saved_places`.
-_EVAL_PERSON_ID = "miles"
+#: harness's `+852111` sender resolves to this person_id (kept as the REAL
+#: production person id, e.g. "miles_novak", so a `--seed-production` run reads the
+#: actual Honcho card/conclusions instead of a synthetic "miles" that has none —
+#: measured 2026-08-31: "miles" returned an empty card while "miles_novak" has a
+#: 12-line card + 9 conclusions). The eval `Circle`'s roster is exactly this,
+#: so the harness room (also just this person) is a verified subset and the
+#: R-31 disclosure gate PERMITS `where_is`/`saved_places`.
+_EVAL_PERSON_ID = "miles_novak"
 
 #: The SHIPPED table, deliberately WITHOUT `[llm.budgets]`. An eval measures the
 #: agent as the repo defines it, so runs stay comparable across deployments and
@@ -222,6 +226,7 @@ class ProductionSeed:
 
     recents: tuple[TranscriptRow, ...] = ()
     cards: dict[str, list[str]] = field(default_factory=dict)
+    conclusions: dict[str, list[str]] = field(default_factory=dict)
 
 
 async def build_production_seed(
@@ -286,6 +291,25 @@ async def build_production_seed(
     # person id (`_EVAL_PERSON_ID`) because `FakeMemoryStore` is asked for that
     # peer in the harness. A dead/missing card is a normal `[]`.
     cards: dict[str, list[str]] = {}
+    # Honcho conclusions for the eval person — the READ surface `about` serves
+    # in production. Seeding these is what makes the recall journeys
+    # (`about_recall`) testable at all: without them `about` answers "nothing
+    # known" and the model's reasonable fallback (search_memory/search_knowledge)
+    # is counted as a sibling leak + budget overrun — a harness artifact, not a
+    # routing failure (measured 2026-08-31; injecting one conclusion flipped
+    # about_recall from 0/9 to routing-pass). Same read-only constraint: this is
+    # the same endpoint the production `about` tool calls, and nothing writes.
+    #
+    # PERSON-ID NOTE: `_EVAL_PERSON_ID` ("miles") is the SYNTHETIC harness person
+    # (`+852111` → miles in `evals/harness.py`'s identity), not the production
+    # person (e.g. "miles_novak"). Honcho keys conclusions under the PRODUCTION id —
+    # reading "miles" returns an empty card/conclusions even though the person
+    # exists (measured 2026-08-31: `miles` empty, `miles_novak` 12-card/9-conclusion).
+    # `build_production_seed` reads the REAL id from the transcript and keys the
+    # seed under it; `FakeMemoryStore` is a plain dict keyed however we choose,
+    # so the harness can serve it under the production id while the R-31 gate
+    # still resolves the synthetic room through `_IDENTITY_TOML`.
+    conclusions: dict[str, list[str]] = {}
     honcho = HonchoClient(
         cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
     )
@@ -295,6 +319,19 @@ async def build_production_seed(
         )
         if card:
             cards[_EVAL_PERSON_ID] = card
+        rec = await asyncio.wait_for(
+            honcho.representation(
+                peer_id=cfg.memory.ai_peer,
+                search_query="personal facts about this person",
+                # `max_conclusions` deliberately NOT passed — same contract as
+                # the production `about` tool (Honcho splits it three ways).
+                target=_EVAL_PERSON_ID,
+            ),
+            timeout=5.0,
+        )
+        if rec.reachable and rec.conclusions:
+            conclusions[_EVAL_PERSON_ID] = list(rec.conclusions)
     finally:
         await honcho.aclose()
-    return ProductionSeed(recents=tuple(recents), cards=cards)
+    return ProductionSeed(recents=tuple(recents), cards=cards,
+                          conclusions=conclusions)
