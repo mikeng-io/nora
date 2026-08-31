@@ -210,6 +210,11 @@ PRESENCE_PLACES = sa.Table(
     sa.Column("lat", sa.Float, nullable=False),
     sa.Column("lng", sa.Float, nullable=False),
     sa.Column("radius_m", sa.Float),
+    # Life360 wire address (address1/address2 joined) — falls back to null,
+    # never fabricated (audit 2026-08-31: the parser carried it but no store
+    # layer did, so `saved_places` promised an address that could never be
+    # returned).
+    sa.Column("address", sa.Text),
     # Epoch MILLISECONDS: when Nora last saw this place on the wire.
     sa.Column("updated_ms", sa.BigInteger, nullable=False),
 )

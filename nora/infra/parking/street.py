@@ -92,7 +92,7 @@ class StreetParkingClient:
             return StreetParking(total=0, vacant=0, streets=())
         streets: list[str] = []
         seen: set[str] = set()
-        vacant = sum(1 for _s, occ in near if occ != "O")
+        vacant = sum(1 for _s, occ in near if occ == "V")
         for s, _occ in near:
             st = s[2].strip()
             if st and st not in seen:
@@ -133,6 +133,13 @@ class StreetParkingClient:
                 (row.get("Street_tc") or row.get("Street") or "").strip(),
                 (row.get("ParkingSpaceId") or "").strip(),
             ))
+        # An empty parse after a real header is a FAILURE (renamed column,
+        # coordinates moved), not «no metered bays anywhere» — leave the
+        # cache unset so the next call retries and the tool reports
+        # unavailable rather than a confident zero (audit 2026-08-31).
+        if not out:
+            log.warning("street spaces parse yielded zero rows from a real header")
+            return None
         self._spaces = tuple(out)
         return self._spaces
 

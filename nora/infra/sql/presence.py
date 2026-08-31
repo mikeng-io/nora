@@ -173,6 +173,7 @@ class PresenceStore:
                             "lat": p.lat,
                             "lng": p.lng,
                             "radius_m": p.radius_m,
+                            "address": p.address,
                             "updated_ms": p.updated_ms,
                         }
                         for p in places
@@ -196,6 +197,7 @@ class PresenceStore:
                 lat=r.lat,
                 lng=r.lng,
                 radius_m=r.radius_m,
+                address=r.address,
                 updated_ms=r.updated_ms,
             )
             for r in rows

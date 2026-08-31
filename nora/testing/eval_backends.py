@@ -101,7 +101,7 @@ class CannedParkingProvider:
     provider's content.
     """
 
-    async def vacancy(self, *, name: str) -> dict | None:
+    async def vacancy(self, *, name: str, strict: bool = False) -> dict | None:
         return {
             "parking_id": "tdc10p1",
             "name": name or "Sai Kung Government Offices Carpark",

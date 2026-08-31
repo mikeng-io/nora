@@ -44,6 +44,7 @@ class _FakeSession:
     def __init__(self, *args, **kwargs):
         self._index = kwargs.get("index", INDEX_SAMPLE)
         self._vacancy = kwargs.get("vacancy", dict(VACANCY_SAMPLE))
+        self._basic = kwargs.get("basic", None)
 
     async def __aenter__(self):
         return self
@@ -74,7 +75,9 @@ class _FakeResp:
     async def json(self, **kwargs):
         if "vacancy_" in self._url:
             return self._session._vacancy
-        raise AssertionError(f"unexpected vacancy url {self._url}")
+        if "basic_info_" in self._url:
+            return self._session._basic or {"car_park": [{}]}
+        raise AssertionError(f"unexpected url {self._url}")
 
 
 @pytest.mark.asyncio
@@ -119,3 +122,38 @@ async def test_parking_client_unknown_returns_none(monkeypatch):
     client = ParkingClient()
     monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
     assert await client.vacancy(name="月球停車場") is None
+
+BASIC_SAMPLE = {"car_park": [{
+    "park_id": "tdc10p1",
+    "opening_status": "OPEN",
+    "displayAddress_en": "Man Nin Street No 24, Sai Kung",
+    "remark_en": "Height Limit: 2.45m; Per Hours: $27; Night: $90",
+}]}
+
+
+@pytest.mark.asyncio
+async def test_parking_client_carries_basic_info_bonus(monkeypatch):
+    """status/address/fee come from the basic-info JSON when present —
+    never hardcoded (fix 2026-08-31: was a fabricated 'OPEN')."""
+    client = ParkingClient()
+    monkeypatch.setattr(
+        "aiohttp.ClientSession",
+        lambda *a, **k: _FakeSession(*a, **{**k, "basic": BASIC_SAMPLE}),
+    )
+    out = await client.vacancy(name="西貢政府合署停車場")
+    assert out["status"] == "OPEN"
+    assert out["address"] == "Man Nin Street No 24, Sai Kung"
+    assert "Height Limit" in out["fee"]
+
+
+@pytest.mark.asyncio
+async def test_parking_client_no_status_when_basic_unavailable(monkeypatch):
+    """A missing/empty basic-info must NOT invent an opening status (R-5)."""
+    client = ParkingClient()
+    monkeypatch.setattr(
+        "aiohttp.ClientSession",
+        lambda *a, **k: _FakeSession(*a, **{**k, "basic": None}),
+    )
+    out = await client.vacancy(name="西貢政府合署停車場")
+    assert "status" not in out
+    assert out["vacancy"] == 30  # vacancy survives the basic-info miss

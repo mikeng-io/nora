@@ -34,8 +34,7 @@ NEARBY_URL = "https://places.googleapis.com/v1/places:searchNearby"
 # parking types on a hard failure — Google returns a `parking` type on every
 # hit, so a result WITHOUT parking-ish types is a venue that merely has a lot.
 NEARBY_FIELD_MASK = (
-    "places.id,places.displayName,places.location,places.formattedAddress,"
-    "places.types"
+    "places.id,places.displayName,places.location,places.formattedAddress"
 )
 
 # A parking search circle: 1500 m — walkable from a restaurant table. Google's

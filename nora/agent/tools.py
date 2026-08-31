@@ -4427,9 +4427,11 @@ Args:
         is when the operator reported it — ALWAYS carry that age into your
         reply («大概 11:35 更新, 仲有 30 個位»), a count without its age
         reads as «right now», which you do not know. `status` is the
-        operator's opening status; `address` is the street address when the
-        feed carries one; `fee` is the operator's rate table when the feed
-        carries one — both are bonuses, say them only when present. The exact
+        operator's OWN opening status from the feed's basic info (`OPEN` /
+        `CLOSED` — present only when the feed carries it, never guessed);
+        `address` is the street address when the feed carries one; `fee` is
+        the operator's rate table when the feed carries one — these are
+        bonuses, say them only when present. The exact
         spot stays private machinery — never
         echo a parking id back at the group, never invent a number.
 
@@ -4502,6 +4504,23 @@ Args:
             return {"status": "unavailable",
                     "note": "Parking search isn't configured here."}
         if place.strip():
+            # The R-28 outbound screen (shared with route / place_info):
+            # an identifier, a raw coordinate, or a known person's name
+            # must NOT travel to Google Places as a search query — that is
+            # the exact exfil shape the screen exists to close (route
+            # screens args the same way; audit 2026-08-31 flagged find_parking
+            # for skipping it).
+            if scan_identifiers(place) is not None or _looks_like_coordinate(place):
+                _record(metrics, "find_parking", "refused")
+                return {"status": "not_found",
+                        "note": "That doesn't look like a place name I can search for. "
+                                "Ask which place they mean."}
+            if (_route_person_names is not None
+                    and _names_a_person(place, _route_person_names)):
+                _record(metrics, "find_parking", "refused")
+                return {"status": "not_found",
+                        "note": "That looks like a person, not a place to park near. "
+                                "Ask which place they mean."}
             # A named place: resolve it to ONE point first (same resolver
             # `route`/`place_info` use). Ambiguity is handed back for the
             # model to ask about, exactly as `place_info` does.
@@ -4547,11 +4566,26 @@ Args:
                     continue
                 if not (location_trusted or DisclosureGuard(circle).permits(room_ids)):
                     continue
-                # The asker's own latest fix (the room's tagger).
-                for person in view.people:
-                    fix = await presence_source.latest_fix(
-                        circle_id=circle.circle_id, person_id=person.person_id,
-                    )
+                # The asker's own latest fix (the room's tagger) FIRST — the
+                # person being asked is the natural search centre; another
+                # circle member's position would answer «near HER» when the
+                # question was «near ME». Fall back to any room member's fix
+                # only when the tagger has none recorded. (Gated by the
+                # disclosure guard above either way.)
+                asker = getattr(room, "tagger", None)
+                candidates = (
+                    tuple(p for p in view.people
+                          if asker is not None and p.person_id == asker.person_id)
+                    + tuple(p for p in view.people if p.person_id != (asker.person_id if asker else None))
+                )
+                for person in candidates:
+                    try:
+                        fix = await presence_source.latest_fix(
+                            circle_id=circle.circle_id, person_id=person.person_id,
+                        )
+                    except Exception:  # a tool never raises into the loop (R-5)
+                        log.exception("find_parking presence read failed")
+                        fix = None
                     if fix is not None:
                         pos = (fix.lat, fix.lng)
                         break
@@ -4563,7 +4597,11 @@ Args:
                         "note": "I can't use anyone's position in this conversation "
                                 "right now. Ask which place they mean instead."}
             lat, lng = pos
-        parking = await route_source.nearby_parking(lat=lat, lng=lng)
+        try:
+            parking = await route_source.nearby_parking(lat=lat, lng=lng)
+        except Exception:  # a tool never raises into the loop (R-5)
+            log.exception("find_parking nearby search failed")
+            parking = None
         if parking is None:
             _record(metrics, "find_parking", "unavailable")
             return {"status": "unavailable",
@@ -4579,11 +4617,14 @@ Args:
                 "name": p.name, "address": p.address,
                 "distance_m": p.distance_m,
             }
-            # Cross-reference the TD feed by name — a covered public car
-            # park adds live vacancy to the same entry.
+            # Cross-reference the TD feed by name — an EXACT name match
+            # (strict) so a Google-named lot never attaches another car
+            # park's vacancy through a loose substring fallback (audit
+            # 2026-08-31: 'Central' could bind Park Central). The covered
+            # public car park adds live vacancy to the same entry.
             if parking_source is not None:
                 try:
-                    live = await parking_source.vacancy(name=p.name)
+                    live = await parking_source.vacancy(name=p.name, strict=True)
                 except Exception:
                     live = None
                 if live:
