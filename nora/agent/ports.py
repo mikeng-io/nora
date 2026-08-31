@@ -84,6 +84,29 @@ class ToolSpec:
     straight off the table, and
     `tests/unit/test_tool_registry.py::test_every_tool_declares_a_time_axis`
     pins the values.
+
+    `side_effect_state`, `idempotency` and `retry` are the contract triple
+    (ADR 0008, DEC-152), carried here for the reason `budget` and `terminal` are:
+    they are declared once on `NativeTool` and copied by `_spec()`, so anything
+    holding a spec can answer "what may an interrupted call of this have done"
+    without reaching back into the registry table. They describe a FAILURE, not
+    a success — `side_effect_state="unknown"` means a timeout leaves the write
+    undecidable and the harness must assume it may have applied; `retry="never"`
+    means it may not be replayed to find out. The full argument and the closed
+    vocabularies (`SIDE_EFFECT_STATES` / `IDEMPOTENCY_VALUES` / `RETRY_POLICIES`)
+    live on `nora.agent.tools`, which is where the declarations are; they are not
+    re-stated here because two copies of a vocabulary is how one of them drifts.
+
+    Their defaults are the same fail-closed ones the table takes —
+    `none`/`non_idempotent`/`never` — so a spec built by hand rather than by
+    `_spec()` is treated as un-replayable rather than as safe. **Nothing in this
+    phase READS them off a `ToolSpec`**: the reader that ships with them is
+    `tests/test_tool_contract_metadata.py`, which reads the declarations, and
+    the output-contract validation (ADR 0008 §3) is a separate later pass. They
+    are stated here so that pass has somewhere to read them from without another
+    port change — the same posture `disclose_failure` takes above, and the ADR's
+    own "each field ships with its reader" finding is what the enforcement test
+    answers.
     """
 
     name: str
@@ -95,6 +118,9 @@ class ToolSpec:
     time_shiftable: bool | None = None
     disclose_failure: bool = False
     timeout_seconds: float | None = None
+    side_effect_state: str = "none"
+    idempotency: str = "non_idempotent"
+    retry: str = "never"
 
 
 def adapt(spec: ToolSpec) -> Any:

@@ -1,0 +1,10 @@
+{
+  "type": "none",
+  "summary": "ADR 0008 step 2: NativeTool/ToolSpec declare side_effect_state, idempotency and retry.",
+  "details": [
+    "Metadata and tests only. No guard, pipeline, delivery, doctrine or tool-schema surface changes, so no behaviour a person in a room can observe.",
+    "The output-contract validation (ADR 0008 section 3) is a separate later pass and will carry its own fragment if it changes what she says."
+  ],
+  "limitations": [],
+  "reason": "Internal declarations plus their enforcement test; nothing in the running agent reads the three fields yet."
+}
