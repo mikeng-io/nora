@@ -68,45 +68,47 @@ The operator's direction, verbatim:
 
 ### 3.1 Per-adaptor schedule
 
-`DreamAdaptor` gains one optional field:
+**The schedule is a NAME-KEYED MAPPING, not a Protocol field.** The first
+draft proposed `DreamAdaptor.schedule: AdaptorSchedule | None = None` — a
+defaulted field on the `@runtime_checkable` protocol. Verified against
+Python 3.13: a runtime-checkable protocol with a defaulted non-method member
+fails `isinstance(adaptor, DreamAdaptor)` for every existing adaptor that
+does not declare the attribute (measured: `False`). That would break all
+six existing adaptors at runtime. The corrected shape follows the budgets
+precedent — `DreamerRuntime` already takes `budgets: Mapping[str,
+AdaptorBudget]` keyed by adaptor name (`dreamer.py:512`), and an adaptor
+with no entry gets `default_budget` by omission. The schedule does the same:
 
 ```python
 @dataclass(frozen=True)
 class AdaptorSchedule:
-    min_interval_seconds: float   # floor between runs; None/absent = global
+    min_interval_seconds: float   # floor between runs
     batch_limit: int             # this adaptor's batch cap
-    # quiet_seconds / max_age_seconds are NOT carried here: min_interval
-    # subsumes both. A watermarked adaptor with a schedule fires when
-    # (lag > 0) AND (now - last_run >= min_interval), and the age-only
-    # heartbeat is replaced by the interval itself.
 ```
 
-`DreamAdaptor.schedule: AdaptorSchedule | None = None` — `None` means "use the
-shared `[language]` values", so every existing adaptor is untouched.
-
-`_dream_adaptor_once` (`nora/app/runtime.py:444`) reads the override:
+`dream_loop` and `_dream_adaptor_once` gain one parameter,
+`schedules: Mapping[str, AdaptorSchedule] = {}` (wired from composition,
+alongside the existing `[language]` shared values). Per-adaptor lookup by
+`adaptor.name`:
 
 ```python
-if adaptor.schedule is not None:
-    interval = adaptor.schedule.min_interval_seconds
-    batch_limit = adaptor.schedule.batch_limit
+sched = schedules.get(adaptor.name)
+if sched is not None:
+    interval = sched.min_interval_seconds
+    batch_limit = sched.batch_limit
     # fire when there is unread backlog AND the interval has elapsed
     fires = lag > 0 and age >= interval
 else:
+    batch_limit = shared_batch_limit
     fires = (lag > safety_lag
              or (lag > 0 and quiet >= quiet_seconds)
              or age >= max_age_seconds)
 ```
 
-The watermark's `updated_at` already records the last run, so `age` is the
-natural interval clock — no new state. The age-only latch reset
-(`runtime.py:523`) still applies: a run with an empty batch refreshes the
-watermark row so the interval clock does not fire every tick.
-
-**The global 5-minute tick stays.** It is the wake interval, not the fire
-condition. An adaptor with `min_interval_seconds = 86400` wakes every 5
-minutes, checks, and skips until the interval has elapsed — the same shape as
-`[heartbeat]`'s "best case for lateness, not a bound" docstring.
+No adaptor class changes; no Protocol change; existing adaptors are
+untouched by omission, exactly like budgets. The mapping is keyed by
+`adaptor.name` — the same identity as the watermark row, the metric label and
+the budget table, so a schedule cannot drift from the adaptor it names.
 
 ### 3.2 Fact tier schedule and budget
 
