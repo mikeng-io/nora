@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 from evals.harness import Case, ProductionSeed, run_case
+from evals.journeys import JOURNEYS
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -168,3 +169,27 @@ def test_run_case_signature_has_live_knobs():
     for name in ("effort", "seed", "skills_dir"):
         assert name in sig.parameters, f"run_case lost parameter {name}"
         assert sig.parameters[name].default is None
+
+
+def test_journey_seed_merges_over_production_seed():
+    """A journey's precondition (`Journey.seed`) must merge over, not replace,
+    the shared production seed — so about_recall gets its cats regardless of
+    what production Honcho happens to hold, while cards/recents still apply.
+    Imports `_run_journeys_live`'s merge logic by reconstructing it here:
+    the merge is `dataclasses.replace(seed, conclusions={**seed.conclusions,
+    **journey.seed["conclusions"]})`."""
+    import dataclasses
+    from nora.app.eval_support import ProductionSeed
+
+    base = ProductionSeed(recents=(), cards={"miles_novak": ["name: Miles"]},
+                          conclusions={"miles_novak": ["asked about weather"]})
+    journey = next(j for j in JOURNEYS if j.intent.name == "about_recall")
+    assert journey.seed is not None, "about_recall lost its precondition"
+    merged = dataclasses.replace(
+        base,
+        conclusions={**base.conclusions, **journey.seed["conclusions"]},
+    )
+    # The journey's cats override production conclusions for the SAME person
+    # (the precondition is what matters), and cards are untouched by the merge.
+    assert any("cats" in c for c in merged.conclusions["miles_novak"])
+    assert merged.cards == base.cards

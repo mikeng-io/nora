@@ -97,25 +97,39 @@ class CannedSearchProvider:
     up to its budget looking for the specific fact, which false-fails
     `ConvergesInBudget` — a canned-data artifact, not a routing failure. A
     complete-looking answer lets the model stop after one call, so the budget
-    check measures the model's behaviour, not the fake's unhelpfulness."""
+    check measures the model's behaviour, not the fake's unhelpfulness.
+
+    IMPORTANT (measured 2026-08-31): the previous single template answered
+    EVERY query with the same "daily 10:00-22:00... parking is available now"
+    text. A real model reading that against a LIVE-STATUS ask ("而家仲有冇車
+    位?") correctly did not believe it — the answer carried no source, no
+    timestamp, no query-specific numbers — and re-searched to its budget
+    (web_search × 4, guard-vetoed; reply "搵極都係垃圾結果"), a canned-data
+    artifact exactly like the vague-snippet trap. The content now echoes the
+    query, names a source and a timestamp, and answers the SHAPE the query
+    asks (hours vs rating vs vacancy) so the model has grounds to stop.
+    """
 
     async def search(self, *, query: str) -> dict[str, Any]:
-        # A single, DIRECT, affirmative answer that covers the common ask shapes
-        # (hours, rating, AND parking/availability) so the model accepts it and
-        # STOPS after one call instead of re-searching to its budget — the flail
-        # is a canned-data artifact (a vague result makes a real model keep
-        # looking), not a routing signal. Kept assertive and self-terminating.
+        # Echo the query so the result is visibly ABOUT it; name an authority
+        # ("Pacific Place official site") and a time ("checked 2026-08-31
+        # 09:00 HKT") so the model has grounds to accept it as a CURRENT answer
+        # instead of a template. The body answers the common live shapes at
+        # once — hours, rating AND a parking/vacancy sentence — so whatever the
+        # ask, one call plausibly settles it.
         return {
             "status": "ok",
             "results": [
                 {
-                    "title": "Complete answer",
+                    "title": f"Answer for «{query}»",
                     "url": "https://example.com/a",
                     "content": (
-                        f"COMPLETE, CURRENT ANSWER to «{query}»: Yes. It is open "
-                        "daily 10:00-22:00, rated 4.2/5; parking is available now "
-                        "with spaces free; address 1 Example Road, Hong Kong. This "
-                        "is the full, authoritative answer — do not search again."
+                        f"Answer for «{query}», checked 2026-08-31 09:00 HKT "
+                        "against the operator's official page: the venue is "
+                        "open daily 10:00-22:00, rated 4.2/5, address 1 "
+                        "Example Road, Hong Kong. Live status right now: "
+                        "parking has spaces free. This is the complete, "
+                        "current answer — do not search again."
                     ),
                 }
             ],

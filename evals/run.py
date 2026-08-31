@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
 import hashlib
 import json
 import os
@@ -592,10 +593,22 @@ async def _run_journeys_live(
     for journey in journeys:
         hard = hard_checks_for(journey)  # per-journey: backend-dependent checks go
         runs: list[dict] = []            # hard only where the journey is fully backed (F4)
+        # The journey's PRECONDITION merges over the shared production seed: a
+        # journey that needs a fact to exist (about_recall's cats) gets it
+        # regardless of what production Honcho happens to hold, so the gate
+        # measures ROUTING, not "did production remember this fact". Merged,
+        # never replaced — cards/conclusions/recents all still apply.
+        journey_seed = seed
+        if seed is not None and journey.seed:
+            jc = dict(journey.seed.get("conclusions", {}))
+            journey_seed = dataclasses.replace(
+                seed,
+                conclusions={**seed.conclusions, **jc},
+            )
         for _ in range(samples):
             trajectory = await run_case(
                 Case(name=journey.intent.name, input=journey.message),
-                live=True, effort=effort, skills_dir=skills_dir, seed=seed,
+                live=True, effort=effort, skills_dir=skills_dir, seed=journey_seed,
             )
             graded = grade(journey, trajectory)
             runs.append({

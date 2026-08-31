@@ -32,11 +32,24 @@ from evals.evaluators import (
 @dataclass(frozen=True)
 class Journey:
     """One real incident: the user's message, the tool path it must take, and a
-    note on what actually happened / why the routing is what it is."""
+    note on what actually happened / why the routing is what it is.
+
+    `seed` is the journey's PRECONDITION — the facts that must be true for the
+    message to be answerable at all. Without it, a journey can fail for reasons
+    that have nothing to do with routing: `about_recall` asks what the speaker's
+    home animals are, but an empty Honcho store means `about` cannot answer,
+    and the model's reasonable fallback (search_memory/search_knowledge) is
+    counted as sibling leak + budget overrun — a harness artifact, not a
+    routing failure (measured 2026-08-31; 0/9 pre-seed, routing-pass post-seed).
+    The seed is applied by the live harness before `run_case` and removed (or
+    never written to production stores) after, keeping the eval reproducible
+    and production-zero-write.
+    """
 
     intent: Intent
     message: str
     note: str
+    seed: dict | None = None
 
 
 # The tuning set — the four incidents the E1/E2 fix was written from. Grading a
@@ -112,6 +125,9 @@ SEED_JOURNEYS: tuple[Journey, ...] = (
             "remember-about edge exists to catch — a recall ask must never "
             "become a write. Budget 2: one read, room for one retry."
         ),
+        seed={"conclusions": {"miles_novak": [
+            "Miles's home has two cats — the settled fact about his pets.",
+        ]}},
     ),
 )
 
