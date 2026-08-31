@@ -123,7 +123,7 @@ from .links import LinkCarry
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .room import Room, RoomView, _key, _names_of
-from .whereis import Whereis, resolvable_places
+from .whereis import DisclosureGuard, Whereis, resolvable_places
 
 log = logging.getLogger("nora.tools")
 
@@ -565,6 +565,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # enough; a second covers a follow-up (a different venue name).
     "parking_status": NativeTool(2,
                                  source_tier="confirmed", cacheable=False, read_only=True),
+    # `find_parking` (2026-08-31): Google Places Nearby Search for parking.
+    # Budget 3 — one resolve (or one presence read) + one nearby call + up to
+    # N vacancy cross-references. `terminal=False`? No — it TRANSMITS a place
+    # name or uses a position internally; the place name came from the group,
+    # and the position never leaves the process. Google key comes from
+    # `route_source` (already restricted to Places).
+    "find_parking": NativeTool(3,
+                               source_tier="confirmed", cacheable=False, read_only=True),
     # design/discord-music/07-agent-tool.md. Discord-only by construction — every
     # body checks `room.platform != "discord"` first and answers `unavailable`,
     # never guessing a channel on a platform with no voice concept at all.
@@ -4455,6 +4463,126 @@ Args:
         _record(metrics, "parking_status", "ok")
         return {"status": "ok", **data}
 
+    async def find_parking(place: str = "") -> dict:
+        """Where the nearest car parks are, around a spot the group names.
+
+        Call this when somebody wants parking near somewhere — «嚟緊去食飯嗰
+        度附近有冇停車場», «我而家喺呢度，附近邊度泊車?». Give it the place in
+        their words (「銅鑼灣」, a restaurant name, or empty for "where I am
+        now" — the asker's own last position). It returns the nearest car
+        parks with name, street address, and how FAR each is (「300 米」;
+        each is a walk from the spot — say the distance, don't rank silently).
+
+        Each entry may carry live vacancy if the Transport Department's feed
+        covers it (`vacancy` + `lastupdate` — the feed covers public car
+        parks, so a private mall's lot usually has none; that is honest, not
+        a missing feature). ALWAYS carry a quoted vacancy's age into your
+        reply («大概 11:35 更新, 仲有 30 個位»); a vacancy without its age
+        reads as right now, which you do not know. `nothing_found` when
+        there are no car parks within range, and never invent one;
+        `unavailable` when the lookup itself failed — say you couldn't
+        check. Never echo a Google place id or a coordinate back at the
+        group.
+
+        Args:
+            place: the spot to search around, in their words; empty = the asker's current position.
+        """
+        if route_source is None:
+            _record(metrics, "find_parking", "unavailable")
+            return {"status": "unavailable",
+                    "note": "Parking search isn't configured here."}
+        if place.strip():
+            # A named place: resolve it to ONE point first (same resolver
+            # `route`/`place_info` use). Ambiguity is handed back for the
+            # model to ask about, exactly as `place_info` does.
+            try:
+                resolved = await route_source._resolver.resolve(place)
+            except Exception:
+                log.exception("find_parking resolve failed")
+                resolved = None
+            if resolved is None:
+                _record(metrics, "find_parking", "unavailable")
+                return {"status": "unavailable",
+                        "note": "I couldn't look that place up just now."}
+            if resolved.status == "ambiguous":
+                _record(metrics, "find_parking", "ambiguous")
+                return {"status": "ambiguous",
+                        "note": "That name matches several places.",
+                        "could_be": list(resolved.could_be)}
+            if resolved.status != "ok" or resolved.place is None:
+                _record(metrics, "find_parking", "not_found")
+                return {"status": "not_found",
+                        "note": "I couldn't find that place. Ask which one they mean."}
+            lat, lng = resolved.place.lat, resolved.place.lng
+        else:
+            if presence_source is None or not presence_circles:
+                _record(metrics, "find_parking", "unavailable")
+                return {"status": "unavailable",
+                        "note": "I can't see where you are right now, and you gave "
+                                "me no place to search around. Say you couldn't check."}
+            # Empty `place`: the asker's own last position — the same
+            # disclosure guard `where_is` applies (a room must be a verified
+            # subset of a circle before any position may be used).
+            view = await room.scope()
+            if not view.available or view.degraded:
+                _record(metrics, "find_parking", "unavailable")
+                return {"status": "unavailable",
+                        "note": "I can't confirm who's here, so I can't use your "
+                                "position. Say you couldn't check."}
+            unnamed_blocks = view.unnamed > 0 and not location_trusted
+            room_ids = frozenset(p.person_id for p in view.people)
+            pos: tuple[float, float] | None = None
+            for circle in presence_circles:
+                if unnamed_blocks:
+                    continue
+                if not (location_trusted or DisclosureGuard(circle).permits(room_ids)):
+                    continue
+                # The asker's own latest fix (the room's tagger).
+                for person in view.people:
+                    fix = await presence_source.latest_fix(
+                        circle_id=circle.circle_id, person_id=person.person_id,
+                    )
+                    if fix is not None:
+                        pos = (fix.lat, fix.lng)
+                        break
+                if pos:
+                    break
+            if pos is None:
+                _record(metrics, "find_parking", "unavailable")
+                return {"status": "unavailable",
+                        "note": "I can't use anyone's position in this conversation "
+                                "right now. Ask which place they mean instead."}
+            lat, lng = pos
+        parking = await route_source.nearby_parking(lat=lat, lng=lng)
+        if parking is None:
+            _record(metrics, "find_parking", "unavailable")
+            return {"status": "unavailable",
+                    "note": "I couldn't reach the parking search just now. Say you "
+                            "couldn't check — don't guess a spot."}
+        if not parking:
+            _record(metrics, "find_parking", "nothing_found")
+            return {"status": "nothing_found",
+                    "note": "No car parks nearby. Say so plainly — don't invent one."}
+        out = []
+        for p in parking[:5]:  # nearest five is what a person can act on
+            entry: dict[str, object] = {
+                "name": p.name, "address": p.address,
+                "distance_m": p.distance_m,
+            }
+            # Cross-reference the TD feed by name — a covered public car
+            # park adds live vacancy to the same entry.
+            if parking_source is not None:
+                try:
+                    live = await parking_source.vacancy(name=p.name)
+                except Exception:
+                    live = None
+                if live:
+                    entry["vacancy"] = live.get("vacancy")
+                    entry["lastupdate"] = live.get("lastupdate")
+            out.append(entry)
+        _record(metrics, "find_parking", "ok", count=len(out))
+        return {"status": "ok", "car_parks": out}
+
     def _music_sender_ids() -> frozenset[str]:
         """The tagger's raw Discord ids — `MusicToolBridge.play`'s
         `sender_ids`, which must resolve a REAL guild member, never a name.
@@ -6255,6 +6383,7 @@ Args:
         _spec("social_fetch", social_fetch),
         _spec("weather", weather),
         _spec("parking_status", parking_status),
+        _spec("find_parking", find_parking),
         _spec("play_music", play_music),
         _spec("skip_music", skip_music),
         _spec("top_music", top_music),

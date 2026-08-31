@@ -44,6 +44,7 @@ from typing import Any
 from .directions import Journey, candidates_note, describe, read_journey
 from .http import post_json
 from .places import Place, PlaceResolution, PlaceResolver
+from ..parking.nearby import NearbyParking, SEARCH_RADIUS_M, search_nearby
 
 log = logging.getLogger("nora.routes")
 
@@ -290,6 +291,28 @@ class RouteClient:
         # §2.1). Empty for a bus stop or a street corner, which is honest.
         out.update(place.dining())
         return out
+
+    async def nearby_parking(
+        self, *, lat: float, lng: float, radius_m: float | None = None,
+    ) -> tuple[NearbyParking, ...] | None:
+        """Car parks near a point, for `find_parking`. NEVER raises.
+
+        This is the FIND layer — «附近邊度有停車場» — answered from Google
+        Places Nearby Search (`includedTypes: ["parking"]`). It reuses the
+        same key/HTTP identity as `route`/`place_info`; the field mask keeps
+        billing to what the tool renders. `None` = the call failed (tool
+        reports `unavailable`); an empty tuple = Google searched and found
+        nothing nearby (honest answer, never a fabricated list).
+        """
+        try:
+            return await search_nearby(
+                api_key=self._api_key, lat=lat, lng=lng,
+                radius_m=radius_m or SEARCH_RADIUS_M,
+                timeout_seconds=self._timeout_seconds,
+            )
+        except Exception:
+            log.exception("nearby_parking failed")
+            return None
 
     async def _compute(
         self, origin: Place, destination: Place, mode: str, arrive_by: str,

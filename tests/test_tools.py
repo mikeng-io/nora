@@ -143,6 +143,8 @@ def test_every_declared_tool_is_built(wiring):
         "weather",
         # TD open-data parking vacancy (data.gov.hk hk-td-tis_5, 2026-08-31).
         "parking_status",
+        # Google Nearby Search parking discovery around a named place/position.
+        "find_parking",
         # Discord-only music (design/discord-music/07-agent-tool.md).
         "play_music", "skip_music", "top_music", "stop_music", "music_status",
         "remind", "list_reminders", "cancel_reminder",
@@ -1208,4 +1210,13 @@ async def test_search_knowledge_with_no_workspace_is_unavailable(wiring_with):
 
     out = await tools["search_knowledge"]("big walk")
 
+    assert out["status"] == "unavailable"
+
+
+async def test_find_parking_unavailable_without_route_source(wiring):
+    """No RouteClient wired (`route_source` None — every offline/eval
+    composition) → the tool answers `unavailable`, never a crash (R-5)."""
+    tools = wiring["tools"]
+    assert "find_parking" in tools
+    out = await tools["find_parking"](place="銅鑼灣")
     assert out["status"] == "unavailable"
