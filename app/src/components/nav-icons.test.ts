@@ -24,6 +24,10 @@ vi.mock("@/components/chat-sheet", () => ({
   ChatSheet: () => null,
 }));
 
+vi.mock("@/components/nav-sheet", () => ({
+  NavSheet: () => null,
+}));
+
 describe("nav icon registries", () => {
   // Regression test for the bug where bottom-nav.tsx's ICONS record was
   // missing an "events" entry while nav-links.tsx's had one: MODULES.map()

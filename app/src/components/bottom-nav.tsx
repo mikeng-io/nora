@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { Activity, BookOpen, CalendarDays, Gamepad2, MapPin, Sparkles, Users, MessageCircle, Wrench } from "lucide-react";
+import { Activity, BookOpen, CalendarDays, Gamepad2, MapPin, Sparkles, Users, Wrench, Menu } from "lucide-react";
 import { Link, usePathname } from "@/i18n/routing";
 import { MODULES } from "@/lib/modules";
 import { cn } from "@/lib/utils";
-import { ChatSheet } from "@/components/chat-sheet";
+import { NavSheet } from "@/components/nav-sheet";
 
 // Every MODULES entry needs a key here, live or not — a module flipping
 // back to "live" must never re-expose the missing-icon crash that shipped
@@ -24,20 +24,21 @@ export const ICONS: Record<string, typeof Activity> = {
 };
 
 // Mobile-only (md:hidden — the sidebar in (portal)/layout.tsx owns nav on
-// desktop). Matches trustless/apps/web's BottomNav.tsx structure exactly:
-// h-20, shadow-sm + backdrop-blur-2xl, the gradient hairline along the top
-// edge, 44px+ touch targets, a raised center action button (-mt-10, h-14
-// w-14, rounded-xl, bg-accent) that opens a sheet — trustless's opens an
-// "Operations Sheet"; Nora's opens a chat-with-Nora sheet instead, since
-// that's the equivalent thing to reach for from anywhere in her portal.
+// desktop). Expandable structure: the bar keeps only the FIRST TWO live
+// modules left and the LAST TWO right, with a center Menu button that opens
+// a bottom sheet listing EVERY live module — so adding a ninth module never
+// crowds the bar again (the pre-sheet bar was squeezing 8 items into 44px
+// targets and labels were dropping to 8px). The chat button is retired: the
+// chat pipe into Nora doesn't exist on web yet, and the placeholder sheet
+// taught nothing — Menu is the honest center action.
 export function BottomNav() {
   const pathname = usePathname();
   const t = useTranslations("nav");
-  const [chatOpen, setChatOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const liveModules = MODULES.filter((m) => m.status === "live");
   const left = liveModules.slice(0, 2);
-  const right = liveModules.slice(2);
+  const right = liveModules.slice(Math.max(2, liveModules.length - 2));
 
   const renderLink = (m: (typeof MODULES)[number]) => {
     const Icon = ICONS[m.id];
@@ -54,7 +55,7 @@ export function BottomNav() {
         )}
       >
         <Icon className="h-5 w-5" />
-        <span className="text-[8px]">{t(m.labelKey)}</span>
+        <span className="text-[10px]">{t(m.labelKey)}</span>
       </Link>
     );
   };
@@ -70,13 +71,13 @@ export function BottomNav() {
 
         <div className="relative z-50 -mt-10 flex flex-col items-center justify-center px-4">
           <button
-            onClick={() => setChatOpen(true)}
-            aria-label={t("chat")}
+            onClick={() => setMenuOpen(true)}
+            aria-label={t("menu")}
             className="group relative flex h-14 w-14 items-center justify-center rounded-full border border-accent/35 bg-accent text-bg-base outline-none transition-colors hover:bg-accent-dim focus-visible:ring-2 focus-visible:ring-accent/70 active:scale-95"
           >
-            <MessageCircle className="h-6 w-6" />
+            <Menu className="h-6 w-6" />
           </button>
-          <span className="mt-2 text-[9px] text-accent">{t("chat")}</span>
+          <span className="mt-2 text-[9px] text-accent">{t("menu")}</span>
         </div>
 
         <div className="flex h-full flex-1 items-center justify-around">
@@ -84,7 +85,7 @@ export function BottomNav() {
         </div>
       </nav>
 
-      <ChatSheet open={chatOpen} onOpenChange={setChatOpen} />
+      <NavSheet open={menuOpen} onOpenChange={setMenuOpen} />
     </>
   );
 }
