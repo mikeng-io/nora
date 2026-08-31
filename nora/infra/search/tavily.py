@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any
 
 import aiohttp
@@ -149,9 +150,19 @@ class TavilySearchProvider:
             # return 0.02–0.05 junk while real answers sit above 0.15. A
             # below-floor result is dropped, not wrapped: five junk links are
             # worse for the model than an honest «nothing found».
+            #
+            # FAIL CLOSED (Codex review 2026-08-31, MAJOR): a missing or
+            # malformed score (null, string, bool, NaN) cannot be measured
+            # against the floor, so it is dropped too — a response-shape
+            # change must not silently admit unmeasured content. `NaN`
+            # needs the explicit check: `NaN < x` is False, so it would
+            # otherwise bypass the floor.
             score = item.get("score")
-            if self._min_score > 0.0 and isinstance(score, (int, float)) and score < self._min_score:
-                continue
+            if self._min_score > 0.0:
+                if not isinstance(score, (int, float)) or math.isnan(score):
+                    continue
+                if score < self._min_score:
+                    continue
             title = str(item.get("title") or "")
             content = str(item.get("content") or "")
             body_text = f"{title}\n{content}".strip() if title else content
