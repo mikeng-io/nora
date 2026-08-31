@@ -1,6 +1,6 @@
 # 0009 — Output-contract vocabulary: the three states are a core, not a ceiling
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-08-31
 - **Supersedes:** ADR 0008 §3 (the fixed three-value enum), per adr/README.md
   (accepted ADRs are immutable — superseded rather than edited)
