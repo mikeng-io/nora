@@ -34,6 +34,9 @@ TRAPS = {
     "remember": "note_create",
     "remember_alt": "note_create",
     "about_recall": "remember",
+    # find_parking (2026-08-31): discovering NEARBY lots vs querying ONE
+    # named lot — the trap is the single-lot tool.
+    "find_parking": "parking_status",
 }
 
 

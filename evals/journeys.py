@@ -175,6 +175,12 @@ PARAPHRASE_JOURNEYS: tuple[Journey, ...] = (
         note="Carpark/parking lookup → the dedicated `parking_status` feed (same as carpark); trap `web_search`/`place_info`.",
     ),
     Journey(
+        intent=Intent(name="find_parking", required=frozenset({"find_parking"}), budget=2),
+        message="我聽晚去銅鑼灣食飯，想問吓嗰邊附近有冇停車場?",
+        # "I'm eating in Causeway Bay tomorrow night — are there car parks near there?"
+        note="Finding car parks NEAR a place → `find_parking` (Google Nearby Search + TD vacancy cross-ref); trap `parking_status` (queries ONE named car park, not 'nearby') and `web_search`.",
+    ),
+    Journey(
         intent=Intent(name="mall_alt", required=frozenset({"place_info"}), budget=2),
         message="海港城宜家仲營業緊嗎?",  # "is Harbour City still open now?" — no "關門"
         note="Is-a-place-open, different mall, no 'close' word → `place_info`; trap `web_search`.",

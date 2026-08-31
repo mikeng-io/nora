@@ -30,6 +30,7 @@ from typing import Any
 
 from nora.domain.models import WeatherObservation
 from nora.domain.presence import PresenceFix, SavedPlace, WireState
+from nora.infra.parking.nearby import NearbyParking
 
 #: The tools these canned providers back — the set the per-journey gate checks a
 #: journey's (required + siblings) against before promoting its leakage/budget
@@ -54,7 +55,7 @@ BACKED_TOOLS = frozenset(
         "weather", "web_search", "web_fetch", "place_info", "route", "transit",
         "where_is", "saved_places",
         "remember", "about", "ask_memory", "search_memory", "note_create",
-        "parking_status",
+        "parking_status", "find_parking",
     }
 )
 
@@ -178,9 +179,15 @@ class CannedSearchProvider:
 
 
 class CannedRouteSource:
-    """The `route`/`place_info` collaborator (`RouteClient` shape) — canned dicts,
-    written COMPLETE (see `CannedSearchProvider`) so the model does not re-call
-    looking for a missing field and blow `ConvergesInBudget`."""
+    """The `route`/`place_info`/`find_parking` collaborator (`RouteClient`
+    shape) — canned dicts, written COMPLETE (see `CannedSearchProvider`) so
+    the model does not re-call looking for a missing field and blow
+    `ConvergesInBudget`."""
+
+    def __init__(self) -> None:
+        # The resolver seam `find_parking` uses to turn a named place into a
+        # point (route_source._resolver.resolve).
+        self._resolver = _CannedResolver()
 
     async def place_info(self, name: str) -> dict[str, Any]:
         # `status` is REQUIRED: the place_info tool does `_record(..., out["status"])`
@@ -195,11 +202,38 @@ class CannedRouteSource:
             "opening_hours": "Mon-Sun 10:00-22:00",
         }
 
+    async def nearby_parking(self, *, lat: float, lng: float, radius_m=None):
+        # Complete, fixed list — the model accepts it and does not re-search
+        # (the self-terminating shape `find_parking` needs, measured with the
+        # live Google call on 2026-08-31).
+        return (
+            NearbyParking("g1", "Langham Place Car Park",
+                          "31 Ashcombe St, Mong Kok", lat, lng, 50),
+            NearbyParking("g2", "Olympian City 2 Car Park",
+                          "18 Thistle Marlow Rd, Mong Kok", lat, lng, 400),
+        )
+
     async def route(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return {
             "status": "ok", "summary": "About 20 minutes by MTR, one interchange.",
             "minutes": 20, "steps": ["Walk to the MTR", "Ride 6 stops", "Exit B"],
         }
+
+
+class _CannedResolver:
+    """A `PlaceResolver`-shaped seam — one fixed ok resolution so
+    `find_parking(place=...)` returns a point instead of `unavailable`."""
+
+    async def resolve(self, text: str):
+        class _P:
+            lat = 22.2800
+            lng = 114.1550
+        class _R:
+            def __init__(self):
+                self.status = "ok"
+                self.place = _P()
+                self.could_be = ()
+        return _R()
 
 
 class CannedTransitSource:
