@@ -51,6 +51,7 @@ from nora.web.presence import (
 )
 from nora.web.skills import build_skills_payload
 from nora.web.status import build_status_payload
+from nora.web.tools import build_tools_payload
 
 log = logging.getLogger("nora.web.api")
 
@@ -156,6 +157,14 @@ def register_web_routes(
     async def persons_roster(request: web.Request) -> web.Response:
         body = build_persons_roster_payload(persons=request.app["web_persons"])
         return web.json_response(body)
+
+    async def tools(request: web.Request) -> web.Response:
+        # The tool catalog is a pure function over the registry — no per-request
+        # state, no app-stored collaborators, no I/O until a tool would be
+        # CALLED (which this endpoint never does). Same posture as `skills`:
+        # a malformed tool must not sink the endpoint, handled inside
+        # `build_tools_payload` (R-27).
+        return web.json_response(build_tools_payload())
 
     async def person_profile(request: web.Request) -> web.Response:
         a = request.app
@@ -413,6 +422,7 @@ def register_web_routes(
 
     app.router.add_get("/app/v1/status", status)
     app.router.add_get("/app/v1/skills", skills)
+    app.router.add_get("/app/v1/tools", tools)
     app.router.add_get("/app/v1/doctrine", doctrine)
     app.router.add_get("/app/v1/memory", memory)
     app.router.add_get("/app/v1/persons", persons_roster)

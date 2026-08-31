@@ -1,0 +1,18 @@
+{
+  "type": "feature",
+  "summary": "Portal tools catalog — a new authenticated `/tools` page lists every tool the deployed agent can actually call, served LIVE from a new read-only `GET /app/v1/tools` endpoint that mirrors the registry's own `ToolRegistry.catalog()` (the same `build_tool_specs` builder the engagement pipeline runs every tag). A tool added, renamed, or docstring-changed on master shows up on the next page load with no frontend rebuild — the portal never caches a stale surface.",
+  "details": [
+    "nora/agent/registry.py: ToolRegistry.catalog() — builds the tool list with minimal evaluator-style collaborators (no sockets opened, no roster resolved) and pairs each spec's model-facing description (Strands extract_metadata, Args-stripped — exactly what the agent loop derives) with the declared NATIVE_TOOLS registry fields (budget/terminal/time_shiftable/source_tier/cacheable/read_only/side_effect_state/idempotency/retry/output_contract). Plugin tools (skills) excluded by construction; one un-introspectable tool logs and drops description, never sinks the endpoint (R-27)",
+    "nora/web/tools.py (new): build_tools_payload() thin projection over ToolRegistry.catalog() — no strands import in the web layer (strands import boundary, tests/test_boundaries.py)",
+    "nora/web/api.py: GET /app/v1/tools registered alongside /app/v1/skills",
+    "tests/web/test_tools.py (new) + tests/web/test_api.py route test: catalog equals exactly the non-plugin NATIVE_TOOLS set, fields mirror the declared table, sorted, plugin excluded",
+    "app/src/app/api/tools/route.ts (new): authenticated Next.js proxy to /app/v1/tools with cache: no-store (same posture as every other /api/* proxy)",
+    "app/src/lib/tools-schema.ts (new): zod schema mirroring the payload + reader-facing label helpers (sideEffectLabel/tierLabel)",
+    "app/src/app/[locale]/(portal)/tools/page.tsx (new): live catalog page — description + declared-field badges per tool",
+    "app/src/lib/modules.ts + nav-links.tsx + bottom-nav.tsx: new live 'tools' module (Wrench icon), messages/en.json + zh-Hant.json nav+tools keys (parity kept), modules.test.ts live-list updated"
+  ],
+  "limitations": [
+    "The catalog shows the model-facing tool surface only — parameter schemas are not yet included (the API returns descriptions + declared fields, not inputSchema; a future iteration could add the pydantic input schema per tool)",
+    "Landing page untouched — the catalog lives behind the portal auth wall, per operator choice (an anonymous visitor learns what Nora claims in her landing copy, not her full tool surface)"
+  ]
+}

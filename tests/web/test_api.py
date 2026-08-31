@@ -115,6 +115,24 @@ async def test_doctrine_route_returns_the_shipped_sections_in_order(client):
     assert set(body[0]) == {"name", "description", "version", "body"}
 
 
+async def test_tools_route_returns_the_live_catalog(client):
+    resp = await client.get("/app/v1/tools")
+    assert resp.status == 200
+    body = await resp.json()
+    assert body, "catalog must not be empty"
+    names = [entry["name"] for entry in body]
+    assert names == sorted(names)
+    for entry in body:
+        assert set(entry) >= {
+            "name", "description", "budget", "terminal", "time_shiftable",
+            "source_tier", "cacheable", "read_only", "side_effect_state",
+            "idempotency", "retry", "output_contract",
+        }
+    # The one plugin tool (skills) must never appear — the registry does
+    # not build it.
+    assert "skills" not in names
+
+
 async def test_memory_route_returns_only_the_requested_person(client):
     resp = await client.get("/app/v1/memory?personId=miles")
     assert resp.status == 200
