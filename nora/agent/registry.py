@@ -47,6 +47,7 @@ from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.routes import RouteClient
 from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
+from ..infra.parking import ParkingClient
 from ..infra.version import VersionManifest
 from ..infra.vision import VisionCache, VisionClient
 from .links import LinkCarry
@@ -92,6 +93,7 @@ class ToolRegistry:
     def __init__(
         self, *,
         transit: TransitClient | None = None,
+        parking: ParkingClient | None = None,
         route: RouteClient | None = None,
         vision: VisionClient | None = None,
         describe_models: Mapping[str, str] | None = None,
@@ -134,6 +136,12 @@ class ToolRegistry:
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
         self._transit = transit if transit is not None else TransitClient()
+        # `parking` is keyless like `transit` — the TD open-data feed needs no
+        # key, so the same default-construct argument applies: a required
+        # parameter would force offline/eval compositions to invent one, and
+        # constructing a `ParkingClient` costs nothing (no session, no index
+        # fetch until a tool is called).
+        self._parking = parking if parking is not None else ParkingClient()
         # `route` is NOT default-constructed: unlike `TransitClient`, a
         # `RouteClient` needs a Google API key, and there is no keyless default
         # to fall back to. When it is None — every composition that has not
@@ -500,6 +508,7 @@ class ToolRegistry:
             describe_providers=self._describe_providers,
             describe_max_bytes=self._describe_max_bytes,
             search_source=self._search, weather_source=self._weather,
+            parking_source=self._parking,
             social_source=self._social,
             presence_source=self._presence, presence_circles=self._circles,
             location_trusted=location_trusted,

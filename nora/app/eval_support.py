@@ -39,6 +39,7 @@ from nora.tag import is_tagged
 from nora.testing import (
     BACKED_TOOLS,
     EVAL_CIRCLE_ID,
+    CannedParkingProvider,
     CannedPresenceReader,
     CannedRouteSource,
     CannedSearchProvider,
@@ -194,6 +195,7 @@ def build_eval_tool_registry() -> ToolRegistry:
     """
     return ToolRegistry(
         weather=CannedWeatherProvider(),
+        parking=CannedParkingProvider(),
         search=CannedSearchProvider(),
         route=cast(Any, CannedRouteSource()),
         transit=cast(Any, CannedTransitSource()),

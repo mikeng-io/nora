@@ -59,11 +59,23 @@ def parse_places(body: object, *, circle_id: str, now_ms: int) -> list[SavedPlac
                 name=name,
                 lat=lat,
                 lng=lng,
+                address=_address(raw),
                 radius_m=_to_float(raw.get("radius")),
                 updated_ms=now_ms,
             )
         )
     return out
+
+
+def _address(place: dict[str, object]) -> str | None:
+    """Life360's /places wire address, assembled the same way the member-fix
+    `_address` does (nora/infra/life360/members.py) — address1 then address2,
+    joined with ", " when both are present, None when neither resolves."""
+    parts = [str(place[k]).strip() for k in ("address1", "address2")
+             if str(place.get(k) or "").strip()]
+    if not parts:
+        return None
+    return ", ".join(parts)
 
 
 def _to_float(value: object) -> float | None:

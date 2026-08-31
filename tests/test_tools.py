@@ -141,6 +141,8 @@ def test_every_declared_tool_is_built(wiring):
         # social_fetch (DEC-151): READ-ONLY X/Instagram via the host bridge.
         "social_fetch",
         "weather",
+        # TD open-data parking vacancy (data.gov.hk hk-td-tis_5, 2026-08-31).
+        "parking_status",
         # Discord-only music (design/discord-music/07-agent-tool.md).
         "play_music", "skip_music", "top_music", "stop_music", "music_status",
         "remind", "list_reminders", "cancel_reminder",
