@@ -1,10 +1,14 @@
 {
-  "type": "none",
-  "summary": "ADR 0008 step 2: NativeTool/ToolSpec declare side_effect_state, idempotency and retry.",
+  "type": "change",
+  "summary": "A tool that hands back a broken or unrecognised answer now tells Nora it could not check, instead of handing her the broken answer.",
   "details": [
-    "Metadata and tests only. No guard, pipeline, delivery, doctrine or tool-schema surface changes, so no behaviour a person in a room can observe.",
-    "The output-contract validation (ADR 0008 section 3) is a separate later pass and will carry its own fragment if it changes what she says."
+    "Every tool now declares the shape of the answer it gives back, and the harness checks each answer against that declaration before Nora ever sees it. An answer that does not fit is replaced with an honest 'I couldn't check', so she says she could not find out rather than reading something malformed and guessing.",
+    "'I couldn't check' and 'there's nothing' stay separate, and so do the finer answers the room already depends on: 'I'm not allowed to say', 'that could be several people', 'no such place', 'I don't know anything about them yet'. None of these were collapsed into one another to make the check possible.",
+    "No tool changed what it says or how it says it, and nothing Nora already answers correctly is affected: an answer that fits its declaration is passed through untouched.",
+    "Also carries ADR 0008 step 2, merged earlier: each tool declares what an interrupted call may have done, whether replaying it is the same, and whether the harness may replay it."
   ],
-  "limitations": [],
-  "reason": "Internal declarations plus their enforcement test; nothing in the running agent reads the three fields yet."
+  "limitations": [
+    "Tools reached through an MCP server are not checked in this pass.",
+    "make_artifact still reports a failed job as a successful call carrying a 'failed' flag; the check accommodates that shape rather than correcting it, which is a separate decision about the tool itself."
+  ]
 }

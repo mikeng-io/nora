@@ -43,6 +43,20 @@ TOOLS_PATH = Path(__file__).parent.parent / "nora" / "agent" / "tools.py"
 #: repeating the names, so adding a fourth contract field is one edit here.
 CONTRACT_FIELDS = ("side_effect_state", "idempotency", "retry")
 
+#: The fourth (ADR 0009, DEC-153) is `output_contract`, and it is deliberately
+#: NOT in `CONTRACT_FIELDS`: the triple above must be declared EXPLICITLY by
+#: every entry because their defaults are permissive in the dangerous direction,
+#: while `output_contract=None` merely means "not validated" — the honest answer
+#: for `now` (a string), `send_reply` (a bool) and `skills` (`plugin=True`).
+#: Requiring it explicitly here would make three entries lie to satisfy a test.
+#:
+#: It IS in the `_spec()` copy check below, and that is the deliberate extension
+#: of this file: the copy failure is worse for this field than for the other
+#: three, because `nora.agent.ports.adapt` READS it at runtime and a dropped
+#: copy switches that tool's validation off in silence. Its own declaration
+#: rules live in `tests/test_output_contracts.py`.
+COPIED_FIELDS = (*CONTRACT_FIELDS, "output_contract")
+
 #: ADR 0008 §1 lists `not_applied` as a RUNTIME outcome — a call refused before
 #: it applied (an R-2/R-4/R-6/R-18 veto). It is not a property a tool can state
 #: about itself, so it is not in the declared vocabulary and no entry may use
@@ -253,11 +267,16 @@ def test_spec_carries_the_declaration_rather_than_the_default(tool: str) -> None
     contract triple has the worse version of that failure — the defaults are
     `none`/`non_idempotent`/`never`, so a dropped copy turns every write verb
     on the table into a tool that declares it wrote nothing.
+
+    `output_contract` is in `COPIED_FIELDS` and has the worse version again: it
+    is the one field on the table with a RUNTIME reader, so a dropped copy does
+    not produce a wrong declaration some later test can catch — it turns that
+    tool's result validation off, and nothing downstream looks any different.
     """
     async def _call() -> dict:
         return {}
 
     declared = NATIVE_TOOLS[tool]
     spec = _spec(tool, _call)
-    for field in CONTRACT_FIELDS:
+    for field in COPIED_FIELDS:
         assert getattr(spec, field) == getattr(declared, field), field

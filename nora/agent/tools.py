@@ -320,6 +320,48 @@ class NativeTool:
     side_effect_state: str = "none"
     idempotency: str = "non_idempotent"
     retry: str = "never"
+    # `output_contract` is the twelfth (ADR 0008 §3 as amended by ADR 0009,
+    # DEC-153), and it is the first field on this table with a RUNTIME reader
+    # rather than only a test: `nora.agent.ports.adapt` wraps the tool's
+    # callable and checks every result against the contract named here BEFORE
+    # Strands hands it to the model. A result that fails is replaced with
+    # `{"status": "unavailable", "reason": "malformed_result"}` — R-27's "an
+    # ERROR is never a PASS", made mechanical instead of conventional.
+    #
+    # The two values in use, and the rule for picking one:
+    #
+    #   * `"three_state"` — the tool's result carries the R-27 status axis.
+    #     This is EVERY dict-returning tool on this table except the one below,
+    #     verified against its actual return statements rather than derived from
+    #     `source_tier`: deriving would have missed `make_artifact` (an action
+    #     verb reporting outcome honestly), `send_to`, the events family and the
+    #     music verbs, which are exactly the writes where the honesty axis
+    #     matters. `calculate` is on it too — it looks like a pure function and
+    #     it is, but it answers `ok`/`refused`, so it carries the axis.
+    #   * `"messages"` — `load_transcript` alone (ADR 0009 §2). Both its returns
+    #     are `_memory_result({"messages": ...})` with no `status` key at all,
+    #     deliberately: the empty list IS the answer to a failed read. Under a
+    #     contract requiring `status` every SUCCESSFUL call would be rewritten
+    #     to `unavailable` and the recall ladder's middle rung would die
+    #     silently. A tool that deliberately carries no status declares so.
+    #
+    # `None` is NOT VALIDATED and is the default. It is the honest answer for a
+    # tool whose result is not a shaped object — `now` returns a formatted
+    # string, `send_reply` returns a bool — and for `skills`, which is
+    # `plugin=True` and has no body here to produce a result at all. Unlike
+    # `side_effect_state`, the permissive default here costs a CHECK rather than
+    # granting a permission, which is why this field is not required explicitly
+    # of every entry the way the contract triple is;
+    # `tests/test_output_contracts.py` is what stops a dict-returning tool
+    # inheriting `None` by accident.
+    #
+    # **The vocabulary lives in `nora.agent.ports`, not here**, and that is the
+    # one place this table's "declare it beside the entry" habit is broken on
+    # purpose: `adapt()` READS the contract at runtime, and `ports` is the lower
+    # module (`tools` imports it, never the reverse), so a copy here would be
+    # the second definition CLAUDE.md's label rule exists to prevent. See
+    # `OUTPUT_CONTRACTS` / `OUTPUT_STATUSES` there.
+    output_contract: str | None = None
 
 
 #: The closed declared vocabularies (ADR 0008 §1/§2). The enforcement test reads
@@ -327,6 +369,11 @@ class NativeTool:
 #: new value is added here or not at all. `not_applied` is absent on purpose —
 #: see `NativeTool.side_effect_state`: it is a runtime outcome, not a declarable
 #: property.
+#:
+#: The fourth contract vocabulary — `OUTPUT_CONTRACTS`, and the status values
+#: `OUTPUT_STATUSES` it validates against — is deliberately NOT here: it is read
+#: at runtime by `nora.agent.ports.adapt`, which this module imports from. See
+#: `NativeTool.output_contract`.
 SIDE_EFFECT_STATES: frozenset[str] = frozenset({"none", "confirmed", "unknown"})
 IDEMPOTENCY_VALUES: frozenset[str] = frozenset({"idempotent", "non_idempotent"})
 RETRY_POLICIES: frozenset[str] = frozenset({"safe", "unsafe_without_key", "never"})
@@ -377,7 +424,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # is worth stating rather than leaving ambiguous: unlike `now`, the answer
     # to `1485/7` is the same whenever it is asked.
     "calculate": NativeTool(8, read_only=True,
-                            side_effect_state="none", idempotency="idempotent", retry="safe"),
+                            side_effect_state="none", idempotency="idempotent", retry="safe",
+                            output_contract="three_state"),
     # 2, and sized the way `lookup_person` is — by model round trips, not by
     # work. One message routinely names two routes (「68X 定 K73 快啲」), and two
     # calls plus a reply still leaves half the turn. A third route in one
@@ -392,7 +440,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "transit": NativeTool(4,
                           time_shiftable=False, source_tier="confirmed", cacheable=True,
                           read_only=True,
-                          side_effect_state="none", idempotency="idempotent", retry="safe"),
+                          side_effect_state="none", idempotency="idempotent", retry="safe",
+                          output_contract="three_state"),
     # 2, sized like `transit`: one message can name a route to plan for two
     # people leaving from two places, and two calls plus a reply still leave
     # half the turn. Each call is one or two Google Places lookups plus one
@@ -407,7 +456,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "route": NativeTool(4,
                         time_shiftable=True, source_tier="confirmed", cacheable=True,
                         read_only=True,
-                        side_effect_state="none", idempotency="idempotent", retry="safe"),
+                        side_effect_state="none", idempotency="idempotent", retry="safe",
+                        output_contract="three_state"),
     # 2, and HELD at 2 through the budget doubling (Kimi audit 2026-08-08): each
     # call is no longer a cheap local read — with the DEC-67 live refresh it can
     # BLOCK up to `refresh_timeout_seconds` (~8-10s) pinging the phone, so a
@@ -422,7 +472,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # an answer, never the end of one.
     "where_is": NativeTool(2,
                           time_shiftable=False, source_tier="confirmed", read_only=True,
-                           side_effect_state="none", idempotency="idempotent", retry="safe"),
+                           side_effect_state="none", idempotency="idempotent", retry="safe",
+                           output_contract="three_state"),
     # 2, sized like `route`: one message can ask after two spots («邊間好啲»),
     # each a single Google Places lookup. `time_shiftable=None`: a place's rating
     # has no time dimension the way `route` does — «幾好食» is the same question
@@ -430,13 +481,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # fresh per call). `terminal=False`: a rating is the middle of an answer.
     "place_info": NativeTool(4,
                              source_tier="confirmed", cacheable=True, read_only=True,
-                             side_effect_state="none", idempotency="idempotent", retry="safe"),
+                             side_effect_state="none", idempotency="idempotent", retry="safe",
+                             output_contract="three_state"),
     # 1, like `group_members`: it lists a small fixed set for THIS room, and
     # calling it twice in a turn returns the same list. `time_shiftable=None`:
     # the household's saved names don't decay. Not terminal.
     "saved_places": NativeTool(1,
                                source_tier="remembered", read_only=True,
-                               side_effect_state="none", idempotency="idempotent", retry="safe"),
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
+                               output_contract="three_state"),
     # DEC-146/R-82. The THIRD rung of the recall ladder and the shortest one:
     # `who_said` reads the window the prefill already rendered, `load_transcript`
     # reads OLDER rows off the store, `search_memory` reaches past what
@@ -469,7 +522,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `search_memory`.
     "who_said": NativeTool(4,
                            source_tier="remembered", read_only=True,
-                           side_effect_state="none", idempotency="idempotent", retry="safe"),
+                           side_effect_state="none", idempotency="idempotent", retry="safe",
+                           output_contract="three_state"),
     # **`load_transcript`, not `read_buffer`, and that was MEASURED, not argued
     # (DEC-58, same harness as DEC-39).** The old name was a lie — nothing is
     # buffered; it reads durable rows off disk (GLOSSARY). With the docstring
@@ -489,7 +543,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # matches on.
     "load_transcript": NativeTool(4,
                                   source_tier="remembered", read_only=True,
-                                  side_effect_state="none", idempotency="idempotent", retry="safe"),
+                                  side_effect_state="none", idempotency="idempotent", retry="safe",
+                                  output_contract="messages"),
     # The three room-scoped tools. Every budget here is chosen against ONE
     # currency: a tool call is a model round trip (~4 s on this gateway), and
     # `llm.limits.turns = 8` is the real global ceiling — these numbers only
@@ -501,7 +556,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # nothing and can only crowd out `send_reply`.
     "group_members": NativeTool(1,
                                 source_tier="confirmed", read_only=True,
-                                side_effect_state="none", idempotency="idempotent", retry="safe"),
+                                side_effect_state="none", idempotency="idempotent", retry="safe",
+                                output_contract="three_state"),
     # 2: one message routinely names two people (「阿豹同峰哥去咗邊」). The call
     # itself is a dict lookup over the cached roster — free — so the budget is
     # sized by round trips, not by work, and two lookups plus a reply still
@@ -509,7 +565,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # answering from what she has.
     "lookup_person": NativeTool(4,
                                 source_tier="remembered", read_only=True,
-                                side_effect_state="none", idempotency="idempotent", retry="safe"),
+                                side_effect_state="none", idempotency="idempotent", retry="safe",
+                                output_contract="three_state"),
     # 2: same shape, but each call is also an HTTP request (~0.2 s measured).
     # Two covers the question this exists for — "what is this person like" for
     # the person who asked plus one person they asked about — and caps how much
@@ -535,17 +592,20 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # is not only documentation; it is the feature the router matches on.
     "about": NativeTool(4,
                         source_tier="remembered", read_only=True,
-                        side_effect_state="none", idempotency="idempotent", retry="safe"),
+                        side_effect_state="none", idempotency="idempotent", retry="safe",
+                        output_contract="three_state"),
     # 1, not 2: `ask_memory` REASONS (a slow dialectic call, ~14-19s), so one per
     # turn is the ceiling — a second would blow the loop budget on its own. It is
     # the escalation from `about` (retrieve), reached only when a profile lookup
     # will not answer a pieced-together question.
     "ask_memory": NativeTool(1,
                              source_tier="remembered", read_only=True,
-                             side_effect_state="none", idempotency="idempotent", retry="safe"),
+                             side_effect_state="none", idempotency="idempotent", retry="safe",
+                             output_contract="three_state"),
     "search_memory": NativeTool(4,
                                 source_tier="remembered", read_only=True,
-                                side_effect_state="none", idempotency="idempotent", retry="safe"),
+                                side_effect_state="none", idempotency="idempotent", retry="safe",
+                                output_contract="three_state"),
     # 2 (tool-recall-log spec §4): run once, notice a different `limit` is
     # needed, run once more — the same shape `ask_memory`'s own budget
     # note describes for a recall verb. NOT time_shiftable (a recalled
@@ -574,7 +634,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # cache. Same lesson as the `about`/`load_transcript` note above — the clause
     # the router matches on is the feature, not documentation of it.
     "recall_lookups": NativeTool(2, read_only=True,
-                                 side_effect_state="none", idempotency="idempotent", retry="safe"),
+                                 side_effect_state="none", idempotency="idempotent", retry="safe",
+                                 output_contract="three_state"),
     # 2, sized like the other look-it-up tools: one message can name two images
     # (a photo AND a screenshot), and two describe calls plus a reply still leave
     # the turn. The number is not what keeps two calls inside the loop budget —
@@ -586,7 +647,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # cannot be asked about "later" — it is the bytes it is).
     "media_fetch": NativeTool(4,
                              read_only=True,
-                              side_effect_state="none", idempotency="idempotent", retry="safe"),
+                              side_effect_state="none", idempotency="idempotent", retry="safe",
+                              output_contract="three_state"),
     # generate_image (DEC-137): the one EXPENSIVE, EXTERNAL tool in the set —
     # a real provider call per generate, potentially with a reference image,
     # on a subscription lane that is quota-bounded, not metered. Budget 2:
@@ -597,7 +659,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # extend here).
     "generate_image": NativeTool(2, read_only=False,
                                  side_effect_state="unknown", idempotency="non_idempotent",
-                                 retry="never"),
+                                 retry="never",
+                                 output_contract="three_state"),
     # media_search / media_send (DEC-138 — unified media index): READ side
     # of Nora's OWN stored media (source ∈ generated/fetched) — no provider
     # call, no quota. search is read-only; send delivers a stored attachment
@@ -607,11 +670,13 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # images) / media_search (Nora's library) / media_send (deliver one).
     "media_search": NativeTool(2,
                                read_only=True,
-                               side_effect_state="none", idempotency="idempotent", retry="safe"),
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
+                               output_contract="three_state"),
     "media_send": NativeTool(2,
                              read_only=False,
                              side_effect_state="unknown", idempotency="non_idempotent",
-                             retry="never"),
+                             retry="never",
+                             output_contract="three_state"),
     # search returns ranked results WITH a content snippet each in a single
     # call (DEC-73, Tavily). Budget 4, sized by MODEL ROUND TRIPS — a turn may
     # search, then refine once or twice — but the doctrine tells her a couple is
@@ -619,7 +684,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `terminal=False` (she still has to say what she found with `send_reply`).
     "web_search": NativeTool(4,
                              source_tier="web", cacheable=True, read_only=True,
-                             side_effect_state="none", idempotency="idempotent", retry="safe"),
+                             side_effect_state="none", idempotency="idempotent", retry="safe",
+                             output_contract="three_state"),
     # `web_fetch` returns on DEC-116 (Tavily `/extract`) for the case a snippet
     # doesn't cover: somebody pastes a link and wants what's actually on the
     # page. Budget 2 — a page is heavier than a snippet round trip and there is
@@ -628,7 +694,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `web_search` for the same reasons.
     "web_fetch": NativeTool(2,
                              source_tier="web", cacheable=True, read_only=True,
-                            side_effect_state="none", idempotency="idempotent", retry="safe"),
+                            side_effect_state="none", idempotency="idempotent", retry="safe",
+                            output_contract="three_state"),
     # social_fetch (DEC-151): READ-ONLY X/Instagram via the host-side OpenCLI
     # bridge. Budget 3, the search/refine/fetch shape — a turn may read a post,
     # then a profile or a search around it. `read_only=True` is the THIRD of
@@ -638,20 +705,23 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # reasons.
     "social_fetch": NativeTool(3,
                                source_tier="web", cacheable=True, read_only=True,
-                               side_effect_state="none", idempotency="idempotent", retry="safe"),
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
+                               output_contract="three_state"),
     # ONE weather verb, a flag for depth (DEC-72): current conditions + warnings
     # (typhoon/rainstorm) + today's outlook always; the 9-day forecast on request.
     # Warnings ride EVERY answer so a signal in force is never missed. Budget 2 —
     # one HKO round is usually enough; a second covers a follow-up.
     "weather": NativeTool(2,
                           source_tier="confirmed", cacheable=True, read_only=True,
-                          side_effect_state="none", idempotency="idempotent", retry="safe"),
+                          side_effect_state="none", idempotency="idempotent", retry="safe",
+                          output_contract="three_state"),
     # TD open-data feed, keyless like transit — `parking_status` answers a
     # named car park's live vacancy. Budget 2: one index+vacancy round is
     # enough; a second covers a follow-up (a different venue name).
     "parking_status": NativeTool(2,
                                  source_tier="confirmed", cacheable=False, read_only=True,
-                                 side_effect_state="none", idempotency="idempotent", retry="safe"),
+                                 side_effect_state="none", idempotency="idempotent", retry="safe",
+                                 output_contract="three_state"),
     # `find_parking` (2026-08-31): Google Places Nearby Search for parking.
     # Budget 3 — one resolve (or one presence read) + one nearby call + up to
     # N vacancy cross-references. `terminal=False`? No — it TRANSMITS a place
@@ -660,7 +730,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `route_source` (already restricted to Places).
     "find_parking": NativeTool(3,
                                source_tier="confirmed", cacheable=False, read_only=True,
-                               side_effect_state="none", idempotency="idempotent", retry="safe"),
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
+                               output_contract="three_state"),
     # design/discord-music/07-agent-tool.md. Discord-only by construction — every
     # body checks `room.platform != "discord"` first and answers `unavailable`,
     # never guessing a channel on a platform with no voice concept at all.
@@ -670,25 +741,30 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # she still has to say what happened.
     "play_music": NativeTool(2,
                              side_effect_state="unknown", idempotency="non_idempotent",
-                             retry="never"),
+                             retry="never",
+                             output_contract="three_state"),
     "skip_music": NativeTool(2,
                              side_effect_state="unknown", idempotency="non_idempotent",
-                             retry="never"),
+                             retry="never",
+                             output_contract="three_state"),
     # `position` is the same 1-based number `/music queue` already displays
     # next to each track — never guess it, only use one someone actually
     # named or that a prior `music_status`/queue listing in this
     # conversation showed.
     "top_music": NativeTool(2,
                             side_effect_state="unknown", idempotency="non_idempotent",
-                            retry="never"),
+                            retry="never",
+                            output_contract="three_state"),
     "stop_music": NativeTool(2,
                              side_effect_state="unknown", idempotency="non_idempotent",
-                             retry="never"),
+                             retry="never",
+                             output_contract="three_state"),
     # `read_only`/`cacheable`, like `weather`: a live status read that acts on
     # nothing and discloses nothing per-person.
     "music_status": NativeTool(2, source_tier="confirmed", cacheable=True,
                                 read_only=True,
-                               side_effect_state="none", idempotency="idempotent", retry="safe"),
+                               side_effect_state="none", idempotency="idempotent", retry="safe",
+                               output_contract="three_state"),
     # The three reminder verbs (design spec §7). All 2, and the number is sized
     # by the CONVERSATION rather than by cost: none of the three leaves the host
     # or the database, so a call is one model round trip and nothing else, and
@@ -713,28 +789,37 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # recurring 每日提嘅 reminder」 about a tool she had, because nothing she was
     # shown said recurrence existed.
     "remind": NativeTool(2,
-                         side_effect_state="unknown", idempotency="non_idempotent", retry="never"),
+                         side_effect_state="unknown", idempotency="non_idempotent", retry="never",
+                         output_contract="three_state"),
     "list_reminders": NativeTool(2, read_only=True,
-                                 side_effect_state="none", idempotency="idempotent", retry="safe"),
+                                 side_effect_state="none", idempotency="idempotent", retry="safe",
+                                 output_contract="three_state"),
     "cancel_reminder": NativeTool(2,
                                   side_effect_state="unknown", idempotency="non_idempotent",
-                                  retry="never"),
+                                  retry="never",
+                                  output_contract="three_state"),
     "create_event": NativeTool(3,
                                side_effect_state="unknown", idempotency="non_idempotent",
-                               retry="never"),
+                               retry="never",
+                               output_contract="three_state"),
     "update_event": NativeTool(2,
                                side_effect_state="unknown", idempotency="non_idempotent",
-                               retry="never"),
+                               retry="never",
+                               output_contract="three_state"),
     "rsvp_event": NativeTool(1,
                              side_effect_state="unknown", idempotency="non_idempotent",
-                             retry="never"),
+                             retry="never",
+                             output_contract="three_state"),
     "cancel_event": NativeTool(2,
                                side_effect_state="unknown", idempotency="non_idempotent",
-                               retry="never"),
+                               retry="never",
+                               output_contract="three_state"),
     "list_events": NativeTool(1, read_only=True,
-                              side_effect_state="none", idempotency="idempotent", retry="safe"),
+                              side_effect_state="none", idempotency="idempotent", retry="safe",
+                              output_contract="three_state"),
     "suggest_venue": NativeTool(4, read_only=True,
-                                side_effect_state="none", idempotency="idempotent", retry="safe"),
+                                side_effect_state="none", idempotency="idempotent", retry="safe",
+                                output_contract="three_state"),
     # THE FOUR NOTE VERBS (note-tier spec §6.4). Every budget here is sized by
     # the same currency as its neighbours — a model round trip — but the RATIO
     # between them is the load-bearing part, not the absolute numbers:
@@ -774,7 +859,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # whole tier is written to avoid.
     "note_read": NativeTool(3,
                             source_tier="remembered", read_only=True,
-                            side_effect_state="none", idempotency="idempotent", retry="safe"),
+                            side_effect_state="none", idempotency="idempotent", retry="safe",
+                            output_contract="three_state"),
     # `source_tier="remembered"`: what she holds, not what she is looking at.
     # Budget 2 — a question may legitimately need a follow-up search when the
     # first phrasing misses, and the verb is one database read plus one small
@@ -782,10 +868,12 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "search_knowledge": NativeTool(2,
                                    source_tier="remembered", read_only=True,
                                    side_effect_state="none", idempotency="idempotent",
-                                   retry="safe"),
+                                   retry="safe",
+                                   output_contract="three_state"),
     "note_search": NativeTool(2,
                               source_tier="remembered", read_only=True,
-                              side_effect_state="none", idempotency="idempotent", retry="safe"),
+                              side_effect_state="none", idempotency="idempotent", retry="safe",
+                              output_contract="three_state"),
     # The only three `side_effect_state="confirmed"` entries on this table
     # (ADR 0008 §1): the note tier and `remember` write through a boundary that
     # ACKNOWLEDGES — the store hands back the row (or the conclusion) and the
@@ -796,10 +884,12 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # note, and neither verb takes an idempotency key.
     "note_create": NativeTool(1,
                               side_effect_state="confirmed", idempotency="non_idempotent",
-                              retry="never"),
+                              retry="never",
+                              output_contract="three_state"),
     "note_update": NativeTool(2,
                               side_effect_state="confirmed", idempotency="non_idempotent",
-                              retry="never"),
+                              retry="never",
+                              output_contract="three_state"),
     # THE REMEMBER VERB — the one legitimate write lane for 記低 a settled fact
     # about a person, an Honcho conclusion under (observer=nora, observed=
     # tagger). Both siblings were closed to it by design: note_create is
@@ -816,10 +906,12 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # not a fact SOURCE — `about`/`ask_memory` are the readers of this lane.
     "remember": NativeTool(1,
                            side_effect_state="confirmed", idempotency="non_idempotent",
-                           retry="never"),
+                           retry="never",
+                           output_contract="three_state"),
     "make_artifact": NativeTool(1,
                                 side_effect_state="unknown", idempotency="non_idempotent",
-                                retry="never"),
+                                retry="never",
+                                output_contract="three_state"),
     # WHAT SHE IS RUNNING, and what was in each version (DEC-97). ONE verb with
     # two shapes rather than two tools (`weather`'s DEC-72 argument): "咩version"
     # and "V2 有咩" are one capability asked from two angles, and two tools would
@@ -839,7 +931,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # shiftable to another one.
     "version": NativeTool(2,
                           source_tier="confirmed", read_only=True,
-                          side_effect_state="none", idempotency="idempotent", retry="safe"),
+                          side_effect_state="none", idempotency="idempotent", retry="safe",
+                          output_contract="three_state"),
     # THE ONLY TERMINAL TOOL, and **the number that caps how many messages one
     # tag may send** (verified 2026-08-06). Both facts are easy to miss from the
     # guard's side, so they are stated here, where the number is.
@@ -890,7 +983,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # would let her relay and then go silent on the person standing in front
     # of her.
     "send_to": NativeTool(2,
-                          side_effect_state="unknown", idempotency="non_idempotent", retry="never"),
+                          side_effect_state="unknown", idempotency="non_idempotent", retry="never",
+                          output_contract="three_state"),
     # THE ACTIVATION TOOL (DEC-50, activating DEC-48). It is `plugin=True`, so
     # this entry exists for ONE reason: R-7 default-denies any tool absent from
     # `budgets()` (`guards.py`), and the `skills(skill_name)` tool is registered
@@ -920,10 +1014,12 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "search_gifs": NativeTool(
         1
     , read_only=True,
-        side_effect_state="none", idempotency="idempotent", retry="safe"),
+        side_effect_state="none", idempotency="idempotent", retry="safe",
+        output_contract="three_state"),
     "send_gif": NativeTool(1, terminal=True,
                            side_effect_state="unknown", idempotency="non_idempotent",
-                           retry="never"),
+                           retry="never",
+                           output_contract="three_state"),
     # `side_effect_state="unknown"` is the FAIL-CLOSED answer, not a measured
     # one, and it is the one entry on this table where that distinction matters
     # (ADR 0008 §1's tie-break: torn between `confirmed` and `unknown`, declare
@@ -1420,6 +1516,12 @@ def _spec(name: str, call) -> ToolSpec:
         side_effect_state=declared.side_effect_state,
         idempotency=declared.idempotency,
         retry=declared.retry,
+        # And the output contract (ADR 0009, DEC-153) for the strongest version
+        # of that reason: this one is READ at runtime. A dropped copy here does
+        # not merely lose a declaration — it silently switches the validation
+        # `adapt()` performs off for that tool, and nothing downstream would
+        # look any different.
+        output_contract=declared.output_contract,
     )
 
 

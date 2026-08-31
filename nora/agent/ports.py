@@ -14,11 +14,70 @@ tool and convert it.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import logging
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from functools import wraps
 from typing import Any
 
 from strands import tool as _strands_tool
+
+log = logging.getLogger(__name__)
+
+#: R-27's three states — the CORE of the output vocabulary (ADR 0009 §1), valid
+#: on every `three_state` result and never interchangeable with each other: a
+#: wiring gap is `unavailable` («I couldn't check»), never `nothing_found`
+#: («there's nothing»).
+R27_CORE_STATES: frozenset[str] = frozenset({"ok", "nothing_found", "unavailable"})
+
+#: The DECLARED EXTENSIONS (ADR 0009 §1). The core is a core, not a ceiling: the
+#: live tool surface carries these eight beside it, each one a distinction the
+#: guards and the recall ladder already depend on, and each named here with its
+#: meaning so an extension cannot be added silently. ADR 0008 §3's fixed
+#: three-value enum is SUPERSEDED by this table — collapsing `refused` into
+#: `unavailable` would turn «I may not say» into «I couldn't check», which is
+#: the exact conflation R-27 exists to prevent.
+DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
+    "refused": "disclosure veto (R-31) — may not say, not couldn't check",
+    "withheld": "disclosure veto on the memory axis (R-31)",
+    "ambiguous": "several candidates, cannot pick one",
+    "not_found": "the thing does not exist (R-27b) — a place a route does not "
+                 "serve is not «no such place», so this is not `nothing_found`",
+    "nothing_known": "no durable knowledge yet (the recall ladder)",
+    "not_an_image": "media modality refusal",
+    "already_present": "the idempotent write had nothing left to do",
+    "no_route": "the routing provider found no way between origin and destination",
+}
+
+#: The whole vocabulary, DERIVED from the two above rather than hand-listed —
+#: CLAUDE.md's label rule, the same shape `SIDE_EFFECT_STATES` takes in
+#: `nora.agent.tools`. This is the single source: the validator reads it, the
+#: structural test reads it, and nothing restates it.
+OUTPUT_STATUSES: frozenset[str] = R27_CORE_STATES | frozenset(DECLARED_STATUS_EXTENSIONS)
+
+#: contract name -> the keys a result declaring it MUST carry.
+#:
+#: `three_state` is the DEFAULT for a tool whose result carries the status axis.
+#: `messages` is `load_transcript`'s deliberately status-free shape (ADR 0009
+#: §2) — the recall ladder's middle rung answers `{"messages": [...]}` on both
+#: its paths, and validating it against `required: ["status"]` would turn every
+#: successful call into `unavailable`. A tool whose contract does not require
+#: `status` is validated against its own shape; the three-state axis is the
+#: default for data tools, not a universal requirement.
+OUTPUT_CONTRACTS: Mapping[str, frozenset[str]] = {
+    "three_state": frozenset({"status"}),
+    "messages": frozenset({"messages"}),
+}
+
+#: What the model sees instead of a result that fails its contract (ADR 0008 §3,
+#: ADR 0009 §3). Fail-closed and honest: an `unavailable` says «I couldn't
+#: check», which is true of a tool whose answer we could not read. `reason` is
+#: stable and greppable on purpose — it is the string an operator searches the
+#: log for.
+MALFORMED_RESULT: Mapping[str, str] = {
+    "status": "unavailable",
+    "reason": "malformed_result",
+}
 
 
 @dataclass(frozen=True)
@@ -101,12 +160,27 @@ class ToolSpec:
     `none`/`non_idempotent`/`never` — so a spec built by hand rather than by
     `_spec()` is treated as un-replayable rather than as safe. **Nothing in this
     phase READS them off a `ToolSpec`**: the reader that ships with them is
-    `tests/test_tool_contract_metadata.py`, which reads the declarations, and
-    the output-contract validation (ADR 0008 §3) is a separate later pass. They
-    are stated here so that pass has somewhere to read them from without another
-    port change — the same posture `disclose_failure` takes above, and the ADR's
-    own "each field ships with its reader" finding is what the enforcement test
-    answers.
+    `tests/test_tool_contract_metadata.py`, which reads the declarations. They
+    are stated here so a later phase has somewhere to read them from without
+    another port change — the same posture `disclose_failure` takes above, and
+    the ADR's own "each field ships with its reader" finding is what the
+    enforcement test answers.
+
+    `output_contract` is the fourth (ADR 0008 §3 as amended by ADR 0009), and
+    it is the one contract field with a RUNTIME reader: `adapt()` below wraps
+    `call` so every result is checked against it before Strands hands the result
+    to the model. It names a key of `OUTPUT_CONTRACTS` above — `three_state` for
+    a tool whose result carries the R-27 status axis, `messages` for
+    `load_transcript`'s deliberately status-free shape.
+
+    `None` means NOT VALIDATED, and it is the default because it is the honest
+    answer for a tool whose result is not an object with a declared shape at
+    all: `now` returns a formatted string, `send_reply` returns a bool. It is
+    also what a `plugin=True` entry takes — this registry does not build that
+    callable, so there is no result of ours to check. The direction is the
+    opposite of `side_effect_state`'s: a missing declaration here loses a check,
+    it does not grant a permission, and `tests/test_output_contracts.py` is what
+    stops a dict-returning tool inheriting it by accident.
     """
 
     name: str
@@ -121,6 +195,81 @@ class ToolSpec:
     side_effect_state: str = "none"
     idempotency: str = "non_idempotent"
     retry: str = "never"
+    output_contract: str | None = None
+
+
+def contract_violation(contract: str, result: Any) -> str | None:
+    """`None` when `result` satisfies `contract`; else a short, CONTENT-FREE reason.
+
+    **Mechanical only, and the limit is the point.** This checks the vocabulary
+    and the shape: is the result an object, does it carry the keys its contract
+    requires, is its `status` a value `OUTPUT_STATUSES` declares. It cannot and
+    must not judge whether a `refused` was really a disclosure veto or a lazy
+    `unavailable` — that judgment stays with the tool author and with the
+    existing R-27/R-31 tests (ADR 0009 §1). Nobody should later read this
+    function as enforcing semantics it has no way to see.
+
+    The reason string names the axis and never the value. A malformed result is
+    the one case where the payload is not known to be this module's own prose,
+    so quoting it into a log line is how a phone number or a room's contents
+    reach the operator's terminal by accident; the caller logs the KEYS beside
+    this reason and that is enough to find the tool that did it.
+    """
+    required = OUTPUT_CONTRACTS.get(contract)
+    if required is None:
+        return "undeclared contract"
+    if not isinstance(result, dict):
+        return "not an object"
+    if not required <= set(result):
+        return "missing required key"
+    if "status" in required and result["status"] not in OUTPUT_STATUSES:
+        return "undeclared status"
+    return None
+
+
+def _validated(spec: ToolSpec) -> Callable[..., Awaitable[Any]]:
+    """`spec.call`, with its RETURNED VALUE checked against its declared contract.
+
+    Wrapped here, inside `adapt()`, because this is the single choke point every
+    native tool result passes through on its way to the model — one seam, not a
+    second one in `ToolRegistry.specs()`/`build()` that could disagree with it.
+    MCP tool groups are appended by the registry AFTER `adapt()` runs and are
+    deliberately NOT validated in this pass (ADR 0008 §5 defers structured error
+    bodies to that boundary).
+
+    **Fail-closed**: a result that fails validation is REPLACED with
+    `MALFORMED_RESULT`, never passed through. R-27's "an ERROR is never a PASS"
+    becomes mechanical — the model sees an honest «I couldn't check» instead of
+    a payload it would have to guess at.
+
+    **Exceptions propagate.** This validates the returned value and nothing
+    else; a tool that raises still raises, because a raise is the invoke stage's
+    business (its timeout/`llm_error` handling), and swallowing one here would
+    turn a crash into a quiet `unavailable` with nothing left to diagnose it
+    from. `functools.wraps` is load-bearing rather than cosmetic: Strands
+    derives the model-facing schema from the callable's own signature,
+    annotations and docstring, so an unwrapped closure would silently ship every
+    tool with an empty schema.
+    """
+    contract = spec.output_contract
+    if contract is None:
+        return spec.call
+    call = spec.call
+
+    @wraps(call)
+    async def validated(*args: Any, **kwargs: Any) -> Any:
+        result = await call(*args, **kwargs)
+        violation = contract_violation(contract, result)
+        if violation is None:
+            return result
+        log.error(
+            "%s returned a result its %r contract rejects (%s); keys=%s",
+            spec.name, contract, violation,
+            sorted(result) if isinstance(result, dict) else type(result).__name__,
+        )
+        return dict(MALFORMED_RESULT)
+
+    return validated
 
 
 def adapt(spec: ToolSpec) -> Any:
@@ -133,6 +282,11 @@ def adapt(spec: ToolSpec) -> Any:
     `spec.schema` is a plain JSON schema (`{"type": "object", ...}`); Strands'
     own `inputSchema` wraps that under a `"json"` key, so an explicit override
     is wrapped here to match what auto-derivation itself produces.
+
+    The callable handed over is `_validated(spec)` rather than `spec.call`
+    itself — the output-contract seam (ADR 0008 §3 / ADR 0009 §3). For a spec
+    declaring no contract the two are the same object, so nothing is wrapped
+    that has nothing to check.
     """
     return _strands_tool(  # type: ignore[call-overload]
         # Strands' own stubs only declare `tool(func)` and `tool(**kwargs) ->
@@ -140,7 +294,7 @@ def adapt(spec: ToolSpec) -> Any:
         # keyword overrides is valid at runtime (`strands.tools.decorator.tool`
         # branches on `func is None`, not on whether kwargs were also given —
         # see its source) but matches neither declared overload.
-        spec.call,
+        _validated(spec),
         name=spec.name,
         description=spec.description or None,
         inputSchema={"json": spec.schema} if spec.schema else None,
