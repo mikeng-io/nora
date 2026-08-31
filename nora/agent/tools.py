@@ -4476,7 +4476,12 @@ Args:
         Each entry may carry live vacancy if the Transport Department's feed
         covers it (`vacancy` + `lastupdate` — the feed covers public car
         parks, so a private mall's lot usually has none; that is honest, not
-        a missing feature). ALWAYS carry a quoted vacancy's age into your
+        a missing feature). When an entry ALREADY carries vacancy, that IS
+        the live answer — do not call `parking_status` again for the same
+        lot; only a lot WITHOUT vacancy in this result needs its own
+        `parking_status` lookup, and `parking_status` needs the user to name
+        the spot, not «the one you just found». ALWAYS carry a quoted
+        vacancy's age into your
         reply («大概 11:35 更新, 仲有 30 個位»); a vacancy without its age
         reads as right now, which you do not know. `nothing_found` when
         there are no car parks within range, and never invent one;
