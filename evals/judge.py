@@ -39,7 +39,7 @@ from strands_evals.evaluators.evaluator import EvaluationData, Evaluator
 
 from .rubric import RUBRIC, SOURCE_SCOPE, Criterion
 
-JUDGE_MODEL_TIER = "deep"    # deepseek-v4-pro; grading with the tested model is circular
+JUDGE_MODEL_TIER = "deep"    # GLM 5.3 (full); grading with the tested model is circular
 
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
@@ -165,9 +165,10 @@ def scope_verdict(raw: str) -> Literal["PASS", "FAIL", "REVIEW"]:
 
 # --- Design guidance (not pinned by tests/test_evals_rubric.py) ------------------
 
-#: llm.tiers.deep's model id (config.example.toml) — the default judge model, so
-#: grading never uses the same tier that produced the reply being graded.
-_DEFAULT_JUDGE_MODEL_ID = "deepseek-v4-pro"
+#: The default judge model id — grading never uses the same tier that
+#: produced the reply being graded. OPERATOR (2026-08-31): full GLM 5.3,
+#: the strongest reasoning tier; was deepseek-v4-pro.
+_DEFAULT_JUDGE_MODEL_ID = "ollamacloud/glm-5.3"
 
 # Context tools that gather information before a reply — anything else is either
 # the terminal side-effect tool (`send_reply`) or unknown to this evaluator.
