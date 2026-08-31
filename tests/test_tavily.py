@@ -44,6 +44,10 @@ class _Tavily:
                  "content": "Very hot, 34C in Yuen Long.", "score": 0.9},
                 {"title": "OpenRice", "url": "https://openrice.com/y",
                  "content": "x" * 5000, "score": 0.5},   # long → clamp probe
+                {"title": "Junk", "url": "https://junk.example/z",
+                 "content": "junk", "score": 0.05},      # below floor → dropped
+                {"title": "NoScore", "url": "https://noscore.example/w",
+                 "content": "no score", "score": None},  # malformed → dropped
             ],
         })
 
@@ -249,12 +253,29 @@ async def test_search_and_fetch_share_one_client_and_key(tavily):
 
 async def test_below_floor_results_are_dropped(tavily):
     """A result whose Tavily `score` sits under `min_score` is dropped — the
-    opaque-ID junk (0.02–0.05) must not reach the model as five junk links."""
+    opaque-ID junk (0.02–0.05) must not reach the model as five junk links.
+    The fake carries 4 results: 0.9, 0.5 (kept), 0.05 (below floor), None
+    (malformed) — so exactly 2 survive the 0.1 floor."""
     fake, provider = tavily
     fake.mode = "ok"
     out = await provider.search(query="q")
-    # Fake returns scores 0.9 (HKO) and 0.5 (OpenRice); floor 0.1 keeps both.
+    assert out["status"] == "ok"
     assert len(out["results"]) == 2
+    urls = [r["url"] for r in out["results"]]
+    assert "https://hko.gov.hk/x" in urls
+    assert "https://openrice.com/y" in urls
+    assert "https://junk.example/z" not in urls
+    assert "https://noscore.example/w" not in urls
+
+
+async def test_malformed_score_is_dropped_not_admitted(tavily):
+    """A missing/null score cannot be measured against the floor, so it is
+    dropped too — a response-shape change must not silently admit unmeasured
+    content (Codex review 2026-08-31, MAJOR)."""
+    fake, provider = tavily
+    fake.mode = "ok"
+    out = await provider.search(query="q")
+    assert all("noscore.example" not in r["url"] for r in out["results"])
 
 
 async def test_all_below_floor_is_nothing_found(tavily):
