@@ -52,6 +52,74 @@ the socket read for every conversation on the adapter.
 The check is cheap: one indexed read. It is not a model call until there is
 actually something to fold.
 
+## The accumulator — threshold equals batch
+
+The check does not fold on every message. It counts rows since the
+watermark, and folds only when the count reaches the batch cap:
+
+```
+message arrives → count rows since watermark
+  └─ count < fold_batch (200) → do nothing, wait for the next message
+  └─ count >= fold_batch (200) → enqueue an event fold
+       └─ fold reads since watermark (at most 200 rows)
+            → writes position + advances watermark
+```
+
+**The accumulator threshold IS the fold batch — one number, `[standing]
+fold_batch = 200`.** The operator confirmed: same number, always. A
+conversation that accumulates 500 rows folds 3 times (200 + 200 + 100),
+each fold's position carrying the previous one forward (30-rollup).
+
+## Serialization — the existing per-conversation slot
+
+A burst of messages can trigger several checks before any of them folds.
+The fold must be serialized per conversation, or two folds race on the same
+watermark. The mechanism already exists: `ConversationSlots`
+(`nora/engagement/slots.py`, R-10 single-in-flight lock + R-30
+per-conversation FIFO queue).
+
+```
+Message A → accumulator at cap → enqueue(event_fold)
+  └─ slot free → run fold (writes position + advances watermark)
+       └─ release_and_dispatch
+            └─ Message B's check runs → re-reads watermark → re-counts
+                 └─ still >= 200 new rows → folds again
+```
+
+- **No two folds race the same watermark** — the single-in-flight lock
+  guarantees one fold per conversation at a time.
+- **No message is lost** — every message is already in the audit store
+  before the check runs; the check only counts rows, and a fold that runs
+  after a burst naturally counts the stragglers.
+- **The event fold enqueues, it does not `try_acquire`-skip.** A tag that
+  arrives while an event fold is in flight queues behind it in the same
+  FIFO — the tag is delayed by the fold's bounded runtime (2-5s), never
+  dropped. Tags keep the full `acquire`/`release_and_dispatch` path; the
+  event fold uses the same queue, one slot, FIFO order.
+
+## Restart safety — the queue is memory, the watermark is Postgres
+
+`ConversationQueues` (`nora/engagement/queue.py:54-93`) is a pure in-memory
+`deque` — no persistence. A container restart loses whatever event folds
+are queued. **This loses no message and no backlog:**
+
+- Messages are already in the Postgres audit store — restart does not touch
+  them.
+- The fold's state is the watermark (`last_folded_row_id`), which lives on
+  the standing row in Postgres — restart does not touch it either.
+- After restart, the next message's check re-reads the watermark, re-counts
+  rows since it, and re-triggers the fold if the backlog is still there.
+
+The queue is scheduling, not state. The watermark is the state, and it is
+durable. This is the property that makes the event fold idempotent-ish:
+a lost queue entry is re-derived from the watermark, never silently dropped.
+
+**The tag path is different and this is existing behaviour, not new.** A
+queued TAG lost to restart is a tag nobody answers — there is no watermark
+to re-derive it from. That is R-30's accepted design (the queue is
+transient by construction); the event fold does not inherit the problem
+because its work is defined by the watermark, not by the queue.
+
 ## Interaction with the tag path
 
 A tagged message flows through ingest too — it is a message like any other.

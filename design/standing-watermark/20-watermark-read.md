@@ -32,6 +32,16 @@ async def since_including_nora(
 `since` stays unchanged — the Dreamer's derivation reads must keep excluding
 Nora's own words (`audit.py:147-179`). The new read is for the fold only.
 
+**Why a new read at all, precisely.** The current fold reads
+`ctx.transcript` = `RecordStore.recent()` (`audit.py:109-145`), which does
+NOT filter `is_nora` — the fold already sees Nora's own rows. The reason a
+new read is needed is the WATERMARK: a cursor read (`id > after_id`,
+ascending) is the only shape that can resume where the last fold ended, and
+the existing cursor read `since` excludes Nora's rows. So the new read is
+`since_including_nora`: cursor semantics + Nora's rows. The framing matters
+because it names the actual gap — the watermark needs a cursor read that
+includes her, not a fix for a blindness the fold never had.
+
 ## Why row id, not timestamp
 
 - `RecordStore.since` is already a cursor read on `id > after_id`

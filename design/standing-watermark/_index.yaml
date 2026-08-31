@@ -26,6 +26,7 @@ members:
   - 20-watermark-read.md
   - 30-rollup.md
   - 40-verification.md
+  - 50-review.md
 edges:
   - {src: 00-intent, dst: 10-event-trigger, rel: sequences, provenance: asserted}
   - {src: 00-intent, dst: 20-watermark-read, rel: sequences, provenance: asserted}
@@ -35,4 +36,8 @@ edges:
   - {src: 20-watermark-read, dst: 00-intent, rel: realizes, provenance: asserted}
   - {src: 30-rollup, dst: 00-intent, rel: realizes, provenance: asserted}
   - {src: 40-verification, dst: 00-intent, rel: depends_on, provenance: asserted}
+  - {src: 50-review, dst: 00-intent, rel: depends_on, provenance: asserted}
+  - {src: 50-review, dst: 10-event-trigger, rel: depends_on, provenance: asserted}
+  - {src: 50-review, dst: 20-watermark-read, rel: depends_on, provenance: asserted}
+  - {src: 50-review, dst: 30-rollup, rel: depends_on, provenance: asserted}
 ---
