@@ -1407,6 +1407,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 extract_url=cfg.search.extract_url,
                 extract_depth=cfg.search.extract_depth,
                 extract_max_chars=cfg.search.extract_max_chars,
+                min_score=cfg.search.min_score,
             )
         else:
             log.warning(

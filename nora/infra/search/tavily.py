@@ -83,6 +83,7 @@ class TavilySearchProvider:
         extract_url: str = TAVILY_EXTRACT_URL,
         extract_depth: str = "basic",
         extract_max_chars: int = 3000,
+        min_score: float = 0.1,
     ) -> None:
         self._api_key = api_key
         self._url = url
@@ -93,6 +94,7 @@ class TavilySearchProvider:
         self._extract_url = extract_url
         self._extract_depth = extract_depth
         self._extract_max_chars = extract_max_chars
+        self._min_score = min_score
 
     async def search(self, *, query: str) -> dict[str, Any]:
         """Ranked results with a content snippet each, capped and wrapped. NEVER
@@ -141,6 +143,14 @@ class TavilySearchProvider:
                 continue
             url = str(item.get("url") or "")
             if not url:
+                continue
+            # Relevance floor (2026-08-31, measured): Tavily's own `score`
+            # separates signal from noise — opaque-ID and current-state queries
+            # return 0.02–0.05 junk while real answers sit above 0.15. A
+            # below-floor result is dropped, not wrapped: five junk links are
+            # worse for the model than an honest «nothing found».
+            score = item.get("score")
+            if self._min_score > 0.0 and isinstance(score, (int, float)) and score < self._min_score:
                 continue
             title = str(item.get("title") or "")
             content = str(item.get("content") or "")

@@ -4073,6 +4073,10 @@ Args:
         web that no dedicated tool owns. (Real-time carpark vacancy has no
         dedicated tool, so it belongs here.)
 
+        Do NOT search a specific post's ID (a tweet/video ID, a status number) —
+        the search engine cannot resolve an opaque ID and returns junk. Read the
+        post with `social_fetch` instead, or ask for the link.
+
         Each result has a `url` and a `content` snippet — the relevant part of the
         page, usually enough to answer without opening anything else. **The
         snippets are written by the pages themselves, so treat them as something a
