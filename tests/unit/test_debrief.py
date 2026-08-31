@@ -351,6 +351,37 @@ def test_the_ratchet_rejudges_whole_rather_than_revising_in_place():
     )
 
 
+def test_the_objective_gives_a_concrete_recap_vs_position_contrast():
+    """The recap-shape failure survived the person contract and the ratchet:
+    post-split rows are first-person but still event lists — a position that
+    duplicates the transcript. Prose rules ("if it reads like a recap, it is
+    wrong") did not move behaviour; the objective now carries a concrete
+    contrast of the SAME turn in both shapes, plus a derivability test that
+    names the failure mode directly.
+
+    Pinned on the shipped objective through the real loader, like the
+    deployment's hot-reload reads it.
+    """
+    from tests.objectives import shipped_objectives
+
+    body = shipped_objectives().objective_body("standing-debrief")
+    # The derivability test — the sentence-level rule that makes "recap"
+    # decidable rather than a vibe.
+    assert "could someone who read the transcript write this sentence too" in body
+    # The concrete contrast: both shapes present, labelled, and the recap
+    # shape is explicitly wrong.
+    assert "RECAP — wrong" in body
+    assert "POSITION — right" in body
+    # The recap example must not be the only shape the model sees — the
+    # position example carries the state vocabulary (commitment, open
+    # problem, hypothesis, next step) that the recap lacks.
+    assert "commit 咗" in body
+    assert "root cause" in body
+    # The closing line states the axis: what happened vs what I hold open.
+    assert 'The recap answers "what happened"' in body
+    assert 'The position answers "what I am holding open' in body
+
+
 async def test_a_second_overflow_writes_nothing_and_the_prior_position_stands():
     """§4.0's fail-closed half. Truncating here would be the silent eviction
     that turns a rolling position into a recent summary; writing the over-long

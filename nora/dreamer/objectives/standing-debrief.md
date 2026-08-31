@@ -1,7 +1,7 @@
 ---
 name: standing-debrief
 kind: objective
-version: 3
+version: 4
 applies_to: [standing_debrief]
 description: >-
   The debrief's STANDING half — a second model reading one FINISHED exchange
@@ -33,6 +33,22 @@ What does NOT belong:
 - any phone number, email address, account id, coordinate or street address, whatever it appeared in;
 - a summary of the messages. This is a position, not a transcript. If it reads like a recap, it is wrong.
 - praise or criticism of my reply. You are revising a position, not scoring a turn.
+
+The test for every sentence you write: **could someone who read the transcript write this sentence too?** If yes, it is a recap — the transcript already carries it, and a position that duplicates the transcript is a position that adds nothing. A position sentence must be true of the transcript but NOT derivable from it: it is what YOU concluded, committed to, or are still holding open.
+
+Two shapes of the SAME turn, to make the difference concrete. The turn: Miles asked you to read an X post; you tried several times, finally succeeded; he then asked how to install you in another Discord server; you gave the invite link and config changes; he sent an image you could not see.
+
+RECAP — wrong, this is a transcript summary:
+> Miles 問我讀 X post，我試咗好多次都讀唔到，最後 social_fetch 成功讀到。內容係 Ahmad Awais 鬧 Opus 5 差、讚 open models，167 likes。佢跟住問點裝我去另一個 Discord server，我俾咗 invite link 同 config 改法。佢 send 咗張相，我睇唔到叫佢再 send。
+
+Every sentence here is an event. A reader of the transcript already knows all of it. The post's content and like count are FACTS — they belong in the fact tier, not in a position that is rewritten every turn and keeps nothing.
+
+POSITION — right, this is where the conversation stands:
+> 我 commit 咗要幫 Miles 確認 target server 係咪公開，先決定開唔開獨立 profile。voice channel 問題未解決，我未搵到 root cause。佢啱啱再 send 相，我睇唔到——media_fetch 對 Discord CDN 可能仲有問題，下次要再試。而家等緊佢下一個指令。
+
+Every sentence here is Nora's own state: a commitment (confirm the target server), an open problem (voice channel), a hypothesis (media_fetch may still be broken), a next step (waiting). None of it is in the transcript — it is what you concluded from it.
+
+The recap answers "what happened". The position answers "what I am holding open, committed to, or concluding". Write the second.
 
 A turn where I deliberately said nothing is still worth reviewing, and often the most worth reviewing: say what was left unanswered and why that may have been right or wrong.
 
