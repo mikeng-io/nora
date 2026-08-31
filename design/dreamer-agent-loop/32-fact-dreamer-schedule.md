@@ -128,20 +128,29 @@ The Dreamer gets the same three mechanisms the orchestrator uses:
 
 1. **Attributed transcript rendering.** `FactCandidateAdaptor.inputs`
    currently renders `f"{row.id}: {row.body or ''}"` (`fact_adaptor.py:292`)
-   — a bare id and a body, with no sender, no time, no room. `TranscriptRow`
-   already carries `sender_name`, `person_id`, `ts`, `conversation_id`
+   — a bare id and a body, with no sender, no time, no room, no media, no
+   reply. `TranscriptRow` already carries `sender_name`, `person_id`, `ts`,
+   `conversation_id`, `quoted_ts` and `media_json`
    (`nora/domain/models.py:141`); the renderer just does not use them. The
    batch renders as:
 
    ```
    [2026-08-30 14:03:09] 隨風而去 (friends): 我沖涼先
+   [2026-08-30 14:03:14] 隨風而去 (friends): 有人玩call我
+   [2026-08-30 14:00:32] Clara Yates (friends): [sticker]
+   [2026-08-30 14:01:36] 熱咖啡☕少奶多糖 (friends): @Clara Yates u see see will play this type of game https://www.youtube.com/watch?v=dQw4w9WgXcQ
    ```
 
-   — sender name, timestamp, and the room's display name on every line. The
-   model can then attribute a claim to a person and a moment, which is the
-   operator's original complaint ("冇寫住邊一個講、幾時講、喺邊度講").
-   The objective's `message_ids` contract is unchanged — ids are still the
-   provenance key; the labels are context for the model's judgement.
+   Every line carries: sender name, timestamp, room display name, and the
+   body. Media rows render their type from `media_json` (`[image]`,
+   `[video]`, `[sticker]`, `[attachment: filename]`) instead of an empty
+   body. Reply rows render the quoted target: `(reply to 1950)`. The model
+   can then attribute a claim to a person, a moment, a room, and a medium —
+   which is the operator's original complaint ("冇寫住邊一個講、幾時講、
+   喺邊度講") and the media complaint ("reply、reference、image、video、
+   sticker 呢啲"). The objective's `message_ids` contract is unchanged — ids
+   are still the provenance key; the labels are context for the model's
+   judgement.
 
 2. **Batch-render cap.** `FactCandidateAdaptor.inputs` renders at most
    `MAX_RENDERED_MESSAGES` (500) rows; beyond that it appends a summary line:
@@ -172,10 +181,18 @@ already refuses them):
 |---|---|---|
 | `get_fact(subject)` | `fact` where `superseded_at IS NULL` | the live facts about a subject |
 | `search_fact(query)` | `fact` + `fact_entity` | facts matching the query across the workspace |
-| `check_note(subject)` | `note` (live heads) | the note(s) about a subject |
-| `get_note(note_id)` | `note` + `note_revision` | one note with its revision history |
-| `search_note(query)` | `note` | notes matching the query |
+| `note_read(title)` | `note` (live heads) | **EXISTS** (`tools.py:5793`) — expose to the Dreamer |
+| `note_search(query)` | `note` | **EXISTS** (`tools.py:5935`) — expose to the Dreamer |
 | `search_memory_workspace(query)` | Honcho, all peers in the workspace | memory excerpts across the workspace's people |
+
+**Reuse, not rewrite.** `note_read`/`note_search` already exist for the tag
+path (`NativeTool` rows at `tools.py:775/786`, implementations at
+`tools.py:5793/5935`). The Dreamer gets them by adding the names to its
+`tools` set and to `WORKSPACE_SAFE_TOOLS` — the same function objects, no
+second copy. Only `get_fact`/`search_fact` are genuinely new: the `fact`
+table has no read tool anywhere in the codebase today. `search_memory_workspace`
+is a workspace-scoped variant of the room-scoped `search_memory` — the
+existing implementation is reused with a different scope argument, not copied.
 
 All six are added to `WORKSPACE_SAFE_TOOLS` and declared in `NativeTool` with
 `read_only=True`, `source_tier="remembered"`, bounded budgets (2–4 per turn).
@@ -210,10 +227,11 @@ attribution is the "who said it, when" the operator asked for.
    copied onto the adjudicated `fact` row when the candidate is settled — so
    the rendered `<facts>` block can say who said it and when, not only the web
    warrant.
-3. **Tool names are the operator's.** `get_fact`, `search_fact`, `check_note`,
-   `get_note`, `search_note` — exactly as named, in the `NativeTool` table,
-   the `WORKSPACE_SAFE_TOOLS` set, and the objective's tool list. A rename is
-   a three-place contract change and is not made by taste.
+3. **Tool names are the operator's.** `get_fact`, `search_fact`, `note_read`,
+   `note_search`, `search_memory_workspace` — the two note tools already
+   exist under those names; the two fact tools and the workspace memory
+   variant are new. A rename is a three-place contract change and is not made
+   by taste.
 
 ## 6. Reversal conditions
 
