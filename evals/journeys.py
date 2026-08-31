@@ -141,7 +141,15 @@ SEED_JOURNEYS: tuple[Journey, ...] = (
         ),
         seed={"conclusions": {"miles_novak": [
             "Miles's home has two cats — the settled fact about his pets.",
-        ]}},
+        ]},
+            # Neutral transcript: production messages could mention pets or
+            # otherwise answer the recall from context; the journey grades
+            # `about` REACH, so keep context clean.
+            "transcript_bodies": [
+                "今晚食咩好",
+                "有冇人想打機",
+                "聽日天氣預報點",
+            ]},
     ),
 )
 
