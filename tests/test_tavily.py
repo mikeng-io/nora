@@ -243,3 +243,28 @@ async def test_search_and_fetch_share_one_client_and_key(tavily):
     await provider.fetch(url="https://hko.gov.hk/x")
     assert len(fake.requests) == 1
     assert len(fake.extract_requests) == 1
+
+
+# ---- relevance floor (2026-08-31, measured) --------------------------------
+
+async def test_below_floor_results_are_dropped(tavily):
+    """A result whose Tavily `score` sits under `min_score` is dropped — the
+    opaque-ID junk (0.02–0.05) must not reach the model as five junk links."""
+    fake, provider = tavily
+    fake.mode = "ok"
+    out = await provider.search(query="q")
+    # Fake returns scores 0.9 (HKO) and 0.5 (OpenRice); floor 0.1 keeps both.
+    assert len(out["results"]) == 2
+
+
+async def test_all_below_floor_is_nothing_found(tavily):
+    """When every result is below the floor, the search reads `nothing_found` —
+    «I could not find that», never a list of junk."""
+    fake, provider = tavily
+    fake.mode = "ok"
+    # The fixture's provider is pointed at the fake server; raise its floor
+    # above both fake scores (0.9, 0.5) to force the all-dropped path.
+    provider._min_score = 0.95
+    out = await provider.search(query="q")
+    assert out["status"] == "nothing_found"
+    assert out["results"] == []

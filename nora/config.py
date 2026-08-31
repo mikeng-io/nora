@@ -960,6 +960,14 @@ class SearchConfig(BaseModel):
     extract_url: str = "https://api.tavily.com/extract"
     extract_depth: Literal["basic", "advanced"] = "basic"
     extract_max_chars: int = Field(default=3000, ge=1)
+    # Relevance floor (2026-08-31, measured): Tavily scores every result, and
+    # the score separates signal from noise cleanly on real queries — opaque-ID
+    # lookups (a tweet/video ID searched as text) and current-state queries
+    # (weather) come back at 0.02–0.05 while real answers sit above 0.15.
+    # Results below the floor are dropped; if everything drops, the search
+    # reads `nothing_found` — «I could not find that», never five junk links.
+    # 0.0 disables the floor (Tavily's raw ranking only).
+    min_score: float = Field(default=0.1, ge=0.0, le=1.0)
 
 
 class SocialConfig(BaseModel):
