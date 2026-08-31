@@ -48,10 +48,10 @@ from ..domain.ports import (
 )
 from ..domain.reminders import ReminderCaps, ReminderStore
 from ..domain.tool_call_log import ToolCallLogStore
+from ..infra.parking import ParkingClient, StreetParkingClient
 from ..infra.routes import RouteClient
 from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
-from ..infra.parking import ParkingClient, StreetParkingClient
 from ..infra.version import VersionManifest
 from ..infra.vision import VisionCache, VisionClient
 from .links import LinkCarry
@@ -517,7 +517,7 @@ class ToolRegistry:
                 description = metadata.get("description")
                 if description:
                     entry["description"] = description
-            except Exception:  # noqa: BLE001 — R-27: never sink the endpoint
+            except Exception:
                 log.exception("could not introspect tool %s for the catalog", spec.name)
             catalog.append(entry)
         return tuple(sorted(catalog, key=lambda entry: entry["name"]))
