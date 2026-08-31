@@ -67,14 +67,16 @@ SEED_JOURNEYS: tuple[Journey, ...] = (
         ),
     ),
     Journey(
-        intent=Intent(name="carpark", required=frozenset({"web_search"}), budget=3),
+        intent=Intent(name="carpark", required=frozenset({"parking_status"}), budget=2),
         message="金鐘太古廣場而家仲有冇車位?",  # "any parking at Pacific Place now?"
         note=(
-            "Real-time carpark vacancy has NO dedicated tool — it is not a bus, a "
-            "route, the weather or a saved place, so `web_search` is the honest "
-            "path. The trap is `place_info` (which answers ratings/open-hours, not "
-            "live vacancy) or `transit` — a local tool that would confabulate a "
-            "number. Budget 3: a couple of searches is fine, a runaway is not."
+            "Real-time carpark vacancy comes from the TD open-data feed — the "
+            "`parking_status` tool (data.gov.hk hk-td-tis_5), the same "
+            "dedicated-source shape as `weather`. Live vacancy is NOT in "
+            "`web_search` results (measured 2026-08-31: model re-searched to "
+            "budget and guard-veto), so web_search is now the trap, alongside "
+            "`place_info` (ratings/open-hours, not live vacancy). Budget 2: "
+            "one named-venue query settles it."
         ),
     ),
     Journey(
@@ -168,9 +170,9 @@ PARAPHRASE_JOURNEYS: tuple[Journey, ...] = (
         note="Weather intent without the word weather — routes to `weather`, trap `web_search`.",
     ),
     Journey(
-        intent=Intent(name="carpark_alt", required=frozenset({"web_search"}), budget=3),
+        intent=Intent(name="carpark_alt", required=frozenset({"parking_status"}), budget=2),
         message="銅鑼灣時代廣場泊車貴唔貴呀而家?",  # parking price/availability, different mall
-        note="Carpark/parking lookup, no dedicated tool → `web_search`; trap `place_info`.",
+        note="Carpark/parking lookup → the dedicated `parking_status` feed (same as carpark); trap `web_search`/`place_info`.",
     ),
     Journey(
         intent=Intent(name="mall_alt", required=frozenset({"place_info"}), budget=2),

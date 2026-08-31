@@ -54,6 +54,7 @@ BACKED_TOOLS = frozenset(
         "weather", "web_search", "web_fetch", "place_info", "route", "transit",
         "where_is", "saved_places",
         "remember", "about", "ask_memory", "search_memory", "note_create",
+        "parking_status",
     }
 )
 
@@ -85,6 +86,26 @@ class CannedWeatherProvider:
             typhoon="",
             forecast_days=(),
         )
+
+
+class CannedParkingProvider:
+    """`nora.domain.ports.ParkingProvider` — a fixed vacancy, always `ok`.
+
+    Answers ANY name with the same record so the eval's carpark journey
+    (required `parking_status`) gets a real ok-shaped result and the model
+    does not re-search to budget (the canned-data artifact the search
+    provider's self-terminating content exists to avoid).
+    """
+
+    async def vacancy(self, *, name: str) -> dict | None:
+        return {
+            "parking_id": "tdc10p1",
+            "name": "Sai Kung Government Offices Carpark",
+            "vacancy": 30,
+            "lastupdate": "2026-08-31 11:35:34",
+            "status": "OPEN",
+            "address": "Man Nin Street No 24, Sai Kung",
+        }
 
 
 class CannedSearchProvider:
@@ -194,6 +215,7 @@ class CannedPresenceReader:
         return PresenceFix(
             circle_id=circle_id, person_id=person_id, ts=_FIX_TS,
             lat=22.2830, lng=114.1588, wire_state=WireState.LIVE, recorded_at=_FIX_TS,
+            speed_kmh=42.0,  # above whereis._SPEED_FLOOR_KMH → movement branch
         )
 
     async def places_for(self, *, circle_id: str) -> list[SavedPlace]:
@@ -201,6 +223,7 @@ class CannedPresenceReader:
             SavedPlace(
                 circle_id=circle_id, place_id="saved:work", name="返工",
                 lat=22.2830, lng=114.1588, updated_ms=_FIX_TS,
+                address="Acme Tower, 1 Example Road, Hong Kong",
             )
         ]
 

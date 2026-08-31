@@ -1216,6 +1216,31 @@ class WeatherProvider(Protocol):
 
 
 @runtime_checkable
+class ParkingProvider(Protocol):
+    """Real-time parking vacancy for a named HK car park, or None. NEVER
+    raises — a failure is a missing reading, and the `parking_status` tool
+    reports `unavailable` rather than the loop paying for an exception (R-5,
+    the same grounding discipline as `WeatherProvider`).
+
+    Backed by the Transport Department's open-data feed (data.gov.hk,
+    hk-td-tis_5): a per-car-park vacancy JSON (~179 bytes) plus basic-info
+    JSON (~500 bytes), reached through the car_park_list.csv index. HK-only
+    today, but a PORT because the region set will grow — another parking
+    source plugs in behind the same `parking_status` tool with no tool
+    change. `name` is what the model asked about (a venue or car park name);
+    matching it to a parking id is the provider's job, so the 105KB index
+    never enters model context.
+
+    RETURN SHAPE: `{"parking_id", "name", "vacancy", "lastupdate", "status",
+    "address"}` on success; `None` on any fetch/parse failure or an unmatched
+    name. `vacancy` is an INT of spaces free, never fabricated; `lastupdate`
+    is the feed's own timestamp string.
+    """
+
+    async def vacancy(self, *, name: str) -> dict | None: ...
+
+
+@runtime_checkable
 class SearchProvider(Protocol):
     """`query -> {status, results}` web search, and `url -> {status, content}`
     page extraction, behind the `web_search`/`web_fetch` tools (DEC-73, DEC-116).

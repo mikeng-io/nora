@@ -96,6 +96,7 @@ ports — also exempt; see their docstrings.
 from nora.testing.eval_backends import (
     BACKED_TOOLS,
     EVAL_CIRCLE_ID,
+    CannedParkingProvider,
     CannedPresenceReader,
     CannedRouteSource,
     CannedSearchProvider,
@@ -143,6 +144,7 @@ __all__ = [
     "BACKED_TOOLS",
     "EVAL_CIRCLE_ID",
     "TOOL_CHOICE_FIRST_CALL",
+    "CannedParkingProvider",
     "CannedPresenceReader",
     "CannedRouteSource",
     "CannedSearchProvider",

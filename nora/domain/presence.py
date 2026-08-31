@@ -83,6 +83,7 @@ class SavedPlace:
     lat: float
     lng: float
     updated_ms: int               # when Nora last saw this place on the wire
+    address: str | None = None    # Life360 wire address1/address2, when present
     radius_m: float | None = None
 
 

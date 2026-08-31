@@ -560,6 +560,11 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # one HKO round is usually enough; a second covers a follow-up.
     "weather": NativeTool(2,
                           source_tier="confirmed", cacheable=True, read_only=True),
+    # TD open-data feed, keyless like transit — `parking_status` answers a
+    # named car park's live vacancy. Budget 2: one index+vacancy round is
+    # enough; a second covers a follow-up (a different venue name).
+    "parking_status": NativeTool(2,
+                                 source_tier="confirmed", cacheable=False, read_only=True),
     # design/discord-music/07-agent-tool.md. Discord-only by construction — every
     # body checks `room.platform != "discord"` first and answers `unavailable`,
     # never guessing a channel on a platform with no voice concept at all.
@@ -1750,6 +1755,7 @@ def build_tool_specs(
     search_source=None,
     social_source=None,
     weather_source=None,
+    parking_source=None,
     presence_source=None,
     presence_circles=(),
     location_trusted: bool = False,
@@ -3081,6 +3087,9 @@ Args:
         You get a list of `names` («Home», «Miles Home», «阿媽屋企») — pick
         the one they meant and pass THAT as the origin or destination to `route`
         (or the place to `place_info`), and the exact saved spot is used.
+        When Life360 stores a street address for a name, `addresses` carries it
+        (name → address), so a question like «我返工嗰度個地址係咩» can be
+        answered from what you already hold — no need to look the address up.
 
         `status`:
           - `ok` — `names` is the list (may be empty if nothing is saved). Match
@@ -3119,8 +3128,14 @@ Args:
         # R-35 shape: the model simply has no household names to offer, and a
         # guarded name stays indistinguishable from an unsaved one.
         names = sorted({p.name for p in places})
+        # Addresses are carried for the names Life360 stores them on (audit
+        # 2026-08-31): a saved place question («我返工嗰度個地址係咩») needs the
+        # street address, which the domain now holds (SavedPlace.address).
+        # Never a coordinate — address only.
+        addresses = {p.name: p.address for p in places if p.address}
         _record(metrics, "saved_places", "ok", count=len(names))
-        return {"status": "ok", "names": names}
+        return {"status": "ok", "names": names,
+                "addresses": addresses or None}
 
     async def where_is(person: str) -> dict:
         """Where somebody in this conversation was last seen.
@@ -4390,6 +4405,53 @@ Args:
             return dict(_WEATHER_OFF)
         _record(metrics, "weather", "ok", forecast=forecast, warned=bool(obs.warnings))
         return _weather_result(obs)
+
+    async def parking_status(name: str) -> dict:
+        """How many spaces are free at a named car park, RIGHT NOW. Call this
+        when somebody asks whether a car park / venue has parking (「而家仲有
+        冇車位?」「泊車貴唔貴?」) — the live feed answers vacancy directly, where
+        `web_search` cannot (real-time vacancy is not in search results).
+
+        Give it the venue or car park the way they named it — the feed's
+        index maps venue names (「太古廣場」, Pacific Place, «科學園 P1») to one
+        parking record. `vacancy` is the number of spaces free; `lastupdate`
+        is when the operator reported it — ALWAYS carry that age into your
+        reply («大概 11:35 更新, 仲有 30 個位»), a count without its age
+        reads as «right now», which you do not know. `status` is the
+        operator's opening status; `address` is the street address when the
+        feed carries one. The exact spot stays private machinery — never
+        echo a parking id back at the group, never invent a number.
+
+        `status`: `ok` with `parking_id`, `name`, `vacancy`, `lastupdate`,
+        `status`, `address`; `nothing_found` when no car park matches the
+        name — say you couldn't find it, don't guess a nearby one;
+        `unavailable` when the feed is unreachable — say you couldn't check,
+        NEVER that there are no spaces.
+
+        Args:
+            name: the venue or car park name, in the group's words.
+        """
+        if parking_source is None:
+            _record(metrics, "parking_status", "unavailable")
+            return {"status": "unavailable",
+                    "note": "Parking isn't configured here."}
+        try:
+            data = await parking_source.vacancy(name=name)
+        except Exception:  # a tool never raises into the loop (R-5)
+            log.exception("parking_status failed")
+            data = None
+        if data is None:
+            # Distinguish "no such car park" from "couldn't check" — the
+            # port collapses both to None, so the tool cannot tell them
+            # apart and must NOT invent either; this is the honest
+            # `unavailable`, while `nothing_found` stays unreachable
+            # through this provider. (A richer provider MAY distinguish.)
+            _record(metrics, "parking_status", "unavailable")
+            return {"status": "unavailable",
+                    "note": "I couldn't reach the parking feed just now. Say "
+                            "you couldn't check — don't guess a number."}
+        _record(metrics, "parking_status", "ok")
+        return {"status": "ok", **data}
 
     def _music_sender_ids() -> frozenset[str]:
         """The tagger's raw Discord ids — `MusicToolBridge.play`'s
@@ -6190,6 +6252,7 @@ Args:
         _spec("web_fetch", web_fetch),
         _spec("social_fetch", social_fetch),
         _spec("weather", weather),
+        _spec("parking_status", parking_status),
         _spec("play_music", play_music),
         _spec("skip_music", skip_music),
         _spec("top_music", top_music),
@@ -6240,6 +6303,7 @@ def build_tools(
     search_source=None,
     social_source=None,
     weather_source=None,
+    parking_source=None,
     presence_source=None,
     presence_circles=(),
     location_trusted: bool = False,
@@ -6272,6 +6336,7 @@ def build_tools(
         describe_models=describe_models,
         describe_providers=describe_providers,
         search_source=search_source, weather_source=weather_source,
+        parking_source=parking_source,
         social_source=social_source,
         presence_source=presence_source, presence_circles=presence_circles,
         location_trusted=location_trusted,
