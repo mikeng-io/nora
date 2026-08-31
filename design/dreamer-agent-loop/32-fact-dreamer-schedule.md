@@ -126,22 +126,38 @@ batch_limit=1000)`.
 
 The Dreamer gets the same three mechanisms the orchestrator uses:
 
-1. **Batch-render cap.** `FactCandidateAdaptor.inputs` renders at most
-   `MAX_RENDERED_MESSAGES` (500) rows as `id: body` lines; beyond that it
-   appends a summary line: `"... and N more messages (ids X..Y) not shown"`.
-   The model still sees the full id range (so it cannot invent an id outside
-   it) but not the full text. The objective already says "do not use an id
-   that is not in the batch" — the cap keeps the batch's id set intact while
-   bounding the prompt.
+1. **Attributed transcript rendering.** `FactCandidateAdaptor.inputs`
+   currently renders `f"{row.id}: {row.body or ''}"` (`fact_adaptor.py:292`)
+   — a bare id and a body, with no sender, no time, no room. `TranscriptRow`
+   already carries `sender_name`, `person_id`, `ts`, `conversation_id`
+   (`nora/domain/models.py:141`); the renderer just does not use them. The
+   batch renders as:
 
-2. **Tool-result truncation.** The runtime wraps every tool result before it
+   ```
+   [2026-08-30 14:03:09] 隨風而去 (friends): 我沖涼先
+   ```
+
+   — sender name, timestamp, and the room's display name on every line. The
+   model can then attribute a claim to a person and a moment, which is the
+   operator's original complaint ("冇寫住邊一個講、幾時講、喺邊度講").
+   The objective's `message_ids` contract is unchanged — ids are still the
+   provenance key; the labels are context for the model's judgement.
+
+2. **Batch-render cap.** `FactCandidateAdaptor.inputs` renders at most
+   `MAX_RENDERED_MESSAGES` (500) rows; beyond that it appends a summary line:
+   `"... and N more messages (ids X..Y) not shown"`. The model still sees the
+   full id range (so it cannot invent an id outside it) but not the full
+   text. The objective already says "do not use an id that is not in the
+   batch" — the cap keeps the batch's id set intact while bounding the prompt.
+
+3. **Tool-result truncation.** The runtime wraps every tool result before it
    re-enters the loop: `web_fetch`/`web_search` results capped at
    `MAX_TOOL_RESULT_CHARS` (8000), `search_memory`/`about`/`ask_memory`
    results capped at `MAX_MEMORY_RESULT_CHARS` (4000), with a
    `"... truncated"` marker. The model is told the cap exists so a truncated
    result reads as truncated, not as the whole answer.
 
-3. **Per-tool budget already exists.** `NATIVE_TOOL_BUDGETS` caps how many
+4. **Per-tool budget already exists.** `NATIVE_TOOL_BUDGETS` caps how many
    times each tool may be called per turn — the Dreamer inherits this. A
    `search_memory` budget of 4 means at most 4 memory searches per run, which
    is the "search 六個人嘅 memory" case bounded.
