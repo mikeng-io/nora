@@ -181,21 +181,38 @@ already refuses them):
 |---|---|---|
 | `get_fact(subject)` | `fact` where `superseded_at IS NULL` | the live facts about a subject |
 | `search_fact(query)` | `fact` + `fact_entity` | facts matching the query across the workspace |
+| `fact_premises(fact_id)` | `fact_premise` | the dependency edges — which facts this one rests on |
+| `fact_asserters(fact_id)` | `fact_asserter` | who said it, when, in which message |
+| `fact_entity(name)` | `fact_entity` | the canonical entity + aliases a name resolves to |
 | `note_read(title)` | `note` (live heads) | **EXISTS** (`tools.py:5793`) — expose to the Dreamer |
 | `note_search(query)` | `note` | **EXISTS** (`tools.py:5935`) — expose to the Dreamer |
 | `search_memory_workspace(query)` | Honcho, all peers in the workspace | memory excerpts across the workspace's people |
+
+**The graph is the point, not a flat list.** The fact tier's schema is
+already a graph — `fact_entity` (nodes), `fact_premise` (dependency edges),
+`fact_asserter` (attribution edges), `fact.object_entity_id` (object→entity
+FK), `fact.superseded_by` (supersession chain). The operator's requirement is
+that the Dreamer understands these relations AT BREAKDOWN TIME, not after:
+`fact_premises`/`fact_asserters`/`fact_entity` expose the edges so a claim
+like «GTA 6 requires 顯卡» is read together with its premises, its asserters,
+and the entity it resolves to. `fact_premise` currently holds 0 rows (no
+writer exists for `warrant_kind='premises'`) — the read surface ships ahead
+of the writer, the same way the candidate table shipped ahead of its
+adjudicator.
 
 **Reuse, not rewrite.** `note_read`/`note_search` already exist for the tag
 path (`NativeTool` rows at `tools.py:775/786`, implementations at
 `tools.py:5793/5935`). The Dreamer gets them by adding the names to its
 `tools` set and to `WORKSPACE_SAFE_TOOLS` — the same function objects, no
-second copy. Only `get_fact`/`search_fact` are genuinely new: the `fact`
-table has no read tool anywhere in the codebase today. `search_memory_workspace`
-is a workspace-scoped variant of the room-scoped `search_memory` — the
-existing implementation is reused with a different scope argument, not copied.
+second copy. `SqlFactStore` already has `asserters()` (`facts.py:532`) and
+`standing_facts()` (`facts.py:783`) — the new tools wrap those store methods,
+not duplicate them. `search_memory_workspace` is a workspace-scoped variant
+of the room-scoped `search_memory` — the existing implementation is reused
+with a different scope argument, not copied.
 
-All six are added to `WORKSPACE_SAFE_TOOLS` and declared in `NativeTool` with
-`read_only=True`, `source_tier="remembered"`, bounded budgets (2–4 per turn).
+All eight are added to `WORKSPACE_SAFE_TOOLS` and declared in `NativeTool`
+with `read_only=True`, `source_tier="remembered"`, bounded budgets (2–4 per
+turn).
 
 **Attribution.** `SqlFactCandidateStore.propose` joins `messages` on
 `observed_in` and writes `asserted_by` (the `person_id` of the first message)
@@ -227,10 +244,12 @@ attribution is the "who said it, when" the operator asked for.
    copied onto the adjudicated `fact` row when the candidate is settled — so
    the rendered `<facts>` block can say who said it and when, not only the web
    warrant.
-3. **Tool names are the operator's.** `get_fact`, `search_fact`, `note_read`,
+3. **Tool names are the operator's.** `get_fact`, `search_fact`,
+   `fact_premises`, `fact_asserters`, `fact_entity`, `note_read`,
    `note_search`, `search_memory_workspace` — the two note tools already
-   exist under those names; the two fact tools and the workspace memory
-   variant are new. A rename is a three-place contract change and is not made
+   exist under those names; the fact tools wrap `SqlFactStore`'s existing
+   read methods; the workspace memory variant reuses `search_memory`'s
+   implementation. A rename is a three-place contract change and is not made
    by taste.
 
 ## 6. Reversal conditions
