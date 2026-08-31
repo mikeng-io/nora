@@ -4689,7 +4689,7 @@ Args:
         parking record. `vacancy` is the number of spaces free; `lastupdate`
         is when the operator reported it — ALWAYS carry that age into your
         reply («大概 11:35 更新, 仲有 30 個位»), a count without its age
-        reads as «right now», which you do not know. `status` is the
+        reads as «right now», which you do not know. `opening_status` is the
         operator's OWN opening status from the feed's basic info (`OPEN` /
         `CLOSED` — present only when the feed carries it, never guessed);
         `address` is the street address when the feed carries one; `fee` is
@@ -4699,7 +4699,7 @@ Args:
         echo a parking id back at the group, never invent a number.
 
         `status`: `ok` with `parking_id`, `name`, `vacancy`, `lastupdate`,
-        `status`, `address`; `nothing_found` when no car park matches the
+        `opening_status`, `address`; `nothing_found` when no car park matches the
         name — say you couldn't find it, don't guess a nearby one;
         `unavailable` when the feed is unreachable — say you couldn't check,
         NEVER that there are no spaces.

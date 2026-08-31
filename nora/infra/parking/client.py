@@ -136,7 +136,13 @@ class ParkingClient:
             "lastupdate": _lastupdate_of(body),
         }
         if opening_status:
-            out["status"] = opening_status
+            # `opening_status`, NOT `status`: the R-27 axis owns the `status`
+            # key, and `parking_status` spreads this dict under its own
+            # `{"status": "ok", **data}` — a feed value written into `status`
+            # would overwrite the contract's `ok` and fail the output-contract
+            # validator (Kimi audit 2026-08-31, blocker). The opening status
+            # rides its own key; the model reads it as a bonus field.
+            out["opening_status"] = opening_status
         if address:
             out["address"] = address
         if fee:

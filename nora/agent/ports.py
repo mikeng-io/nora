@@ -222,7 +222,10 @@ def contract_violation(contract: str, result: Any) -> str | None:
         return "not an object"
     if not required <= set(result):
         return "missing required key"
-    if "status" in required and result["status"] not in OUTPUT_STATUSES:
+    if "status" in required and (
+        not isinstance(result["status"], str)
+        or result["status"] not in OUTPUT_STATUSES
+    ):
         return "undeclared status"
     return None
 
@@ -265,7 +268,7 @@ def _validated(spec: ToolSpec) -> Callable[..., Awaitable[Any]]:
         log.error(
             "%s returned a result its %r contract rejects (%s); keys=%s",
             spec.name, contract, violation,
-            sorted(result) if isinstance(result, dict) else type(result).__name__,
+            sorted(result, key=str) if isinstance(result, dict) else type(result).__name__,
         )
         return dict(MALFORMED_RESULT)
 
