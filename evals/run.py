@@ -52,6 +52,8 @@ from typing import Literal
 
 import yaml
 
+from nora.domain.models import DeliveryStatus, TranscriptRow
+
 from evals.datasets import CORPUS_DATASETS, item_id
 from evals.evaluators import (
     HonchoFedOncePerReply,
@@ -566,6 +568,33 @@ async def _run_suite(paths: tuple[Path, ...], *, sink: EvalSink, run_name: str) 
 _ROUTING_CHECKS = ("PathMatchesIntent", "NoSiblingLeakage", "ConvergesInBudget")
 
 
+#: Timestamp base for `_bodies_to_recents` — 2026-08-31 08:00 HKT, monotic-ish
+#: so a journey's declared transcript bodies render newest-first like the
+#: production seed's rows do.
+_BODY_TS_BASE = 1_788_480_000_000
+
+
+def _bodies_to_recents(bodies: list[str]) -> tuple[TranscriptRow, ...]:
+    """Build eval-room transcript rows from plain message bodies.
+
+    Used by `_run_journeys_live`'s journey-seed merge: a journey that declares
+    `transcript_bodies` gets a NEUTRAL transcript (the eval room's Miles row
+    shape) instead of the production one, so the answer the journey exists to
+    grade is not already in context. Sender is the eval room's member
+    (`+852111` → miles_novak), oldest-first as written; `ts` ticks forward.
+    """
+    rows = []
+    for i, body in enumerate(bodies):
+        rows.append(TranscriptRow(
+            id=1000 + i, sender_id="+852111", sender_name="Miles",
+            ts=_BODY_TS_BASE + i * 60_000, body=body, is_nora=False,
+            delivery_status=DeliveryStatus.SENT,
+            raw_json=None, quoted_ts=None, media_json=None,
+            person_id="miles_novak",
+        ))
+    return tuple(rows)
+
+
 async def _run_journeys_live(
     journeys=JOURNEYS, *, samples: int = 1,
     effort: str | None = None, skills_dir: Path | None = None,
@@ -598,6 +627,15 @@ async def _run_journeys_live(
         # regardless of what production Honcho happens to hold, so the gate
         # measures ROUTING, not "did production remember this fact". Merged,
         # never replaced — cards/conclusions/recents all still apply.
+        #
+        # `transcript_bodies` (audit 2026-08-31) OVERRIDES the production
+        # recents for journeys whose answer the production transcript already
+        # carries — where_work («我邊度返工») was answered from the seeded
+        # transcript (it contains "Acme Tower") with zero tool calls, a
+        # prompt-shortcut that graded as a routing failure. A journey that
+        # declares its own neutral transcript bodies removes the answer from
+        # context so the gate can measure whether the model REACHES for the
+        # right tool, not whether it happens to remember the transcript.
         journey_seed = seed
         if seed is not None and journey.seed:
             jc = dict(journey.seed.get("conclusions", {}))
@@ -605,6 +643,11 @@ async def _run_journeys_live(
                 seed,
                 conclusions={**seed.conclusions, **jc},
             )
+            bodies = journey.seed.get("transcript_bodies")
+            if bodies is not None:
+                journey_seed = dataclasses.replace(
+                    journey_seed, recents=_bodies_to_recents(bodies),
+                )
         for _ in range(samples):
             trajectory = await run_case(
                 Case(name=journey.intent.name, input=journey.message),

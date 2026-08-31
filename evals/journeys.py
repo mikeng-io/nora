@@ -100,6 +100,11 @@ SEED_JOURNEYS: tuple[Journey, ...] = (
             "to ask for the LABEL (the saved place's name), which the transcript "
             "does not contain, so the model must call `saved_places`."
         ),
+        seed={"transcript_bodies": [
+            "食咗飯未？我哋今晚約幾點",
+            "想食日本嘢，有冇好推介",
+            "上次嗰間拉麵唔錯，可以再食",
+        ]},
     ),
     # The remember write lane (live 2026-08-29, message id 1932): Nora said
     # 「記低咗」 and wrote nowhere, because 記低 had no tool at all. Journeys in
@@ -171,6 +176,11 @@ PARAPHRASE_JOURNEYS: tuple[Journey, ...] = (
             "A saved-place question (the company/office this household saved) phrased "
             "as «公司地址», not «返工» — routes to `saved_places`, trap `where_is`."
         ),
+        seed={"transcript_bodies": [
+            "今晚打機唔打？",
+            "聽日天氣點，要唔要帶遮",
+            "新嗰間餐廳好唔好食",
+        ]},
     ),
     Journey(
         intent=Intent(name="remember_alt", required=frozenset({"remember"}), budget=1),

@@ -193,3 +193,34 @@ def test_journey_seed_merges_over_production_seed():
     # (the precondition is what matters), and cards are untouched by the merge.
     assert any("cats" in c for c in merged.conclusions["miles_novak"])
     assert merged.cards == base.cards
+
+
+def test_journey_transcript_bodies_override_production_recents():
+    """A journey that declares `transcript_bodies` must REPLACE the production
+    recents with the declared neutral transcript — where_work was answered
+    from the seeded transcript ("Acme Tower") with zero tool calls, a
+    prompt-shortcut graded as routing failure. The override removes the
+    answer from context so the gate measures tool REACH, not memory."""
+    import dataclasses
+    from evals.run import _bodies_to_recents
+
+    journey = next(j for j in JOURNEYS if j.intent.name == "where_work")
+    assert journey.seed is not None, "where_work lost its transcript override"
+    bodies = journey.seed["transcript_bodies"]
+    rows = _bodies_to_recents(bodies)
+    assert len(rows) == len(bodies)
+    # Rows are eval-room Miles rows, in order.
+    assert all(r.person_id == "miles_novak" for r in rows)
+    assert rows[0].body == bodies[0]
+    # Monotonic timestamps.
+    assert rows[-1].ts > rows[0].ts
+
+
+def test_where_work_transcript_does_not_contain_the_answer():
+    """The where_work transcript override must NOT leak the answer the journey
+    exists to grade (a saved place / company name) — otherwise the model
+    answers from context and the routing check measures memory, not reach."""
+    journey = next(j for j in JOURNEYS if j.intent.name == "where_work")
+    bodies = " ".join(journey.seed["transcript_bodies"]).lower()
+    for poison in ("返工", "公司", "acme", "office"):
+        assert poison not in bodies, f"where_work transcript leaks {poison!r}"
