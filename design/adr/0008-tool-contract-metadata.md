@@ -1,6 +1,6 @@
 # 0008 — Tool contract metadata: side-effect state, idempotency, retry, output contracts
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-08-31
 - **Index:** DEC-152 (pending), extends ADR 0007 (tool-surface policy), ADR 0006
   (reasoning effort), DEC-93 (recovery), DEC-95 (bursts), DEC-150 (schema is the
@@ -30,7 +30,12 @@ Harness         → deterministic enforcement (ReplyGuard/Deliverer/check_outcom
 - `NativeTool` declares `budget`, `terminal`, `time_shiftable`, `source_tier`,
   `cacheable`, `read_only` (tools.py:199-271) — richer than MCP's four hints,
   and test-enforced (`tests/unit/test_tool_registry.py`). `ToolSpec` adds
-  `disclose_failure` and `timeout_seconds` (ports.py:96-97).
+  `disclose_failure` and `timeout_seconds` (ports.py:96-97) — **both are
+  declared-but-unread today** (ports.py:33-39 names `disclose_failure` as
+  deferred to its own phase; nothing reads `spec.timeout_seconds` —
+  factory.py:295 uses the per-tier `llm.timeout_seconds`). The new fields in
+  this ADR must NOT inherit that pattern: each ships with its reader (an
+  enforcement test or a harness use), or it is not added.
 - R-27's three-state result (`ok` / `nothing_found` / `unavailable`) is a
   **convention** — every data tool returns it, but nothing validates it.
 - The harness already protects delivery invariants: `check_outcome` splits
@@ -110,8 +115,10 @@ Rules:
 
 ### 3. Output contracts — the R-27 three-state becomes a schema
 
-Every data tool (a tool whose result is a fact about the world, i.e.
-`source_tier` is not `None`) declares an output contract:
+Every tool whose result carries the three-state status declares an output
+contract — data tools (`source_tier` is not `None`) AND action tools that
+report outcome honestly, e.g. `make_artifact` (returns `unavailable` before
+launch, `ok` with `url` after — the same R-27 axis on an action verb):
 
 ```json
 {
@@ -155,8 +162,10 @@ stronger of the two:
 - **Tool descriptions** (ADR 0007 §2): the same register split, test-enforced
   across all 49 descriptions.
 
-Formal adoption is one line in ADR 0007 citing BCP 14 / RFC 8174, and one line
-in the loader's comment block naming the standard it already implements. The
+Formal adoption is recorded HERE (this ADR cites BCP 14 / RFC 8174) and in one
+line in the loader's comment block naming the standard it already implements.
+ADR 0007 is not edited — accepted ADRs are immutable (adr/README.md) — this
+document is the adoption record. The
 proposal's example doctrine line — "a completed turn MUST produce no more than
 one user-visible response" — is **rejected**: it conflicts with DEC-95, where
 bursts are first-class (`send_reply` budget 6, MAY multiple calls). The correct

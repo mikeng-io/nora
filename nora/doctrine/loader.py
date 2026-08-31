@@ -104,6 +104,7 @@ _SNAKE_CASE_RE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
 # passes untouched. The two-word forms lead the alternation so `SHOULD NOT`
 # matches ahead of `SHOULD`. `MAY`/`OPTIONAL` are omitted — permission is not a
 # claim any kind's register contradicts.
+# This is BCP 14 (RFC 2119 + RFC 8174) applied to doctrine kinds — see ADR 0008 §4.
 _RFC2119_ABSOLUTE = ("MUST NOT", "MUST", "SHALL NOT", "SHALL", "REQUIRED")
 _RFC2119_ADVISORY = ("SHOULD NOT", "SHOULD", "RECOMMENDED")
 _RFC2119_RE = re.compile(r"\b(" + "|".join((*_RFC2119_ABSOLUTE, *_RFC2119_ADVISORY)) + r")\b")
