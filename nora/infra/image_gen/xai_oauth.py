@@ -336,18 +336,20 @@ class XaiOAuth:
 
             # Boot precedence: state file first; only absent/corrupt → derive
             # from the .env refresh token. M3: a rotated refresh token in the
-            # state file (if present) is adopted here, so a restarted lane
-            # keeps using the rotated token, not the stale .env one.
+            # state file (if present) is adopted here even when the access
+            # token is EXPIRED (xAI rotates on use — the `.env` token can be
+            # dead while a newer rotated token in the state file is live).
+            # Adopting the rotated token before refreshing means a restarted
+            # (or state-mutating) lane heals without a re-login, and the
+            # refresh below then persists the next rotation back to state.
             if cached is None:
                 state = self._load_state()
-                if (
-                    state is not None
-                    and state.expires_at > now + XAI_ACCESS_TOKEN_REFRESH_SKEW_SECONDS
-                ):
-                    self._cached = state
+                if state is not None:
                     if state.refresh_token:
                         self._refresh_token = state.refresh_token
-                    return OAuthState(status="ok", access_token=state.access_token)
+                    if state.expires_at > now + XAI_ACCESS_TOKEN_REFRESH_SKEW_SECONDS:
+                        self._cached = state
+                        return OAuthState(status="ok", access_token=state.access_token)
 
             result = await self._refresh()
             if result.status == "ok":
