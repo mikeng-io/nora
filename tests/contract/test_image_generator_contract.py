@@ -448,6 +448,31 @@ async def test_refresh_rotation_persisted(tmp_path, oauth_server):
     assert state["sent_refresh"] == "rt-rotated"
 
 
+async def test_expired_state_adopts_rotated_refresh_before_refresh(tmp_path, oauth_server):
+    """Regression: xAI rotates refresh tokens on use. With an EXPIRED access
+    token in the state file plus a rotated (newer) refresh token there, the
+    lane must refresh with the ROTATED token — never the stale `.env`/boot
+    one — so a state-mutating lane heals without a re-login. The `.env`
+    token (rt-boot) is dead; the rotated one (rt-rotated) is live."""
+    base, state = oauth_server
+    state["rotate"] = True
+    sf = tmp_path / "xai-oauth.json"
+    sf.write_text(
+        json.dumps({
+            "access_token": "at-expired",  # noqa: S105 — fake test token
+            "expires_at": 1,               # long-expired: fresh check fails
+            "refresh_token": "rt-rotated",  # noqa: S105 — fake test token
+        }),
+        encoding="utf-8",
+    )
+    oauth = _oauth(tmp_path, base)  # boot token rt-boot is the DEAD .env token
+    result = await oauth.access_token()
+    assert result.status == "ok"
+    assert result.access_token == "at-new"  # noqa: S105 — fake test token
+    # The rotated token from state was adopted and used, not the dead boot token
+    assert state["sent_refresh"] == "rt-rotated"
+
+
 async def test_refresh_403_is_cloudflare(tmp_path, oauth_server):
     base, state = oauth_server
     state["behavior"] = "403"
