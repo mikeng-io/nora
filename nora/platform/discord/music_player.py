@@ -589,14 +589,19 @@ class MusicPlayer:
         retried, never substituted with a guess."""
         prewarmed = self._prewarmed
         if self._prewarm_done and prewarmed is None:
-            # A completed prewarm answered EMPTY — that is the FINAL answer
-            # for this track (external audit Codex MAJOR-1, 2026-08-26):
-            # `related()` was already consulted once. R-62's discipline is
-            # "never retried, never guessed"; re-calling `related()` here
-            # would RETRY the empty answer and could later autoplay a track
-            # instead of falling through to idle.
+            # A completed prewarm answered EMPTY — but that is NOT the
+            # final answer (R-68, 2026-09-01): the prewarm ran up to
+            # `autoplay_prewarm_seconds` BEFORE the track ended, and a
+            # transient YouTube failure (or a Mix that was momentarily
+            # empty) at that earlier moment must not permanently kill the
+            # chain. Fall through to the live `related()` call below —
+            # ONE retry at the actual track end. If THAT also answers
+            # empty, the chain ends exactly as before (R-62's
+            # never-retried discipline still holds for the live answer).
+            # This supersedes external audit Codex MAJOR-1 (2026-08-26),
+            # which treated the prewarm's empty as final; the live retry
+            # is bounded to one, so it cannot loop.
             self._prewarm_done = False
-            return None
         if prewarmed is not None:
             self._prewarmed = None
             self._prewarm_done = False

@@ -873,12 +873,15 @@ async def test_scheduling_a_new_prewarm_cancels_the_previous_timer_and_task() ->
     player._cancel_prewarm()  # type: ignore[attr-defined]
 
 
-async def test_an_empty_prewarm_is_not_retried_at_track_end() -> None:
-    """Codex MAJOR-1 (2026-08-26): a completed prewarm that answered empty
-    (R-62's ordinary 'nothing to offer' — `related()` returned nothing)
-    must be the FINAL answer. Re-calling `related()` at track end would
-    RETRY an empty Mix and could later autoplay a track instead of
-    falling through to idle, violating R-62's 'never retried' rule."""
+async def test_an_empty_prewarm_is_retried_once_at_track_end() -> None:
+    """R-68 (2026-09-01), superseding Codex MAJOR-1 (2026-08-26): a
+    completed prewarm that answered empty is NOT the final answer — the
+    prewarm ran up to `autoplay_prewarm_seconds` BEFORE the track ended,
+    and a transient YouTube failure at that earlier moment must not
+    permanently kill the chain. The track-end `_advance` retries
+    `related()` ONCE live; only if THAT also answers empty does the
+    chain fall through to idle (R-62's never-retried discipline still
+    holds for the live answer — the retry is bounded to one)."""
     source = _StubSource(
         {"track a": _TRACK_A, "locator-b": _TRACK_B},
         related={"locator-a": ()},  # empty Mix: nothing to offer
@@ -896,13 +899,13 @@ async def test_an_empty_prewarm_is_not_retried_at_track_end() -> None:
     assert player._prewarm_done is True  # type: ignore[attr-defined]
     assert player._prewarmed is None  # type: ignore[attr-defined]
 
-    # Track ends naturally: the empty answer must NOT be retried.
+    # Track ends naturally: the empty prewarm IS retried once live.
     related_before = len(source.related_calls)
     await player.on_track_finished()
 
-    assert len(source.related_calls) == related_before
+    assert len(source.related_calls) == related_before + 1
     status = await player.status()
-    assert status.now_playing is None  # fell through to idle, not autoplay
+    assert status.now_playing is None  # live retry also empty -> idle
 
 
 async def test_resume_from_persisted_into_a_dead_voice_marks_the_session_dead() -> None:
@@ -1039,3 +1042,35 @@ async def test_stop_clears_the_last_played_seed() -> None:
     await player.stop()
 
     assert player._last_played is None  # type: ignore[attr-defined]
+
+
+async def test_an_empty_prewarm_recovers_when_the_live_retry_has_a_track() -> None:
+    """R-68: the prewarm answered empty (transient YouTube failure at
+    prewarm time) but the live track-end retry finds a track — the chain
+    continues instead of dying. This is the exact live failure of
+    2026-09-01: autoplay went silent mid-session with no error."""
+    source = _StubSource(
+        {"track a": _TRACK_A, "locator-b": _TRACK_B},
+        related={"locator-a": ()},  # prewarm sees empty
+    )
+    player = MusicPlayer(
+        guild_id="guild-1", queue=FakeMusicQueueStore(), source=source,
+        voice=_FakeVoiceSession(), session=FakeMusicSessionStore(),
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+        autoplay_enabled=True, autoplay_prewarm_seconds=20.0,
+        loop=asyncio.get_running_loop(),
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    player._start_prewarm()  # type: ignore[attr-defined]
+    await asyncio.sleep(0)  # let the background task complete
+    assert player._prewarm_done is True  # type: ignore[attr-defined]
+    assert player._prewarmed is None  # type: ignore[attr-defined]
+
+    # The Mix recovers by track end: the live retry finds Track B.
+    source._related["locator-a"] = (_TRACK_B,)  # type: ignore[attr-defined]
+
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
