@@ -746,7 +746,11 @@ allow_reference_images = true
 # xAI adapter knobs. `model`/`quality_model` mirror the names Hermes'
 # image_gen/xai plugin uses; `refresh_token_env` is resolved by NAME from
 # the container env (DEC-8: one name for one secret — the CLI writes it).
-model = "grok-imagine-image"
+# 2026-09-01: model bumped to grok-imagine-image-2.0 — the v1 model the
+# edits lane ran made reference-image output noticeably worse; xAI's own
+# edits docs use 2.0 (multi-ref support + current-generation quality).
+# quality_model stays the pro/-latest lane (quality="quality" only).
+model = "grok-imagine-image-2.0"
 quality_model = "grok-imagine-image-quality"
 refresh_token_env = "XAI_OAUTH_REFRESH_TOKEN"
 timeout_seconds = 90.0
