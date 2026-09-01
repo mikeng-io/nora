@@ -292,6 +292,21 @@ class MusicPlayerManager:
             # Either nothing was playing when this was persisted, or the
             # persisted track no longer resolves -- either way, fall
             # through to whatever the ACTUAL queue has next (or idle).
+            #
+            # R-67: if nothing is playing but a last-played track is on
+            # record (autoplay's chain had already ended before the
+            # restart), restore it as the re-seed seed FIRST -- the
+            # `_advance` below then seeds the autoplay chain from it
+            # instead of sitting silent in a live voice channel.
+            if (
+                session.last_played_source is not None
+                and session.last_played_locator is not None
+            ):
+                player.seed_last_played(
+                    source=session.last_played_source,
+                    locator=session.last_played_locator,
+                    title=session.last_played_title or "",
+                )
             await player.on_track_finished()
         status = await self._after_transition(session.guild_id, player)
         await self._notify_now_playing(session.guild_id, status)

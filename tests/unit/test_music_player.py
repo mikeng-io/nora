@@ -957,3 +957,85 @@ async def test_a_failed_session_delete_does_not_block_dead_voice_teardown() -> N
 
     assert player._session_dead is True  # type: ignore[attr-defined]
     assert voice.disconnected == 1
+
+
+# ── R-67: autoplay re-seed seed (last_played) ──────────────────────────────
+
+
+async def test_advance_records_last_played_when_a_track_starts() -> None:
+    """R-67: a track that actually starts becomes the re-seed seed, and it
+    survives the queue emptying (unlike `_now_playing`)."""
+    player, voice, session = _player({"track a": _TRACK_A})
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+
+    assert player._last_played is not None  # type: ignore[attr-defined]
+    assert player._last_played.url == "locator-a"  # type: ignore[attr-defined]
+    # Persisted too.
+    row = await session.get("guild-1")
+    assert row is not None
+    assert row.last_played_locator == "locator-a"
+    assert row.last_played_title == "Track A"
+
+
+async def test_last_played_survives_the_queue_emptying() -> None:
+    """R-67: when autoplay's chain ends (related() empty), `_now_playing`
+    is cleared but `_last_played` remains -- the seed a boot-time resume
+    needs."""
+    player, voice, session = _player(
+        {"track a": _TRACK_A}, autoplay_enabled=True,
+    )
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    # related() answers empty -> chain ends, session goes idle.
+    await player.on_track_finished()
+
+    assert (await player.status()).now_playing is None
+    assert player._last_played is not None  # type: ignore[attr-defined]
+    assert player._last_played.url == "locator-a"  # type: ignore[attr-defined]
+    row = await session.get("guild-1")
+    assert row is not None
+    assert row.now_playing_locator is None
+    assert row.last_played_locator == "locator-a"
+
+
+async def test_advance_seeds_autoplay_from_last_played_when_nothing_playing() -> None:
+    """R-67: a boot-time resume that found nothing playing (autoplay's
+    chain had already ended) still seeds the chain from `_last_played`."""
+    player, voice, _session = _player(
+        {"track a": _TRACK_A, "locator-b": _TRACK_B}, autoplay_enabled=True,
+    )
+    source = player._source  # type: ignore[attr-defined]
+    source._related["locator-a"] = (_TRACK_B,)  # type: ignore[attr-defined]
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    # Simulate the boot-time resume path: nothing playing, seed restored.
+    player._now_playing = None  # type: ignore[attr-defined]
+    player.seed_last_played(source="youtube", locator="locator-a", title="Track A")
+
+    await player.on_track_finished()
+
+    status = await player.status()
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+    assert voice.played == ["https://cdn.example/a", "https://cdn.example/b"]
+
+
+async def test_seed_last_played_does_not_play_or_dedup() -> None:
+    """R-67: `seed_last_played` only restores the seed -- it never starts
+    playback and never occupies a dedup slot (the seed track has not played
+    in THIS session)."""
+    player, voice, _session = _player({"track a": _TRACK_A})
+    player.seed_last_played(source="youtube", locator="locator-a", title="Track A")
+
+    assert voice.played == []
+    assert player._last_played is not None  # type: ignore[attr-defined]
+    assert "locator-a" not in player._played_locators  # type: ignore[attr-defined]
+
+
+async def test_stop_clears_the_last_played_seed() -> None:
+    """R-67: a stop ENDS the session -- the re-seed seed dies with it."""
+    player, voice, _session = _player({"track a": _TRACK_A})
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    assert player._last_played is not None  # type: ignore[attr-defined]
+
+    await player.stop()
+
+    assert player._last_played is None  # type: ignore[attr-defined]

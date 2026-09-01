@@ -1964,6 +1964,13 @@ MUSIC_SESSION = sa.Table(
     sa.Column("now_playing_source", sa.Text, nullable=True),
     sa.Column("now_playing_locator", sa.Text, nullable=True),
     sa.Column("now_playing_title", sa.Text, nullable=True),
+    # The most recent track that ACTUALLY started -- the autoplay re-seed
+    # seed for boot-time resume (design/discord-music/08-autoplay.md,
+    # R-67). All three NULL together means "never played a track in this
+    # session" -- no seed to re-seed from, and none must be fabricated.
+    sa.Column("last_played_source", sa.Text, nullable=True),
+    sa.Column("last_played_locator", sa.Text, nullable=True),
+    sa.Column("last_played_title", sa.Text, nullable=True),
     sa.Column("paused", sa.Boolean, nullable=False),
     sa.Column("volume", sa.Float, nullable=False),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),

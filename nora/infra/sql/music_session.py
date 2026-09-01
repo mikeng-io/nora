@@ -24,6 +24,8 @@ def _row_to_session(row: Row[Any]) -> MusicSession:
         notify_channel_id=row.notify_channel_id, now_playing_source=row.now_playing_source,
         now_playing_locator=row.now_playing_locator, now_playing_title=row.now_playing_title,
         paused=row.paused, volume=row.volume, updated_at=row.updated_at,
+        last_played_source=row.last_played_source, last_played_locator=row.last_played_locator,
+        last_played_title=row.last_played_title,
     )
 
 
@@ -42,6 +44,9 @@ class SqlMusicSessionStore:
             "now_playing_source": session.now_playing_source,
             "now_playing_locator": session.now_playing_locator,
             "now_playing_title": session.now_playing_title,
+            "last_played_source": session.last_played_source,
+            "last_played_locator": session.last_played_locator,
+            "last_played_title": session.last_played_title,
             "paused": session.paused,
             "volume": session.volume,
             "updated_at": updated_at,

@@ -784,3 +784,62 @@ async def test_dead_voice_teardown_removes_the_player_from_the_manager() -> None
     assert outcome is not None
     assert outcome.status == "playing"
     assert voice2.played == ["https://cdn.example/b"]
+
+
+async def test_resume_persisted_session_reseeds_autoplay_from_last_played() -> None:
+    """R-67: a persisted session with nothing playing (autoplay's chain
+    had already ended before the restart) but a last-played track on record
+    re-seeds the autoplay chain from it -- the boot-time resume's
+    fall-through `_advance` picks a fresh track instead of sitting silent
+    in a live voice channel."""
+    manager = _manager(
+        {"track a": _TRACK_A, "locator-b": _TRACK_B},
+        related={"locator-a": (_TRACK_B,)}, autoplay_enabled=True,
+    )
+    voice = _FakeVoiceSession()
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    persisted = _persisted_session(
+        guild_id="guild-1", now_playing_source=None, now_playing_locator=None,
+        now_playing_title=None, last_played_source="youtube",
+        last_played_locator="locator-a", last_played_title="Track A",
+    )
+
+    await manager.resume_persisted_session(persisted, connect=connect, notify=notify)
+
+    # The chain re-seeded from last_played: Track B autoplayed.
+    assert voice.played == ["https://cdn.example/b"]
+    status = await manager.status("guild-1")
+    assert status is not None
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+    # Autoplay picks announce with the autoplay line, not the plain one.
+    assert notify.messages == ["Autoplaying: Track B — locator-b"]
+
+
+async def test_resume_persisted_session_without_last_played_stays_idle() -> None:
+    """R-67: no last-played on record (never played a track) means no seed
+    to re-seed from -- the resume stays idle, exactly as before."""
+    manager = _manager({"track a": _TRACK_A}, autoplay_enabled=True)
+    voice = _FakeVoiceSession()
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    persisted = _persisted_session(
+        guild_id="guild-1", now_playing_source=None, now_playing_locator=None,
+        now_playing_title=None, last_played_source=None, last_played_locator=None,
+        last_played_title=None,
+    )
+
+    await manager.resume_persisted_session(persisted, connect=connect, notify=notify)
+
+    assert voice.played == []
+    status = await manager.status("guild-1")
+    assert status is not None
+    assert status.now_playing is None
+    assert notify.messages == []

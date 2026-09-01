@@ -92,6 +92,14 @@ class MusicPlayer:
         self._autoplay_prewarm_seconds = autoplay_prewarm_seconds
         self._loop = loop
         self._now_playing: QueuedTrack | None = None
+        # The most recent track that ACTUALLY started in this session --
+        # the autoplay re-seed seed (R-67). Unlike `_now_playing`, this is
+        # NOT cleared when the queue empties: a chain that ends (autoplay
+        # answered empty) must still leave a seed behind, so a boot-time
+        # resume can re-seed autoplay from it instead of sitting silent.
+        # Persisted in `music_session.last_played_*`; restored into a
+        # fresh player by `seed_last_played` (boot-time only).
+        self._last_played: QueuedTrack | None = None
         self._paused = False
         self._volume = 1.0
         # Locators of every track that actually STARTED playing in this
@@ -138,6 +146,7 @@ class MusicPlayer:
 
     async def _persist_session(self) -> None:
         now_playing = self._now_playing
+        last_played = self._last_played
         await self._session.upsert(MusicSession(
             guild_id=self._guild_id, voice_channel_id=self._voice_channel_id,
             notify_channel_id=self._notify_channel_id,
@@ -145,6 +154,9 @@ class MusicPlayer:
             now_playing_locator=now_playing.url if now_playing else None,
             now_playing_title=now_playing.title if now_playing else None,
             paused=self._paused, volume=self._volume, updated_at=self._clock(),
+            last_played_source=last_played.source if last_played else None,
+            last_played_locator=last_played.url if last_played else None,
+            last_played_title=last_played.title if last_played else None,
         ))
 
     async def play(
@@ -271,6 +283,9 @@ class MusicPlayer:
         # boot HAS played in this session and must occupy a dedup slot,
         # or the first autoplay pick after a restart could repeat it.
         self._played_locators.add(self._now_playing.url)
+        # R-67: the re-seed seed, same moment as the dedup slot -- a
+        # resumed track is the most recent thing that played.
+        self._last_played = self._now_playing
         self._paused = False
         try:
             self._voice.play(resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds)
@@ -296,6 +311,26 @@ class MusicPlayer:
         await self._persist_session()
         return True
 
+    def seed_last_played(self, *, source: str, locator: str, title: str) -> None:
+        """Boot-time only (R-67): restores the persisted `last_played_*`
+        trio into a fresh player as the autoplay re-seed seed, WITHOUT
+        starting playback. Called by the manager when a persisted session
+        has nothing currently playing (autoplay's chain had already ended
+        before the restart) but a last-played track is on record -- so the
+        next `_advance` (the boot-time resume's fall-through) can seed the
+        autoplay chain from it instead of sitting silent in a live voice
+        channel.
+
+        Deliberately does NOT touch `_played_locators`: the seed track
+        itself is not re-played by this call, and if autoplay's first pick
+        happens to BE this track, that is a legitimate fresh pick for the
+        new session (the dedup window is session-scoped, and this track
+        has not played in THIS session yet)."""
+        self._last_played = QueuedTrack(
+            id=uuid4(), guild_id=self._guild_id, position=-1, source=source,
+            url=locator, title=title, added_by_person_id="", added_at=self._clock(),
+        )
+
     async def stop(self) -> None:
         """Clears the whole queue, stops playback, and leaves the voice
         channel — `/music stop`. Deletes the persisted session row too:
@@ -304,6 +339,10 @@ class MusicPlayer:
         self._cancel_prewarm()
         await self._queue.clear(self._guild_id)
         self._now_playing = None
+        # R-67: a stop ENDS the session -- the re-seed seed dies with it.
+        # A later `/music play` starts a fresh session with no seed, which
+        # is the correct "nothing to autoplay from" case.
+        self._last_played = None
         self._paused = False
         self._voice.stop()
         await self._voice.disconnect()
@@ -351,11 +390,15 @@ class MusicPlayer:
         while True:
             # Captured before `pop_next` overwrites it -- the SEED autoplay
             # recommends from, once the queue turns out empty below
-            # (design/discord-music/08-autoplay.md). `None` on the very
+            # (design/discord-music/08-autoplay.md). Falls back to
+            # `_last_played` (R-67): a boot-time resume that found nothing
+            # playing (autoplay's chain had already ended before the
+            # restart) still has a seed to re-seed the chain from, instead
+            # of sitting silent in a live voice channel. `None` on the very
             # first track of a session (nothing has played yet to seed
             # from), which is the correct "nothing to autoplay from" case,
             # not a bug.
-            previous = self._now_playing
+            previous = self._now_playing or self._last_played
             # Whether to bother arming the prewarm for the track this call
             # is about to start. The `queue_for` read is skipped entirely
             # when autoplay is off or prewarm is disabled (the default), so
@@ -388,6 +431,12 @@ class MusicPlayer:
                 # is never recorded: it never played, so it has no right
                 # to occupy a dedup slot.
                 self._played_locators.add(self._now_playing.url)
+                # R-67: the re-seed seed. Recorded at the same moment as
+                # the dedup slot -- a track that actually started is the
+                # most recent thing that played, and must survive the
+                # queue emptying (unlike `_now_playing`, which is cleared
+                # by the next `_advance`).
+                self._last_played = self._now_playing
                 try:
                     self._voice.play(
                         resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds,

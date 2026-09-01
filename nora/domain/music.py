@@ -125,6 +125,13 @@ class MusicSession:
     paused: bool
     volume: float
     updated_at: datetime
+    # The most recent track that ACTUALLY started -- the autoplay re-seed
+    # seed for boot-time resume (design/discord-music/08-autoplay.md,
+    # R-67). All three None together means "never played a track in this
+    # session" -- no seed to re-seed from, and none must be fabricated.
+    last_played_source: str | None = None
+    last_played_locator: str | None = None
+    last_played_title: str | None = None
 
 
 @runtime_checkable
