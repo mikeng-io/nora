@@ -84,6 +84,7 @@ with no entry gets `default_budget` by omission. The schedule does the same:
 class AdaptorSchedule:
     min_interval_seconds: float   # floor between runs
     batch_limit: int             # this adaptor's batch cap
+    max_items: int | None = None  # envelope item cap; None = runtime MAX_ITEMS (64)
 ```
 
 `dream_loop` and `_dream_adaptor_once` gain one parameter,
@@ -109,6 +110,15 @@ No adaptor class changes; no Protocol change; existing adaptors are
 untouched by omission, exactly like budgets. The mapping is keyed by
 `adaptor.name` — the same identity as the watermark row, the metric label and
 the budget table, so a schedule cannot drift from the adaptor it names.
+
+**The envelope item cap is per-adaptor too — measured gap.** The runtime caps
+each run's envelope at `MAX_ITEMS = 64` items (`dreamer.py:91`) and silently
+DROPS beyond that (`dreamer.py:675-678`) while the watermark still advances —
+a daily 1000-message batch can plausibly yield more than 64 candidate claims,
+and the excess would be lost with no error and no re-run. `AdaptorSchedule.
+max_items` overrides the cap for that adaptor (fact-candidates: 256), keeping
+the shared runtime default for everyone else. The watermark-advances-on-drop
+semantics are unchanged; the cap is what changes.
 
 ### 3.2 Fact tier schedule and budget
 
@@ -182,7 +192,7 @@ already refuses them):
 | Tool | Reads | Returns |
 |---|---|---|
 | `search_knowledge(query)` | `fact` hybrid (dense + lexical) | **EXISTS** (`tools.py:868`/`5959`) — but key path broken for workspace-keyed adaptors (see below) |
-| `get_knowledge(subject)` | `fact` where `superseded_at IS NULL` | the live facts about a subject |
+| `get_knowledge(subject)` | `fact` where `superseded_at IS NULL` | the live facts about a subject — **resolves the subject first**: `fact_entity.resolve(workspace, name)` → entity id → `standing_facts(subject_ids=[id])`. `standing_facts` takes entity IDS, not strings (`facts.py:783`); a name that resolves to nothing is `nothing_found`, never an empty ok. |
 | `knowledge_premises(fact_id)` | `fact_premise` | the dependency edges — which facts this one rests on |
 | `knowledge_asserters(fact_id)` | `fact_asserter` | who said it, when, in which message |
 | `knowledge_entity(name)` | `fact_entity` | the canonical entity + aliases a name resolves to |
@@ -192,8 +202,9 @@ already refuses them):
 
 **Terminology: the tier is the KNOWLEDGE tier, not the fact tier.** The
 rename happened in the design layer (`20-knowledge-tier.md` — "The name
-followed the implementation, and the name has been setting everyone's idea of
-the scope") and in the tool surface (`search_knowledge`), but the code layer
+followed the implementation, and the name has been setting the scope everyone
+reasons within") and in the tool surface (`search_knowledge`), but the code
+layer
 lags: config section `[facts]`, file `facts.py`, tables `fact_*`. The new
 tools follow the knowledge vocabulary (`get_knowledge`, `knowledge_premises`,
 `knowledge_asserters`, `knowledge_entity`) to match the existing
