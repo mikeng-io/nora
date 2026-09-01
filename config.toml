@@ -243,11 +243,12 @@ enabled = true
 max_depth = 16
 
 [engagement.trigger]
-# Text trigger phrase (re-enabled 2026-08-26, operator): "nora" — any message
-# (typed or transcribed from a voice note) containing the word engages her.
-# A real @mention or a reply to one of her own messages also engages her
+# Text trigger phrase DISABLED 2026-09-01 (operator): the base text trigger
+# fired on a plain URL ("nora.67.zone") — substring match catches the word
+# inside domains. Engagement is now voice-note + @mention/reply only.
+# A real @mention or a reply to one of her own messages still engages her
 # (MentionPolicy/ReplyToNoraPolicy, unaffected by this flag).
-enabled = true
+enabled = false
 text = "nora"
 min_interval_seconds = 5
 
