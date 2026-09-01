@@ -1760,6 +1760,29 @@ _SOCIAL_TWEET_URL_RE = re.compile(
     r"/status/([0-9]{1,25})(?:[?#]\S*)?"
 )
 _SOCIAL_TWEET_ID_RE = re.compile(r"[0-9]{1,25}")
+
+# Media marker tokens (`[image a3f2c1]`, `[sticker 199010: a caption]`,
+# `[video b9d4e7]`, bare `[image]`, ...) are Nora-internal transcript
+# conventions (DEC-43 / domain.media.render_placeholder) — the handle is a
+# custody promise inside her OWN record. They are NEVER legitimate in a
+# visible reply: the image was already delivered as a real attachment, so
+# quoting the raw hash to the group is noise (and leaks internal
+# identifiers). Strip before ANY outbound text, hard-enforced here rather
+# than left to model compliance (same adapter-enforces posture DEC-137's
+# reference gate takes).
+_MEDIA_MARKER_RE = re.compile(
+    r"\[(?:image|sticker|video|audio|voice note|document|file)"
+    r"(?:[ \t]+[A-Za-z0-9_-]{4,48}(?::[^\]]*)?)?\]",
+    re.IGNORECASE,
+)
+
+
+def _strip_media_markers(text: str) -> str:
+    """Remove `[image a3f2c1]`-style markers from outbound reply text."""
+    if not text:
+        return text
+    return _MEDIA_MARKER_RE.sub("", text)
+
 _SOCIAL_QUERY_MAX_CHARS = 200
 _SOCIAL_LIMIT_MAX = 20
 
@@ -3904,8 +3927,11 @@ Args:
         `status` tells you what happened:
           - `ok` — the image was already sent to this chat as an attachment;
             there is NO url and NO link to share. The transcript shows
-            `[image <handle>]`. Do not paste any URL, and never re-use a
-            drop/upload link from an earlier message — those links are stale.
+            `[image <handle>]` — that handle is Nora's internal record of
+            the image, NEVER a thing to quote in your reply, and never a
+            thing to paste anywhere: the group already has the picture.
+            Do not paste any URL, and never re-use a drop/upload link from
+            an earlier message — those links are stale.
           - `nothing_found` — the provider refused the prompt, or a
             reference code is not in view here. Do not guess why; say it
             could not be made.
@@ -6604,7 +6630,7 @@ Args:
         Args:
             text: One message, in your own voice.
         """
-        sent = await deliverer.deliver(text, source="tool")
+        sent = await deliverer.deliver(_strip_media_markers(text), source="tool")
         # A LENGTH, never the reply. `Deliverer` already logs the specific
         # reason behind every refusal (R-2 latch, R-4 empty, R-6 leak, R-18
         # egress, audit failure, send failure); this line exists so that the

@@ -464,6 +464,39 @@ async def test_send_reply_delegates_to_the_deliverer(wiring):
     assert wiring["deliverer"].delivered is True
 
 
+def test_strip_media_markers_covers_all_marker_shapes():
+    """[image <handle>] / [sticker ...] conventions are Nora-internal
+    custody markers (DEC-43) — never legitimate in a visible reply.
+    The image is already delivered as a real attachment, so a model that
+    quotes the raw handle leaks internal identifiers to the group. The
+    stripper is the hard enforcement; these shapes must all collapse."""
+    from nora.agent.tools import _strip_media_markers as strip
+
+    cases = (
+        ("改完 [image c6a9cd]", "改完 "),
+        ("[image c6a9cd] 開頭", " 開頭"),
+        ("[image] 未 custody", " 未 custody"),
+        ("[sticker 199010: A man wearing glasses, with a puzzled expression] 後記", " 後記"),
+        ("[video b9d4e7] 片", " 片"),
+        ("[FILE abc123] 大楷", " 大楷"),
+        ("[Image c6A9Cd] 混合大小楷", " 混合大小楷"),
+        ("[audio] [voice note] [document abc123] [file] 其他種類", "    其他種類"),
+        ("正常文字", "正常文字"),
+        ("[image a3f2c1][image bbccdd] 連續", " 連續"),
+    )
+    for raw, expected in cases:
+        assert strip(raw) == expected, f"{raw!r} -> {strip(raw)!r}"
+
+
+async def test_send_reply_strips_media_markers_before_delivery(wiring):
+    """Integration: the stripped text (not the model's raw text) reaches the
+    deliverer. Two sends stay under the R-2 6-message turn latch."""
+    assert await _call(wiring["tools"]["send_reply"], text="改完 [image c6a9cd]") is True
+    assert wiring["sink"].texts[-1] == "改完 "
+    assert await _call(wiring["tools"]["send_reply"], text="[image] 佔位") is True
+    assert wiring["sink"].texts[-1] == " 佔位"
+
+
 class _RosterHolding:
     """A `RosterSource` that reports exactly the members it was told about.
 
