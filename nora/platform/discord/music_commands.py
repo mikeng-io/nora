@@ -57,7 +57,14 @@ def _notify_factory(interaction: discord.Interaction):
             # Silent: a "Now playing" line on every auto-advance is useful
             # to have in the channel, not worth a push notification/ping
             # every few minutes.
+            log.info("music notify: sending %r to channel %s", text, getattr(channel, "id", "?"))
             await channel.send(text, silent=True)
+            return
+        log.warning(
+            "music notify: channel %r is NOT Messageable — auto-advance "
+            "notification dropped (text: %r)",
+            channel, text,
+        )
 
     return notify
 

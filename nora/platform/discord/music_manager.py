@@ -357,10 +357,23 @@ class MusicPlayerManager:
     async def _notify_now_playing(self, guild_id: str, status: PlayerStatus) -> None:
         now_playing = status.now_playing
         if now_playing is None:
+            log.info(
+                "notify_now_playing: nothing playing for guild %s — no notification",
+                guild_id,
+            )
             return
         notify = self._notify.get(guild_id)
         if notify is None:
+            log.warning(
+                "notify_now_playing: no notify closure registered for guild %s — "
+                "auto-advance notification will NOT be sent (track: %s)",
+                guild_id, now_playing.title,
+            )
             return
+        log.info(
+            "notify_now_playing: sending notification for guild %s (track: %s)",
+            guild_id, now_playing.title,
+        )
         # Tells apart a track someone actually queued from one autoplay
         # picked (`AUTOPLAY_PERSON_ID`, design/discord-music/08-autoplay.md)
         # -- otherwise a listener has no way to tell why a track nobody
