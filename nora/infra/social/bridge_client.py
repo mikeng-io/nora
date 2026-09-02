@@ -149,7 +149,7 @@ def _render_text(data: Any) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
-def _render_item(item: dict) -> str:
+def _render_item(item: dict[str, Any]) -> str:
     """One opencli item → readable lines, unknown keys ignored gracefully.
 
     Both post items (`author`, `text`, `likes`, …) and profile items
