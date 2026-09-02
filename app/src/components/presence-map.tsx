@@ -134,22 +134,26 @@ function FocusOn({ point }: { point: [number, number] | null }) {
 // after a selection changes zoom (`setView`); every update after that just
 // pans (`panTo`), so the operator's own manual zoom-out isn't fought on
 // every tick. Ref, not state — this must never itself trigger a re-render.
-function FollowSelected({ point, active }: { point: [number, number] | null; active: boolean }) {
+function FollowSelected({ personId, point }: { personId: string | null; point: [number, number] | null }) {
   const map = useMap();
-  const wasActive = useRef(false);
+  // Tracks WHICH person the last zoom-in was for, not just whether someone
+  // was selected — switching straight from A to B (a marker click right
+  // after another, with no deselect in between) must re-zoom on B, not
+  // silently keep panning at whatever zoom A left behind.
+  const followedId = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!active || !point) {
-      wasActive.current = false;
+    if (!personId || !point) {
+      followedId.current = null;
       return;
     }
-    if (!wasActive.current) {
+    if (followedId.current !== personId) {
       map.setView(point, 16);
-      wasActive.current = true;
+      followedId.current = personId;
     } else {
       map.panTo(point);
     }
-  }, [map, point, active]);
+  }, [map, personId, point]);
 
   return null;
 }
@@ -194,7 +198,7 @@ export function PresenceMap({
           camera — re-fitting to the WHOLE group on every poll tick would
           fight it, zooming back out the moment new positions arrive. */}
       {!selectedPersonId && <FitToMarkers points={points} />}
-      <FollowSelected point={selectedPoint} active={selectedPersonId !== null} />
+      <FollowSelected personId={selectedPersonId} point={selectedPoint} />
       <FocusOn point={focusPlace} />
       {places.map((place) => (
         <Marker key={place.name} position={[place.lat, place.lng]} icon={PLACE_ICON}>
