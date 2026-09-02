@@ -20,9 +20,9 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
 from typing import Any
 
+from ...domain.parking import NearbyParking as NearbyParking
 from ..routes.http import post_json
 
 log = logging.getLogger("nora.parking")
@@ -46,22 +46,6 @@ SEARCH_RADIUS_M = 1500.0
 # field-mask cost for names nobody will read, and the model needs the NEAREST
 # handful to actually drive/walk to, not a directory.
 MAX_RESULTS = 10
-
-
-@dataclass(frozen=True)
-class NearbyParking:
-    """One nearby car park, as `find_parking` renders it.
-
-    Coordinates are Nora's working state (DEC-24) — the model never sees them;
-    `distance_m` is the human proxy (「300 米」).
-    """
-
-    place_id: str
-    name: str
-    address: str
-    lat: float
-    lng: float
-    distance_m: int
 
 
 async def search_nearby(

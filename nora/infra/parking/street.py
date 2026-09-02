@@ -25,10 +25,11 @@ import csv
 import io
 import logging
 import math
-from dataclasses import dataclass
 from typing import Any
 
 import aiohttp
+
+from ...domain.parking import StreetParking as StreetParking
 
 log = logging.getLogger("nora.parking")
 
@@ -41,15 +42,6 @@ TIMEOUT_SECONDS = 8.0
 # 300 m is «on this street» while 1500 m (the nearby-parking radius) would
 # sweep several districts. Mirrors the walkable-lot argument in nearby.py.
 STREET_RADIUS_M = 300.0
-
-
-@dataclass(frozen=True)
-class StreetParking:
-    """What `find_parking` renders for on-street metered parking near a point."""
-
-    total: int
-    vacant: int
-    streets: tuple[str, ...]
 
 
 class StreetParkingClient:

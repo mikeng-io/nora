@@ -149,7 +149,7 @@ class ParkingClient:
             out["fee"] = fee
         return out
 
-    async def _load_index(self) -> dict[str, tuple[str, str, str, str]] | None:
+    async def _load_index(self) -> dict[str, tuple[str, str, str, str, str]] | None:
         if self._index is not None:
             return self._index
         async with aiohttp.ClientSession(

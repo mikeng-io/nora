@@ -225,6 +225,7 @@ from nora.domain.models import (
     UnattributedRow,
     WeatherObservation,
 )
+from nora.domain.parking import StreetParking as StreetParking
 from nora.domain.standing import Standing as Standing
 from nora.domain.turn_verdict import TurnVerdict as TurnVerdict
 from nora.domain.utf16 import utf16_len
@@ -1245,13 +1246,43 @@ class ParkingProvider(Protocol):
     matching it to a parking id is the provider's job, so the 105KB index
     never enters model context.
 
-    RETURN SHAPE: `{"parking_id", "name", "vacancy", "lastupdate", "status",
-    "address"}` on success; `None` on any fetch/parse failure or an unmatched
-    name. `vacancy` is an INT of spaces free, never fabricated; `lastupdate`
-    is the feed's own timestamp string.
+    `strict=True` is `find_parking`'s cross-ref mode: an EXACT name match
+    only, so a Google-named lot never attaches another car park's vacancy
+    through a substring fallback. `parking_status` (a user naming a spot)
+    keeps the fallback, where a distinctive substring is the experience.
+
+    RETURN SHAPE: `{"parking_id", "name", "vacancy", "lastupdate"}` on
+    success, plus `opening_status`/`address`/`fee` when the feed's basic
+    info actually carried them (never invented); `None` on any fetch/parse
+    failure or an unmatched name. `vacancy` is an INT of spaces free, never
+    fabricated; `lastupdate` is the feed's own timestamp string. The opening
+    status rides `opening_status`, NOT `status` — the R-27 axis owns the
+    `status` key and `parking_status` spreads this dict under its own
+    `{"status": "ok", **data}`, so a provider value written into `status`
+    would overwrite the contract's `ok`.
     """
 
-    async def vacancy(self, *, name: str) -> dict | None: ...
+    async def vacancy(
+        self, *, name: str, strict: bool = False,
+    ) -> dict[str, Any] | None: ...
+
+
+@runtime_checkable
+class StreetParkingProvider(Protocol):
+    """Metered on-street parking near a point — the street row `find_parking`
+    appends. NEVER raises — `None` is a missing reading and the tool reports
+    `unavailable` (R-5), never a confident zero.
+
+    Backed by the TD on-street feed (hk-td-msd_1): a cached metered-space
+    table plus a fresh per-space occupancy CSV. HK-only today, a PORT for
+    the same reason `ParkingProvider` is — and a second implementation
+    (including a test double) means a shared contract suite both pass
+    (tests/contract/, CLAUDE.md).
+    """
+
+    async def near(
+        self, *, lat: float, lng: float, radius_m: float = ...,
+    ) -> StreetParking | None: ...
 
 
 @runtime_checkable

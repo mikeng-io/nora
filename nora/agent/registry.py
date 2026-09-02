@@ -42,8 +42,10 @@ from ..domain.ports import (
     MediaDescriptionStore,
     MediaObjectStore,
     MusicToolBridge,
+    ParkingProvider,
     SearchProvider,
     SocialProvider,
+    StreetParkingProvider,
     WeatherProvider,
 )
 from ..domain.reminders import ReminderCaps, ReminderStore
@@ -99,8 +101,8 @@ class ToolRegistry:
     def __init__(
         self, *,
         transit: TransitClient | None = None,
-        parking: ParkingClient | None = None,
-        street_parking: StreetParkingClient | None = None,
+        parking: ParkingProvider | None = None,
+        street_parking: StreetParkingProvider | None = None,
         route: RouteClient | None = None,
         vision: VisionClient | None = None,
         describe_models: Mapping[str, str] | None = None,
