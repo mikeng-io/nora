@@ -23,6 +23,7 @@ from nora.app.gatherings import GatheringService
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.ports import MemoryStore, RecordStore
 from nora.domain.reminders import ReminderStore
+from nora.infra.sql.mobility import SqlMobilityStore
 from nora.persons import Persons
 from nora.web.doctrine import build_doctrine_payload
 from nora.web.games import (
@@ -80,6 +81,9 @@ _DEFAULT_HISTORY_HOURS = 24
 _DEFAULT_PAGE = 1
 _DEFAULT_PAGE_SIZE = 20
 _DEFAULT_INSIGHTS_DAYS = 30
+_DEFAULT_ANALYTICS_DAYS = 30
+_MAX_ANALYTICS_DAYS = 90
+_DAY_MS = 24 * 60 * 60 * 1000
 
 
 class _BadQueryError(Exception):
@@ -118,12 +122,67 @@ def _optional_bool_query(request: web.Request, name: str) -> bool | None:
     raise _BadQueryError(name)
 
 
+def _analytics_subject_ids(circles: tuple[Circle, ...]) -> list[str]:
+    """Return known circle subjects once, preserving roster order."""
+    seen: set[str] = set()
+    subject_ids: list[str] = []
+    for circle in circles:
+        for ref in circle.people:
+            if ref.person_id not in seen:
+                seen.add(ref.person_id)
+                subject_ids.append(ref.person_id)
+    return subject_ids
+
+
+def _place_payload(place: dict) -> dict:
+    return {
+        "kind": place["kind"],
+        "label": place["label"],
+        "lat": place["lat"],
+        "lng": place["lng"],
+        "radiusM": place["radius_m"],
+        "confidence": place["confidence"],
+        "firstSeenTs": place["first_seen_ts"],
+        "lastSeenTs": place["last_seen_ts"],
+        "stayCount": place["stay_count"],
+        "totalDwellMs": place["total_dwell_ms"],
+    }
+
+
+def _trip_payload(trip: dict) -> dict:
+    return {
+        "id": trip["id"],
+        "startedTs": trip["started_ts"],
+        "endedTs": trip["ended_ts"],
+        "distanceM": trip["distance_m"],
+        "avgSpeedKmh": trip["avg_speed_kmh"],
+        "fixCount": trip["fix_count"],
+        "corridorId": trip["corridor_id"],
+        "corridorSampleCount": trip["corridor_sample_count"],
+    }
+
+
+def _corridor_payload(corridor: dict) -> dict:
+    return {
+        "id": corridor["id"],
+        "sampleCount": corridor["sample_count"],
+        "firstSeenTs": corridor["first_seen_ts"],
+        "lastSeenTs": corridor["last_seen_ts"],
+        # The address-sequence ends are the corridor's provisional NAME ("A →
+        # B") on the portal's person profile until the stay-adjacency place
+        # join lands — corridors are directional (a reversed sequence clusters
+        # apart), so from/to is honest, not decorative.
+        "sequence": corridor["sequence"],
+    }
+
+
 def register_web_routes(
     app: web.Application, *, store: RecordStore, honcho: MemoryStore,
     reminders: ReminderStore, persons: Persons, ai_peer: str, started_at: float,
     games_client: PulseGamesClient | None,
     presence: PresenceReader | None, presence_circles: tuple[Circle, ...],
     skills_dir: Path, events: GatheringService, doctrine_store: DoctrineStore,
+    mobility: SqlMobilityStore | None = None,
 ) -> None:
     app["web_store"] = store
     app["web_honcho"] = honcho
@@ -134,6 +193,7 @@ def register_web_routes(
     app["web_games_client"] = games_client
     app["web_presence"] = presence
     app["web_presence_circles"] = presence_circles
+    app["web_mobility"] = mobility
     app["web_skills_dir"] = skills_dir
     app["web_events"] = events
     app["web_doctrine_store"] = doctrine_store
@@ -352,6 +412,101 @@ def register_web_routes(
         )
         return web.json_response(body)
 
+    async def presence_analytics_places(request: web.Request) -> web.Response:
+        a = request.app
+        # Bind through a local NAME, not `a["web_mobility"].method(...)` — the
+        # store-caller architecture walk only credits attribute calls on a
+        # Name/Attribute receiver, so a subscript receiver reads as "no
+        # production caller" (fail-closed by design).
+        mobility = a["web_mobility"]
+        if a["web_presence"] is None or mobility is None:
+            return web.json_response({"subjects": []})
+        subjects = []
+        for subject_id in _analytics_subject_ids(a["web_presence_circles"]):
+            places = await mobility.places_with_aggregates(
+                subject_id=subject_id,
+            )
+            subjects.append(
+                {
+                    "subjectId": subject_id,
+                    "places": [_place_payload(place) for place in places],
+                }
+            )
+        return web.json_response({"subjects": subjects})
+
+    async def presence_analytics_rhythm(request: web.Request) -> web.Response:
+        subject_id = request.query.get("subjectId")
+        try:
+            days = _int_query(request, "days", _DEFAULT_ANALYTICS_DAYS)
+        except _BadQueryError:
+            return web.json_response({"error": "invalid days"}, status=400)
+        if days <= 0:
+            return web.json_response({"error": "invalid days"}, status=400)
+        days = min(days, _MAX_ANALYTICS_DAYS)
+        empty: dict[str, object] = {
+            "subjectId": subject_id, "bins": [], "windowDays": days,
+        }
+        a = request.app
+        mobility = a["web_mobility"]  # local NAME — see presence_analytics_places
+        if (
+            a["web_presence"] is None
+            or mobility is None
+            or subject_id is None
+            or subject_id not in _analytics_subject_ids(a["web_presence_circles"])
+        ):
+            return web.json_response(empty)
+        bins = await mobility.rhythm_bins(
+            subject_id=subject_id, window_ms=days * _DAY_MS,
+        )
+        return web.json_response(
+            {
+                "subjectId": subject_id,
+                "bins": [
+                    {
+                        "hourOfWeek": bucket["hour_of_week"],
+                        "stayCount": bucket["stay_count"],
+                        "totalDwellMs": bucket["total_dwell_ms"],
+                    }
+                    for bucket in bins
+                ],
+                "windowDays": days,
+            }
+        )
+
+    async def presence_analytics_routes(request: web.Request) -> web.Response:
+        subject_id = request.query.get("subjectId")
+        try:
+            days = _int_query(request, "days", _DEFAULT_ANALYTICS_DAYS)
+        except _BadQueryError:
+            return web.json_response({"error": "invalid days"}, status=400)
+        if days <= 0:
+            return web.json_response({"error": "invalid days"}, status=400)
+        days = min(days, _MAX_ANALYTICS_DAYS)
+        empty: dict[str, object] = {
+            "subjectId": subject_id, "trips": [], "corridors": [],
+        }
+        a = request.app
+        mobility = a["web_mobility"]  # local NAME — see presence_analytics_places
+        if (
+            a["web_presence"] is None
+            or mobility is None
+            or subject_id is None
+            or subject_id not in _analytics_subject_ids(a["web_presence_circles"])
+        ):
+            return web.json_response(empty)
+        result = await mobility.trips_with_corridors(
+            subject_id=subject_id, window_ms=days * _DAY_MS,
+        )
+        return web.json_response(
+            {
+                "subjectId": subject_id,
+                "trips": [_trip_payload(trip) for trip in result["trips"]],
+                "corridors": [
+                    _corridor_payload(corridor) for corridor in result["corridors"]
+                ],
+            }
+        )
+
     async def presence_history(request: web.Request) -> web.Response:
         raw_hours = request.query.get("hours")
         try:
@@ -443,6 +598,15 @@ def register_web_routes(
     app.router.add_get("/app/v1/games/servers/{id}/sessions", games_server_sessions)
     app.router.add_get("/app/v1/presence", presence_positions)
     app.router.add_get("/app/v1/presence/places", presence_places)
+    app.router.add_get(
+        "/app/v1/presence/analytics/places", presence_analytics_places,
+    )
+    app.router.add_get(
+        "/app/v1/presence/analytics/rhythm", presence_analytics_rhythm,
+    )
+    app.router.add_get(
+        "/app/v1/presence/analytics/routes", presence_analytics_routes,
+    )
     app.router.add_get("/app/v1/presence/{person_id}/history", presence_history)
     app.router.add_get("/app/v1/events", events_list)
     app.router.add_get("/app/v1/events/{id}", events_detail)

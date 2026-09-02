@@ -1,0 +1,10 @@
+{
+  "type": "feature",
+  "summary": "Adds authenticated portal API dashboards for derived presence places, routine rhythm, and route corridors.",
+  "details": [
+    "The read-only endpoints expose bounded place aggregates, hour-of-week stay bins, and trip corridor speed metadata from the analytics substrate."
+  ],
+  "limitations": [
+    "The portal frontend is not included in this change."
+  ]
+}

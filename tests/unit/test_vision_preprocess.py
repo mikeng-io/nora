@@ -16,7 +16,13 @@ import pytest
 
 from nora.infra.vision.preprocess import download_media, preprocess_media
 
-pytest_plugins = ("aiohttp.pytest_plugin",)
+# NOTE: no `pytest_plugins = ("aiohttp.pytest_plugin",)` here — the env's
+# pytest-aiohttp already provides `aiohttp_server`. Registering aiohttp's own
+# plugin from a test module re-registers same-named fixtures SESSION-WIDE
+# (module-level pytest_plugins is global once collected), and its `loop`/
+# client fixtures are incompatible with pytest-asyncio auto mode — every
+# tests/web/ module collected after this one then failed (measured
+# 2026-09-02: 62/62 in test_api.py red, green again with the line removed).
 
 # A 1x1 red PNG, decoded ASCII — tiny enough for quick real-ffmpeg runs.
 RED_PNG = base64.b64decode(

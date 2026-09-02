@@ -326,10 +326,84 @@
     "loading": "Loading…",
     "error": "Couldn't reach Nora.",
     "noFix": "No location recorded",
+    "driving": "Driving",
+    "drivingStale": "Marked driving, but hasn't reported a new position in a while",
+    "batteryLow": "Battery low",
     "liveSection": "Live now",
     "otherSection": "No recent location",
-    "placesSection": "Saved places",
-    "lookback": "Route:",
+  "placesSection": "Saved places",
+  "profile": {
+    "open": "Profile",
+    "close": "Close profile",
+    "peak": "Most active",
+    "trips": "{count, plural, one {# trip} other {# trips}}",
+    "lastSeen": "last {date}",
+    "unmatched": "{count, plural, one {# trip} other {# trips}} not linked to a corridor",
+    "window": "last {days} days"
+  },
+  "analytics": {
+    "tabs": {
+      "live": "Live map",
+      "places": "Places",
+      "rhythm": "Rhythm",
+      "routes": "Routes"
+    },
+    "subjects": "Subject",
+    "loading": "Loading data…",
+    "error": "Couldn't load analytics.",
+    "unnamed": "Unnamed place",
+    "empty": {
+      "noSubjects": "No subjects",
+      "noPlaces": "No derived places",
+      "noRhythm": "No stay data",
+      "noRoutes": "No trips",
+      "noPath": "No fix path"
+    },
+    "units": {
+      "places": "places",
+      "days": "days",
+      "stays": "stays",
+      "fixes": "fixes"
+    },
+    "metrics": {
+      "confidence": "Confidence",
+      "stays": "Stays",
+      "dwell": "Dwell"
+    },
+    "help": {
+      "confidence": "How sure Nora is this is really home/work — based on how many nights or workday-hours were spent here versus everywhere else this person stayed.",
+      "corridors": "A recurring route: trips whose road sequence closely matches each other are grouped as one corridor, so a regular commute reads as one thing instead of dozens of separate trips.",
+      "linked": "Trips that matched an existing corridor (a route this person has taken before), out of all trips shown."
+    },
+    "rhythm": {
+      "window": "Window",
+      "low": "Low",
+      "high": "High"
+    },
+    "days": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    },
+    "routes": {
+      "trips": "Trips",
+      "corridors": "Corridors",
+      "linked": "Linked",
+      "tripList": "Trip list",
+      "path": "Fix path",
+      "start": "Start",
+      "end": "End",
+      "corridor": "Corridor",
+      "unmatched": "Unmatched",
+      "samples": "samples",
+      "heat": "Heat"
+    }
+  },
+  "lookback": "Route:",
     "hours": {
       "1": "1h",
       "6": "6h",

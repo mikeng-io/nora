@@ -11,6 +11,7 @@ windowed), and nothing else.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import sqlalchemy as sa
@@ -23,7 +24,9 @@ from nora.domain.mobility import (
     Stay,
     Trip,
     best_corridor_match,
+    hour_of_week,
 )
+from nora.domain.presence import haversine_distance_m
 from nora.infra.sql.schema import (
     ANALYTICS_WATERMARK,
     PRESENCE_CORRIDOR_SPEED,
@@ -37,6 +40,14 @@ from nora.infra.sql.schema import (
 )
 
 DERIVER_NAME = "mobility"
+
+# The web consumer is deliberately bounded independently of the rollup's
+# batch sizes.  These are the same operational limits as the portal's history
+# endpoint: a 90-day dashboard window and at most 5,000 derived rows.
+_MAX_ANALYTICS_WINDOW_MS = 90 * 24 * 60 * 60 * 1000
+_MAX_ANALYTICS_POINTS = 5_000
+_MAX_ANALYTICS_PLACES = 100
+_ANALYTICS_TZ_NAME = "Asia/Hong_Kong"
 
 
 def _trip_from_row(r: Any) -> Trip:
@@ -61,6 +72,157 @@ class SqlMobilityStore:
         boundary. `None` means this store does not count."""
         self._engine = engine
         self._metrics = metrics
+
+    async def places_with_aggregates(self, *, subject_id: str) -> list[dict[str, Any]]:
+        """Read derived places and bounded stay aggregates for one subject.
+
+        Containment is intentionally decided with the domain's haversine
+        function, the same `_within` rule the rollup uses.  Both statements
+        are SELECT-only; the web consumer never re-runs or mutates derivation.
+        """
+        places_stmt = (
+            sa.select(PRESENCE_DERIVED_PLACES)
+            .where(PRESENCE_DERIVED_PLACES.c.subject_id == subject_id)
+            .order_by(PRESENCE_DERIVED_PLACES.c.id.asc())
+            .limit(_MAX_ANALYTICS_PLACES)
+        )
+        stays_stmt = (
+            sa.select(
+                PRESENCE_STAYS.c.lat, PRESENCE_STAYS.c.lng,
+                PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts,
+            )
+            .where(PRESENCE_STAYS.c.subject_id == subject_id)
+            .order_by(PRESENCE_STAYS.c.started_ts.desc())
+            .limit(_MAX_ANALYTICS_POINTS)
+        )
+        async with self._engine.connect() as conn:
+            places = (await conn.execute(places_stmt)).all()
+            stays = (await conn.execute(stays_stmt)).all()
+
+        out: list[dict[str, Any]] = []
+        for place in places:
+            matching = [
+                stay for stay in stays
+                if haversine_distance_m(
+                    stay.lat, stay.lng, place.lat, place.lng,
+                ) <= place.radius_m
+            ]
+            out.append(
+                {
+                    "kind": place.kind,
+                    "label": place.label,
+                    "lat": place.lat,
+                    "lng": place.lng,
+                    "radius_m": place.radius_m,
+                    "confidence": place.confidence,
+                    "first_seen_ts": place.first_seen_ts,
+                    "last_seen_ts": place.last_seen_ts,
+                    "stay_count": len(matching),
+                    "total_dwell_ms": sum(
+                        max(0, stay.ended_ts - stay.started_ts) for stay in matching
+                    ),
+                }
+            )
+        return out
+
+    async def rhythm_bins(self, *, subject_id: str, window_ms: int) -> list[dict[str, int]]:
+        """Read bounded stays and group them by the substrate's local hour key."""
+        window_ms = min(max(window_ms, 0), _MAX_ANALYTICS_WINDOW_MS)
+        if window_ms == 0:
+            return []
+        cutoff_ms = int(time.time() * 1000) - window_ms
+        stmt = (
+            sa.select(PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts)
+            .where(
+                PRESENCE_STAYS.c.subject_id == subject_id,
+                PRESENCE_STAYS.c.started_ts >= cutoff_ms,
+            )
+            .order_by(PRESENCE_STAYS.c.started_ts.desc())
+            .limit(_MAX_ANALYTICS_POINTS)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+
+        bins: dict[int, dict[str, int]] = {}
+        for row in rows:
+            how = hour_of_week(row.started_ts, _ANALYTICS_TZ_NAME)
+            bucket = bins.setdefault(how, {"stay_count": 0, "total_dwell_ms": 0})
+            bucket["stay_count"] += 1
+            bucket["total_dwell_ms"] += max(0, row.ended_ts - row.started_ts)
+        return [
+            {
+                "hour_of_week": how,
+                "stay_count": bins[how]["stay_count"],
+                "total_dwell_ms": bins[how]["total_dwell_ms"],
+            }
+            for how in sorted(bins)
+        ]
+
+    async def trips_with_corridors(
+        self, *, subject_id: str, window_ms: int,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Read bounded trips with optional corridor metadata in one SELECT."""
+        window_ms = min(max(window_ms, 0), _MAX_ANALYTICS_WINDOW_MS)
+        if window_ms == 0:
+            return {"trips": [], "corridors": []}
+        cutoff_ms = int(time.time() * 1000) - window_ms
+        stmt = (
+            sa.select(
+                PRESENCE_TRIPS.c.id.label("trip_id"),
+                PRESENCE_TRIPS.c.started_ts,
+                PRESENCE_TRIPS.c.ended_ts,
+                PRESENCE_TRIPS.c.distance_m,
+                PRESENCE_TRIPS.c.avg_speed_kmh,
+                PRESENCE_TRIPS.c.fix_count,
+                PRESENCE_TRIPS.c.corridor_id,
+                PRESENCE_CORRIDORS.c.sequence.label("corridor_sequence"),
+                PRESENCE_CORRIDORS.c.sample_count.label("corridor_sample_count"),
+                PRESENCE_CORRIDORS.c.first_seen_ts.label("corridor_first_seen_ts"),
+                PRESENCE_CORRIDORS.c.last_seen_ts.label("corridor_last_seen_ts"),
+            )
+            .select_from(
+                PRESENCE_TRIPS.outerjoin(
+                    PRESENCE_CORRIDORS,
+                    PRESENCE_TRIPS.c.corridor_id == PRESENCE_CORRIDORS.c.id,
+                )
+            )
+            .where(
+                PRESENCE_TRIPS.c.subject_id == subject_id,
+                PRESENCE_TRIPS.c.started_ts >= cutoff_ms,
+            )
+            .order_by(PRESENCE_TRIPS.c.started_ts.desc())
+            .limit(_MAX_ANALYTICS_POINTS)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+
+        trips: list[dict[str, Any]] = []
+        corridors: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            trips.append(
+                {
+                    "id": row.trip_id,
+                    "started_ts": row.started_ts,
+                    "ended_ts": row.ended_ts,
+                    "distance_m": row.distance_m,
+                    "avg_speed_kmh": row.avg_speed_kmh,
+                    "fix_count": row.fix_count,
+                    "corridor_id": row.corridor_id,
+                    "corridor_sample_count": row.corridor_sample_count,
+                }
+            )
+            if row.corridor_id is not None and row.corridor_id not in corridors:
+                corridors[row.corridor_id] = {
+                    "id": row.corridor_id,
+                    "sample_count": row.corridor_sample_count,
+                    "first_seen_ts": row.corridor_first_seen_ts,
+                    "last_seen_ts": row.corridor_last_seen_ts,
+                    "sequence": list(row.corridor_sequence or ()),
+                }
+        return {
+            "trips": trips,
+            "corridors": sorted(corridors.values(), key=lambda corridor: corridor["id"]),
+        }
 
     async def watermark(self, *, subject_id: str) -> tuple[int, int]:
         stmt = sa.select(

@@ -326,10 +326,84 @@
     "loading": "載入緊…",
     "error": "連唔到 Nora。",
     "noFix": "未有位置紀錄",
+    "driving": "揸緊車",
+    "drivingStale": "標記緊揸車，但一段時間冇匯報新位置",
+    "batteryLow": "電量低",
     "liveSection": "而家即時",
     "otherSection": "冇最近位置",
-    "placesSection": "已儲低嘅地點",
-    "lookback": "路線：",
+  "placesSection": "已儲低嘅地點",
+  "profile": {
+    "open": "個人檔案",
+    "close": "閂咗個人檔案",
+    "peak": "最活躍",
+    "trips": "{count} 程",
+    "lastSeen": "最近 {date}",
+    "unmatched": "{count} 程未匹配到路線",
+    "window": "近 {days} 日"
+  },
+  "analytics": {
+    "tabs": {
+      "live": "即時地圖",
+      "places": "地點",
+      "rhythm": "作息",
+      "routes": "路線"
+    },
+    "subjects": "對象",
+    "loading": "載入緊數據…",
+    "error": "載入唔到分析數據。",
+    "unnamed": "未命名地點",
+    "empty": {
+      "noSubjects": "冇對象",
+      "noPlaces": "未有推算地點",
+      "noRhythm": "未有停留數據",
+      "noRoutes": "未有行程",
+      "noPath": "未有定位路徑"
+    },
+    "units": {
+      "places": "個地點",
+      "days": "日",
+      "stays": "次停留",
+      "fixes": "個定位"
+    },
+    "metrics": {
+      "confidence": "信心",
+      "stays": "停留",
+      "dwell": "總時長"
+    },
+    "help": {
+      "confidence": "Nora 有幾肯定呢度真係屋企／公司——根據呢個人響度過咗幾多晚，或者上班時間響度嘅比例，同佢響其他地方停留嘅比較。",
+      "corridors": "重複出現嘅路線：如果幾程行程行嘅道路序列好相似，就會歸做同一條走廊，等一個經常性嘅通勤顯示做一件事，而唔係幾十程獨立行程。",
+      "linked": "喺顯示嘅所有行程入面，有幾多程係匹配到現有走廊（即係呢個人之前行過嘅路線）。"
+    },
+    "rhythm": {
+      "window": "範圍",
+      "low": "少",
+      "high": "多"
+    },
+    "days": {
+      "mon": "一",
+      "tue": "二",
+      "wed": "三",
+      "thu": "四",
+      "fri": "五",
+      "sat": "六",
+      "sun": "日"
+    },
+    "routes": {
+      "trips": "行程",
+      "corridors": "走廊",
+      "linked": "已連結",
+      "tripList": "行程列表",
+      "path": "定位路徑",
+      "start": "開始",
+      "end": "結束",
+      "corridor": "走廊",
+      "unmatched": "未匹配",
+      "samples": "個樣本",
+      "heat": "熱力圖"
+    }
+  },
+  "lookback": "路線：",
     "hours": {
       "1": "1小時",
       "6": "6小時",

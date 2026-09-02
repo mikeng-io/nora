@@ -3,20 +3,24 @@
 import { useMemo, useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
-import { Car, BatteryLow, Home } from "lucide-react";
+import { Car, BatteryLow, ChevronRight, Home } from "lucide-react";
 import {
   fetchPresence,
   fetchPresenceHistory,
   fetchPresencePlaces,
+  STALE_DRIVING_SECONDS,
   type PresenceEntry,
   type PresenceHistoryPoint,
   type PresencePlace,
 } from "@/lib/presence-schema";
+import { relativeAge } from "@/lib/presence-format";
 import { hueOf } from "@/lib/person-color";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { PersonAvatar } from "@/components/ui/person-avatar";
 import { cn } from "@/lib/utils";
+import { PresenceAnalytics, SurfaceTabs, type MapSurface } from "@/components/presence-analytics";
+import { PresenceProfile } from "@/components/presence-profile";
 
 // Leaflet touches `window` at import time — must never run during SSR.
 const PresenceMap = dynamic(
@@ -30,15 +34,6 @@ const PresenceMap = dynamic(
 const POLL_INTERVAL_MS = 20_000;
 const HOUR_OPTIONS = [1, 6, 24, 168] as const;
 
-function initialsOf(name: string) {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
-
 export default function MapPage() {
   const t = useTranslations("map");
   const [entries, setEntries] = useState<PresenceEntry[] | null>(null);
@@ -48,6 +43,13 @@ export default function MapPage() {
   const [hours, setHours] = useState<number>(24);
   const [history, setHistory] = useState<PresenceHistoryPoint[]>([]);
   const [focusPlace, setFocusPlace] = useState<[number, number] | null>(null);
+  const [surface, setSurface] = useState<MapSurface>("live");
+  const [profileId, setProfileId] = useState<string | null>(null);
+
+  const profileEntry = useMemo(
+    () => entries?.find((entry) => entry.personId === profileId) ?? null,
+    [entries, profileId],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -83,15 +85,23 @@ export default function MapPage() {
       return;
     }
     let cancelled = false;
-    fetchPresenceHistory(selected, hours)
-      .then((h) => {
-        if (!cancelled) setHistory(h.points);
-      })
-      .catch(() => {
-        if (!cancelled) setHistory([]);
-      });
+    // Same cadence as the position poll above — otherwise the trail line
+    // only draws once, at selection time, and never extends while the dot
+    // keeps moving on every 20s position update.
+    const tick = () => {
+      fetchPresenceHistory(selected, hours)
+        .then((h) => {
+          if (!cancelled) setHistory(h.points);
+        })
+        .catch(() => {
+          if (!cancelled) setHistory([]);
+        });
+    };
+    tick();
+    const id = setInterval(tick, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
+      clearInterval(id);
     };
   }, [selected, hours]);
 
@@ -112,6 +122,16 @@ export default function MapPage() {
       <h1 className="mb-1.5 text-[26px] font-medium tracking-tight">{t("heading")}</h1>
       <p className="mb-6 max-w-[56ch] text-text-secondary">{t("dek")}</p>
 
+      <SurfaceTabs
+        active={surface}
+        onChange={(next) => {
+          setSurface(next);
+          // The drawer belongs to the live surface — leaving it open across
+          // a tab switch would resurrect it, stale, on the way back.
+          setProfileId(null);
+        }}
+      />
+
       {error && (
         <Alert variant="destructive" className="mb-6">
           {t("error")}
@@ -119,7 +139,18 @@ export default function MapPage() {
       )}
       {!error && !entries && <p className="text-text-muted">{t("loading")}</p>}
 
-      {entries && (
+      {surface === "live" && profileEntry && (
+        <PresenceProfile entry={profileEntry} onClose={() => setProfileId(null)} />
+      )}
+
+      {surface !== "live" ? (
+        <PresenceAnalytics
+          surface={surface}
+          entries={entries}
+          selectedSubjectId={selected}
+          onSubjectSelect={setSelected}
+        />
+      ) : entries ? (
         <div className="grid gap-4 md:grid-cols-[1fr_290px]">
           <div>
             {selected && (
@@ -149,6 +180,7 @@ export default function MapPage() {
                 places={places}
                 selectedPersonId={selected}
                 onSelect={(id) => setSelected((cur) => (cur === id ? null : id))}
+                onOpenProfile={(id) => setProfileId(id)}
                 historyPoints={history}
                 focusPlace={focusPlace}
               />
@@ -169,6 +201,7 @@ export default function MapPage() {
                     entry={entry}
                     selected={selected === entry.personId}
                     onClick={() => setSelected((cur) => (cur === entry.personId ? null : entry.personId))}
+                    onOpenProfile={() => setProfileId(entry.personId)}
                   />
                 ))}
               </div>
@@ -185,6 +218,7 @@ export default function MapPage() {
                         entry={entry}
                         selected={selected === entry.personId}
                         onClick={() => setSelected((cur) => (cur === entry.personId ? null : entry.personId))}
+                        onOpenProfile={() => setProfileId(entry.personId)}
                       />
                     ))}
                   </div>
@@ -213,7 +247,7 @@ export default function MapPage() {
             )}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -222,63 +256,84 @@ function PersonRow({
   entry,
   selected,
   onClick,
+  onOpenProfile,
 }: {
   entry: PresenceEntry;
   selected: boolean;
   onClick: () => void;
+  onOpenProfile: () => void;
 }) {
   const t = useTranslations("map");
   const hue = hueOf(entry.personId);
   const fix = entry.current;
 
+  // The row is a div containing TWO buttons, not one button with a nested
+  // control (invalid HTML, and screen readers mangle it): the body selects/
+  // follows, the chevron opens the profile drawer — the same two actions a
+  // map marker exposes (select on click, Profile inside its popup).
   return (
-    <button
-      onClick={onClick}
+    <div
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-lg border-l-[3px] border-y border-r p-2.5 text-left transition-colors",
+        "group flex w-full items-center rounded-lg border-l-[3px] border-y border-r transition-all hover:-translate-y-px hover:shadow-sm active:translate-y-0",
         selected
           ? "border-y-accent/40 border-r-accent/40 bg-accent/10"
           : "border-y-border border-r-border bg-bg-surface hover:bg-bg-elevated",
       )}
       style={{ borderLeftColor: fix ? `hsl(${hue} 65% 50%)` : "var(--border-strong)" }}
     >
-      <Avatar
-        className="h-8 w-8 shrink-0 ring-2"
-        style={{
-          backgroundColor: `hsl(${hue} 70% 92%)`,
-          // @ts-expect-error -- CSS custom value, not a token
-          "--tw-ring-color": `hsl(${hue} 60% 55% / ${fix ? 0.35 : 0.12})`,
-        }}
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={selected}
+        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-l-lg p-2.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
       >
-        <AvatarFallback
+        <span
+          className="inline-flex shrink-0 rounded-full ring-2 transition-transform group-hover:scale-105"
           style={{
-            color: fix ? `hsl(${hue} 55% 32%)` : "var(--text-muted)",
-            backgroundColor: "transparent",
+            // @ts-expect-error -- CSS custom value, not a token
+            "--tw-ring-color": `hsl(${hue} 60% 55% / ${fix ? 0.35 : 0.12})`,
           }}
         >
-          {initialsOf(entry.displayName)}
-        </AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium">{entry.displayName}</div>
-        <div className="flex items-center gap-1.5 truncate font-mono text-[10px] uppercase tracking-wide text-text-muted">
-          {fix ? t(`state.${fix.wireState}`) : t("noFix")}
-          {fix?.isDriving && <Car className="h-3 w-3 shrink-0" />}
-          {fix?.batteryPercent != null && fix.batteryPercent < 20 && (
-            <BatteryLow className="h-3 w-3 shrink-0 text-danger" />
-          )}
-          {fix && <span className="normal-case">· {relativeAge(fix.ageSeconds)}</span>}
+          <PersonAvatar seed={entry.personId} size={32} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-medium">{entry.displayName}</div>
+          <div className="flex items-center gap-1.5 truncate font-mono text-[10px] uppercase tracking-wide text-text-muted">
+            {fix ? t(`state.${fix.wireState}`) : t("noFix")}
+            {fix?.isDriving && (
+              <span
+                className={cn(
+                  "flex items-center",
+                  fix.ageSeconds > STALE_DRIVING_SECONDS && "text-text-muted/60",
+                )}
+                title={fix.ageSeconds > STALE_DRIVING_SECONDS ? t("drivingStale") : t("driving")}
+              >
+                <Car className="h-3 w-3 shrink-0" />
+                <span className="sr-only">
+                  {fix.ageSeconds > STALE_DRIVING_SECONDS ? t("drivingStale") : t("driving")}
+                </span>
+              </span>
+            )}
+            {fix?.batteryPercent != null && fix.batteryPercent < 20 && (
+              <span title={t("batteryLow")}>
+                <BatteryLow className="h-3 w-3 shrink-0 text-danger" />
+                <span className="sr-only">{t("batteryLow")}</span>
+              </span>
+            )}
+            {fix && <span className="normal-case">· {relativeAge(fix.ageSeconds)}</span>}
+          </div>
         </div>
-      </div>
-    </button>
+      </button>
+      <button
+        type="button"
+        onClick={onOpenProfile}
+        aria-label={`${t("profile.open")} — ${entry.displayName}`}
+        title={t("profile.open")}
+        className="relative mr-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors before:absolute before:-inset-1.5 before:content-[''] hover:bg-bg-elevated hover:text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </div>
   );
 }
 
-function relativeAge(ageSeconds: number): string {
-  if (ageSeconds < 60) return "now";
-  const min = Math.round(ageSeconds / 60);
-  if (min < 60) return `${min}m`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h`;
-  return `${Math.round(hr / 24)}d`;
-}

@@ -111,6 +111,7 @@ class App:
             persons=deps.persons, ai_peer=self.cfg.memory.ai_peer, started_at=started_at,
             games_client=deps.games_client,
             presence=deps.presence, presence_circles=deps.presence_circles,
+            mobility=deps.mobility,
             skills_dir=deps.skills_dir, events=deps.events,
             doctrine_store=deps.doctrine_store,
         )
