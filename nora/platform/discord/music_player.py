@@ -410,6 +410,14 @@ class MusicPlayer:
             self._now_playing = await self._queue.pop_next(self._guild_id)
             self._paused = False
             if self._now_playing is None:
+                # Diagnose "autoplay is NOT working" (2026-09-02): the queue
+                # emptying and staying empty has no log line distinguishing
+                # WHY -- disabled, no seed, or a pick attempt that came back
+                # empty -- so a real incident leaves nothing to read back.
+                log.info(
+                    "autoplay check for guild %s: enabled=%s has_seed=%s",
+                    self._guild_id, self._autoplay_enabled, previous is not None,
+                )
                 if (
                     self._autoplay_enabled and previous is not None
                     and await self._enqueue_autoplay_pick(previous)
@@ -606,16 +614,43 @@ class MusicPlayer:
             self._prewarmed = None
             self._prewarm_done = False
             if prewarmed.locator not in self._played_locators:
+                log.info("autoplay pick: consumed prewarmed %s", prewarmed.locator)
                 return prewarmed
             # The prewarmed pick was played in the meantime (a skip, a
             # user re-queue) -- fall through to a fresh pick below.
+            log.info(
+                "autoplay pick: prewarmed %s already played this session, falling "
+                "through to a fresh related() call", prewarmed.locator,
+            )
+        # Timed (2026-09-02 diagnosis): a slow or contended `related()` call
+        # here is otherwise invisible -- the caller only ever sees the final
+        # pick or `None`, never how long the live yt-dlp extraction took.
+        started = self._clock()
         related = await self._source.related(locator=previous.url)
+        elapsed = (self._clock() - started).total_seconds()
         if not related:
+            log.info(
+                "autoplay pick: related() for %s returned EMPTY after %.1fs",
+                previous.url, elapsed,
+            )
             return None
-        return next(
+        pick = next(
             (t for t in related if t.locator not in self._played_locators),
             None,
         )
+        if pick is None:
+            log.info(
+                "autoplay pick: related() for %s returned %d candidate(s) after "
+                "%.1fs, but ALL already played this session",
+                previous.url, len(related), elapsed,
+            )
+        else:
+            log.info(
+                "autoplay pick: related() for %s returned %d candidate(s) after "
+                "%.1fs, picked %s",
+                previous.url, len(related), elapsed, pick.locator,
+            )
+        return pick
 
     async def _enqueue_autoplay_pick(self, previous: QueuedTrack) -> bool:
         """`True` only if a track was actually enqueued -- `related()`

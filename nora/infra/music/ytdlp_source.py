@@ -66,6 +66,7 @@ _YDL_OPTS: dict[str, Any] = {
     "quiet": True,
     "no_warnings": True,
     "skip_download": True,
+    "socket_timeout": 20,
 }
 
 # A playlist LISTING only needs title + video ID per entry — `extract_flat`
@@ -78,6 +79,15 @@ _FLAT_YDL_OPTS: dict[str, Any] = {
     "quiet": True,
     "no_warnings": True,
     "skip_download": True,
+    # Diagnosed 2026-09-02: a shared `YoutubeDL` instance under concurrent
+    # `asyncio.to_thread` load measured 20-31s for one Mix extraction (vs.
+    # single digits idle) -- and `Task.cancel()` on the coroutine awaiting it
+    # does NOT stop the underlying thread (`to_thread` has no forced
+    # interrupt), so a stale prewarm/retry keeps a thread-pool slot pinned
+    # until the request itself gives up. Without a bound, enough of these
+    # pile up over a long session to starve the default executor, silently
+    # stalling every later autoplay attempt with nothing to catch or log.
+    "socket_timeout": 20,
 }
 
 
