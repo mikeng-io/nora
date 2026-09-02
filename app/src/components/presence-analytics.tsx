@@ -539,11 +539,12 @@ function RoutesSurface({
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 font-mono text-[10px] text-text-muted">
                 <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-success" />{t("analytics.routes.start")}</span>
                 <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-accent" />{t("analytics.routes.end")}</span>
-                {data.corridors.map((corridor) => (
-                  <span key={corridor.id} className="flex items-center gap-1.5">
-                    <i className="h-2 w-2 rounded-full bg-accent" />C{corridor.id} · {corridor.sampleCount} {t("analytics.routes.samples")}
-                  </span>
-                ))}
+                {/* Two swatches, not one per corridor: the map renders every
+                    corridor in the SAME --accent (unmatched in --accent-dim),
+                    so a per-corridor legend row would promise a per-corridor
+                    color that doesn't exist on the map. */}
+                <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-accent" />{t("analytics.routes.corridor")}</span>
+                <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-accent-dim" />{t("analytics.routes.unmatched")}</span>
                 {selectedPath.length === 0 && <span className="ml-auto">{t("analytics.empty.noPath")}</span>}
               </div>
             </Card>

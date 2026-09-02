@@ -113,14 +113,21 @@ const PLACE_ICON = L.divIcon({
 
 function FitToMarkers({ points }: { points: [number, number][] }) {
   const map = useMap();
+  // `points` is a fresh array on every 20s poll tick even when nobody has
+  // moved, so an effect keyed on the array re-fits — and undoes any manual
+  // pan/zoom — every tick. This string only changes when a real position
+  // does (~11 m rounding); the effect re-derives the bounds from IT, which
+  // keeps the dependency list honest (no `points` used but undeclared).
+  const fitKey = points.map(([lat, lng]) => `${lat.toFixed(4)},${lng.toFixed(4)}`).join("|");
   useEffect(() => {
-    if (points.length === 0) return;
-    if (points.length === 1) {
-      map.setView(points[0], 14);
+    if (!fitKey) return;
+    const fitted = fitKey.split("|").map((pair) => pair.split(",").map(Number) as [number, number]);
+    if (fitted.length === 1) {
+      map.setView(fitted[0], 14);
       return;
     }
-    map.fitBounds(L.latLngBounds(points), { padding: [48, 48] });
-  }, [map, points]);
+    map.fitBounds(L.latLngBounds(fitted), { padding: [48, 48] });
+  }, [map, fitKey]);
   return null;
 }
 

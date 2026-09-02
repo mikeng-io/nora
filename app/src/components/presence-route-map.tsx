@@ -33,14 +33,22 @@ const END_ICON = L.divIcon({
 function FitToPath({ points }: { points: [number, number][] }) {
   const map = useMap();
 
+  // The caller rebuilds the `routes` prop inline on every render, so
+  // `points` is a fresh array even when nothing moved — an effect keyed on
+  // it re-fits (undoing manual pan/zoom) on every re-render, e.g. toggling
+  // the heat layer. Same stable-key fix as presence-map's FitToMarkers:
+  // the string changes only when a real coordinate does, and the effect
+  // re-derives the bounds from it rather than from `points`.
+  const fitKey = points.map(([lat, lng]) => `${lat.toFixed(4)},${lng.toFixed(4)}`).join("|");
   useEffect(() => {
-    if (points.length === 0) return;
-    if (points.length === 1) {
-      map.setView(points[0], 14);
+    if (!fitKey) return;
+    const fitted = fitKey.split("|").map((pair) => pair.split(",").map(Number) as [number, number]);
+    if (fitted.length === 1) {
+      map.setView(fitted[0], 14);
       return;
     }
-    map.fitBounds(L.latLngBounds(points), { padding: [40, 40] });
-  }, [map, points]);
+    map.fitBounds(L.latLngBounds(fitted), { padding: [40, 40] });
+  }, [map, fitKey]);
 
   return null;
 }
@@ -59,6 +67,10 @@ function AnimatedSelectedPath({ positions, color }: { positions: [number, number
     const layer = antPath(positions, {
       color, weight: 5, opacity: 0.95, delay: 800, dashArray: [10, 20],
       pulseColor: "#ffffff",
+      // The route keeps its dashed direction-of-travel encoding, just
+      // static — the same trade globals.css's reduced-motion guard makes
+      // for .marker-pulse (strip the motion, keep the styling).
+      paused: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     });
     layer.addTo(map);
     layerRef.current = layer;
