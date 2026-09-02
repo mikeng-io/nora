@@ -332,6 +332,15 @@
     "liveSection": "而家即時",
     "otherSection": "冇最近位置",
   "placesSection": "已儲低嘅地點",
+  "profile": {
+    "open": "個人檔案",
+    "close": "閂咗個人檔案",
+    "peak": "最活躍",
+    "trips": "{count} 程",
+    "lastSeen": "最近 {date}",
+    "unmatched": "{count} 程未匹配到路線",
+    "window": "近 {days} 日"
+  },
   "analytics": {
     "tabs": {
       "live": "即時地圖",

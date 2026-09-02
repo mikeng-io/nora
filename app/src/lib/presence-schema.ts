@@ -101,6 +101,7 @@ export const PresenceRouteCorridorSchema = z.object({
   sampleCount: z.number(),
   firstSeenTs: z.number(),
   lastSeenTs: z.number(),
+  sequence: z.array(z.string()),
 });
 
 export const PresenceRoutesSchema = z.object({

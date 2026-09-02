@@ -17,6 +17,12 @@ import {
   type PresenceRouteTrip,
 } from "@/lib/presence-schema";
 import { hueOf } from "@/lib/person-color";
+import {
+  formatDate,
+  formatDateTime,
+  formatDuration,
+  formatNumber,
+} from "@/lib/presence-format";
 import { PersonAvatar } from "@/components/ui/person-avatar";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
@@ -660,23 +666,6 @@ function AnalyticsEmpty({ label, icon: Icon = Waypoints }: { label: string; icon
       {label}
     </div>
   );
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat().format(value);
-}
-
-function formatDuration(ms: number) {
-  if (ms < 60 * 60 * 1000) return `${Math.max(1, Math.round(ms / (60 * 1000)))}m`;
-  return `${(ms / (60 * 60 * 1000)).toFixed(1)}h`;
-}
-
-function formatDate(ts: number) {
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(ts);
-}
-
-function formatDateTime(ts: number) {
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(ts);
 }
 
 function historyHoursForTrips(trips: PresenceRouteTrip[]) {

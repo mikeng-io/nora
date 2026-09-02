@@ -132,6 +132,7 @@ describe("PresenceRoutesSchema", () => {
             sampleCount: 5,
             firstSeenTs: 1_787_900_000_000,
             lastSeenTs: 1_788_013_740_000,
+            sequence: ["Nathan Road", "Argyle Street", "Harbour City"],
           },
         ],
       }),

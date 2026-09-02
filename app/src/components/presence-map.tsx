@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { useTranslations } from "next-intl";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import BoringAvatar from "boring-avatars";
@@ -178,6 +179,7 @@ export function PresenceMap({
   places,
   selectedPersonId,
   onSelect,
+  onOpenProfile,
   historyPoints,
   focusPlace,
 }: {
@@ -185,9 +187,11 @@ export function PresenceMap({
   places: PresencePlace[];
   selectedPersonId: string | null;
   onSelect: (personId: string) => void;
+  onOpenProfile: (personId: string) => void;
   historyPoints: PresenceHistoryPoint[];
   focusPlace: [number, number] | null;
 }) {
+  const t = useTranslations("map");
   const withFix = useMemo(() => entries.filter((e) => e.current !== null), [entries]);
   const points = useMemo<[number, number][]>(
     () => withFix.map((e) => [e.current!.lat, e.current!.lng]),
@@ -241,9 +245,23 @@ export function PresenceMap({
             )}
             eventHandlers={{ click: () => onSelect(entry.personId) }}
           >
+            {/* Marker click = sidebar-row click (select/follow), and the
+                popup carries the same second action the row's chevron does —
+                open the profile — so the two surfaces never diverge. The
+                popup sits in Leaflet's own light bubble, OUTSIDE the app's
+                dark token context, hence the hardcoded readable-on-white
+                link colour (the avatar palette's deep blue). */}
             <Popup>
               <div className="text-[13px] font-medium">{entry.displayName}</div>
               {fix.address && <div className="text-[12px] text-text-secondary">{fix.address}</div>}
+              <button
+                type="button"
+                onClick={() => onOpenProfile(entry.personId)}
+                className="mt-1 cursor-pointer text-[12px] font-medium underline decoration-dotted underline-offset-2"
+                style={{ color: "#3d5a80" }}
+              >
+                {t("profile.open")}
+              </button>
             </Popup>
           </Marker>
         );

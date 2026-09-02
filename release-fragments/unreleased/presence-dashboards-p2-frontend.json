@@ -1,10 +1,12 @@
 {
   "type": "feature",
-  "summary": "Adds read-only portal dashboards for places, weekly rhythm, and route corridors.",
+  "summary": "Adds read-only portal dashboards for places, weekly rhythm, and route corridors, plus a per-person profile drawer.",
   "details": [
-    "The existing map route now includes authenticated place graphs, hour-of-week dwell heatmaps, and Leaflet trip paths backed by presence analytics."
+    "The existing map route now includes authenticated place graphs, hour-of-week dwell heatmaps, and Leaflet trip paths backed by presence analytics.",
+    "A slide-over profile drawer (from a sidebar row's chevron or a map marker's popup) digests one member's top places by dwell, weekday rhythm, and signature corridors named from their address-sequence ends."
   ],
   "limitations": [
-    "Route paths use the existing bounded presence history window for each selected trip."
+    "Route paths use the existing bounded presence history window for each selected trip.",
+    "Corridor names are the raw address-sequence endpoints, not derived-place names (Home/Work) yet."
   ]
 }
