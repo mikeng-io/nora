@@ -35,11 +35,12 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import Awaitable, Callable, Coroutine, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .. import tag as tag_module
+from ..agent.dreamer import AdaptorSchedule
 from ..domain.models import TranscriptRow
 from ..domain.ports import DreamAdaptor, RoomConsolidator, RoomPortraitSynthesizer
 from ..obs.metrics import Metrics
@@ -446,6 +447,7 @@ async def _dream_adaptor_once(
     record: _SinceReadable, language: _ConsolidationCursor, metrics: Metrics,
     key: str, safety_lag: int, quiet_seconds: float, max_age_seconds: float,
     batch_limit: int,
+    schedules: Mapping[str, AdaptorSchedule] | None = None,
 ) -> str | None:
     """One adaptor, one key, one cycle — `_dream_once`'s shape generalised off
     the hardcoded `"language"` cursor and off `RoomConsolidator`.
@@ -483,16 +485,28 @@ async def _dream_adaptor_once(
     age = await language.watermark_age_seconds(
         consolidator_name=adaptor.name, scope_id=key)
 
-    fires = (
-        lag > safety_lag
-        or (lag > 0 and quiet >= quiet_seconds)
-        or age >= max_age_seconds      # fires at lag == 0 ON PURPOSE
-    )
+    fires: bool
+    sched = (schedules or {}).get(adaptor.name)
+    if sched is not None:
+        # The adaptor's own clock (design/dreamer-agent-loop/32 §3.1): backlog
+        # present AND the watermark row at least `min_interval_seconds` old —
+        # a daily fact-extraction batch, not the shared lag/quiet/age shape.
+        # The `else` latch-reset below stays mandatory here too:
+        # `watermark_age_seconds` reads `updated_at`, and only the batch arm
+        # writes it, so an interval-only fire would otherwise latch on forever.
+        fires = lag > 0 and age >= sched.min_interval_seconds
+    else:
+        fires = (
+            lag > safety_lag
+            or (lag > 0 and quiet >= quiet_seconds)
+            or age >= max_age_seconds      # fires at lag == 0 ON PURPOSE
+        )
     if not fires:
         return None
 
     batch = await record.since(
-        conversation_id=key, after_id=watermark, limit=batch_limit)
+        conversation_id=key, after_id=watermark,
+        limit=sched.batch_limit if sched is not None else batch_limit)
 
     outcome = await runtime.run(adaptor=adaptor, key=key, batch=batch)
 
@@ -537,6 +551,7 @@ async def dream_loop(
     adaptors: Sequence[DreamAdaptor] = (),
     runtime: _AdaptorRunner | None = None,
     workspaces: Callable[[], Sequence[str]] = lambda: (),
+    schedules: Mapping[str, AdaptorSchedule] | None = None,
 ) -> None:
     """The Dreamer's clock. A sibling of `prune_loop`, with two differences
     that are not stylistic.
@@ -681,6 +696,7 @@ async def dream_loop(
                 language=language, metrics=metrics, key=key,
                 safety_lag=safety_lag, quiet_seconds=quiet_seconds,
                 max_age_seconds=max_age_seconds, batch_limit=batch_limit,
+                schedules=schedules,
             )
             if status == "unavailable":
                 # **A FAILURE, even though nothing raised.**

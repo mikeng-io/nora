@@ -117,6 +117,35 @@ class AdaptorBudget:
 
 
 @dataclass(frozen=True)
+class AdaptorSchedule:
+    """One adaptor's own clock (design/dreamer-agent-loop/32 §3.1).
+
+    A NAME-KEYED MAPPING value, like `AdaptorBudget`, and deliberately NOT a
+    field on the `DreamAdaptor` protocol: a defaulted non-method member on a
+    `@runtime_checkable` protocol fails `isinstance` for every adaptor that
+    does not declare it (measured on Python 3.13), which would break all six
+    existing adaptors at once. An adaptor with no entry in the mapping keeps
+    the shared `[language]` schedule — `lag > safety_lag`, `quiet_seconds`,
+    `max_age_seconds` — exactly as an adaptor with no budget entry gets
+    `default_budget` by omission.
+
+    `min_interval_seconds` is the floor between runs: a scheduled adaptor
+    fires when there is unread backlog (`lag > 0`) AND the watermark row's
+    `updated_at` is at least this old. `batch_limit` replaces the shared cap
+    for that adaptor's `record.since` read. `max_items` overrides the
+    runtime's envelope cap (`MAX_ITEMS`) for that adaptor — a daily
+    1000-message batch can legitimately yield more than 64 candidate claims,
+    and the runtime DROPS past the cap while the watermark still advances, so
+    the excess would be lost with no error and no re-run. `None` keeps the
+    shared default.
+    """
+
+    min_interval_seconds: float
+    batch_limit: int
+    max_items: int | None = None
+
+
+@dataclass(frozen=True)
 class DreamOutcome:
     """What one run did, in R-27's three states.
 
@@ -512,6 +541,13 @@ class DreamerRuntime:
     adaptor name to its ceiling; an adaptor with no entry gets `default_budget`
     rather than a `KeyError` or an unbounded loop, because an adaptor added
     later must be bounded by omission rather than unbounded by it.
+
+    `schedules` is the same shape for the run's other per-adaptor number: an
+    adaptor whose `AdaptorSchedule.max_items` is set gets that envelope cap
+    instead of `MAX_ITEMS` (design/dreamer-agent-loop/32 §3.1 — the cap is
+    DROP-shaped while the watermark still advances, so a daily 1000-message
+    extraction batch would lose every claim past 64 with no error and no
+    re-run). An adaptor with no entry keeps the shared cap.
     """
 
     def __init__(
@@ -525,6 +561,7 @@ class DreamerRuntime:
         retry: factory.RetryPolicy,
         metrics: Metrics,
         model_name: str,
+        schedules: Mapping[str, AdaptorSchedule] | None = None,
     ) -> None:
         self._models = models
         self._instructions = instructions
@@ -534,9 +571,21 @@ class DreamerRuntime:
         self._retry = retry
         self._metrics = metrics
         self._model_name = model_name
+        # `| None` rather than `= {}`: ruff's B006 is right that a mutable
+        # default shared across instances is a trap, and this mapping is only
+        # ever READ, so coalescing here costs nothing.
+        self._schedules = dict(schedules or {})
 
     def budget_for(self, adaptor_name: str) -> AdaptorBudget:
         return self._budgets.get(adaptor_name, self._default_budget)
+
+    def max_items_for(self, adaptor_name: str) -> int:
+        """This adaptor's envelope item cap — its schedule's `max_items`
+        where set, else the runtime-wide `MAX_ITEMS`."""
+        sched = self._schedules.get(adaptor_name)
+        if sched is not None and sched.max_items is not None:
+            return sched.max_items
+        return MAX_ITEMS
 
     async def run(
         self, *, adaptor: DreamAdaptor, key: str, batch: Sequence[TranscriptRow]
@@ -672,13 +721,14 @@ class DreamerRuntime:
                 adaptor, "unavailable", 0, sha, stop_reason, started,
             )
 
-        if len(items) > MAX_ITEMS:
+        max_items = self.max_items_for(adaptor.name)
+        if len(items) > max_items:
             # Capped, never silently: a cap nobody counts reads as «we wrote
             # everything it found».
-            dropped = len(items) - MAX_ITEMS
+            dropped = len(items) - max_items
             log.warning(
                 "dream run returned %d items, keeping %d (adaptor=%s key=%s)",
-                len(items), MAX_ITEMS, adaptor.name, key,
+                len(items), max_items, adaptor.name, key,
             )
             # ONE increment carrying the count, not one call per item: the
             # envelope cap is 200k characters, so a pathological response can
@@ -689,7 +739,7 @@ class DreamerRuntime:
                 "nora_dream_screened_total", float(dropped),
                 adaptor=adaptor.name, reason="cap",
             )
-            items = items[:MAX_ITEMS]
+            items = items[:max_items]
 
         kept, _rejected = screen(
             adaptor=adaptor.name, items=items, metrics=self._metrics,
