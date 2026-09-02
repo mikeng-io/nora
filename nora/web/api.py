@@ -409,11 +409,16 @@ def register_web_routes(
 
     async def presence_analytics_places(request: web.Request) -> web.Response:
         a = request.app
-        if a["web_presence"] is None or a["web_mobility"] is None:
+        # Bind through a local NAME, not `a["web_mobility"].method(...)` — the
+        # store-caller architecture walk only credits attribute calls on a
+        # Name/Attribute receiver, so a subscript receiver reads as "no
+        # production caller" (fail-closed by design).
+        mobility = a["web_mobility"]
+        if a["web_presence"] is None or mobility is None:
             return web.json_response({"subjects": []})
         subjects = []
         for subject_id in _analytics_subject_ids(a["web_presence_circles"]):
-            places = await a["web_mobility"].places_with_aggregates(
+            places = await mobility.places_with_aggregates(
                 subject_id=subject_id,
             )
             subjects.append(
@@ -437,14 +442,15 @@ def register_web_routes(
             "subjectId": subject_id, "bins": [], "windowDays": days,
         }
         a = request.app
+        mobility = a["web_mobility"]  # local NAME — see presence_analytics_places
         if (
             a["web_presence"] is None
-            or a["web_mobility"] is None
+            or mobility is None
             or subject_id is None
             or subject_id not in _analytics_subject_ids(a["web_presence_circles"])
         ):
             return web.json_response(empty)
-        bins = await a["web_mobility"].rhythm_bins(
+        bins = await mobility.rhythm_bins(
             subject_id=subject_id, window_ms=days * _DAY_MS,
         )
         return web.json_response(
@@ -475,14 +481,15 @@ def register_web_routes(
             "subjectId": subject_id, "trips": [], "corridors": [],
         }
         a = request.app
+        mobility = a["web_mobility"]  # local NAME — see presence_analytics_places
         if (
             a["web_presence"] is None
-            or a["web_mobility"] is None
+            or mobility is None
             or subject_id is None
             or subject_id not in _analytics_subject_ids(a["web_presence_circles"])
         ):
             return web.json_response(empty)
-        result = await a["web_mobility"].trips_with_corridors(
+        result = await mobility.trips_with_corridors(
             subject_id=subject_id, window_ms=days * _DAY_MS,
         )
         return web.json_response(
