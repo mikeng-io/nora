@@ -90,13 +90,15 @@ class _ToolSource:
         self._ceiling = ceiling if ceiling is not None else frozenset(
             {"load_transcript", "now", "web_search"}
         )
-        self.built: list[tuple[str, frozenset[str]]] = []
+        self.built: list[tuple[str, frozenset[str], str | None]] = []
 
     def read_only(self) -> frozenset[str]:
         return self._ceiling
 
-    def build(self, *, key: str, names: frozenset[str]) -> list[Any]:
-        self.built.append((key, names))
+    def build(
+        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+    ) -> list[Any]:
+        self.built.append((key, names, workspace))
         return []
 
 
@@ -495,7 +497,39 @@ async def test_the_adaptors_declared_names_are_what_gets_built(monkeypatch):
 
     await runtime.run(adaptor=adaptor, key="g1", batch=())
 
-    assert tools.built == [("g1", frozenset({"now", "web_search"}))]
+    assert tools.built == [("g1", frozenset({"now", "web_search"}), None)]
+
+
+async def test_a_workspace_keyed_adaptor_supplies_its_key_as_the_workspace(
+    monkeypatch,
+):
+    """The key-path fix (design/dreamer-agent-loop/32 §3.4), pinned at the
+    seam it crosses: a workspace-keyed adaptor's key IS the workspace, so the
+    runtime SUPPLIES it to the tool source rather than letting the tool layer
+    derive one from a room that does not exist (`08-state.md` §10's trap —
+    «the seam looking like it works while every call fails closed»)."""
+    tools = _ToolSource(ceiling=frozenset({"now", "web_search"}))
+    sink = _Sink()
+    adaptor = _Adaptor(sink=sink, tools=frozenset({"now"}))
+    adaptor.key_kind = "workspace"
+    runtime, _ = _runtime(monkeypatch, raw='{"observations": []}', tools=tools)
+
+    await runtime.run(adaptor=adaptor, key="ridgeline", batch=())
+
+    assert tools.built == [("ridgeline", frozenset({"now"}), "ridgeline")]
+
+
+async def test_a_scope_keyed_adaptor_supplies_no_workspace(monkeypatch):
+    """The other half: a scope key is a conversation id, and handing it to
+    the workspace slot would make every workspace-scoped verb read the wrong
+    store. `None` keeps the resolver path — the room answers as before."""
+    tools = _ToolSource()
+    sink = _Sink()
+    runtime, _ = _runtime(monkeypatch, raw='{"observations": []}', tools=tools)
+
+    await runtime.run(adaptor=_Adaptor(sink=sink), key="g1", batch=())
+
+    assert tools.built[0][2] is None
 
 
 # ---------------------------------------------------------------------------
@@ -543,24 +577,6 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
         "load_transcript", "group_members", "lookup_person", "about",
         "ask_memory", "search_memory", "recall_lookups", "media_fetch",
         "list_reminders", "list_events", "suggest_venue", "search_gifs",
-        # The note tier's two read verbs (landed 2026-08-21). Notes are
-        # workspace-keyed, so these are not room-scoped in the way
-        # `load_transcript` is — but they are classified here, fail-closed,
-        # because nothing wires their collaborators into `RegistryToolSource`
-        # yet. A Dreamer adaptor asking for one today would get a tool that
-        # cannot answer, which is the `nothing_found`-for-`unavailable`
-        # substitution this classification exists to prevent. Move them when
-        # the note tier's curator adaptor lands and the wiring is real.
-        "note_read", "note_search",
-        # `search_knowledge` for the same reason and a sharper one: `23` §9
-        # grants it to Dreamer adaptors, and it resolves its workspace THROUGH
-        # THE ROOM, while `RegistryToolSource.build` hands a workspace-keyed
-        # adaptor a room with no platform and the workspace in the
-        # conversation slot. Policy cannot name that, so the verb answers
-        # `unavailable` on every call — which is `08-state.md` §10's stated
-        # trap, "the seam looking like it works while every call fails
-        # closed". Move it when the key path is SUPPLIED rather than derived.
-        "search_knowledge",
         # `music_status` (design/discord-music/07-agent-tool.md) reports on
         # ONE Discord conversation's voice session — the exact shape
         # `load_transcript`/`where_is` are room-scoped for, not a
@@ -568,9 +584,29 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
         # `room.platform != "discord"`, which the Dreamer's synthetic room
         # (`RegistryToolSource`) never satisfies today — classified here,
         # fail-closed, the same "not yet actually reachable" reasoning
-        # `note_read`/`note_search` are.
+        # `note_read`/`note_search` were.
         "music_status",
     }
+    # The workspace-safe half is `WORKSPACE_SAFE_TOOLS` itself, read from the
+    # module. Since design/dreamer-agent-loop/32 §3.4 that set includes the
+    # eight workspace-scoped reads this test used to hold HERE, fail-closed:
+    # `search_knowledge`, `note_read`, `note_search` (they resolved their
+    # workspace THROUGH THE ROOM, and the Dreamer's synthetic room could never
+    # answer that) and the five reads that shipped WITH the fix
+    # (`get_knowledge`, `knowledge_premises`, `knowledge_asserters`,
+    # `knowledge_entity`, `search_memory_workspace`). They moved when the key
+    # path became SUPPLIED — `DreamerRuntime.run` hands a workspace-keyed
+    # adaptor's key to the tool layer AS the workspace — which is exactly the
+    # move these entries' own comments said to make.
+    workspace_scoped = {
+        "search_knowledge", "note_read", "note_search",
+        "get_knowledge", "knowledge_premises", "knowledge_asserters",
+        "knowledge_entity", "search_memory_workspace",
+    }
+    assert workspace_scoped <= WORKSPACE_SAFE_TOOLS, (
+        "a workspace-scoped read fell out of WORKSPACE_SAFE_TOOLS — 32 §3.4 "
+        "grants these only with the supplied key path"
+    )
     unclassified = ToolRegistry().read_only_tools() - WORKSPACE_SAFE_TOOLS - room_scoped
     assert unclassified == set(), (
         "read-only tool(s) classified neither workspace-safe nor room-scoped: "

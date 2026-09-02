@@ -104,6 +104,10 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
     "web_fetch": MAX_TOOL_RESULT_CHARS,
     "web_search": MAX_TOOL_RESULT_CHARS,
     "search_memory": MAX_MEMORY_RESULT_CHARS,
+    # The workspace variant (32 §3.4) is the same verb at a wider scope —
+    # same tighter number, same reason: summaries to reason over, not pages
+    # to quote.
+    "search_memory_workspace": MAX_MEMORY_RESULT_CHARS,
     "about": MAX_MEMORY_RESULT_CHARS,
     "ask_memory": MAX_MEMORY_RESULT_CHARS,
 }
@@ -210,23 +214,41 @@ class DreamToolSource(Protocol):
 
     def read_only(self) -> frozenset[str]: ...
 
-    def build(self, *, key: str, names: frozenset[str]) -> list[Any]: ...
+    def build(
+        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+    ) -> list[Any]: ...
 
 
 # The read-only tools a WORKSPACE-keyed adaptor may hold, and the reason the
-# set is this small.
+# set is exactly this.
 #
-# Every other read tool is bound to a CONVERSATION — `load_transcript` reads one
+# Every ROOM-scoped read tool stays refused here — `load_transcript` reads one
 # room's record, `group_members`/`lookup_person`/`about`/`ask_memory`/
 # `search_memory` all answer against one room's live roster, and
 # `recall_lookups`/`media_fetch` replay one room's own calls. A workspace has no
 # single room to bind them to, and binding one to an arbitrary room of that
 # workspace would be a disclosure decision (R-31) nobody has made.
 #
-# So they are refused rather than guessed at. The cost is real and named: the
-# fact adaptor researches the open web and cannot read the group's own
-# transcript. That is the right side to fail on — the candidate EXTRACTOR is
-# scope-keyed and reads the room; the adjudicator checks the world.
+# The WORKSPACE-scoped read tools are here, and they are here because the key
+# path is now SUPPLIED (design/dreamer-agent-loop/32 §3.4): a workspace-keyed
+# adaptor's key IS the workspace, and `DreamerRuntime.run` hands it through
+# `RegistryToolSource.build(workspace=...)` to `build_tool_specs`, where
+# `_workspace()` returns it directly instead of deriving it from the room.
+# Before that fix this set deliberately EXCLUDED `search_knowledge` and the
+# note verbs: they resolve their workspace through the ROOM — `workspace_for(
+# room.platform, conversation_id)` — and `RegistryToolSource.build` hands a
+# workspace-keyed adaptor a `Room` with no platform and the workspace in the
+# conversation slot, so policy could never name it and every call answered
+# `unavailable` forever. That is `08-state.md` §10's stated trap: a tier read
+# tool for a workspace-keyed adaptor needs a key path that does not route
+# through the room at all, because the Dreamer's key already IS the workspace
+# and must be SUPPLIED rather than derived — "the difference between the seam
+# working and the seam looking like it works while every call fails closed".
+#
+# The trap still binds for SCOPE-keyed adaptors: they get `workspace=None`,
+# `_workspace()` falls back to the resolver, and the resolver reads the real
+# room as before. Nothing about the tag path changes — the supplied value
+# only ever WINS when a caller supplies one, and only the Dreamer does.
 #
 # Hand-listed HERE and pinned by a test that measures it against
 # `read_only_tools()`, so a read tool added tomorrow is UNCLASSIFIED and turns
@@ -245,26 +267,17 @@ WORKSPACE_SAFE_TOOLS: frozenset[str] = frozenset({
     # but a lookup is a global search of her own creations, never
     # conversation-scoped like `load_transcript`).
     "media_search",
-    # `search_knowledge` is NOT here, and the first version of this comment
-    # claimed the opposite. `23` §9 does grant it to Dreamer adaptors, but the
-    # tool resolves its workspace through the ROOM — `workspace_for(
-    # room.platform, conversation_id)` — and `RegistryToolSource.build` hands
-    # a workspace-keyed adaptor a `Room` with no platform and the workspace in
-    # the conversation slot. Policy cannot name that, so the verb would answer
-    # `unavailable` on every call, forever.
-    #
-    # `08-state.md` §10 names this exact trap: a tier read tool for a
-    # workspace-keyed adaptor needs a key path that does not route through the
-    # room at all, because the Dreamer's key already IS the workspace and must
-    # be SUPPLIED rather than derived — "the difference between the seam
-    # working and the seam looking like it works while every call fails
-    # closed". Failing closed is right and is not the same as working.
-    #
-    # This set is an ALLOW-LIST a startup refusal reads, so listing it here
-    # would let the first adaptor declaring it past `verify_tool_subsets` with
-    # a permanently-unavailable tool — a protection three documents claim
-    # exists, which the 2026-08-21 entry in this file records as worse than
-    # one nobody claims. It goes in when the key path is supplied.
+    # The workspace-scoped reads, admitted with the supplied key path
+    # (32 §3.4): the knowledge tier's retrieval verb and its four graph
+    # verbs, the note tier's two read verbs, and the workspace-wide memory
+    # variant of `search_memory`. Each resolves its workspace from the
+    # SUPPLIED key rather than from a room a workspace-keyed adaptor does
+    # not have.
+    "search_knowledge",
+    "get_knowledge", "knowledge_premises", "knowledge_asserters",
+    "knowledge_entity",
+    "note_read", "note_search",
+    "search_memory_workspace",
 })
 
 
@@ -521,7 +534,9 @@ class RegistryToolSource:
     def read_only(self) -> frozenset[str]:
         return self._registry.read_only_tools()
 
-    def build(self, *, key: str, names: frozenset[str]) -> list[Any]:
+    def build(
+        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+    ) -> list[Any]:
         from .room import Room
 
         wanted = frozenset(names) & self.read_only()
@@ -543,6 +558,16 @@ class RegistryToolSource:
                 platform="", conversation_id=key, roster_source=None,
                 persons=self._persons,
             ),
+            # The key-path fix (design/dreamer-agent-loop/32 §3.4): for a
+            # WORKSPACE-keyed adaptor `key` IS the workspace, so the runtime
+            # SUPPLIES it and the workspace-scoped verbs (`search_knowledge`,
+            # the note reads, the knowledge graph verbs) read it directly
+            # rather than deriving one from the synthetic room above — where
+            # `workspace_for("", key)` can only answer `None`. `None` for a
+            # scope-keyed adaptor, whose key is a real conversation id and
+            # whose tools resolve through the room exactly as the tag path's
+            # do.
+            supplied_workspace=workspace,
         )
         return [
             tool for tool in built
@@ -642,7 +667,15 @@ class DreamerRuntime:
                     adaptor, "unavailable", 0, sha, None, started,
                 )
 
-            tools = self._tools.build(key=key, names=frozenset(adaptor.tools))
+            tools = self._tools.build(
+                key=key, names=frozenset(adaptor.tools),
+                # A workspace-keyed adaptor's key IS the workspace (32 §3.4):
+                # supply it so the workspace-scoped verbs resolve it directly
+                # instead of asking `workspace_for` to name a room that does
+                # not exist. A scope-keyed adaptor supplies nothing and its
+                # tools resolve through the room, unchanged.
+                workspace=key if adaptor.key_kind == "workspace" else None,
+            )
             guard = DreamGuard(
                 adaptor=adaptor.name,
                 budgets=_tool_budgets(tools, adaptor),

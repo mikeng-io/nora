@@ -27,6 +27,7 @@ from nora.domain.facts import (
     FACT_TERM_CEILING_CHARS,
     Fact,
     FactAsserter,
+    FactPremise,
     FactVerdict,
 )
 from nora.domain.ports import Proposal
@@ -487,6 +488,123 @@ async def test_the_double_refuses_a_malformed_id_its_column_type_would():
     )
 
     assert await store.asserters(fact_id="not-a-uuid") == ()
+
+
+# ---------------------------------------------------------------------------
+# `premises()` — the FORWARD read of `fact_premise`, on BOTH implementations
+# ---------------------------------------------------------------------------
+#
+# The read ships ahead of any writer (design/dreamer-agent-loop/32 §3.4): no
+# `warrant_kind='premises'` write path exists, so both sides seed by their own
+# channel — SQL by raw insert (the FKs refuse an orphan, so real `fact` rows
+# go in first), the double by its `seed_premises` seam, exactly the split the
+# `asserters` suite above makes. Shared because the double's claim to match
+# production on a malformed id and on ordering is self-attestation until a
+# test measures it.
+
+
+@pytest.fixture(params=["memory", "sql"])
+async def premise_reader(request):
+    """The `reader` fixture's shape for the premise edge: both implementations
+    plus a per-implementation `seed` that takes FactPremise rows directly."""
+    if request.param == "memory":
+        store = InMemoryFactStore()
+
+        async def seed(rows):
+            store.seed_premises(*rows)
+
+        yield store, seed
+        return
+
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    store = SqlFactStore(engine)
+
+    async def seed(rows):
+        async with engine.begin() as conn:
+            for p in rows:
+                # Both ENDPOINTS first: `fact_premise`'s two FKs refuse an
+                # orphan on either end, and a double that let one through
+                # would be permissive where production is not.
+                for fid in (p.fact_id, p.premise_fact_id):
+                    await conn.execute(
+                        sa.text(
+                            "insert into fact (id, workspace, subject_id, "
+                            "predicate, object_literal, source_url, "
+                            "source_excerpt, valid_from, created_at, "
+                            "instruction_sha256, model, established_by) "
+                            "values (:fid, 'ws', 's', 'p', 'o', "
+                            "'https://x.test/a', 'x', 1, 1, :sha, 'm', 'run') "
+                            "on conflict do nothing"
+                        ),
+                        {"fid": fid, "sha": "a" * 64},
+                    )
+                await conn.execute(
+                    sa.text(
+                        "insert into fact_premise (fact_id, premise_fact_id) "
+                        "values (:f, :pf)"
+                    ),
+                    {"f": p.fact_id, "pf": p.premise_fact_id},
+                )
+
+    try:
+        yield store, seed
+    finally:
+        await engine.dispose()
+
+
+async def test_premises_reads_back_the_forward_edges(premise_reader):
+    store, seed = premise_reader
+    await seed([FactPremise(fact_id=FACT_A, premise_fact_id=FACT_B)])
+
+    rows = await store.premises(fact_id=FACT_A)
+
+    assert [(p.fact_id, p.premise_fact_id) for p in rows] == [(FACT_A, FACT_B)]
+
+
+async def test_premises_is_the_forward_direction_only(premise_reader):
+    """«Which facts depend on this one» is the REVERSE direction and is not
+    offered: `knowledge_premises` asks what a claim rests on, and a read
+    surface is added where its consumer exists."""
+    store, seed = premise_reader
+    await seed([FactPremise(fact_id=FACT_A, premise_fact_id=FACT_B)])
+
+    assert await store.premises(fact_id=FACT_B) == ()
+    assert await store.premises(fact_id=FACT_A) != ()
+
+
+async def test_premises_orders_by_premise_fact_id(premise_reader):
+    """Nothing else orders the rows — the composite PK serves the lookup — so
+    two reads of one fact could otherwise disagree, which on a tool result is
+    a different answer from the same store."""
+    store, seed = premise_reader
+    later = "0191f2c4-0000-7000-8000-0000000000ff"
+    earlier = "0191f2c4-0000-7000-8000-000000000001"
+    await seed([
+        FactPremise(fact_id=FACT_A, premise_fact_id=later),
+        FactPremise(fact_id=FACT_A, premise_fact_id=earlier),
+    ])
+
+    rows = await store.premises(fact_id=FACT_A)
+
+    assert [p.premise_fact_id for p in rows] == [earlier, later]
+
+
+async def test_premises_of_an_unknown_or_malformed_id_is_empty_on_both(
+    premise_reader,
+):
+    """`asserters`' own rule, one relation over: a malformed id is an unknown
+    row, not a reason to take a turn down — and the double must degrade the
+    way the real store does."""
+    store, seed = premise_reader
+    await seed([FactPremise(fact_id=FACT_A, premise_fact_id=FACT_B)])
+
+    assert await store.premises(fact_id="not-a-uuid") == ()
+    assert await store.premises(
+        fact_id="0191f2c4-0000-7000-8000-0000000000ee") == ()
+    # Positive control: the store is not simply empty.
+    assert await store.premises(fact_id=FACT_A) != ()
 
 
 # ---------------------------------------------------------------------------

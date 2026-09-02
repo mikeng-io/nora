@@ -574,17 +574,27 @@ class FactAdaptor:
     precedent).
 
     **`tools` is a subset of `nora.agent.dreamer.WORKSPACE_SAFE_TOOLS`, and
-    that set is small for a structural reason.** Every other read tool is
-    bound to a CONVERSATION — `load_transcript` reads one room's record,
-    `group_members`/`lookup_person`/`about`/`ask_memory`/`search_memory` all
-    answer against one room's live roster, and `recall_lookups`/`media_fetch`
-    replay one room's own calls. A workspace has no single room to bind them
-    to, and binding one to an arbitrary room of that workspace would be a
-    disclosure decision (R-31) nobody has made. So they are refused rather
-    than guessed at, and the cost is named rather than hidden: this adaptor
-    researches the open web and cannot read the group's own transcript. That
-    is the right side to fail on — the candidate EXTRACTOR is scope-keyed and
-    reads the room; the adjudicator checks the world.
+    that set excludes every ROOM-scoped read for a structural reason.**
+    `load_transcript` reads one room's record, `group_members`/`lookup_person`/
+    `about`/`ask_memory`/`search_memory` all answer against one room's live
+    roster, and `recall_lookups`/`media_fetch` replay one room's own calls. A
+    workspace has no single room to bind them to, and binding one to an
+    arbitrary room of that workspace would be a disclosure decision (R-31)
+    nobody has made. So they are refused rather than guessed at: this adaptor
+    still cannot read one room's own transcript. That is the right side to
+    fail on — the candidate EXTRACTOR is scope-keyed and reads the room; the
+    adjudicator checks the world.
+
+    The WORKSPACE-scoped reads ARE granted (design/dreamer-agent-loop/32
+    §3.4), made possible by the supplied key path (`DreamerRuntime.run` hands
+    a workspace-keyed adaptor's key to the tool layer AS the workspace): the
+    tier's own retrieval verb (`search_knowledge`), the four graph verbs
+    (`get_knowledge`/`knowledge_premises`/`knowledge_asserters`/
+    `knowledge_entity` — a claim is read together with its premises, its
+    asserters and the entity it resolves to, at breakdown time), the note
+    tier's two reads, and `search_memory_workspace`, the workspace-wide
+    memory variant of the room-scoped `search_memory` (32 §5 closed
+    decision 1).
 
     (`weather` and `version` are in `WORKSPACE_SAFE_TOOLS` and are left out
     here. Neither answers a question about a claim's truth: `weather` is one
@@ -598,7 +608,13 @@ class FactAdaptor:
     uses_watermark = False
     objective = "fact-adjudication"
     envelope_key = "verdicts"
-    tools: frozenset[str] = frozenset({"web_search", "web_fetch", "now", "calculate"})
+    tools: frozenset[str] = frozenset({
+        "web_search", "web_fetch", "now", "calculate",
+        # The workspace-scoped read surface (32 §3.4) — see the docstring.
+        "search_knowledge", "note_read", "note_search",
+        "get_knowledge", "knowledge_premises", "knowledge_asserters",
+        "knowledge_entity", "search_memory_workspace",
+    })
 
     def __init__(
         self,

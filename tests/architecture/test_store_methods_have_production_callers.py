@@ -256,6 +256,13 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "propose", "prune", "prune_all", "put", "read", "recent", "record",
         "rescore", "resolve", "rsvps_for", "save", "search", "supersede",
         "sweep_firing", "update", "upsert", "watermark",
+        # `SqlEntityStore.lookup` (32 §3.4) shares its name with
+        # `TransitCatalogue.lookup` and `VersionManifest.lookup`, both
+        # non-Protocol classes — a call to `.lookup(...)` cannot be
+        # attributed, so the name is UNCHECKED, never clean. Its caller is
+        # `nora.agent.tools`' `knowledge_entity`/`get_knowledge`, pinned by
+        # `tests/test_tools.py` instead.
+        "lookup",
     }
 )
 

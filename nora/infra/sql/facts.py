@@ -80,13 +80,14 @@ from nora.domain.facts import (
     DisputeOutcome,
     Fact,
     FactAsserter,
+    FactPremise,
     FactVerdict,
     normalise_name,
     refuse_over_operating_caps,
 )
 from nora.domain.ports import Proposal
 from nora.infra.sql.entities import SqlEntityStore
-from nora.infra.sql.schema import EMBEDDING, FACT, FACT_ASSERTER
+from nora.infra.sql.schema import EMBEDDING, FACT, FACT_ASSERTER, FACT_PREMISE
 
 log = logging.getLogger(__name__)
 
@@ -564,6 +565,41 @@ class SqlFactStore:
                 fact_id=r.fact_id, person_id=r.person_id,
                 message_id=r.message_id, asserted_at=r.asserted_at,
             )
+            for r in rows
+        )
+
+    async def premises(self, *, fact_id: str) -> tuple[FactPremise, ...]:
+        """Which facts this one rests ON — the FORWARD direction of
+        `fact_premise` (design/dreamer-agent-loop/32 §3.4).
+
+        The reverse direction — "which facts depend on this one" — is the one
+        `FactPremise`'s own docstring names for §13.5's transitive
+        supersession, and it is not offered here: the tool that reads this
+        (`knowledge_premises`) asks what a claim rests on at breakdown time,
+        and a read surface is added where its consumer exists, not ahead of it.
+
+        Ordered by `premise_fact_id` for determinism — the composite PK serves
+        the lookup, and nothing else orders the rows, so two reads of one fact
+        could otherwise disagree. A non-UUID `fact_id` returns `()` rather than
+        raising, the same rule `asserters` states for itself.
+
+        **The read ships ahead of any writer, deliberately** (32 §3.4): no
+        `warrant_kind='premises'` write path exists, so this answers `()` for
+        every fact today, and the tool renders that as `nothing_found` — an
+        honest «no premises recorded», not an outage.
+        """
+        try:
+            UUID(fact_id)
+        except ValueError:
+            return ()
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(FACT_PREMISE)
+                .where(FACT_PREMISE.c.fact_id == fact_id)
+                .order_by(FACT_PREMISE.c.premise_fact_id)
+            )).all()
+        return tuple(
+            FactPremise(fact_id=r.fact_id, premise_fact_id=r.premise_fact_id)
             for r in rows
         )
 

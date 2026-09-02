@@ -1952,6 +1952,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # wired — two absences covering for each other.
         workspace_for=_note_workspace_of(allowlist),
         knowledge=knowledge_search,
+        # The graph reads behind `get_knowledge`/`knowledge_premises`/
+        # `knowledge_asserters`/`knowledge_entity` (design/dreamer-agent-loop/32
+        # §3.4) — the SAME `fact_store`/`fact_entities` the Dreamer adaptors
+        # write through, so the tool surface and the tier never disagree about
+        # what is standing. Both `None` while `[facts] enabled = false`, which
+        # is exactly the verbs' `unavailable` path (R-5): a wiring gap, never
+        # an empty answer.
+        facts=fact_store, entities=fact_entities,
         versions=version_manifest,
         giphy=giphy_client,
         music=music_bridge,
