@@ -84,6 +84,7 @@ class FakeAnalyticsStore:
                     "sample_count": 5,
                     "first_seen_ts": 1_787_900_000_000,
                     "last_seen_ts": 1_788_013_740_000,
+                    "sequence": ["Nathan Road", "Argyle Street", "Harbour City"],
                 },
             ],
         }
@@ -169,6 +170,7 @@ async def test_analytics_endpoints_return_the_spec_shapes(aiohttp_client):
                 "sampleCount": 5,
                 "firstSeenTs": 1_787_900_000_000,
                 "lastSeenTs": 1_788_013_740_000,
+                "sequence": ["Nathan Road", "Argyle Street", "Harbour City"],
             },
         ],
     }

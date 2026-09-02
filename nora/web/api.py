@@ -168,6 +168,11 @@ def _corridor_payload(corridor: dict) -> dict:
         "sampleCount": corridor["sample_count"],
         "firstSeenTs": corridor["first_seen_ts"],
         "lastSeenTs": corridor["last_seen_ts"],
+        # The address-sequence ends are the corridor's provisional NAME ("A →
+        # B") on the portal's person profile until the stay-adjacency place
+        # join lands — corridors are directional (a reversed sequence clusters
+        # apart), so from/to is honest, not decorative.
+        "sequence": corridor["sequence"],
     }
 
 

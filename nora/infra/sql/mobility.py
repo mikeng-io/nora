@@ -175,6 +175,7 @@ class SqlMobilityStore:
                 PRESENCE_TRIPS.c.avg_speed_kmh,
                 PRESENCE_TRIPS.c.fix_count,
                 PRESENCE_TRIPS.c.corridor_id,
+                PRESENCE_CORRIDORS.c.sequence.label("corridor_sequence"),
                 PRESENCE_CORRIDORS.c.sample_count.label("corridor_sample_count"),
                 PRESENCE_CORRIDORS.c.first_seen_ts.label("corridor_first_seen_ts"),
                 PRESENCE_CORRIDORS.c.last_seen_ts.label("corridor_last_seen_ts"),
@@ -216,6 +217,7 @@ class SqlMobilityStore:
                     "sample_count": row.corridor_sample_count,
                     "first_seen_ts": row.corridor_first_seen_ts,
                     "last_seen_ts": row.corridor_last_seen_ts,
+                    "sequence": list(row.corridor_sequence or ()),
                 }
         return {
             "trips": trips,
