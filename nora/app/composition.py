@@ -86,6 +86,7 @@ from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
+from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
@@ -587,6 +588,9 @@ class Dependencies:
     # status/memory, not per-room disclosure).
     presence: PresenceStore | None
     presence_circles: tuple[Circle, ...]
+    # Read-only analytics dashboard consumer over the SAME engine as audit and
+    # presence. It has no independent lifecycle; audit closes the shared pool.
+    mobility: SqlMobilityStore
     # The SAME directory `factory.build_agent`'s `skills_dir` argument
     # already resolves (`cfg.doctrine.dir.parent / "skills"`) — exposed here
     # so `nora.web.skills` can read the same on-disk metadata (name,
@@ -700,6 +704,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         max_per_conversation=cfg.store.max_per_conversation,
         metrics=metrics,
     )
+    # The dashboard consumer reads the derived analytics tables through the
+    # same pool as every other Nora store. A second engine would fork the pool
+    # and violate the one-pool, one-lifecycle composition rule.
+    mobility = SqlMobilityStore(engine)
     # The reminders store, REUSING `engine` for the reason above: a second
     # `create_sql_engine` forks the pool and its `aclose()` would dispose the
     # engine the record store and the presence reader are still using.
@@ -2592,6 +2600,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         llm_state=llm_state, client=client, reminders=reminders,
         games_client=games_client,
         presence=presence_store, presence_circles=presence_circles,
+        mobility=mobility,
         skills_dir=cfg.doctrine.dir.parent / "skills",
         language_store=language_store, language_consolidators=language_consolidators,
         language_scopes=language_scopes,
