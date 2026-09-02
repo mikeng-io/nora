@@ -328,8 +328,64 @@
     "noFix": "未有位置紀錄",
     "liveSection": "而家即時",
     "otherSection": "冇最近位置",
-    "placesSection": "已儲低嘅地點",
-    "lookback": "路線：",
+  "placesSection": "已儲低嘅地點",
+  "analytics": {
+    "tabs": {
+      "live": "即時地圖",
+      "places": "地點",
+      "rhythm": "作息",
+      "routes": "路線"
+    },
+    "subjects": "對象",
+    "loading": "載入緊數據…",
+    "error": "載入唔到分析數據。",
+    "unnamed": "未命名地點",
+    "empty": {
+      "noSubjects": "冇對象",
+      "noPlaces": "未有推算地點",
+      "noRhythm": "未有停留數據",
+      "noRoutes": "未有行程",
+      "noPath": "未有定位路徑"
+    },
+    "units": {
+      "places": "個地點",
+      "days": "日",
+      "stays": "次停留",
+      "fixes": "個定位"
+    },
+    "metrics": {
+      "confidence": "信心",
+      "stays": "停留",
+      "dwell": "總時長"
+    },
+    "rhythm": {
+      "window": "範圍",
+      "low": "少",
+      "high": "多"
+    },
+    "days": {
+      "mon": "一",
+      "tue": "二",
+      "wed": "三",
+      "thu": "四",
+      "fri": "五",
+      "sat": "六",
+      "sun": "日"
+    },
+    "routes": {
+      "trips": "行程",
+      "corridors": "走廊",
+      "linked": "已連結",
+      "tripList": "行程列表",
+      "path": "定位路徑",
+      "start": "開始",
+      "end": "結束",
+      "corridor": "走廊",
+      "unmatched": "未匹配",
+      "samples": "個樣本"
+    }
+  },
+  "lookback": "路線：",
     "hours": {
       "1": "1小時",
       "6": "6小時",

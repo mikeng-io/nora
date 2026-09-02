@@ -17,6 +17,7 @@ import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { PresenceAnalytics, SurfaceTabs, type MapSurface } from "@/components/presence-analytics";
 
 // Leaflet touches `window` at import time — must never run during SSR.
 const PresenceMap = dynamic(
@@ -48,6 +49,7 @@ export default function MapPage() {
   const [hours, setHours] = useState<number>(24);
   const [history, setHistory] = useState<PresenceHistoryPoint[]>([]);
   const [focusPlace, setFocusPlace] = useState<[number, number] | null>(null);
+  const [surface, setSurface] = useState<MapSurface>("live");
 
   useEffect(() => {
     let cancelled = false;
@@ -112,6 +114,8 @@ export default function MapPage() {
       <h1 className="mb-1.5 text-[26px] font-medium tracking-tight">{t("heading")}</h1>
       <p className="mb-6 max-w-[56ch] text-text-secondary">{t("dek")}</p>
 
+      <SurfaceTabs active={surface} onChange={setSurface} />
+
       {error && (
         <Alert variant="destructive" className="mb-6">
           {t("error")}
@@ -119,7 +123,14 @@ export default function MapPage() {
       )}
       {!error && !entries && <p className="text-text-muted">{t("loading")}</p>}
 
-      {entries && (
+      {surface !== "live" ? (
+        <PresenceAnalytics
+          surface={surface}
+          entries={entries}
+          selectedSubjectId={selected}
+          onSubjectSelect={setSelected}
+        />
+      ) : entries ? (
         <div className="grid gap-4 md:grid-cols-[1fr_290px]">
           <div>
             {selected && (
@@ -213,7 +224,7 @@ export default function MapPage() {
             )}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

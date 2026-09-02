@@ -328,8 +328,64 @@
     "noFix": "No location recorded",
     "liveSection": "Live now",
     "otherSection": "No recent location",
-    "placesSection": "Saved places",
-    "lookback": "Route:",
+  "placesSection": "Saved places",
+  "analytics": {
+    "tabs": {
+      "live": "Live map",
+      "places": "Places",
+      "rhythm": "Rhythm",
+      "routes": "Routes"
+    },
+    "subjects": "Subject",
+    "loading": "Loading data…",
+    "error": "Couldn't load analytics.",
+    "unnamed": "Unnamed place",
+    "empty": {
+      "noSubjects": "No subjects",
+      "noPlaces": "No derived places",
+      "noRhythm": "No stay data",
+      "noRoutes": "No trips",
+      "noPath": "No fix path"
+    },
+    "units": {
+      "places": "places",
+      "days": "days",
+      "stays": "stays",
+      "fixes": "fixes"
+    },
+    "metrics": {
+      "confidence": "Confidence",
+      "stays": "Stays",
+      "dwell": "Dwell"
+    },
+    "rhythm": {
+      "window": "Window",
+      "low": "Low",
+      "high": "High"
+    },
+    "days": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    },
+    "routes": {
+      "trips": "Trips",
+      "corridors": "Corridors",
+      "linked": "Linked",
+      "tripList": "Trip list",
+      "path": "Fix path",
+      "start": "Start",
+      "end": "End",
+      "corridor": "Corridor",
+      "unmatched": "Unmatched",
+      "samples": "samples"
+    }
+  },
+  "lookback": "Route:",
     "hours": {
       "1": "1h",
       "6": "6h",

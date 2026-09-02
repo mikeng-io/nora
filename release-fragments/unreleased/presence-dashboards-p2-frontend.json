@@ -1,0 +1,10 @@
+{
+  "type": "feature",
+  "summary": "Adds read-only portal dashboards for places, weekly rhythm, and route corridors.",
+  "details": [
+    "The existing map route now includes authenticated place graphs, hour-of-week dwell heatmaps, and Leaflet trip paths backed by presence analytics."
+  ],
+  "limitations": [
+    "Route paths use the existing bounded presence history window for each selected trip."
+  ]
+}

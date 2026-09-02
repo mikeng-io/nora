@@ -42,11 +42,77 @@ export const PresenceHistorySchema = z.object({
   points: z.array(PresenceHistoryPointSchema),
 });
 
+export const PresenceAnalyticsPlaceSchema = z.object({
+  kind: z.string(),
+  label: z.string().nullable(),
+  lat: z.number(),
+  lng: z.number(),
+  radiusM: z.number(),
+  confidence: z.number(),
+  firstSeenTs: z.number(),
+  lastSeenTs: z.number(),
+  stayCount: z.number(),
+  totalDwellMs: z.number(),
+});
+
+export const PresenceAnalyticsPlacesSubjectSchema = z.object({
+  subjectId: z.string(),
+  places: z.array(PresenceAnalyticsPlaceSchema),
+});
+
+export const PresenceAnalyticsPlacesSchema = z.object({
+  subjects: z.array(PresenceAnalyticsPlacesSubjectSchema),
+});
+
+export const PresenceRhythmBinSchema = z.object({
+  hourOfWeek: z.number(),
+  stayCount: z.number(),
+  totalDwellMs: z.number(),
+});
+
+export const PresenceRhythmSchema = z.object({
+  subjectId: z.string(),
+  bins: z.array(PresenceRhythmBinSchema),
+  windowDays: z.number(),
+});
+
+export const PresenceRouteTripSchema = z.object({
+  id: z.number(),
+  startedTs: z.number(),
+  endedTs: z.number(),
+  distanceM: z.number(),
+  avgSpeedKmh: z.number(),
+  fixCount: z.number(),
+  corridorId: z.number().nullable(),
+  corridorSampleCount: z.number().nullable(),
+});
+
+export const PresenceRouteCorridorSchema = z.object({
+  id: z.number(),
+  sampleCount: z.number(),
+  firstSeenTs: z.number(),
+  lastSeenTs: z.number(),
+});
+
+export const PresenceRoutesSchema = z.object({
+  subjectId: z.string(),
+  trips: z.array(PresenceRouteTripSchema),
+  corridors: z.array(PresenceRouteCorridorSchema),
+});
+
 export type PresenceFix = z.infer<typeof PresenceFixSchema>;
 export type PresenceEntry = z.infer<typeof PresenceEntrySchema>;
 export type PresencePlace = z.infer<typeof PresencePlaceSchema>;
 export type PresenceHistoryPoint = z.infer<typeof PresenceHistoryPointSchema>;
 export type PresenceHistory = z.infer<typeof PresenceHistorySchema>;
+export type PresenceAnalyticsPlace = z.infer<typeof PresenceAnalyticsPlaceSchema>;
+export type PresenceAnalyticsPlacesSubject = z.infer<typeof PresenceAnalyticsPlacesSubjectSchema>;
+export type PresenceAnalyticsPlaces = z.infer<typeof PresenceAnalyticsPlacesSchema>;
+export type PresenceRhythmBin = z.infer<typeof PresenceRhythmBinSchema>;
+export type PresenceRhythm = z.infer<typeof PresenceRhythmSchema>;
+export type PresenceRouteTrip = z.infer<typeof PresenceRouteTripSchema>;
+export type PresenceRouteCorridor = z.infer<typeof PresenceRouteCorridorSchema>;
+export type PresenceRoutes = z.infer<typeof PresenceRoutesSchema>;
 
 const PresenceListSchema = z.array(PresenceEntrySchema);
 const PresencePlacesSchema = z.array(PresencePlaceSchema);
@@ -76,4 +142,42 @@ export async function fetchPresenceHistory(personId: string, hours = 24): Promis
     throw new Error(`presence history fetch failed: ${res.status}`);
   }
   return PresenceHistorySchema.parse(await res.json());
+}
+
+export async function fetchPresenceAnalyticsPlaces(): Promise<PresenceAnalyticsPlaces> {
+  const res = await fetch("/api/presence/analytics/places", { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`presence analytics places fetch failed: ${res.status}`);
+  }
+  return PresenceAnalyticsPlacesSchema.parse(await res.json());
+}
+
+async function fetchPresenceAnalytics<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  errorName: string,
+): Promise<T> {
+  const res = await fetch(path, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`${errorName} fetch failed: ${res.status}`);
+  }
+  return schema.parse(await res.json());
+}
+
+export function fetchPresenceRhythm(subjectId: string, days = 30): Promise<PresenceRhythm> {
+  const params = new URLSearchParams({ subjectId, days: String(days) });
+  return fetchPresenceAnalytics(
+    `/api/presence/analytics/rhythm?${params.toString()}`,
+    PresenceRhythmSchema,
+    "presence rhythm",
+  );
+}
+
+export function fetchPresenceRoutes(subjectId: string, days = 30): Promise<PresenceRoutes> {
+  const params = new URLSearchParams({ subjectId, days: String(days) });
+  return fetchPresenceAnalytics(
+    `/api/presence/analytics/routes?${params.toString()}`,
+    PresenceRoutesSchema,
+    "presence routes",
+  );
 }
