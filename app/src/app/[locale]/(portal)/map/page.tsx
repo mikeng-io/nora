@@ -8,6 +8,7 @@ import {
   fetchPresence,
   fetchPresenceHistory,
   fetchPresencePlaces,
+  STALE_DRIVING_SECONDS,
   type PresenceEntry,
   type PresenceHistoryPoint,
   type PresencePlace,
@@ -76,15 +77,23 @@ export default function MapPage() {
       return;
     }
     let cancelled = false;
-    fetchPresenceHistory(selected, hours)
-      .then((h) => {
-        if (!cancelled) setHistory(h.points);
-      })
-      .catch(() => {
-        if (!cancelled) setHistory([]);
-      });
+    // Same cadence as the position poll above — otherwise the trail line
+    // only draws once, at selection time, and never extends while the dot
+    // keeps moving on every 20s position update.
+    const tick = () => {
+      fetchPresenceHistory(selected, hours)
+        .then((h) => {
+          if (!cancelled) setHistory(h.points);
+        })
+        .catch(() => {
+          if (!cancelled) setHistory([]);
+        });
+    };
+    tick();
+    const id = setInterval(tick, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
+      clearInterval(id);
     };
   }, [selected, hours]);
 
@@ -257,9 +266,25 @@ function PersonRow({
         <div className="truncate text-[13px] font-medium">{entry.displayName}</div>
         <div className="flex items-center gap-1.5 truncate font-mono text-[10px] uppercase tracking-wide text-text-muted">
           {fix ? t(`state.${fix.wireState}`) : t("noFix")}
-          {fix?.isDriving && <Car className="h-3 w-3 shrink-0" />}
+          {fix?.isDriving && (
+            <span
+              className={cn(
+                "flex items-center",
+                fix.ageSeconds > STALE_DRIVING_SECONDS && "text-text-muted/60",
+              )}
+              title={fix.ageSeconds > STALE_DRIVING_SECONDS ? t("drivingStale") : t("driving")}
+            >
+              <Car className="h-3 w-3 shrink-0" />
+              <span className="sr-only">
+                {fix.ageSeconds > STALE_DRIVING_SECONDS ? t("drivingStale") : t("driving")}
+              </span>
+            </span>
+          )}
           {fix?.batteryPercent != null && fix.batteryPercent < 20 && (
-            <BatteryLow className="h-3 w-3 shrink-0 text-danger" />
+            <span title={t("batteryLow")}>
+              <BatteryLow className="h-3 w-3 shrink-0 text-danger" />
+              <span className="sr-only">{t("batteryLow")}</span>
+            </span>
           )}
           {fix && <span className="normal-case">· {relativeAge(fix.ageSeconds)}</span>}
         </div>

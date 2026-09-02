@@ -5,6 +5,15 @@ import { z } from "zod";
 // shape exactly (camelCase keys, optional fields omitted rather than null,
 // matching PresenceFix's own optionality).
 
+// The collector polls every 5s while `is_driving` (config.toml's
+// cadence_moving_seconds) — a fix older than this many seconds despite the
+// flag still being true means Life360 itself hasn't reported a new
+// position, not that our polling is too slow. Shared here (not in
+// presence-map.tsx) because that file is Leaflet-dependent and only ever
+// imported via next/dynamic(ssr:false) — a plain page-level import of a
+// constant from it would pull Leaflet into that page's normal bundle.
+export const STALE_DRIVING_SECONDS = 60;
+
 export const PresenceFixSchema = z.object({
   lat: z.number(),
   lng: z.number(),

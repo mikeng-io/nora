@@ -7,7 +7,12 @@ import "leaflet/dist/leaflet.css";
 import BoringAvatar from "boring-avatars";
 import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
 import { hueOf } from "@/lib/person-color";
-import type { PresenceEntry, PresenceHistoryPoint, PresencePlace } from "@/lib/presence-schema";
+import {
+  STALE_DRIVING_SECONDS,
+  type PresenceEntry,
+  type PresenceHistoryPoint,
+  type PresencePlace,
+} from "@/lib/presence-schema";
 
 // Hong Kong — this portal's whole friend group is HK-based (see the HKO
 // weather tool, the hkgov geocode option). Only used before any fix has
@@ -66,13 +71,16 @@ function carBadge(color: string): string {
 // box-shadow radiates from an element's own border-box regardless of what
 // overflow:hidden content sits inside it, so splitting "the ring" from
 // "the circular clip" doesn't change how either looks.
-function dotIcon(personId: string, hue: number, muted: boolean, selected: boolean, driving: boolean): L.DivIcon {
+function dotIcon(
+  personId: string, hue: number, muted: boolean, selected: boolean, driving: boolean, ageSeconds: number,
+): L.DivIcon {
   const size = selected ? 36 : muted ? 22 : 28;
   const ring = selected ? `outline:3px solid hsl(${hue} 75% 50% / 0.45);outline-offset:2px;` : "";
   const pulseClass = !muted ? "marker-pulse" : "";
   const pulseColor = `hsl(${hue} 75% 50% / 0.55)`;
   const avatar = avatarSvg(personId, size);
-  const badge = driving ? carBadge(`hsl(${hue} 70% 45%)`) : "";
+  const stale = driving && ageSeconds > STALE_DRIVING_SECONDS;
+  const badge = driving ? carBadge(stale ? "var(--text-muted)" : `hsl(${hue} 70% 45%)`) : "";
   return L.divIcon({
     className: "",
     html:
@@ -222,6 +230,7 @@ export function PresenceMap({
               fix.wireState !== "live",
               entry.personId === selectedPersonId,
               fix.isDriving === true,
+              fix.ageSeconds,
             )}
             eventHandlers={{ click: () => onSelect(entry.personId) }}
           >
