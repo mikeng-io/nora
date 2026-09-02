@@ -293,7 +293,7 @@ class MusicPlayerManager:
             # persisted track no longer resolves -- either way, fall
             # through to whatever the ACTUAL queue has next (or idle).
             #
-            # R-67: if nothing is playing but a last-played track is on
+            # R-88: if nothing is playing but a last-played track is on
             # record (autoplay's chain had already ended before the
             # restart), restore it as the re-seed seed FIRST -- the
             # `_advance` below then seeds the autoplay chain from it

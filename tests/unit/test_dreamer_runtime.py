@@ -527,6 +527,13 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
 
     room_scoped = {
         "transit", "route", "where_is", "place_info", "saved_places",
+        # The two parking verbs (2026-08-31), classified with the live-location
+        # family they belong to (`transit`/`route`/`place_info` sit here too).
+        # `find_parking` can even read the asker's PRESENCE when called with no
+        # place — a room-shaped input a workspace-keyed tick does not have — so
+        # the fail-closed side is the honest one: no Dreamer adaptor has been
+        # granted a parking lookup, and this keeps it that way by name.
+        "parking_status", "find_parking",
         # `who_said` (DEC-146) is room-scoped in the strictest sense in the
         # table: it answers out of ONE turn's prefill window, which a Dreamer
         # tick does not have at all — `RegistryToolSource` builds it with no

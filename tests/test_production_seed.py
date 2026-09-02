@@ -43,17 +43,18 @@ def _load_cfg():
 # --- effort override --------------------------------------------------------
 
 
-def test_build_live_runner_effort_override_does_not_mutate_config():
+def test_build_live_runner_effort_override_does_not_mutate_config(monkeypatch):
     """`effort=` must be a per-run override on a COPY — the shipped config value
     (which the operator changed to `low` while the ADR still says `none`) is
     what a plain gate run must keep using."""
     from nora.app.eval_support import build_live_runner
 
+    # The config loader refuses to load without the LLM key env (the daemon's
+    # fail-closed default); a dummy key satisfies it — runner construction
+    # makes no network call. Same pattern as tests/test_evals_gate.py.
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     cfg = _load_cfg()
     shipped = cfg.llm.reasoning_effort
-
-    if not os.environ.get(cfg.llm.api_key_env):
-        pytest.skip("LLM key env not set; construction would raise")
 
     runner = build_live_runner(cfg, effort="high")
     # The built runner's model spec is what carries the override.
@@ -68,15 +69,14 @@ def test_build_live_runner_effort_override_does_not_mutate_config():
     assert default_runner._models._spec.reasoning_effort == shipped
 
 
-def test_build_live_runner_skills_dir_normalises_str_to_path():
+def test_build_live_runner_skills_dir_normalises_str_to_path(monkeypatch):
     """The runner's `skills_dir` slot is `Path | None`; the eval entry point
     may hand it a str (`cfg.doctrine.dir.parent / "skills"` is a Path already,
     but the CLI/API surface accepts str)."""
     from nora.app.eval_support import build_live_runner
 
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     cfg = _load_cfg()
-    if not os.environ.get(cfg.llm.api_key_env):
-        pytest.skip("LLM key env not set; construction would raise")
 
     runner = build_live_runner(cfg, skills_dir="nora/doctrine")
     assert runner._skills_dir == Path("nora/doctrine")
@@ -103,11 +103,12 @@ def _seed_with_one_recent() -> ProductionSeed:
     )
 
 
-async def test_run_case_seed_lands_in_fake_stores_even_when_scripted():
+async def test_run_case_seed_lands_in_fake_stores_even_when_scripted(monkeypatch):
     """Even with a zero-turn script, seeding must populate the fake stores the
     pipeline graph reads — that is the whole production-shape trick: the model
     (real or scripted) sees a prompt built from real transcript/card content,
     while the stores it writes to remain fakes."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")  # config load is fail-closed
     seed = _seed_with_one_recent()
     traj = await run_case(Case(name="seeded", input="nora.000 hi"),
                           script=[], seed=seed)
@@ -116,11 +117,12 @@ async def test_run_case_seed_lands_in_fake_stores_even_when_scripted():
     assert traj.tool_calls == []
 
 
-def test_build_production_seed_raises_without_deployment_env():
+def test_build_production_seed_raises_without_deployment_env(monkeypatch):
     """`--seed-production` without DATABASE_URL must FAIL LOUDLY, not silently
     run with an empty snapshot that measures nothing."""
     from nora.app.eval_support import build_production_seed
 
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")  # config load is fail-closed
     cfg = _load_cfg()
     # Ensure the env var is absent in this process regardless of any shell leak.
     old = os.environ.pop(cfg.store.database_url_env, None)
@@ -179,6 +181,7 @@ def test_journey_seed_merges_over_production_seed():
     the merge is `dataclasses.replace(seed, conclusions={**seed.conclusions,
     **journey.seed["conclusions"]})`."""
     import dataclasses
+
     from nora.app.eval_support import ProductionSeed
 
     base = ProductionSeed(recents=(), cards={"miles_novak": ["name: Miles"]},
@@ -201,7 +204,6 @@ def test_journey_transcript_bodies_override_production_recents():
     from the seeded transcript ("Acme Tower") with zero tool calls, a
     prompt-shortcut graded as routing failure. The override removes the
     answer from context so the gate measures tool REACH, not memory."""
-    import dataclasses
     from evals.run import _bodies_to_recents
 
     journey = next(j for j in JOURNEYS if j.intent.name == "where_work")

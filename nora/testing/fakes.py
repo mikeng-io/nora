@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
@@ -48,6 +49,37 @@ from nora.domain.tool_call_log import (
     normalise_tool_call_log_entry,
 )
 from nora.domain.utf16 import utf16_len
+
+
+def transcript_rows(
+    bodies: Sequence[str],
+    *,
+    sender_id: str,
+    sender_name: str,
+    person_id: str | None,
+    ts_base: int,
+    ts_step: int = 60_000,
+    id_start: int = 1000,
+) -> tuple[TranscriptRow, ...]:
+    """Build transcript rows from plain message bodies.
+
+    The builder `evals/` reaches this type through — `evals/` may import
+    `nora.app` and `nora.testing` and nothing else (`tests/test_boundaries.py`),
+    so it cannot name `TranscriptRow` itself. The shape mirrors what a real
+    `RecordStore.recent` read returns (see `_transcript_row` below): oldest
+    first as written, `ts` ticking forward by `ts_step`, every row SENT — a
+    row the sender's own message produced, not a pending outbound one.
+    """
+    return tuple(
+        TranscriptRow(
+            id=id_start + i, sender_id=sender_id, sender_name=sender_name,
+            ts=ts_base + i * ts_step, body=body, is_nora=False,
+            delivery_status=DeliveryStatus.SENT,
+            raw_json=None, quoted_ts=None, media_json=None,
+            person_id=person_id,
+        )
+        for i, body in enumerate(bodies)
+    )
 
 
 class FakeRecordStore:

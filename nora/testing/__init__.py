@@ -99,8 +99,8 @@ from nora.testing.eval_backends import (
     CannedParkingProvider,
     CannedPresenceReader,
     CannedRouteSource,
-    CannedStreetParkingProvider,
     CannedSearchProvider,
+    CannedStreetParkingProvider,
     CannedTransitSource,
     CannedWeatherProvider,
 )
@@ -125,6 +125,7 @@ from nora.testing.fakes import (
     FakeRosterSource,
     FakeToolCallLogStore,
     FakeTranscriber,
+    transcript_rows,
 )
 from nora.testing.note_store import InMemoryNoteStore, NoteCandidate
 from nora.testing.scripted_agent import (
@@ -149,6 +150,7 @@ __all__ = [
     "CannedPresenceReader",
     "CannedRouteSource",
     "CannedSearchProvider",
+    "CannedStreetParkingProvider",
     "CannedTransitSource",
     "CannedWeatherProvider",
     "DuplicateVerdictError",
@@ -180,4 +182,5 @@ __all__ = [
     "fact_proposal_factory",
     "group_event",
     "limit_stop_reason",
+    "transcript_rows",
 ]

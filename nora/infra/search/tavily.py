@@ -147,7 +147,7 @@ class TavilySearchProvider:
                 continue
             # Relevance floor (2026-08-31, measured): Tavily's own `score`
             # separates signal from noise — opaque-ID and current-state queries
-            # return 0.02–0.05 junk while real answers sit above 0.15. A
+            # return 0.02-0.05 junk while real answers sit above 0.15. A
             # below-floor result is dropped, not wrapped: five junk links are
             # worse for the model than an honest «nothing found».
             #

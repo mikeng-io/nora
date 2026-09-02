@@ -168,9 +168,18 @@ type = "layers"
 # -> obs -> infra; platform is independent of the other four) so the contract does
 # not fight legitimate cross-package imports. The property this contract exists to
 # prove is the last line: nothing above nora.domain may be imported BY nora.domain.
+#
+# nora.ingest sits ABOVE nora.engagement, not beside it: the standing event fold
+# (design/standing-watermark/10) is triggered from the ingest path — every message,
+# tagged or not, spawns the watermark check — while the fold machinery it reuses
+# (ConversationSlots, the debrief objective/prompt/parse) is engagement's. That is
+# engagement's own framing ("ingest decides WHETHER to engage; engagement decides
+# HOW", nora/engagement/__init__.py): the trigger layer above, the machinery below.
+# The reverse import does not exist and stays forbidden.
 layers = [
     "nora.app | nora.presence | nora.analytics",
-    "nora.ingest | nora.engagement",
+    "nora.ingest",
+    "nora.engagement",
     "nora.agent | nora.platform",
     "nora.doctrine",
     "nora.language",

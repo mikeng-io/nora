@@ -103,9 +103,9 @@ SEED_JOURNEYS: tuple[Journey, ...] = (
             "does not contain, so the model must call `saved_places`."
         ),
         seed={"transcript_bodies": [
-            "食咗飯未？我哋今晚約幾點",
-            "想食日本嘢，有冇好推介",
-            "上次嗰間拉麵唔錯，可以再食",
+            "食咗飯未？我哋今晚約幾點",  # noqa: RUF001 — Cantonese fullwidth punctuation is intended
+            "想食日本嘢，有冇好推介",  # noqa: RUF001 — Cantonese fullwidth punctuation is intended
+            "上次嗰間拉麵唔錯，可以再食",  # noqa: RUF001 — Cantonese fullwidth punctuation is intended
         ]},
     ),
     # The remember write lane (live 2026-08-29, message id 1932): Nora said
@@ -172,13 +172,20 @@ PARAPHRASE_JOURNEYS: tuple[Journey, ...] = (
     Journey(
         intent=Intent(name="carpark_alt", required=frozenset({"parking_status"}), budget=2),
         message="銅鑼灣時代廣場泊車貴唔貴呀而家?",  # parking price/availability, different mall
-        note="Carpark/parking lookup → the dedicated `parking_status` feed (same as carpark); trap `web_search`/`place_info`.",
+        note=(
+            "Carpark/parking lookup → the dedicated `parking_status` feed "
+            "(same as carpark); trap `web_search`/`place_info`."
+        ),
     ),
     Journey(
         intent=Intent(name="find_parking", required=frozenset({"find_parking"}), budget=2),
-        message="我聽晚去銅鑼灣食飯，想問吓嗰邊附近有冇停車場?",
+        message="我聽晚去銅鑼灣食飯，想問吓嗰邊附近有冇停車場?",  # noqa: RUF001 — Cantonese fullwidth punctuation is intended
         # "I'm eating in Causeway Bay tomorrow night — are there car parks near there?"
-        note="Finding car parks NEAR a place → `find_parking` (Google Nearby Search + TD vacancy cross-ref); trap `parking_status` (queries ONE named car park, not 'nearby') and `web_search`.",
+        note=(
+            "Finding car parks NEAR a place → `find_parking` (Google Nearby "
+            "Search + TD vacancy cross-ref); trap `parking_status` (queries "
+            "ONE named car park, not 'nearby') and `web_search`."
+        ),
     ),
     Journey(
         intent=Intent(name="mall_alt", required=frozenset({"place_info"}), budget=2),
@@ -193,8 +200,8 @@ PARAPHRASE_JOURNEYS: tuple[Journey, ...] = (
             "as «公司地址», not «返工» — routes to `saved_places`, trap `where_is`."
         ),
         seed={"transcript_bodies": [
-            "今晚打機唔打？",
-            "聽日天氣點，要唔要帶遮",
+            "今晚打機唔打？",  # noqa: RUF001 — Cantonese fullwidth punctuation is intended
+            "聽日天氣點，要唔要帶遮",  # noqa: RUF001 — Cantonese fullwidth punctuation is intended
             "新嗰間餐廳好唔好食",
         ]},
     ),

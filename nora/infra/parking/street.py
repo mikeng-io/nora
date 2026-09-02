@@ -25,10 +25,10 @@ import csv
 import io
 import logging
 import math
-from dataclasses import dataclass
-from typing import Any
 
 import aiohttp
+
+from ...domain.parking import StreetParking as StreetParking
 
 log = logging.getLogger("nora.parking")
 
@@ -41,15 +41,6 @@ TIMEOUT_SECONDS = 8.0
 # 300 m is «on this street» while 1500 m (the nearby-parking radius) would
 # sweep several districts. Mirrors the walkable-lot argument in nearby.py.
 STREET_RADIUS_M = 300.0
-
-
-@dataclass(frozen=True)
-class StreetParking:
-    """What `find_parking` renders for on-street metered parking near a point."""
-
-    total: int
-    vacant: int
-    streets: tuple[str, ...]
 
 
 class StreetParkingClient:
@@ -73,7 +64,9 @@ class StreetParkingClient:
         # (lat, lng, street_tc, parking_space_id)
         self._spaces: tuple[tuple[float, float, str, str], ...] | None = None
 
-    async def near(self, *, lat: float, lng: float, radius_m: float = STREET_RADIUS_M) -> StreetParking | None:
+    async def near(
+        self, *, lat: float, lng: float, radius_m: float = STREET_RADIUS_M,
+    ) -> StreetParking | None:
         """Metered-space counts within `radius_m` of (lat, lng). None = failed."""
         try:
             spaces = await self._load_spaces()
@@ -108,21 +101,20 @@ class StreetParkingClient:
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=self._timeout_seconds),
             raise_for_status=True,
-        ) as session:
-            async with session.get(self._spaces_url) as resp:
-                text = await resp.text(encoding="utf-8-sig")
+        ) as session, session.get(self._spaces_url) as resp:
+            text = await resp.text(encoding="utf-8-sig")
         out: list[tuple[float, float, str, str]] = []
         lines = text.splitlines()
         # The TD file opens with a date line, an empty line, THEN the real
         # header (measured 2026-08-31: row 0 = "2026-08-30", row 1 = empty,
         # row 2 = ParkingSpaceId,...). DictReader would take the date line as
         # its fieldnames and every data row would read None.
-        for idx, line in enumerate(lines):
+        for _idx, line in enumerate(lines):
             if "ParkingSpaceId" in line and "Latitude" in line:
                 break
         else:
             return None
-        for row in csv.DictReader(lines[idx:], fieldnames=None):
+        for row in csv.DictReader(lines[_idx:], fieldnames=None):
             try:
                 lat = float(row.get("Latitude") or "")
                 lng = float(row.get("Longitude") or "")
@@ -148,9 +140,8 @@ class StreetParkingClient:
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=self._timeout_seconds),
             raise_for_status=True,
-        ) as session:
-            async with session.get(self._occupancy_url) as resp:
-                text = await resp.text(encoding="utf-8-sig")
+        ) as session, session.get(self._occupancy_url) as resp:
+            text = await resp.text(encoding="utf-8-sig")
         out: dict[str, str] = {}
         for row in csv.DictReader(io.StringIO(text)):
             pid = (row.get("ParkingSpaceId") or "").strip()

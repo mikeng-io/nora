@@ -9,7 +9,6 @@ Revises: 0044_embedding
 from __future__ import annotations
 
 import sqlalchemy as sa
-
 from alembic import op
 
 revision = "0045_places_address"

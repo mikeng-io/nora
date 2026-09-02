@@ -79,6 +79,9 @@ def test_the_registry_exposes_every_declared_tool():
         # social_fetch (DEC-151): READ-ONLY X/Instagram via the host bridge.
         "social_fetch",
         "weather",
+        # HK parking (2026-08-31): TD open-data vacancy for a named car park,
+        # and Google Places nearby-search + street meters for «near X».
+        "parking_status", "find_parking",
         # Discord-only music (design/discord-music/07-agent-tool.md).
         "play_music", "skip_music", "top_music", "stop_music", "music_status",
         "remind", "list_reminders", "cancel_reminder",
@@ -174,6 +177,15 @@ def test_budgets_match_todays_table():
         # 9-day forecast on a flag. 2 — one HKO round usually answers, a second
         # covers a follow-up.
         "weather": 2,
+        # TD open-data feed, keyless like transit — `parking_status` answers a
+        # named car park's live vacancy. 2, sized like `weather`: one
+        # index+vacancy round usually answers; a second covers a follow-up (a
+        # different venue name).
+        "parking_status": 2,
+        # `find_parking` (2026-08-31): Google Places nearby search plus the TD
+        # vacancy cross-ref per hit. 3 — one resolve (or one presence read) +
+        # one nearby call + the vacancy cross-references that follow.
+        "find_parking": 3,
         # Discord-only music (design/discord-music/07-agent-tool.md), all 2
         # like `weather`: one call is the ordinary shape for each verb, a
         # second covers "no, the other one" after a bad match.
@@ -560,6 +572,9 @@ READ_ONLY = frozenset({
     "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "list_events",
     "suggest_venue", "version", "search_gifs",
+    # The two parking verbs (2026-08-31): live reads that act on nothing —
+    # vacancy lookups and nearby discovery, no writes anywhere.
+    "parking_status", "find_parking",
     "note_read", "note_search", "search_knowledge",
     "music_status",
     # DEC-151: social_fetch is a pure read at all three layers — the tool's

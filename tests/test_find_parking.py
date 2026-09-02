@@ -7,8 +7,6 @@ nearby call through the real registry.
 """
 from __future__ import annotations
 
-import pytest
-
 from nora.infra.parking.nearby import _parse_nearby
 
 

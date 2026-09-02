@@ -1,0 +1,5 @@
+{
+  "type": "none",
+  "summary": "Gate bookkeeping only: no behaviour change.",
+  "reason": "R-67's acceptance-rule mapping and decision-index row were updated to match the behaviour shipped 2026-09-01 (an empty autoplay prewarm is retried once live at track end), and the mislabelled last-played re-seed rule was numbered R-88. No runtime behaviour changed."
+}

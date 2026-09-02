@@ -2410,7 +2410,9 @@ def build_tool_specs(
     # already placed in this room.
 
     async def group_members() -> dict:
-        """Who is in this conversation right now. Call this when somebody asks who is here, who is in the group, how many people are in it, or whether a particular person is around.
+        """Who is in this conversation right now. Call this when somebody asks
+who is here, who is in the group, how many people are in it, or whether a
+particular person is around.
 
 SHOULD — how to use it well: do NOT guess from the transcript; people
 who have not spoken recently are still here, and people mentioned in a
@@ -2918,7 +2920,8 @@ cannot tell you about anyone outside it."""
         return moment.strftime("%A %-d %B %Y, %H:%M (%Z)")
 
     async def calculate(expression: str) -> dict:
-        """Work out a number exactly. Use this for ALL arithmetic, however easy it looks — call it whenever a number needs computing.
+        """Work out a number exactly. Use this for ALL arithmetic, however easy
+        it looks — call it whenever a number needs computing.
 
         Never do a calculation in your head and never state a number you did not get
         from here. A wrong total sounds exactly like a right one and the group has no
@@ -4240,7 +4243,9 @@ Args:
         return {"status": "ok", "results": results}
 
     async def media_send(handle: str) -> dict:
-        """Send a previously stored media object (from `media_search`) to this chat. Call this when the room wants the media itself, not just its description.
+        """Send a previously stored media object (from `media_search`) to this
+        chat. Call this when the room wants the media itself, not just its
+        description.
 
         Args:
             handle: the media object's handle from `media_search`.
@@ -4787,7 +4792,7 @@ Args:
 
         Args:
             place: the spot to search around, in their words; empty = the asker's current position.
-        """
+        """  # noqa: RUF002 — the Cantonese examples keep their fullwidth comma
         if route_source is None:
             _record(metrics, "find_parking", "unavailable")
             return {"status": "unavailable",
@@ -4865,7 +4870,10 @@ Args:
                 candidates = (
                     tuple(p for p in view.people
                           if asker is not None and p.person_id == asker.person_id)
-                    + tuple(p for p in view.people if p.person_id != (asker.person_id if asker else None))
+                    + tuple(
+                        p for p in view.people
+                        if p.person_id != (asker.person_id if asker else None)
+                    )
                 )
                 for person in candidates:
                     try:
@@ -4914,7 +4922,7 @@ Args:
             if parking_source is not None:
                 try:
                     live = await parking_source.vacancy(name=p.name, strict=True)
-                except Exception:
+                except Exception:  # noqa: BLE001 — vacancy enrichment is never fatal
                     live = None
                 if live:
                     entry["vacancy"] = live.get("vacancy")
@@ -5024,7 +5032,8 @@ Args:
         return _music_result(outcome)
 
     async def skip_music() -> dict:
-        """Skip the track currently playing in this Discord voice channel. Call this when somebody wants the current song moved on.
+        """Skip the track currently playing in this Discord voice channel.
+Call this when somebody wants the current song moved on.
 
 `status`: `ok` (`title` names what was skipped), `nothing_found`
 (nothing is playing), or `unavailable` (music isn't available here)."""
@@ -5046,7 +5055,8 @@ Args:
         return _music_result(outcome)
 
     async def top_music(position: int) -> dict:
-        """Move a track already queued in this Discord voice channel to play next. Call this when somebody wants a queued song sooner.
+        """Move a track already queued in this Discord voice channel to play
+next. Call this when somebody wants a queued song sooner.
 
 `position` is the number `/music queue` (or a prior `music_status`
 mention of the queue in this conversation) shows next to the track —
@@ -5078,7 +5088,8 @@ Args:
         return _music_result(outcome)
 
     async def stop_music() -> dict:
-        """Stop the music and leave the Discord voice channel. Call this when somebody wants the music off.
+        """Stop the music and leave the Discord voice channel. Call this when
+somebody wants the music off.
 
 `status`: `ok` (stopped), `nothing_found` (nothing was playing, so
 there was nothing to stop), or `unavailable` (music isn't available
@@ -5101,7 +5112,8 @@ here)."""
         return _music_result(outcome)
 
     async def music_status() -> dict:
-        """What's currently playing in this Discord voice channel. Call this when somebody asks what song is on.
+        """What's currently playing in this Discord voice channel. Call this
+when somebody asks what song is on.
 
 `status`: `ok` (`title` names the now-playing track), `nothing_found`
 (nothing is playing), or `unavailable` (music isn't available here)."""
@@ -5409,7 +5421,8 @@ here)."""
         }
 
     async def cancel_reminder(reminder_id: str) -> dict:
-        """Call off something you are holding. Call this when somebody wants to un-set a reminder, by the id list_reminders gave you.
+        """Call off something you are holding. Call this when somebody wants
+to un-set a reminder, by the id list_reminders gave you.
 
 Only ids from this conversation work, and only ones still waiting: something
 that has already gone out cannot be un-sent, and this will say so rather than
@@ -5530,7 +5543,10 @@ Args:
     async def create_event(
         title: str, when: str = "", venue_text: str = "",
     ) -> dict:
-        """Propose a NEW gathering in this conversation — call this when the room wants to arrange something that is not open yet. Call list_events FIRST: if one is already open (status "proposed"), call update_event against it instead of creating a second one.
+        """Propose a NEW gathering in this conversation — call this when the
+room wants to arrange something that is not open yet. Call list_events FIRST:
+if one is already open (status "proposed"), call update_event against it
+instead of creating a second one.
 
 Outcomes: `ok` with the id; `refused` with a note (two or more
 events are already open here — ask which one is meant, do not
@@ -5585,7 +5601,9 @@ Args:
     async def update_event(
         event_id: str, when: str = "", venue_text: str = "",
     ) -> dict:
-        """Update an event ALREADY proposed here — a time now settled, a venue now settled. Use this when an open event's details change; use the id list_events gave you.
+        """Update an event ALREADY proposed here — a time now settled, a
+venue now settled. Use this when an open event's details change; use the id
+list_events gave you.
 
 Args:
     event_id: The event's id, from list_events.
@@ -5632,7 +5650,8 @@ Args:
         }
 
     async def rsvp_event(event_id: str, response: str) -> dict:
-        """Record whether the person talking now is coming to an event already proposed here. Call this when somebody says they will (or won't) come.
+        """Record whether the person talking now is coming to an event
+already proposed here. Call this when somebody says they will (or won't) come.
 
 Args:
     event_id: The event's id, from list_events.
@@ -5673,7 +5692,8 @@ Args:
         return {"status": "ok"}
 
     async def cancel_event(event_id: str) -> dict:
-        """Call off an event already proposed here. Use when the room agrees a gathering is not happening.
+        """Call off an event already proposed here. Use when the room agrees
+a gathering is not happening.
 
 Args:
     event_id: The event's id, from list_events."""
@@ -5702,7 +5722,9 @@ Args:
         return {"status": "ok", "id": str(ev.id)}
 
     async def suggest_venue(event_id: str) -> dict:
-        """Suggest a venue for an event already proposed here, drawn from what people in this conversation have said they like. Call this when somebody wants a place to hold an open event.
+        """Suggest a venue for an event already proposed here, drawn from
+what people in this conversation have said they like. Call this when somebody
+wants a place to hold an open event.
 
 Outcomes: `ok` with `candidates` (name, address, rating,
 price_level, maps_url, and why it was suggested); `nothing_found`
@@ -5983,7 +6005,9 @@ Args:
         }
 
     async def search_knowledge(query: str) -> dict:
-        """Look through what I actually know about this room. Call this when you need something from the store of things people have said and I have checked — rather than what is in front of me right now.
+        """Look through what I actually know about this room. Call this when
+you need something from the store of things people have said and I have
+checked — rather than what is in front of me right now.
 
 <facts> shows a handful and tells you how many more I hold. This is
 how you reach the rest. It is for a QUESTION: 「邊個做嘅大步行」,
@@ -6137,9 +6161,18 @@ Args:
         }
 
     async def remember(content: str) -> dict:
-        """Record a settled fact about the person speaking. Call this when somebody tells you something about themselves that is now just TRUE — «我屋企有兩隻貓», «我下個月開始返新工» — and being able to recall it later is the whole point. This writes it into your long-term memory about THAT person; `about` and `ask_memory` read that same store back, so what lands here is what you will "remember" tomorrow. Nothing else in your toolset can write a person's settled fact: the note tier refuses them (a note is tracked uncertainty, not a settled fact) and the fact lane excludes descriptions of a person too.
+        """Record a settled fact about the person speaking. Call this when
+somebody tells you something about themselves that is now just TRUE —
+«我屋企有兩隻貓», «我下個月開始返新工» — and being able to recall it later is
+the whole point. This writes it into your long-term memory about THAT person;
+`about` and `ask_memory` read that same store back, so what lands here is
+what you will "remember" tomorrow. Nothing else in your toolset can write a
+person's settled fact: the note tier refuses them (a note is tracked
+uncertainty, not a settled fact) and the fact lane excludes descriptions of
+a person too.
 
-The trigger word is «記低» — «記低 X» marks a settled fact. Check what it actually is before you reach for anything:
+The trigger word is «記低» — «記低 X» marks a settled fact. Check what
+it actually is before you reach for anything:
 
 - a settled fact about the person in front of you → `remember` (this),
 - still an open question nothing here settles → `note_create`,
@@ -6226,7 +6259,9 @@ Args:
         body: str, anchor_date: int | None = None,
         anchor_entities: list[str] | None = None,
     ) -> dict:
-        """Start carrying an open question that nothing here settles yet. Call this when the room is chewing on something that outlives this conversation — an undecided thing nobody has settled.
+        """Start carrying an open question that nothing here settles yet.
+Call this when the room is chewing on something that outlives this
+conversation — an undecided thing nobody has settled.
 
 A note is TRACKED UNCERTAINTY — a thing this group is still chewing on
 that outlives the conversation it came up in: whose wedding is when and
@@ -6313,7 +6348,8 @@ Args:
         return {"status": "ok", "title": note.title}
 
     async def note_update(title: str, body: str) -> dict:
-        """Revise a note you have JUST read this turn. Call this when an open note's content changes — a detail settles, a plan moves.
+        """Revise a note you have JUST read this turn. Call this when an
+open note's content changes — a detail settles, a plan moves.
 
 Give the WHOLE note back with your change folded in, not just the new
 part — `body` replaces what note_read handed you as the note's current
@@ -6642,7 +6678,8 @@ Args:
     gif_candidates: dict[str, GifCandidate] = {}
 
     async def search_gifs(query: str) -> dict:
-        """Find described reaction GIFs before sending one. Call this when a GIF would fit the reply and you need candidates.
+        """Find described reaction GIFs before sending one. Call this when a
+GIF would fit the reply and you need candidates.
 
 Use a short, generic visual reaction phrase. The query leaves Nora for Giphy;
 never include chat content, names, or private facts. Choose only from the
@@ -6663,7 +6700,9 @@ Args:
         ]} if found else {"status": "nothing_found", "note": "Reply in words instead."}
 
     async def send_gif(candidate_id: str, caption: str = "") -> dict:
-        """Send one GIF returned by `search_gifs`, optionally with a caption. Call this when a reaction GIF fits the reply and you already picked a candidate from `search_gifs` this turn.
+        """Send one GIF returned by `search_gifs`, optionally with a
+caption. Call this when a reaction GIF fits the reply and you already picked
+a candidate from `search_gifs` this turn.
 
 Pick the candidate whose title, description, and tags fit the reply. Do not
 invent an id or send a GIF whose metadata does not match your intended reaction.

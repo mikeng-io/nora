@@ -459,9 +459,9 @@ async def test_expired_state_adopts_rotated_refresh_before_refresh(tmp_path, oau
     sf = tmp_path / "xai-oauth.json"
     sf.write_text(
         json.dumps({
-            "access_token": "at-expired",  # noqa: S105 — fake test token
+            "access_token": "at-expired",
             "expires_at": 1,               # long-expired: fresh check fails
-            "refresh_token": "rt-rotated",  # noqa: S105 — fake test token
+            "refresh_token": "rt-rotated",
         }),
         encoding="utf-8",
     )

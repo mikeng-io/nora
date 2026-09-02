@@ -29,9 +29,8 @@ from __future__ import annotations
 from typing import Any
 
 from nora.domain.models import WeatherObservation
+from nora.domain.parking import NearbyParking, StreetParking
 from nora.domain.presence import PresenceFix, SavedPlace, WireState
-from nora.infra.parking.nearby import NearbyParking
-from nora.infra.parking.street import StreetParking
 
 #: The tools these canned providers back — the set the per-journey gate checks a
 #: journey's (required + siblings) against before promoting its leakage/budget
@@ -101,13 +100,17 @@ class CannedParkingProvider:
     provider's content.
     """
 
-    async def vacancy(self, *, name: str, strict: bool = False) -> dict | None:
+    async def vacancy(self, *, name: str, strict: bool = False) -> dict[str, Any] | None:
         return {
             "parking_id": "tdc10p1",
             "name": name or "Sai Kung Government Offices Carpark",
             "vacancy": 30,
             "lastupdate": "2026-08-31 11:35:34",
-            "status": "OPEN",
+            # `opening_status`, NOT `status` — the real client never writes
+            # `status` because `parking_status` spreads this dict under its
+            # own `{"status": "ok", **data}` and a provider `status` would
+            # overwrite the contract's `ok` (nora/infra/parking/client.py).
+            "opening_status": "OPEN",
             "address": "Man Nin Street No 24, Sai Kung",
             # carpark_alt asks «泊車貴唔貴» — vacancy alone drove a follow-up
             # web_search for price (measured 2026-08-31). Carry the fee so
@@ -117,14 +120,16 @@ class CannedParkingProvider:
 
 
 class CannedStreetParkingProvider:
-    """`StreetParkingClient` shape - a fixed summary, always `ok`.
+    """`nora.domain.ports.StreetParkingProvider` — a fixed summary, always `ok`.
 
     Completeness matters (measured 2026-08-31): a find_parking result that
     omits the street row would look like "no streets", so return a real
     summary with names the model can repeat.
     """
 
-    async def near(self, *, lat: float, lng: float, radius_m=None):
+    async def near(
+        self, *, lat: float, lng: float, radius_m: float | None = None,
+    ) -> StreetParking | None:
         return StreetParking(
             total=12, vacant=4,
             streets=("登打士街", "上海街"),
@@ -152,7 +157,7 @@ class CannedSearchProvider:
     artifact exactly like the vague-snippet trap. The content now echoes the
     query, names a source and a timestamp, and answers the SHAPE the query
     asks (hours vs rating vs vacancy) so the model has grounds to stop.
-    """
+    """  # noqa: RUF002 — the multiplication sign matches the audit's own notation (as in nora/language/render.py)
 
     async def search(self, *, query: str) -> dict[str, Any]:
         # Echo the query so the result is visibly ABOUT it; name an authority
@@ -218,7 +223,9 @@ class CannedRouteSource:
             "opening_hours": "Mon-Sun 10:00-22:00",
         }
 
-    async def nearby_parking(self, *, lat: float, lng: float, radius_m=None):
+    async def nearby_parking(
+        self, *, lat: float, lng: float, radius_m: float | None = None,
+    ) -> tuple[NearbyParking, ...]:
         # Complete, fixed list — the model accepts it and does not re-search
         # (the self-terminating shape `find_parking` needs, measured with the
         # live Google call on 2026-08-31).

@@ -52,8 +52,6 @@ from typing import Literal
 
 import yaml
 
-from nora.domain.models import DeliveryStatus, TranscriptRow
-
 from evals.datasets import CORPUS_DATASETS, item_id
 from evals.evaluators import (
     HonchoFedOncePerReply,
@@ -87,6 +85,7 @@ from nora.app.eval_support import (
     is_tagged,
     load_eval_config,
 )
+from nora.testing import transcript_rows
 
 CASES_DIR = Path(__file__).resolve().parent / "cases"
 ADVERSARIAL_DIR = Path("evals") / "adversarial"
@@ -574,7 +573,7 @@ _ROUTING_CHECKS = ("PathMatchesIntent", "NoSiblingLeakage", "ConvergesInBudget")
 _BODY_TS_BASE = 1_788_480_000_000
 
 
-def _bodies_to_recents(bodies: list[str]) -> tuple[TranscriptRow, ...]:
+def _bodies_to_recents(bodies: list[str]):
     """Build eval-room transcript rows from plain message bodies.
 
     Used by `_run_journeys_live`'s journey-seed merge: a journey that declares
@@ -582,17 +581,15 @@ def _bodies_to_recents(bodies: list[str]) -> tuple[TranscriptRow, ...]:
     shape) instead of the production one, so the answer the journey exists to
     grade is not already in context. Sender is the eval room's member
     (`+852111` → miles_novak), oldest-first as written; `ts` ticks forward.
+
+    The row construction itself lives in `nora.testing.transcript_rows`:
+    `evals/` may import `nora.app` and `nora.testing` and nothing else
+    (`tests/test_boundaries.py`), so it cannot name `TranscriptRow` directly.
     """
-    rows = []
-    for i, body in enumerate(bodies):
-        rows.append(TranscriptRow(
-            id=1000 + i, sender_id="+852111", sender_name="Miles",
-            ts=_BODY_TS_BASE + i * 60_000, body=body, is_nora=False,
-            delivery_status=DeliveryStatus.SENT,
-            raw_json=None, quoted_ts=None, media_json=None,
-            person_id="miles_novak",
-        ))
-    return tuple(rows)
+    return transcript_rows(
+        bodies, sender_id="+852111", sender_name="Miles", person_id="miles_novak",
+        ts_base=_BODY_TS_BASE,
+    )
 
 
 async def _run_journeys_live(
