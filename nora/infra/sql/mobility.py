@@ -197,7 +197,7 @@ class SqlMobilityStore:
 
         trips: list[dict[str, Any]] = []
         corridors: dict[int, dict[str, Any]] = {}
-        for row in reversed(rows):
+        for row in rows:
             trips.append(
                 {
                     "id": row.trip_id,

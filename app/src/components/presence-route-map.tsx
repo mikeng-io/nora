@@ -49,6 +49,14 @@ export function PresenceRouteMap({ routes, selectedTripId }: { routes: RouteLine
     [routes],
   );
   const selectedRoute = routes.find((route) => route.id === selectedTripId);
+  const selectedPositions = useMemo<[number, number][]>(
+    () => selectedRoute?.points.map((point) => [point.lat, point.lng] as [number, number]) ?? [],
+    [selectedRoute],
+  );
+  // A selected trip with no recorded fix path (older trips can fall outside
+  // the shared history fetch's window) has nothing to frame — fall back to
+  // the full set rather than silently keeping the previous trip's framing.
+  const fitTargets = selectedPositions.length > 0 ? selectedPositions : positions;
 
   return (
     <MapContainer
@@ -61,7 +69,7 @@ export function PresenceRouteMap({ routes, selectedTripId }: { routes: RouteLine
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
-      <FitToPath points={positions} />
+      <FitToPath points={fitTargets} />
       {routes.map((route) => {
         const routePositions = route.points.map((point) => [point.lat, point.lng] as [number, number]);
         if (routePositions.length < 2) return null;

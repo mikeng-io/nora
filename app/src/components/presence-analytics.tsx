@@ -39,16 +39,21 @@ export function SurfaceTabs({ active, onChange }: { active: MapSurface; onChange
   ];
 
   return (
-    <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border" role="tablist">
+    // A plain, non-ARIA-tabs button group — not role="tablist"/"tab": those
+    // roles imply the WAI-ARIA tabs keyboard contract (roving tabindex,
+    // arrow-key navigation between tabs), which this 4-item switcher doesn't
+    // implement. Announcing "tab 1 of 4" for a widget that doesn't behave
+    // like one is worse than not claiming the role.
+    <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs.map(({ id, icon: Icon, label }) => (
         <button
           key={id}
           type="button"
-          role="tab"
-          aria-selected={active === id}
+          aria-pressed={active === id}
           onClick={() => onChange(id)}
           className={cn(
-            "-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-2.5 font-mono text-[10px] uppercase tracking-wider transition-colors",
+            "relative -mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-2.5 font-mono text-[10px] uppercase tracking-wider transition-colors",
+            "before:absolute before:-inset-2 before:content-['']", // 44px+ hit target without growing the visible chip
             active === id
               ? "border-accent text-accent"
               : "border-transparent text-text-muted hover:border-border-strong hover:text-text-secondary",
@@ -107,7 +112,11 @@ function SubjectPicker({
   if (!entries) return null;
 
   return (
-    <div className="mb-4 flex items-center gap-1.5 overflow-x-auto" role="group" aria-label={t("analytics.subjects")}>
+    <div
+      className="mb-4 flex items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      role="group"
+      aria-label={t("analytics.subjects")}
+    >
       <span className="mr-1 shrink-0 font-mono text-[10px] uppercase tracking-wider text-text-muted">
         {t("analytics.subjects")}
       </span>
@@ -120,7 +129,8 @@ function SubjectPicker({
             type="button"
             onClick={() => onSelect(entry.personId)}
             className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors",
+              "relative flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors",
+              "before:absolute before:-inset-2 before:content-['']", // 44px+ hit target without growing the visible pill
               active
                 ? "border-border-strong bg-bg-elevated text-text-primary"
                 : "border-border text-text-secondary hover:bg-bg-elevated",
@@ -262,7 +272,7 @@ function RhythmSurface({
   }, [subjectId]);
 
   if (!entries) return <AnalyticsLoading />;
-  if (!subjectId || entries.length === 0) return <AnalyticsEmpty label={t("analytics.empty.noSubjects")} />;
+  if (!subjectId || entries.length === 0) return <AnalyticsEmpty label={t("analytics.empty.noSubjects")} icon={Grid2X2} />;
   return (
     <div>
       <SubjectPicker entries={entries} selectedSubjectId={subjectId} onSelect={onSubjectSelect} />
@@ -277,6 +287,15 @@ function RhythmGrid({ data, subjectId }: { data: PresenceRhythm; subjectId: stri
   const maxDwell = Math.max(...data.bins.map((bin) => bin.totalDwellMs), 0);
   const hue = hueOf(subjectId);
   const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+  // A `title` tooltip is mouse-hover-only — invisible to keyboard and touch
+  // users. This readout mirrors the same text on focus/hover of any cell so
+  // sighted keyboard users get the same detail; aria-label already carries
+  // it to screen readers regardless of pointer.
+  const [activeCell, setActiveCell] = useState<{ day: number; hour: number } | null>(null);
+  const cellDetail = (day: number, hour: number) => {
+    const bin = bins.get(day * 24 + hour);
+    return `${t(`analytics.days.${days[day]}`)} ${String(hour).padStart(2, "0")}:00 · ${bin?.stayCount ?? 0} ${t("analytics.units.stays")} · ${formatDuration(bin?.totalDwellMs ?? 0)}`;
+  };
 
   return (
     <Card className="p-4 sm:p-5">
@@ -301,17 +320,22 @@ function RhythmGrid({ data, subjectId }: { data: PresenceRhythm; subjectId: stri
               const bin = bins.get(day * 24 + hour);
               const intensity = maxDwell > 0 && bin ? bin.totalDwellMs / maxDwell : 0;
               return (
-                <div
+                <button
                   key={`${day}-${hour}`}
-                  className="group relative aspect-square min-h-5 rounded-[3px] border border-border/60"
+                  type="button"
+                  className="aspect-square min-h-5 rounded-[3px] border border-border/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                   style={{ backgroundColor: intensity === 0 ? "var(--bg-elevated)" : `hsl(${hue} 68% 50% / ${0.12 + intensity * 0.78})` }}
-                  title={`${t(`analytics.days.${days[day]}`)} ${String(hour).padStart(2, "0")}:00 · ${bin?.stayCount ?? 0} ${t("analytics.units.stays")} · ${formatDuration(bin?.totalDwellMs ?? 0)}`}
-                  aria-label={`${t(`analytics.days.${days[day]}`)} ${String(hour).padStart(2, "0")}:00, ${bin?.stayCount ?? 0} ${t("analytics.units.stays")}, ${formatDuration(bin?.totalDwellMs ?? 0)}`}
+                  onFocus={() => setActiveCell({ day, hour })}
+                  onMouseEnter={() => setActiveCell({ day, hour })}
+                  aria-label={cellDetail(day, hour)}
                 />
               );
             })}
           </Fragment>
         ))}
+      </div>
+      <div className="mt-2 min-h-4 font-mono text-[10px] text-text-muted" aria-live="polite">
+        {activeCell ? cellDetail(activeCell.day, activeCell.hour) : " "}
       </div>
       {data.bins.length === 0 && <div className="mt-4 font-mono text-[11px] text-text-muted">{t("analytics.empty.noRhythm")}</div>}
     </Card>
@@ -378,11 +402,11 @@ function RoutesSurface({
   }, [subjectId, data]);
 
   if (!entries) return <AnalyticsLoading />;
-  if (!subjectId || entries.length === 0) return <AnalyticsEmpty label={t("analytics.empty.noSubjects")} />;
+  if (!subjectId || entries.length === 0) return <AnalyticsEmpty label={t("analytics.empty.noSubjects")} icon={Route} />;
   return (
     <div>
       <SubjectPicker entries={entries} selectedSubjectId={subjectId} onSelect={onSubjectSelect} />
-      {error ? <AnalyticsError /> : !data ? <AnalyticsLoading /> : data.trips.length === 0 ? <AnalyticsEmpty label={t("analytics.empty.noRoutes")} /> : (
+      {error ? <AnalyticsError /> : !data ? <AnalyticsLoading /> : data.trips.length === 0 ? <AnalyticsEmpty label={t("analytics.empty.noRoutes")} icon={Route} /> : (
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-3">
             <MetricCard icon={Activity} label={t("analytics.routes.trips")} value={formatNumber(data.trips.length)} />
@@ -471,8 +495,13 @@ function AnalyticsError() {
   return <Alert variant="destructive">{t("analytics.error")}</Alert>;
 }
 
-function AnalyticsEmpty({ label }: { label: string }) {
-  return <div className="flex min-h-32 items-center justify-center rounded-lg border border-dashed border-border-strong font-mono text-[10px] uppercase tracking-wider text-text-muted">{label}</div>;
+function AnalyticsEmpty({ label, icon: Icon = Waypoints }: { label: string; icon?: typeof Waypoints }) {
+  return (
+    <div className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border-strong font-mono text-[10px] uppercase tracking-wider text-text-muted">
+      <Icon className="h-4 w-4 opacity-60" />
+      {label}
+    </div>
+  );
 }
 
 function formatNumber(value: number) {
