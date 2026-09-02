@@ -299,10 +299,19 @@ autoplay_enabled = true
 # Prewarm (design/discord-music/08-autoplay.md, R-64, PR #54): resolve the
 # next autoplay pick (Mix lookup + its playable stream) this many seconds
 # before the current track's expected end, so the track-end advance plays
-# it with zero network calls at the gap. 12.0s chosen: tracks far shorter
-# than yt-dlp reported still fall back to the at-end lookup. 0 = off (old
-# behaviour, gap = two network calls after the track ends).
-autoplay_prewarm_seconds = 12.0
+# it with zero network calls at the gap. 0 = off (old behaviour, gap = two
+# network calls after the track ends).
+#
+# Raised 12.0 -> 60.0 (2026-09-02, live incident): a related() Mix lookup
+# measured 38.4s under real contention on the shared yt-dlp extractor --
+# far past the old 12s lead time. The prewarm lost that race every time:
+# it was still in flight when the track's natural end fired the live
+# fallback, which raced the SAME contended extractor and came back
+# genuinely empty in under a second, and the prewarm's own eventual
+# (correct) pick was discarded as stale once nothing was playing anymore.
+# 60s gives real margin above the one measured worst case; tracks shorter
+# than that still fall back to the at-end lookup, same as before.
+autoplay_prewarm_seconds = 60.0
 
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version

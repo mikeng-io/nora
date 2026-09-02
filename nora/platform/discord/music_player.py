@@ -560,8 +560,20 @@ class MusicPlayer:
             log.warning("autoplay prewarm failed", exc_info=True)
             return
         if self._prewarm_task is not asyncio.current_task():
+            log.info("autoplay prewarm for %s superseded by a newer prewarm", previous.url)
             return  # a newer prewarm replaced this one; its result is stale
         if self._now_playing is None or self._now_playing.url != self._prewarm_for_locator:
+            # Diagnosed live 2026-09-02: this pick (found or not) is
+            # DISCARDED here with nothing landing anywhere else -- a prewarm
+            # that outlasted the track it was for (measured 38.4s against a
+            # 12s lead time) silently lost a valid pick with no trace. Now
+            # logged so a recurrence is visible instead of indistinguishable
+            # from "related() found nothing".
+            log.info(
+                "autoplay prewarm for %s discarded as stale (now_playing=%s, pick=%s)",
+                previous.url, self._now_playing.url if self._now_playing else None,
+                pick.locator if pick is not None else None,
+            )
             return  # the track it was scheduled for ended/skipped meanwhile
         self._prewarmed = pick
         self._prewarm_done = True
