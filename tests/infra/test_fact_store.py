@@ -34,11 +34,16 @@ from nora.domain.ports import Proposal
 from nora.infra.sql.embeddings import SqlEmbeddingStore, StoredEmbedding
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.entities import SqlEntityStore
+from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore, oversized_terms
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import EMBEDDING_DIMENSIONS
 from nora.obs.metrics import Metrics
-from nora.testing import InMemoryFactStore, fact_proposal_factory
+from nora.testing import (
+    InMemoryFactStore,
+    fact_candidate_proposal_factory,
+    fact_proposal_factory,
+)
 
 NOW = 1_755_100_000_000
 
@@ -992,6 +997,88 @@ async def test_asserters_of_an_unknown_or_malformed_id_is_empty(sql_store):
     assert await store.asserters(fact_id="not-a-uuid") == ()
     assert await store.asserters(
         fact_id="0191f2c4-0000-7000-8000-0000000000ff") == ()
+
+
+# ---------------------------------------------------------------------------
+# the asserted_* carry — 32 §5 closed decision 2
+# ---------------------------------------------------------------------------
+#
+# The fact row copies the settling candidate's `asserted_by`/`asserted_at` at
+# adjudication time, so the rendered `<facts>` block can say who said it and
+# when. SQL only, with the join above: the carry reads `fact_candidate`, a
+# table `InMemoryFactStore` does not hold.
+
+
+async def test_the_fact_row_carries_the_settling_candidates_attribution(sql_store):
+    """The full chain, end to end: a message said by miles, a candidate that
+    joined it at propose time, and the verdict that settles the candidate —
+    the fact row then answers «who said it, when» without a second join."""
+    store, engine, _ = sql_store
+    await _seed_message(engine, mid=41, person_id="miles")
+    candidates = SqlFactCandidateStore(engine)
+    cids = await candidates.propose(
+        key="ws",
+        proposals=(fact_candidate_proposal_factory(message_ids=(41,)),),
+        now_ms=NOW,
+    )
+    candidate = await candidates.candidate_by_id(
+        workspace="ws", candidate_id=cids[0],
+    )
+    assert candidate is not None
+    assert candidate.asserted_by == "miles", (
+        "the carry reads what propose wrote; if this is None the test below "
+        "measures nothing"
+    )
+
+    ids = await store.propose(
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cids[0]),),
+        now_ms=NOW,
+    )
+
+    fact = await store.fact_by_id(workspace="ws", fact_id=ids[0])
+    assert fact is not None
+    # `_seed_message` stamps ts = mid.
+    assert (fact.asserted_by, fact.asserted_at) == ("miles", 41)
+
+
+async def test_a_verdict_with_no_candidate_writes_an_unattributed_fact(sql_store):
+    """None propagates as None: a verdict the adaptor could not map back to a
+    shown candidate writes the fact with NO attribution rather than a guessed
+    one — the same «never invent a value» rule the candidate-side join
+    follows. The fact existing is the positive control."""
+    store, _engine, _ = sql_store
+
+    ids = await store.propose(
+        key="ws", proposals=(_proposal(_verdict()),), now_ms=NOW,
+    )
+
+    fact = await store.fact_by_id(workspace="ws", fact_id=ids[0])
+    assert fact is not None
+    assert (fact.asserted_by, fact.asserted_at) == (None, None)
+
+
+async def test_a_candidate_without_attribution_carries_none(sql_store):
+    """The other None half: the candidate EXISTS but its message was pruned
+    before propose, so its own pair is NULL — and the fact row says the same
+    nothing rather than distinguishing "not carried" from "carried as NULL",
+    a difference there is none of."""
+    store, engine, _ = sql_store
+    # Seeded raw, so `asserted_*` are NULL even though message 41 exists: the
+    # candidate store's propose — the only writer of the pair — never ran.
+    await _seed_message(engine, mid=41, person_id="miles")
+    cid = await _seed_candidate(engine, observed_in=["41"])
+
+    ids = await store.propose(
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),),
+        now_ms=NOW,
+    )
+
+    fact = await store.fact_by_id(workspace="ws", fact_id=ids[0])
+    assert fact is not None
+    assert (fact.asserted_by, fact.asserted_at) == (None, None)
+    # The two attributions are orthogonal: `fact_asserter`'s join walks
+    # `observed_in` live and still finds miles.
+    assert [a.person_id for a in await store.asserters(fact_id=ids[0])] == ["miles"]
 
 
 # ---------------------------------------------------------------------------

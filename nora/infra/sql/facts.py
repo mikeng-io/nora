@@ -59,6 +59,12 @@ separate, explicit `supersede` call, made by whatever runtime logic decides
 to make it (spec §4.1). Reading only this module could reasonably suggest a
 `contradicted` verdict retires its target as a side effect of `propose`; it
 does not.
+
+**`propose` carries the settling candidate's `asserted_by`/`asserted_at` onto
+the fact row** (design/dreamer-agent-loop/32 §5 closed decision 2) — see
+`_candidate_attributions`. The candidate's pair is the "who said it, when"
+the operator asked the render to have; None propagates as None, and a verdict
+that names no candidate writes the fact unattributed rather than invented.
 """
 
 from __future__ import annotations
@@ -87,7 +93,13 @@ from nora.domain.facts import (
 )
 from nora.domain.ports import Proposal
 from nora.infra.sql.entities import SqlEntityStore
-from nora.infra.sql.schema import EMBEDDING, FACT, FACT_ASSERTER, FACT_PREMISE
+from nora.infra.sql.schema import (
+    EMBEDDING,
+    FACT,
+    FACT_ASSERTER,
+    FACT_CANDIDATE,
+    FACT_PREMISE,
+)
 
 log = logging.getLogger(__name__)
 
@@ -105,6 +117,7 @@ def _row_to_fact(r: Row[Any]) -> Fact:
         supersede_source=r.supersede_source,
         disputed_at=r.disputed_at, disputed_by=r.disputed_by,
         disputed_reason=r.disputed_reason, disputed_tag_id=r.disputed_tag_id,
+        asserted_by=r.asserted_by, asserted_at=r.asserted_at,
     )
 
 
@@ -321,6 +334,45 @@ class SqlFactStore:
             {"fid": fact_id, "now": now_ms, "cid": candidate_id},
         )
         return "ok"
+
+    async def _candidate_attributions(
+        self, conn: Any, attributions: Sequence[tuple[str, str | None]],
+    ) -> dict[str, tuple[str | None, int | None]]:
+        """`candidate_id -> (asserted_by, asserted_at)` for every candidate the
+        batch names — 32 §5 closed decision 2's carry onto the fact row.
+
+        Read INSIDE the fact write's transaction (30 §4's one boundary), keyed
+        by the candidate's IDENTITY for `_attribute`'s reason: the triple is
+        not the join key. A `candidate_id` that is None, not UUID-shaped, or
+        names no row is simply absent from the map, and the fact is written
+        with the pair still None — «I could not attribute this» is a NULL,
+        never a guess. UUID-shape is checked here rather than left to
+        `pg.UUID`, which would turn a malformed id into a raw type error that
+        rolls the FACT back with it."""
+        candidate_ids: list[str] = []
+        for _, candidate_id in attributions:
+            if candidate_id is None:
+                continue
+            try:
+                UUID(candidate_id)
+            except ValueError:
+                continue
+            candidate_ids.append(candidate_id)
+        if not candidate_ids:
+            return {}
+        rows = (await conn.execute(
+            sa.select(
+                FACT_CANDIDATE.c.id,
+                FACT_CANDIDATE.c.asserted_by,
+                FACT_CANDIDATE.c.asserted_at,
+            ).where(FACT_CANDIDATE.c.id.in_(candidate_ids))
+        )).all()
+        # A candidate row whose OWN attribution is NULL (its message was
+        # pruned before it was proposed) maps to (None, None) and is still
+        # "carried": the fact row then says the same nothing the candidate
+        # says, which is the honest propagation — distinguishing "not carried"
+        # from "carried as NULL" would invent a difference there is none of.
+        return {r.id: (r.asserted_by, r.asserted_at) for r in rows}
 
     async def mark_disputed(
         self, *, workspace: str, fact_id: str, person_id: str | None,
@@ -656,6 +708,14 @@ class SqlFactStore:
                 "instruction_sha256": p.instruction_sha256,
                 "model": p.model,
                 "established_by": p.established_by,
+                # The settling candidate's attribution (32 §5 closed decision
+                # 2), filled in inside the transaction below. None here is not
+                # a placeholder to be overwritten by a guess: a verdict with
+                # no `candidate_id`, or a candidate whose message is gone,
+                # writes the fact with no attribution rather than an invented
+                # one.
+                "asserted_by": None,
+                "asserted_at": None,
             })
             ids.append(fact_id)
             attributions.append((fact_id, p.candidate_id))
@@ -669,6 +729,13 @@ class SqlFactStore:
         # only meant to measure.
         statuses: list[AsserterJoinStatus] = []
         async with self._engine.begin() as conn:
+            carried = await self._candidate_attributions(conn, attributions)
+            by_fact_id = {row["id"]: row for row in rows}
+            for fact_id, candidate_id in attributions:
+                pair = carried.get(candidate_id) if candidate_id else None
+                if pair is not None:
+                    by_fact_id[fact_id]["asserted_by"] = pair[0]
+                    by_fact_id[fact_id]["asserted_at"] = pair[1]
             await conn.execute(sa.insert(FACT), rows)
             await self._resolve_subjects(conn, rows, workspace=key, now_ms=now_ms)
             for fact_id, candidate_id in attributions:

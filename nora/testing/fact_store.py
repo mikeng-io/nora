@@ -12,6 +12,14 @@ every request the same way") is why it applies the SAME three refusals
 null `replaced_by`. It carries no delete method, matching `DreamSink`'s own
 shape ("invalidate, never delete").
 
+**`asserted_by`/`asserted_at` stay None on every row it writes.** 32 §5
+closed decision 2's carry reads `fact_candidate` inside the write's
+transaction, and this double holds no candidate table — the same reason it
+does not perform the asserter join. Faking the carry would make a green
+attribution test a claim about the double, so the behaviour is asserted
+against Postgres alone (`tests/infra/test_fact_store.py`'s attribution
+section) and the `Fact` defaults carry the None.
+
 `fact_proposal_factory` builds a `Proposal` whose `payload` is a valid
 `FactVerdict` — for another session's contract suite (a note-tier store, most
 likely) to hand to *its own* store and prove a foreign payload is refused,

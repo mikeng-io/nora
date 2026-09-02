@@ -954,6 +954,10 @@ async def sql_sink(candidate_pg_url):
             "TRUNCATE fact_premise, fact, fact_candidate, fact_entity "
             "RESTART IDENTITY CASCADE"
         ))
+        # The attribution tests below write `messages` rows; the module-scoped
+        # database keeps them across tests, so clear them here rather than let
+        # one test's sender leak into the next one's join.
+        await conn.execute(sa.text("delete from messages"))
     metrics = Metrics()
     try:
         yield SqlFactCandidateStore(
@@ -1332,3 +1336,110 @@ async def test_the_unresolved_census_is_not_narrowed_to_one_page(sql_sink):
     await store.pending(workspace=WS, limit=2)
 
     assert metrics.get("nora_fact_entity_unresolved", workspace=WS) == 9
+
+
+# ---------------------------------------------------------------------------
+# asserted_by / asserted_at — the propose-time messages join (32 §3.4)
+# ---------------------------------------------------------------------------
+#
+# SQL only, for the same reason the fact tier's attribution-join tests are:
+# the join walks `messages`, a table `InMemoryFactCandidateStore` does not
+# hold, and a double that faked attribution would make every green test here
+# a claim about the double. The double's `FactCandidate` defaults carry the
+# None instead.
+
+
+async def _seed_message(
+    engine, *, mid: int, person_id: str | None, ts: int,
+) -> None:
+    """One `messages` row — the same shape `tests/infra/test_fact_store.py`'s
+    helper writes, one tier up. `person_id` NULL is the unmapped sender:
+    resolved at ingest or not at all, which is why `sender_id` is the
+    fallback rather than a follow-up lookup."""
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.text(
+                "insert into messages (id, platform, conversation_id, "
+                "conversation_type, sender_id, ts, body, person_id) values "
+                "(:id, 'signal', 'g1', 'group', :s, :ts, 'x', :p)"
+            ),
+            {"id": mid, "ts": ts, "s": f"sender-{mid}", "p": person_id},
+        )
+
+
+async def test_propose_attributes_the_claim_to_its_first_message(sql_sink):
+    """32 §3.4: `asserted_by` is the FIRST message's `person_id`,
+    `asserted_at` its `ts` — when the claim was SAID, which neither
+    `first_seen_at` nor `last_seen_at` (when it was SEEN) can say.
+
+    The second message belongs to somebody else and is the positive control:
+    a join that took the LAST id, or any id, would attribute to grant and
+    pass a test that seeded only one message."""
+    store, engine, _ = sql_sink
+    await _seed_message(engine, mid=41, person_id="miles", ts=NOW - 60_000)
+    await _seed_message(engine, mid=42, person_id="grant", ts=NOW - 30_000)
+
+    ids = await store.propose(
+        key=WS, proposals=(_candidate(message_ids=(41, 42)),), now_ms=NOW,
+    )
+
+    row = await store.candidate_by_id(workspace=WS, candidate_id=ids[0])
+    assert row is not None
+    assert (row.asserted_by, row.asserted_at) == ("miles", NOW - 60_000)
+
+
+async def test_an_unmapped_sender_falls_back_to_the_sender_id(sql_sink):
+    """An unmapped sender has no `person_id` at ingest, by design. NULL here
+    would say "unattributable" about a message that is right there; the
+    platform id is who said it as far as the room is concerned."""
+    store, engine, _ = sql_sink
+    await _seed_message(engine, mid=41, person_id=None, ts=NOW - 60_000)
+
+    ids = await store.propose(
+        key=WS, proposals=(_candidate(message_ids=(41,)),), now_ms=NOW,
+    )
+
+    row = await store.candidate_by_id(workspace=WS, candidate_id=ids[0])
+    assert row is not None
+    assert (row.asserted_by, row.asserted_at) == ("sender-41", NOW - 60_000)
+
+
+async def test_a_message_the_join_cannot_find_attributes_nothing(sql_sink):
+    """`prune_all` deletes messages by conversation on a schedule while
+    `observed_in` survives it. A claim whose evidence is gone writes NULL for
+    BOTH fields — the join finding nothing is never an invented asserter.
+    The row itself is the positive control: the candidate IS written, only
+    its attribution is empty."""
+    store, _engine, _ = sql_sink
+
+    ids = await store.propose(
+        key=WS, proposals=(_candidate(message_ids=(424242,)),), now_ms=NOW,
+    )
+
+    row = await store.candidate_by_id(workspace=WS, candidate_id=ids[0])
+    assert row is not None
+    assert (row.asserted_by, row.asserted_at) == (None, None)
+
+
+async def test_a_re_sighting_does_not_move_the_attribution(sql_sink):
+    """INSERT-only, beside `first_seen_at` and the provenance trio: the pair
+    records the FIRST assertion, and a later sighting — even one from a
+    different sender — did not assert the claim first. `occurrence_count`
+    moving is the positive control: the re-sighting landed, and only the
+    attribution stayed where the insert put it."""
+    store, engine, _ = sql_sink
+    await _seed_message(engine, mid=41, person_id="miles", ts=NOW - 60_000)
+    await _seed_message(engine, mid=42, person_id="grant", ts=NOW - 30_000)
+    ids = await store.propose(
+        key=WS, proposals=(_candidate(message_ids=(41,)),), now_ms=NOW,
+    )
+
+    again = await store.propose(
+        key=WS, proposals=(_candidate(message_ids=(42,)),), now_ms=NOW + 1,
+    )
+
+    assert again == ids
+    row = await store.candidate_by_id(workspace=WS, candidate_id=ids[0])
+    assert row is not None
+    assert row.occurrence_count == 2
+    assert (row.asserted_by, row.asserted_at) == ("miles", NOW - 60_000)
