@@ -42,10 +42,12 @@ exception.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from ..domain.facts import (
@@ -197,6 +199,73 @@ def _optional_text(value: object, *, limit: int) -> tuple[str | None, bool]:
 # Phase A — extraction
 # ---------------------------------------------------------------------------
 
+# How many rows of one batch `FactCandidateAdaptor.inputs` renders before it
+# switches to a summary line (design/dreamer-agent-loop/32 §3.3 point 2). The
+# batch itself is uncapped by this — `_message_ids` keeps the FULL id set, so
+# `accept` still validates against everything the watermark advanced over; the
+# cap bounds the PROMPT, and the summary line keeps the omitted id range
+# visible so the model cannot be said to have been shown an id set smaller
+# than the one it may cite.
+MAX_RENDERED_MESSAGES = 500
+
+
+def _format_ts(ms: int) -> str:
+    """A message `ts` (epoch ms) for the transcript line. UTC, the language
+    package's existing convention (`render.py`/`exchange_render.py`); the
+    reader here is a model matching claims to moments, not a human glancing
+    at a clock, so the label matters more than the zone."""
+    return datetime.fromtimestamp(ms / 1000, tz=UTC).strftime(
+        "%Y-%m-%d %H:%M:%S UTC")
+
+
+def _media_placeholder(media_json: str | None) -> str:
+    """What a bodiless row renders as, decoded from `messages.media_json`.
+
+    `TranscriptRow.media_json` is the raw JSON array of `MediaBlob`s. A blob
+    distinguishes only by `media_type` — a sticker is an `image/webp` and
+    renders `[image]` like any other image — and its `filename` is NEVER
+    rendered (`nora.domain.media`'s own rule), so the placeholder names the
+    type and nothing else. Unparseable or absent JSON is an empty string:
+    this is a rendering fallback, not a validation gate.
+    """
+    if not media_json:
+        return ""
+    try:
+        blobs = json.loads(media_json)
+    except ValueError:
+        return ""
+    if not isinstance(blobs, list):
+        return ""
+    parts: list[str] = []
+    for blob in blobs:
+        media_type = (
+            blob.get("media_type", "") if isinstance(blob, dict) else "")
+        if media_type.startswith("image/"):
+            parts.append("[image]")
+        elif media_type.startswith("video/"):
+            parts.append("[video]")
+        else:
+            parts.append(f"[attachment: {media_type or 'unknown'}]")
+    return " ".join(parts)
+
+
+def _render_line(row: TranscriptRow, *, room: str) -> str:
+    """One attributed transcript line (design/dreamer-agent-loop/32 §3.3
+    point 1): `<id> [<ts>] <name> (<room>): <body>`.
+
+    The id stays FIRST and verbatim — it is the provenance key the objective
+    tells the model to cite, and `accept` validates every cited id against
+    the batch. The name is `person_name` (operator-authored) before
+    `sender_name` (self-set, spoofable — DEC-80's own ordering), falling
+    back to the raw sender id. A bodiless row renders its media placeholder;
+    a reply row appends the quoted target's timestamp."""
+    name = row.person_name or row.sender_name or row.sender_id
+    body = row.body or _media_placeholder(row.media_json)
+    line = f"{row.id} [{_format_ts(row.ts)}] {name} ({room}): {body}"
+    if row.quoted_ts is not None:
+        line += f" (reply to {_format_ts(row.quoted_ts)})"
+    return line
+
 
 class FactCandidateAdaptor:
     """Phase A: read one room's message batch, name the claims, write them to
@@ -266,9 +335,19 @@ class FactCandidateAdaptor:
         self._message_ids: dict[str, frozenset[int]] = {}
 
     async def inputs(self, *, key: str, batch: Sequence[TranscriptRow]) -> str:
-        """`id: body` lines, which is exactly what the objective points at
-        when it says "the integer id of the message the claim was asserted
-        in, exactly as it appears in the batch you were given".
+        """One attributed line per message — `<id> [<ts>] <name> (<room>):
+        <body>` — which is exactly what the objective points at when it says
+        "the integer id of the message the claim was asserted in, exactly as
+        it appears in the batch you were given".
+
+        Attributed, per design/dreamer-agent-loop/32 §3.3 point 1: the old
+        `id: body` render was a bare id and a body with no sender, no time,
+        no room, no media, no reply, and a claim the model could not place
+        on a person or a moment came back unattributable. The speaker is now
+        PRESENT — the earlier "speaker deliberately absent" reasoning is
+        reversed by the same design; the roster guard against claims about
+        people in the room lives in the candidate store and the objective's
+        exclusion list, not in starving the model of who spoke.
 
         The claim's attribution is PLURAL (`CandidateClaim.message_ids`)
         because D31 makes an episode a conversational chunk, so a claim can
@@ -276,20 +355,28 @@ class FactCandidateAdaptor:
         one line per message and still copies ids off it.
 
         `TranscriptRow.body` is `str | None` — a media-only message has no
-        text at all — so it is rendered as an empty body rather than assumed
-        to be a string; an `inputs` that assumed one would take the tick down
-        on a sticker. Such a row is still rendered, with its id, rather than
-        skipped: `accept` validates every returned `message_ids` entry against the
-        whole BATCH, so skipping a row here would make the set the model was shown
-        smaller than the set `accept` will accept from it.
+        text at all — so it is rendered as its media placeholder rather than
+        assumed to be a string; an `inputs` that assumed one would take the
+        tick down on a sticker. Such a row is still rendered, with its id,
+        rather than skipped: `accept` validates every returned `message_ids`
+        entry against the whole BATCH, so skipping a row here would make the
+        set the model was shown smaller than the set `accept` will accept
+        from it.
 
-        The speaker is deliberately absent. The objective's first exclusion is
-        "anything about a person in this room", and naming the speakers is how
-        a batch of ordinary chat starts looking like a batch of claims about
-        the people in it.
+        Past `MAX_RENDERED_MESSAGES` the render switches to a summary line
+        naming the omitted id range (32 §3.3 point 2): the id SET the model
+        may cite stays the whole batch, only the text is bounded.
         """
         self._message_ids[key] = frozenset(row.id for row in batch)
-        lines = [f"{row.id}: {row.body or ''}" for row in batch]
+        room = self._workspace_for(key) or key
+        lines = [_render_line(row, room=room)
+                 for row in batch[:MAX_RENDERED_MESSAGES]]
+        if len(batch) > MAX_RENDERED_MESSAGES:
+            omitted = batch[MAX_RENDERED_MESSAGES:]
+            lines.append(
+                f"... and {len(omitted)} more messages "
+                f"(ids {omitted[0].id}..{omitted[-1].id}) not shown"
+            )
         if not lines:
             # Same rule as the adjudicator's: blank means "nothing to reason
             # about", and the runtime skips the model rather than paying for a
