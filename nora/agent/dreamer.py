@@ -90,6 +90,24 @@ log = logging.getLogger("nora.dreamer")
 MAX_ENVELOPE_CHARS = 200_000
 MAX_ITEMS = 64
 
+# Tool-result caps (design/dreamer-agent-loop/32 §3.3 point 3).
+# `MAX_ENVELOPE_CHARS` bounds the OUTGOING envelope only; before these, a
+# tool result re-entered the loop UNTRUNCATED, so one fetched page or memory
+# dump could spend the run's whole token budget on context. `DreamGuard`
+# enforces the cap in its after-tool hook and appends a marker naming the
+# cap, so a truncated result reads as truncated rather than as the whole
+# answer. Memory verbs get the tighter number: their answers are summaries
+# to reason over, not pages to quote.
+MAX_TOOL_RESULT_CHARS = 8000
+MAX_MEMORY_RESULT_CHARS = 4000
+_TOOL_RESULT_CAPS: Mapping[str, int] = {
+    "web_fetch": MAX_TOOL_RESULT_CHARS,
+    "web_search": MAX_TOOL_RESULT_CHARS,
+    "search_memory": MAX_MEMORY_RESULT_CHARS,
+    "about": MAX_MEMORY_RESULT_CHARS,
+    "ask_memory": MAX_MEMORY_RESULT_CHARS,
+}
+
 DreamStatus = Literal["ok", "nothing_found", "unavailable"]
 
 
@@ -629,6 +647,7 @@ class DreamerRuntime:
                 adaptor=adaptor.name,
                 budgets=_tool_budgets(tools, adaptor),
                 metrics=self._metrics,
+                result_caps=_TOOL_RESULT_CAPS,
             )
             prompt = await adaptor.inputs(key=key, batch=batch)
             if not prompt.strip():

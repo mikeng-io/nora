@@ -276,9 +276,13 @@ def test_the_guard_has_no_terminal_verb_and_nothing_that_could_end_a_turn():
     argument does not transfer to a loop that ends when the model stops calling
     tools. The way to be sure this guard is not a weakened `ReplyGuard` is that
     it cannot be handed the parts.
+
+    `result_caps` (design/dreamer-agent-loop/32 §3.3 point 3) is on the
+    signature deliberately: it shapes a tool RESULT, not a turn — it cannot
+    cancel, relax, or end anything, so the negative below stays intact.
     """
     params = inspect.signature(DreamGuard.__init__).parameters
-    assert set(params) == {"self", "adaptor", "budgets", "metrics"}
+    assert set(params) == {"self", "adaptor", "budgets", "metrics", "result_caps"}
     assert all(
         p.kind is inspect.Parameter.KEYWORD_ONLY
         for name, p in params.items() if name != "self"
@@ -314,3 +318,59 @@ def test_a_hook_failure_never_escapes_the_loop():
     g._before_tool(event)                    # must not raise
     g._after_tool(_Malformed())              # must not raise
     assert event.cancel_tool is None
+
+
+# ---- result caps (design/dreamer-agent-loop/32 §3.3 point 3) ----------------
+
+
+def _capped_guard(cap: int) -> DreamGuard:
+    return DreamGuard(
+        adaptor="fact-adjudication", budgets=BUDGETS, metrics=Metrics(),
+        result_caps={"place_info": cap},
+    )
+
+
+def test_a_capped_tools_result_is_cut_and_says_so():
+    """A result past its cap is cut BEFORE it re-enters the loop, and the
+    marker names the cap: a truncated result must read as truncated, not as
+    the whole answer."""
+    g = _capped_guard(10)
+    event = _AfterToolCall("place_info")
+    event.result["content"] = [{"text": "x" * 50}]
+
+    g._after_tool(event)
+
+    text = event.result["content"][0]["text"]
+    assert text.startswith("x" * 10)
+    assert "x" * 11 not in text
+    assert "truncated" in text and "10" in text
+
+
+def test_a_result_under_the_cap_passes_through_untouched():
+    g = _capped_guard(100)
+    event = _AfterToolCall("place_info")
+
+    g._after_tool(event)
+
+    assert event.result["content"] == [{"text": "True"}]
+
+
+def test_an_uncapped_tool_is_never_touched():
+    """Caps are per tool: a tool absent from the mapping keeps its result
+    verbatim, however large."""
+    g = _capped_guard(1)
+    event = _AfterToolCall("now")
+
+    g._after_tool(event)
+
+    assert event.result["content"] == [{"text": "True"}]
+
+
+def test_a_guard_with_no_caps_behaves_exactly_as_before():
+    event = _AfterToolCall("place_info")
+    event.result["content"] = [{"text": "x" * 100_000}]
+
+    _guard()._after_tool(event)
+
+    assert event.result["content"] == [{"text": "x" * 100_000}]
+

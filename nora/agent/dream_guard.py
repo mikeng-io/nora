@@ -68,6 +68,7 @@ class DreamGuard(HookProvider):
 
     def __init__(
         self, *, adaptor: str, budgets: Mapping[str, int], metrics: Metrics,
+        result_caps: Mapping[str, int] | None = None,
     ) -> None:
         self._adaptor = adaptor
         self._metrics = metrics
@@ -76,6 +77,12 @@ class DreamGuard(HookProvider):
         # membership (`knows`); this is the same set spelled for a human, held
         # once rather than re-derived on every veto.
         self._tool_names = frozenset(budgets)
+        # Per-tool result size caps (design/dreamer-agent-loop/32 §3.3 point
+        # 3), enforced in `_after_tool`. A run with no caps behaves exactly as
+        # before — the tag path's results are bounded upstream by their
+        # callers; the Dreamer's were not, and one unbounded page fetch could
+        # spend the run's whole token budget on context.
+        self._result_caps = result_caps or {}
 
     def _veto(self, rule: str, message: str) -> str:
         self._metrics.inc(
@@ -177,5 +184,38 @@ class DreamGuard(HookProvider):
             if getattr(event, "cancel_message", None) is not None:
                 return                       # a vetoed call never ran
             self._ledger.record(name)
+            cap = self._result_caps.get(name)
+            if cap is not None:
+                self._clamp_result(event, name, cap)
         except Exception:
             log.exception("DreamGuard._after_tool raised; ignoring")
+
+    def _clamp_result(self, event: Any, name: str, cap: int) -> None:
+        """Cut a capped tool's result text down to its cap, IN PLACE.
+
+        The marker says the cap exists — design/dreamer-agent-loop/32 §3.3:
+        "a truncated result reads as truncated, not as the whole answer",
+        which is what stops the model summarising half a page as if it were
+        the page. Only `text` content blocks are clamped: the dream tools
+        return plain dicts, which Strands wraps as one `text` block
+        (`strands.tools.decorator._wrap_tool_result`, verified against the
+        installed SDK), and a block of any other shape is left exactly as it
+        arrived rather than guessed at.
+        """
+        result = getattr(event, "result", None)
+        if not isinstance(result, dict):
+            return
+        content = result.get("content")
+        if not isinstance(content, list):
+            return
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            text = block.get("text")
+            if isinstance(text, str) and len(text) > cap:
+                block["text"] = (
+                    text[:cap]
+                    + f"\n... [truncated: this {name} result exceeded the "
+                      f"{cap}-character cap; the rest was cut before it "
+                      f"reached you]"
+                )
