@@ -15,7 +15,7 @@ import {
 import { hueOf } from "@/lib/person-color";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { PersonAvatar } from "@/components/person-avatar";
 import { cn } from "@/lib/utils";
 import { PresenceAnalytics, SurfaceTabs, type MapSurface } from "@/components/presence-analytics";
 
@@ -30,15 +30,6 @@ const PresenceMap = dynamic(
 
 const POLL_INTERVAL_MS = 20_000;
 const HOUR_OPTIONS = [1, 6, 24, 168] as const;
-
-function initialsOf(name: string) {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
 
 export default function MapPage() {
   const t = useTranslations("map");
@@ -246,30 +237,20 @@ function PersonRow({
     <button
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-lg border-l-[3px] border-y border-r p-2.5 text-left transition-colors",
+        "group flex w-full items-center gap-2.5 rounded-lg border-l-[3px] border-y border-r p-2.5 text-left transition-all hover:-translate-y-px hover:shadow-sm active:translate-y-0",
         selected
           ? "border-y-accent/40 border-r-accent/40 bg-accent/10"
           : "border-y-border border-r-border bg-bg-surface hover:bg-bg-elevated",
       )}
       style={{ borderLeftColor: fix ? `hsl(${hue} 65% 50%)` : "var(--border-strong)" }}
     >
-      <Avatar
-        className="h-8 w-8 shrink-0 ring-2"
-        style={{
-          backgroundColor: `hsl(${hue} 70% 92%)`,
-          // @ts-expect-error -- CSS custom value, not a token
-          "--tw-ring-color": `hsl(${hue} 60% 55% / ${fix ? 0.35 : 0.12})`,
-        }}
-      >
-        <AvatarFallback
-          style={{
-            color: fix ? `hsl(${hue} 55% 32%)` : "var(--text-muted)",
-            backgroundColor: "transparent",
-          }}
-        >
-          {initialsOf(entry.displayName)}
-        </AvatarFallback>
-      </Avatar>
+      <PersonAvatar
+        personId={entry.personId}
+        name={entry.displayName}
+        size="md"
+        muted={!fix}
+        className="transition-transform group-hover:scale-105"
+      />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium">{entry.displayName}</div>
         <div className="flex items-center gap-1.5 truncate font-mono text-[10px] uppercase tracking-wide text-text-muted">

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
 import { Activity, Gauge, Grid2X2, HelpCircle, MapPinned, Route, Waypoints } from "lucide-react";
@@ -17,6 +17,7 @@ import {
   type PresenceRouteTrip,
 } from "@/lib/presence-schema";
 import { hueOf } from "@/lib/person-color";
+import { PersonAvatar } from "@/components/person-avatar";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,63 @@ const RouteMap = dynamic(
 );
 
 export type MapSurface = "live" | "places" | "rhythm" | "routes";
+
+// These horizontal strips (subjects, days, surface tabs) hide their
+// scrollbar (see the earlier hallmark-audit fix) — but a hidden scrollbar
+// with only touch/trackpad-swipe scrolling reads as broken to a plain-mouse
+// user, who has no drag handle left to grab. Click-and-drag panning covers
+// that gap; touch/trackpad users already have native gesture scrolling and
+// are unaffected (this only listens for mouse events).
+function useDragScroll<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const state = useRef({ dragging: false, startX: 0, startScroll: 0 });
+
+  const onMouseDown = (event: MouseEvent) => {
+    const el = ref.current;
+    if (!el) return;
+    state.current = { dragging: true, startX: event.clientX, startScroll: el.scrollLeft };
+  };
+  const endDrag = () => {
+    state.current.dragging = false;
+  };
+  const onMouseMove = (event: MouseEvent) => {
+    const el = ref.current;
+    if (!el || !state.current.dragging) return;
+    el.scrollLeft = state.current.startScroll - (event.clientX - state.current.startX);
+  };
+
+  return { ref, onMouseDown, onMouseMove, onMouseUp: endDrag, onMouseLeave: endDrag };
+}
+
+const DAYS_OPTIONS = [7, 14, 30, 90] as const;
+
+function DaysPicker({ value, onChange }: { value: number; onChange: (days: number) => void }) {
+  const t = useTranslations("map");
+  return (
+    <div className="mb-4 flex items-center gap-1.5" role="group" aria-label={t("analytics.rhythm.window")}>
+      <span className="mr-1 shrink-0 font-mono text-[10px] uppercase tracking-wider text-text-muted">
+        {t("analytics.rhythm.window")}
+      </span>
+      {DAYS_OPTIONS.map((days) => (
+        <button
+          key={days}
+          type="button"
+          aria-pressed={value === days}
+          onClick={() => onChange(days)}
+          className={cn(
+            "relative rounded-full border px-2.5 py-1 font-mono text-[11.5px] transition-colors",
+            "before:absolute before:-inset-2 before:content-['']", // 44px+ hit target
+            value === days
+              ? "border-border-strong bg-bg-elevated text-text-primary"
+              : "border-border text-text-secondary hover:bg-bg-elevated",
+          )}
+        >
+          {days} {t("analytics.units.days")}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function SurfaceTabs({ active, onChange }: { active: MapSurface; onChange: (surface: MapSurface) => void }) {
   const t = useTranslations("map");
@@ -109,11 +167,17 @@ function SubjectPicker({
   onSelect: (subjectId: string) => void;
 }) {
   const t = useTranslations("map");
+  const drag = useDragScroll<HTMLDivElement>();
   if (!entries) return null;
 
   return (
     <div
-      className="mb-4 flex items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      ref={drag.ref}
+      onMouseDown={drag.onMouseDown}
+      onMouseMove={drag.onMouseMove}
+      onMouseUp={drag.onMouseUp}
+      onMouseLeave={drag.onMouseLeave}
+      className="mb-4 flex cursor-grab items-center gap-1.5 overflow-x-auto select-none active:cursor-grabbing [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       role="group"
       aria-label={t("analytics.subjects")}
     >
@@ -122,21 +186,25 @@ function SubjectPicker({
       </span>
       {entries.map((entry) => {
         const active = entry.personId === selectedSubjectId;
-        const hue = hueOf(entry.personId);
         return (
           <button
             key={entry.personId}
             type="button"
             onClick={() => onSelect(entry.personId)}
             className={cn(
-              "relative flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors",
+              "group relative flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-[11.5px] transition-all hover:-translate-y-px active:translate-y-0",
               "before:absolute before:-inset-2 before:content-['']", // 44px+ hit target without growing the visible pill
               active
                 ? "border-border-strong bg-bg-elevated text-text-primary"
                 : "border-border text-text-secondary hover:bg-bg-elevated",
             )}
           >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `hsl(${hue} 65% 50%)` }} />
+            <PersonAvatar
+              personId={entry.personId}
+              name={entry.displayName}
+              muted={!active}
+              className="transition-transform group-hover:scale-110"
+            />
             {entry.displayName}
           </button>
         );
@@ -195,12 +263,11 @@ function PlaceSubjectCard({
   places: PresenceAnalyticsPlace[];
 }) {
   const t = useTranslations("map");
-  const hue = hueOf(personId);
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 text-[13px] font-medium">
-          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: `hsl(${hue} 65% 50%)` }} />
+          <PersonAvatar personId={personId} name={displayName} />
           {displayName}
         </div>
         <span className="font-mono text-[10px] uppercase tracking-wider text-text-muted">
@@ -251,6 +318,7 @@ function RhythmSurface({
 }) {
   const t = useTranslations("map");
   const [data, setData] = useState<PresenceRhythm | null>(null);
+  const [days, setDays] = useState(30);
   const [error, setError] = useState(false);
   const subjectId = selectedSubjectId ?? entries?.[0]?.personId ?? null;
 
@@ -259,7 +327,7 @@ function RhythmSurface({
     let cancelled = false;
     setData(null);
     setError(false);
-    fetchPresenceRhythm(subjectId)
+    fetchPresenceRhythm(subjectId, days)
       .then((value) => {
         if (!cancelled) setData(value);
       })
@@ -269,13 +337,14 @@ function RhythmSurface({
     return () => {
       cancelled = true;
     };
-  }, [subjectId]);
+  }, [subjectId, days]);
 
   if (!entries) return <AnalyticsLoading />;
   if (!subjectId || entries.length === 0) return <AnalyticsEmpty label={t("analytics.empty.noSubjects")} icon={Grid2X2} />;
   return (
     <div>
       <SubjectPicker entries={entries} selectedSubjectId={subjectId} onSelect={onSubjectSelect} />
+      <DaysPicker value={days} onChange={setDays} />
       {error ? <AnalyticsError /> : !data ? <AnalyticsLoading /> : <RhythmGrid data={data} subjectId={subjectId} />}
     </div>
   );
@@ -356,6 +425,7 @@ function RoutesSurface({
   const [paths, setPaths] = useState<Record<number, PresenceHistoryPoint[]>>({});
   const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
   const [showHeat, setShowHeat] = useState(true);
+  const [days, setDays] = useState(30);
   const [error, setError] = useState(false);
   const subjectId = selectedSubjectId ?? entries?.[0]?.personId ?? null;
   const selectedTrip = data?.trips.find((trip) => trip.id === selectedTripId) ?? data?.trips[0] ?? null;
@@ -368,7 +438,7 @@ function RoutesSurface({
     setPaths({});
     setSelectedTripId(null);
     setError(false);
-    fetchPresenceRoutes(subjectId)
+    fetchPresenceRoutes(subjectId, days)
       .then((value) => {
         if (!cancelled) setData(value);
       })
@@ -378,7 +448,7 @@ function RoutesSurface({
     return () => {
       cancelled = true;
     };
-  }, [subjectId]);
+  }, [subjectId, days]);
 
   useEffect(() => {
     if (!subjectId || !data || data.trips.length === 0) return;
@@ -407,6 +477,7 @@ function RoutesSurface({
   return (
     <div>
       <SubjectPicker entries={entries} selectedSubjectId={subjectId} onSelect={onSubjectSelect} />
+      <DaysPicker value={days} onChange={setDays} />
       {error ? <AnalyticsError /> : !data ? <AnalyticsLoading /> : data.trips.length === 0 ? <AnalyticsEmpty label={t("analytics.empty.noRoutes")} icon={Route} /> : (
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-3">
