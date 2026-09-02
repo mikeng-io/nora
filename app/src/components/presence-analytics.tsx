@@ -17,7 +17,7 @@ import {
   type PresenceRouteTrip,
 } from "@/lib/presence-schema";
 import { hueOf } from "@/lib/person-color";
-import { PersonAvatar } from "@/components/person-avatar";
+import { PersonAvatar } from "@/components/ui/person-avatar";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -186,6 +186,7 @@ function SubjectPicker({
       </span>
       {entries.map((entry) => {
         const active = entry.personId === selectedSubjectId;
+        const hue = hueOf(entry.personId);
         return (
           <button
             key={entry.personId}
@@ -199,12 +200,15 @@ function SubjectPicker({
                 : "border-border text-text-secondary hover:bg-bg-elevated",
             )}
           >
-            <PersonAvatar
-              personId={entry.personId}
-              name={entry.displayName}
-              muted={!active}
-              className="transition-transform group-hover:scale-110"
-            />
+            <span
+              className="inline-flex shrink-0 rounded-full ring-2 transition-transform group-hover:scale-110"
+              style={{
+                // @ts-expect-error -- CSS custom value, not a token
+                "--tw-ring-color": `hsl(${hue} 60% 55% / ${active ? 0.35 : 0.12})`,
+              }}
+            >
+              <PersonAvatar seed={entry.personId} size={20} />
+            </span>
             {entry.displayName}
           </button>
         );
@@ -263,11 +267,20 @@ function PlaceSubjectCard({
   places: PresenceAnalyticsPlace[];
 }) {
   const t = useTranslations("map");
+  const hue = hueOf(personId);
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 text-[13px] font-medium">
-          <PersonAvatar personId={personId} name={displayName} />
+          <span
+            className="inline-flex shrink-0 rounded-full ring-2"
+            style={{
+              // @ts-expect-error -- CSS custom value, not a token
+              "--tw-ring-color": `hsl(${hue} 60% 55% / 0.35)`,
+            }}
+          >
+            <PersonAvatar seed={personId} size={24} />
+          </span>
           {displayName}
         </div>
         <span className="font-mono text-[10px] uppercase tracking-wider text-text-muted">

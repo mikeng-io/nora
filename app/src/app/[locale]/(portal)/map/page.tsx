@@ -15,7 +15,7 @@ import {
 import { hueOf } from "@/lib/person-color";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
-import { PersonAvatar } from "@/components/person-avatar";
+import { PersonAvatar } from "@/components/ui/person-avatar";
 import { cn } from "@/lib/utils";
 import { PresenceAnalytics, SurfaceTabs, type MapSurface } from "@/components/presence-analytics";
 
@@ -244,13 +244,15 @@ function PersonRow({
       )}
       style={{ borderLeftColor: fix ? `hsl(${hue} 65% 50%)` : "var(--border-strong)" }}
     >
-      <PersonAvatar
-        personId={entry.personId}
-        name={entry.displayName}
-        size="md"
-        muted={!fix}
-        className="transition-transform group-hover:scale-105"
-      />
+      <span
+        className="inline-flex shrink-0 rounded-full ring-2 transition-transform group-hover:scale-105"
+        style={{
+          // @ts-expect-error -- CSS custom value, not a token
+          "--tw-ring-color": `hsl(${hue} 60% 55% / ${fix ? 0.35 : 0.12})`,
+        }}
+      >
+        <PersonAvatar seed={entry.personId} size={32} />
+      </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium">{entry.displayName}</div>
         <div className="flex items-center gap-1.5 truncate font-mono text-[10px] uppercase tracking-wide text-text-muted">
