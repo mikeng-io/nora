@@ -874,9 +874,10 @@ async def test_scheduling_a_new_prewarm_cancels_the_previous_timer_and_task() ->
 
 
 async def test_an_empty_prewarm_is_retried_once_at_track_end() -> None:
-    """R-68 (2026-09-01), superseding Codex MAJOR-1 (2026-08-26): a
-    completed prewarm that answered empty is NOT the final answer — the
-    prewarm ran up to `autoplay_prewarm_seconds` BEFORE the track ended,
+    """R-67 (amended 2026-09-01), superseding the original Codex MAJOR-1
+    form (2026-08-26): a completed prewarm that answered empty is NOT the
+    final answer — the prewarm ran up to `autoplay_prewarm_seconds` BEFORE
+    the track ended,
     and a transient YouTube failure at that earlier moment must not
     permanently kill the chain. The track-end `_advance` retries
     `related()` ONCE live; only if THAT also answers empty does the
@@ -962,13 +963,13 @@ async def test_a_failed_session_delete_does_not_block_dead_voice_teardown() -> N
     assert voice.disconnected == 1
 
 
-# ── R-67: autoplay re-seed seed (last_played) ──────────────────────────────
+# ── R-88: autoplay re-seed seed (last_played) ──────────────────────────────
 
 
 async def test_advance_records_last_played_when_a_track_starts() -> None:
-    """R-67: a track that actually starts becomes the re-seed seed, and it
+    """R-88: a track that actually starts becomes the re-seed seed, and it
     survives the queue emptying (unlike `_now_playing`)."""
-    player, voice, session = _player({"track a": _TRACK_A})
+    player, _voice, session = _player({"track a": _TRACK_A})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
 
     assert player._last_played is not None  # type: ignore[attr-defined]
@@ -981,10 +982,10 @@ async def test_advance_records_last_played_when_a_track_starts() -> None:
 
 
 async def test_last_played_survives_the_queue_emptying() -> None:
-    """R-67: when autoplay's chain ends (related() empty), `_now_playing`
+    """R-88: when autoplay's chain ends (related() empty), `_now_playing`
     is cleared but `_last_played` remains -- the seed a boot-time resume
     needs."""
-    player, voice, session = _player(
+    player, _voice, session = _player(
         {"track a": _TRACK_A}, autoplay_enabled=True,
     )
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
@@ -1001,7 +1002,7 @@ async def test_last_played_survives_the_queue_emptying() -> None:
 
 
 async def test_advance_seeds_autoplay_from_last_played_when_nothing_playing() -> None:
-    """R-67: a boot-time resume that found nothing playing (autoplay's
+    """R-88: a boot-time resume that found nothing playing (autoplay's
     chain had already ended) still seeds the chain from `_last_played`."""
     player, voice, _session = _player(
         {"track a": _TRACK_A, "locator-b": _TRACK_B}, autoplay_enabled=True,
@@ -1022,7 +1023,7 @@ async def test_advance_seeds_autoplay_from_last_played_when_nothing_playing() ->
 
 
 async def test_seed_last_played_does_not_play_or_dedup() -> None:
-    """R-67: `seed_last_played` only restores the seed -- it never starts
+    """R-88: `seed_last_played` only restores the seed -- it never starts
     playback and never occupies a dedup slot (the seed track has not played
     in THIS session)."""
     player, voice, _session = _player({"track a": _TRACK_A})
@@ -1034,8 +1035,8 @@ async def test_seed_last_played_does_not_play_or_dedup() -> None:
 
 
 async def test_stop_clears_the_last_played_seed() -> None:
-    """R-67: a stop ENDS the session -- the re-seed seed dies with it."""
-    player, voice, _session = _player({"track a": _TRACK_A})
+    """R-88: a stop ENDS the session -- the re-seed seed dies with it."""
+    player, _voice, _session = _player({"track a": _TRACK_A})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
     assert player._last_played is not None  # type: ignore[attr-defined]
 
@@ -1045,7 +1046,7 @@ async def test_stop_clears_the_last_played_seed() -> None:
 
 
 async def test_an_empty_prewarm_recovers_when_the_live_retry_has_a_track() -> None:
-    """R-68: the prewarm answered empty (transient YouTube failure at
+    """R-67: the prewarm answered empty (transient YouTube failure at
     prewarm time) but the live track-end retry finds a track — the chain
     continues instead of dying. This is the exact live failure of
     2026-09-01: autoplay went silent mid-session with no error."""

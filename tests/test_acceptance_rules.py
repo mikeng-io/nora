@@ -396,10 +396,15 @@ RULE_TESTS = {
     # while a track is loaded, and on two consecutive dead observations
     # signals on_voice_death so the session is torn down like a stop.
     "R-66": "test_the_voice_death_monitor_signals_death_after_two_dead_ticks",
-    # R-67: a completed prewarm that answered EMPTY is the final answer for
-    # that track -- `related()` is never re-consulted at track end (R-62's
-    # "never retried" discipline under prewarm, external audit Codex MAJOR-1).
-    "R-67": "test_an_empty_prewarm_is_not_retried_at_track_end",
+    # R-67: a completed prewarm that answered EMPTY gets ONE live `related()`
+    # retry at the actual track end, never more -- only if the live answer is
+    # also empty does the chain fall through to idle (R-62's "never retried"
+    # discipline applied to the LIVE answer; the bound of one makes a loop
+    # unreachable). External audit Codex MAJOR-1 (2026-08-26) first made the
+    # prewarm's empty the FINAL answer; the live failure of 2026-09-01 --
+    # autoplay went permanently silent after a transient empty prewarm Mix
+    # that had recovered by track end -- bounded that to one retry.
+    "R-67": "test_an_empty_prewarm_is_retried_once_at_track_end",
     # R-68: every transition that can touch a guild's MusicPlayer runs under
     # that guild's lock -- skip/stop/channel-empty/idle-timeout join
     # play()/on_track_finished()/on_voice_death() so a natural track-end,
@@ -408,6 +413,13 @@ RULE_TESTS = {
     # and the dead-voice teardown's session delete are both exception-safe
     # (Codex MAJOR-3/4).
     "R-68": "test_a_dead_voice_connection_tears_down_the_session",
+    # R-88: the most recent track that ACTUALLY started is persisted as
+    # `music_session.last_played_*` and survives the queue emptying, so a
+    # boot-time resume that finds nothing playing re-seeds the autoplay
+    # chain from it instead of sitting silent in a live voice channel.
+    # (Numbered at gate-cleanup time: the change landed 2026-09-01
+    # mislabelled "R-67", colliding with the prewarm rule above.)
+    "R-88": "test_advance_seeds_autoplay_from_last_played_when_nothing_playing",
     # R-69 names the FIRST of four tests (the naming convention this dict
     # follows), and it is the one whose failure is unrecoverable: an exception
     # raised inside a `finally` skips the rest of that `finally`, and the
