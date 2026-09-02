@@ -9,7 +9,8 @@ import pytest
 
 from nora.infra.parking.street import StreetParkingClient, _metres
 
-SPACES_CSV = "\ufeffPoleId,ParkingSpaceId,Region,District,Street,Street_tc,SectionOfStreet,Latitude,Longitude,VehicleType\n" \
+SPACES_CSV = "\ufeffPoleId,ParkingSpaceId,Region,District,Street,Street_tc," \
+    "SectionOfStreet,Latitude,Longitude,VehicleType\n" \
     "P1,S10006A,HK,Central,QUEEN'S ROAD CENTRAL,皇后大道中,Section,22.2820,114.1580,M\n" \
     "P1,S10007B,HK,Central,QUEEN'S ROAD CENTRAL,皇后大道中,Section,22.2821,114.1581,M\n" \
     "P2,S20001A,NT,Tsuen Wan,TAI PA STREET,大埔道,Section,22.3750,114.1100,M\n" \

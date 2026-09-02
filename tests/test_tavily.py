@@ -253,7 +253,7 @@ async def test_search_and_fetch_share_one_client_and_key(tavily):
 
 async def test_below_floor_results_are_dropped(tavily):
     """A result whose Tavily `score` sits under `min_score` is dropped — the
-    opaque-ID junk (0.02–0.05) must not reach the model as five junk links.
+    opaque-ID junk (0.02-0.05) must not reach the model as five junk links.
     The fake carries 4 results: 0.9, 0.5 (kept), 0.05 (below floor), None
     (malformed) — so exactly 2 survive the 0.1 floor."""
     fake, provider = tavily

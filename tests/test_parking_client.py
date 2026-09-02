@@ -8,10 +8,10 @@ from __future__ import annotations
 import pytest
 
 from nora.infra.parking.client import (
+    ParkingClient,
     _lastupdate_of,
     _normalise,
     _vacancy_of,
-    ParkingClient,
 )
 
 INDEX_SAMPLE = (
@@ -44,7 +44,7 @@ class _FakeSession:
     def __init__(self, *args, **kwargs):
         self._index = kwargs.get("index", INDEX_SAMPLE)
         self._vacancy = kwargs.get("vacancy", dict(VACANCY_SAMPLE))
-        self._basic = kwargs.get("basic", None)
+        self._basic = kwargs.get("basic")
 
     async def __aenter__(self):
         return self

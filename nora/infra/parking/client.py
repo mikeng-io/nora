@@ -93,11 +93,10 @@ class ParkingClient:
         try:
             async with aiohttp.ClientSession(
                 timeout=self._timeout, raise_for_status=True,
-            ) as session:
-                async with session.get(vacancy_url) as resp:
-                    # utf-8-sig: the vacancy bodies carry a BOM too (same feed
-                    # convention as the index CSV) — measured 2026-08-31.
-                    body = await resp.json(encoding="utf-8-sig")
+            ) as session, session.get(vacancy_url) as resp:
+                # utf-8-sig: the vacancy bodies carry a BOM too (same feed
+                # convention as the index CSV) — measured 2026-08-31.
+                body = await resp.json(encoding="utf-8-sig")
         except Exception:
             log.exception("parking vacancy fetch failed")
             return None
@@ -114,9 +113,8 @@ class ParkingClient:
             try:
                 async with aiohttp.ClientSession(
                     timeout=self._timeout, raise_for_status=True,
-                ) as session:
-                    async with session.get(basic_url) as resp:
-                        basic = await resp.json(encoding="utf-8-sig")
+                ) as session, session.get(basic_url) as resp:
+                    basic = await resp.json(encoding="utf-8-sig")
                 # The basic-info envelope is {"car_park": [{...}]} — the
                 # first record is the one this index row named.
                 row = None
@@ -125,7 +123,8 @@ class ParkingClient:
                     if isinstance(cp, list) and cp and isinstance(cp[0], dict):
                         row = cp[0]
                 opening_status = _basic_text(row, "opening_status")
-                address = _basic_text(row, "displayAddress_en") or _basic_text(row, "displayAddress_tc")
+                address = (_basic_text(row, "displayAddress_en")
+                           or _basic_text(row, "displayAddress_tc"))
                 fee = _basic_text(row, "remark_en") or _basic_text(row, "remark_tc")
             except Exception:
                 log.exception("parking basic-info fetch failed (vacancy kept)")
@@ -154,12 +153,11 @@ class ParkingClient:
             return self._index
         async with aiohttp.ClientSession(
             timeout=self._timeout, raise_for_status=True,
-        ) as session:
-            async with session.get(self._index_url) as resp:
-                # utf-8-sig strips the CSV's BOM — otherwise the first header
-                # is "\ufeffParking ID" and `row.get("Parking ID")` misses
-                # every row, leaving the index empty (measured 2026-08-31).
-                text = await resp.text(encoding="utf-8-sig")
+        ) as session, session.get(self._index_url) as resp:
+            # utf-8-sig strips the CSV's BOM — otherwise the first header
+            # is "\ufeffParking ID" and `row.get("Parking ID")` misses
+            # every row, leaving the index empty (measured 2026-08-31).
+            text = await resp.text(encoding="utf-8-sig")
         index: dict[str, tuple[str, str, str, str, str]] = {}
         for row in csv.DictReader(io.StringIO(text)):
             pid = (row.get("Parking ID") or "").strip()
@@ -242,7 +240,8 @@ def _vacancy_of(body: Any) -> int | None:
                         # impossible count (audit nit 2026-08-31).
                         if isinstance(v, int) and v >= 0:
                             return v
-    except Exception:
+    except (AttributeError, TypeError):
+        # A wrong-shaped feed body (non-dict, non-iterable) is "no reading".
         return None
     return None
 
@@ -254,7 +253,8 @@ def _lastupdate_of(body: Any) -> str | None:
                 for sc in vt.get("service_category", []):
                     if sc.get("category") == "HOURLY" and sc.get("lastupdate"):
                         return str(sc["lastupdate"])
-    except Exception:
+    except (AttributeError, TypeError):
+        # A wrong-shaped feed body (non-dict, non-iterable) is "no reading".
         return None
     return None
 

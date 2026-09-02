@@ -157,7 +157,7 @@ class CannedSearchProvider:
     artifact exactly like the vague-snippet trap. The content now echoes the
     query, names a source and a timestamp, and answers the SHAPE the query
     asks (hours vs rating vs vacancy) so the model has grounds to stop.
-    """
+    """  # noqa: RUF002 — the multiplication sign matches the audit's own notation (as in nora/language/render.py)
 
     async def search(self, *, query: str) -> dict[str, Any]:
         # Echo the query so the result is visibly ABOUT it; name an authority
