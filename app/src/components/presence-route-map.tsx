@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+// `leaflet.heat` is loaded dynamically inside DwellHeatLayer's effect, not
+// imported here — it's a plain script that assumes a browser global and
+// crashes Next's server-side prerender the moment it's in ANY module graph
+// the server touches, even behind this file's own ssr:false dynamic import.
+// `@types/leaflet.heat` (a type-only devDependency) still augments `L`'s
+// types globally, so `L.heatLayer` below type-checks without the runtime
+// import present at module scope.
+import { antPath, type AntPath } from "leaflet-ant-path";
 import { MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
 import type { PresenceHistoryPoint } from "@/lib/presence-schema";
 
@@ -37,13 +45,73 @@ function FitToPath({ points }: { points: [number, number][] }) {
   return null;
 }
 
+// react-leaflet has no declarative wrapper for a third-party layer — same
+// imperative add/remove-on-the-map pattern as FitToPath above, not a new
+// convention. The selected trip's path animates (marching-ants direction of
+// travel); every other trip stays a plain dim Polyline (rendered by the
+// caller) — animating a dozen at once would be noise, not signal.
+function AnimatedSelectedPath({ positions, color }: { positions: [number, number][]; color: string }) {
+  const map = useMap();
+  const layerRef = useRef<AntPath | null>(null);
+
+  useEffect(() => {
+    if (positions.length < 2) return undefined;
+    const layer = antPath(positions, {
+      color, weight: 5, opacity: 0.95, delay: 800, dashArray: [10, 20],
+      pulseColor: "#ffffff",
+    });
+    layer.addTo(map);
+    layerRef.current = layer;
+    return () => {
+      layer.remove();
+      layerRef.current = null;
+    };
+  }, [map, positions, color]);
+
+  return null;
+}
+
+// Density of every fetched fix (not just the selected trip) — the texture
+// of where a subject actually spends time, including spots that never
+// crossed Tier 2's clustering confidence threshold to become a labelled
+// place. Uses points already fetched for the trip paths — no extra request.
+function DwellHeatLayer({ points, enabled }: { points: [number, number][]; enabled: boolean }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!enabled || points.length === 0) return undefined;
+    let layer: L.HeatLayer | undefined;
+    let cancelled = false;
+    import("leaflet.heat").then(() => {
+      if (cancelled) return;
+      layer = L.heatLayer(
+        points.map(([lat, lng]) => L.latLng(lat, lng)),
+        { radius: 18, blur: 22, maxZoom: 16, minOpacity: 0.25 },
+      );
+      layer.addTo(map);
+    });
+    return () => {
+      cancelled = true;
+      layer?.remove();
+    };
+  }, [map, points, enabled]);
+
+  return null;
+}
+
 type RouteLine = {
   id: number;
   corridorId: number | null;
   points: PresenceHistoryPoint[];
 };
 
-export function PresenceRouteMap({ routes, selectedTripId }: { routes: RouteLine[]; selectedTripId: number | null }) {
+export function PresenceRouteMap({
+  routes, selectedTripId, showHeat = false,
+}: {
+  routes: RouteLine[];
+  selectedTripId: number | null;
+  showHeat?: boolean;
+}) {
   const positions = useMemo<[number, number][]>(
     () => routes.flatMap((route) => route.points.map((point) => [point.lat, point.lng] as [number, number])),
     [routes],
@@ -70,22 +138,29 @@ export function PresenceRouteMap({ routes, selectedTripId }: { routes: RouteLine
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <FitToPath points={fitTargets} />
+      <DwellHeatLayer points={positions} enabled={showHeat} />
       {routes.map((route) => {
         const routePositions = route.points.map((point) => [point.lat, point.lng] as [number, number]);
         if (routePositions.length < 2) return null;
-        const selected = route.id === selectedTripId;
+        if (route.id === selectedTripId) return null; // rendered animated, below
         return (
           <Polyline
             key={route.id}
             positions={routePositions}
             pathOptions={{
               color: route.corridorId === null ? "var(--accent-dim)" : "var(--accent)",
-              weight: selected ? 5 : 2,
-              opacity: selected ? 0.95 : 0.38,
+              weight: 2,
+              opacity: 0.38,
             }}
           />
         );
       })}
+      {selectedPositions.length > 0 && (
+        <AnimatedSelectedPath
+          positions={selectedPositions}
+          color={selectedRoute?.corridorId === null ? "var(--accent-dim)" : "var(--accent)"}
+        />
+      )}
       {selectedRoute && selectedRoute.points.length > 0 && (
         <Marker position={[selectedRoute.points[0].lat, selectedRoute.points[0].lng]} icon={START_ICON} />
       )}

@@ -358,6 +358,11 @@
       "stays": "Stays",
       "dwell": "Dwell"
     },
+    "help": {
+      "confidence": "How sure Nora is this is really home/work — based on how many nights or workday-hours were spent here versus everywhere else this person stayed.",
+      "corridors": "A recurring route: trips whose road sequence closely matches each other are grouped as one corridor, so a regular commute reads as one thing instead of dozens of separate trips.",
+      "linked": "Trips that matched an existing corridor (a route this person has taken before), out of all trips shown."
+    },
     "rhythm": {
       "window": "Window",
       "low": "Low",
@@ -382,7 +387,8 @@
       "end": "End",
       "corridor": "Corridor",
       "unmatched": "Unmatched",
-      "samples": "samples"
+      "samples": "samples",
+      "heat": "Heat"
     }
   },
   "lookback": "Route:",

@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useTranslations } from "next-intl";
-import { Activity, Gauge, Grid2X2, MapPinned, Route, Waypoints } from "lucide-react";
+import { Activity, Gauge, Grid2X2, HelpCircle, MapPinned, Route, Waypoints } from "lucide-react";
 import {
   fetchPresenceAnalyticsPlaces,
   fetchPresenceHistory,
@@ -232,7 +232,7 @@ function PlaceRow({ place }: { place: PresenceAnalyticsPlace }) {
         </div>
       </div>
       <div className="grid grid-cols-3 gap-3 text-right sm:min-w-[260px]">
-        <Metric label={t("analytics.metrics.confidence")} value={`${Math.round(place.confidence * 100)}%`} />
+        <Metric label={t("analytics.metrics.confidence")} value={`${Math.round(place.confidence * 100)}%`} help={t("analytics.help.confidence")} />
         <Metric label={t("analytics.metrics.stays")} value={formatNumber(place.stayCount)} />
         <Metric label={t("analytics.metrics.dwell")} value={formatDuration(place.totalDwellMs)} />
       </div>
@@ -355,6 +355,7 @@ function RoutesSurface({
   const [data, setData] = useState<PresenceRoutes | null>(null);
   const [paths, setPaths] = useState<Record<number, PresenceHistoryPoint[]>>({});
   const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
+  const [showHeat, setShowHeat] = useState(true);
   const [error, setError] = useState(false);
   const subjectId = selectedSubjectId ?? entries?.[0]?.personId ?? null;
   const selectedTrip = data?.trips.find((trip) => trip.id === selectedTripId) ?? data?.trips[0] ?? null;
@@ -410,8 +411,8 @@ function RoutesSurface({
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-3">
             <MetricCard icon={Activity} label={t("analytics.routes.trips")} value={formatNumber(data.trips.length)} />
-            <MetricCard icon={Waypoints} label={t("analytics.routes.corridors")} value={formatNumber(data.corridors.length)} />
-            <MetricCard icon={Gauge} label={t("analytics.routes.linked")} value={formatNumber(data.trips.filter((trip) => trip.corridorId !== null).length)} />
+            <MetricCard icon={Waypoints} label={t("analytics.routes.corridors")} value={formatNumber(data.corridors.length)} help={t("analytics.help.corridors")} />
+            <MetricCard icon={Gauge} label={t("analytics.routes.linked")} value={formatNumber(data.trips.filter((trip) => trip.corridorId !== null).length)} help={t("analytics.help.linked")} />
           </div>
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(300px,1.15fr)]">
             <Card className="max-h-[510px] overflow-y-auto">
@@ -427,13 +428,27 @@ function RoutesSurface({
             <Card className="overflow-hidden">
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <div className="font-mono text-[10px] uppercase tracking-wider text-text-muted">{t("analytics.routes.path")}</div>
-                {selectedTrip && <span className="font-mono text-[10px] text-text-muted">#{selectedTrip.id}</span>}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    aria-pressed={showHeat}
+                    onClick={() => setShowHeat((v) => !v)}
+                    className={cn(
+                      "font-mono text-[10px] uppercase tracking-wider transition-colors",
+                      showHeat ? "text-accent" : "text-text-muted hover:text-text-secondary",
+                    )}
+                  >
+                    {t("analytics.routes.heat")}
+                  </button>
+                  {selectedTrip && <span className="font-mono text-[10px] text-text-muted">#{selectedTrip.id}</span>}
+                </div>
               </div>
               <div className="h-[390px]">
                 {selectedTrip && (
                   <RouteMap
                     routes={data.trips.map((trip) => ({ id: trip.id, corridorId: trip.corridorId, points: paths[trip.id] ?? [] }))}
                     selectedTripId={selectedTrip.id}
+                    showHeat={showHeat}
                   />
                 )}
               </div>
@@ -477,12 +492,70 @@ function TripRow({ trip, selected, onClick }: { trip: PresenceRouteTrip; selecte
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div><div className="font-mono text-[9px] uppercase tracking-wider text-text-muted">{label}</div><div className="mt-1 font-mono text-[12px] text-text-primary">{value}</div></div>;
+// No tooltip primitive exists in this app and no Radix tooltip package is a
+// dependency — not worth adding one for a handful of (?) glyphs. Click/tap
+// toggles a small popover (works identically for mouse, touch, and keyboard
+// — unlike a hover-only `title`, which the earlier rhythm-grid a11y fix
+// already moved away from); `title` is kept too as a zero-cost mouse hint.
+function InfoTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        title={text}
+        aria-label={text}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        onBlur={() => setOpen(false)}
+        className="relative text-text-muted transition-colors hover:text-text-secondary before:absolute before:-inset-2 before:content-['']"
+      >
+        <HelpCircle className="h-3 w-3" />
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          className="absolute bottom-full left-1/2 z-20 mb-1.5 w-48 -translate-x-1/2 rounded-md border border-border bg-bg-elevated p-2 text-left font-mono text-[10px] normal-case leading-snug tracking-normal text-text-secondary shadow-lg"
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  );
 }
 
-function MetricCard({ icon: Icon, label, value }: { icon: typeof Activity; label: string; value: string }) {
-  return <Card className="flex items-center gap-3 p-4"><Icon className="h-4 w-4 text-accent" /><div><div className="font-mono text-[9px] uppercase tracking-wider text-text-muted">{label}</div><div className="mt-1 font-mono text-[17px]">{value}</div></div></Card>;
+function Metric({ label, value, help }: { label: string; value: string; help?: string }) {
+  return (
+    <div>
+      <div className="flex items-center gap-1 font-mono text-[9px] uppercase tracking-wider text-text-muted">
+        {label}
+        {help && <InfoTip text={help} />}
+      </div>
+      <div className="mt-1 font-mono text-[12px] text-text-primary">{value}</div>
+    </div>
+  );
+}
+
+function MetricCard({
+  icon: Icon, label, value, help,
+}: {
+  icon: typeof Activity;
+  label: string;
+  value: string;
+  help?: string;
+}) {
+  return (
+    <Card className="flex items-center gap-3 p-4">
+      <Icon className="h-4 w-4 text-accent" />
+      <div>
+        <div className="flex items-center gap-1 font-mono text-[9px] uppercase tracking-wider text-text-muted">
+          {label}
+          {help && <InfoTip text={help} />}
+        </div>
+        <div className="mt-1 font-mono text-[17px]">{value}</div>
+      </div>
+    </Card>
+  );
 }
 
 function AnalyticsLoading() {
