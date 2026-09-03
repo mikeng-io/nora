@@ -372,7 +372,15 @@ strict = true
 #
 # ALL-OFF again (2026-08-30, operator instruction: "disable all the dreamer").
 # Runtime off, so no adaptor ticks regardless of its own section's flag.
-enabled = false
+#
+# ON again (2026-09-03, operator instruction: "enable knowledge dreamer").
+# The fact-dreamer-schedule implementation (design 32) is merged and verified:
+# per-adaptor schedule (fact-candidates daily), enlarged budget, attributed
+# transcript, workspace-supplied key path, read-only knowledge tools, and
+# asserted_by/asserted_at attribution. `[facts]` is enabled alongside, so the
+# knowledge tier's three adaptors (extraction, adjudication, entity
+# resolution) run on the daily schedule. `[language]` stays false.
+enabled = true
 # The same model Nora runs. OPERATOR DECISION (2026-08-21), NOT a measurement
 # — and the distinction is stated because the earlier version of this comment
 # claimed the opposite while carrying a value nobody had measured.
@@ -1077,7 +1085,15 @@ verify_known_entities = true
 # Turn this back off if the rendered block starts asserting things about
 # people rather than describing what the room has established.
 # ALL-OFF again (2026-08-30, operator instruction: "disable all the dreamer").
-enabled = false
+#
+# ON again (2026-09-03, operator instruction: "enable knowledge dreamer").
+# The fact-dreamer-schedule implementation (design 32) is merged and verified.
+# The knowledge tier's three adaptors (extraction, adjudication, entity
+# resolution) run on the daily per-adaptor schedule; the <facts> block renders
+# into every tag's prefill; recognition runs on the reply path. Watch first:
+# `nora_fact_candidates_total{outcome="not_covered"}` climbing while
+# `outcome="adjudicated"` does not — the tell that extraction is noise.
+enabled = true
 # max_adjudications_per_tick = 10   # research loops per tick — the cost knob
 # max_room_facts = 8                # render cap: facts about the room
 # max_sender_facts = 4              # render cap: facts about the sender
