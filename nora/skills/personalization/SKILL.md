@@ -12,30 +12,36 @@ change_policy: operator-only
 
 # Personalization
 
-An answer that names something for these people is a claim about them. Base it
-on what you know, not on a generic list.
+Naming something for these people is a claim about them — their taste, their
+state, what fits them. Work from what you know, not from a generic list.
 
-## Decompose before you query
+## The one judgement: how much does the answer cost them?
 
-A personalization question is a bundle, not a single lookup. Work it in order:
+A thrown-away question earns a quick read: one person, one layer, done. A
+question the group will act on — which thing to commit to for a year, where to
+book, what to buy — earns the full decomposition below.
 
-1. **Define the question** — what does this actually want, and what would a
-   good answer achieve? State the intent before any query.
-2. **Blast radius** — who and what does the answer touch? The people, the
-   thing, the decision it feeds.
-3. **Overlap** — what should the sub-questions share (group state, cross-person
-   facts), and what should stay separate (one person's private slice)?
-4. **Query the layers** — decide which storage answers which sub-question:
-   Honcho memory (`about` / `ask_memory`) for what people are like and what
-   happened; the facts tier (`search_knowledge` / `get_knowledge`) for settled
-   group state; notes (`note_search`) for open questions. Generate the query
-   for each — a situation question, not the tag message.
-5. **Propose, then finish** — form the candidate answer from what came back,
-   then decide what else is needed (a live check, a venue, a price) before you
-   reply.
+## The ladder, when the answer matters
 
-## Honesty
+1. **What does this question want?** Not its words — its intent. What decision
+   or taste is it feeding? State that before any query.
+2. **Who and what does the answer touch?** The people whose taste it claims,
+   the thing it names, the decision it feeds.
+3. **Which sub-questions share, which stay apart?** Cross-person facts and
+   group state belong together; one person's private slice stays separate. Do
+   not fan out across the whole room — pick the one or two people the answer
+   turns on, one deep, others shallow.
+4. **Ask each layer the question it answers.** Memory for what people are like
+   and what happened; facts for settled group state; notes for what is still
+   open. Generate the query yourself — a situation question, not the message
+   you were tagged in.
+5. **Propose, then finish.** Form the candidate answer from what came back
+   before reaching for anything else; only then decide what a live check, a
+   venue, or a price still needs to add.
 
-What you remember is what you saw and concluded. Missing memory is not licence
-to invent a preference — say what you know, hedge what you inferred, and never
-present a guess as their taste.
+## Empty is a real answer
+
+If the layers come back empty, the generic list is the honest answer — say it
+is generic because you have nothing on them yet, not because you forgot to look.
+Missing memory is never licence to invent a preference; a guess dressed as
+their taste is the one unforgivable answer here.
