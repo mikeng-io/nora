@@ -129,11 +129,14 @@ def test_no_room_scoped_tool_asks_the_model_for_anything_nora_already_knows(pers
     """DEC-24 asserted on the SCHEMA, which is what the model actually sees.
 
     `group_members` takes nothing at all — it is bound to the tag's
-    conversation. The other two take ONE argument, a name, because a name is
-    the only thing in the exchange the model genuinely decides. A conversation,
-    a peer id, a phone number or the search query would each be a value Nora
-    already holds, and DEC-24 measured what declaring one costs: on the first
-    real tag the model invented a group id three times and the turn died mute.
+    conversation. `lookup_person` takes ONE argument, a name, because a name is
+    the only thing in the exchange the model genuinely decides. `about` takes a
+    name AND an optional `query` — the query is the ONE DEC-24 exception: it is
+    a value the tool actually reads (it becomes the Honcho search), so the
+    model supplying it is meaningful, not invented. A conversation, a peer id,
+    a phone number would each be a value Nora already holds, and DEC-24
+    measured what declaring one costs: on the first real tag the model invented
+    a group id three times and the turn died mute.
     """
     tools = _build(persons=persons)
     assert tools["group_members"].tool_spec["inputSchema"]["json"].get("properties") in (
@@ -142,18 +145,26 @@ def test_no_room_scoped_tool_asks_the_model_for_anything_nora_already_knows(pers
     assert set(
         tools["lookup_person"].tool_spec["inputSchema"]["json"]["properties"]
     ) == {"name"}
-    assert set(tools["about"].tool_spec["inputSchema"]["json"]["properties"]) == {"person"}
+    assert set(tools["about"].tool_spec["inputSchema"]["json"]["properties"]) == {
+        "person", "query",
+    }
 
 
 def test_no_room_scoped_tool_accepts_a_platform_identifier(persons):
     tools = _build(persons=persons)
     forbidden = {"conversation_id", "conversation_type", "peer_id", "sender_id",
-                 "person_id", "phone", "uuid", "search_query", "query"}
-    for name in ("group_members", "lookup_person", "about"):
+                 "person_id", "phone", "uuid", "search_query"}
+    # `query` is deliberately NOT forbidden for `about`: it is the one value the
+    # tool reads (the Honcho search angle), so the model supplying it is the
+    # DEC-24 exception, not a violation. The other room-scoped tools still
+    # refuse it.
+    for name in ("group_members", "lookup_person"):
         properties = set(
             tools[name].tool_spec["inputSchema"]["json"].get("properties") or {}
         )
         assert not properties & forbidden, f"{name} makes the model supply {properties}"
+    about_props = set(tools["about"].tool_spec["inputSchema"]["json"]["properties"])
+    assert not about_props & forbidden, f"about makes the model supply {about_props}"
 
 
 def test_every_room_scoped_tool_has_a_selection_policy_in_its_docstring(persons):
@@ -319,6 +330,19 @@ async def test_recall_asks_the_question_the_group_actually_asked(persons):
     tools = _build(persons=persons, honcho=honcho, question="佢係咪識踢波")
     await _call(tools["about"], person="Miles")
     assert honcho.queries == [("nora", "miles_novak", "佢係咪識踢波")]
+
+
+async def test_recall_accepts_a_model_generated_query_override(persons):
+    """The DEC-24 exception: `query` IS read by the tool (it becomes the
+    Honcho search angle), so a model-supplied situation query is meaningful,
+    not invented. A personalization turn asks about the group's state, not the
+    raw tag message."""
+    honcho = FakeHoncho(conclusions={"miles_novak": ["something"]})
+    tools = _build(persons=persons, honcho=honcho, question="有咩類似 game 推薦")
+    await _call(tools["about"], person="Miles",
+                query="group 而家玩緊咩、打完咩、偏好咩")
+    assert honcho.queries == [("nora", "miles_novak",
+                               "group 而家玩緊咩、打完咩、偏好咩")]
 
 
 async def test_recall_is_blind_to_someone_who_is_not_in_this_room(persons):

@@ -595,11 +595,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                         source_tier="remembered", read_only=True,
                         side_effect_state="none", idempotency="idempotent", retry="safe",
                         output_contract="three_state"),
-    # 1, not 2: `ask_memory` REASONS (a slow dialectic call, ~14-19s), so one per
-    # turn is the ceiling — a second would blow the loop budget on its own. It is
-    # the escalation from `about` (retrieve), reached only when a profile lookup
-    # will not answer a pieced-together question.
-    "ask_memory": NativeTool(1,
+    # 2, raised from 1 (operator 2026-09-03): `ask_memory` REASONS (a slow
+    # dialectic call, ~14-19s), so the budget is sized by the loop wall clock —
+    # `[llm] timeout_seconds` is 240s, so two calls (~38s) fit comfortably and
+    # three (~57s) still do. The personalization decomposition (design/31) may
+    # need a deep read on more than one person; two covers the key person plus
+    # one more. It is the escalation from `about` (retrieve), reached only when
+    # a profile lookup will not answer a pieced-together question.
+    "ask_memory": NativeTool(2,
                              source_tier="remembered", read_only=True,
                              side_effect_state="none", idempotency="idempotent", retry="safe",
                              output_contract="three_state"),
@@ -1036,18 +1039,18 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # a budget here `ReplyGuard` VETOES the activation call on every turn and the
     # skill can never load — the same DEC-42 inert shape multi-message shipped in.
     #
-    # **budget 1, sized like `group_members`, not like `lookup_person`.** Every
-    # budget here is one currency — a model round trip (~4 s), against
-    # `llm.limits.turns = 8`. A second `skills(navigation)` in one turn re-injects
-    # a body ALREADY in context — the exact context-cost `load_transcript`'s clamp
-    # exists to bound — and cannot improve the answer, the same reason
-    # `group_members` is 1 ("a second call returns the identical answer"). At 1,
-    # R-7's repeat veto ("you already called skills and have that context, answer
-    # from what you have") is precisely the right thing to tell a model that
-    # tries. Today exactly one skill exists, so a turn never needs two; the day a
-    # second domain ships and one message legitimately spans both, this is a
-    # one-line raise (DEC-10's property), which is where `lookup_person`'s 2 would
-    # come from — the argument VARIES then. It does not yet.
+    # **budget 2, raised from 1 (operator 2026-09-03).** Every budget here is
+    # one currency — a model round trip (~4 s), against `llm.limits.turns = 20`.
+    # A second `skills(same_skill)` in one turn re-injects a body ALREADY in
+    # context — the exact context-cost `load_transcript`'s clamp exists to bound
+    # — and cannot improve the answer, the same reason `group_members` is 1 ("a
+    # second call returns the identical answer"). At 1, R-7's repeat veto ("you
+    # already called skills and have that context, answer from what you have")
+    # is precisely the right thing to tell a model that tries. Two skills now
+    # ship (`navigation`, `personalization`), and one message can legitimately
+    # span both domains — a wayfinding question with a personalization angle —
+    # so a turn may need two DIFFERENT activations. The repeat-veto still stops
+    # a second load of the SAME skill; 2 allows one of each.
     #
     # `terminal=False`: activating a skill is the START of using its judgement —
     # she still has to route, or reply — never the end of a turn. `time_shiftable`
@@ -1074,7 +1077,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # conservative declaration rather than a guessed one. The reading that
     # would change it is the plugin's activation being shown to write nothing
     # outside the turn, which would make it `none`.
-    "skills": NativeTool(1,
+    "skills": NativeTool(2,
                          terminal=False, time_shiftable=None, plugin=True,
                          side_effect_state="unknown", idempotency="non_idempotent", retry="never"),
 }
@@ -2679,19 +2682,26 @@ cannot tell you about anyone outside it."""
             "note": "This person is in this conversation.",
         }
 
-    async def about(person: str) -> dict:
+    async def about(person: str, query: str | None = None) -> dict:
         """What you know about someone in this conversation — their standing profile.
 
         Call this when your answer depends on knowing somebody — what they do,
         what they like, how they usually are — and you were not already given
         it. It is the only place that knows any of that. What comes back is
         conclusions built up about them over time, narrowed to the message you
-        were just tagged in, so ask about the person, not about the topic.
+        were just tagged in unless you say otherwise.
 
         It holds no messages. For something that was actually said, load_transcript.
 
         Name the person the way the message did; a nickname is fine. It only
         knows people in THIS conversation.
+
+        `query` is the angle to recall them by — GENERATE it yourself, the
+        question you actually need answered, not the raw tag message. A
+        personalization turn asking about the group's state wants a situation
+        question («what is this group currently playing, what have they
+        finished»), not the raw ask. Only when you have no better angle does
+        the tag message stand in. Ask about the person, not about the topic.
 
         Two parts come back and they are not the same kind of thing.
         `identity` is who they are — durable, and it stays true tomorrow.
@@ -2707,6 +2717,7 @@ cannot tell you about anyone outside it."""
 
         Args:
             person: The name or nickname of the person, as the message said it.
+            query: The angle to recall them by; defaults to the tag message.
         """
         view = await room.scope()
         if not view.available:
@@ -2787,9 +2798,12 @@ cannot tell you about anyone outside it."""
                 target=ref.honcho_peer_id,
                 # The QUESTION is Nora's to supply, not the model's (DEC-24):
                 # she has the tagging message, so asking for it would be one
-                # more value to invent per call. Truncated because it is a
-                # search query, not a prompt.
-                search_query=(question or ref.name)[:500],
+                # more value to invent per call. The model MAY supply a
+                # different `query` when the tag message is not the angle it
+                # needs (personalization turns) — that value IS read, so it is
+                # not the DEC-24 case. Truncated because it is a search query,
+                # not a prompt.
+                search_query=(query or question or ref.name)[:500],
                 # `max_conclusions` is DELIBERATELY not passed. It is not a row
                 # limit — Honcho spends it across three independent queries
                 # (semantic / most-derived / recent), and the arithmetic that
@@ -2861,7 +2875,7 @@ cannot tell you about anyone outside it."""
             "partial_view": view.degraded,
         })
 
-    async def ask_memory(person: str, depth: str = "low") -> dict:
+    async def ask_memory(person: str, depth: str = "low", query: str | None = None) -> dict:
         """Work out an answer about someone from what you've come to understand
         of them — a specific QUESTION, not a profile dump.
 
@@ -2876,8 +2890,12 @@ cannot tell you about anyone outside it."""
         `depth`: `low` for a quick read, `high` or `max` when the question really
         needs it (and is worth the wait). Deeper is slower.
 
-        Only knows people in THIS conversation, and answers about the message you
-        were tagged in. Outcomes: `ok` with the answer; `unavailable` when the
+        Only knows people in THIS conversation. `query` is the question to
+        reason about — GENERATE it yourself, the question you actually need
+        answered, not the raw tag message. A personalization turn wants a
+        situation question («would he be up for this?»), not the raw ask. Only
+        when you have no better angle does the tag message stand in. Outcomes:
+        `ok` with the answer; `unavailable` when the
         reasoning could not be done (unreachable, or nothing to work from) —
         never report that as "I don't know them", say you can't check right now;
         and, rarely, `nothing_known` when she worked something out but it can't be
@@ -2888,6 +2906,7 @@ cannot tell you about anyone outside it."""
         Args:
             person: The name or nickname of the person, as the message said it.
             depth: How hard to reason — minimal, low, medium, high, or max.
+            query: The question to reason about; defaults to the tag message.
         """
         level = depth if depth in _REASONING_LEVELS else "low"
         view = await room.scope()
@@ -2914,12 +2933,13 @@ cannot tell you about anyone outside it."""
         try:
             # OBSERVER = Nora, OBSERVED = the person (design/24 §4): she reasons
             # from HER model of them. The QUESTION is the tagging message, hers to
-            # supply (DEC-24), not a value the model invents. `level` is the
-            # model's per-question depth/latency choice — Nora decides.
+            # supply (DEC-24), not a value the model invents — unless the model
+            # supplies a `query`, which IS read and therefore legitimate. `level`
+            # is the model's per-question depth/latency choice — Nora decides.
             answer = await honcho.chat(
                 peer_id=ai_peer,
                 target=ref.honcho_peer_id,
-                query=(question or ref.name)[:500],
+                query=(query or question or ref.name)[:500],
                 reasoning_level=level,
             )
         except Exception:
