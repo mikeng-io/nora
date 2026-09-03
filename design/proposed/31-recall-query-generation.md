@@ -46,14 +46,28 @@ situation, instead of force-feeding the raw tag message. This requires:
   `search_memory`? All three, or a subset?
 - Fallback: when the model does not supply `query`, fall back to the tag
   message (current behaviour) — this keeps non-personalization turns unchanged.
-- Should `_recall_tagger` / `_recall_self` (prefill injection, non-tool) get
-  the same treatment? They are not tools; the model cannot supply a query to
-  them. Options: (a) route intent → situation query (rejected as a new
-  component, operator flagged RouteIntent precedent), (b) doctrine/skill
-  governs when the model should reach for `about`/`ask_memory` with a
-  generated query instead of trusting the injected block, (c) standing
-  watermark read (already designed, `design/standing-watermark/`) gives the
-  prefill a live situation feed so the injected block carries current state.
+
+### Auto-injection is OUT OF SCOPE — context-native, not query-affected (operator 2026-09-03)
+
+`_recall_tagger` / `_recall_self` (the prefill `<peer_history>` / `<self_card>`
+blocks) stay exactly as they are. They are **context-native**: they exist to
+give the model the situation it is standing in, and their query behaviour is
+not part of this fix. The model's own reasoning already recognises a
+recommendation/personalization turn (verified in the Raft trace's
+reasoningContent: "This is a game recommendation question. I have context:
+group finished Abiotic Factor…") — so the awareness is there; what is missing
+is the tool-query path when she reaches for more. The fix is therefore exactly
+two things, and nothing else:
+
+1. **Personalization skill** — teaches the behaviour (answer from what you
+   know about the group, not a generic list) and the query strategy (generate
+   a situation query, group/cluster, don't dump N people's profiles).
+2. **Tool query optimisation** — `about` / `ask_memory` / `search_memory`
+   accept a model-generated query instead of force-feeding the tag message.
+
+The standing watermark read (`design/standing-watermark/`) remains a separate,
+longer-term track for prefill-between-tags currency — referenced, not part of
+this design.
 
 ## 2. Tool limit review — ask_memory across N people is structurally capped
 
