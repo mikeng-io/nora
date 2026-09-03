@@ -995,18 +995,18 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # a budget here `ReplyGuard` VETOES the activation call on every turn and the
     # skill can never load — the same DEC-42 inert shape multi-message shipped in.
     #
-    # **budget 1, sized like `group_members`, not like `lookup_person`.** Every
-    # budget here is one currency — a model round trip (~4 s), against
-    # `llm.limits.turns = 8`. A second `skills(navigation)` in one turn re-injects
-    # a body ALREADY in context — the exact context-cost `load_transcript`'s clamp
-    # exists to bound — and cannot improve the answer, the same reason
-    # `group_members` is 1 ("a second call returns the identical answer"). At 1,
-    # R-7's repeat veto ("you already called skills and have that context, answer
-    # from what you have") is precisely the right thing to tell a model that
-    # tries. Today exactly one skill exists, so a turn never needs two; the day a
-    # second domain ships and one message legitimately spans both, this is a
-    # one-line raise (DEC-10's property), which is where `lookup_person`'s 2 would
-    # come from — the argument VARIES then. It does not yet.
+    # **budget 2, raised from 1 (operator 2026-09-03).** Every budget here is
+    # one currency — a model round trip (~4 s), against `llm.limits.turns = 20`.
+    # A second `skills(same_skill)` in one turn re-injects a body ALREADY in
+    # context — the exact context-cost `load_transcript`'s clamp exists to bound
+    # — and cannot improve the answer, the same reason `group_members` is 1 ("a
+    # second call returns the identical answer"). At 1, R-7's repeat veto ("you
+    # already called skills and have that context, answer from what you have")
+    # is precisely the right thing to tell a model that tries. Two skills now
+    # ship (`navigation`, `personalization`), and one message can legitimately
+    # span both domains — a wayfinding question with a personalization angle —
+    # so a turn may need two DIFFERENT activations. The repeat-veto still stops
+    # a second load of the SAME skill; 2 allows one of each.
     #
     # `terminal=False`: activating a skill is the START of using its judgement —
     # she still has to route, or reply — never the end of a turn. `time_shiftable`
@@ -1033,7 +1033,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # conservative declaration rather than a guessed one. The reading that
     # would change it is the plugin's activation being shown to write nothing
     # outside the turn, which would make it `none`.
-    "skills": NativeTool(1,
+    "skills": NativeTool(2,
                          terminal=False, time_shiftable=None, plugin=True,
                          side_effect_state="unknown", idempotency="non_idempotent", retry="never"),
 }
