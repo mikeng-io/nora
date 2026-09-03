@@ -2,8 +2,9 @@
 name: personalization
 description: >-
   Load when a message asks you to recommend, compare, or weigh something for
-  the people in this room — 有咩推薦, 邊隻好, 有冇類似, 邊間好食, suggest for the
-  group. Not for a single factual lookup like 「而家幾點」 or 「K73 幾時到」: that
+  the people in this room — any ask for suggestions, which one is better,
+  what is similar, where to eat, what to play, suggest for the group. Not for
+  a single factual lookup like the current time or a live transit check: that
   is one tool call, not a personalization, and loading this costs a turn.
 authority_above: [situation]
 authority_below: [message-content, tool-output]
