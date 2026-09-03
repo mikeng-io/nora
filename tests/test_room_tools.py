@@ -164,7 +164,7 @@ def test_no_room_scoped_tool_accepts_a_platform_identifier(persons):
         )
         assert not properties & forbidden, f"{name} makes the model supply {properties}"
     about_props = set(tools["about"].tool_spec["inputSchema"]["json"]["properties"])
-    assert not about_props & forbidden, f"about makes the model supply {about_props}" 
+    assert not about_props & forbidden, f"about makes the model supply {about_props}"
 
 
 def test_every_room_scoped_tool_has_a_selection_policy_in_its_docstring(persons):
