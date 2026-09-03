@@ -17,7 +17,7 @@ from nora.agent.tools import (
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import GifCandidate, MediaObject
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
-from nora.domain.ports import ImageResult, OutboundAttachment, Roster
+from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment, Roster
 from nora.domain.utf16 import utf16_len
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -159,8 +159,11 @@ def test_every_declared_tool_is_built(wiring):
         "note_read", "note_search", "note_create", "note_update",
         # The remember verb — the conclusion write lane (2026-08-30).
         "remember",
-        # The knowledge tier's retrieval verb (23 §9).
+        # The knowledge tier's retrieval verb (23 §9), its graph reads
+        # (32 §3.4), and the workspace-wide memory variant.
         "search_knowledge",
+        "get_knowledge", "knowledge_premises", "knowledge_asserters",
+        "knowledge_entity", "search_memory_workspace",
     }
 
 
@@ -1242,6 +1245,393 @@ async def test_search_knowledge_with_no_workspace_is_unavailable(wiring_with):
     )
 
     out = await tools["search_knowledge"]("big walk")
+
+    assert out["status"] == "unavailable"
+
+
+# ---------------------------------------------------------------------------
+# the knowledge tier's graph verbs and the workspace-wide memory variant
+# (design/dreamer-agent-loop/32 §3.4)
+# ---------------------------------------------------------------------------
+
+
+def _fact(fact_id="0191f2c4-0000-7000-8000-00000000000a",
+          subject="Big Walk", predicate="means", obj="a long walk",
+          *, disputed=False):
+    from nora.domain.facts import Fact
+    return Fact(
+        id=fact_id, workspace="ws-main", subject_id=subject, predicate=predicate,
+        object_entity_id=None, object_literal=obj, valid_from=1, created_at=1,
+        instruction_sha256="a" * 64, model="m", established_by="run",
+        source_url="https://x.test/a", source_excerpt="the excerpt",
+        disputed_at=2 if disputed else None,
+        disputed_by="miles" if disputed else None,
+        disputed_reason="heard otherwise" if disputed else None,
+        disputed_tag_id="t1" if disputed else None,
+    )
+
+
+def _entity(name="Big Walk", aliases=("big walk", "大步行")):
+    from nora.domain.facts import FactEntity
+    return FactEntity(
+        id="0191f2c4-0000-7000-8000-0000000000e1", workspace="ws-main",
+        canonical_name=name, created_at=1, aliases=tuple(aliases),
+    )
+
+
+class _FakeFacts:
+    """`FactReadCollaborator`'s shape, with the outage as a first-class case —
+    a fake that cannot fail answers every request the same way, which is how
+    «the store is down» gets reported as «there is nothing» (R-27)."""
+
+    def __init__(self, *, standing=(), asserters=(), premises=(), raises=False):
+        self._standing = tuple(standing)
+        self._asserters = tuple(asserters)
+        self._premises = tuple(premises)
+        self._raises = raises
+        self.standing_calls: list[dict] = []
+
+    async def standing_facts(self, *, workspace, subject_ids, limit):
+        self.standing_calls.append(
+            {"workspace": workspace, "subject_ids": list(subject_ids), "limit": limit})
+        if self._raises:
+            raise RuntimeError("fact store down")
+        return self._standing
+
+    async def asserters(self, *, fact_id):
+        if self._raises:
+            raise RuntimeError("fact store down")
+        return self._asserters
+
+    async def premises(self, *, fact_id):
+        if self._raises:
+            raise RuntimeError("fact store down")
+        return self._premises
+
+
+class _FakeEntities:
+    def __init__(self, entity=None, *, raises=False):
+        self._entity = entity
+        self._raises = raises
+        self.lookups: list[dict] = []
+
+    async def lookup(self, *, workspace, name):
+        self.lookups.append({"workspace": workspace, "name": name})
+        if self._raises:
+            raise RuntimeError("entity store down")
+        return self._entity
+
+
+async def test_get_knowledge_resolves_then_reads_the_surface_names(wiring_with):
+    """The 32 §3.4 contract: `fact.subject_id` holds surface TEXT, not entity
+    ids, so the facts read is asked with the canonical name AND the aliases —
+    the strings that actually appear in `subject_id`."""
+    facts = _FakeFacts(standing=(_fact(),))
+    entities = _FakeEntities(_entity())
+    tools = wiring_with(facts=facts, entities=entities)
+
+    out = await tools["get_knowledge"]("big walk")
+
+    assert out["status"] == "ok"
+    assert facts.standing_calls == [{
+        "workspace": "ws-main",
+        "subject_ids": ["Big Walk", "big walk", "大步行"],
+        "limit": KNOWLEDGE_SEARCH_LIMIT,
+    }]
+    assert out["facts"] == [{
+        "id": "0191f2c4-0000-7000-8000-00000000000a",
+        "claim": "Big Walk │ means │ a long walk",
+    }]
+
+
+async def test_get_knowledge_carries_the_dispute_mark(wiring_with):
+    """R-79 on the graph read, exactly as on `search_knowledge`: a claim held
+    under objection must not read as one she does not."""
+    tools = wiring_with(
+        facts=_FakeFacts(standing=(_fact(disputed=True),)),
+        entities=_FakeEntities(_entity()),
+    )
+
+    out = await tools["get_knowledge"]("big walk")
+
+    assert out["facts"][0]["claim"].endswith(" — disputed")
+
+
+async def test_get_knowledge_nothing_found_when_the_name_resolves_to_nothing(
+    wiring_with,
+):
+    """«A name that resolves to nothing is `nothing_found`, never an empty ok»
+    (32 §3.4) — and no fact read is spent on a name nothing holds."""
+    facts = _FakeFacts(standing=(_fact(),))
+    tools = wiring_with(facts=facts, entities=_FakeEntities(None))
+
+    out = await tools["get_knowledge"]("nobody ever said this")
+
+    assert out["status"] == "nothing_found"
+    assert facts.standing_calls == []
+
+
+async def test_get_knowledge_with_no_collaborators_is_unavailable(wiring):
+    """The default wiring — the tool is granted and nothing is behind it
+    (`[facts] enabled = false`). `unavailable`, never `nothing_found`: a
+    wiring gap is «I could not check», not «there is nothing» (R-5/R-27)."""
+    out = await wiring["tools"]["get_knowledge"]("big walk")
+
+    assert out["status"] == "unavailable"
+
+
+async def test_get_knowledge_an_outage_is_unavailable_not_nothing(wiring_with):
+    """`SqlEntityStore.lookup` RAISES on an unreachable store precisely so this
+    branch can exist — the collapse of «store down» into «no such entity» is
+    the one R-27 forbids."""
+    tools = wiring_with(
+        facts=_FakeFacts(standing=(_fact(),)),
+        entities=_FakeEntities(_entity(), raises=True),
+    )
+
+    out = await tools["get_knowledge"]("big walk")
+
+    assert out["status"] == "unavailable"
+
+
+async def test_the_supplied_workspace_wins_over_the_room_resolver(wiring_with):
+    """The key-path fix itself (32 §3.4, `08-state.md` §10): a workspace-keyed
+    Dreamer adaptor's key IS the workspace, SUPPLIED to the build — so the
+    verb must read IT, not the room-derived resolver's answer. The resolver
+    answering a DIFFERENT workspace is what makes the assertion discriminate:
+    against the old code this call read `ws-main`."""
+    entities = _FakeEntities(_entity())
+    tools = wiring_with(
+        facts=_FakeFacts(standing=(_fact(),)), entities=entities,
+        supplied_workspace="ridgeline",
+    )
+
+    out = await tools["get_knowledge"]("big walk")
+
+    assert entities.lookups[0]["workspace"] == "ridgeline"
+    assert out["status"] == "ok"
+
+
+async def test_the_supplied_workspace_covers_a_missing_resolver(wiring_with):
+    """The Dreamer's actual shape: no `workspace_for` at all (the synthetic
+    room has no platform for policy to name), and the supplied key still
+    reaches the store. Before the fix this was `unavailable` on every call,
+    forever — the seam looking wired while failing closed."""
+    entities = _FakeEntities(_entity())
+    tools = wiring_with(
+        facts=_FakeFacts(standing=(_fact(),)), entities=entities,
+        workspace_for=None, supplied_workspace="ridgeline",
+    )
+
+    out = await tools["get_knowledge"]("big walk")
+
+    assert out["status"] == "ok"
+    assert entities.lookups[0]["workspace"] == "ridgeline"
+
+
+async def test_get_knowledge_refuses_a_blank_subject(wiring_with):
+    entities = _FakeEntities(_entity())
+    tools = wiring_with(facts=_FakeFacts(), entities=entities)
+
+    out = await tools["get_knowledge"]("   ")
+
+    assert out["status"] == "refused"
+    assert entities.lookups == [], "a blank subject must cost no lookup"
+
+
+async def test_knowledge_entity_renders_the_canonical_name_and_aliases(
+    wiring_with,
+):
+    tools = wiring_with(entities=_FakeEntities(_entity()))
+
+    out = await tools["knowledge_entity"]("大步行")
+
+    assert out == {
+        "status": "ok",
+        "canonical_name": "Big Walk",
+        "aliases": ["big walk", "大步行"],
+    }
+
+
+async def test_knowledge_entity_nothing_found_and_unavailable(wiring_with):
+    """Unresolved is a real answer; a store outage is not one."""
+    unresolved = await wiring_with(entities=_FakeEntities(None))[
+        "knowledge_entity"]("nothing by this name")
+    down = await wiring_with(entities=_FakeEntities(raises=True))[
+        "knowledge_entity"]("big walk")
+    off = await wiring_with()["knowledge_entity"]("big walk")
+
+    assert unresolved["status"] == "nothing_found"
+    assert down["status"] == "unavailable"
+    assert off["status"] == "unavailable"
+
+
+async def test_knowledge_premises_lists_the_edges(wiring_with):
+    from nora.domain.facts import FactPremise
+    fid = "0191f2c4-0000-7000-8000-00000000000a"
+    premise = "0191f2c4-0000-7000-8000-00000000000b"
+    tools = wiring_with(
+        facts=_FakeFacts(premises=(FactPremise(fact_id=fid, premise_fact_id=premise),)),
+    )
+
+    out = await tools["knowledge_premises"](fid)
+
+    assert out == {"status": "ok", "premises": [premise]}
+
+
+async def test_knowledge_premises_nothing_found_is_honest_about_zero_rows(
+    wiring_with,
+):
+    """`fact_premise` holds 0 rows today — the read shipped ahead of any
+    writer (32 §3.4) — so «no premises recorded» is the ORDINARY answer and
+    must be `nothing_found`, not an error and not an empty `ok`."""
+    tools = wiring_with(facts=_FakeFacts())
+
+    out = await tools["knowledge_premises"]("0191f2c4-0000-7000-8000-00000000000a")
+
+    assert out["status"] == "nothing_found"
+
+
+async def test_knowledge_premises_an_outage_is_unavailable(wiring_with):
+    tools = wiring_with(facts=_FakeFacts(raises=True))
+
+    out = await tools["knowledge_premises"]("0191f2c4-0000-7000-8000-00000000000a")
+
+    assert out["status"] == "unavailable"
+
+
+async def test_knowledge_asserters_renders_what_the_rows_carry(wiring_with):
+    from nora.domain.facts import FactAsserter
+    fid = "0191f2c4-0000-7000-8000-00000000000a"
+    tools = wiring_with(facts=_FakeFacts(asserters=(
+        FactAsserter(fact_id=fid, person_id="miles", message_id=1932,
+                     asserted_at=1755100000000),
+    )))
+
+    out = await tools["knowledge_asserters"](fid)
+
+    assert out == {
+        "status": "ok",
+        "asserters": [{
+            "person_id": "miles", "message_id": 1932,
+            "asserted_at": 1755100000000,
+        }],
+    }
+
+
+async def test_knowledge_asserters_nothing_found_and_unavailable(wiring_with):
+    unknown = await wiring_with(facts=_FakeFacts())[
+        "knowledge_asserters"]("0191f2c4-0000-7000-8000-00000000000a")
+    down = await wiring_with(facts=_FakeFacts(raises=True))[
+        "knowledge_asserters"]("0191f2c4-0000-7000-8000-00000000000a")
+    off = await wiring_with()[
+        "knowledge_asserters"]("0191f2c4-0000-7000-8000-00000000000a")
+
+    assert unknown["status"] == "nothing_found"
+    assert down["status"] == "unavailable"
+    assert off["status"] == "unavailable"
+
+
+class _RecordingHoncho:
+    """`FakeHoncho` records the query but not the SCOPE, and the scope is the
+    whole point of this verb: `conversation_id=None` is what makes the search
+    workspace-wide (the client's `/search` endpoint), so the fake has to
+    remember it."""
+
+    def __init__(self, hits=(), *, reachable=True):
+        self._hits = tuple(hits)
+        self._reachable = reachable
+        self.calls: list[dict] = []
+
+    async def search(self, *, query, conversation_id=None, limit=8,
+                     workspace_id=None):
+        self.calls.append({"query": query, "conversation_id": conversation_id})
+        return MessageHits(reachable=self._reachable, hits=self._hits)
+
+
+def _workspace_memory_tools(wiring, **over):
+    """`build_tools` over the `wiring` fixture's collaborators, with any of
+    them swapped out — `wiring_with` cannot do this (it passes `honcho`,
+    `persons` and `metrics` itself), and the roster/source ARE the thing
+    under test for this verb."""
+    tools = build_tools(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=over.pop("persons", wiring["persons"]),
+        honcho=over.pop("honcho", wiring["honcho"]),
+        deliverer=wiring["deliverer"],
+        metrics=over.pop("metrics", wiring["metrics"]),
+        room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        question="who is here", context_window=40,
+        workspace_for=lambda *_a: "ws-main", **over,
+    )
+    return {t.tool_name: t for t in tools}
+
+
+async def test_search_memory_workspace_filters_by_the_workspace_roster(wiring):
+    """32 §5 closed decision 1: the roster is the WORKSPACE's people
+    (`persons.by_person`), not one room's live view — and the per-message
+    guard is unchanged: a peer nobody can name never comes back, and neither
+    does Nora's own."""
+    honcho = _RecordingHoncho(hits=(
+        ("miles", "big walk 聽日朝早"),
+        ("a_peer_nobody_mapped", "should never surface"),
+        ("nora", "her own words are not the group's memory"),
+    ))
+    tools = _workspace_memory_tools(wiring, honcho=honcho)
+
+    out = await tools["search_memory_workspace"]("big walk")
+
+    assert out["status"] == "ok"
+    assert out["results"] == [{"who": "Miles", "said": "big walk 聽日朝早"}]
+    # No room to scope to and none passed — the workspace-wide endpoint.
+    assert honcho.calls[0]["conversation_id"] is None
+    # The room verb's marker of a DEGRADED view has no meaning here: there is
+    # no room view to degrade, so the key is absent rather than False.
+    assert "partial_view" not in out
+
+
+async def test_search_memory_workspace_withholds_what_she_may_not_repeat(
+    wiring,
+):
+    """The egress filter is SHARED with `search_memory`
+    (`_memory_hits_result`): a hit she cannot legally utter is `withheld`,
+    never `nothing_found` — the words exist and she may not repeat them."""
+    honcho = _RecordingHoncho(
+        hits=(("miles", "個 script 我 send 咗俾 +85290000101 呀"),))
+    metrics = Metrics()
+    tools = _workspace_memory_tools(wiring, honcho=honcho, metrics=metrics)
+
+    out = await tools["search_memory_workspace"]("script")
+
+    assert out["status"] == "withheld"
+    assert out["found_but_unquotable"] == 1
+    assert "90000101" not in json.dumps(out)
+    # Counted on the TOOL series, not `nora_room_lookups_total` — this verb
+    # has no room, and the room series' alert would mislabel it.
+    assert metrics.get("nora_tool_calls_total",
+                       tool="search_memory_workspace", status="withheld") == 1
+
+
+async def test_search_memory_workspace_an_outage_is_unavailable(wiring):
+    """`reachable=False` is the adapter's own signal that nothing ran — the
+    outage must not read as «nothing was said»."""
+    tools = _workspace_memory_tools(wiring, honcho=_RecordingHoncho(reachable=False))
+
+    out = await tools["search_memory_workspace"]("big walk")
+
+    assert out["status"] == "unavailable"
+
+
+async def test_search_memory_workspace_without_a_roster_is_unavailable(wiring):
+    """No persons wired at all is a WIRING gap, not an empty address book:
+    an empty one legitimately filters every hit, a missing one means «I
+    could not check» — and the two never share a status."""
+    tools = _workspace_memory_tools(
+        wiring, honcho=_RecordingHoncho(hits=(("miles", "big walk"),)),
+        persons=None,
+    )
+
+    out = await tools["search_memory_workspace"]("big walk")
 
     assert out["status"] == "unavailable"
 

@@ -70,6 +70,13 @@ turn each came from**", and `CandidateClaim.message_ids` are those turns; each
 sighting merges its message ids in, so the column accumulates the distinct
 turns a claim was asserted across.
 
+**`asserted_by`/`asserted_at` are joined from `messages` at propose time**
+(design/dreamer-agent-loop/32 §3.4): the FIRST message's `person_id` (or
+`sender_id` when the sender mapped to nobody) and its `ts`. The join finding
+nothing — a pruned conversation, an id that never existed — writes NULL for
+both, never an invented asserter; and the upsert's `set_` omits the pair for
+the provenance trio's reason: a re-sighting did not assert the claim first.
+
 **`occurrence_count` does NOT count them, and since plural `message_ids` it
 never did.** It counts SIGHTINGS — `propose` calls — while `observed_in` counts
 turns, and one sighting can now carry several (D31: an episode is a
@@ -144,7 +151,7 @@ from nora.domain.facts import (
     refuse_over_operating_caps,
 )
 from nora.domain.ports import Proposal
-from nora.infra.sql.schema import FACT, FACT_CANDIDATE, FACT_ENTITY
+from nora.infra.sql.schema import FACT, FACT_CANDIDATE, FACT_ENTITY, MESSAGES
 
 log = logging.getLogger(__name__)
 
@@ -165,7 +172,41 @@ def _row_to_candidate(r: Row[Any]) -> FactCandidate:
         established_by=r.established_by,
         instruction_sha256=r.instruction_sha256, model=r.model,
         last_adjudicated_at=r.last_adjudicated_at, attempts=r.attempts,
+        asserted_by=r.asserted_by, asserted_at=r.asserted_at,
     )
+
+
+# `messages.id` is INT4; `CandidateClaim.message_ids` are Python ints of
+# unbounded width. One over-range id in an `IN (...)` binds as int4 and raises
+# out of range INSIDE the candidate's transaction — the same failure
+# `SqlFactStore._attribute` documents for its `::bigint` cast. Such an id
+# cannot name a message, so it is filtered rather than cast.
+_INT4_MAX = 2_147_483_647
+
+
+async def _first_message_attributions(
+    conn: Any, mids: Sequence[int],
+) -> dict[int, tuple[str, int]]:
+    """`message_id -> (asserted_by, asserted_at)` for the FIRST message of each
+    claim (design/dreamer-agent-loop/32 §3.4).
+
+    `asserted_by` is the message's `person_id`, falling back to its
+    `sender_id` when the sender mapped to nobody at ingest — `sender_id` is
+    NOT NULL on `messages`, so a found message always attributes to SOMEBODY.
+    A mid the join does not find (pruned, or an id that never existed) is
+    simply ABSENT from the map: the caller writes NULL for it, and never
+    invents an asserter.
+    """
+    lookup = [m for m in dict.fromkeys(mids) if 0 <= m <= _INT4_MAX]
+    if not lookup:
+        return {}
+    rows = (await conn.execute(
+        sa.select(
+            MESSAGES.c.id, MESSAGES.c.person_id, MESSAGES.c.sender_id,
+            MESSAGES.c.ts,
+        ).where(MESSAGES.c.id.in_(lookup))
+    )).all()
+    return {r.id: (r.person_id or r.sender_id, r.ts) for r in rows}
 
 
 class SqlFactCandidateStore:
@@ -253,6 +294,12 @@ class SqlFactCandidateStore:
         all-or-nothing.
         """
         rows: list[dict[str, Any]] = []
+        # The FIRST message id of each accepted claim, parallel to `rows` —
+        # the attribution join's lookup key (32 §3.4). Tracked separately
+        # rather than re-derived from `observed_in` because the row's array is
+        # stringified and deduped; the claim's own tuple is the source of
+        # truth for which message came first.
+        first_mids: list[int] = []
         refused: Counter[str] = Counter()
         for p in proposals:
             if not isinstance(p.payload, CandidateClaim):
@@ -330,6 +377,7 @@ class SqlFactCandidateStore:
                 "instruction_sha256": p.instruction_sha256,
                 "model": p.model,
             })
+            first_mids.append(claim.message_ids[0])
         if self._metrics is not None:
             for reason, count in refused.items():
                 self._metrics.inc(
@@ -340,6 +388,16 @@ class SqlFactCandidateStore:
             return ()
         ids: list[str] = []
         async with self._engine.begin() as conn:
+            # 32 §3.4: attribute each row to the FIRST message its claim was
+            # sighted in. One batched select, inside the insert's transaction,
+            # so the rows and their attribution commit or roll back together.
+            # A mid the join misses writes (None, None) — never an invented
+            # asserter.
+            attribution = await _first_message_attributions(conn, first_mids)
+            for row, mid in zip(rows, first_mids, strict=True):
+                row["asserted_by"], row["asserted_at"] = attribution.get(
+                    mid, (None, None),
+                )
             for row in rows:
                 insert = pg.insert(FACT_CANDIDATE).values(row)
                 upsert = insert.on_conflict_do_update(
@@ -370,6 +428,10 @@ class SqlFactCandidateStore:
                         # stop. The provenance trio is left alone for the
                         # matching reason: it says which run ESTABLISHED this
                         # row, and a later sighting did not establish it.
+                        # `asserted_by`/`asserted_at` follow the same rule
+                        # (32 §5 closed decision 2): they record the FIRST
+                        # assertion, and the first assertion is the one the
+                        # insert — not any re-sighting — saw.
                     },
                 ).returning(FACT_CANDIDATE.c.id)
                 ids.append((await conn.execute(upsert)).scalar_one())

@@ -27,17 +27,23 @@ from nora.domain.facts import (
     FACT_TERM_CEILING_CHARS,
     Fact,
     FactAsserter,
+    FactPremise,
     FactVerdict,
 )
 from nora.domain.ports import Proposal
 from nora.infra.sql.embeddings import SqlEmbeddingStore, StoredEmbedding
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.entities import SqlEntityStore
+from nora.infra.sql.fact_candidates import SqlFactCandidateStore
 from nora.infra.sql.facts import SqlFactStore, oversized_terms
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import EMBEDDING_DIMENSIONS
 from nora.obs.metrics import Metrics
-from nora.testing import InMemoryFactStore, fact_proposal_factory
+from nora.testing import (
+    InMemoryFactStore,
+    fact_candidate_proposal_factory,
+    fact_proposal_factory,
+)
 
 NOW = 1_755_100_000_000
 
@@ -490,6 +496,123 @@ async def test_the_double_refuses_a_malformed_id_its_column_type_would():
 
 
 # ---------------------------------------------------------------------------
+# `premises()` — the FORWARD read of `fact_premise`, on BOTH implementations
+# ---------------------------------------------------------------------------
+#
+# The read ships ahead of any writer (design/dreamer-agent-loop/32 §3.4): no
+# `warrant_kind='premises'` write path exists, so both sides seed by their own
+# channel — SQL by raw insert (the FKs refuse an orphan, so real `fact` rows
+# go in first), the double by its `seed_premises` seam, exactly the split the
+# `asserters` suite above makes. Shared because the double's claim to match
+# production on a malformed id and on ordering is self-attestation until a
+# test measures it.
+
+
+@pytest.fixture(params=["memory", "sql"])
+async def premise_reader(request):
+    """The `reader` fixture's shape for the premise edge: both implementations
+    plus a per-implementation `seed` that takes FactPremise rows directly."""
+    if request.param == "memory":
+        store = InMemoryFactStore()
+
+        async def seed(rows):
+            store.seed_premises(*rows)
+
+        yield store, seed
+        return
+
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    store = SqlFactStore(engine)
+
+    async def seed(rows):
+        async with engine.begin() as conn:
+            for p in rows:
+                # Both ENDPOINTS first: `fact_premise`'s two FKs refuse an
+                # orphan on either end, and a double that let one through
+                # would be permissive where production is not.
+                for fid in (p.fact_id, p.premise_fact_id):
+                    await conn.execute(
+                        sa.text(
+                            "insert into fact (id, workspace, subject_id, "
+                            "predicate, object_literal, source_url, "
+                            "source_excerpt, valid_from, created_at, "
+                            "instruction_sha256, model, established_by) "
+                            "values (:fid, 'ws', 's', 'p', 'o', "
+                            "'https://x.test/a', 'x', 1, 1, :sha, 'm', 'run') "
+                            "on conflict do nothing"
+                        ),
+                        {"fid": fid, "sha": "a" * 64},
+                    )
+                await conn.execute(
+                    sa.text(
+                        "insert into fact_premise (fact_id, premise_fact_id) "
+                        "values (:f, :pf)"
+                    ),
+                    {"f": p.fact_id, "pf": p.premise_fact_id},
+                )
+
+    try:
+        yield store, seed
+    finally:
+        await engine.dispose()
+
+
+async def test_premises_reads_back_the_forward_edges(premise_reader):
+    store, seed = premise_reader
+    await seed([FactPremise(fact_id=FACT_A, premise_fact_id=FACT_B)])
+
+    rows = await store.premises(fact_id=FACT_A)
+
+    assert [(p.fact_id, p.premise_fact_id) for p in rows] == [(FACT_A, FACT_B)]
+
+
+async def test_premises_is_the_forward_direction_only(premise_reader):
+    """«Which facts depend on this one» is the REVERSE direction and is not
+    offered: `knowledge_premises` asks what a claim rests on, and a read
+    surface is added where its consumer exists."""
+    store, seed = premise_reader
+    await seed([FactPremise(fact_id=FACT_A, premise_fact_id=FACT_B)])
+
+    assert await store.premises(fact_id=FACT_B) == ()
+    assert await store.premises(fact_id=FACT_A) != ()
+
+
+async def test_premises_orders_by_premise_fact_id(premise_reader):
+    """Nothing else orders the rows — the composite PK serves the lookup — so
+    two reads of one fact could otherwise disagree, which on a tool result is
+    a different answer from the same store."""
+    store, seed = premise_reader
+    later = "0191f2c4-0000-7000-8000-0000000000ff"
+    earlier = "0191f2c4-0000-7000-8000-000000000001"
+    await seed([
+        FactPremise(fact_id=FACT_A, premise_fact_id=later),
+        FactPremise(fact_id=FACT_A, premise_fact_id=earlier),
+    ])
+
+    rows = await store.premises(fact_id=FACT_A)
+
+    assert [p.premise_fact_id for p in rows] == [earlier, later]
+
+
+async def test_premises_of_an_unknown_or_malformed_id_is_empty_on_both(
+    premise_reader,
+):
+    """`asserters`' own rule, one relation over: a malformed id is an unknown
+    row, not a reason to take a turn down — and the double must degrade the
+    way the real store does."""
+    store, seed = premise_reader
+    await seed([FactPremise(fact_id=FACT_A, premise_fact_id=FACT_B)])
+
+    assert await store.premises(fact_id="not-a-uuid") == ()
+    assert await store.premises(
+        fact_id="0191f2c4-0000-7000-8000-0000000000ee") == ()
+    # Positive control: the store is not simply empty.
+    assert await store.premises(fact_id=FACT_A) != ()
+
+
+# ---------------------------------------------------------------------------
 # the attribution join — SQL only, because the join IS the behaviour
 # ---------------------------------------------------------------------------
 #
@@ -874,6 +997,88 @@ async def test_asserters_of_an_unknown_or_malformed_id_is_empty(sql_store):
     assert await store.asserters(fact_id="not-a-uuid") == ()
     assert await store.asserters(
         fact_id="0191f2c4-0000-7000-8000-0000000000ff") == ()
+
+
+# ---------------------------------------------------------------------------
+# the asserted_* carry — 32 §5 closed decision 2
+# ---------------------------------------------------------------------------
+#
+# The fact row copies the settling candidate's `asserted_by`/`asserted_at` at
+# adjudication time, so the rendered `<facts>` block can say who said it and
+# when. SQL only, with the join above: the carry reads `fact_candidate`, a
+# table `InMemoryFactStore` does not hold.
+
+
+async def test_the_fact_row_carries_the_settling_candidates_attribution(sql_store):
+    """The full chain, end to end: a message said by miles, a candidate that
+    joined it at propose time, and the verdict that settles the candidate —
+    the fact row then answers «who said it, when» without a second join."""
+    store, engine, _ = sql_store
+    await _seed_message(engine, mid=41, person_id="miles")
+    candidates = SqlFactCandidateStore(engine)
+    cids = await candidates.propose(
+        key="ws",
+        proposals=(fact_candidate_proposal_factory(message_ids=(41,)),),
+        now_ms=NOW,
+    )
+    candidate = await candidates.candidate_by_id(
+        workspace="ws", candidate_id=cids[0],
+    )
+    assert candidate is not None
+    assert candidate.asserted_by == "miles", (
+        "the carry reads what propose wrote; if this is None the test below "
+        "measures nothing"
+    )
+
+    ids = await store.propose(
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cids[0]),),
+        now_ms=NOW,
+    )
+
+    fact = await store.fact_by_id(workspace="ws", fact_id=ids[0])
+    assert fact is not None
+    # `_seed_message` stamps ts = mid.
+    assert (fact.asserted_by, fact.asserted_at) == ("miles", 41)
+
+
+async def test_a_verdict_with_no_candidate_writes_an_unattributed_fact(sql_store):
+    """None propagates as None: a verdict the adaptor could not map back to a
+    shown candidate writes the fact with NO attribution rather than a guessed
+    one — the same «never invent a value» rule the candidate-side join
+    follows. The fact existing is the positive control."""
+    store, _engine, _ = sql_store
+
+    ids = await store.propose(
+        key="ws", proposals=(_proposal(_verdict()),), now_ms=NOW,
+    )
+
+    fact = await store.fact_by_id(workspace="ws", fact_id=ids[0])
+    assert fact is not None
+    assert (fact.asserted_by, fact.asserted_at) == (None, None)
+
+
+async def test_a_candidate_without_attribution_carries_none(sql_store):
+    """The other None half: the candidate EXISTS but its message was pruned
+    before propose, so its own pair is NULL — and the fact row says the same
+    nothing rather than distinguishing "not carried" from "carried as NULL",
+    a difference there is none of."""
+    store, engine, _ = sql_store
+    # Seeded raw, so `asserted_*` are NULL even though message 41 exists: the
+    # candidate store's propose — the only writer of the pair — never ran.
+    await _seed_message(engine, mid=41, person_id="miles")
+    cid = await _seed_candidate(engine, observed_in=["41"])
+
+    ids = await store.propose(
+        key="ws", proposals=(_proposal(_verdict(), candidate_id=cid),),
+        now_ms=NOW,
+    )
+
+    fact = await store.fact_by_id(workspace="ws", fact_id=ids[0])
+    assert fact is not None
+    assert (fact.asserted_by, fact.asserted_at) == (None, None)
+    # The two attributions are orthogonal: `fact_asserter`'s join walks
+    # `observed_in` live and still finds miles.
+    assert [a.person_id for a in await store.asserters(fact_id=ids[0])] == ["miles"]
 
 
 # ---------------------------------------------------------------------------

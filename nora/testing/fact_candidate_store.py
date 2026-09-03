@@ -31,6 +31,14 @@ easy to get quietly wrong:
 It carries no delete method, matching `DreamSink`'s own shape ("invalidate,
 never delete") and §5.1's reason for the table.
 
+**`asserted_by`/`asserted_at` stay None here, deliberately.** The attribution
+join walks `messages` (design/dreamer-agent-loop/32 §3.4), a table this double
+does not hold — the same reason `InMemoryFactStore` does not perform the
+asserter join. A double that faked attribution would make every green
+attribution test a claim about the double, so the join is asserted against
+Postgres alone (`tests/infra/test_fact_candidate_store.py`'s SQL-only
+section), and the `FactCandidate` defaults carry the None.
+
 **The facts and entities `pending` filters against are injected.** The SQL
 store reads them from the same database in one statement; this one has no
 database, so it takes the two collections through `__init__` — the only seam

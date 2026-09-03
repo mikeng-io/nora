@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 import pytest
 
@@ -134,7 +135,12 @@ async def test_inputs_renders_every_row_including_one_with_no_body():
     WITH ITS ID rather than skipped: `accept` validates a returned
     every `message_ids` entry against the whole batch, so a row dropped from the render
     would make the set the model was shown smaller than the set `accept`
-    accepts from it."""
+    accepts from it.
+
+    Updated for design/dreamer-agent-loop/32 §3.3 point 1: the line is now
+    ATTRIBUTED (`<id> [<ts>] <name> (<room>): <body>`) rather than the bare
+    `id: body` this test used to assert, and a bodiless row renders its media
+    placeholder (none here, so an empty body)."""
     adaptor = FactCandidateAdaptor(
         candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
     )
@@ -143,8 +149,65 @@ async def test_inputs_renders_every_row_including_one_with_no_body():
         key=SCOPE, batch=(_row(41, "big walk 今晚?"), _row(42, None)),
     )
 
-    assert "41: big walk 今晚?" in rendered
-    assert "42: " in rendered
+    assert "41 [1970-01-01 00:00:01 UTC] A (ws-main): big walk 今晚?" in rendered
+    assert "42 [1970-01-01 00:00:01 UTC] A (ws-main): " in rendered
+
+
+async def test_inputs_prefers_the_operator_authored_person_name():
+    """DEC-80's ordering, applied to the dream transcript: `person_name` is
+    operator-authored, `sender_name` is self-set and spoofable, so the render
+    names the first and only falls back to the second."""
+    adaptor = FactCandidateAdaptor(
+        candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
+    )
+    row = replace(_row(41, "a claim"), sender_name="self-set", person_name="Miles")
+
+    rendered = await adaptor.inputs(key=SCOPE, batch=(row,))
+
+    assert " Miles (ws-main): a claim" in rendered
+    assert "self-set" not in rendered
+
+
+async def test_inputs_renders_media_and_reply_markers():
+    """32 §3.3 point 1: a bodiless row renders its media TYPE from
+    `media_json` (a filename is never rendered — `nora.domain.media`'s own
+    rule), and a reply row names the quoted target's timestamp."""
+    adaptor = FactCandidateAdaptor(
+        candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
+    )
+    image = replace(
+        _row(41, None),
+        media_json='[{"sha256": "ab", "media_type": "image/jpeg", "size": 1,'
+                   ' "filename": "secret-name.jpg"}]',
+    )
+    reply = replace(_row(42, "sure"), quoted_ts=2_000)
+
+    rendered = await adaptor.inputs(key=SCOPE, batch=(image, reply))
+
+    assert "41 [1970-01-01 00:00:01 UTC] A (ws-main): [image]" in rendered
+    assert "secret-name" not in rendered
+    assert "(reply to 1970-01-01 00:00:02 UTC)" in rendered
+
+
+async def test_inputs_caps_the_render_but_keeps_the_whole_id_set():
+    """32 §3.3 point 2: past MAX_RENDERED_MESSAGES the prompt switches to a
+    summary line naming the omitted id range, while `accept` still validates
+    against the FULL batch — the cap bounds text, not provenance."""
+    adaptor = FactCandidateAdaptor(
+        candidates=InMemoryFactCandidateStore(), workspace_for=lambda _: WS,
+    )
+    batch = tuple(_row(i, f"claim {i}") for i in range(1, 503))
+
+    rendered = await adaptor.inputs(key=SCOPE, batch=batch)
+
+    assert "claim 500" in rendered
+    assert "claim 501" not in rendered
+    assert "... and 2 more messages (ids 501..502) not shown" in rendered
+    parsed = await adaptor.accept(key=SCOPE, items=(
+        {"subject": "s", "predicate": "p", "object": "o",
+         "message_ids": [502]},
+    ))
+    assert [c.message_ids for c in parsed] == [(502,)]  # type: ignore[attr-defined]
 
 
 async def test_a_message_id_outside_the_batch_is_dropped():

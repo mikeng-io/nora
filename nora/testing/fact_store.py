@@ -12,6 +12,14 @@ every request the same way") is why it applies the SAME three refusals
 null `replaced_by`. It carries no delete method, matching `DreamSink`'s own
 shape ("invalidate, never delete").
 
+**`asserted_by`/`asserted_at` stay None on every row it writes.** 32 §5
+closed decision 2's carry reads `fact_candidate` inside the write's
+transaction, and this double holds no candidate table — the same reason it
+does not perform the asserter join. Faking the carry would make a green
+attribution test a claim about the double, so the behaviour is asserted
+against Postgres alone (`tests/infra/test_fact_store.py`'s attribution
+section) and the `Fact` defaults carry the None.
+
 `fact_proposal_factory` builds a `Proposal` whose `payload` is a valid
 `FactVerdict` — for another session's contract suite (a note-tier store, most
 likely) to hand to *its own* store and prove a foreign payload is refused,
@@ -34,6 +42,7 @@ from nora.domain.facts import (
     DisputeOutcome,
     Fact,
     FactAsserter,
+    FactPremise,
     FactVerdict,
     SupersedeReason,
 )
@@ -96,6 +105,7 @@ class InMemoryFactStore:
 
     _facts: dict[tuple[str, str], Fact] = field(default_factory=dict)
     _asserters: list[FactAsserter] = field(default_factory=list)
+    _premises: list[FactPremise] = field(default_factory=list)
 
     async def propose(
         self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
@@ -303,6 +313,25 @@ class InMemoryFactStore:
         them — a production `propose` writes them through SQL the double
         cannot run."""
         self._asserters.extend(asserters)
+
+    async def premises(self, *, fact_id: str) -> tuple[FactPremise, ...]:
+        """The forward read over what `seed_premises` put in, matching
+        `SqlFactStore.premises`: a malformed id answers `()`, and the rows are
+        ordered by `premise_fact_id` so two reads of one fact cannot disagree."""
+        try:
+            UUID(fact_id)
+        except ValueError:
+            return ()
+        rows = [p for p in self._premises if p.fact_id == fact_id]
+        rows.sort(key=lambda p: p.premise_fact_id)
+        return tuple(rows)
+
+    def seed_premises(self, *premises: FactPremise) -> None:
+        """Test seam for `premises` — `seed_asserters`'s exact shape and
+        reason: the SQL table has no production writer yet (32 §3.4 ships the
+        read ahead of one), so a double with no seam would make the read
+        untestable anywhere but raw-SQL fixtures."""
+        self._premises.extend(premises)
 
     async def standing_facts(
         self, *, workspace: str, subject_ids: Sequence[str], limit: int,

@@ -214,6 +214,10 @@ class App:
                 adaptors=deps.dream_adaptors,
                 runtime=deps.dreamer_runtime,
                 workspaces=deps.workspace_scopes,
+                # Per-adaptor clocks (design/dreamer-agent-loop/32 §3.1) —
+                # the fact-candidate extractor's daily interval/1000-row batch
+                # live here, not in `[language]`'s shared numbers.
+                schedules=deps.dream_schedules,
             ))
         elif self.cfg.dreamer.enabled:
             # **This branch changed meaning on 2026-08-27 and was rewritten

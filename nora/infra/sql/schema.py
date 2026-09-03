@@ -1223,6 +1223,16 @@ FACT_CANDIDATE = sa.Table(
     # ESTABLISHED the row, alongside `established_by` and `first_seen_at`.
     sa.Column("instruction_sha256", sa.Text, nullable=False),
     sa.Column("model", sa.Text, nullable=False),
+    # 2026-09-03 (migration 0048, design/dreamer-agent-loop/32 §3.4): the
+    # FIRST assertion's attribution — the first sighting message's `person_id`
+    # (or `sender_id` when the sender mapped to nobody) and its `ts`, joined
+    # from `messages` at propose time. NULLABLE with no backfill: a pruned or
+    # never-existing message leaves nothing to attribute, and NULL is the only
+    # honest value there — the migration's docstring carries the argument.
+    # INSERT-only like the provenance trio: a re-sighting is not the first
+    # assertion, and the upsert's `set_` leaves both alone.
+    sa.Column("asserted_by", sa.Text),
+    sa.Column("asserted_at", sa.BigInteger),
     sa.CheckConstraint(
         "status in ('pending', 'adjudicated', 'not_covered')",
         name="fact_candidate_status_check",
@@ -1342,6 +1352,15 @@ FACT = sa.Table(
     # stored: it is model-adjacent free text and this column is rendered.
     sa.Column("disputed_reason", sa.Text),
     sa.Column("disputed_tag_id", sa.Text),
+    # 2026-09-03 (migration 0048, 32 §5 closed decision 2): the settling
+    # candidate's attribution, copied onto the fact row at adjudication so the
+    # rendered `<facts>` block can say who said it and when, not only the web
+    # warrant. NULLABLE and never backfilled, for `fact_candidate.asserted_*`'s
+    # reason; None on the candidate propagates as None here. Orthogonal to
+    # `fact_asserter`, which records EVERY attribution — this pair is the
+    # first, denormalised onto the row the render path already reads.
+    sa.Column("asserted_by", sa.Text),
+    sa.Column("asserted_at", sa.BigInteger),
     sa.CheckConstraint(
         "instruction_sha256 ~ '^[0-9a-f]{64}$'",
         name="fact_instruction_sha256_check",

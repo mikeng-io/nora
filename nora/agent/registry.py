@@ -64,7 +64,9 @@ from .room import Room
 from .tools import (
     NATIVE_TOOL_BUDGETS,
     NATIVE_TOOLS,
+    EntityReadCollaborator,
     EventsCollaborator,
+    FactReadCollaborator,
     ImageGenerator,
     KnowledgeCollaborator,
     NoteCollaborator,
@@ -130,6 +132,8 @@ class ToolRegistry:
         note_workspace: Callable[[str, str], str | None] | None = None,
         workspace_for: Callable[[str, str], str | None] | None = None,
         knowledge: KnowledgeCollaborator | None = None,
+        facts: FactReadCollaborator | None = None,
+        entities: EntityReadCollaborator | None = None,
         compute_backend: ComputeBackend | None = None,
         compute_jobs: ComputeJobStore | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
@@ -286,6 +290,17 @@ class ToolRegistry:
         # parameter and thereby depend on the note tier being wired.
         self._workspace_for = workspace_for
         self._knowledge = knowledge
+        # The knowledge tier's GRAPH reads (design/dreamer-agent-loop/32 §3.4)
+        # — `get_knowledge`/`knowledge_premises`/`knowledge_asserters`/
+        # `knowledge_entity`'s own pair, wired the identical honest way
+        # `knowledge` is: both None while `[facts] enabled = false` (every
+        # composition that has not wired the tier — offline, eval, and any
+        # test that does not care), and the four verbs answer `unavailable`
+        # (R-5) rather than crash or report an unconsulted store as an empty
+        # one. `entities` is the resolver `get_knowledge` needs FIRST, because
+        # `fact.subject_id` holds surface text, not entity ids.
+        self._facts = facts
+        self._entities = entities
         # `make_artifact`'s pair (Nora Compute spec §4), wired the same honest
         # way `reminders` is: NOT default-constructed — there is no backendless
         # or storeless default — so every composition that has not wired Nora
@@ -556,6 +571,7 @@ class ToolRegistry:
         fire_turn: bool = False,
         location_trusted: bool = False,
         links: LinkCarry | None = None,
+        supplied_workspace: str | None = None,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
@@ -590,7 +606,17 @@ class ToolRegistry:
         minted in one conversation to a reply being composed in another, which
         is a disclosure rather than a cosmetic bug. It comes from
         `nora.engagement.stages.deliver.build`'s `DeliveryHandle`, which is also
-        where the `Deliverer` that consumes it is built."""
+        where the `Deliverer` that consumes it is built.
+
+        `supplied_workspace` is per-CALL for the same reason, from exactly one
+        caller: `nora.agent.dreamer.RegistryToolSource`, whose workspace-keyed
+        adaptors ARE keyed on the workspace and must SUPPLY it rather than let
+        the tool layer derive it from a room they do not have
+        (design/dreamer-agent-loop/32 §3.4, `08-state.md` §10). It must not
+        become a registry field either: a workspace fixed for the life of the
+        process is the cross-workspace read `note_workspace`'s own comment
+        (above, in `__init__`) exists to prevent. Every tag-path caller leaves
+        it None and the resolver answers as before."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -616,6 +642,8 @@ class ToolRegistry:
             notes=self._notes, note_workspace=self._note_workspace,
             workspace_for=self._workspace_for,
             knowledge=self._knowledge,
+            facts=self._facts, entities=self._entities,
+            supplied_workspace=supplied_workspace,
             links=links,
             relay=self._relay,
             versions=self._versions,
@@ -646,6 +674,7 @@ class ToolRegistry:
         allowed_mcp: frozenset[str] = frozenset(),
         location_trusted: bool = False,
         links: LinkCarry | None = None,
+        supplied_workspace: str | None = None,
     ) -> list[Any]:
         """The registered tools, adapted to what `Agent(tools=...)` wants —
         what `nora.engagement.pipeline.EngagementPipeline` calls in place of
@@ -661,13 +690,18 @@ class ToolRegistry:
         Task 2), not `ToolSpec`s, so `specs()` cannot return them and `adapt()`
         must not be called on them. Native tools are unaffected — this
         codebase has no per-conversation gating for them today, and this
-        change does not add one."""
+        change does not add one.
+
+        `supplied_workspace` passes straight through to `specs()` — see that
+        method's docstring; it exists for the Dreamer's workspace-keyed build
+        and every other caller leaves it None."""
         specs = self.specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
             transcript=transcript,
             fire_turn=fire_turn, location_trusted=location_trusted, links=links,
+            supplied_workspace=supplied_workspace,
         )
         tools = [adapt(spec) for spec in specs]
         for name in allowed_mcp:
