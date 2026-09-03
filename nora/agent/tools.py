@@ -595,14 +595,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                         source_tier="remembered", read_only=True,
                         side_effect_state="none", idempotency="idempotent", retry="safe",
                         output_contract="three_state"),
-    # 2, raised from 1 (operator 2026-09-03): `ask_memory` REASONS (a slow
+    # 4, raised from 2 (operator 2026-09-03): `ask_memory` REASONS (a slow
     # dialectic call, ~14-19s), so the budget is sized by the loop wall clock —
-    # `[llm] timeout_seconds` is 240s, so two calls (~38s) fit comfortably and
-    # three (~57s) still do. The personalization decomposition (design/31) may
-    # need a deep read on more than one person; two covers the key person plus
-    # one more. It is the escalation from `about` (retrieve), reached only when
-    # a profile lookup will not answer a pieced-together question.
-    "ask_memory": NativeTool(2,
+    # `[llm] timeout_seconds` is 240s, so four calls (~76s) still fit inside
+    # the turn. The personalization decomposition (design/31) may need deep
+    # reads on several people; four covers the key people of a group turn. It
+    # is the escalation from `about` (retrieve), reached only when a profile
+    # lookup will not answer a pieced-together question.
+    "ask_memory": NativeTool(4,
                              source_tier="remembered", read_only=True,
                              side_effect_state="none", idempotency="idempotent", retry="safe",
                              output_contract="three_state"),
