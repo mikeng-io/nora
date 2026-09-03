@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from typing import Any
 
 import pytest
 from strands.hooks.events import BeforeInvocationEvent
@@ -568,3 +569,56 @@ def test_a_model_source_hands_out_the_tool_choice_its_spec_declares():
     )
 
     assert source.create().config["params"]["tool_choice"] == "auto"
+
+
+async def test_invoke_catches_max_tokens_and_carries_the_partial_text():
+    """The salvage mechanism's first half: `factory.invoke` must NOT let
+    Strands' `MaxTokensReachedException` bubble into `invoke.run`'s generic
+    `except Exception` (which counts a silent failure and drops the words).
+    The partial message is already in `agent.messages` when Strands raises —
+    this fake agent reproduces that exact shape."""
+    from strands.types.exceptions import MaxTokensReachedException
+
+    from nora.domain.errors import PartialReplyError
+
+    class _FakeAgent:
+        messages = [{"role": "assistant", "content": [
+            {"text": "密碼寫咗喺島上面，去搵下啦"},
+        ]}]
+
+        async def invoke_async(self, *args: Any, **kwargs: Any) -> Any:
+            raise MaxTokensReachedException("max tokens")
+
+    with pytest.raises(PartialReplyError) as excinfo:
+        await factory.invoke(
+            _FakeAgent(),  # type: ignore[arg-type]
+            "<tag_message/>", invocation_state={}, limits={},
+        )
+
+    assert excinfo.value.partial_text == "密碼寫咗喺島上面，去搵下啦"
+
+
+async def test_invoke_carries_an_empty_partial_when_only_tool_use_blocks():
+    """A cut-off whose partial message carried only tool-use blocks has
+    nothing to salvage — `partial_text` is empty and the pipeline stays
+    silent (R-5). Strands' own recovery replaces tool uses with error text
+    in `agent.messages`, but the words the model WROTE are what matter here."""
+    from strands.types.exceptions import MaxTokensReachedException
+
+    from nora.domain.errors import PartialReplyError
+
+    class _FakeAgent:
+        messages = [{"role": "assistant", "content": [
+            {"toolUse": {"name": "send_reply", "input": {}}},
+        ]}]
+
+        async def invoke_async(self, *args: Any, **kwargs: Any) -> Any:
+            raise MaxTokensReachedException("max tokens")
+
+    with pytest.raises(PartialReplyError) as excinfo:
+        await factory.invoke(
+            _FakeAgent(),  # type: ignore[arg-type]
+            "<tag_message/>", invocation_state={}, limits={},
+        )
+
+    assert excinfo.value.partial_text == ""
