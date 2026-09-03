@@ -55,6 +55,21 @@ class _FakeVoiceConnection:
         self.ws = _FakeVoiceWS(ws_closed)
 
 
+class _FakeVoiceChannel:
+    """Stands in for `discord.VoiceChannel.connect()` -- returns a fresh
+    `_FakeVoiceClient` per call, the shape `_try_reconnect` needs."""
+
+    def __init__(self, *, fail_connects: int = 0) -> None:
+        self.connect_calls = 0
+        self._fail_connects = fail_connects
+
+    async def connect(self) -> _FakeVoiceClient:
+        self.connect_calls += 1
+        if self.connect_calls <= self._fail_connects:
+            raise discord.ClientException("Not connected to voice.")
+        return _FakeVoiceClient()
+
+
 class _FakeVoiceClient:
     def __init__(self, *, connected: bool = True, ws_closed: bool = False) -> None:
         self.played_sources: list[object] = []
@@ -82,6 +97,7 @@ class _FakeVoiceClient:
         # `_connection.ws.closed` to reproduce the silent voice-side drop
         # of 2026-08-26.
         self._connection = _FakeVoiceConnection(ws_closed=ws_closed)
+        self.channel = None
 
     def is_connected(self) -> bool:
         return self.connected
@@ -669,3 +685,113 @@ async def test_the_voice_death_monitor_stays_silent_after_a_natural_track_end() 
     session.stop()
 
     assert deaths == 0
+
+
+async def test_voice_death_reconnects_and_restarts_the_track() -> None:
+    """2026-09-03 live: a voice websocket drop made the monitor tear the
+    session down, killing autoplay. With `reconnect_channel` set, the
+    monitor must rejoin with a fresh connection and restart the current
+    track instead of signalling death."""
+    voice_client = _FakeVoiceClient(ws_closed=True)
+    channel = _FakeVoiceChannel()
+    deaths = 0
+
+    async def on_voice_death() -> None:
+        nonlocal deaths
+        deaths += 1
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        on_voice_death=on_voice_death,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        monitor_interval_seconds=0.02,
+        reconnect_channel=channel,
+    )
+    session.play("https://cdn.example/a")
+
+    await asyncio.sleep(0.12)
+
+    assert deaths == 0, "reconnect must prevent the death signal"
+    assert channel.connect_calls == 1, "must have rejoined the channel"
+    assert session._voice_client is not voice_client, "must swap to a fresh client"
+    assert session._voice_client.played_sources, "must restart the track on the new client"
+
+
+async def test_voice_death_reconnect_failure_still_signals_death() -> None:
+    """If every reconnect attempt fails, the session must still tear down
+    like before -- a dead voice connection must not leave the player
+    believing it is playing."""
+    voice_client = _FakeVoiceClient(ws_closed=True)
+    channel = _FakeVoiceChannel(fail_connects=3)
+    deaths = 0
+
+    async def on_voice_death() -> None:
+        nonlocal deaths
+        deaths += 1
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        on_voice_death=on_voice_death,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        monitor_interval_seconds=0.02,
+        reconnect_channel=channel,
+        reconnect_attempts=2,
+        reconnect_delay_seconds=0.01,
+    )
+    session.play("https://cdn.example/a")
+
+    await asyncio.sleep(0.15)
+
+    assert deaths == 1, "failed reconnect must still signal death"
+    assert channel.connect_calls == 2, "must have tried both attempts"
+
+
+async def test_voice_death_without_reconnect_channel_signals_death_immediately() -> None:
+    """`reconnect_channel=None` (the default) keeps the pre-existing
+    behaviour: signal death on the first observation, no reconnect."""
+    voice_client = _FakeVoiceClient(ws_closed=True)
+    deaths = 0
+
+    async def on_voice_death() -> None:
+        nonlocal deaths
+        deaths += 1
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        on_voice_death=on_voice_death,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        monitor_interval_seconds=0.02,
+    )
+    session.play("https://cdn.example/a")
+
+    await asyncio.sleep(0.12)
+
+    assert deaths == 1
+
+
+async def test_a_failed_play_cleans_up_the_just_spawned_source() -> None:
+    """2026-09-03 live: a dead-voice teardown left an orphan ffmpeg running
+    for minutes. When `voice_client.play()` raises (dead connection), the
+    source we just spawned via the factory must be cleaned up so its ffmpeg
+    is reaped -- otherwise the process writes into a pipe nobody reads
+    forever."""
+    voice_client = _FakeVoiceClient(connected=False)
+    cleaned: list[object] = []
+
+    class _TrackingSource(_FakeAudioSource):
+        def cleanup(self) -> None:
+            cleaned.append(self)
+
+    def factory(url: str) -> _TrackingSource:
+        return _TrackingSource(url)
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        audio_source_factory=factory,
+    )
+
+    with pytest.raises(discord.ClientException):
+        session.play("https://cdn.example/a")
+
+    assert len(cleaned) == 1, "the failed play's source must be cleaned up"
+    assert cleaned[0].label == "https://cdn.example/a"

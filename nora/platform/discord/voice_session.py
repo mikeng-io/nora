@@ -80,6 +80,9 @@ class DiscordVoiceSession:
         audio_source_factory: AudioSourceFactory = _default_audio_source,
         crossfade_seconds: float = 0.0,
         monitor_interval_seconds: float = 5.0,
+        reconnect_channel: discord.VoiceChannel | None = None,
+        reconnect_attempts: int = 2,
+        reconnect_delay_seconds: float = 1.0,
     ) -> None:
         self._voice_client = voice_client
         self._loop = loop
@@ -103,11 +106,29 @@ class DiscordVoiceSession:
         self._current_raw: discord.AudioSource | None = None
         self._crossfade_timer: asyncio.TimerHandle | None = None
         self._dead_consecutive = 0
+        # Voice reconnect (2026-09-03): when the monitor observes the voice
+        # connection die, try to rejoin the channel with a fresh connection
+        # before tearing the session down. `None` disables reconnect (the
+        # pre-existing behaviour: signal death immediately).
+        self._reconnect_channel = reconnect_channel
+        self._reconnect_attempts = reconnect_attempts
+        self._reconnect_delay_seconds = reconnect_delay_seconds
+        # The stream URL/duration of the CURRENT track -- remembered so a
+        # reconnect can restart the same track on the fresh connection.
+        self._current_stream_url: str | None = None
+        self._current_duration_seconds: float | None = None
 
     def is_playing(self) -> bool:
         return bool(self._voice_client.is_playing())
 
     def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+        # Remember the CURRENT track so a voice reconnect can restart it on
+        # the fresh connection (2026-09-03). Recorded BEFORE the factory
+        # call below -- if the factory itself raises (ffmpeg missing, a
+        # transient spawn failure), the previous track's URL is still the
+        # right thing to reconnect with.
+        self._current_stream_url = stream_url
+        self._current_duration_seconds = duration_seconds
         raw = self._audio_source_factory(stream_url)
         mixed: discord.AudioSource = raw
         # `is_playing()` reflects the `AudioPlayer` THREAD's own state, not
@@ -157,13 +178,27 @@ class DiscordVoiceSession:
         if self._pending_finish is not None:
             self._pending_finish.cancel()
             self._pending_finish = None
-        if already_playing:
-            # A live swap, not stop()+play() -- the AudioPlayer thread never
-            # sees a gap, which is the whole point: the OLD track (now
-            # inside `mixed`) keeps being heard, blending into the new one.
-            self._voice_client.source = wrapped
-        else:
-            self._voice_client.play(wrapped, after=self._after)
+        try:
+            if already_playing:
+                # A live swap, not stop()+play() -- the AudioPlayer thread never
+                # sees a gap, which is the whole point: the OLD track (now
+                # inside `mixed`) keeps being heard, blending into the new one.
+                self._voice_client.source = wrapped
+            else:
+                self._voice_client.play(wrapped, after=self._after)
+        except Exception:
+            # The voice connection is dead (a dropped voice websocket makes
+            # `play()` raise `Not connected to voice.`). The ffmpeg we just
+            # spawned via the factory would otherwise be orphaned -- writing
+            # into a pipe nobody reads, forever (found live 2026-09-03: a
+            # dead-voice teardown left an ffmpeg running for minutes).
+            # Clean it up before re-raising so the caller's teardown does
+            # not leak a process.
+            try:
+                wrapped.cleanup()
+            except Exception:
+                log.exception("voice source cleanup after failed play() failed")
+            raise
         if self._crossfade_seconds > 0 and duration_seconds is not None:
             delay = duration_seconds - self._crossfade_seconds
             if delay > 0:
@@ -192,6 +227,8 @@ class DiscordVoiceSession:
             self._pending_finish = None
         self._suppress_next_after = True
         self._current_raw = None
+        self._current_stream_url = None
+        self._current_duration_seconds = None
         self._voice_client.stop()
 
     async def disconnect(self) -> None:
@@ -335,17 +372,76 @@ class DiscordVoiceSession:
                     continue
                 log.warning(
                     "voice connection dead for guild %s (ws_closed=%s playing=%s); "
-                    "signalling on_voice_death",
+                    "attempting reconnect",
                     getattr(self._voice_client, "guild", "<unknown>"),
                     ws_dead, self._voice_client.is_playing(),
                 )
                 self._dead_consecutive = 0
+                if await self._try_reconnect():
+                    continue  # monitor keeps running on the fresh connection
                 await self._signal_voice_death()
                 return
         except asyncio.CancelledError:
             return
         except Exception:
             log.exception("voice-death monitor crashed")
+
+    async def _try_reconnect(self) -> bool:
+        """Attempt to rejoin the voice channel with a fresh connection and
+        restart the current track. Returns `True` if the session is alive
+        again (monitor keeps running), `False` if reconnect failed and the
+        caller should signal death.
+
+        The old `VoiceClient` is discarded (its websocket is dead); a fresh
+        `channel.connect()` gives us a new one. The current track restarts
+        from position 0 -- the same limitation `resume_from_persisted` has
+        (design/discord-music/06-session-persistence.md: mid-frame resume is
+        never attempted, only \"what track\")."""
+        if self._reconnect_channel is None or self._current_stream_url is None:
+            return False
+        for attempt in range(1, self._reconnect_attempts + 1):
+            try:
+                log.info(
+                    "voice reconnect attempt %d/%d for guild %s",
+                    attempt, self._reconnect_attempts,
+                    getattr(self._voice_client, "guild", "<unknown>"),
+                )
+                new_client: discord.VoiceClient = await self._reconnect_channel.connect()
+                # Swap the live client. The old one is dead; disconnect it
+                # forcefully so discord.py's bookkeeping is clean (the
+                # `force=True` rationale in `disconnect()` applies here too).
+                old_client = self._voice_client
+                self._voice_client = new_client
+                try:
+                    await old_client.disconnect(force=True)
+                except Exception:
+                    log.warning(
+                        "old voice client disconnect during reconnect failed", exc_info=True,
+                    )
+                # Restart the current track on the fresh connection.
+                self._current_raw = None
+                self._current_source = None
+                self._suppress_next_after = False
+                self._pending_finish = None
+                self.play(
+                    self._current_stream_url,
+                    duration_seconds=self._current_duration_seconds,
+                )
+                log.info(
+                    "voice reconnect succeeded for guild %s; restarted %s",
+                    getattr(self._voice_client, "guild", "<unknown>"),
+                    self._current_stream_url,
+                )
+                return True
+            except Exception:
+                log.exception(
+                    "voice reconnect attempt %d/%d failed for guild %s",
+                    attempt, self._reconnect_attempts,
+                    getattr(self._voice_client, "guild", "<unknown>"),
+                )
+                if attempt < self._reconnect_attempts:
+                    await asyncio.sleep(self._reconnect_delay_seconds)
+        return False
 
     async def _signal_voice_death(self) -> None:
         if self._on_voice_death is None:
