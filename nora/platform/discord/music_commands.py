@@ -96,6 +96,7 @@ def _connect_factory(
         return DiscordVoiceSession(
             voice_client, loop=asyncio.get_running_loop(), on_finished=_on_finished,
             on_voice_death=_on_voice_death, crossfade_seconds=crossfade_seconds,
+            reconnect_channel=channel,
         )
 
     return connect
