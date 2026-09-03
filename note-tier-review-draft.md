@@ -40,8 +40,15 @@ No ordering, no cadence, no per-adaptor rhythm. Note work does not need 5-minute
 ### C2 — A create path: the `note-candidates` adaptor (fact tier's Phase A shape)
 - Scope-keyed, watermarked, tool-free — reads a room's message batch **plus the workspace's note index**.
 - Proposes a **full note** (title, description, body, anchor, closing condition, message_ids).
+- Read-only awareness only (see C2.1) — never delivery verbs
 - **Code decides** create vs update vs nothing (dedupe against the standing index; update only if the proposal adds something).
 - The tag path stays as-is (R-55 latch, never creates). The cold start proved it will not.
+
+### C2.1 — Tool surface: read-only awareness, never delivery
+
+- Note dreamers may hold **read-only cross-tier verbs** so they know what is happening while consolidating: `list_reminders`, `list_events`, `search_knowledge` / `get_knowledge`, `search_memory_workspace`, `note_read` / `note_search`.
+- **Never** delivery or write verbs: `remind`, `cancel_reminder`, `create_event`, `update_event`, `cancel_event`.
+- The revisitor's `schedule_reminder` block is **not widened** — reaching a person is a separate proactive adapter's job (see C7).
 
 ### C3 — `note_candidate` table gains a create shape
 - Add `kind` (`miss` | `create`); existing rows are all `miss`, no backfill.
@@ -68,6 +75,13 @@ Budgets follow 32's enlarged pattern (more turns, more tokens, longer timeout).
 - Unsettled remainder keeps the note alive.
 - Gap recorded: no general discharge pipeline exists; it is the curator's job, sequenced after the create path.
 
+### C7 — Proactive adapter (deferred, cross-tier)
+
+- Confirmed 2026-09-03: Nora should move from **passive to active** — initiative derived from collected memory/notes/knowledge/events, with cross-tier synthesis.
+- This is **not** the note tier's job: note dreamers consolidate and close; they **never initiate contact**.
+- A separate proactive adapter (built on the settled state of note/knowledge/language tiers) owns initiative: input = cross-tier summaries (`<notes>` index, standing, facts block, event/reminder state), output = proposed actions (`remind`, `cancel_reminder`, `update`, `discharge`, reach out), model-proposes / code-disposes, daily cadence.
+- Deferred because it is built **on top** of this tier — nothing to be active about until the note tier has a create path, schedule and discharge.
+
 ## 4. What gets built (implementation order)
 
 1. **Migration** — `note_candidate` shape change (kind=create columns).
@@ -83,7 +97,10 @@ Budgets follow 32's enlarged pattern (more turns, more tokens, longer timeout).
 - **Cross-week conversations get digested.** Hourly watermark over each room's transcript assembles the arrangement the per-turn tag path cannot.
 - **Closed notes discharge cleanly.** Settled content reaches the right tier (Event / knowledge / Honcho); the container retires as archive.
 - **The Dreamer has a clear rhythm.** Per-adaptor cadence, phase-offset ordering, no flat-list stampede — and no dependency-graph machinery the tier does not need.
+- **Boundaries stay sharp.** Note dreamers read across tiers for awareness, never deliver or initiate; the proactive adapter (deferred) owns initiative separately.
 
 ---
 
 *Open question for Miles: whether to wait for `feat/fact-dreamer-schedule-impl` to land before implementing C4 (both touch `AdaptorSchedule`), or carry the schedule wiring in this branch.*
+
+*Second decision 2026-09-03: proactive adapter deferred (C7) — note tier trimmed to lifecycle-only; read-only cross-tier awareness for consolidation (C2.1).*
