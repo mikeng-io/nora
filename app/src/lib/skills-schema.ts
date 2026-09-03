@@ -1,12 +1,15 @@
 import { z } from "zod";
 
-// Mirrors nora/web/skills.py::build_skills_payload's return shape — name
-// and description only, never the instructions body (progressive
-// disclosure: the body reaches the model only on activation, and has no
-// business reaching a browser either).
+// Mirrors nora/web/skills.py::build_skills_payload's return shape — each
+// entry is the skill's public metadata: name, the when-to-load description
+// (the only body text that ever sits in the prompt), and the instructions
+// body (progressive disclosure: the body reaches the model only on
+// activation; the portal shows it because the portal is private and the
+// operator wants to read what a skill actually says).
 export const SkillEntrySchema = z.object({
   name: z.string(),
   description: z.string(),
+  instructions: z.string(),
 });
 
 export const SkillsSchema = z.array(SkillEntrySchema);
