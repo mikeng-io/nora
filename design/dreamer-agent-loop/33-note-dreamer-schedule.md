@@ -334,7 +334,7 @@ pipeline is sequenced after them. The fact tier's DAG question is explicitly
 out of scope — [32](32-fact-dreamer-schedule.md) and its implementation
 branch own it.
 
-**2026-09-03 (later, same session) — two boundary decisions.** (1) A
+**2026-09-03 (later, same session) — three boundary decisions.** (1) A
 **proactive adapter is confirmed as a separate, deferred design** — cross-
 tier initiative ("Nora 由 passive 變 active") built on top of the note,
 knowledge and language streamers' settled state. It is NOT the note tier's

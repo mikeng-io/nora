@@ -82,13 +82,21 @@ Budgets follow 32's enlarged pattern (more turns, more tokens, longer timeout).
 - A separate proactive adapter (built on the settled state of note/knowledge/language tiers) owns initiative: input = cross-tier summaries (`<notes>` index, standing, facts block, event/reminder state), output = proposed actions (`remind`, `cancel_reminder`, `update`, `discharge`, reach out), model-proposes / code-disposes, daily cadence.
 - Deferred because it is built **on top** of this tier — nothing to be active about until the note tier has a create path, schedule and discharge.
 
+### C8 — Revisitor merged into curator (`note-curation`)
+
+- Verified: in production the revisitor's distinctive machinery is **dead** — `revisit_at` / `strikes` / `last_wake_revision_id` have no writer anywhere, so early close and dateless aging are unreachable. Its only working trigger (passed anchor) is the curator's selection. The reaching-a-person half that justified the split is deferred to the proactive adapter.
+- **Merge**: one `note-curation` adaptor carries merge + retire, with three SQL-only selections (`merge_groups`, `anchored_before`, `due`) → one model judgement per selected note (`closed` / `expired` / `moot` / `open`) → code disposes.
+- **Two non-negotiables** (full detail in 34): cheap selection must stay SQL-only or a daily sweep becomes a full-notebook model call (5.1); the `_covers` evidence ground must not degrade — silence is not an answer (5.2).
+- `revisit_at` gets its writer: `record_wake` converts the dead branches into live dateless-aging modes (5.3). Metrics consolidate under `nora_note_curator_*` (5.5). `note-candidates` and the proactive adapter stay separate (5.6).
+
 ## 4. What gets built (implementation order)
 
 1. **Migration** — `note_candidate` shape change (kind=create columns).
 2. **`note-candidates` adaptor** — `nora/language/note_candidates.py`, objective `note-candidates.md`, deterministic create/update gate.
-3. **Schedule wiring** — `AdaptorSchedule` entries in composition (depends on 32's impl landing or being carried here).
-4. **Doctrine recognition** — `conduct.md` line broadens.
-5. **Discharge pipeline** — curator-side, after create path is live.
+3. **Revisitor → curator merge** (C8) — `note_curator.py` gains `due` read + `_covers`/strike logic; `note_revisitor.py` logic moves across; `note-revisit` adaptor retired.
+4. **Schedule wiring** — `AdaptorSchedule` entries in composition (depends on 32's impl landing or being carried here).
+5. **Doctrine recognition** — `conduct.md` line broadens.
+6. **Discharge pipeline** — curator-side, after create path is live.
 
 ## 5. Target effect
 
@@ -96,6 +104,7 @@ Budgets follow 32's enlarged pattern (more turns, more tokens, longer timeout).
 - **The notebook holds arrangements, not just questions.** A dinner plan lives whole; its settled half has a home.
 - **Cross-week conversations get digested.** Hourly watermark over each room's transcript assembles the arrangement the per-turn tag path cannot.
 - **Closed notes discharge cleanly.** Settled content reaches the right tier (Event / knowledge / Honcho); the container retires as archive.
+- **The Dreamer has a clear rhythm — and fewer of them.** Candidate + curator, instead of candidate + curator + a revisitor whose distinctive machinery was dead in production (C8).
 - **The Dreamer has a clear rhythm.** Per-adaptor cadence, phase-offset ordering, no flat-list stampede — and no dependency-graph machinery the tier does not need.
 - **Boundaries stay sharp.** Note dreamers read across tiers for awareness, never deliver or initiate; the proactive adapter (deferred) owns initiative separately.
 
