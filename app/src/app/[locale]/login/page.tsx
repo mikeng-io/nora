@@ -1,5 +1,7 @@
 import { getTranslations } from "next-intl/server";
+import { redirect } from "next/navigation";
 import { signIn } from "@/auth";
+import { checkSession } from "@/lib/require-session";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -14,6 +16,13 @@ export default async function LoginPage({
   const { locale } = await params;
   const { denied } = await searchParams;
   const t = await getTranslations("login");
+
+  // Already signed in and allowlisted? Go straight to the portal — the login
+  // page must not re-send an authed user through Discord OAuth.
+  const check = await checkSession();
+  if (check.status === "ok") {
+    redirect(`/${locale}/status`);
+  }
 
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-bg-base p-6">

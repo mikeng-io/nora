@@ -478,6 +478,9 @@
     "writes": "可以寫入",
     "cacheable": "可緩存",
     "sideEffect": "{state}",
-    "contract": "合約：{contract}"
+    "contract": "合約：{contract}",
+    "tabTools": "工具",
+    "tabSkills": "技能",
+    "noSkills": "而家冇任何技能。"
   }
 }

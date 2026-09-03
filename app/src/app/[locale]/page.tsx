@@ -1,4 +1,5 @@
 import { getTranslations } from "next-intl/server";
+import { redirect } from "next/navigation";
 import {
   Activity,
   Brain,
@@ -17,6 +18,7 @@ import {
   Volume2,
 } from "lucide-react";
 import { signIn } from "@/auth";
+import { checkSession } from "@/lib/require-session";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { CapabilityTile } from "@/components/capability-tile";
@@ -69,6 +71,13 @@ const LANDING_DIFFS = [
 export default async function LandingPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
   const t = await getTranslations("landing");
+
+  // Already signed in and allowlisted? Go straight to the portal — the
+  // landing CTA must not send an authed user back through Discord OAuth.
+  const check = await checkSession();
+  if (check.status === "ok") {
+    redirect(`/${locale}/status`);
+  }
 
   return (
     <main className="relative min-h-svh overflow-hidden bg-bg-base">

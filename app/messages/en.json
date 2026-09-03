@@ -478,6 +478,9 @@
     "writes": "Can write",
     "cacheable": "Cacheable",
     "sideEffect": "{state}",
-    "contract": "Contract: {contract}"
+    "contract": "Contract: {contract}",
+    "tabTools": "Tools",
+    "tabSkills": "Skills",
+    "noSkills": "No skills are currently available."
   }
 }

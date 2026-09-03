@@ -9,7 +9,7 @@ _SKILL_MD = """\
 name: {name}
 description: {description}
 ---
-Body text — never surfaced to the web portal, only name/description are.
+Body text — surfaced to the private portal since 2026-09-03 (operator).
 """
 
 
@@ -30,14 +30,19 @@ async def test_lists_a_real_skill_by_name_and_description(tmp_path: Path):
     )
     payload = await build_skills_payload(skills_dir=tmp_path)
     assert payload == [
-        {"name": "navigation", "description": "Load when planning a journey."},
+        {
+            "name": "navigation",
+            "description": "Load when planning a journey.",
+            "instructions": "Body text — surfaced to the private portal since 2026-09-03 (operator).",
+        },
     ]
 
 
-async def test_never_surfaces_the_instructions_body(tmp_path: Path):
-    """The body is the only thing that reaches the model, and only on
-    activation (progressive disclosure) — it must never reach a browser
-    that merely lists what's available."""
+async def test_surfaces_the_instructions_body_to_the_private_portal(tmp_path: Path):
+    """The body IS included since 2026-09-03 (operator decision): the portal
+    is private (auth-gated), so it shows what a skill actually says. This does
+    NOT touch progressive disclosure — the body still stays out of the model's
+    prompt until activation; this is a read-only metadata endpoint."""
     skill_dir = tmp_path / "navigation"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text(
@@ -45,8 +50,8 @@ async def test_never_surfaces_the_instructions_body(tmp_path: Path):
         + "\nSECRET-INSTRUCTIONS-BODY-MARKER\n",
     )
     payload = await build_skills_payload(skills_dir=tmp_path)
-    assert "SECRET-INSTRUCTIONS-BODY-MARKER" not in str(payload)
-    assert set(payload[0]) == {"name", "description"}
+    assert "SECRET-INSTRUCTIONS-BODY-MARKER" in str(payload)
+    assert set(payload[0]) == {"name", "description", "instructions"}
 
 
 async def test_skips_a_malformed_skill_rather_than_failing_the_whole_list(tmp_path: Path):
@@ -60,4 +65,8 @@ async def test_skips_a_malformed_skill_rather_than_failing_the_whole_list(tmp_pa
     (broken / "SKILL.md").write_text("not even frontmatter")
 
     payload = await build_skills_payload(skills_dir=tmp_path)
-    assert payload == [{"name": "navigation", "description": "Real one."}]
+    assert payload == [{
+        "name": "navigation",
+        "description": "Real one.",
+        "instructions": "Body text — surfaced to the private portal since 2026-09-03 (operator).",
+    }]
