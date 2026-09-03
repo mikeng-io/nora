@@ -2485,19 +2485,26 @@ cannot tell you about anyone outside it."""
             "note": "This person is in this conversation.",
         }
 
-    async def about(person: str) -> dict:
+    async def about(person: str, query: str | None = None) -> dict:
         """What you know about someone in this conversation — their standing profile.
 
         Call this when your answer depends on knowing somebody — what they do,
         what they like, how they usually are — and you were not already given
         it. It is the only place that knows any of that. What comes back is
         conclusions built up about them over time, narrowed to the message you
-        were just tagged in, so ask about the person, not about the topic.
+        were just tagged in unless you say otherwise.
 
         It holds no messages. For something that was actually said, load_transcript.
 
         Name the person the way the message did; a nickname is fine. It only
         knows people in THIS conversation.
+
+        `query` is the angle to recall them by — GENERATE it yourself, the
+        question you actually need answered, not the raw tag message. A
+        personalization turn asking about the group's state wants a situation
+        question («what is this group currently playing, what have they
+        finished»), not the raw ask. Only when you have no better angle does
+        the tag message stand in. Ask about the person, not about the topic.
 
         Two parts come back and they are not the same kind of thing.
         `identity` is who they are — durable, and it stays true tomorrow.
@@ -2513,6 +2520,7 @@ cannot tell you about anyone outside it."""
 
         Args:
             person: The name or nickname of the person, as the message said it.
+            query: The angle to recall them by; defaults to the tag message.
         """
         view = await room.scope()
         if not view.available:
@@ -2593,9 +2601,12 @@ cannot tell you about anyone outside it."""
                 target=ref.honcho_peer_id,
                 # The QUESTION is Nora's to supply, not the model's (DEC-24):
                 # she has the tagging message, so asking for it would be one
-                # more value to invent per call. Truncated because it is a
-                # search query, not a prompt.
-                search_query=(question or ref.name)[:500],
+                # more value to invent per call. The model MAY supply a
+                # different `query` when the tag message is not the angle it
+                # needs (personalization turns) — that value IS read, so it is
+                # not the DEC-24 case. Truncated because it is a search query,
+                # not a prompt.
+                search_query=(query or question or ref.name)[:500],
                 # `max_conclusions` is DELIBERATELY not passed. It is not a row
                 # limit — Honcho spends it across three independent queries
                 # (semantic / most-derived / recent), and the arithmetic that
@@ -2667,7 +2678,7 @@ cannot tell you about anyone outside it."""
             "partial_view": view.degraded,
         })
 
-    async def ask_memory(person: str, depth: str = "low") -> dict:
+    async def ask_memory(person: str, depth: str = "low", query: str | None = None) -> dict:
         """Work out an answer about someone from what you've come to understand
         of them — a specific QUESTION, not a profile dump.
 
@@ -2682,8 +2693,12 @@ cannot tell you about anyone outside it."""
         `depth`: `low` for a quick read, `high` or `max` when the question really
         needs it (and is worth the wait). Deeper is slower.
 
-        Only knows people in THIS conversation, and answers about the message you
-        were tagged in. Outcomes: `ok` with the answer; `unavailable` when the
+        Only knows people in THIS conversation. `query` is the question to
+        reason about — GENERATE it yourself, the question you actually need
+        answered, not the raw tag message. A personalization turn wants a
+        situation question («would he be up for this?»), not the raw ask. Only
+        when you have no better angle does the tag message stand in. Outcomes:
+        `ok` with the answer; `unavailable` when the
         reasoning could not be done (unreachable, or nothing to work from) —
         never report that as "I don't know them", say you can't check right now;
         and, rarely, `nothing_known` when she worked something out but it can't be
@@ -2694,6 +2709,7 @@ cannot tell you about anyone outside it."""
         Args:
             person: The name or nickname of the person, as the message said it.
             depth: How hard to reason — minimal, low, medium, high, or max.
+            query: The question to reason about; defaults to the tag message.
         """
         level = depth if depth in _REASONING_LEVELS else "low"
         view = await room.scope()
@@ -2720,12 +2736,13 @@ cannot tell you about anyone outside it."""
         try:
             # OBSERVER = Nora, OBSERVED = the person (design/24 §4): she reasons
             # from HER model of them. The QUESTION is the tagging message, hers to
-            # supply (DEC-24), not a value the model invents. `level` is the
-            # model's per-question depth/latency choice — Nora decides.
+            # supply (DEC-24), not a value the model invents — unless the model
+            # supplies a `query`, which IS read and therefore legitimate. `level`
+            # is the model's per-question depth/latency choice — Nora decides.
             answer = await honcho.chat(
                 peer_id=ai_peer,
                 target=ref.honcho_peer_id,
-                query=(question or ref.name)[:500],
+                query=(query or question or ref.name)[:500],
                 reasoning_level=level,
             )
         except Exception:
