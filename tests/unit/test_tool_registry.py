@@ -125,10 +125,11 @@ def test_budgets_match_todays_table():
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 4, "about": 4,
-        # 2 — the dialectic reasoning verb is slow (~14-19s), so the budget is
-        # sized by the loop wall clock (240s); two calls fit comfortably. Raised
-        # from 1 (operator 2026-09-03) for the personalization decomposition.
-        "ask_memory": 2, "search_memory": 4,
+        # 4 — the dialectic reasoning verb is slow (~14-19s), so the budget is
+        # sized by the loop wall clock (240s); four calls (~76s) still fit.
+        # Raised from 2 (operator 2026-09-03) for the personalization
+        # decomposition's group turns.
+        "ask_memory": 4, "search_memory": 4,
         # 2 (tool-recall-log spec §4): the same shape `ask_memory`'s own
         # note describes for a recall verb — run once, notice a different
         # `limit` is needed, run once more.
