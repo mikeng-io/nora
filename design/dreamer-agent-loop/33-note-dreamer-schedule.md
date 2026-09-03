@@ -58,7 +58,7 @@ Three complaints, all confirmed against the design corpus and the live system:
 
 | Claim | Where | Status |
 |---|---|---|
-| Per-adaptor schedule is designed AND wired | [32](32-fact-dreamer-schedule.md) §3.1 — `AdaptorSchedule(min_interval_seconds, batch_limit, max_items)`, name-keyed mapping, no Protocol change. Merged into master (`3ca43b83`); composition wires `dream_schedules` (`composition.py:2415`) for `fact-candidates` | ✅ designed + wired |
+| Per-adaptor schedule is designed AND wired | [32](32-fact-dreamer-schedule.md) §3.1 — `AdaptorSchedule(min_interval_seconds, batch_limit, max_items)`, name-keyed mapping, no Protocol change. Merged into master (`3ca43b83`); composition wires `dream_schedules` (`composition.py:2415`) for `fact-candidates` ONLY — see §5 N1 for why the note curator cannot use it as-is | ✅ designed + wired (fact only) |
 | The note tier has two adaptors, neither creates | `NoteRevisitor` (`nora/language/note_revisitor.py:485`, `name="note-revisit"`, workspace-keyed, watermark-free) and `NoteCuratorAdaptor` (`nora/language/note_curator.py:227`, `name="note-curation"`, workspace-keyed, watermark-free) | ✅ both built, both read-only |
 | The tag path has create/update tools | `note_create`/`note_update` (`nora/agent/tools.py`), gated by R-55 read-before-write latch | ✅ exists, never fired |
 | `note_candidate` is a MISS CACHE, not a create queue | `nora/infra/sql/schema.py:1821` — `(workspace, probe)` unique key, `occurrence_count`, `observed_in`; written by `record_miss` (`nora/agent/tools.py:2000`) | ✅ the only candidate table, wrong shape for create |
@@ -229,32 +229,60 @@ never initiate contact.
 Following [32](32-fact-dreamer-schedule.md) §3.1's name-keyed mapping — no
 Protocol change, existing adaptors untouched by omission:
 
-```toml
-[dreamer.schedules.note-candidates]
-min_interval_seconds = 3600   # hourly — the operator's "可能每一個鐘"
-batch_limit = 200            # a week of one room's planning, not a day of everything
-
-[dreamer.schedules.note-curation]
-min_interval_seconds = 86400 # daily — housekeeping, quality over latency
-batch_limit = 20             # the existing max_expired_per_tick shape
-
-[dreamer.schedules.note-revisit]
-min_interval_seconds = 3600  # hourly — but self-scheduled by revisit_at
-batch_limit = 5              # max_revisits_per_tick
+```python
+# composition.py wiring (NOT a TOML surface — see N2 below)
+dream_schedules = {
+    "note-candidates": AdaptorSchedule(
+        min_interval_seconds=3600,   # hourly — the operator's "可能每一個鐘"
+        batch_limit=200,             # a week of one room's planning
+    ),
+}
 ```
+
+**Kimi review finding N1 (MAJOR, post-rebase) — `AdaptorSchedule` is
+watermark-bound, so only `note-candidates` can use it.** The schedule check
+lives inside the watermark branch of `_dream_adaptor_once`
+(`runtime.py:498-503`): an adaptor with `uses_watermark = False` returns at
+`runtime.py:470` BEFORE the schedule is consulted. `note-candidates` is
+scope-keyed and watermarked, so its hourly cadence works. The curator
+(`uses_watermark = False`, `note_curator.py:267`) can NOT be given a daily
+`AdaptorSchedule` — it would run every tick exactly as it does today,
+because `min_interval_seconds` is never read.
+
+So the cadence for the curator must be decided differently. Two options:
+
+- **(a) Add a non-watermark schedule path** — move the `sched` lookup above
+  the `uses_watermark` early return in `_dream_adaptor_once`, and for a
+  watermark-free scheduled adaptor fire on `now - last_run >= interval`
+  (the runtime's `failures`/`last_failure_at` dicts already track per-unit
+  last-run state; a per-(adaptor,key) `last_fired_at` would be the same
+  shape). This is the real implementation work for the curator's daily
+  cadence.
+- **(b) Keep the curator every-tick with empty-`inputs()` suppression** —
+  what it does today. `inputs()` returns `""` on the overwhelming majority
+  of ticks (nothing expired, no merge groups), and the runtime skips the
+  model call (`dreamer.py:702-711`). The cost is a cheap SQL round per tick
+  per workspace, not a model call. "Daily" becomes "daily-when-there-is-
+  something", which for a housekeeping pass is arguably the honest reading
+  of the operator's intent anyway.
+
+**N2 (MINOR) — there is no `[dreamer.schedules.*]` TOML surface.**
+`DreamerConfig` (`nora/config.py:2091-2245`) has `budgets` but no
+`schedules`, with `extra="forbid"` (`:2138`) — 33's earlier TOML block would
+fail at boot. The shipped mechanism is the hardcoded name-keyed dict at
+`composition.py:2415-2421` (fact-candidates only), wired through
+`composition.py:2616` and `__main__.py:198-219`. The schedule wiring for
+note adaptors belongs in composition beside it.
 
 **Why these numbers:** the operator's own words — *"未密到要 5 分鐘行一次，
 我哋 5 分鐘都冇嘢 create、冇 candidate。"* A note arrangement spans days, not
 minutes; hourly gives the adaptor a week's exchange to read without paying
-for a model call every five minutes. The curator is the tier's decay — daily
-matches the fact tier's cadence change (fewer, deeper). The revisitor is
-already self-scheduled by each note's `revisit_at`; the hourly floor just
-stops it re-checking the same due note every tick.
-
-**The budget follows the fact tier's pattern too** — the note-candidates
-adaptor gets the enlarged budget shape ([32] §3.2): more turns, more total
-tokens, longer timeout, because it reads a week of transcript and proposes a
-full note, not a triple.
+for a model call every five minutes. The curator is the tier's decay —
+daily matches the fact tier's cadence change (fewer, deeper), subject to
+N1 option (a) or (b) above. **The budget follows the fact tier's pattern
+too** — the note-candidates adaptor gets the enlarged budget shape ([32]
+§3.2): more turns, more total tokens, longer timeout, because it reads a
+week of transcript and proposes a full note, not a triple.
 
 ## 6. Phase offset, not a DAG
 

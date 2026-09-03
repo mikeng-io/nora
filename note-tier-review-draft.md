@@ -56,13 +56,18 @@ No ordering, no cadence, no per-adaptor rhythm. Note work does not need 5-minute
 - Miss cache keeps its `(workspace, probe)` key; create candidates key on `(workspace, title)`.
 
 ### C4 — Per-adaptor schedule (following the fact tier's cadence change)
-| Adaptor | Cadence | Why |
+| Adaptor | Cadence | Mechanism |
 |---|---|---|
-| `note-candidates` | hourly (3600s) | a week of planning, not 5-minute slices |
-| `note-curation` | daily (86400s) | housekeeping, quality over latency |
-| `note-revisit` | hourly floor | already self-scheduled by `revisit_at` |
+| `note-candidates` | hourly (3600s) | `AdaptorSchedule` — works, it is watermark-bearing |
+| `note-curation` | daily — **subject to N1** | `AdaptorSchedule` is watermark-bound; needs a non-watermark schedule path (runtime change) or stays every-tick with empty-`inputs()` suppression |
+| (revisit — merged into curator per C8) | — | — |
 
-Budgets follow 32's enlarged pattern (more turns, more tokens, longer timeout).
+**Kimi audit #2 (N1/N2):** only `note-candidates` can take an
+`AdaptorSchedule` as wired today (schedule check inside watermark branch,
+`runtime.py:498`); the curator is watermark-free so a daily schedule would be
+inert. No `[dreamer.schedules.*]` TOML surface exists (`extra="forbid"`) —
+wiring is the hardcoded dict at `composition.py:2415`. Budgets follow 32's
+enlarged pattern (more turns, more tokens, longer timeout).
 
 ### C5 — Phase offset, not a DAG
 - Verified: the note adaptors share **no execution dependency** (curator/revisitor read notes, never candidates). Ordering is emergent at the data level — a pass with no input does not fire.
@@ -87,7 +92,7 @@ Budgets follow 32's enlarged pattern (more turns, more tokens, longer timeout).
 - Verified: in production the revisitor's distinctive machinery is **dead** — `revisit_at` / `strikes` / `last_wake_revision_id` have no writer anywhere, so early close and dateless aging are unreachable. Its only working trigger (passed anchor) is the curator's selection. The reaching-a-person half that justified the split is deferred to the proactive adapter.
 - **Merge**: one `note-curation` adaptor carries merge + retire, with three SQL-only selections (`merge_groups`, `anchored_before`, `due`) → one model judgement per selected note (`closed` / `expired` / `moot` / `open`) → code disposes.
 - **Two non-negotiables** (full detail in 34): cheap selection must stay SQL-only or a daily sweep becomes a full-notebook model call (5.1); the `_covers` evidence ground must not degrade — silence is not an answer (5.2).
-- `revisit_at` gets its writer: `record_wake` converts the dead branches into live dateless-aging modes (5.3) — **with the policy it never had** (who calls it, which notes, what next_revisit_at; and gate-created notes need a first-wake neutral resolution so their creation is not striked). Metrics consolidate under `nora_note_curator_*` (5.5). `note-candidates` and the proactive adapter stay separate (5.6).
+- `revisit_at` gets its writer: `record_wake` converts the dead branches into live dateless-aging modes (5.3) — **with the policy it never had** (who calls it, which notes, what next_revisit_at; gate-created notes get an explicit `revisit_at` at creation — resolution (c), after (a) was rejected as a no-op in audit #2). Metrics consolidate under `nora_note_curator_*` (5.5). `note-candidates` and the proactive adapter stay separate (5.6).
 - **Kimi external audit (2026-09-03): REQUEST CHANGES, no BLOCKING.** Merge direction confirmed sound; evidence-grounding and cheap-selection invariants hold. MAJOR fixes folded in: tool grant constrained by `tool_subset_faults` (C2.1), wake policy + gate-created notes (C8), metric names `nora_note_revisit_*` + `nora_note_retirements_total` (not `nora_note_revisitor_*`), phase-offset corrected, `note_candidate` migration nullable constraints. Full record in 34 Status.
 
 ## 4. What gets built (implementation order)

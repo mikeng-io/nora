@@ -222,14 +222,24 @@ changes the progress test.**
    the chain holds no tag-path revision — `progressed = False`, a strike is
    charged, and `revisit_at` is never set. **The wake clock and the create
    path do not compose as written** for the very notes the tier is gaining.
-   Three resolutions, in order of preference: (a) treat gate-created notes'
-   FIRST wake as neutral — the note's creation is the progress that started
-   the clock, so seed `last_wake_revision_id = head` at creation;
-   (b) count a `note_create` revision whose author is the gate as tag-path
-   progress for the first wake only; (c) make gate-created notes start with
-   an explicit `revisit_at` (derived from their anchor) so the first wake is
-   not a strike. Any of these must be decided before implementation; (a) is
-   the smallest change to `record_wake`'s semantics.
+   Three resolutions. (a) **REJECTED — Kimi review finding N3: it is a
+   no-op.** Seeding `last_wake_revision_id = head` at creation changes
+   nothing under current semantics: with `NULL` the whole chain is walked
+   (`domain/notes.py:640`) and a gate-created chain contains no `tag:`
+   revision either way, so the first wake is a strike with `revisit_at`
+   unset in both cases (`notes.py:584-590`). Conversely, the worry that
+   seeding would break strike semantics for a tag-path-touched note is
+   unfounded — the span walk still finds the intervening `tag:` revision.
+   (b) **a predicate change** treating the establishing revision as
+   first-wake progress — viable but touches the domain predicate that
+   §9.6's trap makes load-bearing. (c) **RECOMMENDED — creation writes an
+   explicit `revisit_at`.** The gate, when it creates a note, also writes
+   `revisit_at` derived from the note's anchor (or a bounded default
+   horizon for dateless notes), so a gate-created note's first wake is a
+   normal scheduled wake, not a strike bootstrap. This is the smallest
+   correct change and it composes with `record_wake`'s existing
+   re-arm-on-progress semantics. Must be decided before implementation,
+   but (c) is now the recommendation; (a) is recorded as rejected.
 
 ### 5.4 Two loop-breaker modes, one switch
 
@@ -252,18 +262,20 @@ note; the runtime sees one adaptor.
 
 | current series | merge disposition |
 |---|---|
-| `nora_note_curator_total{action=merge\|retire}` | kept — the merged adaptor keeps this name |
+| `nora_note_curator_total{action=...}` (actual vocabulary: `merge`, `closed`, `moot`, `merge_refused`, `merge_failed`, `retire_failed`, `retire_stale` — `note_curator.py:79-90`; there is NO literal `action="retire"`, retirement counts as `closed`/`moot`) | kept — the merged adaptor keeps this name and vocabulary |
 | `nora_note_curator_groups_refused_total` | kept |
 | `nora_note_revisit_*` (standing, candidates, verdicts, refused, deferred) | renamed/merged under `nora_note_curator_*` — the series is the adaptor, and the adaptor is now one. A stale `nora_note_revisit_*` series left publishing would double-count the retirement readings the merge is meant to unify |
 | `nora_note_retirements_total{because,result}` | **kept under the same name** — this is the actual retirement series, emitted by the revisitor (`note_revisitor.py:932/950`); the consolidation must carry it into the curator unchanged, not fold it into a renamed series. Kimi review finding: 34's earlier table missed it entirely |
 
-Exact series names, verified (`nora/obs/metric_specs.py:1591-1651`): the
-revisitor emits `nora_note_revisit_candidates_total`, `…_verdicts_total`,
+Exact series names, verified (`nora/obs/metric_specs.py:1591-1659`; the
+`nora_note_revisit_standing` gauge lives at `:1998`, outside the count range):
+the revisitor emits `nora_note_revisit_candidates_total`, `…_verdicts_total`,
 `…_refused_total`, `…_deferred_total`, `nora_note_revisit_standing`, and —
 the retirement reading the merge cares about most —
 `nora_note_retirements_total`. The `strikes_total`/`revisit_total` names
-declared in the note-tier spec §6 remain unbuilt (metric_specs.py declares
-them for adaptors that do not exist).
+from the note-tier spec §6 remain unbuilt — metric_specs.py mentions them
+in a comment as measuring adaptors that do not exist (cosmetic: not declared
+specs).
 
 The merge is a metric-name change plus a docstring update; the vocabularies
 already enforce the label sets (`_VOCABULARIES`, `note_curator.py:300`).
@@ -345,3 +357,28 @@ live machinery. This does not change the merge argument — it strengthens it �
 but the docs should say so; and the architecture test pinning `record_wake`
 as caller-less (`tests/architecture/test_store_methods_have_production_callers.py:221`)
 must be updated when the merge wires it (M12/INFO).
+
+**2026-09-03 (Kimi audit #2, after folding the first round). Verdict:
+REQUEST CHANGES — the first-round fixes are all verified FIXED and correct
+on current master; one rebase-era MAJOR plus minors.** Findings folded in:
+
+- **N1 (MAJOR, 33 §5)** — `AdaptorSchedule` is watermark-bound: the
+  schedule check sits inside the watermark branch of `_dream_adaptor_once`
+  (`runtime.py:498-503`) and watermark-free adaptors return at
+  `runtime.py:470` first. Only `note-candidates` can take a schedule;
+  the curator's daily cadence needs either a non-watermark schedule path
+  (option a) or stays every-tick with empty-`inputs()` suppression
+  (option b). Both recorded in 33 §5.
+- **N2 (MINOR, 33 §5)** — there is no `[dreamer.schedules.*]` TOML surface;
+  `DreamerConfig` has `extra="forbid"` and no schedules key. The mechanism
+  is the hardcoded dict at `composition.py:2415-2421`. TOML block removed.
+- **N3 (MINOR, §5.3)** — recommendation (a) for gate-created notes was a
+  no-op: seeding `last_wake_revision_id = head` changes nothing, because
+  the walk (`domain/notes.py:640`) finds no `tag:` revision either way.
+  Rejected and replaced with (c) — creation writes an explicit
+  `revisit_at`; (b) predicate change recorded as viable.
+- **N4 (INFO, 33+34)** — stale line refs post-rebase (`runtime.py:530`→544,
+  `schema.py:1821`→1839, `composition.py:2457/2489`→2487/2522,
+  `metric_specs` range, `nora_note_curator_total{action}` vocabulary has
+  no literal `retire` — retirement counts as `closed`/`moot`). Fixed where
+  they mattered.
