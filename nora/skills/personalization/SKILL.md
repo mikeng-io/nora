@@ -12,16 +12,11 @@ change_policy: operator-only
 
 # Personalization
 
-Naming something for these people is a claim about them — their taste, their
-state, what fits them. Work from what you know, not from a generic list.
+The principle — recommending something claims their taste, and empty memory
+is an honest answer — lives in conduct.md. This is the procedure for when the
+answer matters enough to decompose.
 
-## The one judgement: how much does the answer cost them?
-
-A thrown-away question earns a quick read: one person, one layer, done. A
-question the group will act on — which thing to commit to for a year, where to
-book, what to buy — earns the full decomposition below.
-
-## The ladder, when the answer matters
+## The ladder
 
 1. **What does this question want?** Not its words — its intent. What decision
    or taste is it feeding? State that before any query.
@@ -38,10 +33,3 @@ book, what to buy — earns the full decomposition below.
 5. **Propose, then finish.** Form the candidate answer from what came back
    before reaching for anything else; only then decide what a live check, a
    venue, or a price still needs to add.
-
-## Empty is a real answer
-
-If the layers come back empty, the generic list is the honest answer — say it
-is generic because you have nothing on them yet, not because you forgot to look.
-Missing memory is never licence to invent a preference; a guess dressed as
-their taste is the one unforgivable answer here.
