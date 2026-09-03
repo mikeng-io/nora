@@ -34,6 +34,7 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.tools import note_handle
 from nora.app.runtime import BackgroundTasks
 from nora.doctrine.loader import Doctrine
+from nora.domain.errors import PartialReplyError
 from nora.domain.models import (
     ConversationTarget,
     NormalizedMessage,
@@ -536,6 +537,49 @@ async def test_an_llm_error_releases_the_lock_and_counts_llm_error():
     assert metrics.get("nora_silent_failures_total", reason="llm_error") == 1
     assert len(metrics.observations("nora_tag_latency_seconds")) == 1
     assert len(metrics.observations("nora_overhead_seconds")) == 1
+
+
+async def test_a_max_tokens_partial_reply_is_salvaged_not_silent():
+    """A `max_tokens` cut-off with real prose is delivered, not dropped.
+
+    The Raft-password case measured live 2026-09-02: Strands appends the
+    partial message to `agent.messages` before raising, `factory.invoke`
+    carries the words up as `PartialReplyError`, and the pipeline must
+    deliver them — silence here is the exact failure the group saw.
+    """
+    adapter = _FakeAdapter()
+    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner(raises=PartialReplyError("密碼寫咗喺島上面，去搵下啦")),
+    )
+
+    await pipeline.run(_request())
+
+    assert adapter.texts == ["密碼寫咗喺島上面，去搵下啦"]
+    assert _held(pipeline) is False
+    # NOT a silent failure: the words were delivered.
+    assert metrics.get("nora_silent_failures_total", reason="llm_error") == 0
+    assert metrics.get("nora_salvaged_replies_total") == 1
+    assert len(metrics.observations("nora_tag_latency_seconds")) == 1
+    assert len(metrics.observations("nora_overhead_seconds")) == 1
+
+
+async def test_a_max_tokens_cut_off_with_no_prose_stays_silent():
+    """A `max_tokens` cut-off whose partial message carried only tool-use
+    blocks has nothing to salvage — `PartialReplyError.partial_text` is empty
+    and the turn stays silent (R-5), exactly like a generic `llm_error`."""
+    adapter = _FakeAdapter()
+    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
+        adapter=adapter,
+        runner=ScriptedRunner(raises=PartialReplyError("")),
+    )
+
+    await pipeline.run(_request())
+
+    assert adapter.sent == []
+    assert _held(pipeline) is False
+    assert metrics.get("nora_salvaged_replies_total") == 0
+    assert metrics.get("nora_silent_failures_total", reason="llm_error") == 0
 
 
 async def test_a_base_exception_only_fault_is_absorbed_silently():

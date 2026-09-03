@@ -36,8 +36,10 @@ from strands.agent.conversation_manager import NullConversationManager
 from strands.hooks import HookCallback, HookProvider
 from strands.models.openai import OpenAIModel
 from strands.plugins import Plugin
+from strands.types.exceptions import MaxTokensReachedException
 from strands.vended_plugins.skills import AgentSkills
 
+from ..domain.errors import PartialReplyError
 from .guards import ReplyGuard, ToolCallLog
 from .tool_choice import FIRST_CALL
 
@@ -514,17 +516,45 @@ async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limi
     `nora.app` — which mypy checks strictly and which must not import
     `strands` (`tests/test_boundaries.py::test_strands_import_boundary`) —
     can narrow the one attribute they want without naming the SDK type.
+
+    **`MaxTokensReachedException` is caught here, not left to bubble.** Strands
+    raises it AFTER appending the partial message to `agent.messages`
+    (event_loop.py:640) — the words are recoverable, they just never left the
+    loop. Without this catch the exception lands in `invoke.run`'s generic
+    `except Exception`, which counts a silent failure and drops the partial
+    reply entirely (measured live 2026-09-02: Blake's Raft-password tag hit
+    max_tokens and Nora stayed silent). The partial text is extracted from the
+    last message's text blocks and carried up as `PartialReplyError` so the
+    pipeline can deliver it. `nora.agent` may import `strands` (only
+    `nora.app` may not), so naming the SDK exception here is legal.
     """
-    return await agent.invoke_async(
-        tag_message,
-        invocation_state=invocation_state,
-        # limits is a plain dict end-to-end for the same reason pre_fill is above:
-        # nora.app.composition/nora.engagement build and thread it as `dict` without
-        # importing strands. Strands' `Limits` is a TypedDict with the same three
-        # keys build_limits() always fills (turns/output_tokens/total_tokens); the
-        # value is shape-correct at runtime, only the static type differs.
-        limits=limits,  # type: ignore[arg-type]
-    )
+    try:
+        return await agent.invoke_async(
+            tag_message,
+            invocation_state=invocation_state,
+            # limits is a plain dict end-to-end for the same reason pre_fill is above:
+            # nora.app.composition/nora.engagement build and thread it as `dict` without
+            # importing strands. Strands' `Limits` is a TypedDict with the same three
+            # keys build_limits() always fills (turns/output_tokens/total_tokens); the
+            # value is shape-correct at runtime, only the static type differs.
+            limits=limits,  # type: ignore[arg-type]
+        )
+    except MaxTokensReachedException:
+        # The partial message is the LAST entry in `agent.messages` — Strands
+        # appended it before raising. Extract its text blocks the same way
+        # `final_text` does, but from the message dict directly (there is no
+        # `AgentResult` to read here).
+        partial = ""
+        if agent.messages:
+            last = agent.messages[-1]
+            content = last.get("content") if isinstance(last, dict) else None
+            if isinstance(content, list):
+                parts = [
+                    block["text"] for block in content
+                    if isinstance(block, dict) and isinstance(block.get("text"), str)
+                ]
+                partial = "\n".join(p for p in parts if p.strip()).strip()
+        raise PartialReplyError(partial) from None
 
 
 def final_text(result: Any) -> str:

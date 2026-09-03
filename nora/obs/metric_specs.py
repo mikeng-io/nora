@@ -522,6 +522,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "honouring tool_choice=required.",
         ("platform",),
     ),
+    # Salvage-partial-reply (2026-09-03): a `max_tokens` cut-off whose partial
+    # message carried real prose, delivered rather than dropped. Distinct from
+    # `nora_recovered_replies_total` (DEC-93) on purpose: that one is a
+    # provider not honouring `tool_choice=required`, this one is the model
+    # running out of output budget mid-answer — different causes, different
+    # fixes, and a rising share here means the tier's `max_tokens` is too
+    # tight for the questions being asked.
+    _CounterSpec(
+        "nora_salvaged_replies_total",
+        "Partial replies cut off at max_tokens, salvaged and delivered "
+        "(2026-09-03). Non-zero means the model hit its output ceiling "
+        "mid-answer.",
+        ("platform",),
+    ),
     # Pure observability, no new behavioural rule (no DEC/R row — see the
     # comment beside its call site). ONE turn, ONE increment, every admitted
     # tag `_run_admitted`'s `finally` reaches — the standing replacement for

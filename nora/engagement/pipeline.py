@@ -849,6 +849,37 @@ class EngagementPipeline:
                 # — a real alert, not the silent void the budget fallback closes.
                 # Closing this path too is a larger change (DEC-42 reconciliation),
                 # left as a flagged follow-up rather than bolted on here.
+                #
+                # ONE exception, added 2026-09-03 (salvage-partial-reply): a
+                # `max_tokens` cut-off is NOT a generic `llm_error`. Strands
+                # appends the partial message to `agent.messages` before raising
+                # (`nora.agent.factory.invoke` catches it and carries the words
+                # up as `PartialReplyError`), so the model WROTE an answer and
+                # the harness dropped it — silence here is the Raft-password
+                # case measured live 2026-09-02. The words are her own, not a
+                # canned line, so delivering them is not the forgery the
+                # fallback above refuses to commit. `stop_reason == "max_tokens"`
+                # is the discriminator: a generic `llm_error` has `stop_reason
+                # is None` (invoke.py), so this branch cannot fire on a timeout
+                # or an API error.
+                if (
+                    stop_reason == "max_tokens"
+                    and not handle.deliverer.delivered
+                    and final_text.strip()
+                    and await handle.deliverer.deliver(final_text, source="salvaged")
+                ):
+                    self._metrics.inc(
+                        "nora_salvaged_replies_total", platform=msg.platform,
+                    )
+                    log.warning(
+                        "salvaged a partial reply cut off at max_tokens "
+                        "(tag=%s, %d chars)", request.tag_id, len(final_text),
+                    )
+                    # The `finally` reads this local to annotate the turn and
+                    # resolve the indicator — `DeliverySettler` already settled
+                    # ✅ on delivery, but `nora.delivered` must not say False
+                    # for a turn that sent her own words.
+                    delivered = True
                 return
 
             # NEVER-SILENT FALLBACK (operator 2026-08-09): the loop was cut off by
