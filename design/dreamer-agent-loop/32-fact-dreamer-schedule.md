@@ -193,6 +193,16 @@ already refuses them):
 |---|---|---|
 | `search_knowledge(query)` | `fact` hybrid (dense + lexical) | **EXISTS** (`tools.py:868`/`5959`) — but key path broken for workspace-keyed adaptors (see below) |
 | `get_knowledge(subject)` | `fact` where `superseded_at IS NULL` | the live facts about a subject — **resolves the subject first**: `fact_entity.resolve(workspace, name)` → entity id → `standing_facts(subject_ids=[id])`. `standing_facts` takes entity IDS, not strings (`facts.py:783`); a name that resolves to nothing is `nothing_found`, never an empty ok. |
+
+> **ERRATUM (2026-09-03, implementation review).** The claim above that
+> `standing_facts` takes entity IDS is wrong against the code: `propose`
+> writes `subject_id = payload.subject` verbatim (`facts.py:699`; module
+> docstring `facts.py:45`), so the column holds the claim's SURFACE TEXT, and
+> `standing_facts` filters `subject_id.in_(subject_ids)` (`facts.py:909`).
+> The implemented `get_knowledge` resolves the name to an entity, then
+> queries `standing_facts(subject_ids=[canonical_name, *aliases])` — the
+> strings that actually appear in the column. Intent preserved (resolve-first,
+> `nothing_found` never empty-ok); mechanism corrected by the implementer.
 | `knowledge_premises(fact_id)` | `fact_premise` | the dependency edges — which facts this one rests on |
 | `knowledge_asserters(fact_id)` | `fact_asserter` | who said it, when, in which message |
 | `knowledge_entity(name)` | `fact_entity` | the canonical entity + aliases a name resolves to |
