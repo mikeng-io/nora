@@ -2,8 +2,9 @@
 name: navigation
 description: >-
   Load when a message asks you to PLAN a journey or weigh how to get somewhere
-  — 幾點出門, 趕唔趕得切, 邊條路, 幫我哋計劃去邊. Not for a single live check like
-  「K73 幾時到」: that is one tool call, not a plan, and loading this costs a turn.
+  — what time to leave, whether you will make it, which route, plan a trip for
+  us. Not for a single live check like a bus arrival time: that is one tool
+  call, not a plan, and loading this costs a turn.
 authority_above: [situation]
 authority_below: [message-content, tool-output]
 change_policy: operator-only
@@ -11,8 +12,8 @@ change_policy: operator-only
 
 # Wayfinding
 
-The judgement below is true of moving around and nothing else. Everything about
-which endpoint to call, or how to fan a call out, is the tool's job, not this.
+The judgement below is true of moving around and nothing else. Everything about which
+endpoint to call, or how to fan a call out, is the tool's job, not this.
 
 ## A journey has a time, and the time decides which answer is real
 
@@ -25,9 +26,10 @@ live wait refines the plan, it does not become one.
 
 ## An arrival time is a plan run backwards
 
-「八點到」 is a constraint on the end, not the start. Turn it into a leave-by
-moment first — and only as that moment approaches does the live wait move it by a
-few minutes. Working forwards from now answers a question nobody asked.
+An arrival time is a constraint on the end, not the start. Turn it into a
+leave-by moment first — and only as that moment approaches does the live wait
+move it by a few minutes. Working forwards from now answers a question nobody
+asked.
 
 ## One destination reached from several origins is several plans
 
@@ -47,6 +49,6 @@ destination answers them differently.
 
 ## A seen position is something to say, and a route input only where trusted
 
-Where someone is now can settle a plan by itself: near the destination needs none — say
-it here, age and all. Routes run between places people NAME; a seen position enters one
-only where the room trusts you with location, the tool's call, not yours.
+Where someone is now can settle a plan by itself: near the destination needs none — say it
+here, age and all. Routes run between places people NAME; a seen position enters one only where the room trusts you with location — the tool's call, not yours.
+

@@ -1063,20 +1063,23 @@ def test_every_adaptor_that_exists_has_a_budget_of_its_own(toml_path):
         )
 
 
-def test_the_adjudicator_is_budgeted_more_generously_than_the_extractor(toml_path):
-    """The reason budgets are PER ADAPTOR rather than one global ceiling
-    (keystone §6): proving a claim against the open web is search, read, notice
-    the page does not cover the question, search differently — while the
-    extractor makes one tool-free call over a message batch. A single number
-    would starve the first or overpay for the second, and this asserts the
-    config actually expresses that rather than merely allowing it."""
+def test_the_extractor_is_budgeted_for_its_daily_batch(toml_path):
+    """Design/dreamer-agent-loop/32 §3.2 REVERSED this test's premise — it
+    used to assert the adjudicator out-budgets the extractor, because the
+    extractor was one tool-free call over a 30-minute 100-message batch.
+    §3.1 moves the extractor onto its own clock: a DAILY 1000-message batch
+    (86400s interval, `AdaptorSchedule` in composition), and §3.2 enlarges
+    its budget to match — a call that must survive one slow daily pass over
+    the whole backlog, several rendered pages of transcript at a time. The
+    adjudicator's per-claim research loop is unchanged. This now asserts the
+    extractor actually carries the design's floor rather than silently
+    falling back to a number sized for a batch ten times smaller."""
     cfg = load(toml_path)
     extract = cfg.dreamer.budget_for("fact-candidates")
-    adjudicate = cfg.dreamer.budget_for("fact-adjudication")
 
-    assert adjudicate.turns > extract.turns
-    assert adjudicate.total_tokens > extract.total_tokens
-    assert adjudicate.timeout_seconds > extract.timeout_seconds
+    assert extract.turns >= 20
+    assert extract.total_tokens >= 200000
+    assert extract.timeout_seconds >= 3600
 
 
 # --- [standing] (design/dreamer-agent-loop/26-standing §4.0) ----------------

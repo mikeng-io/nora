@@ -96,8 +96,12 @@ def test_the_registry_exposes_every_declared_tool():
         "note_read", "note_search", "note_create", "note_update",
         # The remember verb — the conclusion write lane (2026-08-30).
         "remember",
-        # The knowledge tier's retrieval verb (23 §9).
+        # The knowledge tier's retrieval verb (23 §9) and its graph reads
+        # (design/dreamer-agent-loop/32 §3.4), plus the workspace-wide memory
+        # variant built for the Dreamer's workspace key.
         "search_knowledge",
+        "get_knowledge", "knowledge_premises", "knowledge_asserters",
+        "knowledge_entity", "search_memory_workspace",
     }
 
 
@@ -121,9 +125,11 @@ def test_budgets_match_todays_table():
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 4, "about": 4,
-        # 1 — the dialectic reasoning verb is slow (~14-19s), so one call per
-        # turn is the ceiling; it is the escalation from `about` (design/24 §4).
-        "ask_memory": 1, "search_memory": 4,
+        # 4 — the dialectic reasoning verb is slow (~14-19s), so the budget is
+        # sized by the loop wall clock (240s); four calls (~76s) still fit.
+        # Raised from 2 (operator 2026-09-03) for the personalization
+        # decomposition's group turns.
+        "ask_memory": 4, "search_memory": 4,
         # 2 (tool-recall-log spec §4): the same shape `ask_memory`'s own
         # note describes for a recall verb — run once, notice a different
         # `limit` is needed, run once more.
@@ -148,10 +154,11 @@ def test_budgets_match_todays_table():
         "where_is": 2,
         # The plugin-provided activation tool (DEC-50, activating DEC-48). It is
         # in `budgets()` ONLY so R-7 admits the `AgentSkills` activation call;
-        # the registry does not BUILD it (see the tests below). Sized 1 like
-        # `group_members`: re-activating a skill re-injects a body already in
-        # context and cannot improve the answer.
-        "skills": 1,
+        # the registry does not BUILD it (see the tests below). Sized 2 since
+        # 2026-09-03: two skills ship (navigation, personalization) and one turn
+        # may span both; the repeat-veto still stops re-activating the SAME
+        # skill, which re-injects a body already in context.
+        "skills": 2,
         # One message can name two images (a photo AND a screenshot); the
         # per-call vision timeout, not this number, is what keeps two describe
         # calls inside the loop budget (DEC-56).
@@ -235,6 +242,15 @@ def test_budgets_match_todays_table():
         # remember verb's write lane, 2026-08-30).
         "remember": 1,
         "search_knowledge": 2,
+        # The knowledge tier's graph verbs and the workspace-wide memory
+        # variant (32 §3.4). `get_knowledge`/`knowledge_entity` are 3 like
+        # `note_read` (one lookup answers, a second and third cover the other
+        # spelling); the two edge verbs are 2 like `note_search` (one call
+        # per fact under review, one refinement after a misread id);
+        # `search_memory_workspace` is 4 like its room-scoped sibling — the
+        # same verb at a wider scope, the same sizing.
+        "get_knowledge": 3, "knowledge_premises": 2, "knowledge_asserters": 2,
+        "knowledge_entity": 3, "search_memory_workspace": 4,
     }
 
 
@@ -388,7 +404,7 @@ def test_skills_is_budgeted_so_r7_admits_it_but_the_registry_does_not_build_it()
     registry = ToolRegistry()
     # Admitted by R-7.
     assert "skills" in registry.budgets()
-    assert registry.budgets()["skills"] == 1
+    assert registry.budgets()["skills"] == 2
     # Not built, not advertised, not in the catalogue gate.
     built = {t.tool_name for t in _built_tools(registry)}
     assert "skills" not in built
@@ -576,6 +592,12 @@ READ_ONLY = frozenset({
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",
     "note_read", "note_search", "search_knowledge",
+    # The knowledge tier's graph reads and the workspace-wide memory variant
+    # (design/dreamer-agent-loop/32 §3.4) — all pure reads of stores the tag
+    # path already trusts, granted to the Dreamer's workspace-keyed
+    # adjudicator through `WORKSPACE_SAFE_TOOLS`.
+    "get_knowledge", "knowledge_premises", "knowledge_asserters",
+    "knowledge_entity", "search_memory_workspace",
     "music_status",
     # DEC-151: social_fetch is a pure read at all three layers — the tool's
     # closed vocabulary, the bridge's host-side allowlist, this declaration.

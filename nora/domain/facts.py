@@ -449,6 +449,16 @@ class FactCandidate:
     model: str
     last_adjudicated_at: int | None = None
     attempts: int = 0
+    # Who FIRST asserted this claim, and when (design/dreamer-agent-loop/32
+    # §3.4): joined from `messages` at propose time by
+    # `SqlFactCandidateStore.propose` — `asserted_by` is the first message's
+    # `person_id`, falling back to its `sender_id` when the sender mapped to
+    # nobody. Both stay None when the message is gone (pruned, or an id that
+    # never existed): the join finding nothing is NULL, never an invented
+    # asserter. INSERT-only, beside `first_seen_at` and the provenance trio:
+    # a re-sighting did not assert the claim first and moves neither field.
+    asserted_by: str | None = None
+    asserted_at: int | None = None
 
     def __post_init__(self) -> None:
         if self.status not in _CANDIDATE_STATUSES:
@@ -564,6 +574,14 @@ class Fact:
     disputed_by: str | None = None
     disputed_reason: str | None = None
     disputed_tag_id: str | None = None
+    # 32 §5 closed decision 2: carried verbatim from the settling candidate at
+    # adjudication time (`SqlFactStore.propose`), so the rendered `<facts>`
+    # block can say who said it and when, not only the web warrant. None
+    # propagates as None — a fact whose candidate's message was pruned asserts
+    # nobody rather than guessing. Orthogonal to `fact_asserter`: that
+    # relation records EVERY attribution; this pair is the first.
+    asserted_by: str | None = None
+    asserted_at: int | None = None
 
     def __post_init__(self) -> None:
         if not _INSTRUCTION_SHA256_RE.fullmatch(self.instruction_sha256):

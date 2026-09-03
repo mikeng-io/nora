@@ -90,6 +90,28 @@ log = logging.getLogger("nora.dreamer")
 MAX_ENVELOPE_CHARS = 200_000
 MAX_ITEMS = 64
 
+# Tool-result caps (design/dreamer-agent-loop/32 §3.3 point 3).
+# `MAX_ENVELOPE_CHARS` bounds the OUTGOING envelope only; before these, a
+# tool result re-entered the loop UNTRUNCATED, so one fetched page or memory
+# dump could spend the run's whole token budget on context. `DreamGuard`
+# enforces the cap in its after-tool hook and appends a marker naming the
+# cap, so a truncated result reads as truncated rather than as the whole
+# answer. Memory verbs get the tighter number: their answers are summaries
+# to reason over, not pages to quote.
+MAX_TOOL_RESULT_CHARS = 8000
+MAX_MEMORY_RESULT_CHARS = 4000
+_TOOL_RESULT_CAPS: Mapping[str, int] = {
+    "web_fetch": MAX_TOOL_RESULT_CHARS,
+    "web_search": MAX_TOOL_RESULT_CHARS,
+    "search_memory": MAX_MEMORY_RESULT_CHARS,
+    # The workspace variant (32 §3.4) is the same verb at a wider scope —
+    # same tighter number, same reason: summaries to reason over, not pages
+    # to quote.
+    "search_memory_workspace": MAX_MEMORY_RESULT_CHARS,
+    "about": MAX_MEMORY_RESULT_CHARS,
+    "ask_memory": MAX_MEMORY_RESULT_CHARS,
+}
+
 DreamStatus = Literal["ok", "nothing_found", "unavailable"]
 
 
@@ -114,6 +136,35 @@ class AdaptorBudget:
     total_tokens: int
     output_tokens: int
     timeout_seconds: float
+
+
+@dataclass(frozen=True)
+class AdaptorSchedule:
+    """One adaptor's own clock (design/dreamer-agent-loop/32 §3.1).
+
+    A NAME-KEYED MAPPING value, like `AdaptorBudget`, and deliberately NOT a
+    field on the `DreamAdaptor` protocol: a defaulted non-method member on a
+    `@runtime_checkable` protocol fails `isinstance` for every adaptor that
+    does not declare it (measured on Python 3.13), which would break all six
+    existing adaptors at once. An adaptor with no entry in the mapping keeps
+    the shared `[language]` schedule — `lag > safety_lag`, `quiet_seconds`,
+    `max_age_seconds` — exactly as an adaptor with no budget entry gets
+    `default_budget` by omission.
+
+    `min_interval_seconds` is the floor between runs: a scheduled adaptor
+    fires when there is unread backlog (`lag > 0`) AND the watermark row's
+    `updated_at` is at least this old. `batch_limit` replaces the shared cap
+    for that adaptor's `record.since` read. `max_items` overrides the
+    runtime's envelope cap (`MAX_ITEMS`) for that adaptor — a daily
+    1000-message batch can legitimately yield more than 64 candidate claims,
+    and the runtime DROPS past the cap while the watermark still advances, so
+    the excess would be lost with no error and no re-run. `None` keeps the
+    shared default.
+    """
+
+    min_interval_seconds: float
+    batch_limit: int
+    max_items: int | None = None
 
 
 @dataclass(frozen=True)
@@ -163,23 +214,41 @@ class DreamToolSource(Protocol):
 
     def read_only(self) -> frozenset[str]: ...
 
-    def build(self, *, key: str, names: frozenset[str]) -> list[Any]: ...
+    def build(
+        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+    ) -> list[Any]: ...
 
 
 # The read-only tools a WORKSPACE-keyed adaptor may hold, and the reason the
-# set is this small.
+# set is exactly this.
 #
-# Every other read tool is bound to a CONVERSATION — `load_transcript` reads one
+# Every ROOM-scoped read tool stays refused here — `load_transcript` reads one
 # room's record, `group_members`/`lookup_person`/`about`/`ask_memory`/
 # `search_memory` all answer against one room's live roster, and
 # `recall_lookups`/`media_fetch` replay one room's own calls. A workspace has no
 # single room to bind them to, and binding one to an arbitrary room of that
 # workspace would be a disclosure decision (R-31) nobody has made.
 #
-# So they are refused rather than guessed at. The cost is real and named: the
-# fact adaptor researches the open web and cannot read the group's own
-# transcript. That is the right side to fail on — the candidate EXTRACTOR is
-# scope-keyed and reads the room; the adjudicator checks the world.
+# The WORKSPACE-scoped read tools are here, and they are here because the key
+# path is now SUPPLIED (design/dreamer-agent-loop/32 §3.4): a workspace-keyed
+# adaptor's key IS the workspace, and `DreamerRuntime.run` hands it through
+# `RegistryToolSource.build(workspace=...)` to `build_tool_specs`, where
+# `_workspace()` returns it directly instead of deriving it from the room.
+# Before that fix this set deliberately EXCLUDED `search_knowledge` and the
+# note verbs: they resolve their workspace through the ROOM — `workspace_for(
+# room.platform, conversation_id)` — and `RegistryToolSource.build` hands a
+# workspace-keyed adaptor a `Room` with no platform and the workspace in the
+# conversation slot, so policy could never name it and every call answered
+# `unavailable` forever. That is `08-state.md` §10's stated trap: a tier read
+# tool for a workspace-keyed adaptor needs a key path that does not route
+# through the room at all, because the Dreamer's key already IS the workspace
+# and must be SUPPLIED rather than derived — "the difference between the seam
+# working and the seam looking like it works while every call fails closed".
+#
+# The trap still binds for SCOPE-keyed adaptors: they get `workspace=None`,
+# `_workspace()` falls back to the resolver, and the resolver reads the real
+# room as before. Nothing about the tag path changes — the supplied value
+# only ever WINS when a caller supplies one, and only the Dreamer does.
 #
 # Hand-listed HERE and pinned by a test that measures it against
 # `read_only_tools()`, so a read tool added tomorrow is UNCLASSIFIED and turns
@@ -198,26 +267,17 @@ WORKSPACE_SAFE_TOOLS: frozenset[str] = frozenset({
     # but a lookup is a global search of her own creations, never
     # conversation-scoped like `load_transcript`).
     "media_search",
-    # `search_knowledge` is NOT here, and the first version of this comment
-    # claimed the opposite. `23` §9 does grant it to Dreamer adaptors, but the
-    # tool resolves its workspace through the ROOM — `workspace_for(
-    # room.platform, conversation_id)` — and `RegistryToolSource.build` hands
-    # a workspace-keyed adaptor a `Room` with no platform and the workspace in
-    # the conversation slot. Policy cannot name that, so the verb would answer
-    # `unavailable` on every call, forever.
-    #
-    # `08-state.md` §10 names this exact trap: a tier read tool for a
-    # workspace-keyed adaptor needs a key path that does not route through the
-    # room at all, because the Dreamer's key already IS the workspace and must
-    # be SUPPLIED rather than derived — "the difference between the seam
-    # working and the seam looking like it works while every call fails
-    # closed". Failing closed is right and is not the same as working.
-    #
-    # This set is an ALLOW-LIST a startup refusal reads, so listing it here
-    # would let the first adaptor declaring it past `verify_tool_subsets` with
-    # a permanently-unavailable tool — a protection three documents claim
-    # exists, which the 2026-08-21 entry in this file records as worse than
-    # one nobody claims. It goes in when the key path is supplied.
+    # The workspace-scoped reads, admitted with the supplied key path
+    # (32 §3.4): the knowledge tier's retrieval verb and its four graph
+    # verbs, the note tier's two read verbs, and the workspace-wide memory
+    # variant of `search_memory`. Each resolves its workspace from the
+    # SUPPLIED key rather than from a room a workspace-keyed adaptor does
+    # not have.
+    "search_knowledge",
+    "get_knowledge", "knowledge_premises", "knowledge_asserters",
+    "knowledge_entity",
+    "note_read", "note_search",
+    "search_memory_workspace",
 })
 
 
@@ -474,7 +534,9 @@ class RegistryToolSource:
     def read_only(self) -> frozenset[str]:
         return self._registry.read_only_tools()
 
-    def build(self, *, key: str, names: frozenset[str]) -> list[Any]:
+    def build(
+        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+    ) -> list[Any]:
         from .room import Room
 
         wanted = frozenset(names) & self.read_only()
@@ -496,6 +558,16 @@ class RegistryToolSource:
                 platform="", conversation_id=key, roster_source=None,
                 persons=self._persons,
             ),
+            # The key-path fix (design/dreamer-agent-loop/32 §3.4): for a
+            # WORKSPACE-keyed adaptor `key` IS the workspace, so the runtime
+            # SUPPLIES it and the workspace-scoped verbs (`search_knowledge`,
+            # the note reads, the knowledge graph verbs) read it directly
+            # rather than deriving one from the synthetic room above — where
+            # `workspace_for("", key)` can only answer `None`. `None` for a
+            # scope-keyed adaptor, whose key is a real conversation id and
+            # whose tools resolve through the room exactly as the tag path's
+            # do.
+            supplied_workspace=workspace,
         )
         return [
             tool for tool in built
@@ -512,6 +584,13 @@ class DreamerRuntime:
     adaptor name to its ceiling; an adaptor with no entry gets `default_budget`
     rather than a `KeyError` or an unbounded loop, because an adaptor added
     later must be bounded by omission rather than unbounded by it.
+
+    `schedules` is the same shape for the run's other per-adaptor number: an
+    adaptor whose `AdaptorSchedule.max_items` is set gets that envelope cap
+    instead of `MAX_ITEMS` (design/dreamer-agent-loop/32 §3.1 — the cap is
+    DROP-shaped while the watermark still advances, so a daily 1000-message
+    extraction batch would lose every claim past 64 with no error and no
+    re-run). An adaptor with no entry keeps the shared cap.
     """
 
     def __init__(
@@ -525,6 +604,7 @@ class DreamerRuntime:
         retry: factory.RetryPolicy,
         metrics: Metrics,
         model_name: str,
+        schedules: Mapping[str, AdaptorSchedule] | None = None,
     ) -> None:
         self._models = models
         self._instructions = instructions
@@ -534,9 +614,21 @@ class DreamerRuntime:
         self._retry = retry
         self._metrics = metrics
         self._model_name = model_name
+        # `| None` rather than `= {}`: ruff's B006 is right that a mutable
+        # default shared across instances is a trap, and this mapping is only
+        # ever READ, so coalescing here costs nothing.
+        self._schedules = dict(schedules or {})
 
     def budget_for(self, adaptor_name: str) -> AdaptorBudget:
         return self._budgets.get(adaptor_name, self._default_budget)
+
+    def max_items_for(self, adaptor_name: str) -> int:
+        """This adaptor's envelope item cap — its schedule's `max_items`
+        where set, else the runtime-wide `MAX_ITEMS`."""
+        sched = self._schedules.get(adaptor_name)
+        if sched is not None and sched.max_items is not None:
+            return sched.max_items
+        return MAX_ITEMS
 
     async def run(
         self, *, adaptor: DreamAdaptor, key: str, batch: Sequence[TranscriptRow]
@@ -575,11 +667,20 @@ class DreamerRuntime:
                     adaptor, "unavailable", 0, sha, None, started,
                 )
 
-            tools = self._tools.build(key=key, names=frozenset(adaptor.tools))
+            tools = self._tools.build(
+                key=key, names=frozenset(adaptor.tools),
+                # A workspace-keyed adaptor's key IS the workspace (32 §3.4):
+                # supply it so the workspace-scoped verbs resolve it directly
+                # instead of asking `workspace_for` to name a room that does
+                # not exist. A scope-keyed adaptor supplies nothing and its
+                # tools resolve through the room, unchanged.
+                workspace=key if adaptor.key_kind == "workspace" else None,
+            )
             guard = DreamGuard(
                 adaptor=adaptor.name,
                 budgets=_tool_budgets(tools, adaptor),
                 metrics=self._metrics,
+                result_caps=_TOOL_RESULT_CAPS,
             )
             prompt = await adaptor.inputs(key=key, batch=batch)
             if not prompt.strip():
@@ -672,13 +773,14 @@ class DreamerRuntime:
                 adaptor, "unavailable", 0, sha, stop_reason, started,
             )
 
-        if len(items) > MAX_ITEMS:
+        max_items = self.max_items_for(adaptor.name)
+        if len(items) > max_items:
             # Capped, never silently: a cap nobody counts reads as «we wrote
             # everything it found».
-            dropped = len(items) - MAX_ITEMS
+            dropped = len(items) - max_items
             log.warning(
                 "dream run returned %d items, keeping %d (adaptor=%s key=%s)",
-                len(items), MAX_ITEMS, adaptor.name, key,
+                len(items), max_items, adaptor.name, key,
             )
             # ONE increment carrying the count, not one call per item: the
             # envelope cap is 200k characters, so a pathological response can
@@ -689,7 +791,7 @@ class DreamerRuntime:
                 "nora_dream_screened_total", float(dropped),
                 adaptor=adaptor.name, reason="cap",
             )
-            items = items[:MAX_ITEMS]
+            items = items[:max_items]
 
         kept, _rejected = screen(
             adaptor=adaptor.name, items=items, metrics=self._metrics,

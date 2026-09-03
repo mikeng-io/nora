@@ -5,6 +5,8 @@ Preserves `Handler._invoke`'s timeout/exception behaviour exactly
 
 - `asyncio.wait_for(..., timeout=timeout_seconds)`; on `TimeoutError` → log +
   `nora_silent_failures_total{reason="invocation_timeout"}` + return silently.
+- On `PartialReplyError` (a `max_tokens` cut-off carrying prose) → NOT silent:
+  `stop_reason="max_tokens"`, `final_text=partial_text`, caller delivers.
 - On any other exception → log + `nora_silent_failures_total{reason="llm_error"}`
   + return silently.
 - `finally` → always `metrics.observe("nora_llm_latency_seconds", elapsed)`.
@@ -59,6 +61,7 @@ import logging
 import time
 from typing import Any, Protocol
 
+from nora.domain.errors import PartialReplyError
 from nora.domain.models import TagContext
 from nora.domain.tag_trace import TagTrace
 from nora.obs.tracing import trace_attributes as build_trace_attributes
@@ -163,6 +166,21 @@ async def run(
         )
         ok = False
         trace = _blank_trace(ctx=ctx, outcome="timeout")
+    except PartialReplyError as exc:
+        # The model was cut off at `max_tokens` AFTER writing real prose
+        # (`nora.agent.factory.invoke` catches Strands' exception and carries
+        # the words up as this). NOT a silent failure: the words are
+        # recoverable and the pipeline delivers them. `stop_reason` is set to
+        # "max_tokens" so the pipeline can distinguish this from a generic
+        # `llm_error` — the same reason R-23 threads stop reasons at all.
+        log.warning(
+            "max_tokens with partial reply (tag=%s, %d chars)",
+            ctx.tag_id, len(exc.partial_text),
+        )
+        ok = False
+        stop_reason = "max_tokens"
+        final_text = exc.partial_text
+        trace = _blank_trace(ctx=ctx, outcome="llm_error")
     except Exception:
         log.exception("llm_error (tag=%s); staying silent", ctx.tag_id)
         metrics.inc(

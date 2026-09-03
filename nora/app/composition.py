@@ -34,6 +34,7 @@ from openai.types.shared.reasoning_effort import ReasoningEffort
 from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
     AdaptorBudget,
+    AdaptorSchedule,
     DreamerRuntime,
     RegistryToolSource,
     verify_tool_subsets,
@@ -627,6 +628,12 @@ class Dependencies:
     # with no runtime, which is exactly what every deployment does today.
     dreamer_runtime: DreamerRuntime | None
     dream_adaptors: tuple[DreamAdaptor, ...]
+    # Per-adaptor clocks for the dream clock (design/dreamer-agent-loop/32
+    # §3.1), keyed by adaptor name and EMPTY under `[dreamer] enabled = false`.
+    # An adaptor with no entry keeps the shared `[language]` lag/quiet/age
+    # shape; the fact-candidate extractor's entry is what moves it onto its
+    # own daily interval, 1000-row batch and 256-item envelope cap.
+    dream_schedules: Mapping[str, AdaptorSchedule]
     # `language_scopes`' workspace-keyed sibling. `Conversation.workspace`
     # (DEC-105) — several rooms of one workspace are ONE unit of work here, not
     # several, which is the whole reason a workspace-keyed adaptor could not
@@ -1945,6 +1952,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # wired — two absences covering for each other.
         workspace_for=_note_workspace_of(allowlist),
         knowledge=knowledge_search,
+        # The graph reads behind `get_knowledge`/`knowledge_premises`/
+        # `knowledge_asserters`/`knowledge_entity` (design/dreamer-agent-loop/32
+        # §3.4) — the SAME `fact_store`/`fact_entities` the Dreamer adaptors
+        # write through, so the tool surface and the tier never disagree about
+        # what is standing. Both `None` while `[facts] enabled = false`, which
+        # is exactly the verbs' `unavailable` path (R-5): a wiring gap, never
+        # an empty answer.
+        facts=fact_store, entities=fact_entities,
         versions=version_manifest,
         giphy=giphy_client,
         music=music_bridge,
@@ -2349,6 +2364,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # per-adaptor rather than a big-bang switch.
     dream_adaptors: tuple[DreamAdaptor, ...] = ()
     dreamer_runtime: DreamerRuntime | None = None
+    dream_schedules: Mapping[str, AdaptorSchedule] = {}
     if cfg.dreamer.enabled:
         # The fact tier's two adaptors, built only when BOTH gates are on.
         # `[dreamer]` decides whether the runtime exists; `[facts]` decides
@@ -2388,6 +2404,21 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     "same flag; reaching here means that pairing was broken"
                 )
 
+            # The extractor's OWN clock (design/dreamer-agent-loop/32 §3.1-2),
+            # keyed by name rather than declared on the adaptor: a defaulted
+            # field on the @runtime_checkable `DreamAdaptor` Protocol would
+            # break `isinstance` for every adaptor lacking it (measured).
+            # 86400s/1000 rows — one daily pass over the whole backlog, sized
+            # for it; `max_items` lifts the envelope cap so a daily batch's
+            # yield is not silently dropped past 64 while the watermark
+            # advances anyway.
+            dream_schedules = {
+                "fact-candidates": AdaptorSchedule(
+                    min_interval_seconds=86400,
+                    batch_limit=1000,
+                    max_items=256,
+                ),
+            }
             dream_adaptors = (
                 # PHASE A, scope-keyed: it reads one room's message batch.
                 # `workspace_for` is not a convenience — the extractor's KEY is
@@ -2582,6 +2613,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
             metrics=metrics,
             model_name=dream_model,
+            schedules=dream_schedules,
         )
         # R-5's refuse-to-start shape, and the one check that must run at
         # STARTUP rather than at the first tick: an adaptor holding an act verb
@@ -2608,6 +2640,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         dreamer_instructions=dreamer_instructions,
         dreamer_runtime=dreamer_runtime,
         dream_adaptors=dream_adaptors,
+        dream_schedules=dream_schedules,
         workspace_scopes=workspace_scopes,
         events=events,
     )

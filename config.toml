@@ -372,7 +372,15 @@ strict = true
 #
 # ALL-OFF again (2026-08-30, operator instruction: "disable all the dreamer").
 # Runtime off, so no adaptor ticks regardless of its own section's flag.
-enabled = false
+#
+# ON again (2026-09-03, operator instruction: "enable knowledge dreamer").
+# The fact-dreamer-schedule implementation (design 32) is merged and verified:
+# per-adaptor schedule (fact-candidates daily), enlarged budget, attributed
+# transcript, workspace-supplied key path, read-only knowledge tools, and
+# asserted_by/asserted_at attribution. `[facts]` is enabled alongside, so the
+# knowledge tier's three adaptors (extraction, adjudication, entity
+# resolution) run on the daily schedule. `[language]` stays false.
+enabled = true
 # The same model Nora runs. OPERATOR DECISION (2026-08-21), NOT a measurement
 # — and the distinction is stated because the earlier version of this comment
 # claimed the opposite while carrying a value nobody had measured.
@@ -493,10 +501,15 @@ timeout_seconds = 120
 # fetches, each a page of tokens — while the extractor makes ONE tool-free
 # call over a message batch and is sized well under the shared default.
 [dreamer.budgets.fact-candidates]
-turns = 2
-total_tokens = 20000
+# Enlarged (design/dreamer-agent-loop/32 §3.2): the extractor's own clock
+# (§3.1) turns a 30-minute 100-message pass into a DAILY 1000-message one,
+# and 2 turns/20k tokens/60s were sized for the small batch. 20 turns and an
+# hour let the one daily call survive a slow provider without the loop
+# exhausting its budget and reporting `unavailable` on a batch it did read.
+turns = 20
+total_tokens = 200000
 output_tokens = 4000
-timeout_seconds = 60
+timeout_seconds = 3600
 
 [dreamer.budgets.fact-adjudication]
 # 10 -> 20, MEASURED. Five runs of the shipped objective against the shipped
@@ -1072,7 +1085,15 @@ verify_known_entities = true
 # Turn this back off if the rendered block starts asserting things about
 # people rather than describing what the room has established.
 # ALL-OFF again (2026-08-30, operator instruction: "disable all the dreamer").
-enabled = false
+#
+# ON again (2026-09-03, operator instruction: "enable knowledge dreamer").
+# The fact-dreamer-schedule implementation (design 32) is merged and verified.
+# The knowledge tier's three adaptors (extraction, adjudication, entity
+# resolution) run on the daily per-adaptor schedule; the <facts> block renders
+# into every tag's prefill; recognition runs on the reply path. Watch first:
+# `nora_fact_candidates_total{outcome="not_covered"}` climbing while
+# `outcome="adjudicated"` does not — the tell that extraction is noise.
+enabled = true
 # max_adjudications_per_tick = 10   # research loops per tick — the cost knob
 # max_room_facts = 8                # render cap: facts about the room
 # max_sender_facts = 4              # render cap: facts about the sender
