@@ -141,18 +141,36 @@ on what Nora knows about this group's state, history and preferences).
 All factual claims verified PASS against the code (md5-identical worktree). Two
 MAJOR issues surfaced, both needing operator decision before implementation:
 
-### Major 1 — "Grouping/clustering" lever has no mechanism today
+### Major 1 — RESOLVED (operator 2026-09-03): clustering = decomposition, not a group verb
 
-There is **no group-level Honcho verb**. `representation` and `chat` are
-per-peer (observer/observed); only `search()` reaches the whole session, and it
-returns raw messages, not conclusions. So "a query that asks Honcho for the
-group's collective state" cannot land anywhere today. The design must pick one:
+"Clustering" was never about a tool accepting multiple inputs. It is **Nora's
+planning behaviour**: when a personalization question arrives, she breaks the
+requirement down into the queries she actually needs, and calls `about` /
+`ask_memory` **several times** — one per person, deep for the key person
+(solution (a) below). The mechanism is multiple calls, not a group-level verb.
 
-- (a) `ask_memory` on the best-chosen person (one call, deep),
-- (b) `search_memory` session scan (raw messages, shallow),
-- (c) the knowledge/facts tier (see Major 2),
-- or downgrade the "preferred lever" to "one well-chosen person query +
-  search_memory".
+The skill must teach this decomposition workflow, in order:
+
+1. **Define the question** — what does this question actually want, and what
+   is it trying to achieve? Before any query, Nora states the intent.
+2. **Blast radius** — what is affected by the answer? Who/what does it touch?
+3. **Overlap analysis** — what SHOULD overlap between the sub-queries (shared
+   context, cross-person facts), and what should NOT (private/irrelevant
+   slices)? This decides the grouping.
+4. **Derive the query set** — from the above, decide what to query from each
+   **storage layer**: Honcho memory (`about`/`ask_memory`), the facts tier
+   (`search_knowledge`/`get_knowledge`), and notes (`note_search`). Different
+   layers hold different kinds of truth; the decomposition names which layer
+   answers which sub-question.
+5. **Proposal outcome before synthesis** — after the queries return, form a
+   PROPOSAL (the candidate answer), then decide what OTHER tools are still
+   needed (web_search for freshness, place_info for a venue, etc.) before
+   final synthesis.
+
+This resolves the mechanism gap: the "preferred lever" is (a) — one
+well-chosen deep `ask_memory` per key person, plus `about` breadth, plus the
+fact/note layers — orchestrated by the skill's decomposition, not by a new
+Honcho verb.
 
 ### Major 2 — The knowledge/facts tier went live the same day (2026-09-03)
 
