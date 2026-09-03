@@ -16,11 +16,17 @@ type Tab = "tools" | "skills";
 // and `/api/skills` (`cache: no-store`), which proxy Nora's own
 // `build_tool_specs` / `build_skills_payload`, so a tool or skill added on
 // the backend shows up here on the next page load without a frontend rebuild.
+//
+// Collapsed by default: each entry is a compact row (name + one-line
+// description + expand chevron); clicking it spans the full detail. A flat
+// list of every tool's full description forces the reader to scroll past
+// everything to reach the bottom.
 export default function ToolsPage() {
   const t = useTranslations("tools");
   const [tab, setTab] = useState<Tab>("tools");
   const [tools, setTools] = useState<ToolEntry[] | null>(null);
   const [skills, setSkills] = useState<SkillEntry[] | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -62,6 +68,19 @@ export default function ToolsPage() {
     </button>
   );
 
+  const toggle = (key: string) => setExpanded((cur) => (cur === key ? null : key));
+
+  const chevron = (open: boolean) => (
+    <span
+      className={cn(
+        "shrink-0 text-[11px] text-text-muted transition-transform",
+        open && "rotate-90",
+      )}
+    >
+      ▶
+    </span>
+  );
+
   return (
     <div>
       <p className="mb-2.5 font-mono text-[10px] uppercase tracking-wider text-text-muted">
@@ -85,53 +104,65 @@ export default function ToolsPage() {
         <>
           {!error && !tools && <p className="text-text-muted">{t("loading")}</p>}
           {tools && (
-            <div className="flex flex-col gap-3">
-              {tools.map((tool) => (
-                <Card key={tool.name}>
-                  <CardHeader className="flex-row items-start justify-between gap-3 space-y-0 p-4 pb-2">
-                    <div className="flex min-w-0 flex-col gap-1.5">
-                      <CardTitle className="truncate font-mono text-[13.5px]">
-                        {tool.name}
-                      </CardTitle>
-                      {tool.description && (
-                        <CardDescription className="whitespace-pre-line text-[12.5px] leading-relaxed">
-                          {tool.description}
-                        </CardDescription>
-                      )}
-                      {!tool.description && (
-                        <CardDescription className="text-text-muted">
-                          {t("noDescription")}
-                        </CardDescription>
-                      )}
-                    </div>
-                    <Badge variant="live" className="shrink-0">
-                      {t("budget", { budget: tool.budget })}
-                    </Badge>
-                  </CardHeader>
-                  <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-1 p-4 pt-2">
-                    {tool.terminal && (
-                      <Badge variant="danger">{t("terminal")}</Badge>
-                    )}
-                    {tool.read_only ? (
-                      <Badge variant="designed">{t("readOnly")}</Badge>
-                    ) : (
-                      <Badge variant="designed">{t("writes")}</Badge>
-                    )}
-                    <Badge variant="designed">{tierLabel(tool.source_tier)}</Badge>
-                    {tool.cacheable && (
-                      <Badge variant="designed">{t("cacheable")}</Badge>
-                    )}
-                    <Badge variant="designed">
-                      {t("sideEffect", { state: sideEffectLabel(tool.side_effect_state) })}
-                    </Badge>
-                    {tool.output_contract && (
-                      <Badge variant="designed">
-                        {t("contract", { contract: tool.output_contract })}
+            <div className="flex flex-col gap-2">
+              {tools.map((tool) => {
+                const open = expanded === `tool:${tool.name}`;
+                return (
+                  <Card key={tool.name} className="p-0">
+                    <button
+                      type="button"
+                      onClick={() => toggle(`tool:${tool.name}`)}
+                      className="flex w-full items-center gap-3 p-3 text-left"
+                    >
+                      {chevron(open)}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-mono text-[13px]">
+                          {tool.name}
+                        </span>
+                        {tool.description && (
+                          <span className="block truncate text-[12px] text-text-secondary">
+                            {tool.description}
+                          </span>
+                        )}
+                      </span>
+                      <Badge variant="live" className="shrink-0">
+                        {t("budget", { budget: tool.budget })}
                       </Badge>
+                    </button>
+                    {open && (
+                      <div className="border-t border-border px-3 pb-3 pt-2">
+                        {tool.description && (
+                          <p className="mb-2 whitespace-pre-line text-[12.5px] leading-relaxed text-text-secondary">
+                            {tool.description}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          {tool.terminal && (
+                            <Badge variant="danger">{t("terminal")}</Badge>
+                          )}
+                          {tool.read_only ? (
+                            <Badge variant="designed">{t("readOnly")}</Badge>
+                          ) : (
+                            <Badge variant="designed">{t("writes")}</Badge>
+                          )}
+                          <Badge variant="designed">{tierLabel(tool.source_tier)}</Badge>
+                          {tool.cacheable && (
+                            <Badge variant="designed">{t("cacheable")}</Badge>
+                          )}
+                          <Badge variant="designed">
+                            {t("sideEffect", { state: sideEffectLabel(tool.side_effect_state) })}
+                          </Badge>
+                          {tool.output_contract && (
+                            <Badge variant="designed">
+                              {t("contract", { contract: tool.output_contract })}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
                     )}
-                  </CardContent>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </>
@@ -144,24 +175,39 @@ export default function ToolsPage() {
             <p className="text-text-muted">{t("noSkills")}</p>
           )}
           {skills && skills.length > 0 && (
-            <div className="flex flex-col gap-3">
-              {skills.map((skill) => (
-                <Card key={skill.name}>
-                  <CardHeader className="p-4 pb-2">
-                    <CardTitle className="font-mono text-[13.5px]">
-                      {skill.name}
-                    </CardTitle>
-                    <CardDescription className="text-[12.5px] leading-relaxed">
-                      {skill.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-4 pt-2">
-                    <pre className="whitespace-pre-wrap rounded-md bg-bg-elevated p-3 font-mono text-[12px] leading-relaxed text-text-secondary">
-                      {skill.instructions}
-                    </pre>
-                  </CardContent>
-                </Card>
-              ))}
+            <div className="flex flex-col gap-2">
+              {skills.map((skill) => {
+                const open = expanded === `skill:${skill.name}`;
+                return (
+                  <Card key={skill.name} className="p-0">
+                    <button
+                      type="button"
+                      onClick={() => toggle(`skill:${skill.name}`)}
+                      className="flex w-full items-center gap-3 p-3 text-left"
+                    >
+                      {chevron(open)}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-mono text-[13px]">
+                          {skill.name}
+                        </span>
+                        <span className="block truncate text-[12px] text-text-secondary">
+                          {skill.description}
+                        </span>
+                      </span>
+                    </button>
+                    {open && (
+                      <div className="border-t border-border px-3 pb-3 pt-2">
+                        <p className="mb-2 text-[12.5px] leading-relaxed text-text-secondary">
+                          {skill.description}
+                        </p>
+                        <pre className="whitespace-pre-wrap rounded-md bg-bg-elevated p-3 font-mono text-[12px] leading-relaxed text-text-secondary">
+                          {skill.instructions}
+                        </pre>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </>
