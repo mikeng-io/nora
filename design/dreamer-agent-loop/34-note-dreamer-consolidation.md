@@ -190,7 +190,7 @@ answers just fell outside view. **The merged `expired` acceptance test is:
 «the note has evidence the room was still talking past the anchor» — not
 «the date passed».**
 
-### 5.3 `revisit_at` gets its writer
+### 5.3 `revisit_at` gets its writer — and the policy it never had
 
 The merge makes the per-note clock real, which it has never been:
 `record_wake` (27 §11.3.5, built 2026-08-28) exists on both stores but has no
@@ -201,11 +201,45 @@ becomes eligible for dateless retirement. **This converts the revisitor's
 dead branches into the curator's live modes — which is the point of the
 merge: two sets of dead machinery become one working clock.**
 
+**Kimi review finding M2 — the writer needs a POLICY, and the create path
+changes the progress test.**
+
+1. **Who calls `record_wake`, on which notes, with what `next_revisit_at`?**
+   34 as written names the mechanism but not the schedule. The policy that
+   makes §5.1's cheap-selection invariant hold: the merged curator's `due`
+   SQL read selects notes where `revisit_at <= now` (plus anchor-passed),
+   and `record_wake` is called ONLY on selected, judged notes — with
+   `next_revisit_at` chosen by the adaptor as *anchor day minus a lead
+   window* for anchored notes (so a note answered early is caught at the
+   next wake before its anchor), and a bounded horizon (e.g. +7d, capped by
+   the strike ceiling) for dateless ones. Without this policy, "wake every
+   standing note periodically" becomes the full-scan model call §5.1
+   explicitly refuses.
+2. **Gate-created notes never show tag-path progress.** `record_wake`'s
+   progress test (`tag_path_progressed_since_wake`) counts only revisions
+   authored on the tag path. A note created by 33's deterministic gate is
+   background-authored (`established_by` is a run id), so on its first wake
+   the chain holds no tag-path revision — `progressed = False`, a strike is
+   charged, and `revisit_at` is never set. **The wake clock and the create
+   path do not compose as written** for the very notes the tier is gaining.
+   Three resolutions, in order of preference: (a) treat gate-created notes'
+   FIRST wake as neutral — the note's creation is the progress that started
+   the clock, so seed `last_wake_revision_id = head` at creation;
+   (b) count a `note_create` revision whose author is the gate as tag-path
+   progress for the first wake only; (c) make gate-created notes start with
+   an explicit `revisit_at` (derived from their anchor) so the first wake is
+   not a strike. Any of these must be decided before implementation; (a) is
+   the smallest change to `record_wake`'s semantics.
+
 ### 5.4 Two loop-breaker modes, one switch
 
 The merged adaptor carries both:
-- **cursor mode** (the curator's existing): a watermark/cap over what it
-  processed — work is consumed by being handled.
+- **selection mode** (the curator's existing): SQL-only reads each tick
+  (`merge_groups`, `anchored_before`) — a cap, not a watermark. The curator
+  is `uses_watermark = False` (the module notes "retirement is TIME-driven,
+  not evidence-driven"), so nothing is consumed by being handled; declined
+  work re-fires next tick (Kimi review finding M8 — 34's earlier wording
+  mischaracterised this as a cursor).
 - **strike mode** (the revisitor's, now wired): a note that never changes is
   due forever; strikes bound the waking; eligibility for dateless retirement
   falls out.
@@ -220,7 +254,16 @@ note; the runtime sees one adaptor.
 |---|---|
 | `nora_note_curator_total{action=merge\|retire}` | kept — the merged adaptor keeps this name |
 | `nora_note_curator_groups_refused_total` | kept |
-| `nora_note_revisitor_*` (verdicts, wakes, strikes) | renamed/merged under `nora_note_curator_*` — the series is the adaptor, and the adaptor is now one. A stale `nora_note_revisitor_*` series left publishing would double-count the retirement readings the merge is meant to unify |
+| `nora_note_revisit_*` (standing, candidates, verdicts, refused, deferred) | renamed/merged under `nora_note_curator_*` — the series is the adaptor, and the adaptor is now one. A stale `nora_note_revisit_*` series left publishing would double-count the retirement readings the merge is meant to unify |
+| `nora_note_retirements_total{because,result}` | **kept under the same name** — this is the actual retirement series, emitted by the revisitor (`note_revisitor.py:932/950`); the consolidation must carry it into the curator unchanged, not fold it into a renamed series. Kimi review finding: 34's earlier table missed it entirely |
+
+Exact series names, verified (`nora/obs/metric_specs.py:1591-1651`): the
+revisitor emits `nora_note_revisit_candidates_total`, `…_verdicts_total`,
+`…_refused_total`, `…_deferred_total`, `nora_note_revisit_standing`, and —
+the retirement reading the merge cares about most —
+`nora_note_retirements_total`. The `strikes_total`/`revisit_total` names
+declared in the note-tier spec §6 remain unbuilt (metric_specs.py declares
+them for adaptors that do not exist).
 
 The merge is a metric-name change plus a docstring update; the vocabularies
 already enforce the label sets (`_VOCABULARIES`, `note_curator.py:300`).
@@ -262,3 +305,43 @@ moves across; metrics merge; objective `note-curation` gains the revised
 vocabulary; `note-revisit` is retired as an adaptor (its objective file and
 composition entry removed). The 33 schedule's per-adaptor cadence applies to
 the two remaining adaptors: `note-candidates` hourly, `note-curation` daily.
+
+**2026-09-03 (Kimi external audit, independent model). Verdict: REQUEST
+CHANGES — no BLOCKING.** The reviewer re-verified the load-bearing code
+claims (the "no writer" claim is triple-documented; `_covers` and its
+war story match the code; the cheap-selection invariant is achievable —
+empty `inputs()` suppresses the model call). Five MAJOR findings, all
+addressed in place:
+
+- **M1 (33 §4.1)** — the read-only awareness grant is constrained by
+  `tool_subset_faults`: workspace-keyed adaptors can only hold
+  `WORKSPACE_SAFE_TOOLS`; `list_reminders`/`list_events` are room-scoped and
+  need a supplied-key path before they are grantable. Resolved: recorded as
+  an implementation decision under the constraint.
+- **M2 (§5.3, the load-bearing one)** — `record_wake` needs a POLICY (who
+  calls it, on which notes, with what `next_revisit_at`), and its progress
+  test counts only tag-path revisions, so gate-created notes never show
+  progress and would be striked on first wake. Resolved: §5.3 now specifies
+  the policy and three candidate resolutions for the gate-created case.
+- **M3 (33 §1)** — watermark-free adaptors have NO fire condition (run every
+  tick, `runtime.py:470`); 33's "inherits the shared 30-minute quiet" was a
+  factual error. Fixed in 33.
+- **M4 (§5.5)** — the revisitor's metric series are `nora_note_revisit_*`
+  plus `nora_note_retirements_total` (the table missed the retirement series
+  entirely, and `strikes`/`wakes` series do not exist). Fixed.
+- **M5 (33 §4/C3)** — `note_candidate` migration: `probe`/`first_seen_at`/
+  `last_seen_at` are `nullable=False` with no defaults; the create-key
+  (`workspace, title`) and the miss-key (`workspace, probe`) are two domains
+  with separate upsert behaviour. Fixed in 33.
+- **M6 (33 §6)** — hourly-vs-daily is NOT a phase offset: periods coincide
+  every 24h and `dream_loop` dispatches concurrently. The rule is an
+  explicit selection guard. Fixed in 33.
+- **M8 (§5.4)** — "cursor mode" mischaracterised the curator (it is
+  `uses_watermark = False`; declined work re-fires). Fixed.
+
+Also recorded: **M7/INFO** — merge is INERT in production (`note_entity` has
+no writer, so `merge_groups` refuses every group); 34 §2.1 presented merge as
+live machinery. This does not change the merge argument — it strengthens it —
+but the docs should say so; and the architecture test pinning `record_wake`
+as caller-less (`tests/architecture/test_store_methods_have_production_callers.py:221`)
+must be updated when the merge wires it (M12/INFO).
