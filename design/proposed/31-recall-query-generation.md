@@ -172,15 +172,18 @@ well-chosen deep `ask_memory` per key person, plus `about` breadth, plus the
 fact/note layers — orchestrated by the skill's decomposition, not by a new
 Honcho verb.
 
-### Major 2 — The knowledge/facts tier went live the same day (2026-09-03)
+### Major 2 — RESOLVED (operator 2026-09-03): facts/notes are first-class storage layers in the decomposition
 
 Commits d7852572/9644d0e0 shipped `<facts>` prefill (prefill.py:521) +
 `search_knowledge` (budget 2, model-supplied query) + `get_knowledge` (budget
-3). A "group finished Raft" conclusion is exactly what the fact tier is for,
-and it already has the query shape this design is adding to Honcho. The
-personalization skill should state whether group-state questions route there
-first — otherwise we build Honcho query generation in parallel with a store
-that already solves part of this.
+3). The operator's decomposition workflow (Major 1, step 4) explicitly names
+the **storage layers** the query set draws from: Honcho memory (`about` /
+`ask_memory`), the **facts tier** (`search_knowledge` / `get_knowledge`), and
+**notes** (`note_search`). The fact tier is therefore a first-class surface in
+this design, not a parallel build — the skill's decomposition decides which
+layer answers which sub-question, and a "group finished Raft" style conclusion
+routes to the fact tier first (it already has the model-supplied query shape
+this design adds to Honcho).
 
 ### Minor findings (folded into the change surface)
 
