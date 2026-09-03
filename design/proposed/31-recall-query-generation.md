@@ -158,7 +158,7 @@ The skill must teach this decomposition workflow, in order:
    context, cross-person facts), and what should NOT (private/irrelevant
    slices)? This decides the grouping.
 4. **Derive the query set** — from the above, decide what to query from each
-   **storage layer**: Honcho memory (`about`/`ask_memory`), the facts tier
+   **storage layer**: Honcho memory (`about`/`ask_memory`), the knowledge tier
    (`search_knowledge`/`get_knowledge`), and notes (`note_search`). Different
    layers hold different kinds of truth; the decomposition names which layer
    answers which sub-question.
@@ -172,17 +172,17 @@ well-chosen deep `ask_memory` per key person, plus `about` breadth, plus the
 fact/note layers — orchestrated by the skill's decomposition, not by a new
 Honcho verb.
 
-### Major 2 — RESOLVED (operator 2026-09-03): facts/notes are first-class storage layers in the decomposition
+### Major 2 — RESOLVED (operator 2026-09-03): knowledge/notes are first-class storage layers in the decomposition
 
 Commits d7852572/9644d0e0 shipped `<facts>` prefill (prefill.py:521) +
 `search_knowledge` (budget 2, model-supplied query) + `get_knowledge` (budget
 3). The operator's decomposition workflow (Major 1, step 4) explicitly names
 the **storage layers** the query set draws from: Honcho memory (`about` /
-`ask_memory`), the **facts tier** (`search_knowledge` / `get_knowledge`), and
-**notes** (`note_search`). The fact tier is therefore a first-class surface in
+`ask_memory`), the **knowledge tier** (`search_knowledge` / `get_knowledge`), and
+**notes** (`note_search`). The knowledge tier is therefore a first-class surface in
 this design, not a parallel build — the skill's decomposition decides which
 layer answers which sub-question, and a "group finished Raft" style conclusion
-routes to the fact tier first (it already has the model-supplied query shape
+routes to the knowledge tier first (it already has the model-supplied query shape
 this design adds to Honcho).
 
 ### Minor findings (folded into the change surface)
