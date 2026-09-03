@@ -1,7 +1,7 @@
 ---
 type: design
 title: "The Note Dreamer — Notebook Positioning, a Create Path, and Per-Adaptor Schedule"
-description: "The note tier's only create path is a tag-path tool that has never fired. The tier's own spec defines a note as tracked uncertainty, which makes a notebook hold only open questions and leaves the settled half of an arrangement with no home. This node reframes the note as a notebook — the home for anything that must survive across turns — gives the tier a Dreamer-side create path (note-candidates, the fact tier's Phase A shape), and gives each note adaptor its own schedule with a phase-offset rule instead of a dependency graph."
+description: "The note tier's only create path is a tag-path tool that has never fired. The tier's own spec defines a note as tracked uncertainty, which makes a notebook hold only open questions and leaves the settled half of an arrangement with no home. This node reframes the note as a notebook — the home for anything that must survive across turns — gives the tier a Dreamer-side create path (note-candidates, the fact tier's Phase A shape), gives each note adaptor its own schedule with a phase-offset rule instead of a dependency graph, and trims the tier to lifecycle-only: note dreamers hold read-only cross-tier awareness, never delivery verbs — a separate proactive adapter (deferred) owns initiative."
 tags: [nora, note-tier, dreamer, notebook, candidates, schedule, discharge, phase-offset]
 timestamp: '2026-09-03'
 edges:
@@ -128,7 +128,7 @@ a message batch and proposes notes, with code deciding create.**
 | key | scope (per-room watermark) | scope (per-room watermark) |
 | reads | message batch | message batch + the workspace's note index (title/description) |
 | writes | `fact_candidate` rows | `note_candidate` rows, `kind='create'` |
-| tools | none — one cheap call | none — one cheap call |
+| tools | none — one cheap call | **read-only awareness only** — see §4.1 |
 | output | `(subject, predicate, object, message_ids)` | a full note proposal: `(title, description, body, anchor, closing_condition, message_ids)` |
 | code decides | adjudication eligibility | create/update eligibility |
 
@@ -168,6 +168,25 @@ waits is the shape this whole bundle refuses.
 **The tag path stays as it is** — it may only touch a note it read this turn
 (R-55). It never creates. The cold start proved it will not; the adaptor is
 the recognition it lacks.
+
+### 4.1 The tool surface — read-only awareness, never delivery
+
+**Note dreamers hold read-only verbs only.** The operator's trim, confirmed
+2026-09-03: a proactive adapter (deferred — see §8) owns initiative and
+delivery; the note tier owns only the note's lifecycle. So the note adaptors
+may be granted the cross-tier READ surface so they know what is happening
+while they consolidate — `list_reminders`, `list_events`,
+`search_knowledge`/`get_knowledge`, `search_memory_workspace`, `note_read`/
+`note_search` — and none of the delivery or write verbs (`remind`,
+`cancel_reminder`, `create_event`, `update_event`, `cancel_event`).
+
+The revisitor's schedule_reminder block ([27](27-note-dreamer.md) §3) is
+**not widened here.** The reaching-a-person half — "a note whose moment has
+come, remind the person whose plan it is" — is exactly the proactive
+adapter's job, built ON TOP of this tier's settled state, and it belongs to
+that deferred design rather than being smuggled into the note tier through
+a widened `tool_subset_faults`. Note dreamers propose and consolidate; they
+never initiate contact.
 
 ## 5. Per-adaptor schedule
 
@@ -228,6 +247,15 @@ miss one it is about to create. The schedule above already separates them —
 hourly candidates, daily curator — which is the phase offset, expressed as
 schedule rather than as a dependency.
 
+**Why no delivery verbs appear here:** the reminder lifecycle the operator
+described — "未 decide → remind, 後嚟 decide 咗 → cancel" — is cross-tier
+synthesis, not note maintenance. A note reaching its anchor with its
+question open is an INPUT the proactive adapter reads (a `<notes>` index
+entry, settled state); deciding to remind, and later cancelling when the
+note closes, is initiative. Putting it inside the note tier would blur the
+boundary the operator explicitly wants kept — note dreamers consolidate,
+the proactive adapter acts.
+
 **The fact tier is different and out of scope here.** `fact-candidates` →
 `fact-adjudication` → `entity-resolution` have real data dependencies
 (candidates feed adjudication, facts feed resolution). That ordering is
@@ -262,6 +290,39 @@ to knowledge or Honcho. That is the gap this node records, and it is the
 curator's job (the only adaptor that may act across notes), sequenced after
 the create path exists — a note must exist before it can be discharged.
 
+## 8. The proactive adapter — deferred, and why it is not this tier's
+
+Confirmed with the operator 2026-09-03, recorded here so the boundary stays
+visible: **Nora should move from passive to active** — initiative derived
+from the memory, notes, knowledge and events she has collected, with
+synthesis across tiers. That is a real capability and it is **not the note
+tier's job**.
+
+- **Not NoteRevisitor + tools.** The reaching-a-person half ("a note whose
+  moment has come, remind the person whose plan it is", then cancel when
+  the note closes) is initiative, not note maintenance. Widening
+  `tool_subset_faults` (27 §3's blocked route) would blur the tier's
+  boundary — the exact thing this session decided against.
+- **Not a Heartbeat.** Heartbeat is deterministic delivery machinery (pick
+  due rows, fire). Proactive needs judgement — what is worth doing, given
+  everything Nora holds.
+- **A new adaptor, built on top of the streamers.** Its input is the settled
+  cross-tier summary — `<notes>` index, standing, facts block, event and
+  reminder state — not raw transcripts; its output is proposed actions
+  (remind, cancel, update, discharge, reach out), model-proposes /
+  code-disposes like every other adaptor; its cadence is daily, because
+  synthesis is expensive.
+
+**Why it is deferred:** it is built ON TOP of this tier and the knowledge and
+language tiers — it reads their settled state. There is nothing to be active
+about until the note tier has a create path, a schedule, and a discharge
+pipeline. The operator's direction: *"都係返返去 focus note 嗰度先。"* A
+future node (33+ or a separate design) owns the proactive adapter.
+
+**The boundary rule, one line:** *the note tier consolidates and closes; it
+never initiates contact. Initiative is a separate adaptor's job, reading
+this tier's settled state.*
+
 ## Status / Checkpoint
 
 2026-09-03 — written after the operator's review session on the note tier's
@@ -272,3 +333,13 @@ the `note-candidates` adaptor are the implementation work, and the discharge
 pipeline is sequenced after them. The fact tier's DAG question is explicitly
 out of scope — [32](32-fact-dreamer-schedule.md) and its implementation
 branch own it.
+
+**2026-09-03 (later, same session) — two boundary decisions.** (1) A
+**proactive adapter is confirmed as a separate, deferred design** — cross-
+tier initiative ("Nora 由 passive 變 active") built on top of the note,
+knowledge and language streamers' settled state. It is NOT the note tier's
+job, and this node records its existence so the note tier does not grow
+into it. (2) **The note tier is trimmed to lifecycle-only**: note dreamers
+get read-only cross-tier awareness (§4.1) and never delivery or write verbs;
+the revisitor's reaching-a-person half belongs to the proactive adapter,
+not to a widened `tool_subset_faults` here.
