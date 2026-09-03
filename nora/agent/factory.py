@@ -541,9 +541,20 @@ async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limi
         )
     except MaxTokensReachedException:
         # The partial message is the LAST entry in `agent.messages` — Strands
-        # appended it before raising. Extract its text blocks the same way
-        # `final_text` does, but from the message dict directly (there is no
-        # `AgentResult` to read here).
+        # appended it before raising (event_loop.py:640). Extract its text
+        # blocks the same way `final_text` does, but from the message dict
+        # directly (there is no `AgentResult` to read here).
+        #
+        # EXCLUDE Strands' canned recovery notice. Before appending, the SDK
+        # replaces EVERY tool-use block with a fixed English sentence:
+        # "The selected tool X's tool use was incomplete due to maximum token
+        # limits being reached." (`_recover_message_on_max_tokens_reached`,
+        # called at event_loop.py:601). A cut-off mid-send_reply therefore
+        # leaves a message whose ONLY text blocks are that notice — nothing
+        # the model wrote. Delivering it would leak SDK machinery into the
+        # group (the exact thing R-5/R-6 exist to prevent). So blocks that
+        # carry that exact shape are dropped: a partial that is ONLY the
+        # notice yields partial_text="" and the turn stays silent.
         partial = ""
         if agent.messages:
             last = agent.messages[-1]
@@ -552,6 +563,10 @@ async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limi
                 parts = [
                     block["text"] for block in content
                     if isinstance(block, dict) and isinstance(block.get("text"), str)
+                    and not block["text"].startswith(
+                        "The selected tool "
+                    ) and "tool use was incomplete due"
+                    " to maximum token limits being reached" not in block["text"]
                 ]
                 partial = "\n".join(p for p in parts if p.strip()).strip()
         raise PartialReplyError(partial) from None

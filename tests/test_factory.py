@@ -599,17 +599,24 @@ async def test_invoke_catches_max_tokens_and_carries_the_partial_text():
 
 
 async def test_invoke_carries_an_empty_partial_when_only_tool_use_blocks():
-    """A cut-off whose partial message carried only tool-use blocks has
-    nothing to salvage — `partial_text` is empty and the pipeline stays
-    silent (R-5). Strands' own recovery replaces tool uses with error text
-    in `agent.messages`, but the words the model WROTE are what matter here."""
+    """A cut-off THAT STRANDS RECOVERED has nothing to salvage.
+
+    Before appending the partial, Strands replaces EVERY tool-use block with
+    a fixed English notice — `recover_message_on_max_tokens_reached` at
+    event_loop.py:601 — so a cut-off mid-send_reply leaves a message whose
+    ONLY text blocks are that canned sentence. That is SDK machinery, not
+    the model's words: `partial_text` must be empty and the turn stays
+    silent (R-5). The fake reproduces the POST-recovery shape the SDK
+    actually appends (recovered = text blocks, no toolUse)."""
     from strands.types.exceptions import MaxTokensReachedException
 
     from nora.domain.errors import PartialReplyError
 
     class _FakeAgent:
         messages = [{"role": "assistant", "content": [
-            {"toolUse": {"name": "send_reply", "input": {}}},
+            {"text": "The selected tool send_reply's tool use "
+                     "was incomplete due to maximum token limits "
+                     "being reached."},
         ]}]
 
         async def invoke_async(self, *args: Any, **kwargs: Any) -> Any:

@@ -5,6 +5,8 @@ Preserves `Handler._invoke`'s timeout/exception behaviour exactly
 
 - `asyncio.wait_for(..., timeout=timeout_seconds)`; on `TimeoutError` → log +
   `nora_silent_failures_total{reason="invocation_timeout"}` + return silently.
+- On `PartialReplyError` (a `max_tokens` cut-off carrying prose) → NOT silent:
+  `stop_reason="max_tokens"`, `final_text=partial_text`, caller delivers.
 - On any other exception → log + `nora_silent_failures_total{reason="llm_error"}`
   + return silently.
 - `finally` → always `metrics.observe("nora_llm_latency_seconds", elapsed)`.
