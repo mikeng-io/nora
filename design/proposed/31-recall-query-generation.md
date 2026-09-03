@@ -13,7 +13,7 @@ outside the 40-message transcript window).
 
 ## 1. Root cause — recall tools force-feed the tag message as query
 
-Three call sites use the raw tagging message as the Honcho query:
+Four call sites use the raw tagging message as the Honcho query:
 
 | Site | Code | Query source |
 |---|---|---|
@@ -135,6 +135,58 @@ on what Nora knows about this group's state, history and preferences).
 - **RouteIntent** — operator flagged it was disputed with ChatGPT previously;
   do NOT expand it into a personalization router. This design deliberately
   avoids adding code-level routing for personalization.
+
+## 5. Subagent review findings (2026-09-03, independent review)
+
+All factual claims verified PASS against the code (md5-identical worktree). Two
+MAJOR issues surfaced, both needing operator decision before implementation:
+
+### Major 1 — "Grouping/clustering" lever has no mechanism today
+
+There is **no group-level Honcho verb**. `representation` and `chat` are
+per-peer (observer/observed); only `search()` reaches the whole session, and it
+returns raw messages, not conclusions. So "a query that asks Honcho for the
+group's collective state" cannot land anywhere today. The design must pick one:
+
+- (a) `ask_memory` on the best-chosen person (one call, deep),
+- (b) `search_memory` session scan (raw messages, shallow),
+- (c) the knowledge/facts tier (see Major 2),
+- or downgrade the "preferred lever" to "one well-chosen person query +
+  search_memory".
+
+### Major 2 — The knowledge/facts tier went live the same day (2026-09-03)
+
+Commits d7852572/9644d0e0 shipped `<facts>` prefill (prefill.py:521) +
+`search_knowledge` (budget 2, model-supplied query) + `get_knowledge` (budget
+3). A "group finished Raft" conclusion is exactly what the fact tier is for,
+and it already has the query shape this design is adding to Honcho. The
+personalization skill should state whether group-state questions route there
+first — otherwise we build Honcho query generation in parallel with a store
+that already solves part of this.
+
+### Minor findings (folded into the change surface)
+
+- §1 heading count fixed (four, not three).
+- "~60s loop wall clock" is STALE — whole-turn wall clock is **240s**
+  (`[llm] timeout_seconds`, config.toml:150-163, invoke.py:145-151) and
+  `turns = 20` (config.toml:201), not 8. The arithmetic (3 × 14-19s ≈ 45-57s
+  affordable) survives and *strengthens* the case for ask_memory 1→2.
+- `about` docstring "ask about the person, not about the topic"
+  (tools.py:2689) must be rewritten when `query` is added (DEC-39: docstring
+  wording is a routing surface).
+- Two pinned tests must change in the same commit:
+  `test_recall_asks_the_question_the_group_actually_asked`
+  (test_room_tools.py:314-321) and
+  `test_ask_memory_reasons_from_noras_model` (:334-343) pin the
+  tag-message-as-query behaviour.
+- `skills` budget is 1 with comment "Today exactly one skill exists, so a turn
+  never needs two" (tools.py:1045-1051) — a second skill makes that false; a
+  message spanning navigation + personalization can't load both in one turn.
+  One-line raise when it matters.
+- `test_skill_content.py` gates: description must say when to load AND when
+  not to (:26-31), body must name no scenario (:34-40), body ≤30 non-blank
+  lines (:44). The skill body must stay abstraction-level ("personalization",
+  not "game night").
 
 ## Verification plan (draft)
 - Replay the Raft incident end-to-end in eval: tag with the same question,
