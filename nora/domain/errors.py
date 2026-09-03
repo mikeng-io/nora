@@ -33,3 +33,23 @@ class NoraError(Exception):
     ) -> None:
         super().__init__(message)
         self.failure_class = failure_class
+
+
+class PartialReplyError(NoraError):
+    """The model was cut off at `max_tokens` AFTER writing real prose.
+
+    Strands raises `MaxTokensReachedException` once the partial message is
+    already appended to `agent.messages` (event_loop.py:640) — the words are
+    recoverable, they just never left the loop. This error carries them so the
+    pipeline can deliver them instead of staying silent (R-5's silence is for
+    failures where Nora is broken; here she wrote an answer and the harness
+    dropped it).
+
+    `partial_text` is the model's own words, extracted from the last message's
+    text blocks — never a canned line. Empty when the cut-off message carried
+    only tool-use blocks (nothing to salvage).
+    """
+
+    def __init__(self, partial_text: str) -> None:
+        super().__init__("model cut off at max_tokens with a partial reply")
+        self.partial_text = partial_text

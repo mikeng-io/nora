@@ -849,7 +849,54 @@ class EngagementPipeline:
                 # — a real alert, not the silent void the budget fallback closes.
                 # Closing this path too is a larger change (DEC-42 reconciliation),
                 # left as a flagged follow-up rather than bolted on here.
-                return
+                #
+                # ONE exception, added 2026-09-03 (salvage-partial-reply): a
+                # `max_tokens` cut-off is NOT a generic `llm_error`. Strands
+                # appends the partial message to `agent.messages` before raising
+                # (`nora.agent.factory.invoke` catches it and carries the words
+                # up as `PartialReplyError`), so the model WROTE an answer and
+                # the harness dropped it — silence here is the Raft-password
+                # case measured live 2026-09-02. The words are her own, not the
+                # SDK's canned recovery notice (factory.invoke strips that), so
+                # delivering them is not the forgery the fallback above refuses
+                # to commit. `stop_reason == "max_tokens"` is the discriminator:
+                # a generic `llm_error` has `stop_reason is None` (invoke.py),
+                # so this branch cannot fire on a timeout or an API error.
+                # On successful delivery the turn FLOWS THROUGH to
+                # `check_outcome` rather than returning here — it read
+                # `deliverer.delivered` True, corrected the trace, fed Honcho
+                # and marked the turn completed exactly like a normal delivery
+                # (Kimi audit 2026-09-03 finding 3).
+                salvable = (
+                    stop_reason == "max_tokens"
+                    and not handle.deliverer.delivered
+                    and final_text.strip()
+                )
+                if salvable:
+                    if await handle.deliverer.deliver(final_text, source="salvaged"):
+                        self._metrics.inc(
+                            "nora_salvaged_replies_total", platform=msg.platform,
+                        )
+                        log.warning(
+                            "salvaged a partial reply cut off at max_tokens "
+                            "(tag=%s, %d chars)", request.tag_id, len(final_text),
+                        )
+                        # NO early return and NO `delivered = True` here: the
+                        # turn flows through to `check_outcome` below, which
+                        # already reads `deliverer.delivered` (True after the
+                        # salvage) and corrects the trace, feeds Honcho and
+                        # marks the turn completed — the same accounting a
+                        # normal delivery gets. An early return here would
+                        # skip exactly those three things (Kimi audit 2026-09-03).
+                    else:
+                        # Delivery refused (R-2/R-4/R-6/R-18) — nothing went
+                        # out, stay silent exactly like the generic paths.
+                        return
+                else:
+                    # Timeout, generic `llm_error`, or a partial with no
+                    # usable prose (only Strands' canned recovery notice).
+                    # Stay silent (R-5) — this path never delivered anything.
+                    return
 
             # NEVER-SILENT FALLBACK (operator 2026-08-09): the loop was cut off by
             # one of R-8's caps (limit_total_tokens/turns/output) BEFORE she sent a
