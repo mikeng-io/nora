@@ -365,10 +365,15 @@ on current master; one rebase-era MAJOR plus minors.** Findings folded in:
 - **N1 (MAJOR, 33 §5)** — `AdaptorSchedule` is watermark-bound: the
   schedule check sits inside the watermark branch of `_dream_adaptor_once`
   (`runtime.py:498-503`) and watermark-free adaptors return at
-  `runtime.py:470` first. Only `note-candidates` can take a schedule;
-  the curator's daily cadence needs either a non-watermark schedule path
-  (option a) or stays every-tick with empty-`inputs()` suppression
-  (option b). Both recorded in 33 §5.
+  `runtime.py:470` first. Only `note-candidates` can take a schedule.
+  **Resolved 2026-09-03 by the operator's time-vs-data framing: the
+  curator is a TRUE cron job** (anchor dates pass whether or not the room
+  speaks; `note_curator.py` itself says "retirement is TIME-driven, not
+  evidence-driven"), so the data-gated `AdaptorSchedule` is the wrong
+  shape for it — the recommended fix is (a) a non-watermark schedule path
+  (`now - last_fired >= interval`, checked before the watermark early
+  return), with (b) every-tick + empty-`inputs()` suppression as the
+  fallback while (a) is unbuilt. Both recorded in 33 §5.
 - **N2 (MINOR, 33 §5)** — there is no `[dreamer.schedules.*]` TOML surface;
   `DreamerConfig` has `extra="forbid"` and no schedules key. The mechanism
   is the hardcoded dict at `composition.py:2415-2421`. TOML block removed.

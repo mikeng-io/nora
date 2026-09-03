@@ -59,7 +59,7 @@ No ordering, no cadence, no per-adaptor rhythm. Note work does not need 5-minute
 | Adaptor | Cadence | Mechanism |
 |---|---|---|
 | `note-candidates` | hourly (3600s) | `AdaptorSchedule` — works, it is watermark-bearing |
-| `note-curation` | daily — **subject to N1** | `AdaptorSchedule` is watermark-bound; needs a non-watermark schedule path (runtime change) or stays every-tick with empty-`inputs()` suppression |
+| `note-curation` | **true daily cron** | needs a non-watermark schedule path (`now - last_fired >= interval`, checked before the watermark early return) — the curator is time-driven, not data-driven, so the data-gated `AdaptorSchedule` is the wrong shape; every-tick suppression is the fallback while unbuilt |
 | (revisit — merged into curator per C8) | — | — |
 
 **Kimi audit #2 (N1/N2):** only `note-candidates` can take an

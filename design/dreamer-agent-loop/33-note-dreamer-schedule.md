@@ -249,22 +249,31 @@ scope-keyed and watermarked, so its hourly cadence works. The curator
 `AdaptorSchedule` — it would run every tick exactly as it does today,
 because `min_interval_seconds` is never read.
 
-So the cadence for the curator must be decided differently. Two options:
+So the cadence for the curator must be decided differently — and the
+operator's framing (2026-09-03) settles it: **the note tier's disposal is a
+TRUE cron job, not a data-driven pass.** "Fact tier: data accumulates, so
+there will always be data. Note curation: NOT about accumulating data —
+purely a cron job." The curator's trigger is the calendar (anchor dates pass
+whether or not the room speaks), so it must fire even with ZERO new data —
 
-- **(a) Add a non-watermark schedule path** — move the `sched` lookup above
-  the `uses_watermark` early return in `_dream_adaptor_once`, and for a
-  watermark-free scheduled adaptor fire on `now - last_run >= interval`
-  (the runtime's `failures`/`last_failure_at` dicts already track per-unit
-  last-run state; a per-(adaptor,key) `last_fired_at` would be the same
-  shape). This is the real implementation work for the curator's daily
-  cadence.
-- **(b) Keep the curator every-tick with empty-`inputs()` suppression** —
-  what it does today. `inputs()` returns `""` on the overwhelming majority
-  of ticks (nothing expired, no merge groups), and the runtime skips the
-  model call (`dreamer.py:702-711`). The cost is a cheap SQL round per tick
-  per workspace, not a model call. "Daily" becomes "daily-when-there-is-
-  something", which for a housekeeping pass is arguably the honest reading
-  of the operator's intent anyway.
+- **(a) RECOMMENDED — add a non-watermark schedule path.** In
+  `_dream_adaptor_once`, check the schedule BEFORE the `uses_watermark` early
+  return (`runtime.py:470`): a watermark-free scheduled adaptor fires when
+  `now - last_fired >= min_interval_seconds`, with NO `lag > 0` requirement.
+  The runtime's `failures`/`last_failure_at` dicts already track per-unit
+  last-run state; a per-(adaptor,key) `last_fired_at` dict is the same shape.
+  This makes `AdaptorSchedule` live up to its own docstring ("one adaptor's
+  own clock") for every adaptor. **This is required, not optional**: the
+  existing data-gated `AdaptorSchedule` (`fires = lag > 0 and age >=
+  interval`, `runtime.py:497`) is WRONG for the curator — a silent room would
+  never fire, and time-driven retirement would never happen.
+- **(b) REJECTED as the primary answer — keep the curator every-tick with
+  empty-`inputs()` suppression** — what it does today. `inputs()` returns
+  `""` on the overwhelming majority of ticks (nothing expired, no merge
+  groups), and the runtime skips the model call (`dreamer.py:702-711`). It
+  is functionally correct (the calendar check runs every tick) but pays a
+  cheap SQL round per workspace per 300s tick forever. It is the fallback
+  while (a) is unbuilt, not the design.
 
 **N2 (MINOR) — there is no `[dreamer.schedules.*]` TOML surface.**
 `DreamerConfig` (`nora/config.py:2091-2245`) has `budgets` but no
