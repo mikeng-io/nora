@@ -558,9 +558,11 @@ port = 9100
 [obs.tracing]
 enabled = true
 exporter = "otlp_http"                     # console | otlp_http | file
-endpoint = "http://host.docker.internal:3100/api/public/otel/v1/traces"
-headers_env = "LANGFUSE_OTLP_HEADERS"                      # env var NAME holding OTLP auth headers, never the
-                                       # value (DEC-8); only read when exporter = "otlp_http"
+# Universal OTLP ingress: the otel-collector (LAN:4318) fans out to Langfuse
+# (nora project) and Jaeger (infra spans). Collector injects Langfuse auth, so
+# headers_env is no longer needed here — the collector owns the credential now.
+endpoint = "http://host.docker.internal:4318"
+headers_env = ""                           # collector owns Langfuse auth; left empty (DEC-8)
 
 [evals]
 # The model that GRADES the adversarial live run (DEC-75). MUST differ from
