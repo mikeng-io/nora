@@ -12,9 +12,9 @@ describe("SkillEntrySchema", () => {
     expect(SkillEntrySchema.parse(SAMPLE)).toEqual(SAMPLE);
   });
 
-  it("rejects an entry missing the instructions body", () => {
+  it("accepts an entry without the instructions body (pre-PR93 backend)", () => {
     const { instructions: _drop, ...rest } = SAMPLE;
-    expect(() => SkillEntrySchema.parse(rest)).toThrow();
+    expect(SkillEntrySchema.parse(rest)).toEqual(rest);
   });
 
   it("rejects an entry missing the description", () => {

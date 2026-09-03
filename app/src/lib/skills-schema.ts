@@ -9,7 +9,10 @@ import { z } from "zod";
 export const SkillEntrySchema = z.object({
   name: z.string(),
   description: z.string(),
-  instructions: z.string(),
+  // Optional: the deployed backend may predate the instructions-body change
+  // (PR #93). The portal degrades to name + description until the backend
+  // catches up; the body appears once deployed.
+  instructions: z.string().optional(),
 });
 
 export const SkillsSchema = z.array(SkillEntrySchema);

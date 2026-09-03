@@ -200,9 +200,11 @@ export default function ToolsPage() {
                         <p className="mb-2 text-[12.5px] leading-relaxed text-text-secondary">
                           {skill.description}
                         </p>
-                        <pre className="whitespace-pre-wrap rounded-md bg-bg-elevated p-3 font-mono text-[12px] leading-relaxed text-text-secondary">
-                          {skill.instructions}
-                        </pre>
+                        {skill.instructions && (
+                          <pre className="whitespace-pre-wrap rounded-md bg-bg-elevated p-3 font-mono text-[12px] leading-relaxed text-text-secondary">
+                            {skill.instructions}
+                          </pre>
+                        )}
                       </div>
                     )}
                   </Card>
