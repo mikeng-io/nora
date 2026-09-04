@@ -55,6 +55,14 @@ class WhatsAppReactor:
         and failed", which `indicate` counts as different statuses so a
         wiring gap never reads as a transient error.
         """
+        if target.conversation_type != "group":
+            # Same deny-by-default as send.py — 1:1 rooms are not admitted
+            # this phase (the DM-study session owns that posture), and a
+            # reaction is a reply-shaped outbound even though it is not a
+            # text send. Refuse without an HTTP call (M-2).
+            log.error("refusing to react in conversation_type=%r (1:1 is "
+                      "deny-by-default this phase)", target.conversation_type)
+            return ReactionResult(ok=False, supported=False)
         if not to_message_id:
             log.debug("no whatsapp message id to react to; skipping")
             return ReactionResult(ok=False, supported=False)

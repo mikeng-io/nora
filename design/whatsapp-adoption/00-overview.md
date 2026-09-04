@@ -135,10 +135,10 @@ while a design discussion finishes.
 - **No voice calls.** Only messages.
 - **Inbound media (images/files/voice) is deferred but not silent.** The
   transport must carry media events to the ambient tier (custody + audit),
-  but v1 does not define transcription/description of WhatsApp media. Voice
-  notes are an engagement signal in Nora's current posture — deferring them
-  means voice-note engagement does not work until media ingestion lands
-  (see `02-identity-and-policy.md` §Engagement).
+  but v1 does not define transcription/description of WhatsApp media. Media
+  custody/transcription is the later phase, but voice notes DO engage today
+  via the global `VoiceNotePolicy` (operator directive 2026-08-26) even
+  without a transcript — see `03-transport-contract.md` §Engagement.
 - **No 1:1-DM semantics invented here.** 1:1 DMs are in scope (operator
   2026-09-04) but their semantics — roster, disclosure, fallback for a
   roster-less conversation — are the output of the DM-study session. This

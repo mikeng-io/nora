@@ -94,10 +94,13 @@ define, and contract-test, what "mention/reply" means on this platform:
   does — the adapter must pick a deterministic signal.)
 - **1:1:** any message from an admitted person (DM semantics pending the
   DM-study session — see sequencing in `00-overview.md`).
-- **Voice notes:** an engagement signal in Nora's current posture. Until
-  inbound WhatsApp media custody + transcription lands, voice-note
-  engagement does not work — the v1 scope must state this consequence
-  explicitly rather than silently dropping the signal.
+- **Voice notes:** an engagement signal in Nora's current posture, and
+  this is the ACTUAL behavior today: `VoiceNotePolicy` is global
+  (`nora/app/composition.py:1124`, operator directive 2026-08-26 總之任何
+  Voice Note 都會直入上 Nora 度先囉) and fires on any `voice_note` MediaRef
+  even with no transcript. Media custody + transcription (fetch_token) is
+  the later phase, but the note engages her now — this is stated, per
+  Claude audit H-1, rather than the docs claiming engagement waits.
 
 The old "quoted trigger token" framing is superseded: it describes the
 pre-2026-09-01 posture and must not be implemented.

@@ -83,9 +83,12 @@ No new `[engagement]` keys. WhatsApp HAS structural mentions
 (`contextInfo.mentionedJid`), so @mention and reply-to-Nora ride the
 EXISTING `MentionPolicy`/`ReplyToNoraPolicy` against
 `registry.self_aliases()` — which now includes the bot's phone AND lid from
-`GET /self`. The text trigger stays off. Voice notes are carried to the
-ambient tier (`[voice note]` placeholder + audit) but cannot engage until
-media custody + transcription lands — stated, not silent.
+`GET /self`. The text trigger stays off. **Voice notes DO engage today**:
+`VoiceNotePolicy` is global (composition.py:1124, operator directive
+2026-08-26) and fires on any `voice_note` MediaRef regardless of transcript.
+Media custody/transcription (fetch_token) is the later phase, but the note
+engages her now — the transport carries the `ptt` flag so the parser marks
+it correctly.
 
 ## What was tested
 

@@ -166,7 +166,14 @@ policies, and the parser fills exactly what they read.
 - **Reply-to-Nora** — the parser fills `quote.author_id` from the quoted
   participant; `ReplyToNoraPolicy` matches it against the same aliases.
 - **Voice notes** — carried as `MediaRef(voice_note=True)` to the ambient
-  tier (audit + `[voice note]` placeholder) but NOT an engagement signal
-  until media custody + transcription lands. The transport drops nothing.
+  tier (audit + `[voice note]` placeholder), never dropped. **Engagement
+  consequence (corrected per Claude audit H-1):** `VoiceNotePolicy`
+  (`nora/ingest/policy.py:97-117`) is GLOBAL — appended unconditionally in
+  `nora/app/composition.py:1124` under the operator's 2026-08-26 directive
+  「總之任何 Voice Note 都會直入上 Nora 度先囉」 — so a WhatsApp voice note
+  DOES engage Nora today, even with no transcript (a failed transcription
+  still engages; the policy is gated on the `voice_note` flag, not on
+  transcript presence). Media custody/transcription (the `fetch_token`
+  pipeline) is a later phase, but the note itself engages her now.
 - The text trigger stays off (`config.toml:245-251`); nothing here
   re-enables it.

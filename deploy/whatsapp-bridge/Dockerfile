@@ -7,5 +7,7 @@ COPY bridge.js bridge_helpers.js package.json package-lock.json ./
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 RUN npm ci --omit=dev
+# Non-root, matching every other container in this compose project (M-1).
+USER node
 EXPOSE 18081
 CMD ["node", "bridge.js", "--port", "18081", "--session", "/app/session"]
