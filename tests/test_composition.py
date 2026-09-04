@@ -987,7 +987,10 @@ async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg):
     assert wiring is not None
     assert wiring.store is deps.engagement._context._standing_store
     assert wiring.max_chars == 1200
-    assert wiring.fold_batch == 200
+    # Read the value from the config under test, not a hardcoded literal —
+    # the operator owns fold_batch and changed it 200 -> 40 on 2026-09-05
+    # (0d96b49c), which silently broke this assertion.
+    assert wiring.fold_batch == cfg.standing.fold_batch
     assert wiring.record_store is deps.ingest._audit
 
 

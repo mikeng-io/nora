@@ -1127,8 +1127,11 @@ def test_a_standing_cap_exactly_at_the_ceiling_is_allowed(toml_path):
 def test_an_unknown_standing_key_is_a_startup_failure(toml_path):
     """`extra="forbid"`, so `fold_batc = 200` is a boot failure rather than a
     silently ignored line that leaves the fold batch meaning something else."""
-    toml_path.write_text(
-        toml_path.read_text().replace("fold_batch = 200", "fold_batc = 200"))
+    # `_set_key` first (asserts the edit landed) so the typo surgery below
+    # cannot silently no-op when the operator changes the fold_batch value —
+    # the exact failure this file's `_set_key` docstring exists to prevent.
+    text = _set_key(toml_path.read_text(), "fold_batch", "200")
+    toml_path.write_text(text.replace("fold_batch = 200", "fold_batc = 200"))
     with pytest.raises(ConfigError):
         load(toml_path)
 
@@ -1217,10 +1220,9 @@ def test_a_standing_fold_batch_bigger_than_the_reply_window_is_accepted(toml_pat
     further back than `[store] context_window` (that is the whole point; the
     watermark replaces the reply path's window). A value larger than
     `context_window` must LOAD, or the new read could not do its job."""
-    text = toml_path.read_text()
-    i = text.index("[standing]")
-    toml_path.write_text(
-        text[:i] + text[i:].replace("fold_batch = 200", "fold_batch = 400", 1))
+    # `_set_key` asserts the edit landed — a hardcoded `str.replace` on the
+    # old value would silently no-op the day the operator changes fold_batch.
+    toml_path.write_text(_set_key(toml_path.read_text(), "fold_batch", "400"))
     cfg = load(toml_path)
     assert cfg.standing.fold_batch == 400
     assert cfg.standing.fold_batch > cfg.store.context_window
@@ -1231,10 +1233,7 @@ def test_a_standing_fold_batch_of_zero_refuses_to_start(toml_path):
     domain one: a fold that reads zero rows is a fold that does nothing, and a
     `ge=1` constraint is what refuses it at startup rather than at the first
     fold."""
-    text = toml_path.read_text()
-    i = text.index("[standing]")
-    toml_path.write_text(
-        text[:i] + text[i:].replace("fold_batch = 200", "fold_batch = 0", 1))
+    toml_path.write_text(_set_key(toml_path.read_text(), "fold_batch", "0"))
     with pytest.raises(ConfigError):
         load(toml_path)
 
