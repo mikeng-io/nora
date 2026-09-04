@@ -477,7 +477,15 @@ class MemoryHealth:
 @dataclass(frozen=True)
 class EngageDecision:
     """See module docstring for why `rationale` and `threshold` ride along
-    with `confidence` instead of a bare bool or a bare number."""
+    with `confidence` instead of a bare bool or a bare number.
+
+    `participation` is the participation occasion's verdict
+    (design/dreamer-agent-loop/35), deliberately NOT a third value of
+    `engage`: `engage=True` means "a tag admitted, route to the engagement
+    pipeline" and nothing else may mean that. A `participation=True` decision
+    always has `engage=False`; it marks an untagged message in an opted-in
+    room as a candidate for the quiescence trigger, and the dispatcher routes
+    it there rather than to the tag path."""
 
     engage: bool
     reason: str
@@ -485,6 +493,7 @@ class EngageDecision:
     confidence: float | None = None
     threshold: float | None = None
     allow_episode: bool = False
+    participation: bool = False
 
 
 @dataclass(frozen=True)

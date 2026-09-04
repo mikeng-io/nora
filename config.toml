@@ -239,6 +239,20 @@ total_tokens = 256000
 # i.e. 99.8% of it. 12000 is 6x the per-call ceiling.
 output_tokens = 12000
 
+[participation]
+# The participation occasion (design/dreamer-agent-loop/35): Nora MAY speak in a
+# room she was NOT tagged in, judged once per quiescence-closed window, with
+# silence as the healthy default. OFF, and even when enabled it engages nowhere
+# until a room is ALSO opted in with `participation = true` on its
+# [[conversations]] entry in policy.toml — both grants are required.
+enabled = false
+# Quiescence trigger (§3.5): one evaluation per quiet-closed window, never per
+# message.
+settle_seconds = 10
+# SEND cooldown (§10.3), not an evaluation cooldown: at most one participation
+# message per room per this many minutes.
+cooldown_minutes = 10
+
 [engagement]
 policy = "trigger_text"
 

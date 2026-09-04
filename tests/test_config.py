@@ -1102,6 +1102,23 @@ def test_the_standing_section_is_optional_and_ships_inert(toml_path):
     assert cfg.standing.model == ""
 
 
+# --- [participation] (design/dreamer-agent-loop/35 §8) ----------------------
+
+def test_the_participation_section_is_optional_and_ships_inert(toml_path):
+    """A config.toml written before this section existed must keep loading
+    under `extra="forbid"`, with the occasion OFF. Off, no quiescence window
+    is ever evaluated; on, participation STILL engages nowhere until
+    policy.toml opts a room in (`participation = true`) — the two grants are
+    independent on purpose."""
+    text = toml_path.read_text()
+    start = text.index("\n[participation]")
+    toml_path.write_text(text[:start] + text[text.index("\n[engagement]"):])
+    cfg = load(toml_path)
+    assert cfg.participation.enabled is False
+    assert cfg.participation.settle_seconds == 10
+    assert cfg.participation.cooldown_minutes == 10
+
+
 def test_a_standing_cap_above_the_database_ceiling_refuses_to_start(toml_path):
     """**The startup refusal, not a runtime one.** `max_chars` is a knob and
     `standing_body_fits_the_ceiling_check` is DDL that cannot be one, so a

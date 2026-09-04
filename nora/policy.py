@@ -81,6 +81,13 @@ class Conversation:
     # in the destination independently: the workspace bounds WHICH rooms may
     # ever be paired, and the persons list still decides who may use the pair.
     workspace: str = "nora"
+    # UNPROMPTED-SPEECH TRUST (design/dreamer-agent-loop/35 §8). Default False:
+    # being allowed to ANSWER this room when tagged has never implied being
+    # allowed to speak in it uncalled. `participation = true` is the operator
+    # saying "Nora may join THIS room's conversation on her own judgement" —
+    # and it still does nothing while `[participation] enabled = false` in
+    # config.toml (the shipped default).
+    participation: bool = False
 
 
 @dataclass(frozen=True)
@@ -164,6 +171,10 @@ class _ConversationEntry(BaseModel):
     # See `Conversation.workspace` (DEC-105): the social unit this room belongs
     # to. `send_to` may only relay BETWEEN rooms that share it.
     workspace: str = "nora"
+    # See `Conversation.participation` (design/dreamer-agent-loop/35): opts THIS
+    # room into unprompted participation turns. Default False — the right to
+    # speak uncalled is granted per room, never inherited from being answerable.
+    participation: bool = False
 
     @field_validator("persons")
     @classmethod
@@ -222,6 +233,7 @@ def load_policy(path: Path) -> Policy:
             platform=entry.platform, ids=ids, persons=persons, label=entry.label,
             tools=frozenset(entry.tools), location=entry.location,
             primary_id=entry.id, workspace=entry.workspace,
+            participation=entry.participation,
         )
         conversations.append(convo)
         for cid in ids:

@@ -204,3 +204,19 @@ def test_location_flag_defaults_false_and_parses_true(policy, tmp_path):
     )
     trusted = load_policy(_write(tmp_path, body))
     assert trusted.conversation("signal", GROUP).location is True
+
+
+def test_participation_flag_defaults_false_and_parses_true(policy, tmp_path):
+    """design/dreamer-agent-loop/35 §8: `participation` opts a room into
+    unprompted turns. It DEFAULTS False (the fixture rooms set none) — being
+    answerable when tagged has never implied being allowed to speak uncalled —
+    and a room with `participation = true` carries it through to
+    `Conversation.participation`. `[participation] enabled` in config.toml is
+    the second, independent gate."""
+    assert policy.conversation("signal", GROUP).participation is False
+    body = (
+        'default = "deny"\n[[conversations]]\nplatform="signal"\n'
+        f'id="{GROUP}"\npersons=["miles"]\nparticipation=true\n'
+    )
+    opted_in = load_policy(_write(tmp_path, body))
+    assert opted_in.conversation("signal", GROUP).participation is True
