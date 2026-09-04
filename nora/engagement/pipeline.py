@@ -828,6 +828,10 @@ class EngagementPipeline:
                     guard=handle.guard, tool_call_log=handle.tool_call_log,
                     tag_message=tag_message, limits=self._limits, ctx=ctx,
                     timeout_seconds=self._timeout_seconds, metrics=self._metrics,
+                    # This pipeline IS the tag path; the literal stays at the
+                    # call site rather than as a default so an omitted one
+                    # cannot compile (the A8 filter is `audience="tag"`).
+                    audience="tag",
                 )
                 # Inside the `with`, so it lands on the invoke span rather than
                 # on the turn: `ok` and `stop_reason` are what this stage
@@ -989,6 +993,9 @@ class EngagementPipeline:
             delivered = deliver.check_outcome(
                 deliverer=handle.deliverer, tag_id=request.tag_id, platform=msg.platform,
                 stop_reason=stop_reason, llm_state=self._llm_state, metrics=self._metrics,
+                # Literal at the call site, like `invoke.run`'s above: this
+                # pipeline IS the tag path (the A8 filter reads this label).
+                audience="tag",
             )
             # Task 6: correct `trace`'s placeholder `outcome` now that the
             # turn's real disposition is known — mirroring `check_outcome`'s
@@ -1239,7 +1246,13 @@ class EngagementPipeline:
             # route is not honouring `tool_choice=required`, not that the
             # safety net is "working".
             outcome_label = _outcome_label(trace)
-            self._metrics.inc("nora_engagement_outcomes_total", outcome=outcome_label)
+            # `audience` joins the label set ahead of the participation
+            # occasion (design/dreamer-agent-loop/35 §6): a participation
+            # outcome landing here unlabelled would be indistinguishable from
+            # a tag's. This pipeline passes the literal — it IS the tag path.
+            self._metrics.inc(
+                "nora_engagement_outcomes_total", outcome=outcome_label, audience="tag",
+            )
             annotate(**{
                 "nora.outcome": outcome_label,
                 "nora.delivered": delivered,

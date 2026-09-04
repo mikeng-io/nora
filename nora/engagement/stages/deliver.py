@@ -189,6 +189,7 @@ def check_outcome(
     platform: str,
     metrics: Any,
     stop_reason: str | None,
+    audience: str,
     llm_state: Any = None,
 ) -> bool:
     """Return True iff a reply was actually delivered.
@@ -212,12 +213,13 @@ def check_outcome(
     wrong thing. No default value, so a new call site cannot quietly go back
     to always saying `no_send_call`.
 
-    **`audience="tag"` is a literal here because this function is the TAG
-    path's, exclusively** (design spec §6.2). The heartbeat's fire path does
-    its own outcome accounting — it has its own timeout and its own §8.1
-    outcome mapping to produce, and a shared `check_outcome` could give it
-    neither. If a second caller ever appears, this literal is wrong and the
-    parameter it needs is `audience`, threaded like `Deliverer`'s.
+    **`audience` is a required keyword, no default** — the same shape
+    `Deliverer`'s and `invoke.run`'s took before it (design spec §6.2). The
+    heartbeat's fire path still does its own outcome accounting (its own
+    timeout, its own §8.1 outcome mapping), but the participation occasion
+    (design/dreamer-agent-loop/35) threads "participation" through here, and a
+    defaulted "tag" would land its failures inside the very budget A8 filters
+    to `audience="tag"` (`docs/runbook.md`).
     """
     if not deliverer.delivered:
         # `called`, not `attempted` (external review 2026-08-10). `attempted`
@@ -233,7 +235,7 @@ def check_outcome(
             log.warning("%s (tag=%s); dropping the model's text", reason, tag_id)
             metrics.inc(
                 "nora_silent_failures_total", reason=reason, platform=platform,
-                audience="tag",
+                audience=audience,
             )
         return False
     if llm_state is not None:   # a delivered reply implies a successful invocation

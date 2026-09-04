@@ -11,10 +11,12 @@ Preserves `Handler._invoke`'s timeout/exception behaviour exactly
   + return silently.
 - `finally` → always `metrics.observe("nora_llm_latency_seconds", elapsed)`.
 
-Every series this stage moves is labelled `audience="tag"` as a literal, all
-four of them: both `nora_silent_failures_total` increments, the latency
-histogram and `nora_llm_stop_reason_total`. This stage IS the tag path and the
-fire turn never enters it — see `run`'s docstring.
+Every series this stage moves is labelled with the `audience` keyword `run`
+takes — required, no default, all four of them: both
+`nora_silent_failures_total` increments, the latency histogram and
+`nora_llm_stop_reason_total`. The tag path passes "tag"; the participation
+occasion (design/dreamer-agent-loop/35) passes "participation". See `run`'s
+docstring.
 
 Both reasons are R-5 cases with named tests in
 `tests/test_acceptance_rules.py::RULE_TESTS` — the strings must not change.
@@ -111,6 +113,7 @@ async def run(
     ctx: TagContext,
     timeout_seconds: float,
     metrics: Any,
+    audience: str,
 ) -> tuple[bool, float, str | None, str, TagTrace]:
     """Return `(ok, elapsed, stop_reason, final_text, trace)`. `ok` is False on a timeout or any
     other exception, in which case the model was never allowed to reply — the
@@ -125,12 +128,16 @@ async def run(
     with (R-23): `limit_total_tokens` and `no_send_call` are different
     failures and used to be the same metric.
 
-    **Every series below is labelled `audience="tag"` as a literal, because
-    this stage is the TAG path's, exclusively** (design spec §6.2, §13). That is
-    both `nora_silent_failures_total` increments, `nora_llm_latency_seconds` and
-    `nora_llm_stop_reason_total` — the last two because a fire turn is bounded
-    by a DIFFERENT timeout and a mixed histogram describes neither population.
-    The heartbeat's fire path deliberately
+    **Every series below is labelled with the `audience` keyword, a REQUIRED
+    argument with no default** (design spec §6.2, §13). A default would compile
+    fine and an omitted one would record `audience=""` (`Metrics._full_labels`),
+    which the A8 runbook filter `audience="tag"` then excludes — silently. The
+    tag path passes "tag"; the participation occasion (design/dreamer-agent-
+    loop/35) passes "participation". Both `nora_silent_failures_total`
+    increments, `nora_llm_latency_seconds` and `nora_llm_stop_reason_total` —
+    the last two because a fire turn is bounded by a DIFFERENT timeout and a
+    mixed histogram describes neither population. The heartbeat's fire path
+    deliberately
     does NOT call it: it needs `[heartbeat] timeout_seconds` rather than the
     tier's, and it needs the failure mapped to one of §8.1's outcome strings so
     the reminder row records what actually happened. It calls `runner.invoke`
@@ -162,7 +169,7 @@ async def run(
         log.error("invocation_timeout (tag=%s)", ctx.tag_id)
         metrics.inc(
             "nora_silent_failures_total", reason="invocation_timeout",
-            platform=ctx.message.platform, audience="tag",
+            platform=ctx.message.platform, audience=audience,
         )
         ok = False
         trace = _blank_trace(ctx=ctx, outcome="timeout")
@@ -185,17 +192,17 @@ async def run(
         log.exception("llm_error (tag=%s); staying silent", ctx.tag_id)
         metrics.inc(
             "nora_silent_failures_total", reason="llm_error",
-            platform=ctx.message.platform, audience="tag",
+            platform=ctx.message.platform, audience=audience,
         )
         ok = False
         trace = _blank_trace(ctx=ctx, outcome="llm_error")
     finally:
         elapsed = time.perf_counter() - started
-        metrics.observe("nora_llm_latency_seconds", elapsed, audience="tag")
+        metrics.observe("nora_llm_latency_seconds", elapsed, audience=audience)
     if stop_reason is not None:
         # Every completed invocation, not just the ones that ran out of
         # budget: a series that only ever carries `limit_*` cannot say what
         # fraction of turns are being cut off, and `end_turn` being the
         # overwhelming majority is the thing that makes a `limit_*` legible.
-        metrics.inc("nora_llm_stop_reason_total", reason=stop_reason, audience="tag")
+        metrics.inc("nora_llm_stop_reason_total", reason=stop_reason, audience=audience)
     return ok, elapsed, stop_reason, final_text, trace

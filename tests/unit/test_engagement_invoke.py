@@ -86,7 +86,7 @@ async def _run(runner, *, timeout_seconds=5.0, metrics=None, ctx=None, doctrine=
         runner=runner, doctrine=doctrine or _Doctrine(), tools=["t1"],
         pre_fill=[{"role": "user"}], guard="guard", tag_message="<tag_message/>",
         limits={"turns": 4}, ctx=ctx or _ctx(), timeout_seconds=timeout_seconds,
-        metrics=metrics,
+        metrics=metrics, audience="tag",
     ), metrics
 
 
