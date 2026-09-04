@@ -97,6 +97,32 @@ seed differs: fact present vs absent) — and the verdict must flip to silence.
 A model that answers from parametric memory has failed; her memory boundary is
 her standing/facts, not what the base model happens to know.
 
+### 3.5 The trigger: quiescence-closed windows, not per-message evaluation
+
+The participation turn is not evaluated on every message. A candidate window
+opens on a message and CLOSES when the room goes quiet for `settle_seconds`
+(lean 10s). Exactly one participation evaluation runs per closed window, with
+the FULL window — the whole burst, however long — in context.
+
+Three consequences fall out of this shape, including Miles's burst objection:
+
+1. **"Yoooo" cannot burn the cooldown.** In a 100-message burst, the
+   evaluation does not happen at message 1; it happens at burst end, with the
+   whole transcript. Nora judges "was there a question worth answering in
+   these 100 messages", not "is 'yoooo' worth answering".
+2. **Evaluation count is naturally bounded.** One turn per quiet window per
+   room — not per message. This is what makes the full-model determination
+   (decision 10.1) affordable without a sampling layer.
+3. **The send cooldown still applies.** A quiet window may CLOSE and evaluate
+   every few minutes of lull; the `cooldown_minutes` send gate (10.3) still
+   caps at most one SEND per window. Evaluations that conclude "speak" while
+   the cooldown is active stay silent (logged for the shadow review).
+
+The quiescence window needs the same banned retained-per-tag state treatment
+as the tag path's debounce (`nora/tag.py:73-86`, policed by
+`test_no_retained_per_tag_state`): the "last quiet-window end" cursor is
+per-room watermark state, not per-message session state.
+
 ## 4. Doctrine: same files, new audience — plus the pins Rev 1 missed
 
 The three-layer principle — `conduct.md` writes WHEN to act, `voice.md` writes
@@ -254,7 +280,7 @@ reused (that is the point) but the following MUST be occasion-aware:
 | ConversationSlots / R-30 | heartbeat uses `try_acquire`, never queues (`design/09-decision-index.md:101` calls slot serialisation "correctness"). A participation turn racing a tag turn is exactly the re-answer/contradict failure R-30 exists to prevent. Participation's slot policy must be specified. |
 | Debounce / anti-noise | R-9's debounce protects the tag path; participation needs its own cadence state and the same banned per-tag retained state treatment (`nora/tag.py:73-86`, policed by `test_no_retained_per_tag_state`). |
 | Policy | `[engagement].policy` is a closed `Literal["trigger_text"]` (`nora/config.py:350`); "allowed to answer when tagged" vs "allowed to be spoken to unprompted" is a trust distinction `policy.example.toml:77-79` already draws for Discord. A participation policy surface is required. (Genuine good news the audit found: untagged messages already reach ingest, and `VoiceNotePolicy` is precedent for engagement without a tag.) |
-| Trace volume | Rev 1's "full model on every message" would put a retained generation trace on the never-answered flood the plumbing sampler exists to drop (`nora/ingest/pipeline.py:235-244`). Participation needs a sampling decision before the full-model default is accepted. |
+| Trace volume | RESOLVED by the quiescence trigger (§3.5): one participation turn per quiet window per room, not per message — the retained generation trace lands on the evaluated window only, not on the never-answered flood (`nora/ingest/pipeline.py:235-244`). No sampling layer needed for the full-model determination (decision 10.1). |
 | Egress | verified unaffected (R-18 applies through `Deliverer`); presence/analytics/Docker healthcheck also unaffected. |
 
 ## 9. Evaluation: not writable on the harness today — the honest gaps
@@ -296,32 +322,39 @@ harness as it stands** — four concrete gaps, each with its path:
    `addressed_the_tag` rubric that would score correct participation speech
    ~0. An participation judge rubric is a separate deliverable.
 
-## 10. Open questions (for Miles)
+## 10. Decisions (locked by Miles, 2026-09-05)
 
-1. **Determination layer**: lightweight pre-filter vs full model on every
-   message. Lean (unchanged): full model first — fewer components, the model
-   has all context, and a classifier's precision problem is ill-defined until
-   evals exist. BUT §8's trace-volume concern means the full-model default
-   needs a sampling decision, and the per-room cadence (§10.3 below) bounds
-   the cost either way.
-2. **Participation slot policy**: how does a participation turn take the
-   ConversationSlot versus a racing tag? (try_acquire-and-skip, queue-behind-
-   tag, or participation-only slot?) R-30 exists to prevent the re-answer
-   failure; the least surprising choice is try_acquire-and-skip so a tag never
-   waits behind an ambient thought.
-3. **Cadence / anti-noise floor**: at most once per N minutes per room? The
-   tag path's R-9 debounce is separate; participation needs its own floor
-   before any live traffic.
-4. **Name**: adopt "participation" (resolves the "ambient" collision — §2) or
-   pick another? This renames the R-1 clause-2 test, the metrics, the doctrine
-   audience, and the glossary entry as one sweep.
-5. **"I can look that up"**: the middle case between answering and silence.
-   Lean (unchanged): v1 never — it creates a commitment and follow-up
-   obligation; silence is safer and cheaper than a promise.
-6. **Shadow mode** (rollout gate, not a separate runtime): participation
-   determinations write to a mirror channel/log without sending; Miles reviews;
-   then flip. The mirror surface must be decided before the shadow phase
-   starts.
+1. **Determination layer: full model, no pre-filter** (Miles: 1A). Every
+   quiescence-closed window gets a full participation turn with the right to
+   silence. No lightweight classifier gate — one fewer component, the model
+   has all context, and the classifier's precision problem is ill-defined
+   until evals exist. Cost is bounded by the trigger design (§3.5): one
+   evaluation per quiet window per room, not one per message.
+2. **Slot policy: try_acquire-and-skip** (Miles: 2A). A participation turn
+   takes the ConversationSlot only if free; if a tag holds it, participation
+   silently skips. A tag never waits behind an ambient thought. This is the
+   R-30 anti-re-answer posture: an ambient reply is a bonus, never a queue
+   obligation.
+3. **Cadence: send cooldown, NOT evaluation cooldown** (Miles: 3A + key
+   refinement). The per-room limit is on *sending*, not on *evaluating*:
+   at most one participation send per room per `cooldown_minutes` (lean
+   10–15, tune from shadow data). Evaluation is NOT tied to cooldown expiry —
+   a burst of 100+ messages must not burn the window on "yoooo" (§3.5's
+   quiescence trigger already prevents this: the evaluation happens when the
+   burst SETTLES, with the whole burst in context, not at the burst's first
+   message).
+4. **Name: "participation"** (Miles: 4 ok). Resolves the "ambient" collision
+   (§2). The rename sweeps the R-1 clause-2 test, the metrics, the doctrine
+   audience, and the glossary entry as one governed change.
+5. **"I can look that up": excluded in v1** (Miles: 5A). No grounded value =
+   silence. No commitment-creating offers; silence is safer and cheaper than
+   a promise.
+6. **Shadow mode: mirror channel** (Miles: 6A). Before the flip,
+   participation determinations post to a dedicated mirror channel (tagged
+   with source room + triggering context), Miles reviews, then flip. A mirror
+   channel is the review surface that makes the flip decisionable — logs and
+   dashboards do not show what she WOULD have said.
+
 
 ## 11. Migration & governance
 
