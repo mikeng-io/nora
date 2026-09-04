@@ -30,6 +30,12 @@ from .web.api import register_web_routes
 PRUNE_INTERVAL_SECONDS = 300.0
 DEBOUNCE_SWEEP_INTERVAL_SECONDS = 300.0
 DEBOUNCE_SWEEP_TTL_SECONDS = 3600.0
+# The participation loop ticks fast enough that a closed window is evaluated
+# promptly (its settle window is ~10s; a 2s tick bounds the lag), and sweeps
+# rooms idle for a day — the trigger's cursors are per-room, so the TTL is
+# about a room going quiet for good, not about a conversation gap.
+PARTICIPATION_TICK_SECONDS = 2.0
+PARTICIPATION_SWEEP_TTL_SECONDS = 86400.0
 ADOPTION_START_DELAY_SECONDS = adoption.DEFAULT_START_DELAY_SECONDS
 
 log = logging.getLogger("nora.__main__")
@@ -248,6 +254,17 @@ class App:
             interval_seconds=DEBOUNCE_SWEEP_INTERVAL_SECONDS,
             ttl_seconds=DEBOUNCE_SWEEP_TTL_SECONDS,
         ))
+        # The participation occasion's clock (design/dreamer-agent-loop/35):
+        # `deps.participation_trigger` is None unless `[participation]
+        # enabled` AND composition built a fire path — the flag alone gates
+        # nothing, matching the dream clock's "the flag is what decides,
+        # not a widened interval" shape.
+        if deps.participation_trigger is not None:
+            deps.background.spawn(runtime.participation_loop(
+                deps.participation_trigger, deps.metrics,
+                tick_seconds=PARTICIPATION_TICK_SECONDS,
+                sweep_ttl_seconds=PARTICIPATION_SWEEP_TTL_SECONDS,
+            ))
         # EVERY enabled adapter, not just Signal's. `start_adapters` and
         # `supervise_adapter` were written generic over any number of them; this
         # was the one call site still pinning that to a single-element list, so

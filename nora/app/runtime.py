@@ -148,6 +148,52 @@ async def debounce_sweep_loop(
             metrics.inc("nora_errors_total", stage="debounce_sweep")
 
 
+class _ClosesParticipationWindows(Protocol):
+    """The two methods `participation_loop` needs from
+    `nora.app.participation.ParticipationTrigger` — a narrow local shape like
+    `_PrunableStore`, so the loop cannot reach for `note_message` (the
+    dispatcher's half of the trigger) or the cursor dicts."""
+
+    async def close_due_windows(self) -> int: ...
+
+    def sweep(self, older_than: float) -> int: ...
+
+
+async def participation_loop(
+    trigger: _ClosesParticipationWindows,
+    metrics: Metrics,
+    *,
+    tick_seconds: float,
+    sweep_ttl_seconds: float,
+) -> None:
+    """The participation occasion's clock (design/dreamer-agent-loop/35 §3.5).
+
+    A sibling of `prune_loop`/`debounce_sweep_loop`, not of `dream_loop`:
+    its unit of work is one call over every room's window state, so
+    `prune_loop`'s single try/except is the right shape here (one fault must
+    not take the loop down, and there are no per-scope units to isolate).
+
+    One tick does two things: closes any windows whose room has been quiet
+    for `settle_seconds` (running the ONE evaluation each is owed), and
+    sweeps rooms idle past `sweep_ttl_seconds` so the trigger's per-room
+    cursors stay bounded. It exists only when `[participation] enabled` —
+    the composition root's decision, not this loop's.
+    """
+    log.info("participation loop started: tick every %gs", tick_seconds)
+    while True:
+        await asyncio.sleep(tick_seconds)
+        try:
+            evaluated = await trigger.close_due_windows()
+            if evaluated:
+                log.info("participation: evaluated %d closed window(s)", evaluated)
+            dropped = trigger.sweep(sweep_ttl_seconds)
+            if dropped:
+                log.info("participation sweep dropped %d stale room(s)", dropped)
+        except Exception:
+            log.exception("participation tick failed")
+            metrics.inc("nora_errors_total", stage="participation")
+
+
 @dataclass(frozen=True)
 class SupervisedAdapter:
     """A platform name paired with a zero-arg coroutine factory that runs its

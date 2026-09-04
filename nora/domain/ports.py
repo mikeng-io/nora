@@ -501,6 +501,12 @@ class EngagementRequest:
     message: NormalizedMessage
     decision: EngageDecision
     tag_id: str
+    # Which occasion the turn is answering. "tag" for everything the
+    # engagement pipeline handles today; the recovery branches below gate on
+    # it so that a "participation" request (design/dreamer-agent-loop/35) —
+    # should one ever be admitted here — can never have a draft delivered
+    # FOR it: no grounded value is silence there, not a recovered message.
+    occasion: str = "tag"
 
 
 @dataclass(frozen=True)

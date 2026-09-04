@@ -74,6 +74,7 @@ def build(
     on_delivered: Any = None,
     cacheable_tools: frozenset[str] = frozenset(),
     tool_call_log_store: Any = None,
+    send_permitted: bool = True,
 ) -> DeliveryHandle:
     """Build the pair `invoke` needs.
 
@@ -97,6 +98,13 @@ def build(
     a number nobody had edited was doing the refusing. Passing `None` is a
     decision (the offline and eval compositions genuinely have no roster and no
     preview fetcher); omitting the argument is a `TypeError`.
+
+    `send_permitted` defaults True and only the participation occasion ever
+    passes False (its SEND cooldown — design/dreamer-agent-loop/35 §10.3). It is
+    deliberately NOT required like `audience`/`composer`: a default here has no
+    wrong claim available to it (True is the behaviour every pre-participation
+    caller already has), whereas those two would get a missing value WRONG while
+    looking right.
     """
     # DEC-89: one carrier per turn, built HERE because this is the only place
     # both users of it are in scope — the `Deliverer` below, and (via the
@@ -124,6 +132,7 @@ def build(
         on_delivered=on_delivered,
         composer=composer,
         links=links,
+        send_permitted=send_permitted,
     )
     # `budgets` and `terminal` travel together and come from the same place
     # (`ToolRegistry`) — what a tool costs and whether calling it ends the turn

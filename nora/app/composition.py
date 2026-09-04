@@ -106,6 +106,7 @@ from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
     CompositePolicy,
     MentionPolicy,
+    ParticipationPolicy,
     ReplyToNoraPolicy,
     TriggerTextPolicy,
     VoiceNotePolicy,
@@ -158,6 +159,7 @@ from .fire import (
 )
 from .gatherings import GatheringService
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
+from .participation import ParticipationTrigger
 from .runtime import BackgroundTasks
 
 log = logging.getLogger("nora.app.composition")
@@ -549,6 +551,11 @@ class Dependencies:
     ingest: IngestPipeline
     engagement: EngagementPipeline
     dispatcher: Dispatcher
+    # The participation occasion's quiescence trigger (design/dreamer-agent-
+    # loop/35), None unless `[participation] enabled` AND a fire path was
+    # built. `nora/__main__.py` spawns `runtime.participation_loop` on it —
+    # the same "dependencies, not config" split every other loop uses.
+    participation_trigger: ParticipationTrigger | None
     adapter: SignalAdapter
     # EVERY built adapter, keyed by platform. `adapter` above stays the concrete
     # Signal one because a handful of call sites are still Signal-specific by
@@ -1122,6 +1129,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # body by the time the gate runs. Last so the deterministic text paths
     # keep their reasons, but it fires on any note regardless.
     engage_policies.append(VoiceNotePolicy())
+    # The participation occasion's room gate (design/dreamer-agent-loop/35
+    # §7): LAST, and only when the occasion is enabled at all. It never
+    # engages — it marks an untagged message in an opted-in room with
+    # `EngageDecision.participation`, which the dispatcher NOTES with the
+    # quiescence trigger instead of admitting it. With the flag off, no
+    # room's untagged traffic is even considered.
+    if cfg.participation.enabled:
+        engage_policies.append(ParticipationPolicy(allowlist))
     policy = CompositePolicy(tuple(engage_policies))
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
@@ -1224,6 +1239,33 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # truncations_total` (spec §11) has to land where `/metrics` reads it.
         metrics=metrics,
     )
+    # The participation occasion's runner (design/dreamer-agent-loop/35 §4) —
+    # a SECOND `ModelSource`, the shape the Dreamer below established, and for
+    # the same reason: `tool_choice` lives on `ModelSpec`. The determination
+    # must be able to end in SILENCE, and the tag runner's `FIRST_CALL`
+    # (`required`) pin makes that inexpressible — under it the model must call
+    # something on the first pass, and the only terminal call is `send_reply`.
+    # So this runner composes `auto`: `ReplyGuard.relax` mid-turn then releases
+    # BACK to auto (`tool_choice.require`'s initial-value release), never to
+    # required. None while the occasion is disabled; `FirePath` refuses a
+    # participation turn that arrives with no runner composed.
+    participation_runner: LiveAgentRunner | None = None
+    if cfg.participation.enabled:
+        participation_runner = LiveAgentRunner(
+            models=factory.ModelSource(
+                client=client,
+                spec=factory.ModelSpec(
+                    model=tier.model, max_tokens=tier.max_tokens,
+                    temperature=tier.temperature,
+                    reasoning_effort=tier.reasoning_effort,
+                    tool_choice=tool_choice.AFTER_SPEAKING,
+                ),
+            ),
+            retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
+            skills_dir=cfg.doctrine.dir.parent / "skills",
+            agent_name=cfg.agent.name,
+            metrics=metrics,
+        )
     # `output_tokens` comes from `[llm.limits]`, NOT from `tier.max_tokens`.
     # The two were the same value until 2026-08-06, which made the whole
     # loop's output budget equal to one call's ceiling — see
@@ -2137,7 +2179,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         room_language_max_entries=cfg.language.max_rendered_lexemes,
         room_exchange_max_entries=cfg.language.max_rendered_exchanges,
     )
-    dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
+    # The Dispatcher is built LATE, below the fire path — the participation
+    # trigger it may carry needs `fire_path.speak`, which does not exist yet
+    # here. Nothing between here and there consumes it.
 
     # Boot recovery (§8.2), UNCONDITIONALLY — deliberately NOT behind
     # `cfg.heartbeat.enabled`. A crash leaves rows FIRING, and a heartbeat that
@@ -2195,7 +2239,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # no path to ever reach the group it was asked into. Caught while wiring
     # the poller itself: this gate pre-dates Nora Compute and had no reason
     # to anticipate a third occasion needing it.
-    if cfg.heartbeat.enabled or announcing or cfg.compute.enabled:
+    if cfg.heartbeat.enabled or announcing or cfg.compute.enabled or cfg.participation.enabled:
         # The real fire turn. It holds the SAME collaborators the tag path does
         # — one record store, one Honcho client, one runner, one tool registry —
         # because a fire turn is a turn in the same conversation and a second
@@ -2244,6 +2288,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # retaining a `TagTrace` at all (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
+            # The participation occasion's own runner (§4) — None whenever the
+            # occasion is disabled, which is also exactly when no participation
+            # Event can reach `speak` (no policy marks one, no trigger exists).
+            participation_runner=participation_runner,
         )
     if lost_jobs and fire_path is not None:
         # Spawned, never awaited — a boot must not wait on a model call, and
@@ -2342,6 +2390,37 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # `announcer.run()` above are: a boot must not wait on a background
         # loop, and `BackgroundTasks` holds the strong reference.
         background.spawn(compute_poller.run())
+
+    # The participation occasion (design/dreamer-agent-loop/35): trigger, then
+    # dispatcher. Gated on BOTH the flag and a live `fire_path` — the same
+    # shape as the poller above. The trigger holds `fire_path.speak` as a
+    # BOUND METHOD (`tests/test_composition.py` asserts the same of the
+    # heartbeat's `_fire`), and the SAME `slots` every other path into a
+    # conversation holds — two would be two locks and no serialisation at all.
+    #
+    # The LOOP (`nora.app.runtime.participation_loop`) is spawned in
+    # `nora/__main__.py` from `deps.participation_trigger`, like every other
+    # background clock — this section only builds the trigger itself.
+    participation_trigger: ParticipationTrigger | None = None
+    if cfg.participation.enabled and fire_path is not None:
+        participation_trigger = ParticipationTrigger(
+            speak=fire_path.speak,
+            slots=slots,
+            settle_seconds=cfg.participation.settle_seconds,
+            cooldown_seconds=cfg.participation.cooldown_minutes * 60,
+        )
+    elif cfg.participation.enabled:
+        # Reachable only if the fire-path gate above stopped including
+        # `cfg.participation.enabled` — loud rather than inert, because a
+        # trigger-less participation flag would otherwise look healthy.
+        log.error(
+            "participation.enabled = true but no fire path was built — no "
+            "participation turn can ever run. Check the FirePath gate."
+        )
+    dispatcher = Dispatcher(
+        ingest=ingest, engagement=engagement, background=background,
+        participation=participation_trigger,
+    )
 
     # ---- the Dreamer runtime (substrate plan Phase 2) --------------------
     #
@@ -2621,6 +2700,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         dispatcher=dispatcher, adapter=adapter, registry=registry,
+        participation_trigger=participation_trigger,
         account=account, doctrine=doctrine,
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client, reminders=reminders,
