@@ -30,7 +30,10 @@ from nora.agent.whereis import Circle
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
+from nora.domain.facts import Fact
 from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.notes import Note, NoteRevision
+from nora.domain.standing import Standing
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql.engine import create_sql_engine
 from nora.obs.metrics import Metrics
@@ -59,6 +62,13 @@ from .agent_runner import LiveAgentRunner
 #: so the harness room (also just this person) is a verified subset and the
 #: R-31 disclosure gate PERMITS `where_is`/`saved_places`.
 _EVAL_PERSON_ID = "miles_novak"
+
+#: The workspace `nora.policy.permissive_policy()` resolves EVERY conversation
+#: to (`_PermissivePolicy.conversation`'s hardcoded default) — the note and
+#: fact tiers are keyed on `Conversation.workspace` (DEC-105), so a seed read
+#: under any other workspace string would seed rows the eval room's assembler
+#: can never reach, silently discarding the seed rather than injecting it.
+_EVAL_WORKSPACE = "nora"
 
 #: The SHIPPED table, deliberately WITHOUT `[llm.budgets]`. An eval measures the
 #: agent as the repo defines it, so runs stay comparable across deployments and
@@ -223,18 +233,32 @@ class ProductionSeed:
     keyed by person id.
 
     These are the read surfaces the eval path exercises (`FakeRecordStore` only
-    serves `recent(...)` and `FakeMemoryStore` serves `peer_card` from `cards`),
-    so seeding exactly those is what changes the model-visible prompt without
-    pretending the eval is something it is not.
+    serves `recent(...)`, `FakeMemoryStore` serves `peer_card` from `cards`,
+    and `InMemoryStandingStore`/`InMemoryNoteStore`/`InMemoryFactStore` serve
+    `standing`/`notes`/`facts`), so seeding exactly those is what changes the
+    model-visible prompt without pretending the eval is something it is not.
+
+    `standing` is the single latest row across every conversation, remapped
+    onto the eval room by the caller (`evals.harness.run_case`) — there is no
+    "the eval room's own position" in production, so the closest production
+    shape is whatever position Nora most recently held anywhere. `notes` pairs
+    a `Note` with its HEAD `NoteRevision` (what `InMemoryNoteStore.standing`
+    reads), and `facts` are standing (non-superseded) `Fact` rows — both read
+    under `_EVAL_WORKSPACE` so they land where the eval's `permissive_policy()`
+    resolves every room to (see that constant's docstring).
     """
 
     recents: tuple[TranscriptRow, ...] = ()
     cards: dict[str, list[str]] = field(default_factory=dict)
     conclusions: dict[str, list[str]] = field(default_factory=dict)
+    standing: Standing | None = None
+    notes: tuple[tuple[Note, NoteRevision], ...] = ()
+    facts: tuple[Fact, ...] = ()
 
 
 async def build_production_seed(
     cfg: Config, *, recents_limit: int = 12,
+    notes_limit: int = 20, facts_limit: int = 20,
 ) -> ProductionSeed:
     """Read a production-shaped context snapshot from the REAL stores
     (Postgres transcript + Honcho peer card), read-only, for `ProductionSeed`.
@@ -264,6 +288,9 @@ async def build_production_seed(
         )
     engine = create_sql_engine(database_url)
     recents: list[TranscriptRow] = []
+    standing: Standing | None = None
+    notes: list[tuple[Note, NoteRevision]] = []
+    facts: list[Fact] = []
     try:
         async with engine.connect() as conn:
             result = await conn.execute(
@@ -275,6 +302,78 @@ async def build_production_seed(
                 {"n": recents_limit},
             )
             rows = result.all()
+
+            # Standing: the single latest position across every conversation —
+            # there is no "the eval room's own position" in production, so the
+            # closest shape is whatever Nora most recently held anywhere. The
+            # caller remaps `platform`/`conversation_id` onto the eval room
+            # (S4's key), never this function — the eval room's ids are an
+            # `evals/` concern this module has no business naming.
+            standing_row = (await conn.execute(sa.text(
+                "SELECT platform, conversation_id, body, fold_count, updated_at, "
+                "consumed_verdict_tag, last_folded_row_id FROM standing "
+                "ORDER BY updated_at DESC LIMIT 1"
+            ))).one_or_none()
+            if standing_row is not None:
+                standing = Standing(**dict(standing_row._mapping))
+
+            # Notes: every live (unretired) note in the eval workspace, paired
+            # with its HEAD revision — the exact shape `InMemoryNoteStore.
+            # standing` reads back (module docstring), so seeding `.notes`/
+            # `.revisions` from these pairs reproduces what `SqlNoteStore.
+            # standing` would have returned in production.
+            note_rows = (await conn.execute(
+                sa.text(
+                    "SELECT n.id, n.workspace, n.title, n.description, "
+                    "n.uncertainty, n.closing_condition, n.anchor_date, "
+                    "n.anchor_entity_ids, n.established_in, n.created_at, "
+                    "n.head_revision_id, n.retired_at, n.replaced_by, "
+                    "n.retire_reason, n.revisit_at, n.strikes, "
+                    "n.last_wake_revision_id, n.event_id, n.reminder_id, "
+                    "r.id AS rev_id, r.note_id AS rev_note_id, "
+                    "r.body AS rev_body, r.parent_revision_id, r.written_at, "
+                    "r.established_by, r.instruction_sha256, r.model "
+                    "FROM note n JOIN note_revision r "
+                    "ON r.id = n.head_revision_id "
+                    "WHERE n.workspace = :ws AND n.retired_at IS NULL "
+                    "ORDER BY n.created_at LIMIT :n"
+                ),
+                {"ws": _EVAL_WORKSPACE, "n": notes_limit},
+            )).all()
+            for nrow in note_rows:
+                note = Note(
+                    id=nrow.id, workspace=nrow.workspace, title=nrow.title,
+                    description=nrow.description, uncertainty=nrow.uncertainty,
+                    closing_condition=nrow.closing_condition,
+                    anchor_date=nrow.anchor_date,
+                    anchor_entity_ids=tuple(nrow.anchor_entity_ids),
+                    established_in=nrow.established_in, created_at=nrow.created_at,
+                    head_revision_id=nrow.head_revision_id,
+                    retired_at=nrow.retired_at, replaced_by=nrow.replaced_by,
+                    retire_reason=nrow.retire_reason, revisit_at=nrow.revisit_at,
+                    strikes=nrow.strikes,
+                    last_wake_revision_id=nrow.last_wake_revision_id,
+                    event_id=nrow.event_id, reminder_id=nrow.reminder_id,
+                )
+                revision = NoteRevision(
+                    id=nrow.rev_id, note_id=nrow.rev_note_id, body=nrow.rev_body,
+                    parent_revision_id=nrow.parent_revision_id,
+                    written_at=nrow.written_at, established_by=nrow.established_by,
+                    instruction_sha256=nrow.instruction_sha256, model=nrow.model,
+                )
+                notes.append((note, revision))
+
+            # Facts: standing (non-superseded) rows in the eval workspace —
+            # `fact`'s columns match `Fact`'s fields by name, so a plain
+            # `SELECT *` maps straight into the dataclass by keyword.
+            fact_rows = (await conn.execute(
+                sa.text(
+                    "SELECT * FROM fact WHERE workspace = :ws "
+                    "AND superseded_at IS NULL ORDER BY created_at DESC LIMIT :n"
+                ),
+                {"ws": _EVAL_WORKSPACE, "n": facts_limit},
+            )).all()
+            facts.extend(Fact(**dict(frow._mapping)) for frow in fact_rows)
     finally:
         await engine.dispose()
     for row in rows:
@@ -338,4 +437,5 @@ async def build_production_seed(
     finally:
         await honcho.aclose()
     return ProductionSeed(recents=tuple(recents), cards=cards,
-                          conclusions=conclusions)
+                          conclusions=conclusions, standing=standing,
+                          notes=tuple(notes), facts=tuple(facts))
