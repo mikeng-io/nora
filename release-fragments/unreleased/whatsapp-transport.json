@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "WhatsApp transport: a containerized Baileys bridge (whatsapp-bridge) plus a third platform adapter, admitting WhatsApp groups to the friends workspace.",
+  "details": [
+    "New compose service whatsapp-bridge (deploy/whatsapp-bridge/, Node 20 + @whiskeysockets/baileys 7.0.0-rc13): SSE push of inbound events to Nora, HTTP send/edit/send-media/react back, LID<->phone resolution from the session's lid-mapping files, and drop-and-count overflow reporting instead of a silent queue drop. Private nora network, no published ports, session on ./state/whatsapp.",
+    "New nora/platform/whatsapp adapter (third PlatformAdapter realization): JID normalization contract (group = id@g.us verbatim; 1:1 = phone@s.whatsapp.net), engagement via the existing MentionPolicy/ReplyToNoraPolicy (structural @mentions and reply-to-Nora, matched against both the bot's phone and its lid), wired into AdapterRegistry behind [platforms.whatsapp] enabled = false.",
+    "Pairing is an operator step: docker compose run --rm whatsapp-bridge --pair --phone <digits> prints a pairing code for the phone app; the saved session then boots normally.",
+    "Inbound media (images/voice notes/documents) is carried to the ambient tier as audited [image]/[voice note] events; custody and transcription are a later phase, but voice notes DO trigger engagement via the global VoiceNotePolicy (operator 2026-08-26 directive) even before transcription lands."
+  ],
+  "limitations": [
+    "1:1 chats stay deny-by-default until the DM study lands; the sender refuses dm targets outright.",
+    "Voice notes are ingested, audited, AND engage Nora via the global VoiceNotePolicy (2026-08-26 directive) even without transcript; media custody + transcription (fetch_token) is the later phase.",
+    "Not yet paired or run against real WhatsApp; first live pairing may surface Baileys protocol-churn fixes (bump the pin, rebuild, re-pair)."
+  ]
+}

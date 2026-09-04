@@ -14,6 +14,7 @@ from nora.obs.metrics import Metrics
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.platform.signal.adapter import SignalAdapter
+from nora.platform.whatsapp.adapter import WhatsAppAdapter
 
 
 @dataclass(frozen=True)
@@ -30,9 +31,16 @@ class _DiscordCfg:
 
 
 @dataclass(frozen=True)
+class _WhatsAppCfg:
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:1"
+
+
+@dataclass(frozen=True)
 class _PlatformsCfg:
     signal: _SignalCfg
     discord: _DiscordCfg = field(default_factory=_DiscordCfg)
+    whatsapp: _WhatsAppCfg = field(default_factory=_WhatsAppCfg)
 
 
 async def _accounts_server(aiohttp_server, payload):
@@ -177,6 +185,70 @@ async def test_discord_resolve_identity_failing_fails_the_whole_registry(monkeyp
         await AdapterRegistry.from_config(
             cfg, metrics=Metrics(), discord_token="tok"  # noqa: S106 -- test fixture value
         )
+
+
+async def _whatsapp_self_server(aiohttp_server, *, status: int = 200):
+    """A stand-in for the bridge's `GET /self` (design/whatsapp-adoption/
+    03-transport-contract.md)."""
+
+    async def handler(request):
+        if status != 200:
+            return web.json_response({"error": "not_connected"}, status=status)
+        return web.json_response({"phone": "85299900000", "lid": "60000000000001"})
+
+    app = web.Application()
+    app.router.add_get("/self", handler)
+    return await aiohttp_server(app)
+
+
+async def test_a_disabled_whatsapp_platform_is_built_by_no_one():
+    cfg = _PlatformsCfg(
+        signal=_SignalCfg(base_url="http://127.0.0.1:1", account="+852999", enabled=False),
+        whatsapp=_WhatsAppCfg(enabled=False),
+    )
+
+    registry = await AdapterRegistry.from_config(cfg, metrics=Metrics())
+
+    assert "whatsapp" not in registry
+
+
+async def test_an_enabled_whatsapp_platform_is_built_and_its_identity_resolved(
+    aiohttp_server,
+):
+    """Unlike Discord there is no token step: the bridge holds the session, so
+    the whole build is `GET /self` against it — pointed at a real (test) HTTP
+    server rather than monkeypatched, because `base_url` IS the
+    operator-configurable field here."""
+    server = await _whatsapp_self_server(aiohttp_server)
+    base_url = str(server.make_url("")).rstrip("/")
+    cfg = _PlatformsCfg(
+        signal=_SignalCfg(base_url="http://127.0.0.1:1", account="+852999", enabled=False),
+        whatsapp=_WhatsAppCfg(enabled=True, base_url=base_url),
+    )
+
+    registry = await AdapterRegistry.from_config(cfg, metrics=Metrics())
+
+    assert "whatsapp" in registry
+    assert isinstance(registry.get("whatsapp"), WhatsAppAdapter)
+    identity = registry.identity_for("whatsapp")
+    assert identity.primary == "+85299900000"
+    # BOTH id forms are aliases — the MentionPolicy membership test must work
+    # whether a group mention arrives as the bot's phone or its lid.
+    assert identity.aliases >= {"+85299900000", "60000000000001"}
+
+
+async def test_an_unpaired_bridge_fails_fast(aiohttp_server):
+    """`GET /self` answering 503 (not paired / socket down) is a startup
+    failure, not a deaf adapter allowed to build."""
+    server = await _whatsapp_self_server(aiohttp_server, status=503)
+    base_url = str(server.make_url("")).rstrip("/")
+    cfg = _PlatformsCfg(
+        signal=_SignalCfg(base_url="http://127.0.0.1:1", account="+852999", enabled=False),
+        whatsapp=_WhatsAppCfg(enabled=True, base_url=base_url),
+    )
+
+    with pytest.raises(AdapterRegistryError, match="identity"):
+        await AdapterRegistry.from_config(cfg, metrics=Metrics())
 
 
 async def test_mention_match_set_covers_every_platform_not_just_signal():

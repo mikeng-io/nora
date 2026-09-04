@@ -32,3 +32,14 @@ phone = "+85212345678"
 # [[persons.miles.signal]]
 # label = "business"
 # phone = "+85287654321"
+
+# WhatsApp (design/whatsapp-adoption/): two matchable kinds, `phone` and `lid`
+# (nora/domain/identity.py — the vocabulary entry already exists). `phone` is
+# the same "+<digits>" shape Signal uses. `lid` is WhatsApp's Linked Identity
+# digits (Baileys surfaces many group senders as <digits>@lid instead of a
+# phone JID); list BOTH when you have them — `nora persons pending` prints
+# whichever form an unmapped sender arrived as.
+#
+# [[persons.miles.whatsapp]]
+# phone = "+85212345678"
+# lid   = "60000000000001"

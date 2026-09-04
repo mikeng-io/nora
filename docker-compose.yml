@@ -65,6 +65,57 @@ services:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
 
+  # whatsapp-bridge — Nora's WhatsApp transport (design/whatsapp-adoption/).
+  # A containerized Baileys (Node) daemon, the transport TWIN of signal-cli
+  # above: same private `nora` network, same no-published-ports posture, same
+  # ./state/ volume discipline. The bridge holds the full WhatsApp session
+  # (a paired companion device on the bot's dedicated number) — the narrower
+  # its netns, the smaller the blast radius. Reachable ONLY as
+  # whatsapp-bridge:18081 on the `nora` network.
+  #
+  # FIRST RUN needs pairing, the one step signal-cli doesn't have: WhatsApp
+  # has no headless registration, so an operator runs
+  #   docker compose run --rm whatsapp-bridge --pair --phone <digits>
+  # once (prints a pairing code to type into the phone app: Linked Devices →
+  # Link with phone number), then normal `docker compose up -d` boots with
+  # the saved session. See design/whatsapp-adoption/01-bridge-container.md.
+  whatsapp-bridge:
+    build:
+      context: ./deploy/whatsapp-bridge
+      # network: host is REQUIRED, not a preference — same standing
+      # operational constraint 1 as signal-cli above: BuildKit's default
+      # bridge cannot resolve deb.debian.org on this host (systemd-resolved
+      # stub 127.0.0.53), and this Dockerfile's `apt-get install curl` (the
+      # healthcheck below curls /health; node:20-slim ships NO curl — the
+      # design review's B1) would otherwise stall/fail the build.
+      network: host
+    image: whatsapp-bridge:0.1.0
+    container_name: whatsapp-bridge
+    restart: unless-stopped
+    networks: [nora]
+    volumes:
+      # Baileys multi-file auth state (encryption keys, device creds,
+      # lid-mapping-*.json). Losing this loses the pairing — not just
+      # history. Same wall as ./state/signal-cli: deliberately NOT under
+      # ./data (Nora must not read transport credentials). chmod 700; never
+      # commit.
+      - ./state/whatsapp:/app/session
+    command: ["node", "bridge.js", "--port", "18081", "--session", "/app/session"]
+    healthcheck:
+      # Proves the bridge's HTTP layer serves. It CANNOT prove the WhatsApp
+      # websocket is alive — same lesson the signal-cli healthcheck comment
+      # above records. The real detector lives one layer up: the bridge emits
+      # SSE heartbeats, Nora's /health publishes the per-platform
+      # last_event_age_seconds, and deploy/watchdog.sh alerts on it aging.
+      test: ["CMD-SHELL", "curl -fsS -m 5 http://127.0.0.1:18081/health || exit 1"]
+      interval: 60s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
   nora:
     build:
       context: .
