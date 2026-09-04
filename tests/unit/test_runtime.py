@@ -15,6 +15,7 @@ import logging
 import time
 from dataclasses import dataclass
 
+from nora.agent.dreamer import AdaptorSchedule
 from nora.app.runtime import (
     BackgroundTasks,
     SupervisedAdapter,
@@ -1219,6 +1220,108 @@ async def test_a_watermarkless_adaptor_gets_an_empty_batch_and_no_cursor_read():
     # its `"language"` row on the same tick, and asserting over every row would
     # make this test about the legacy path instead of about this one.
     assert [c for c in language.advance_calls if c[0] == "facts"] == []
+
+
+# ---- AdaptorSchedule, universal (32 §3.1 for the watermark-bearing,
+# 33 §5 N1a for the watermark-free)
+
+
+async def test_a_scheduled_watermark_free_adaptor_fires_once_then_holds_for_the_interval():
+    """The non-watermark schedule path: the FIRST tick fires (nothing has
+    fired yet) and every later tick inside `min_interval_seconds` does not.
+    No `lag > 0` requirement — this fake reports zero lag throughout, and the
+    fire happens anyway, which is what makes a silent room's notes retire on
+    the calendar rather than on backlog."""
+    language = _KeyedLanguage()
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("curator", uses_watermark=False)],
+        runtime=runner,
+        schedules={"curator": AdaptorSchedule(
+            min_interval_seconds=1e9, batch_limit=10)},
+    ), ticks=0.08)
+
+    assert [c for c in runner.calls if c[0] == "curator"] == [("curator", "g1", 0)]
+
+
+async def test_a_scheduled_watermark_free_adaptor_fires_again_after_the_interval():
+    """The other half of the clock: the interval elapses and the adaptor
+    fires again — bounded above by the tick count (the interval is holding)
+    and below by more than one (the first fire was not a latch)."""
+    language = _KeyedLanguage()
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("curator", uses_watermark=False)],
+        runtime=runner,
+        schedules={"curator": AdaptorSchedule(
+            min_interval_seconds=0.03, batch_limit=10)},
+    ), ticks=0.12)
+
+    calls = [c for c in runner.calls if c[0] == "curator"]
+    assert 2 <= len(calls) < 12
+
+
+async def test_a_watermark_free_adaptor_without_a_schedule_still_runs_every_tick():
+    """The invariant the schedule path must not disturb: NO entry in the
+    mapping is every-tick, exactly as before schedules existed."""
+    language = _KeyedLanguage()
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({}), language, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("curator", uses_watermark=False)],
+        runtime=runner,
+    ), ticks=0.08)
+
+    assert len([c for c in runner.calls if c[0] == "curator"]) > 1
+
+
+async def test_a_scheduled_watermark_bearing_adaptor_still_needs_backlog_and_age():
+    """32 §3.1, pinned against the reorder: the schedule moving BEFORE the
+    watermark early return must not shift the watermark-bearing shape —
+    `lag > 0 and age >= min_interval_seconds`, both halves required."""
+    runner = _RecordingRunner()
+    schedules = {"facts": AdaptorSchedule(min_interval_seconds=1e9, batch_limit=10)}
+
+    # Backlog but a YOUNG row: the interval has not elapsed, so no fire.
+    young = _KeyedLanguage(lag=99, age=0.0)
+    await _tick(dream_loop(
+        _FakeRecord({"g1": [_row(1)]}), young, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("facts")], runtime=runner, schedules=schedules,
+    ))
+    assert [c for c in runner.calls if c[0] == "facts"] == []
+
+    # An OLD row but no backlog: the daily batch is data-gated, so no fire.
+    quiet_room = _KeyedLanguage(lag=0, age=1e9)
+    await _tick(dream_loop(
+        _FakeRecord({}), quiet_room, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("facts")], runtime=runner, schedules=schedules,
+    ))
+    assert [c for c in runner.calls if c[0] == "facts"] == []
+
+    # Both: fires, and on the schedule's own batch limit.
+    due = _KeyedLanguage(lag=99, age=1e9)
+    await _tick(dream_loop(
+        _FakeRecord({"g1": [_row(1), _row(2)]}), due, [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("facts")], runtime=runner, schedules=schedules,
+    ))
+    assert ("facts", "g1", 2) in runner.calls
 
 
 async def test_the_watermark_is_held_when_the_run_reports_unavailable():

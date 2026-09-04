@@ -448,6 +448,7 @@ async def _dream_adaptor_once(
     key: str, safety_lag: int, quiet_seconds: float, max_age_seconds: float,
     batch_limit: int,
     schedules: Mapping[str, AdaptorSchedule] | None = None,
+    last_fired_at: dict[str, float] | None = None,
 ) -> str | None:
     """One adaptor, one key, one cycle — `_dream_once`'s shape generalised off
     the hardcoded `"language"` cursor and off `RoomConsolidator`.
@@ -456,7 +457,14 @@ async def _dream_adaptor_once(
     age condition and runs on every tick with an empty batch;
     `RoomPortraitSynthesizer` is the standing precedent for a dream-loop
     participant with none of those, and the fact adaptor is the second — its
-    input is the candidate table, not a raw-message proxy for it.
+    input is the candidate table, not a raw-message proxy for it. The ONE
+    exception is a watermark-free adaptor with an `AdaptorSchedule` entry: it
+    fires on elapsed time — `now - last_fired >= min_interval_seconds`, with
+    no backlog requirement, because there is no watermark to age and no lag
+    to read (design/dreamer-agent-loop/33 §5 N1a). `last_fired_at` is that
+    clock, the same per-(adaptor, key) shape as `failures`/`last_failure_at`
+    in `dream_loop`; a caller that cannot supply one gets every-tick, the
+    pre-schedule behaviour.
 
     **Returns the run's STATUS, or `None` when the fire conditions did not
     fire.** The caller needs it: `DreamerRuntime.run` absorbs every failure
@@ -467,7 +475,19 @@ async def _dream_adaptor_once(
     always-unavailable runtime, versus 1 against a runtime that raises. Worse,
     the success path was CLEARING backoff accrued from an unrelated failure.
     """
+    sched = (schedules or {}).get(adaptor.name)
     if not adaptor.uses_watermark:
+        if sched is None or last_fired_at is None:
+            return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
+        # A watermark-free adaptor on its own clock fires on ELAPSED TIME,
+        # never on backlog: there is no cursor to age, and requiring `lag > 0`
+        # would make a silent room's schedule never fire at all. The first
+        # tick fires (no recorded fire), then the interval holds.
+        unit = f"{adaptor.name}:{key}"
+        now = time.monotonic()
+        if now - last_fired_at.get(unit, float("-inf")) < sched.min_interval_seconds:
+            return None
+        last_fired_at[unit] = now
         return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
 
     watermark = await language.watermark_for(
@@ -486,7 +506,6 @@ async def _dream_adaptor_once(
         consolidator_name=adaptor.name, scope_id=key)
 
     fires: bool
-    sched = (schedules or {}).get(adaptor.name)
     if sched is not None:
         # The adaptor's own clock (design/dreamer-agent-loop/32 §3.1): backlog
         # present AND the watermark row at least `min_interval_seconds` old —
@@ -653,6 +672,10 @@ async def dream_loop(
     # function-local to this one `dream_loop` call, exactly like `failures`
     # and `running` beside it.
     last_failure_at: dict[str, float] = {}
+    # A scheduled watermark-free adaptor's own clock (see `_dream_adaptor_once`):
+    # per-(adaptor, key) last-fire monotonic timestamps, function-local to this
+    # one `dream_loop` call, exactly like `failures` and `last_failure_at`.
+    last_fired_at: dict[str, float] = {}
     tasks: set[asyncio.Task[None]] = set()
 
     def _keys_for(adaptor: DreamAdaptor) -> Sequence[str]:
@@ -696,7 +719,7 @@ async def dream_loop(
                 language=language, metrics=metrics, key=key,
                 safety_lag=safety_lag, quiet_seconds=quiet_seconds,
                 max_age_seconds=max_age_seconds, batch_limit=batch_limit,
-                schedules=schedules,
+                schedules=schedules, last_fired_at=last_fired_at,
             )
             if status == "unavailable":
                 # **A FAILURE, even though nothing raised.**

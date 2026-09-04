@@ -55,6 +55,8 @@ members:
   - 30-review-response.md
   - 31-recognition.md
   - 32-fact-dreamer-schedule.md
+  - 33-note-dreamer-schedule.md
+  - 34-note-dreamer-consolidation.md
   - 35-ambient-participation.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}

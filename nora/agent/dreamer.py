@@ -147,13 +147,18 @@ class AdaptorSchedule:
     `@runtime_checkable` protocol fails `isinstance` for every adaptor that
     does not declare it (measured on Python 3.13), which would break all six
     existing adaptors at once. An adaptor with no entry in the mapping keeps
-    the shared `[language]` schedule — `lag > safety_lag`, `quiet_seconds`,
-    `max_age_seconds` — exactly as an adaptor with no budget entry gets
-    `default_budget` by omission.
+    its unscheduled behaviour — a watermark-bearing adaptor the shared
+    `[language]` schedule (`lag > safety_lag`, `quiet_seconds`,
+    `max_age_seconds`), a watermark-free one every tick — exactly as an
+    adaptor with no budget entry gets `default_budget` by omission.
 
-    `min_interval_seconds` is the floor between runs: a scheduled adaptor
-    fires when there is unread backlog (`lag > 0`) AND the watermark row's
-    `updated_at` is at least this old. `batch_limit` replaces the shared cap
+    `min_interval_seconds` is the floor between runs, read two ways. A
+    watermark-BEARING adaptor fires when there is unread backlog (`lag > 0`)
+    AND the watermark row's `updated_at` is at least this old. A
+    watermark-FREE adaptor has no cursor to age, so it fires on elapsed time
+    alone — `now - last_fired >= min_interval_seconds`, no backlog required
+    (design/dreamer-agent-loop/33 §5 N1a), which is what lets a time-driven
+    cron fire in a silent room. `batch_limit` replaces the shared cap
     for that adaptor's `record.since` read. `max_items` overrides the
     runtime's envelope cap (`MAX_ITEMS`) for that adaptor — a daily
     1000-message batch can legitimately yield more than 64 candidate claims,
