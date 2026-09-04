@@ -33,7 +33,9 @@ async def test_lists_a_real_skill_by_name_and_description(tmp_path: Path):
         {
             "name": "navigation",
             "description": "Load when planning a journey.",
-            "instructions": "Body text — surfaced to the private portal since 2026-09-03 (operator).",
+            "instructions": (
+                "Body text — surfaced to the private portal since 2026-09-03 (operator)."
+            ),
         },
     ]
 

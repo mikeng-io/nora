@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from strands.hooks.events import BeforeInvocationEvent
@@ -511,8 +511,10 @@ def test_r29_survives_activation_only_the_operator_dir_loads(tmp_path):
     asyncio.run(plugin.init_agent(agent))
     ctx = SimpleNamespace(agent=agent, tool_use={}, invocation_state={})
 
-    # Only the operator's skill loaded; naming it is the intended activation.
-    assert [s.name for s in plugin.get_available_skills(agent)] == ["navigation"]
+    # Only the operator's skills loaded; naming one is the intended activation.
+    # (navigation + personalization are the operator directory's two skills,
+    # sorted alphabetically by the loader.)
+    assert [s.name for s in plugin.get_available_skills(agent)] == ["navigation", "personalization"]
     ok = asyncio.run(plugin.skills(skill_name="navigation", tool_context=ctx))
     assert "Wayfinding" in ok
 
@@ -535,7 +537,7 @@ def test_r29_survives_activation_only_the_operator_dir_loads(tmp_path):
         assert "not found" in res.lower(), candidate
 
     # Nothing a message named changed the loaded set; only navigation activated.
-    assert [s.name for s in plugin.get_available_skills(agent)] == ["navigation"]
+    assert [s.name for s in plugin.get_available_skills(agent)] == ["navigation", "personalization"]
     assert plugin.get_activated_skills(agent) == ["navigation"]
 
 
@@ -582,7 +584,7 @@ async def test_invoke_catches_max_tokens_and_carries_the_partial_text():
     from nora.domain.errors import PartialReplyError
 
     class _FakeAgent:
-        messages = [{"role": "assistant", "content": [
+        messages: ClassVar[list[dict[str, str]]] = [{"role": "assistant", "content": [
             {"text": "密碼寫咗喺島上面，去搵下啦"},
         ]}]
 
@@ -613,7 +615,7 @@ async def test_invoke_carries_an_empty_partial_when_only_tool_use_blocks():
     from nora.domain.errors import PartialReplyError
 
     class _FakeAgent:
-        messages = [{"role": "assistant", "content": [
+        messages: ClassVar[list[dict[str, str]]] = [{"role": "assistant", "content": [
             {"text": "The selected tool send_reply's tool use "
                      "was incomplete due to maximum token limits "
                      "being reached."},
