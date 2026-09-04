@@ -23,6 +23,17 @@ is correct. To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="heartbeat"}` alongside
    `nora_reminders_fired_total{outcome}` and `nora_heartbeat_last_tick_age_seconds`.
 
+   The participation occasion (design/dreamer-agent-loop/35, once enabled) is the
+   third audience on this series, and it changes what "silent" MEANS: a
+   participation turn that says nothing is the HEALTHY outcome, so it never lands
+   here — it counts on `nora_participation_silence_total`, and a spoke turn on
+   `nora_participation_spoke_total` (their ratio is how often the occasion finds
+   grounded value). What lands here under `audience="participation"` is only a
+   malfunction of the ordinary kind — a budget-cut turn or a delivery failure —
+   so participation's own budget expression is
+   `nora_silent_failures_total{audience="participation"} / (nora_participation_silence_total + nora_participation_spoke_total)`,
+   NOT a share of the tag budget.
+
    **A reminder can also be hours late with all three of those reading healthy.**
    A tick that finds the conversation's slot held by a tag leaves the rows
    `pending` and moves on: nothing fired, nothing failed, and the tick itself

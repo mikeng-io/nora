@@ -73,7 +73,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_silent_failures_total",
         "Failures kept silent from the group, by reason and by which path was "
-        "speaking (audience=\"tag\" | \"heartbeat\").",
+        "speaking (audience=\"tag\" | \"heartbeat\" | \"participation\").",
         # `audience` is the ONE label the heartbeat adds to an existing series
         # (design spec §6.2, §13), and it is added rather than the fire path
         # getting its own silent-failure series, because isolation-by-omission
@@ -551,10 +551,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_engagement_outcomes_total",
         "Every admitted tag, by how the turn ended (see TagTrace.VALID_OUTCOMES "
-        "plus \"unattributed\"). recovered vs send_reply is DEC-93's tell: a "
-        "rising recovered share means the route is not honouring "
-        "tool_choice=required.",
-        ("outcome",),
+        "plus \"unattributed\"), and by audience. recovered vs send_reply is "
+        "DEC-93's tell: a rising recovered share means the route is not "
+        "honouring tool_choice=required. `audience` was added before the "
+        "participation occasion shipped (design/dreamer-agent-loop/35 §6): the "
+        "series named only tag turns when it was created, and a participation "
+        "outcome landing here unlabelled would be indistinguishable from one.",
+        ("outcome", "audience"),
     ),
     _CounterSpec(
         "nora_presence_disclosure_waived_total",
@@ -1781,6 +1784,28 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "named for where the bound is APPLIED (`store.method`), never for the "
         "caller; the vocabulary is `nora.domain.bounds.BoundSite`.",
         ("site",),
+    ),
+    # The participation occasion (design/dreamer-agent-loop/35 §6). Silence is
+    # the HEALTHY outcome of a participation turn — the model was offered the
+    # floor and declined — so it gets its own series and NEVER lands in
+    # `nora_silent_failures_total`, whose every reason is a malfunction. The
+    # gate is `ok=True and stop_reason not in BUDGET_STOP_REASONS`: a turn the
+    # budget cut off before it could call the send tool is a malfunction of
+    # the ordinary kind and goes to `nora_silent_failures_total` with
+    # audience="participation", never here.
+    _CounterSpec(
+        "nora_participation_silence_total",
+        "Participation determinations that concluded 'say nothing' (the "
+        "healthy default — design/dreamer-agent-loop/35 §6), by platform. "
+        "Budget-cut turns are NOT here; those are silent failures.",
+        ("platform",),
+    ),
+    _CounterSpec(
+        "nora_participation_spoke_total",
+        "Participation determinations that concluded 'speak' and delivered, "
+        "by platform. Read against nora_participation_silence_total: the "
+        "ratio is how often the occasion finds grounded value.",
+        ("platform",),
     ),
 )
 

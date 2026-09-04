@@ -130,6 +130,7 @@ class Deliverer:
         on_delivered: DeliveredObserver | None = None,
         composer: OutboundComposer | None = None,
         links: LinkCarry | None = None,
+        send_permitted: bool = True,
     ) -> None:
         self._store = store
         self._adapter = adapter
@@ -170,6 +171,16 @@ class Deliverer:
         # where both halves of the wiring are visible at once; a `Deliverer`
         # holding its own private carrier is the inert case, not a broken one.
         self._links = links if links is not None else LinkCarry()
+        # The participation occasion's SEND cooldown (design/dreamer-agent-
+        # loop/35 §10.3), enforced at the last inch: `False` means "evaluate,
+        # but if she concludes 'speak', hold the message". Defaulted True so the
+        # tag path and the heartbeat — which have no cooldown — build unchanged;
+        # only `FirePath.speak(occasion, send_permitted=...)` ever passes False.
+        # The suppression point is in `deliver`, AFTER every guard has measured
+        # the text and BEFORE the audit write: `called` still reads True (the
+        # model did conclude "speak" — the cooldown, not a malfunction, held it),
+        # so the turn never lands in `no_send_call`.
+        self._send_permitted = send_permitted
         self._attempts = 0
         # Every `deliver()` ENTRY, whether or not it survived the guards —
         # distinct from `_attempts`, which counts the ones that reached the
@@ -389,6 +400,22 @@ class Deliverer:
             self._metrics.inc(
                 "nora_silent_failures_total", reason="egress_block",
                 platform=self._target.platform, audience=self._audience,
+            )
+            return False
+
+        # The participation SEND cooldown (design/dreamer-agent-loop/35 §10.3),
+        # placed AFTER every guard above has measured the text — a held message
+        # is still text the model tried to send, and the guards' accounting of
+        # it stays true — and BEFORE `_attempts`, the audit row and the wire:
+        # a cooldown-held message leaves no trace in the room's history, because
+        # the room never heard it. NOT a failure of any kind — no counter moves
+        # (the log line is the shadow-mode review surface; Phase 2 reads these to
+        # judge what she WOULD have said) — and `called` stays True, so this
+        # turn can never be misread as `no_send_call`.
+        if not self._send_permitted:
+            log.info(
+                "send held by the participation cooldown (tag=%s, %d chars)",
+                self._tag_id, len(styled.text),
             )
             return False
 

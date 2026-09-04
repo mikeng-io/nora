@@ -39,7 +39,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # The named test the spec's B.1 table assigns to each rule.
 RULE_TESTS = {
-    "R-1": "test_ambient_never_constructs_agent",
+    # R-1's SECOND clause, revised (design/dreamer-agent-loop/35) — the first
+    # revision of "ambient traffic never reaches the agent". Untagged messages
+    # may now reach the agent ONLY under the participation occasion's gating:
+    # an operator-opted-in room, one quiescence-closed window, one evaluation
+    # through `FirePath.speak`. The renamed test keeps the original pin
+    # (ordinary ambient traffic constructs ZERO agents) and its sibling pins
+    # the exception's gating.
+    "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
     # R-75: the curator, the note tier's only cross-note writer. Named test
     # is the date-only refusal, because it is the one property that decides
     # whether ANY merge happens in production — merge eligibility reads
@@ -51,13 +58,13 @@ RULE_TESTS = {
     # R-1b: R-1's FIRST clause, revised. `nora.app.fire.FirePath` made "only the
     # tagging path may cause a send" false — a fire turn is a send not caused by
     # a tag. R-1 keeps its entry rather than losing it (the DEC-40 precedent
-    # below): its test asserts BOTH clauses and the second one — ambient traffic
-    # never reaches the agent — is untouched and still enforced. But it harnesses
+    # below): its test asserts the ambient clause. But it harnesses
     # only ambient input, so it stays green no matter how many non-tag send paths
     # exist, which makes it no brake at all on the revised clause. R-1b is that
     # brake: `Deliverer` is the only caller of `adapter.send`, it is constructed
     # only by `deliver.build`, and `deliver.build` has exactly two callers — the
-    # tag pipeline and the fire path.
+    # tag pipeline and the fire path. The participation occasion changes NOTHING
+    # here: it goes through `FirePath.speak`, so the two callers remain two.
     "R-1b": "test_only_the_tag_path_and_the_fire_path_can_send",
     "R-2": "test_send_reply_past_the_cap_is_cancelled",
     "R-2b": "test_deliverer_latch_is_single_shot",

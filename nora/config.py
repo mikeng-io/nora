@@ -353,6 +353,33 @@ class EngagementConfig(BaseModel):
     queue: QueueConfig = QueueConfig()
 
 
+class ParticipationConfig(BaseModel):
+    """The participation occasion (design/dreamer-agent-loop/35): Nora MAY speak
+    in a room she was not tagged in, judged once per quiescence-closed window,
+    with silence as the healthy default.
+
+    Ships INERT (`enabled = false`), and even ON it engages nowhere until the
+    operator ALSO opts a room in with `participation = true` on that room's
+    `[[conversations]]` entry in policy.toml — the trust distinction "allowed
+    to answer when tagged" vs "allowed to be spoken to unprompted" is drawn in
+    the policy file, where every other trust distinction lives.
+
+    `settle_seconds` is the quiescence trigger (§3.5): a candidate window opens
+    on a message and CLOSES when the room has been quiet this long; exactly one
+    participation evaluation runs per closed window, with the whole burst in
+    context — never one per message. `cooldown_minutes` caps SENDS, not
+    evaluations (§10.3): at most one participation message per room per window
+    of this length, and an evaluation that concludes "speak" inside the
+    cooldown stays silent.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    settle_seconds: float = Field(default=10.0, gt=0)
+    cooldown_minutes: float = Field(default=10.0, gt=0)
+
+
 class StoreConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -2510,6 +2537,12 @@ class Config(BaseModel):
     # Optional and defaulted — see `ToolsConfig`. Empty means no MCP server is
     # mounted; a config.toml without a `[tools]` section keeps loading.
     tools: ToolsConfig = ToolsConfig()
+    # Optional and defaulted — see `ParticipationConfig`. Ships INERT
+    # (`enabled = false`): off, no `ParticipationTrigger` is built, the
+    # dispatcher drops the participation verdict, and no quiescence window is
+    # ever evaluated. On, it STILL engages nowhere until a room is opted in via
+    # `participation = true` in policy.toml.
+    participation: ParticipationConfig = ParticipationConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
     # Optional and defaulted — see `DreamerConfig`. A config.toml with no

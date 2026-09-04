@@ -43,11 +43,14 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # paste the sha it reports. Updating the sha WITHOUT bumping the version is the
 # one move this table exists to make somebody stop and think about.
 PINNED: dict[str, tuple[int, str]] = {
-    "identity": (6, "dd8390f3c03f2848fa47a2454efd03ab3c9747037a73ade016040b1c841c5a09"),
-    "voice": (17, "e1e0195dc4d8d7cc5cbc04d0800b1481d56a7956f5b02afdb631dce8bf509db2"),
-    "silence": (1, "c5d286f8fa1cc311a7af9b7a8c6995511e0bdb61d674fcaf91bf6fdfdb0fb043"),
-    "conduct": (22, "4d44e8afd588c5de90fc0c697b6d272a3ab61354bd8318c7a118fb55f9e2c89b"),
-    "constraints": (5, "1b8443de4b615ca6d53ba1708b9e159f35bfad740d0a74458be7a04e01ae11e0"),
+    "identity": (7, "dd8390f3c03f2848fa47a2454efd03ab3c9747037a73ade016040b1c841c5a09"),
+    "voice": (18, "e1e0195dc4d8d7cc5cbc04d0800b1481d56a7956f5b02afdb631dce8bf509db2"),
+    "silence": (2, "55abb8beab124e1d7f696ebcdcd577093b0afa7d063c031cc01e4dd4e3e1b6cc"),
+    "conduct": (23, "4d44e8afd588c5de90fc0c697b6d272a3ab61354bd8318c7a118fb55f9e2c89b"),
+    "participation-conduct": (
+        1, "517ea25df95be7c926faad9d1d12ce293aa85d873a04970a9240216cbdc07dbd",
+    ),
+    "constraints": (6, "1a814c41a079067b2143ee1b4417a9b9a85ca8922f3082120f3c29494fd3dc43"),
 }
 
 

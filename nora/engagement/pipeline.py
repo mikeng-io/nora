@@ -828,6 +828,10 @@ class EngagementPipeline:
                     guard=handle.guard, tool_call_log=handle.tool_call_log,
                     tag_message=tag_message, limits=self._limits, ctx=ctx,
                     timeout_seconds=self._timeout_seconds, metrics=self._metrics,
+                    # This pipeline IS the tag path; the literal stays at the
+                    # call site rather than as a default so an omitted one
+                    # cannot compile (the A8 filter is `audience="tag"`).
+                    audience="tag",
                 )
                 # Inside the `with`, so it lands on the invoke span rather than
                 # on the turn: `ok` and `stop_reason` are what this stage
@@ -868,7 +872,12 @@ class EngagementPipeline:
                 # and marked the turn completed exactly like a normal delivery
                 # (Kimi audit 2026-09-03 finding 3).
                 salvable = (
-                    stop_reason == "max_tokens"
+                    # Occasion-gated (design/dreamer-agent-loop/35): a
+                    # participation turn never delivers a draft on ANY branch —
+                    # no grounded value is silence there, and a salvaged draft
+                    # would speak words she concluded without the tool.
+                    request.occasion != "participation"
+                    and stop_reason == "max_tokens"
                     and not handle.deliverer.delivered
                     and final_text.strip()
                 )
@@ -911,7 +920,10 @@ class EngagementPipeline:
             # mid-stream), `deliverer.delivered` is True and this is skipped — that
             # is a partial delivery, not a void.
             cut_off_before_reply = (
-                stop_reason in deliver.BUDGET_STOP_REASONS
+                # Occasion-gated like the salvage above: the participation
+                # occasion's exhaustion is silence, never the canned line.
+                request.occasion != "participation"
+                and stop_reason in deliver.BUDGET_STOP_REASONS
                 and not handle.deliverer.delivered
             )
             # The local record of WHICH branch below fires (Task 6):
@@ -962,7 +974,11 @@ class EngagementPipeline:
             # provider is not honouring `required`», NOT «this feature is
             # working».
             elif (
-                stop_reason == "end_turn"
+                # Occasion-gated like both branches above: on the participation
+                # occasion a draft written outside the tool is a determination
+                # to stay silent that took the wrong exit, not words to rescue.
+                request.occasion != "participation"
+                and stop_reason == "end_turn"
                 # The text a CANCELLED model call ends with is the guard's veto
                 # string, not the model's words (pre-deploy review 2026-08-10,
                 # reproduced against the real Strands loop). Refusing here is
@@ -989,6 +1005,9 @@ class EngagementPipeline:
             delivered = deliver.check_outcome(
                 deliverer=handle.deliverer, tag_id=request.tag_id, platform=msg.platform,
                 stop_reason=stop_reason, llm_state=self._llm_state, metrics=self._metrics,
+                # Literal at the call site, like `invoke.run`'s above: this
+                # pipeline IS the tag path (the A8 filter reads this label).
+                audience="tag",
             )
             # Task 6: correct `trace`'s placeholder `outcome` now that the
             # turn's real disposition is known — mirroring `check_outcome`'s
@@ -1239,7 +1258,13 @@ class EngagementPipeline:
             # route is not honouring `tool_choice=required`, not that the
             # safety net is "working".
             outcome_label = _outcome_label(trace)
-            self._metrics.inc("nora_engagement_outcomes_total", outcome=outcome_label)
+            # `audience` joins the label set ahead of the participation
+            # occasion (design/dreamer-agent-loop/35 §6): a participation
+            # outcome landing here unlabelled would be indistinguishable from
+            # a tag's. This pipeline passes the literal — it IS the tag path.
+            self._metrics.inc(
+                "nora_engagement_outcomes_total", outcome=outcome_label, audience="tag",
+            )
             annotate(**{
                 "nora.outcome": outcome_label,
                 "nora.delivered": delivered,

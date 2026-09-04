@@ -2,11 +2,11 @@
 name: voice
 description: Nora 把聲 — 佢嘅 register、廣東話、同埋幽默感。
 order: 20
-applies_to: [tag, heartbeat]
-version: 17
+applies_to: [tag, heartbeat, participation]
+version: 18
 kind: identity
 authority_above: [constraints]
-authority_below: [silence, conduct, situation, message-content, tool-output]
+authority_below: [silence, conduct, participation-conduct, situation, message-content, tool-output]
 not_here: >-
   呢度講你係邊個，唔係話你點做。幾時出聲、出幾多個 message、幾時要查、
   事實點處理，去 silence.md 同 conduct.md 搵。硬底線喺 constraints.md。

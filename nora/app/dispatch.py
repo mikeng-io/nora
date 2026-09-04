@@ -19,6 +19,7 @@ from nora.domain.ports import EngagementRequest
 from nora.engagement.pipeline import EngagementPipeline
 from nora.ingest.pipeline import IngestPipeline
 
+from .participation import ParticipationTrigger
 from .runtime import BackgroundTasks
 
 
@@ -51,14 +52,30 @@ class Dispatcher:
         ingest: IngestPipeline,
         engagement: EngagementPipeline,
         background: BackgroundTasks,
+        participation: ParticipationTrigger | None = None,
     ) -> None:
         self._ingest = ingest
         self._engagement = engagement
         self._background = background
+        # The participation occasion's trigger (design/dreamer-agent-loop/35),
+        # None unless `[participation] enabled`. It is NOT a third pipeline:
+        # it only NOTES a candidate message; the quiescence window owns every
+        # later decision (§3.5), and the turn — if one runs — goes through
+        # `FirePath.speak`, never through `EngagementPipeline`.
+        self._participation = participation
 
     async def on_message(self, message: NormalizedMessage) -> None:
         result = await self._ingest.run(message=message)
-        if result.message is None or result.decision is None or not result.decision.engage:
+        if result.message is None or result.decision is None:
+            return
+        if not result.decision.engage:
+            # The participation verdict (EngageDecision.participation): an
+            # untagged message in an opted-in room is NOT admitted — no R-9
+            # debounce semantics, no EngagementRequest, no agent now. It is
+            # only NOTED with the quiescence trigger; whether a window closes
+            # and a determination runs at all is the trigger's own cadence.
+            if result.decision.participation and self._participation is not None:
+                self._participation.note_message(result.message)
             return
         request = EngagementRequest(
             message=result.message, decision=result.decision, tag_id=uuid.uuid4().hex,

@@ -97,13 +97,29 @@ def force(model: Any, tool_name: str) -> bool:
 
 
 def require(model: Any) -> bool:
-    """Release a `force` pin back to `required` (some tool) so the next call is
-    free again (still not `auto` — she has not spoken yet, and `auto` on a
-    not-yet-spoken turn sends prose, R-5's silent-failure shape; see the
-    measurements above). True if it changed."""
+    """Release a `force` pin back to the model's INITIAL `tool_choice`, so the
+    next call is free again. True if it changed.
+
+    The release target is whatever the model was BUILT with — recorded by `_set`
+    the first time it mutates that model — not the module constant. For a tag
+    model that is `FIRST_CALL` (`required`) and nothing changes: she has not
+    spoken yet, and `auto` on a not-yet-spoken turn sends prose, R-5's
+    silent-failure shape (see the measurements above). But a participation turn
+    composes its model with `tool_choice="auto"` ON PURPOSE (speaking is
+    optional; design/dreamer-agent-loop/35 §5) — releasing its pin to
+    `FIRST_CALL` would flip the rest of that turn to `required`, destroying the
+    right-to-silence the occasion exists to create."""
     if model is None:
         return False
-    return _set(model, FIRST_CALL, "require")
+    initial = getattr(model, "_nora_initial_tool_choice", None)
+    if initial is None:
+        # No mutation of this model was ever recorded, so there is no pin to
+        # release: its CURRENT value is its initial one, and releasing to it
+        # is a no-op by construction. Reading it (rather than defaulting to
+        # `FIRST_CALL`) is what keeps that true for a model built `"auto"`.
+        config = model.get_config() or {}
+        initial = (config.get("params") or {}).get("tool_choice", FIRST_CALL)
+    return _set(model, initial, "require")
 
 
 def _set(model: Any, value: Any, what: str) -> bool:
@@ -111,12 +127,20 @@ def _set(model: Any, value: Any, what: str) -> bool:
     back. Shared by `relax`/`force`/`require` for the reason the module docstring
     gives: `update_config` is a shallow update, so `params` must be written WHOLE
     or `max_tokens`/`temperature`/`reasoning_effort` vanish for the rest of the
-    turn. Never raises."""
+    turn. Never raises.
+
+    The first mutation of a model records its as-built `tool_choice` ON the
+    model (`_nora_initial_tool_choice`), which is what `require` releases a
+    `force` pin back to. The value is per-turn state, so it lives on the per-tag
+    model object itself — a module-level table of them would be the retained
+    cross-tag state `ModelSource` exists to prevent."""
     try:
         config = model.get_config() or {}
         params = dict(config.get("params") or {})
         if params.get("tool_choice") == value:
             return False
+        if getattr(model, "_nora_initial_tool_choice", None) is None:
+            model._nora_initial_tool_choice = params.get("tool_choice", FIRST_CALL)
         params["tool_choice"] = value
         model.update_config(params=params)
     except Exception:

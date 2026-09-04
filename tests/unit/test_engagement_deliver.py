@@ -73,6 +73,7 @@ async def test_check_outcome_counts_no_send_call_when_the_model_never_attempted(
     delivered = deliver.check_outcome(
         deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
         stop_reason="end_turn",
+        audience="tag",
     )
 
     assert delivered is False
@@ -95,6 +96,7 @@ async def test_check_outcome_does_not_double_count_when_the_model_attempted_but_
     delivered = deliver.check_outcome(
         deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
         stop_reason="end_turn",
+        audience="tag",
     )
 
     assert delivered is False
@@ -116,7 +118,7 @@ async def test_check_outcome_returns_true_and_sets_llm_state_on_a_delivered_repl
 
     delivered = deliver.check_outcome(
         deliverer=handle.deliverer, tag_id="tag-1", platform="signal", llm_state=llm_state,
-        metrics=metrics, stop_reason="end_turn",
+        metrics=metrics, stop_reason="end_turn", audience="tag",
     )
 
     assert delivered is True
@@ -137,6 +139,7 @@ async def test_check_outcome_tolerates_no_llm_state():
     result = deliver.check_outcome(
         deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
         stop_reason="end_turn",
+        audience="tag",
     )
     assert result is True
 
@@ -162,6 +165,7 @@ async def test_a_turn_cut_off_by_a_budget_cap_is_not_labelled_no_send_call():
         delivered = deliver.check_outcome(
             deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
             stop_reason=stop_reason,
+            audience="tag",
         )
 
         assert delivered is False
@@ -187,6 +191,7 @@ async def test_an_ordinary_stop_reason_still_counts_no_send_call():
         deliver.check_outcome(
             deliverer=handle.deliverer, tag_id="tag-1", platform="signal", metrics=metrics,
             stop_reason=stop_reason,
+            audience="tag",
         )
 
         assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1, stop_reason
@@ -199,6 +204,17 @@ def test_check_outcome_cannot_be_called_without_a_stop_reason():
     import inspect
 
     param = inspect.signature(deliver.check_outcome).parameters["stop_reason"]
+    assert param.default is inspect.Parameter.empty
+
+
+def test_check_outcome_cannot_be_called_without_an_audience():
+    """`audience` has no default either (design/dreamer-agent-loop/35 §6): a
+    defaulted "tag" would let a participation failure land inside the budget
+    A8 filters to `audience="tag"` — invisible, exactly the bug shape the
+    required keyword exists to refuse."""
+    import inspect
+
+    param = inspect.signature(deliver.check_outcome).parameters["audience"]
     assert param.default is inspect.Parameter.empty
 
 
@@ -292,7 +308,7 @@ async def test_a_guard_refused_turn_is_not_counted_as_no_send_call():
 
     check_outcome(
         deliverer=handle.deliverer, metrics=metrics, platform="signal",
-        tag_id="t1", stop_reason="end_turn",
+        tag_id="t1", stop_reason="end_turn", audience="tag",
     )
     assert metrics.get("nora_silent_failures_total", reason="egress_block") == 1
     assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 0
@@ -311,6 +327,6 @@ async def test_a_turn_that_never_called_send_reply_still_counts_no_send_call():
     )
     check_outcome(
         deliverer=handle.deliverer, metrics=metrics, platform="signal",
-        tag_id="t1", stop_reason="end_turn",
+        tag_id="t1", stop_reason="end_turn", audience="tag",
     )
     assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1

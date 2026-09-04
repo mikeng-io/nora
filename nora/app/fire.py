@@ -7,12 +7,17 @@ still allows it and *what the row then says*; this owns everything between the
 two — the synthetic `TagContext`, the prompt, the model call, the delivery, and
 the §8.1 outcome string it answers with.
 
-THERE ARE TWO OCCASIONS, AND THE TURN IS THE SAME TURN
------------------------------------------------------
-A reminder coming due was the first (DEC-70). A version announcement is the
+THERE ARE SEVERAL OCCASIONS, AND THE TURN IS THE SAME TURN
+----------------------------------------------------------
+A reminder coming due was the first (DEC-70). A version announcement was the
 second (DEC-79): on the boot after an upgrade, the operator's release note is
-put to her and she relays it in her own voice. Everything between "something
-made this turn happen" and "the group heard it" is identical — the doctrine
+put to her and she relays it in her own voice. Gatherings (DEC-139), compute
+results (Nora Compute spec §2) and relays (DEC-105) followed; participation
+(design/dreamer-agent-loop/35) is the latest — the FIRST occasion that triggers
+on a real room going quiet rather than on a stored row, and the first where
+silence is a HEALTHY outcome rather than a failure (`SILENT` below).
+Everything between "something made this turn happen" and "the group heard it"
+is identical — the doctrine
 audience, the guards, the audit-first write, the Honcho feed, the Langfuse
 trace — and R-1b (`tests/architecture/test_only_two_paths_can_send.py`) makes
 that structural rather than optional: `deliver.build` has exactly TWO callers,
@@ -50,7 +55,8 @@ of group-authored text stops being pinned by its two named acceptance tests),
 R-6 and R-18 all still apply), and `feedback.run` (a fire turn is still
 something she said; omitting it makes her memory of her own speech incomplete).
 
-Doctrine is read at `applies_to="heartbeat"`, which is why that audience had to
+Doctrine is read at `applies_to="heartbeat"` — `"participation"` for that
+occasion — which is why that audience had to
 exist before this module did: at `"tag"` it would carry the silence rules that
 are false here, and an audience that resolved to nothing would deliver with no
 persona, no constraints, and a `LeakGuard` corpus carrying nothing but the
@@ -122,6 +128,23 @@ SENT = "sent"
 FAILED_POLICY = "failed_policy"
 FAILED_TIMEOUT = "failed_timeout"
 FAILED_ERROR = "failed_error"
+
+# The participation occasion's two additions to the outcome vocabulary
+# (design/dreamer-agent-loop/35 §6).
+#
+# `PARTICIPATION_AUDIENCE` labels every series a participation turn moves
+# (silent failures, llm latency, stop reasons) so its failures are never
+# charged to the heartbeat's budget, and its doctrine is read at this audience
+# — the silence doctrine differs: a heartbeat turn is OBLIGED to speak, a
+# participation turn is PERMITTED to.
+#
+# `SILENT` is the outcome the other four kinds cannot produce: the turn ran,
+# the model concluded "nothing here is worth saying", and that is SUCCESS —
+# the §6 healthy default, counted on `nora_participation_silence_total`, never
+# on `nora_silent_failures_total`. A reminder that says nothing is broken; a
+# participation turn that says nothing is working.
+PARTICIPATION_AUDIENCE = "participation"
+SILENT = "silent"
 
 # How a recurrence reads in the fire header. English prose, like the rest of the
 # header: the header is the SITUATION she is told about, and `doctrine` decides
@@ -337,6 +360,62 @@ def _lost_job_header(tagger: PersonRef | None, now: datetime) -> str:
     )
 
 
+def participation_occasion(
+    *, platform: str, conversation_id: str, conversation_type: str = "group",
+) -> Event:
+    """A room that has gone quiet, as the occasion it is
+    (design/dreamer-agent-loop/35).
+
+    The FIRST occasion with no stored row and nobody's request behind it —
+    `person_id=None`, like a version announcement, because the quiescence
+    trigger that fires it (`nora.app.participation.ParticipationTrigger`) owes
+    the turn to no one person. Every consequence of a `None` tagger that
+    `build_context` documents is accepted here as it is there.
+
+    `body` is EMPTY on purpose, and the header says so: nothing was put to
+    her. The whole basis for the determination is the injected context — the
+    transcript window, standing, notes and facts that `build_context` and
+    `build_prefill` assemble — which is §3.6's fast-by-construction rule: if
+    the value of speaking is not visible in what is already in front of her,
+    it is not worth saying.
+
+    NOT in the reminder-derived event registry: the registry maps a due ROW's
+    kind to its factory, and there is no row. The trigger calls
+    `FirePath.speak` with this Event directly.
+    """
+    return Event(
+        platform=platform,
+        conversation_id=conversation_id,
+        conversation_type=conversation_type,
+        person_id=None,
+        body="",
+        header=lambda tagger, now: _participation_header(),
+        kind="participation",
+    )
+
+
+def _participation_header() -> str:
+    """The situation paragraph for a participation turn.
+
+    Same opening shape as the other fire headers — nobody called her, and
+    that is not why this turn is happening — but the reason clause differs:
+    no one asked for anything, earlier or otherwise. The room went quiet and
+    the floor was offered. The right to decline it is stated HERE as well as
+    in `participation-conduct.md`, because the doctrine can only oblige a
+    model that reads it and the header is the sentence she reads first.
+    """
+    return (
+        "You are in a group chat you have been reading all along. Nobody has "
+        "called you — not just now, and not earlier. The conversation has gone "
+        "quiet, and this turn is the offer of the floor, nothing more.\n"
+        "The tag_message below is deliberately empty: nothing was put to you. "
+        "Decide from what is already in front of you — the transcript above, "
+        "and whatever standing, notes and facts came with it. If speaking "
+        "would add something the room can use, say it — once, briefly. If "
+        "not, stay silent: silence is a complete answer here, not a failure."
+    )
+
+
 def _compute_header(job: ComputeJob, tagger: PersonRef | None, now: datetime) -> str:
     who = escape(tagger.name if tagger is not None else "")
     return (
@@ -385,6 +464,7 @@ class FirePath:
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
+        participation_runner: AgentRunner | None = None,
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -489,6 +569,14 @@ class FirePath:
         self._room_language_max_entries = room_language_max_entries
         # Dreamer Plan 2's own sibling of the above.
         self._room_exchange_max_entries = room_exchange_max_entries
+        # The participation occasion's runner (design/dreamer-agent-loop/35):
+        # the SAME AgentRunner shape composed with `tool_choice="auto"` —
+        # the determination may end in silence, which `required` (the tag
+        # runner's pin) makes inexpressible. `None` whenever
+        # `[participation] enabled = false`; `_invoke` selects it by occasion
+        # kind, and a participation turn arriving with no runner composed is
+        # a wiring fault, not a turn to run on the tag runner.
+        self._participation_runner = participation_runner
 
     async def build_context(self, occasion: Event) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
@@ -653,7 +741,7 @@ class FirePath:
             )
         return await self.speak(factory(rows))
 
-    async def speak(self, occasion: Event) -> str:
+    async def speak(self, occasion: Event, *, send_permitted: bool = True) -> str:
         """One turn, and the §8.1 outcome its caller records.
 
         **It does not call `invoke.run` or `deliver.check_outcome`** (§6.2).
@@ -669,7 +757,16 @@ class FirePath:
 
         Only `sent` is DONE, and `sent` means the `Deliverer` actually
         delivered. Anything else is a turn the group never heard — a reminder
-        that did not arrive, or a version nobody was told about.
+        that did not arrive, or a version nobody was told about. The
+        participation occasion (kind="participation") is the exception that
+        proves the reading: for it "the group never heard" is the HEALTHY
+        default, so its quiet turn answers `SILENT`, not a failure string.
+
+        `send_permitted` is the participation occasion's SEND cooldown
+        (design/dreamer-agent-loop/35 §10.3), threaded into `deliver.build`;
+        every other occasion leaves it True. The trigger decides and this
+        method enforces — the two are separate so that a trigger bug cannot
+        both mistime the evaluation and skip the hold.
         """
         ctx = await self.build_context(occasion)
         # Every log line for the rest of this turn — across every stage it calls
@@ -677,7 +774,7 @@ class FirePath:
         # contextvar bridge), so a fire turn is greppable exactly like a tag.
         bind_tag_id(ctx.tag_id)
         try:
-            return await self._turn(occasion, ctx)
+            return await self._turn(occasion, ctx, send_permitted=send_permitted)
         finally:
             clear_tag_id()
 
@@ -700,7 +797,9 @@ class FirePath:
                 f"wired: {sorted(self._adapters)}"
             ) from None
 
-    async def _turn(self, occasion: Event, ctx: TagContext) -> str:
+    async def _turn(
+        self, occasion: Event, ctx: TagContext, *, send_permitted: bool = True,
+    ) -> str:
         """One turn's stages, its last-resort guard, and DEC-42's observable.
 
         The `except` is the fire path's counterpart to
@@ -736,6 +835,12 @@ class FirePath:
         handle = None
         stop_reason: str | None = None
         completed = False
+        # The participation occasion carries its OWN audience (design/
+        # dreamer-agent-loop/35 §6): its doctrine is the may-speak rule set,
+        # its failures are never charged to the heartbeat's budget, and its
+        # quiet turn is a success (`SILENT`), never a `failed_*`.
+        participation = occasion.kind == "participation"
+        audience = PARTICIPATION_AUDIENCE if participation else AUDIENCE
         try:
             tagger = ctx.tagger
             if tagger is None and occasion.person_id is not None:
@@ -769,7 +874,7 @@ class FirePath:
                 self_ids=self_ids, metrics=self._metrics,
             ).rehydrate(ctx)
 
-            doctrine = self._doctrine_store.get(applies_to=AUDIENCE)
+            doctrine = self._doctrine_store.get(applies_to=audience)
             log.info(
                 "fire turn start (tag_id=%s kind=%s conversation_id=%s "
                 "person_id=%s doctrine_sha256=%s)",
@@ -800,9 +905,15 @@ class FirePath:
                 # fire turn.
                 budgets=self._registry.budgets(),
                 terminal=self._registry.terminal_tools(), metrics=self._metrics,
-                audience=AUDIENCE,
+                audience=audience,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
+                # The participation SEND cooldown (§10.3). True on every other
+                # occasion — the heartbeat has no cooldown, and this keyword's
+                # whole reason for travelling through `deliver.build` rather
+                # than sitting in the trigger alone is that the trigger decides
+                # and the `Deliverer` enforces, at the last inch.
+                send_permitted=send_permitted,
                 # A fire turn is still a message into a real group, so it gets
                 # the same outbound decoration the tag path does — the same
                 # `roster_source`, the same `Persons`. Threaded rather than
@@ -873,6 +984,7 @@ class FirePath:
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
                 tag_message=tag_message, ctx=ctx,
                 platform=occasion.platform, deliverer=handle.deliverer,
+                participation=participation, audience=audience,
             )
             # `truncation_reason`'s "the turn reached the end of its try block",
             # decided HERE rather than at the end of it. The tag path can leave
@@ -885,7 +997,17 @@ class FirePath:
             # for.
             completed = failure is None
             if not handle.deliverer.delivered:
-                return failure if failure is not None else FAILED_ERROR
+                if failure is not None:
+                    return failure
+                if participation:
+                    # SILENT, not FAILED_ERROR: a participation turn that
+                    # delivered nothing is the HEALTHY default (§6), whether
+                    # the model declined the floor or the send cooldown held
+                    # its message — `_invoke` has already filed the turn under
+                    # `nora_participation_silence_total`, or as an ordinary
+                    # silent failure if a budget cap cut it off.
+                    return SILENT
+                return FAILED_ERROR
 
             # A delivered reply implies a successful invocation — the touch
             # `deliver.check_outcome` performs, reimplemented rather than
@@ -893,6 +1015,10 @@ class FirePath:
             # a reminder reports a stale LLM on `GET /health`.
             if self._llm_state is not None:
                 self._llm_state.last_success_at = time.time()
+            if participation:
+                self._metrics.inc(
+                    "nora_participation_spoke_total", platform=occasion.platform,
+                )
             await self._feed(
                 handle.deliverer.sent_texts, occasion.conversation_id,
                 occasion.platform,
@@ -902,7 +1028,7 @@ class FirePath:
             log.exception("fire turn failed (tag=%s); staying silent", ctx.tag_id)
             self._metrics.inc(
                 "nora_silent_failures_total", reason="handler_error",
-                platform=occasion.platform, audience=AUDIENCE,
+                platform=occasion.platform, audience=audience,
             )
             # Whatever the invocation reported, this turn did NOT reach its end —
             # which is what makes `pipeline_error` reachable for a fault raised
@@ -937,6 +1063,8 @@ class FirePath:
         ctx: TagContext,
         platform: str,
         deliverer: Any,
+        participation: bool = False,
+        audience: str = AUDIENCE,
     ) -> tuple[str | None, str | None]:
         """The model call, with the heartbeat's own timeout and its own
         accounting. Returns `(failure, stop_reason)`: the §8.1 failure name — or
@@ -962,6 +1090,22 @@ class FirePath:
         # exists to prevent.
         final_text = ""
         failure: str | None = None
+        # The participation occasion runs on its OWN runner — the composition
+        # root builds it with `tool_choice="auto"`, because a determination
+        # that ends in silence must be expressible and the tag runner's
+        # `required` pin would demand a send. `None` means the occasion was
+        # admitted with no runner composed — a wiring fault, raised (and so
+        # counted as `handler_error` by `_turn`), never quietly downgraded to
+        # the tag runner.
+        runner = self._runner
+        if participation:
+            if self._participation_runner is None:
+                raise RuntimeError(
+                    "a participation occasion arrived but no participation_runner "
+                    "is composed — [participation] enabled = true requires the "
+                    "composition root to build one"
+                )
+            runner = self._participation_runner
         try:
             # `AgentRunner.invoke` also hands back a `TagTrace` (Task 4), but
             # this path builds no debrief record of its own — §7.4/Task 6
@@ -970,7 +1114,7 @@ class FirePath:
             # threaded further for now; a fire turn is a real invocation too
             # and picking it up is a flagged follow-up, not a silent gap.
             stop_reason, final_text, _trace = await asyncio.wait_for(
-                self._runner.invoke(
+                runner.invoke(
                     doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                     tool_call_log=tool_call_log,
                     tag_message=tag_message, limits=self._limits, ctx=ctx,
@@ -982,14 +1126,14 @@ class FirePath:
             log.error("fire turn invocation_timeout (tag=%s)", ctx.tag_id)
             self._metrics.inc(
                 "nora_silent_failures_total", reason="invocation_timeout",
-                platform=platform, audience=AUDIENCE,
+                platform=platform, audience=audience,
             )
             failure = FAILED_TIMEOUT
         except Exception:
             log.exception("fire turn llm_error (tag=%s); staying silent", ctx.tag_id)
             self._metrics.inc(
                 "nora_silent_failures_total", reason="llm_error",
-                platform=platform, audience=AUDIENCE,
+                platform=platform, audience=audience,
             )
             failure = FAILED_ERROR
         finally:
@@ -1002,18 +1146,23 @@ class FirePath:
             # ran out of budget, because the caps differ.
             self._metrics.observe(
                 "nora_llm_latency_seconds", time.perf_counter() - started,
-                audience=AUDIENCE,
+                audience=audience,
             )
         if stop_reason is not None:
             self._metrics.inc(
-                "nora_llm_stop_reason_total", reason=stop_reason, audience=AUDIENCE,
+                "nora_llm_stop_reason_total", reason=stop_reason, audience=audience,
             )
         # DEC-93, before the silent-failure accounting: recover the prose she
         # wrote without routing it through the tool. Same narrow conditions as
         # the tag path — `end_turn` only, nothing delivered, non-empty — and
-        # through `deliver`, so every guard still applies.
+        # through `deliver`, so every guard still applies. NEVER on the
+        # participation occasion: there the prose was written under
+        # `tool_choice="auto"`, so ending in text IS the model declining the
+        # floor — "no grounded value is silence", and recovering the draft
+        # would deliver exactly the turn the determination declined.
         if (
-            failure is None
+            not participation
+            and failure is None
             and stop_reason == "end_turn"
             # See the tag path: a cancelled model call ends with the GUARD's
             # string. Worse here — recovering it would set `delivered`, so
@@ -1033,22 +1182,36 @@ class FirePath:
         # `called`, not `attempted` — the same correction as the tag path's
         # `check_outcome` (external review 2026-08-10). A fire turn whose reply
         # was guard-refused DID call the tool, and reporting it as
-        # `no_send_call` double-counts one failure under two names.
+        # `no_send_call` double-counts one failure under two names. A
+        # participation turn whose send was held by the cooldown is the same
+        # shape: `called` is True, and the hold was policy, not malfunction.
         if failure is None and not deliverer.delivered and not deliverer.called:
-            # The loop finished and she never called `send_reply`, or one of
-            # R-8's caps cut it off. Labelled the way `check_outcome` labels it
-            # (R-23) — `no_send_call` and `limit_total_tokens` are different
-            # failures and used to be the same metric. Every OTHER way of not
-            # delivering implies `attempted` and has already counted itself
-            # inside `Deliverer`.
-            reason = (
-                stop_reason if stop_reason in deliver.BUDGET_STOP_REASONS else "no_send_call"
-            )
-            log.warning("fire turn %s (tag=%s); nothing was sent", reason, ctx.tag_id)
-            self._metrics.inc(
-                "nora_silent_failures_total", reason=reason,
-                platform=platform, audience=AUDIENCE,
-            )
+            if participation and stop_reason not in deliver.BUDGET_STOP_REASONS:
+                # THE HEALTHY DEFAULT (design/dreamer-agent-loop/35 §6): the
+                # model was offered the floor and declined it. Its own series,
+                # gated on a completed invocation and a non-budget stop — a
+                # turn R-8's caps cut off before it could decide is an ordinary
+                # malfunction and falls through to `nora_silent_failures_total`
+                # below, NEVER here, or the budget-cut signal would read as
+                # success.
+                self._metrics.inc(
+                    "nora_participation_silence_total", platform=platform,
+                )
+            else:
+                # The loop finished and she never called `send_reply`, or one of
+                # R-8's caps cut it off. Labelled the way `check_outcome` labels it
+                # (R-23) — `no_send_call` and `limit_total_tokens` are different
+                # failures and used to be the same metric. Every OTHER way of not
+                # delivering implies `attempted` and has already counted itself
+                # inside `Deliverer`.
+                reason = (
+                    stop_reason if stop_reason in deliver.BUDGET_STOP_REASONS else "no_send_call"
+                )
+                log.warning("fire turn %s (tag=%s); nothing was sent", reason, ctx.tag_id)
+                self._metrics.inc(
+                    "nora_silent_failures_total", reason=reason,
+                    platform=platform, audience=audience,
+                )
         return failure, stop_reason
 
     async def _feed(

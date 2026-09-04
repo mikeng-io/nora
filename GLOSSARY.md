@@ -107,7 +107,9 @@ A capability claim in an authored file now **fails to load**.
 
 ## A turn
 
-- **ambient** — a message Nora records but does not answer. The default.
+- **ambient** — a message Nora records but does not answer. The default. (An
+  untagged message in a participation-opted-in room is still ambient — it is
+  only NOTED, and may later close a quiescence window; see **participation**.)
 - **tag** — a message that triggers her. One tag = one turn.
 - **turn** — everything from admission to reply. Contains several **model
   calls**; each call is a **round trip** (~4s) and each retained tool result is
@@ -116,13 +118,21 @@ A capability claim in an authored file now **fails to load**.
   behind it. The second of exactly two paths that may send (R-1b).
 - **occasion** — WHY a fire turn is happening, as a value (`nora.domain.events.Event`, DEC-139):
   where she speaks, on whose authority, the words put to her, and the header
-  that explains the moment. Two exist — a reminder coming due, and a version
-  announcement (DEC-97). A reminder names its requester; an announcement names
-  NOBODY, which is what stops the turn being refused under a rule about a grant
-  it never held.
+  that explains the moment. The factories on `nora.app.fire` enumerate them —
+  a reminder coming due, a gathering, a version announcement (DEC-97), a
+  compute job, a relay, and participation (below). A reminder names its
+  requester; an announcement names NOBODY, which is what stops the turn being
+  refused under a rule about a grant it never held.
+- **participation** — the occasion triggered by the room itself
+  (design/dreamer-agent-loop/35): an untagged message in an operator-opted-in
+  room closes a quiescence window once the room goes quiet, and ONE
+  determination runs with the right to stay silent. NOT "ambient" — ambient
+  means recorded, never answered; participation is the governed exception to
+  it. Ships disabled (`[participation] enabled = false` plus a per-room
+  `participation = true` in `policy.toml`).
 - **terminal verb** — a tool that ends the turn. Today only `send_reply`, on
-  both paths — a fire turn has no way to choose silence (that waits for the
-  staleness check).
+  both paths. A participation turn is the one turn that may choose silence:
+  it composes `tool_choice="auto"`, so ending in prose IS declining the floor.
 - **prefill** — the three messages built before the tag message.
 - **context header** — the block explaining how the turn works. Its opening
   paragraph is the one thing that differs between a tag and a fire turn:

@@ -36,7 +36,13 @@ AUTHORED = ("identity", "voice", "conduct", "constraints")
 # genuinely separate act». The RULE is unchanged and so is what this pins; only
 # the wording it binds to moved. Still a fragment that spans no line break.
 MULTI_MESSAGE = "a genuinely separate act"
-SILENCE = "That's the only reason you ever speak"
+# RE-POINTED for the participation occasion (design/dreamer-agent-loop/35):
+# the old needle — "That's the only reason you ever speak" — was the exact
+# claim the occasion overturns, and it left the file with the redefinition
+# (called means must-speak, offered means may-speak). The new needle is the
+# half that is FALSE on a heartbeat turn, where silence is a failure: an
+# obligation occasion must never read that saying nothing is success.
+SILENCE = "Most offers of the floor end that way"
 
 
 def _bodies(store: DoctrineStore, audience: str) -> str:
@@ -53,9 +59,40 @@ def test_the_heartbeat_audience_is_not_degenerate(doctrine_store):
         assert f'name="{name}"' in text, f"{name} missing from the heartbeat audience"
 
 
-def test_silence_reaches_tags_only(doctrine_store):
+def test_silence_reaches_called_and_offered_turns_only(doctrine_store):
+    """The redefined split (design/dreamer-agent-loop/35): silence.md speaks to
+    a tag turn (must-speak) and a participation turn (may-speak) — the two
+    audiences the must/may distinction exists between. A heartbeat turn is
+    OBLIGED to speak, so the may-speak half is false there and the file stays
+    out."""
     assert SILENCE in _bodies(doctrine_store, "tag")
+    assert SILENCE in _bodies(doctrine_store, "participation")
     assert SILENCE not in _bodies(doctrine_store, "heartbeat")
+
+
+def test_the_participation_audience_is_not_degenerate(doctrine_store):
+    """The same argument the heartbeat audience needed (above), one audience
+    later: a participation turn must carry the full persona, conduct and
+    constraint set — LeakGuard's verbatim-leak corpus is built from whatever
+    the audience resolves to, and a thin corpus on the path that speaks
+    UNCALLED is the worst version of thin."""
+    text = doctrine_store.get(applies_to="participation").text
+    for name in (*AUTHORED, "silence", "participation-conduct"):
+        assert f'name="{name}"' in text, f"{name} missing from the participation audience"
+
+
+def test_participation_conduct_reaches_no_other_audience(doctrine_store):
+    """The may-speak rulebook is the participation occasion's own. On a tag it
+    would contradict must-speak; on a heartbeat turn it would licence the one
+    thing an obligation occasion may not do."""
+    needle = "a question nobody asked"
+    bodies = {
+        aud: " ".join(_bodies(doctrine_store, aud).split())
+        for aud in ("participation", "tag", "heartbeat")
+    }
+    assert needle in bodies["participation"]
+    assert needle not in bodies["tag"]
+    assert needle not in bodies["heartbeat"]
 
 
 def test_the_multi_message_rule_survives_in_both_audiences(doctrine_store):

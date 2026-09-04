@@ -16,10 +16,11 @@ FIRST_TOOL = {"type": "function", "function": {"name": "place_info"}}
 class _Model:
     """Real `OpenAIModel.update_config`/`get_config` semantics (shallow update)."""
 
-    def __init__(self) -> None:
+    def __init__(self, tool_choice: str = "required") -> None:
         self.config: dict[str, Any] = {
             "model_id": "stub",
-            "params": {"max_tokens": 2000, "temperature": 0.7, "tool_choice": "required"},
+            "params": {"max_tokens": 2000, "temperature": 0.7,
+                       "tool_choice": tool_choice},
         }
 
     def update_config(self, **cfg: Any) -> None:
@@ -47,6 +48,27 @@ def test_require_resets_to_required():
     tool_choice.force(m, "place_info")
     assert tool_choice.require(m) is True
     assert _tc(m) == "required"
+
+
+def test_require_releases_to_the_models_initial_value():
+    """A participation turn composes its model with `tool_choice="auto"`
+    (design/dreamer-agent-loop/35 §5): releasing a `force` pin to the hardcoded
+    `FIRST_CALL` would flip the rest of that turn to `required` and destroy the
+    right-to-silence the occasion exists for. The release target is the value
+    the model was BUILT with, recorded on its first mutation."""
+    m = _Model(tool_choice="auto")
+    tool_choice.force(m, "place_info")
+    assert _tc(m) == FIRST_TOOL
+    assert tool_choice.require(m) is True
+    assert _tc(m) == "auto"
+
+
+def test_require_without_a_prior_pin_is_a_no_op():
+    """Nothing was ever forced: there is no pin to release, and an untouched
+    model's initial value IS its current one — so nothing may change."""
+    m = _Model(tool_choice="auto")
+    assert tool_choice.require(m) is False
+    assert _tc(m) == "auto"
 
 
 def test_force_and_require_never_raise_on_a_configless_model():

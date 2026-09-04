@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from nora.agent import tool_choice
 from nora.app.composition import Dependencies, StartupError, build_dependencies
 from nora.app.fire import FirePath
 from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
@@ -391,6 +392,44 @@ async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
         ]
         assert loops, "the heartbeat loop was not spawned"
         assert isinstance(loops[0]._fire.__self__, FirePath)
+    finally:
+        await deps.background.cancel_all()
+
+
+async def test_the_participation_trigger_is_wired_to_the_real_fire_path(cfg):
+    """The participation occasion's wiring pin (design/dreamer-agent-loop/35
+    §3.5/§4), the heartbeat test's shape for the same reason: every unit test
+    supplies its own fake `speak`, so only here is it asserted that the
+    composition root hands the trigger `FirePath.speak` itself — and that the
+    FirePath's participation runner composes `tool_choice="auto"`, without
+    which a determination could never end in silence (the tag runner's
+    `required` pin demands a call, and the only terminal call is a send).
+
+    Reaching through `_speak.__self__` and `_participation_runner` is the only
+    way to see it from out here, exactly as with the heartbeat above.
+    """
+    assert (await _participation_trigger_of(cfg)) is None, (
+        "off by default: no trigger unless [participation] enabled = true"
+    )
+
+    on = override_config(cfg, {"participation.enabled": True})
+    deps = await build_dependencies(on)
+    try:
+        trigger = deps.participation_trigger
+        assert trigger is not None
+        fire = trigger._speak.__self__
+        assert isinstance(fire, FirePath)
+        runner = fire._participation_runner
+        assert runner is not None
+        assert runner._models._spec.tool_choice == tool_choice.AFTER_SPEAKING
+    finally:
+        await deps.background.cancel_all()
+
+
+async def _participation_trigger_of(cfg):
+    deps = await build_dependencies(cfg)
+    try:
+        return deps.participation_trigger
     finally:
         await deps.background.cancel_all()
 

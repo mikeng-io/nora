@@ -25,6 +25,7 @@ from nora.agent.registry import ToolRegistry
 from nora.config import Config
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.ports import (
+    EngagePolicy,
     FactReader,
     MemoryStore,
     RecordStore,
@@ -38,7 +39,7 @@ from nora.engagement.context import RenderedClaimWriter, StandingNotesReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.pipeline import IngestPipeline
-from nora.ingest.policy import TriggerTextPolicy
+from nora.ingest.policy import CompositePolicy, TriggerTextPolicy
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import permissive_policy
@@ -46,6 +47,7 @@ from nora.tag import Debounce
 
 from .assembler import build_assembler
 from .dispatch import Dispatcher
+from .participation import ParticipationTrigger
 from .runtime import BackgroundTasks
 
 
@@ -77,6 +79,8 @@ def build_offline_pipeline(
     facts: FactReader | None = None,
     rendered: RenderedClaimWriter | None = None,
     standing: StandingStore | None = None,
+    participation: ParticipationTrigger | None = None,
+    extra_engage_policies: tuple[EngagePolicy, ...] = (),
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
@@ -92,7 +96,15 @@ def build_offline_pipeline(
     metrics = metrics or Metrics()
     background = BackgroundTasks()
     debounce = Debounce(cfg.engagement.trigger.min_interval_seconds)
-    policy = TriggerTextPolicy(cfg.engagement.trigger.text)
+    # `extra_engage_policies` is the participation occasion's test seam
+    # (design/dreamer-agent-loop/35): an integration harness exercising the
+    # occasion wraps the trigger-text policy in a `CompositePolicy` carrying a
+    # real `ParticipationPolicy`, so an untagged message in an opted-in room
+    # reaches the dispatcher with `EngageDecision.participation` set exactly
+    # as production's wiring does it.
+    policy: Any = TriggerTextPolicy(cfg.engagement.trigger.text)
+    if extra_engage_policies:
+        policy = CompositePolicy((policy, *extra_engage_policies))
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=permissive_policy(),
@@ -168,5 +180,8 @@ def build_offline_pipeline(
         # caller that wants to exercise the stage passes its own.
         debrief_wiring=debrief_wiring,
     )
-    dispatcher = Dispatcher(ingest=ingest, engagement=engagement, background=background)
+    dispatcher = Dispatcher(
+        ingest=ingest, engagement=engagement, background=background,
+        participation=participation,
+    )
     return dispatcher, engagement, background
