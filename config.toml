@@ -561,7 +561,14 @@ exporter = "otlp_http"                     # console | otlp_http | file
 # Universal OTLP ingress: the otel-collector (LAN:4318) fans out to Langfuse
 # (nora project) and Jaeger (infra spans). Collector injects Langfuse auth, so
 # headers_env is no longer needed here — the collector owns the credential now.
-endpoint = "http://host.docker.internal:4318"
+#
+# /v1/traces is REQUIRED: OTLPSpanExporter appends the path ONLY when the
+# endpoint comes from env (OTEL_EXPORTER_OTLP_*); a literal `endpoint=` value is
+# used verbatim, so without the path it POSTs to the collector root -> 404
+# (seen live 2026-09-04, 31 export failures). The collector's own otlphttp
+# exporter is the opposite (it auto-appends) — that's why Langfuse there uses
+# traces_endpoint. Two SDKs, two conventions.
+endpoint = "http://host.docker.internal:4318/v1/traces"
 headers_env = ""                           # collector owns Langfuse auth; left empty (DEC-8)
 
 [evals]
