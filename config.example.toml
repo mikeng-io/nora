@@ -1027,15 +1027,19 @@ max_chars = 1200
 # How many rows one fold reads AND the event trigger's accumulator threshold —
 # ONE number (design/standing-watermark D1). Every fold reads
 # `since_including_nora(after_id=watermark, limit=fold_batch)`: the NEXT
-# fold_batch rows since the last fold's row-id watermark, capped at 200. It is
+# fold_batch rows since the last fold's row-id watermark, capped at 40. It is
 # a batch size, not a recency window — the 40-row window is gone entirely (D6),
 # so a conversation that passes 40 messages between tags no longer loses the
 # middle.
-fold_batch = 200
+#
+# SUPERSEDED MEASUREMENT (0d939413, 2026-09-03): the operating value was 200
+# at first ship; the event-fold accumulator was unreachable at 200, so the
+# deployment lowered it to 40. The template tracks the deployment.
+fold_batch = 40
 # The EVENT-DRIVEN fold path (design/standing-watermark/10): every message that
 # lands in a conversation triggers a standing check off the listener path, and
 # the check enqueues an event fold only when the accumulator reaches fold_batch
-# (200). Off, only the tag path folds — strictly better than pre-bundle, but a
+# (40). Off, only the tag path folds — strictly better than pre-bundle, but a
 # conversation that never tags Nora stays folded only when tagged.
 event_enabled = true
 # How many batch folds ONE spawned event fold may perform before stopping —
