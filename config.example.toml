@@ -20,6 +20,14 @@ enabled = true                   # honoured by the adapter registry; false with 
 enabled = false                  # off by default — see design/discord-integration/
 token_env = "DISCORD_BOT_TOKEN"  # env var holding the bot token; never the value itself
 
+[platforms.whatsapp]
+enabled = false                  # off by default — see design/whatsapp-adoption/
+base_url = "http://whatsapp-bridge:18081"  # the containerized Baileys bridge;
+                                  # it holds the paired session, so there is no
+                                  # token/account here at all. Requires pairing
+                                  # first: docker compose run --rm whatsapp-bridge
+                                  # --pair --phone <digits>
+
 [memory]
 base_url = "http://127.0.0.1:8000"
 workspace_id = "nora"

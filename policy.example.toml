@@ -85,6 +85,18 @@ label     = "Zone 42 #general"
 persons  = ["miles", "ada"]
 # location = true            # same switch as Signal, same meaning — see below.
 
+# WhatsApp (design/whatsapp-adoption/): the id is the group JID exactly as the
+# bridge reports it, `...@g.us`. Find it in the audit DB or in the bridge's
+# logs once the room has spoken. 1:1 chats (`...@s.whatsapp.net`) are
+# DENY-BY-DEFAULT this phase — listing one here admits it, and the DM study
+# owns whether that becomes supported, so don't until it lands.
+# [[conversations]]
+# platform  = "whatsapp"
+# id        = "176569000000000000@g.us"
+# workspace = "family"         # same humans again — the workspace is the unit
+# persons  = ["miles", "ada"]
+# tools/location stay omitted here: deny-by-default, same as every new room.
+
 [[conversations]]
 platform = "telegram"
 id       = "-1001234567890"

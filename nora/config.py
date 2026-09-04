@@ -96,6 +96,28 @@ class DiscordPlatformConfig(BaseModel):
     token_env: str = "DISCORD_BOT_TOKEN"  # noqa: S105 — names an env var, not a secret
 
 
+class WhatsAppPlatformConfig(BaseModel):
+    """`design/whatsapp-adoption/`. Unlike Discord but like Signal, the
+    adapter talks to a LOCAL daemon — the containerized Baileys bridge
+    (`deploy/whatsapp-bridge/`, compose service `whatsapp-bridge`) — so the
+    credential never appears here at all: the bridge holds the paired
+    session on its own `./state/whatsapp` volume, and there is no token to
+    name. No `account` field either: the bot's own number is derived from
+    the bridge's `GET /self` at startup (`nora.platform.whatsapp.self_id`),
+    the same rule DEC-102 set for Signal's removed `nora_sender_id` — a
+    configured copy of who Nora is would be an operator's guess that pairing
+    can silently disagree with.
+
+    Defaulted: a config.toml written before the transport existed must still
+    load with WhatsApp off — the same argument `DiscordPlatformConfig` makes.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    base_url: str = "http://whatsapp-bridge:18081"
+
+
 class PlatformsConfig(BaseModel):
     """A model, not a free-form dict: `extra="forbid"` must keep rejecting an
     unknown platform name. A later phase widens this into a registry.
@@ -105,6 +127,7 @@ class PlatformsConfig(BaseModel):
 
     signal: SignalPlatformConfig
     discord: DiscordPlatformConfig = Field(default_factory=DiscordPlatformConfig)
+    whatsapp: WhatsAppPlatformConfig = Field(default_factory=WhatsAppPlatformConfig)
 
 
 class MemoryConfig(BaseModel):

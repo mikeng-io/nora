@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from strands.hooks.events import BeforeInvocationEvent
@@ -582,7 +582,7 @@ async def test_invoke_catches_max_tokens_and_carries_the_partial_text():
     from nora.domain.errors import PartialReplyError
 
     class _FakeAgent:
-        messages = [{"role": "assistant", "content": [
+        messages: ClassVar[list] = [{"role": "assistant", "content": [
             {"text": "密碼寫咗喺島上面，去搵下啦"},
         ]}]
 
@@ -613,7 +613,7 @@ async def test_invoke_carries_an_empty_partial_when_only_tool_use_blocks():
     from nora.domain.errors import PartialReplyError
 
     class _FakeAgent:
-        messages = [{"role": "assistant", "content": [
+        messages: ClassVar[list] = [{"role": "assistant", "content": [
             {"text": "The selected tool send_reply's tool use "
                      "was incomplete due to maximum token limits "
                      "being reached."},

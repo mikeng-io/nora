@@ -24,6 +24,7 @@ from nora.obs.metrics import Metrics
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
+from nora.platform.whatsapp.adapter import WhatsAppAdapter
 from nora.testing import FakeBlobStore, FakeMediaSource, FakeMemoryStore
 
 
@@ -104,6 +105,15 @@ def test_discord_adapter_satisfies_platform_adapter():
     same headline goal as the Signal assertion above, proven independently
     rather than assumed from the Protocol declaration alone."""
     assert isinstance(DiscordAdapter("tok"), PlatformAdapter)
+
+
+def test_whatsapp_adapter_satisfies_platform_adapter():
+    """The registry's third concrete adapter (design/whatsapp-adoption/) —
+    same headline goal as the Signal and Discord assertions above. A port
+    never gains a second implementation without the shared contract suite
+    covering it (CLAUDE.md); this is the name-level floor, and
+    `test_send_contract.py`/`test_reaction_contract.py` carry the behaviour."""
+    assert isinstance(WhatsAppAdapter("http://x"), PlatformAdapter)
 
 
 def test_runtime_checkable_protocols_only_check_method_names():

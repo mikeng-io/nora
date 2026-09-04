@@ -327,6 +327,50 @@ container.
    docker compose restart nora
    ```
 
+## 4b. WhatsApp (whatsapp-bridge)
+
+The bridge (`deploy/whatsapp-bridge/`, design/whatsapp-adoption/) is the
+transport twin of signal-cli: same private network, same no-published-ports
+posture, session on `./state/whatsapp` (chmod 700, never commit). It is only
+relevant when `[platforms.whatsapp] enabled = true`.
+
+**Pairing (first run, and after any session invalidation):**
+
+```bash
+docker compose run --rm whatsapp-bridge --pair --phone <digits, no +>
+```
+
+Type the printed pairing code into the bot number's phone app (Settings →
+Linked Devices → Link with phone number). Normal `docker compose up -d`
+then boots with the saved session. If you mess it up, re-run the same
+command — no cleanup needed. Losing `./state/whatsapp` loses the pairing,
+not history (the audit DB is the record).
+
+**Admitting a WhatsApp room:** get the group JID (`...@g.us`) from the audit
+DB or the bridge's logs, add a `[[conversations]]` entry with
+`platform = "whatsapp"` to policy.toml, then `docker compose up -d
+--force-recreate nora` — a RECREATE, not a restart (the single-file
+bind-mount inode gotcha, `nora/obs/health.py:14-21`). Confirm `/health`'s
+`config.policy.disk_mtime` matches the edited file. 1:1 chats stay
+deny-by-default until the DM study lands.
+
+| Failure | Symptom | Action |
+|---|---|---|
+| WhatsApp protocol update | bridge reconnect loop / messages stop | bump the Baileys pin in deploy/whatsapp-bridge/package.json, rebuild, re-pair if the session was invalidated |
+| Phone offline >~14 days (operational lore, not an SLA) | device unlinked | re-pair with the command above |
+| Session dir lost/corrupt | `paired: false` in the bridge's /health | re-pair (no data loss) |
+| Account restricted (ban) | login throttled/rejected | stop using the number; evaluate cause (design/whatsapp-adoption/02 §risk posture) |
+| Network blip | transient disconnect | self-heals; the bridge reconnects with backoff |
+
+The container healthcheck only proves the HTTP layer serves (curl exists in
+the image precisely because node:20-slim ships none). The real detector is
+Nora `/health`'s per-platform `last_event_age_seconds` — the bridge emits
+SSE heartbeats so a dead WhatsApp socket ages that value in a quiet room,
+and `deploy/watchdog.sh` alerts on it. `dropped_events` on the bridge's
+`/health` (and a WARNING in Nora's log) means inbound events were discarded
+while Nora was disconnected — audit rows were lost; that is counted, never
+silent.
+
 ## 5. "Which doctrine produced this reply?"
 
 Every reply's log line and trace carry `doctrine_sha256` — the sha256 of the doctrine version

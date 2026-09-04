@@ -47,6 +47,10 @@ venv/
 data/*.pre-alembic
 .serena/
 
+# Node (deploy/whatsapp-bridge): dependencies are rebuilt by npm ci / the
+# Dockerfile; the tree is never a build input worth committing.
+node_modules/
+
 # signal-cli release tarball — fetched+verified by deploy/signal-cli/fetch.sh
 deploy/signal-cli/*.tar.gz
 # .asc is COMMITTED deliberately: the Dockerfile verifies the tarball against

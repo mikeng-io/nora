@@ -11,9 +11,8 @@ cannot resolve who it is; the caller
 (`nora.app.composition.build_dependencies`) routes that through
 `StartupError`, the same as every other fatal, ordered startup step.
 
-Only Signal exists today — `nora.config.PlatformsConfig` has one platform
-field, and `SignalPlatformConfig.enabled` was previously unread (`SignalAdapter`
-started unconditionally). This module is what finally honours it: a disabled
+Each enabled platform is one more `if platforms.<x>.enabled:` block — Signal,
+Discord (DEC-102), and now WhatsApp (design/whatsapp-adoption/). A disabled
 platform is built and resolved by no one, silently.
 
 **Nora's own account is never written to `identity.toml`** (DEC-9) — that
@@ -38,6 +37,7 @@ from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.signal.account import AccountError, derive_account
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.self_id import MetricsSink
+from nora.platform.whatsapp.adapter import WhatsAppAdapter
 
 
 class AdapterRegistryError(Exception):
@@ -59,6 +59,15 @@ class _DiscordPlatformConfig(Protocol):
     def enabled(self) -> bool: ...
     @property
     def token_env(self) -> str: ...
+
+
+class _WhatsAppPlatformConfig(Protocol):
+    """No secret and no account field — the bridge holds the paired session
+    and answers `GET /self`; see `nora.config.WhatsAppPlatformConfig`."""
+    @property
+    def enabled(self) -> bool: ...
+    @property
+    def base_url(self) -> str: ...
 
 
 class _PlatformsConfig(Protocol):
@@ -83,6 +92,8 @@ class _PlatformsConfig(Protocol):
     def signal(self) -> _SignalPlatformConfig: ...
     @property
     def discord(self) -> _DiscordPlatformConfig: ...
+    @property
+    def whatsapp(self) -> _WhatsAppPlatformConfig: ...
 
 
 @dataclass(frozen=True)
@@ -113,7 +124,7 @@ class AdapterRegistry:
         music_manager: MusicPlayerManager | None = None,
         music_crossfade_seconds: float = 0.0,
     ) -> AdapterRegistry:
-        """Build+resolve every enabled platform: Signal and, now, Discord —
+        """Build+resolve every enabled platform — Signal, Discord, WhatsApp;
         each one more `if platforms.<x>.enabled:` block, not a rewrite of this
         method's shape. `platforms` is `cfg.platforms`, not `cfg` itself — see
         `_PlatformsConfig`'s docstring.
@@ -179,6 +190,24 @@ class AdapterRegistry:
             adapters["discord"] = discord_adapter
             identities["discord"] = discord_identity
 
+        whatsapp_cfg = platforms.whatsapp
+        if whatsapp_cfg.enabled:
+            # Same shape as Discord's block, one platform later: no token to
+            # resolve (the bridge holds the session), so the ONLY failure mode
+            # here is identity — an unpaired or unreachable bridge must fail
+            # startup, not produce a deaf adapter (fail-fast is the point —
+            # this module's own docstring).
+            whatsapp_adapter = WhatsAppAdapter(whatsapp_cfg.base_url)
+            try:
+                whatsapp_identity = await whatsapp_adapter.resolve_identity()
+            except Exception as exc:
+                raise AdapterRegistryError(
+                    f"whatsapp adapter could not resolve its own identity: {exc}"
+                ) from exc
+
+            adapters["whatsapp"] = whatsapp_adapter
+            identities["whatsapp"] = whatsapp_identity
+
         return cls(adapters=adapters, identities=identities)
 
     def get(self, platform: str) -> PlatformAdapter:
@@ -200,11 +229,12 @@ class AdapterRegistry:
 
         A UNION, and safe as one: the id spaces are disjoint by construction (a
         Signal phone is `+…`, its ACI a hyphenated UUID, a Discord id a bare
-        17-19 digit snowflake), so no cross-platform false positive is
-        reachable. Identity is matched on IMMUTABLE ids only — a renameable
-        handle can never appear here, because `username` is not a matchable
-        kind on any platform (`nora.domain.identity`) and `Identifier` refuses
-        to carry one.
+        17-19 digit snowflake, a WhatsApp phone `+…` on a DEDICATED number and
+        its lid bare digits), so no cross-platform false positive is reachable.
+        Identity is matched on IMMUTABLE ids only — a renameable handle can
+        never appear here, because `username` is not a matchable kind on any
+        platform (`nora.domain.identity`) and `Identifier` refuses to carry
+        one.
 
         R-12's self-tag check is deliberately NOT this set: it must stay
         strictly per-platform and reads `identity_for(message.platform)`

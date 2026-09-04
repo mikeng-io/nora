@@ -24,6 +24,17 @@ enabled = true                   # honoured by the adapter registry (DEC-102)
 enabled = true                   # Zone 42 + Ridgeline test, see policy.toml
 token_env = "DISCORD_BOT_TOKEN"  # env var name, never the token itself
 
+[platforms.whatsapp]
+# design/whatsapp-adoption/ — the containerized Baileys bridge (compose
+# service `whatsapp-bridge`). Off until the bridge is built and PAIRED
+# (operator step: `docker compose run --rm whatsapp-bridge --pair --phone
+# <digits>`). No token/account here: the bridge holds the session on its own
+# volume and Nora derives her own number from the bridge's /self at startup.
+# 1:1 rooms stay deny-by-default until the DM study lands; groups are
+# admitted through policy.toml like every other platform.
+enabled = false
+base_url = "http://whatsapp-bridge:18081"
+
 [memory]
 base_url = "http://host.docker.internal:8000"
 workspace_id = "nora"

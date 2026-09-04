@@ -28,13 +28,29 @@ from nora.domain.ports import PlatformAdapter, ReactionResult
 from nora.obs.metrics import Metrics
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.signal.adapter import SignalAdapter
+from nora.platform.whatsapp.adapter import WhatsAppAdapter
 from nora.testing import FakeAdapter
 
 DISCORD_GROUP = ConversationTarget("discord", "111/222", "group")
 DISCORD_MESSAGE = "100000000000000208"
 
+WHATSAPP_GROUP = ConversationTarget("whatsapp", "176569000000000000@g.us", "group")
+
 GROUP = ConversationTarget("signal", "Z3JvdXA=", "group")
 ACI = "b9f1c2de-4a55-4c1e-9a77-0c1d2e3f4a5b"
+
+
+async def _whatsapp_adapter(aiohttp_server, *, status: int = 200):
+    """A `WhatsAppAdapter` pointed at a stand-in for the bridge's `/react`."""
+    async def handler(request: web.Request) -> web.Response:
+        if status != 200:
+            return web.json_response({"error": "boom"}, status=status)
+        return web.json_response({"ok": True})
+
+    app = web.Application()
+    app.router.add_post("/react", handler)
+    server = await aiohttp_server(app)
+    return WhatsAppAdapter(str(server.make_url("")).rstrip("/"))
 
 
 async def _discord_adapter(aiohttp_server, *, status: int = 204):
@@ -67,17 +83,19 @@ async def _signal_adapter(aiohttp_server, *, status: int = 200):
     return SignalAdapter(str(server.make_url("")).rstrip("/"), "+15550000000", metrics=Metrics())
 
 
-@pytest.fixture(params=["signal", "discord", "fake"])
+@pytest.fixture(params=["signal", "discord", "whatsapp", "fake"])
 async def working(request, aiohttp_server):
     """An adapter whose platform accepts the reaction."""
     if request.param == "signal":
         return await _signal_adapter(aiohttp_server)
     if request.param == "discord":
         return await _discord_adapter(aiohttp_server)
+    if request.param == "whatsapp":
+        return await _whatsapp_adapter(aiohttp_server)
     return FakeAdapter(account="+15550000000")
 
 
-@pytest.fixture(params=["signal", "discord", "fake"])
+@pytest.fixture(params=["signal", "discord", "whatsapp", "fake"])
 async def broken(request, aiohttp_server):
     """An adapter whose platform HAS reactions but rejects this one."""
     if request.param == "signal":
@@ -87,16 +105,25 @@ async def broken(request, aiohttp_server):
         # react; this attempt was refused, which is the distinction this suite
         # exists to keep identical across implementations.
         return await _discord_adapter(aiohttp_server, status=403)
+    if request.param == "whatsapp":
+        # 500 — the bridge itself failed the call. Same distinction: the
+        # platform CAN react; this attempt was refused.
+        return await _whatsapp_adapter(aiohttp_server, status=500)
     return FakeAdapter(account="+15550000000", react_fails=True)
 
 
 def _target_for(adapter):
     """Each implementation's own room, since a Discord adapter cannot address
     a Signal group id and vice versa."""
-    return DISCORD_GROUP if adapter.platform == "discord" else GROUP
+    platform = getattr(adapter, "platform", "")
+    if platform == "discord":
+        return DISCORD_GROUP
+    if platform == "whatsapp":
+        return WHATSAPP_GROUP
+    return GROUP
 
 
-@pytest.mark.parametrize("impl", [SignalAdapter, DiscordAdapter, FakeAdapter])
+@pytest.mark.parametrize("impl", [SignalAdapter, DiscordAdapter, WhatsAppAdapter, FakeAdapter])
 def test_react_matches_the_port_signature(impl):
     """Keyword-only after self, per `tests/test_ports.py`'s convention, and
     `ReactionResult`-returning. `isinstance` against a runtime_checkable
@@ -110,12 +137,14 @@ def test_react_matches_the_port_signature(impl):
     assert inspect.signature(impl.react).return_annotation == "ReactionResult"
 
 
-@pytest.mark.parametrize("impl", [SignalAdapter, DiscordAdapter, FakeAdapter])
+@pytest.mark.parametrize("impl", [SignalAdapter, DiscordAdapter, WhatsAppAdapter, FakeAdapter])
 def test_every_implementation_is_a_platform_adapter(impl):
     if impl is SignalAdapter:
         instance = impl("http://x", "+1", metrics=Metrics())
     elif impl is DiscordAdapter:
         instance = impl("tok")
+    elif impl is WhatsAppAdapter:
+        instance = impl("http://x")
     else:
         instance = impl()
     assert isinstance(instance, PlatformAdapter)

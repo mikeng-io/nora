@@ -1,0 +1,11 @@
+FROM node:20-slim
+WORKDIR /app
+COPY bridge.js bridge_helpers.js package.json package-lock.json ./
+# curl is load-bearing, not decoration: node:20-slim ships neither curl nor
+# wget, and the compose healthcheck curls /health. Without it the container
+# boots but reports unhealthy forever (design 01; review B1).
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+RUN npm ci --omit=dev
+EXPOSE 18081
+CMD ["node", "bridge.js", "--port", "18081", "--session", "/app/session"]
