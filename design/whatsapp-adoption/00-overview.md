@@ -87,6 +87,10 @@ realization, matching the Discord precedent.
 - Person identity: `whatsapp: phone` id-kind added to the identity
   vocabulary; same-person-across-platforms resolution (a friend on Signal
   and WhatsApp resolves to one `person_id`).
+- **1:1 DMs: in scope** (operator 2026-09-04). The transport must carry
+  1:1 and group traffic alike; the *semantics* of DM interaction follow the
+  separate DM-study session — this bundle does not define them, it only
+  wires the ingress.
 
 ## What's explicit out of scope for v1
 
@@ -95,8 +99,10 @@ realization, matching the Discord precedent.
 - **No WhatsApp Business API.** That is a separate official path with its own
   docs (Hermes supports it as `whatsapp-cloud`); not this design.
 - **No voice calls.** Only messages.
-- **No 1:1-DM special semantics.** WhatsApp DMs follow the same
-  roster-scoped disclosure guards as every Nora conversation.
+- **No 1:1-DM semantics invented here.** 1:1 DMs are in scope (operator
+  2026-09-04) but their semantics — roster, disclosure, fallback for a
+  roster-less conversation — are the output of the DM-study session. This
+  bundle wires the transport and applies the general room rules only.
 
 ## Deployment posture
 

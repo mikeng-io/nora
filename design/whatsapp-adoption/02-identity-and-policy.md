@@ -97,14 +97,16 @@ calendar note, not infrastructure.
 
 ## Open decisions for Miles
 
-1. **Dedicated number source** — prepaid SIM (recommended) vs VoIP vs
-   deferring until a number exists.
-2. **1:1 DMs admitted?** Discord v1 deliberately excluded 1:1 DMs (roster
-   semantics absent). WhatsApp 1:1 has the same issue; the recommendation is
-   to admit only known `persons.yaml` accounts in 1:1, same as every room
-   rule, and defer the general "anyone can DM Nora" question.
-3. **Workspace mapping** — do WhatsApp chats join the existing `friends`
-   workspace (same people, second ingress) or a fresh workspace? DEC-105
-   says one room per platform per workspace; a second Signal group already
-   needs its own workspace. Recommendation: reuse `friends` — same roster,
-   same people.
+1. **Dedicated number source — DECIDED: already available** (operator
+   2026-09-04). A dedicated number exists; pairing uses it. No procurement
+   step in this bundle.
+2. **1:1 DMs — DECIDED: in scope** (operator 2026-09-04). 1:1 DM handling
+   is being defined in a separate DM-study session; this bundle wires the
+   transport and applies general room rules until that session lands.
+   Discord v1 deliberately excluded 1:1 DMs (roster semantics absent) — the
+   DM-study session owns whether WhatsApp changes that posture.
+3. **Workspace mapping — DECIDED: reuse `friends`** (operator 2026-09-04).
+   WhatsApp chats join the existing `friends` workspace — same roster, second
+   ingress. DEC-105's one-room-per-platform-per-workspace rule is satisfied:
+   WhatsApp becomes the friends room's WhatsApp surface, parallel to its
+   Signal group (and existing Discord rooms).
