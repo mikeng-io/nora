@@ -116,13 +116,32 @@ process-level check cannot prove the upstream websocket is alive):
 FROM node:20-slim
 WORKDIR /app
 COPY bridge.js bridge_helpers.js package.json package-lock.json ./
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 RUN npm ci --omit=dev
 EXPOSE 18081
 CMD ["node", "bridge.js", "--port", "18081", "--session", "/app/session"]
 ```
+
+**curl is load-bearing, not decoration.** `node:20-slim` ships neither curl
+nor wget (verified live: `docker run --rm --entrypoint sh node:20-slim -c
+'which curl wget'` → `NO_CURL_NO_WGET`), and the compose healthcheck above
+uses `curl -fsS`. Both precedents install it explicitly:
+`deploy/signal-cli/Dockerfile:22` and the Nora `Dockerfile:12` (which also
+healthchecks with curl, `Dockerfile:59`). Without the install the container
+boots, the healthcheck fails forever, and `unhealthy` reads as a dead bridge
+— an ERROR reading as a PASS, the class R-27 exists to prevent.
 
 The image builds from `deploy/whatsapp-bridge/`, mirroring
 `deploy/signal-cli/`. The Baileys bridge code is adapted from Hermes'
 `scripts/whatsapp-bridge/` (MIT) — same endpoints, Nora-specific tweaks (SSE
 push instead of long-poll; no Hermes env coupling; `reply_prefix` handling
 moved into Nora's egress layer like Discord).
+
+**Do not copy the Hermes queue wholesale.** Hermes' in-memory queue silently
+drops message 101+ on overflow (`bridge.js:272,379-380,774-775` —
+`MAX_QUEUE_SIZE = 100`; `messageQueue.shift()` with no counter, no log, no
+durable spill). For a durability-sensitive transport feeding an audit trail
+(R-5 shape), the adapted bridge must either drop-and-count (surface the drop
+via the SSE/health channel) or spill to disk. Silent loss of audit rows is
+the failure class Nora's own design history treats as a bug, not a feature.

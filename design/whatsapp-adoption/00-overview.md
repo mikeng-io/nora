@@ -73,8 +73,9 @@ tag detection → Strands agent → send_reply → bridge HTTP send
 ```
 
 Nora's `PlatformAdapter` Protocol and `AdapterRegistry` were designed for
-this; only `SignalAdapter` exists today. The WhatsApp adapter is the second
-realization, matching the Discord precedent.
+this; `SignalAdapter` and `DiscordAdapter` both exist today
+(`nora/platform/registry.py:36-39`). The WhatsApp adapter is the **third**
+realization, following the Discord precedent.
 
 ## Sequencing: transport first, DM policy second (operator 2026-09-04)
 
@@ -108,7 +109,13 @@ while a design discussion finishes.
 - Dedicated WhatsApp number (bot mode) — **not** Miles's personal number.
 - Ambient ingest: every inbound WhatsApp message → SQLite audit + Honcho,
   exactly the Signal path.
-- Tag-to-reply: quoted trigger token → Strands agent → reply via bridge.
+- Engagement: reply via bridge on the platform's mention/reply signals.
+  **The text trigger is DISABLED in live config** (`config.toml:243-249`,
+  operator 2026-09-01 — substring match fired on a plain URL). Nora's current
+  posture is voice-note + @mention/reply only; the WhatsApp adapter must map
+  "mention/reply" onto WhatsApp semantics (bot number present in a group
+  message? reply-to-a-Nora-message?) and voice notes need media custody +
+  transcription before they can engage. See `02-identity-and-policy.md` §Engagement.
 - Room admission: WhatsApp chats admitted via the same policy mechanism as
   Signal groups / Discord channels.
 - Person identity: `whatsapp: phone` id-kind added to the identity
@@ -126,6 +133,12 @@ while a design discussion finishes.
 - **No WhatsApp Business API.** That is a separate official path with its own
   docs (Hermes supports it as `whatsapp-cloud`); not this design.
 - **No voice calls.** Only messages.
+- **Inbound media (images/files/voice) is deferred but not silent.** The
+  transport must carry media events to the ambient tier (custody + audit),
+  but v1 does not define transcription/description of WhatsApp media. Voice
+  notes are an engagement signal in Nora's current posture — deferring them
+  means voice-note engagement does not work until media ingestion lands
+  (see `02-identity-and-policy.md` §Engagement).
 - **No 1:1-DM semantics invented here.** 1:1 DMs are in scope (operator
   2026-09-04) but their semantics — roster, disclosure, fallback for a
   roster-less conversation — are the output of the DM-study session. This
