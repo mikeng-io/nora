@@ -76,6 +76,33 @@ Nora's `PlatformAdapter` Protocol and `AdapterRegistry` were designed for
 this; only `SignalAdapter` exists today. The WhatsApp adapter is the second
 realization, matching the Discord precedent.
 
+## Sequencing: transport first, DM policy second (operator 2026-09-04)
+
+WhatsApp and the DM study are **not serial** — they touch different layers:
+
+- The **transport** (bridge container, pairing, adapter, ambient wiring) is
+  identical regardless of what DM semantics conclude; it carries 1:1 and
+  group traffic the same way signal-cli does.
+- The **DM study** feeds the policy layer: roster, disclosure rules, and the
+  fallback for a roster-less conversation. It is a shared-core question that
+  exists independent of WhatsApp (Discord v1 already excluded DMs).
+
+Verdict (pinned here so the build order is not re-litigated):
+
+1. **Build the WhatsApp transport first**, admitting **groups** to `friends`.
+2. **Let the DM study run in parallel** (its own session).
+3. **When the DM study lands**, flip 1:1 admission on with its rules.
+
+One hard rule while waiting: **1:1 stays deny-by-default** (fail-closed,
+R-31 spirit) until the DM study concludes. The transport may *carry* 1:1
+traffic, but the adapter must not *admit* 1:1 with general-room rules that
+the DM design will likely change — the later refit stays bounded to policy
+config, never a transport rework.
+
+Blocking the transport on the DM study would leave the bridge — the part with
+real external risk (protocol churn, ban posture, number lifecycle) — idle
+while a design discussion finishes.
+
 ## What v1 covers
 
 - Dedicated WhatsApp number (bot mode) — **not** Miles's personal number.
