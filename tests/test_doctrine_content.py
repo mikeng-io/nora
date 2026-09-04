@@ -16,16 +16,21 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # deliberately left the names behind so the rename could be proved byte-neutral.
 #
 # The audience is pinned per file, not asserted as one blanket `("tag",)`,
-# because that is the whole point of `silence.md`: everything else holds however
-# the turn started, and only "you're only reading this because someone called
-# you" does not. A file quietly gaining or losing `heartbeat` is the failure
-# this column exists to catch.
+# because that is the whole point of the split: everything occasion-neutral
+# holds however the turn started (and so reaches `participation` too — the
+# LeakGuard corpus argument of `tests/test_doctrine_audiences.py` applies to
+# the newest audience exactly as it applied to `heartbeat`), while the
+# occasion-SPECIFIC files are narrow: `silence` is the tag/participation
+# difference itself, and `participation-conduct` speaks only to an offered
+# floor. A file quietly gaining or losing an audience is the failure this
+# column exists to catch.
 EXPECTED = {
-    "identity": ("identity", 10, ("tag", "heartbeat")),
-    "voice": ("identity", 20, ("tag", "heartbeat")),
-    "silence": ("conduct", 25, ("tag",)),
-    "conduct": ("conduct", 30, ("tag", "heartbeat")),
-    "constraints": ("constraint", 40, ("tag", "heartbeat")),
+    "identity": ("identity", 10, ("tag", "heartbeat", "participation")),
+    "voice": ("identity", 20, ("tag", "heartbeat", "participation")),
+    "silence": ("conduct", 25, ("tag", "participation")),
+    "conduct": ("conduct", 30, ("tag", "heartbeat", "participation")),
+    "participation-conduct": ("conduct", 35, ("participation",)),
+    "constraints": ("constraint", 40, ("tag", "heartbeat", "participation")),
 }
 
 
@@ -81,14 +86,21 @@ def test_voice_is_the_operators_alone():
     assert parse_section(DOCTRINE_DIR / "identity.md").change_policy == "operator-only"
 
 
+def _all_sections():
+    """Every authored file, AUDIENCE-FREE: `get()` filters by `applies_to`, and
+    the authority graph spans audiences (participation-conduct sits in no tag
+    assembly but still declares edges), so graph tests read the files."""
+    return [parse_section(p) for p in sorted(DOCTRINE_DIR.glob("*.md"))]
+
+
 def test_the_authority_graph_is_declared_relatively_and_terminates_at_tool_output():
     """`constraints.md` used to call itself "not negotiable" — an adjective with
     no position in an ordering. It now states its edges, and every other file
     states the same edge from the other side (the loader checks that symmetry).
     """
-    sections = {s.name: s for s in _shipped().get().sections}
+    sections = {s.name: s for s in _all_sections()}
     assert sections["constraints"].authority_above == ()
-    for name in ("identity", "voice", "conduct"):
+    for name in ("identity", "voice", "conduct", "participation-conduct"):
         assert "constraints" in sections[name].authority_above
         assert "tool-output" in sections[name].authority_below
 
@@ -105,8 +117,14 @@ def test_identity_voice_and_silence_conduct_are_peers_on_purpose():
     asserting something no gate checks and no measurement supports, and should
     have to delete this test to do it.
     """
-    sections = {s.name: s for s in _shipped().get().sections}
-    for a, b in (("identity", "voice"), ("silence", "conduct")):
+    sections = {s.name: s for s in _all_sections()}
+    # `participation-conduct` joined the conduct tier (design/dreamer-agent-
+    # loop/35): an occasion-specific conduct file, unranked against its two
+    # peers for exactly the reason `silence` and `conduct` are unranked.
+    peers = (("identity", "voice"), ("silence", "conduct"),
+             ("silence", "participation-conduct"),
+             ("conduct", "participation-conduct"))
+    for a, b in peers:
         assert sections[a].kind == sections[b].kind
         assert b not in sections[a].authority_above
         assert b not in sections[a].authority_below
