@@ -123,6 +123,46 @@ as the tag path's debounce (`nora/tag.py:73-86`, policed by
 `test_no_retained_per_tag_state`): the "last quiet-window end" cursor is
 per-room watermark state, not per-message session state.
 
+### 3.6 Fast by construction — not "answer fast"
+
+Participation has no tag-pressure deadline, so its latency ceiling is a design
+choice, not an instruction. **The doctrine never tells her to "be quick"** —
+an instruction like that is inert; the model does not move faster because it
+is told to. Instead the design removes the slow actions so the fast path is
+the only path that exists:
+
+1. **One judgment per quiet window, not per message.** The trigger (§3.5)
+   makes the determination O(1) per window, not O(n) per message. She never
+   spends tokens deciding "should I speak to this?" a hundred times in a
+   burst; she decides once, with the whole burst already assembled.
+2. **No tools on the determination path.** The grounded-value gate (§3②) is
+   answered from what is ALREADY in context — transcript + standing/notes/
+   facts are injected by the parity assembler. The participation conduct
+   section must say this explicitly: **do not open a tool to answer a
+   question nobody asked you.** Tool round-trips are the latency cost; no
+   tool call on the decide-or-not path means the decision is one model call.
+   (After she decides to speak, she may use tools normally — but she starts
+   with what is in front of her.)
+3. **One reply, one or two sentences, no re-search, no re-check.** She was
+   not asked; nobody is owed depth. The existing voice doctrine already says
+   "Short is the default" (conduct.md:36, voice.md:29,57) — participation
+   inherits it unmodified and adds: a participation reply that needs several
+   checks was not worth saying. If the answer does not come from context in
+   one pass, it does not come at all.
+4. **No commitment offers** (decision 10.5 — "I can look that up" excluded).
+   Every follow-up obligation is latency and noise; silence is both cheaper
+   and faster.
+5. **Silence is the fastest outcome.** Not calling `send_reply` terminates
+   the turn with zero delivery work, zero tool calls, zero room-visible
+   effect (decision 10.1 + the no-indicate decision). The default path being
+   the cheapest path is the whole design.
+
+**What the participation doctrine section will contain** (for the
+implementation phase): "You were not called. Decide from the context already
+in front of you. Do not open tools to answer a question nobody asked. One
+reply, one or two sentences. If it is not in front of you, it is not worth
+saying. When in doubt, say nothing — silence is a complete answer."
+
 ## 4. Doctrine: same files, new audience — plus the pins Rev 1 missed
 
 The three-layer principle — `conduct.md` writes WHEN to act, `voice.md` writes
