@@ -24,12 +24,18 @@ import dataclasses
 import os
 import re
 import shutil
+import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nora.agent import factory
+from nora.agent.registry import ToolRegistry
 from nora.app.dispatch import Dispatcher
+from nora.app.fire import FirePath
 from nora.app.offline import build_offline_pipeline
+from nora.app.participation import ParticipationTrigger
 from nora.app.runtime import BackgroundTasks
 from nora.config import Config
 from nora.doctrine.loader import DoctrineStore
@@ -41,8 +47,10 @@ from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.tag_traces import SqlTagTraceStore
+from nora.ingest.policy import ParticipationPolicy
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
+from nora.policy import load_policy
 from nora.testing import FakeAgentRunner, ScriptedTurn
 from tests.builders import load_example_config, override_config
 from tests.fakes import FakeHoncho, SinkSender
@@ -180,6 +188,10 @@ class Harness:
     _tmp_path: Path
     _identity_toml: str
     _register: Callable[[Harness], None] | None = None
+    # The participation occasion's quiescence trigger (design/dreamer-agent-loop/35),
+    # None unless `participation_script` was given. Tests drive
+    # `close_due_windows()` directly against the injected clock — never a sleep.
+    participation_trigger: ParticipationTrigger | None = None
 
     async def aclose(self) -> None:
         await self.store.aclose()
@@ -297,6 +309,9 @@ async def build_handler(
     register: Callable[[Harness], None] | None = None,
     roster: RosterSource | None = None,
     tool_registry=None,
+    participation_script=None,
+    participation_rooms: tuple[str, ...] = ("g1",),
+    participation_clock: Callable[[], float] | None = None,
 ) -> Harness:
     """Assemble real pipelines wired to a tmp db + a tmp COPY of the real doctrine dir +
     fakes.
@@ -323,6 +338,16 @@ async def build_handler(
     `fault` injects exactly one dependency failure (spec B.3/R-5's silent-failure
     matrix) into an otherwise-normal build; `fault=None` (the default) leaves every
     other caller's behavior unchanged.
+
+    `participation_script`, when given, wires the participation occasion the way
+    the composition root does (design/dreamer-agent-loop/35): the rooms named in
+    `participation_rooms` get `participation = true` in policy.toml, a REAL
+    `FirePath` is built with the scripted model as its `participation_runner`,
+    and a `ParticipationTrigger` over the engagement pipeline's own slots is
+    handed to the dispatcher — so an untagged message in an opted-in room is
+    NOTED, and nothing runs until the test closes the window itself with
+    `harness.participation_trigger.close_due_windows()` (the clock is
+    `participation_clock`, injected for the same reason `Debounce`'s is).
     """
     identity_toml = identity_toml or _DEFAULT_IDENTITY_TOML
     persons_path = tmp_path / "identity.toml"
@@ -346,6 +371,13 @@ async def build_handler(
         + "".join(
             f'[[conversations]]\nplatform = "signal"\nid = "{cid}"\n'
             'persons = "*"\n'
+            + (
+                # The participation occasion's room opt-in (35 §7): only present
+                # when the scenario wired a participation runner at all.
+                "participation = true\n"
+                if participation_script is not None and cid in participation_rooms
+                else ""
+            )
             for cid in ("g1", "g2", "a", "A", "b", "B")
         )
     )
@@ -454,8 +486,50 @@ async def build_handler(
         roster_source=roster,
         tool_registry=tool_registry,
         tag_trace_store=tag_trace_store,
+        extra_engage_policies=(
+            (ParticipationPolicy(load_policy(policy_path)),)
+            if participation_script is not None else ()
+        ),
     )
     handler = _HandlerView(dispatcher=dispatcher, engagement=engagement, adapter=adapter)
+
+    participation_trigger = None
+    if participation_script is not None:
+        # The production wiring's mirror (composition.py): the occasion goes
+        # through a REAL FirePath — same deliver.build, guards, audit and
+        # accounting the deployment runs — with only the model scripted.
+        participation_runner = (
+            participation_script
+            if isinstance(participation_script, FakeAgentRunner)
+            else FakeAgentRunner(participation_script, on_call=calls.append)
+        )
+        fire_path = FirePath(
+            persons=persons, records=store, memory=honcho_double,
+            doctrine_store=doctrine_store, metrics=metrics,
+            runner=runner, adapters={adapter.platform: adapter},
+            registry=tool_registry if tool_registry is not None else ToolRegistry(
+                budget_overrides=cfg.llm.budgets),
+            canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
+            ai_peer=cfg.memory.ai_peer, context_window=cfg.store.context_window,
+            limits=factory.build_limits(
+                output_tokens=cfg.llm.limits.output_tokens,
+                turns=cfg.llm.limits.turns,
+                total_tokens=cfg.llm.limits.total_tokens,
+            ),
+            timeout_seconds=cfg.heartbeat.timeout_seconds,
+            clock=lambda: datetime.now(UTC),
+            participation_runner=participation_runner,
+        )
+        participation_trigger = ParticipationTrigger(
+            speak=fire_path.speak,
+            slots=engagement._slots,
+            settle_seconds=cfg.participation.settle_seconds,
+            cooldown_seconds=cfg.participation.cooldown_minutes * 60,
+            clock=participation_clock or time.monotonic,
+        )
+        # Set post-construction, mirroring `set_script`'s harness-only seam:
+        # the trigger needs the slots `build_offline_pipeline` builds inside.
+        dispatcher._participation = participation_trigger
 
     harness = Harness(
         handler=handler,
@@ -472,6 +546,7 @@ async def build_handler(
         _tmp_path=tmp_path,
         _identity_toml=identity_toml,
         _register=register,
+        participation_trigger=participation_trigger,
     )
     if register is not None:
         register(harness)

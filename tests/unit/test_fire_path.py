@@ -19,7 +19,13 @@ import pytest
 
 from nora.agent.registry import ToolRegistry
 from nora.app import fire as fire_module
-from nora.app.fire import FirePath, compute_occasion, gathering_occasion, reminder_occasion
+from nora.app.fire import (
+    FirePath,
+    compute_occasion,
+    gathering_occasion,
+    participation_occasion,
+    reminder_occasion,
+)
 from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.events import Event
 from nora.domain.models import ConversationTarget, PersonRef
@@ -280,6 +286,7 @@ def _fire_path(
     memory: FakeMemoryStore | None = None,
     records: FakeRecordStore | None = None,
     registry: ToolRegistry | None = None,
+    participation_runner=None,
     timeout_seconds: float = 5.0,
     room_language_max_entries: int | None = None,
     event_registry: dict | None = None,
@@ -304,6 +311,7 @@ def _fire_path(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40,
         limits=LIMITS, timeout_seconds=timeout_seconds, clock=lambda: T0,
+        participation_runner=participation_runner,
         **extra,
     )
 
@@ -1064,3 +1072,210 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
 
     assert ctx.standing is None
     assert metrics.get("nora_errors_total", stage="fire_standing") == 1
+
+
+# ---------------------------------------------------------------------------
+# participation — the fifth Event (design/dreamer-agent-loop/35)
+# ---------------------------------------------------------------------------
+# The occasion that goes THROUGH `FirePath.speak` like the four reminder-row
+# kinds, with three occasion-gated differences this section pins: its own
+# runner (composed with `tool_choice="auto"`), NO DEC-93 recovery on any
+# branch (a draft written instead of a send IS the model declining the
+# floor), and a quiet turn that answers SILENT rather than a failure string.
+
+def _participation(conversation_id: str = "conv-1") -> Event:
+    return participation_occasion(platform="signal", conversation_id=conversation_id)
+
+
+async def test_the_participation_turn_never_passes_through_indicate(
+    fire_path: FirePath,
+) -> None:
+    """The participation trigger fires on a REAL message, but the turn must
+    still skip the indicate stage — `indicate.begin` would otherwise 👀→⚠️ on
+    every silent determination. The mechanism is the fire path's own: it never
+    calls indicate at all, and its synthetic message has a falsy sender, which
+    is the exact condition `indicate.begin` returns None on (indicate.py:13).
+    """
+    assert not hasattr(fire_module, "indicate"), (
+        "FirePath must not gain an indicate stage — pin for the participation "
+        "occasion, whose every silent turn would leave a ⚠️ behind"
+    )
+
+    ctx = await fire_path.build_context(_participation())
+
+    assert ctx.tagger is None                       # the floor, not a requester
+    assert ctx.message.sender_id == ""              # indicate.begin -> None
+    assert ctx.message.timestamp == 0
+
+
+async def test_a_quiet_participation_turn_is_silent_not_a_failure(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """§6's healthy default: the model was offered the floor and declined it.
+    `silent`, an increment of `nora_participation_silence_total`, and NOTHING
+    in `nora_silent_failures_total` — the runbook's `{audience="tag"}` filter
+    is load-bearing and this turn must never reach it. Also the runner-selection
+    pin: the turn runs on the participation runner, never the tag/heartbeat one.
+    """
+    adapter = _FireAdapter()
+    runner = FakeAgentRunner(_send_turns("the tag runner must not run"))
+    participation_runner = FakeAgentRunner([ScriptedTurn(final_text="")])
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=runner, participation_runner=participation_runner,
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SILENT
+    assert adapter.sent == []
+    assert participation_runner.invocations == 1
+    assert runner.invocations == 0
+    assert metrics.get("nora_participation_silence_total", platform="signal") == 1
+    assert metrics.get("nora_silent_failures_total", audience="participation") == 0
+    assert metrics.get("nora_silent_failures_total", audience="tag") == 0
+
+
+async def test_participation_never_recovers_a_written_draft(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The DEC-93 branch, occasion-gated OFF. Under `tool_choice="auto"` prose
+    without a `send_reply` call is the model DECLINING the floor; recovering it
+    would deliver exactly the turn the determination declined."""
+    adapter = _FireAdapter()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner([
+            ScriptedTurn(final_text="今日天氣唔錯"),   # end_turn, prose, no send
+        ]),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SILENT
+    assert adapter.sent == []
+    assert metrics.get("nora_recovered_replies_total") == 0
+    assert metrics.get("nora_participation_silence_total", platform="signal") == 1
+
+
+async def test_a_participation_turn_that_speaks_is_sent_and_counted(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The other half of may-speak: a real send goes through the same
+    `deliver.build`/`Deliverer`/audit machinery every occasion uses, answers
+    `sent`, and moves its own counter — never the silence one."""
+    adapter = _FireAdapter()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner(_send_turns("咁啱嘅")),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SENT
+    assert adapter.texts == ["咁啱嘅"]
+    assert metrics.get("nora_participation_spoke_total", platform="signal") == 1
+    assert metrics.get("nora_participation_silence_total") == 0
+
+
+async def test_a_budget_cut_participation_turn_is_an_ordinary_silent_failure(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The silence counter is gated on a NON-budget stop: a turn R-8's caps cut
+    off before it could decide is a malfunction, not a healthy silence, and
+    lands in `nora_silent_failures_total` under the PARTICIPATION audience —
+    still never the tag one."""
+    adapter = _FireAdapter()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner([
+            # A benign tool call so the loop checks its caps (a tool-less
+            # cycle ends end_turn before the check); 25k against the 24k cap.
+            ScriptedTurn(tool_calls=[("now", {})], total_tokens=25_000),
+        ]),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SILENT
+    assert adapter.sent == []
+    assert metrics.get("nora_participation_silence_total") == 0
+    assert metrics.get(
+        "nora_silent_failures_total",
+        reason="limit_total_tokens", audience="participation",
+    ) == 1
+    assert metrics.get("nora_silent_failures_total", audience="tag") == 0
+
+
+async def test_a_send_held_by_the_cooldown_is_held_at_the_last_inch(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """§10.3's enforcement half: the trigger DECIDES `send_permitted`, the
+    `Deliverer` ENFORCES it after the R-6/R-18 guards and before the audit row.
+    `called` stays True — a held send was policy, so nothing reads it as a
+    `no_send_call` failure, and nothing counts it as silence either: the model
+    DID find grounded value; the room was simply not due to hear it."""
+    adapter = _FireAdapter()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner(_send_turns("held back")),
+    )
+
+    outcome = await path.speak(_participation(), send_permitted=False)
+
+    assert outcome == fire_module.SILENT
+    assert adapter.sent == []
+    assert metrics.get("nora_participation_silence_total") == 0
+    assert metrics.get("nora_participation_spoke_total") == 0
+    assert metrics.get("nora_silent_failures_total") == 0
+
+
+async def test_a_participation_turn_without_a_runner_is_a_wiring_fault(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """`[participation] enabled = true` with no `participation_runner` composed
+    must not quietly downgrade to the tag runner (whose `required` pin would
+    demand a send): it raises, and `_turn`'s guard files it as a handler_error
+    under the participation audience."""
+    adapter = _FireAdapter()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=FakeAgentRunner([]),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.FAILED_ERROR
+    assert adapter.sent == []
+    assert metrics.get(
+        "nora_silent_failures_total", reason="handler_error", audience="participation",
+    ) == 1
+
+
+async def test_the_participation_turn_reads_the_may_speak_doctrine(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The determination runs on the `applies_to="participation"` assembly —
+    silence.md's may-speak half and participation-conduct.md — never the tag
+    assembly, whose must-speak reading would make silence a violation."""
+    adapter = _FireAdapter()
+    calls: list = []
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner(
+            [ScriptedTurn(final_text="")], on_call=calls.append,
+        ),
+    )
+
+    await path.speak(_participation())
+
+    doctrine = calls[-1]["doctrine"]
+    names = {section.name for section in doctrine.sections}
+    assert "participation-conduct" in names
+    assert "silence" in names
+    assert doctrine.sha256 != doctrine_store.get(applies_to="tag").sha256
