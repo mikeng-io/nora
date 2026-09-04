@@ -4,14 +4,17 @@ WHY THIS TEST EXISTS
 --------------------
 R-1 read *"Only the tagging path may cause a send; ambient traffic never
 reaches the agent"*, and `nora.app.fire.FirePath` made the first clause false.
-Its named test — `test_ambient_never_constructs_agent`
-(`tests/integration/test_ambient.py`) — asserts both clauses, but only over
-AMBIENT input: a reminders fire path never enters its harness, so it stayed
-green while the rule it enforces stopped holding. Amending the decision-index
-row alone would therefore have deleted the only written brake on a third send
-path with nothing going red. This is that brake, rebuilt around what is
-actually true now: there are TWO senders, both named, and adding a third is a
-test failure rather than a review comment.
+Its named test — `test_ambient_reaches_the_agent_only_through_participation_gating`
+(`tests/integration/test_ambient.py`) — asserts the ambient clause, but only
+over AMBIENT input: a reminders fire path never enters its harness, so it
+stayed green while the rule it enforces stopped holding. Amending the
+decision-index row alone would therefore have deleted the only written brake
+on a third send path with nothing going red. This is that brake, rebuilt
+around what is actually true now: there are TWO senders, both named, and
+adding a third is a test failure rather than a review comment. (The
+participation occasion, design/dreamer-agent-loop/35, speaks THROUGH
+`FirePath.speak` — it is a fifth occasion on the second path, not a third
+path, and this test is the pin that keeps it so.)
 
 WHAT IT PINS, AND WHY THESE THREE FACTS
 ---------------------------------------

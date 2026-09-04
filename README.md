@@ -73,12 +73,21 @@ Signal group
    → reply → audit row → Honcho feed
 ```
 
-Path ③ is the only reason Nora ever speaks without being asked. It ships
-disabled; the set of senders is closed and enumerated at two (R-1b).
+Path ③ is the only way Nora ever speaks without being asked. It ships
+disabled; the set of senders is closed and enumerated at two (R-1b). Its
+occasions are enumerated too: a reminder coming due, a version announcement,
+a compute job, a relay — and **participation** (design/dreamer-agent-loop/35),
+the one occasion triggered by the room itself: an untagged message in a room
+the operator opted in (`participation = true` in `policy.toml`) is noted, and
+once the room goes quiet for `[participation] settle_seconds` a single
+determination runs with the right to stay silent. It also ships disabled, and
+a send is capped to at most one per room per `[participation] cooldown_minutes`.
 
-Ambient traffic never touches the Strands Agent SDK — it is a pure, deterministic write
-path (Postgres + Honcho). The Agent SDK is constructed, invoked, and discarded **once per
-tag**: there is no session carry-over between tags. Continuity comes from the two stores
+Ambient traffic otherwise never touches the Strands Agent SDK — it is a pure,
+deterministic write path (Postgres + Honcho). The Agent SDK is constructed,
+invoked, and discarded **once per
+tag** (or once per fire-path occasion): there is no session carry-over between
+tags. Continuity comes from the two stores
 (Postgres for transcript, Honcho for durable memory), pre-filled into each fresh agent's
 context. See `design/01-ambient-ingest.md`, `design/02-tagging-path.md`, and
 `design/03-strands-reuse.md` for the detail behind each layer.
