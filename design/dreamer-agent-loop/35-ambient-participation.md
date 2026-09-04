@@ -226,8 +226,16 @@ to send. **Each branch must be occasion-gated: participation never recovers.**
 `indicate.py:13-14` resolves 👀→⚠️ on the triggering message when undelivered.
 Fire escapes via a synthetic blank-sender message; participation triggers on a
 **real** message, so every silent determination would advertise itself to the
-room (👀 then ⚠️). **Participation must not indicate, or must resolve
-invisibly.**
+room (👀 then ⚠️). **Participation must NOT indicate — no 👀, no ✅/⚠️, no
+reaction — (Miles decision, 2026-09-05 review).** An ambient reply does not need
+an emoji indicator; the room sees a message or nothing. Unlike fire — which
+escapes `indicate.begin` by construction because its synthetic event has a
+blank `sender_id`/`timestamp` (`fire.py` docstring) — participation triggers on
+a REAL message with both present, so the 👀 would fire and every silent
+determination would advertise itself. Skipping the indicate stage entirely on
+the participation path is a positive design choice, not a workaround: no
+processing feedback loop is exactly what makes a silent turn look like nothing
+happened.
 
 What survives scrutiny (verified accurate): feedback stage skips on no-send
 (no reply to feed), A9 audit-first writes no outbound row on no-send,
