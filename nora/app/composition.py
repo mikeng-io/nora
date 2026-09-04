@@ -63,7 +63,6 @@ from nora.domain.ports import (
 )
 from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.tool_call_log import ToolCallLogStore
-from nora.engagement.context import TranscriptInjection
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.recognition import Recogniser
 from nora.engagement.slots import ConversationSlots
@@ -146,6 +145,7 @@ from nora.web.games import PulseGamesClient
 
 from .agent_runner import LiveAgentRunner
 from .announce import AnnouncementTarget, VersionAnnouncer
+from .assembler import build_assembler
 from .compute_poller import ComputeJobPoller
 from .compute_poller import recover as compute_poller_recover
 from .dispatch import Dispatcher
@@ -1123,12 +1123,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # keep their reasons, but it fires on any note regardless.
     engage_policies.append(VoiceNotePolicy())
     policy = CompositePolicy(tuple(engage_policies))
-    assembler = TranscriptInjection(
-        audit=audit, memory=memory, persons=persons,
-        context_window=cfg.store.context_window, metrics=metrics,
-        ai_peer=cfg.memory.ai_peer,
-        self_card_conclusions=cfg.memory.self_card_conclusions,
-        tagger_card_conclusions=cfg.memory.tagger_card_conclusions,
+    assembler = build_assembler(
+        cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         # `None` while `[language] enabled = false` — Task 9's "not yet
         # wired" default, unchanged. The STORE limit stays this class's own
         # default (`DEFAULT_ROOM_LANGUAGE_STORE_LIMIT`); `[language]` has no
@@ -1156,8 +1152,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # off nothing is rendered, so there is nothing to record and a store
         # here would be a table that only ever holds zero rows.
         rendered=rendered_claims,
-        max_room_facts=cfg.facts.max_room_facts,
-        max_sender_facts=cfg.facts.max_sender_facts,
         # Standing's READ half. `None` while `[standing] enabled = false`, the
         # shipped default, so `<standing>` renders nothing. Unlike `notes`/
         # `facts` beside it this needs no `policy=` at all: a position is keyed

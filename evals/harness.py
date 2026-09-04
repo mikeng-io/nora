@@ -41,6 +41,7 @@ fault-injection-capable test suite.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -64,6 +65,9 @@ from nora.testing import (
     FakeMemoryStore,
     FakeRecordStore,
     FakeRosterSource,
+    InMemoryFactStore,
+    InMemoryNoteStore,
+    InMemoryStandingStore,
     ScriptedTurn,
     group_event,
 )
@@ -329,6 +333,33 @@ async def run_case(
                 })
             memory = FakeMemoryStore(cards=dict(seed.cards),
                                  conclusions=dict(seed.conclusions))
+        # The note/fact/standing tiers, gated the same way `nora.app.
+        # composition.build_dependencies` gates them — `cfg` here is the same
+        # shipped `config.toml`/`config.example.toml` production reads, so a
+        # tier off in the deployment stays `None` in the eval too rather than
+        # rendering a block production never would. In-memory doubles, never
+        # the real SQL stores (`evals/` may not import `nora.infra`).
+        notes_store = InMemoryNoteStore() if cfg.notes.enabled else None
+        facts_store = InMemoryFactStore() if cfg.facts.enabled else None
+        standing_store = InMemoryStandingStore() if cfg.standing.enabled else None
+        if seed is not None:
+            if notes_store is not None:
+                for note, revision in seed.notes:
+                    notes_store.notes[note.id] = note
+                    notes_store.revisions[revision.id] = revision
+            if facts_store is not None:
+                for fact in seed.facts:
+                    facts_store.seed_fact(fact)
+                if seed.asserters:
+                    facts_store.seed_asserters(*seed.asserters)
+            if standing_store is not None and seed.standing is not None:
+                # Remapped onto the eval room's own key (S4) — `seed.standing`
+                # carries whatever room production last folded, which is never
+                # the eval room's own conversation id.
+                await standing_store.write(standing=dataclasses.replace(
+                    seed.standing, platform="signal",
+                    conversation_id=_EVAL_GROUP_ID,
+                ))
         adapter = FakeAdapter()
         # Live mode swaps the scripted double for Nora's real, networked model;
         # everything else in the graph (db, memory, adapter) stays a fake, so a
@@ -354,6 +385,7 @@ async def run_case(
                 cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
                 doctrine_store=doctrine_store, runner=runner, metrics=metrics,
                 tool_registry=tool_registry, roster_source=roster,
+                notes=notes_store, facts=facts_store, standing=standing_store,
             )
             body = _build_body(case)
             # Mirrors tests/integration/harness.py::_HandlerView.on_event: parse the

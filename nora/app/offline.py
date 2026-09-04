@@ -24,8 +24,17 @@ from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.config import Config
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.ports import MemoryStore, RecordStore, RosterSource
-from nora.engagement.context import TranscriptInjection
+from nora.domain.ports import (
+    FactReader,
+    MemoryStore,
+    RecordStore,
+    RoomExchangeReader,
+    RoomLanguageReader,
+    RoomPortraitReader,
+    RosterSource,
+    StandingStore,
+)
+from nora.engagement.context import RenderedClaimWriter, StandingNotesReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.pipeline import IngestPipeline
@@ -35,6 +44,7 @@ from nora.persons import Persons
 from nora.policy import permissive_policy
 from nora.tag import Debounce
 
+from .assembler import build_assembler
 from .dispatch import Dispatcher
 from .runtime import BackgroundTasks
 
@@ -54,6 +64,19 @@ def build_offline_pipeline(
     tag_trace_store: Any = None,
     debrief_wiring: Any = None,
     standing_event_wiring: Any = None,
+    # The assembler's remaining collaborators (`nora.app.assembler.
+    # build_assembler`), all optional and `None` by default so every existing
+    # caller keeps working unchanged. `language`/`exchange`/`portrait` stay
+    # `None` here even where a caller wires the others: production's own
+    # `[language] enabled = false` means both sides are `None` by construction
+    # today, and a caller that wants to exercise that tier passes its own.
+    language: RoomLanguageReader | None = None,
+    exchange: RoomExchangeReader | None = None,
+    portrait: RoomPortraitReader | None = None,
+    notes: StandingNotesReader | None = None,
+    facts: FactReader | None = None,
+    rendered: RenderedClaimWriter | None = None,
+    standing: StandingStore | None = None,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
@@ -61,17 +84,20 @@ def build_offline_pipeline(
     stages, same scalar fields read off `cfg`) but takes `adapter`/`memory`/
     `runner` as parameters instead of constructing the real, networked ones —
     the split `build_dependencies` doesn't need since production always wants
-    the real collaborators.
+    the real collaborators. The same is true of the assembler's own
+    collaborators above: this module builds none of them (module docstring),
+    so a caller that wants `<notes>`/`<facts>`/`<standing>` to render passes
+    its own `nora.testing` in-memory doubles.
     """
     metrics = metrics or Metrics()
     background = BackgroundTasks()
     debounce = Debounce(cfg.engagement.trigger.min_interval_seconds)
     policy = TriggerTextPolicy(cfg.engagement.trigger.text)
-    assembler = TranscriptInjection(
-        audit=audit, memory=memory, persons=persons,
-        context_window=cfg.store.context_window, metrics=metrics,
-        ai_peer=cfg.memory.ai_peer,
-        self_card_conclusions=cfg.memory.self_card_conclusions,
+    assembler = build_assembler(
+        cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
+        policy=permissive_policy(),
+        language=language, exchange=exchange, portrait=portrait,
+        notes=notes, facts=facts, rendered=rendered, standing=standing,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
