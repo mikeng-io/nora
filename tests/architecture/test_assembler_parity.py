@@ -21,6 +21,15 @@ asserts:
 `tests/unit/test_offline_pipeline_assembler.py` is the companion check that
 the wiring these calls describe actually RENDERS — this file only proves the
 two call sites cannot structurally drift apart.
+
+**Known limitations** (value-blind by design, documented rather than ignored):
+`_kwarg_names` compares NAMES only, never the values or gatings — a site that
+passes `standing=None` unconditionally, or gates a collaborator differently
+from its sibling, stays green here (the value difference is caught by the
+render test for the enabled tiers). The scan covers exactly the two files that
+must use the helper; a third file importing `TranscriptInjection` directly is
+a review-level rule (`test_neither_site_constructs_transcriptinjection_directly`
+can only assert the files it scans).
 """
 
 from __future__ import annotations

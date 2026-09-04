@@ -30,7 +30,7 @@ from nora.agent.whereis import Circle
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
-from nora.domain.facts import Fact
+from nora.domain.facts import Fact, FactAsserter
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.standing import Standing
@@ -254,11 +254,18 @@ class ProductionSeed:
     standing: Standing | None = None
     notes: tuple[tuple[Note, NoteRevision], ...] = ()
     facts: tuple[Fact, ...] = ()
+    # The FACT_ASSERTER rows for the seeded `facts` — WHO said each `stated`
+    # fact (`FactAsserter`, 21-substrate-contract §7). Without these the
+    # `<facts>` sender slice (`facts_asserted_by`) and the stated-fact
+    # attribution (`_asserters_for`) render empty in evals even when
+    # production would show them — the exact "silently missing prompt
+    # content" class this branch exists to fix.
+    asserters: tuple[FactAsserter, ...] = ()
 
 
 async def build_production_seed(
     cfg: Config, *, recents_limit: int = 12,
-    notes_limit: int = 20, facts_limit: int = 20,
+    facts_limit: int = 20,
 ) -> ProductionSeed:
     """Read a production-shaped context snapshot from the REAL stores
     (Postgres transcript + Honcho peer card), read-only, for `ProductionSeed`.
@@ -291,6 +298,7 @@ async def build_production_seed(
     standing: Standing | None = None
     notes: list[tuple[Note, NoteRevision]] = []
     facts: list[Fact] = []
+    asserters: list[FactAsserter] = []
     try:
         async with engine.connect() as conn:
             result = await conn.execute(
@@ -336,9 +344,9 @@ async def build_production_seed(
                     "FROM note n JOIN note_revision r "
                     "ON r.id = n.head_revision_id "
                     "WHERE n.workspace = :ws AND n.retired_at IS NULL "
-                    "ORDER BY n.created_at LIMIT :n"
+                    "ORDER BY n.created_at"
                 ),
-                {"ws": _EVAL_WORKSPACE, "n": notes_limit},
+                {"ws": _EVAL_WORKSPACE},
             )).all()
             for nrow in note_rows:
                 note = Note(
@@ -374,6 +382,23 @@ async def build_production_seed(
                 {"ws": _EVAL_WORKSPACE, "n": facts_limit},
             )).all()
             facts.extend(Fact(**dict(frow._mapping)) for frow in fact_rows)
+
+            # Fact_ASSERTER rows for exactly the seeded facts — WHO said each
+            # stated fact. Scoped to the seeded ids, not the whole workspace:
+            # the `<facts>` sender slice and stated-fact attribution are the
+            # two reads that need these, and both are bounded by the facts
+            # actually shown.
+            if fact_rows:
+                fact_ids = [frow.id for frow in fact_rows]
+                asserter_rows = (await conn.execute(
+                    sa.text(
+                        "SELECT * FROM fact_asserter WHERE fact_id = ANY(:ids)"
+                    ),
+                    {"ids": fact_ids},
+                )).all()
+                asserters.extend(
+                    FactAsserter(**dict(arow._mapping)) for arow in asserter_rows
+                )
     finally:
         await engine.dispose()
     for row in rows:
@@ -438,4 +463,5 @@ async def build_production_seed(
         await honcho.aclose()
     return ProductionSeed(recents=tuple(recents), cards=cards,
                           conclusions=conclusions, standing=standing,
-                          notes=tuple(notes), facts=tuple(facts))
+                          notes=tuple(notes), facts=tuple(facts),
+                          asserters=tuple(asserters))

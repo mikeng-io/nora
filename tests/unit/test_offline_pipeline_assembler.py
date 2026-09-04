@@ -3,7 +3,8 @@
 `tests/architecture/test_assembler_parity.py` for the structural half of this
 guarantee) actually reach the model-visible prompt, not just that they are
 accepted as parameters and silently dropped somewhere on the way to
-`nora.agent.prefill.build_prefill`.
+`nora.agent.prefill.build_prefill` (via the `pre_fill` `invoke.run` already
+hands the runner).
 
 Drives one real message through a real `Dispatcher` built by
 `build_offline_pipeline`, exactly as `evals/harness.py::run_case` does, with
@@ -19,7 +20,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from nora.agent.prefill import build_prefill
 from nora.app.eval_support import TOOL_NAMES, load_eval_config
 from nora.app.offline import build_offline_pipeline
 from nora.doctrine.loader import DoctrineStore
@@ -136,12 +136,12 @@ async def test_seeded_notes_facts_standing_render_in_the_assembled_prompt(tmp_pa
         await audit.aclose()
 
     assert calls, "the scripted runner was never invoked — no turn ran"
-    ctx = calls[0]["ctx"]
-    prefill = build_prefill(
-        ctx, display_name=cfg.doctrine.display_name,
-        context_window=cfg.store.context_window,
-    )
-    rendered = _flatten(prefill)
+    # The pipeline passes the assembled `pre_fill` to `runner.invoke`
+    # (`nora/engagement/stages/invoke.py`), so `on_call` captured exactly what
+    # the model sees — asserting on that instead of re-deriving through
+    # `build_prefill` here rules out drift between the two call sites.
+    assert "pre_fill" in calls[0], "invoke.run did not hand the runner its pre_fill"
+    rendered = _flatten(calls[0]["pre_fill"])
 
     # Each tag carries `untrusted="true" note="..."` attributes (every
     # injected block's convention), so the check is for the OPEN TAG's

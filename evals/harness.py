@@ -350,6 +350,8 @@ async def run_case(
             if facts_store is not None:
                 for fact in seed.facts:
                     facts_store.seed_fact(fact)
+                if seed.asserters:
+                    facts_store.seed_asserters(*seed.asserters)
             if standing_store is not None and seed.standing is not None:
                 # Remapped onto the eval room's own key (S4) — `seed.standing`
                 # carries whatever room production last folded, which is never
