@@ -2310,6 +2310,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # occasion is disabled, which is also exactly when no participation
             # Event can reach `speak` (no policy marks one, no trigger exists).
             participation_runner=participation_runner,
+            # The §10.6 shadow mirror: wired only when the operator turned BOTH
+            # the occasion AND the review surface on — a mirrored determination
+            # always cleared the room opt-in and the enabled gate first. The
+            # channel id is validated non-empty by `ParticipationConfig` when
+            # `shadow = true`.
+            shadow_channel=(
+                cfg.participation.shadow_channel
+                if cfg.participation.enabled and cfg.participation.shadow else None
+            ),
+            shadow_platform=cfg.participation.shadow_platform,
         )
     if lost_jobs and fire_path is not None:
         # Spawned, never awaited — a boot must not wait on a model call, and

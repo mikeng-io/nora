@@ -181,6 +181,14 @@ class Deliverer:
         # model did conclude "speak" — the cooldown, not a malfunction, held it),
         # so the turn never lands in `no_send_call`.
         self._send_permitted = send_permitted
+        # The held-text seam (design/dreamer-agent-loop/35 §10.6): a message
+        # the cooldown held is retained here, so the shadow mirror can answer
+        # "what she WOULD have said" for a held send — today the hold branch
+        # is the one place a concluded-speak's text is otherwise dropped.
+        # Same guarded shape as `_sent_texts`: appended only after every guard
+        # has measured the text (the hold sits after R-2/R-4/R-6/R-18), exposed
+        # read-only, and never fed anywhere — the room never heard it.
+        self._held_texts: list[str] = []
         self._attempts = 0
         # Every `deliver()` ENTRY, whether or not it survived the guards —
         # distinct from `_attempts`, which counts the ones that reached the
@@ -210,6 +218,13 @@ class Deliverer:
         so a caller cannot mutate the Deliverer's record; the feedback stage
         feeds each under the Nora aiPeer."""
         return tuple(self._sent_texts)
+
+    @property
+    def held_texts(self) -> tuple[str, ...]:
+        """Every message the participation cooldown HELD this turn (§10.6's
+        shadow-mode seam), in order. Read-only for the same reason
+        `sent_texts` is; empty on every path that has no cooldown."""
+        return tuple(self._held_texts)
 
     @property
     def delivered(self) -> bool:
@@ -409,14 +424,18 @@ class Deliverer:
         # it stays true — and BEFORE `_attempts`, the audit row and the wire:
         # a cooldown-held message leaves no trace in the room's history, because
         # the room never heard it. NOT a failure of any kind — no counter moves
-        # (the log line is the shadow-mode review surface; Phase 2 reads these to
-        # judge what she WOULD have said) — and `called` stays True, so this
-        # turn can never be misread as `no_send_call`.
+        # (the shadow-mode mirror, §10.6, is the review surface; the held text
+        # is retained on `held_texts` so it can show what she WOULD have said)
+        # — and `called` stays True, so this turn can never be misread as
+        # `no_send_call`.
         if not self._send_permitted:
             log.info(
                 "send held by the participation cooldown (tag=%s, %d chars)",
                 self._tag_id, len(styled.text),
             )
+            # Retained for the §10.6 shadow mirror — "what she WOULD have
+            # said" — after every guard above has passed on the text.
+            self._held_texts.append(styled.text)
             return False
 
         self._attempts += 1

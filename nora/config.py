@@ -371,6 +371,17 @@ class ParticipationConfig(BaseModel):
     evaluations (§10.3): at most one participation message per room per window
     of this length, and an evaluation that concludes "speak" inside the
     cooldown stays silent.
+
+    `shadow` is the §10.6 review surface: every determination — speak AND
+    silence — is mirrored to `shadow_channel`, tagged with the source room,
+    the verdict, the text (sent, held, or the declined draft) and the window
+    that closed. The mirror goes through the same Deliverer/guards as any
+    send, under its own `audience="participation-shadow"` label, and is never
+    counted in `nora_participation_spoke_total` (that series is live sends
+    only). Shadow sits ON TOP of the `enabled` gate and the room opt-in — a
+    determination only exists to mirror when both already passed — and the
+    lean is Discord: the mirror is operator-facing and the community surface
+    is Discord.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -378,6 +389,21 @@ class ParticipationConfig(BaseModel):
     enabled: bool = False
     settle_seconds: float = Field(default=10.0, gt=0)
     cooldown_minutes: float = Field(default=10.0, gt=0)
+    shadow: bool = False
+    # The mirror's destination: a channel id on `shadow_platform`. Required
+    # when `shadow = true` — a mirror with nowhere to post would fail soft on
+    # every determination, which is a config error, not a runtime condition.
+    shadow_channel: str = ""
+    shadow_platform: str = "discord"
+
+    @model_validator(mode="after")
+    def _shadow_needs_a_channel(self) -> ParticipationConfig:
+        if self.shadow and not self.shadow_channel:
+            raise ValueError(
+                "[participation] shadow = true requires shadow_channel — the "
+                "mirror's destination channel id on shadow_platform"
+            )
+        return self
 
 
 class StoreConfig(BaseModel):

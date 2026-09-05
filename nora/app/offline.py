@@ -256,6 +256,16 @@ def build_offline_pipeline(
             max_room_facts=cfg.facts.max_room_facts,
             max_sender_facts=cfg.facts.max_sender_facts,
             participation_runner=participation_runner,
+            # The §10.6 shadow mirror, mirrored from the composition root's
+            # gating (the parity test pins these kwarg NAMES to production's):
+            # an offline/eval run can review determinations on the mirror
+            # exactly as a deployment would. The eval suites leave
+            # `[participation] shadow` off, so this is inert there by default.
+            shadow_channel=(
+                cfg.participation.shadow_channel
+                if cfg.participation.enabled and cfg.participation.shadow else None
+            ),
+            shadow_platform=cfg.participation.shadow_platform,
         )
         participation_trigger = ParticipationTrigger(
             speak=fire_path.speak,

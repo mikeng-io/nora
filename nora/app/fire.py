@@ -88,7 +88,13 @@ from nora.doctrine.loader import DoctrineStore
 from nora.domain.compute import ComputeJob
 from nora.domain.events import Event, EventFactory
 from nora.domain.facts import Fact, FactExtent, FactsView, mentions, normalise_name
-from nora.domain.models import NormalizedMessage, PersonRef, TagContext, TranscriptRow
+from nora.domain.models import (
+    ConversationTarget,
+    NormalizedMessage,
+    PersonRef,
+    TagContext,
+    TranscriptRow,
+)
 from nora.domain.notes import Note
 from nora.domain.ports import (
     FactReader,
@@ -150,6 +156,15 @@ FAILED_ERROR = "failed_error"
 # participation turn that says nothing is working.
 PARTICIPATION_AUDIENCE = "participation"
 SILENT = "silent"
+
+# The §10.6 shadow mirror's audience label: the mirror IS a send (it goes
+# through `deliver.build` and every guard that carries), but it is operator
+# review traffic, never room speech — its failures must not pollute the tag,
+# heartbeat or participation budgets, and a mirrored "spoke" must never read
+# as a live send on `nora_participation_spoke_total` (that counter moves only
+# on the live path below; the mirror has its own Deliverer and never touches
+# it).
+SHADOW_AUDIENCE = "participation-shadow"
 
 # How a recurrence reads in the fire header. English prose, like the rest of the
 # header: the header is the SITUATION she is told about, and `doctrine` decides
@@ -475,6 +490,8 @@ class FirePath:
         max_room_facts: int = 8,
         max_sender_facts: int = 4,
         participation_runner: AgentRunner | None = None,
+        shadow_channel: str | None = None,
+        shadow_platform: str = "discord",
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -611,6 +628,16 @@ class FirePath:
         # kind, and a participation turn arriving with no runner composed is
         # a wiring fault, not a turn to run on the tag runner.
         self._participation_runner = participation_runner
+        # The §10.6 shadow mirror. `shadow_channel` None means shadow mode is
+        # OFF (the shipped default — `[participation] shadow = false`), and
+        # `_mirror` returns without doing anything; set, every participation
+        # determination — speak AND silence — is mirrored to that channel on
+        # `shadow_platform`, through the same `deliver.build`/guards as any
+        # send, under `SHADOW_AUDIENCE`. The composition root wires it only
+        # when `enabled` AND `shadow` are both on, so a mirrored determination
+        # always cleared the room opt-in first.
+        self._shadow_channel = shadow_channel
+        self._shadow_platform = shadow_platform
 
     async def build_context(self, occasion: Event) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
@@ -1144,7 +1171,7 @@ class FirePath:
                 display_name=self._display_name,
             )
 
-            failure, stop_reason = await self._invoke(
+            failure, stop_reason, final_text = await self._invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
                 tag_message=tag_message, ctx=ctx,
@@ -1171,6 +1198,14 @@ class FirePath:
                     # its message — `_invoke` has already filed the turn under
                     # `nora_participation_silence_total`, or as an ordinary
                     # silent failure if a budget cap cut it off.
+                    await self._mirror(
+                        occasion, ctx, doctrine, verdict="silent",
+                        texts=handle.deliverer.held_texts or (
+                            (final_text,) if final_text.strip() else ()
+                        ),
+                        held=bool(handle.deliverer.held_texts),
+                        stop_reason=stop_reason,
+                    )
                     return SILENT
                 return FAILED_ERROR
 
@@ -1183,6 +1218,11 @@ class FirePath:
             if participation:
                 self._metrics.inc(
                     "nora_participation_spoke_total", platform=occasion.platform,
+                )
+                await self._mirror(
+                    occasion, ctx, doctrine, verdict="spoke",
+                    texts=handle.deliverer.sent_texts, held=False,
+                    stop_reason=stop_reason,
                 )
             await self._feed(
                 handle.deliverer.sent_texts, occasion.conversation_id,
@@ -1230,10 +1270,11 @@ class FirePath:
         deliverer: Any,
         participation: bool = False,
         audience: str = AUDIENCE,
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[str | None, str | None, str]:
         """The model call, with the heartbeat's own timeout and its own
-        accounting. Returns `(failure, stop_reason)`: the §8.1 failure name — or
-        None if the loop finished — and how the loop ENDED.
+        accounting. Returns `(failure, stop_reason, final_text)`: the §8.1
+        failure name — or None if the loop finished — how the loop ENDED, and
+        the prose the model wrote (DEC-93).
 
         A `None` failure does NOT mean she spoke — `_turn` asks the `Deliverer`
         that. It means the invocation completed, which is a different fact, and
@@ -1245,6 +1286,12 @@ class FirePath:
         `None` (the invocation never returned) means something different from
         `"limit_turns"` — a distinction `_turn`'s `finally` cannot recover
         afterwards.
+
+        `final_text` travels for the §10.6 shadow mirror: on a participation
+        turn it is the DECLINE draft — what she would have said and why she
+        stayed silent — which the mirror posts for review. The DEC-93 recovery
+        branch below never fires on that occasion, so there it is only ever a
+        draft, never a delivered message.
         """
         started = time.perf_counter()
         stop_reason: str | None = None
@@ -1377,7 +1424,80 @@ class FirePath:
                     "nora_silent_failures_total", reason=reason,
                     platform=platform, audience=audience,
                 )
-        return failure, stop_reason
+        return failure, stop_reason, final_text
+
+    async def _mirror(
+        self, occasion: Event, ctx: TagContext, doctrine: Any, *,
+        verdict: str, texts: Sequence[str], held: bool,
+        stop_reason: str | None,
+    ) -> None:
+        """The §10.6 shadow mirror: post one participation determination —
+        speak AND silence — to the shadow channel, for operator review before
+        the flip.
+
+        NOT a third send path: the mirror goes through `deliver.build` and
+        the `Deliverer`'s guards (R-2/R-4/R-6/R-18, audit-first) exactly like
+        any send, under `SHADOW_AUDIENCE` so its failures never read as tag,
+        heartbeat or participation room speech. It is never counted on
+        `nora_participation_spoke_total` — that series moves only on the live
+        path in `_turn`, and this Deliverer is a separate one. It runs for
+        participation occasions only (`_turn`'s two call sites), and only
+        when the composition root wired a channel (`[participation] shadow =
+        true`, which itself sits on top of `enabled` and the room opt-in).
+
+        Fail-soft in both directions an operator cares about: a missing
+        adapter or a faulted send is logged and counted
+        (`nora_errors_total{stage="participation_shadow"}`), and NEVER changes
+        the reviewed turn's outcome — review traffic must not be able to break
+        the path it reviews.
+        """
+        if self._shadow_channel is None:
+            return
+        try:
+            adapter = self._adapters.get(self._shadow_platform)
+            if adapter is None:
+                raise KeyError(
+                    f"no platform adapter is wired for the shadow platform "
+                    f"{self._shadow_platform!r} — wired: {sorted(self._adapters)}"
+                )
+            identity = await adapter.resolve_identity()
+            handle = deliver.build(
+                store=self._records, adapter=adapter,
+                target=ConversationTarget(
+                    platform=self._shadow_platform,
+                    conversation_id=self._shadow_channel,
+                    # The mirror channel is operator-facing; `group` keeps the
+                    # audit row's conversation_type honest without a platform
+                    # round-trip to classify it.
+                    conversation_type="group",
+                ),
+                doctrine=doctrine, canary=self._canary, tag_id=ctx.tag_id,
+                nora_sender_id=identity.primary,
+                conversation_id=self._shadow_channel,
+                budgets=self._registry.budgets(),
+                terminal=self._registry.terminal_tools(), metrics=self._metrics,
+                audience=SHADOW_AUDIENCE,
+                # Plain operator-facing text: no roster, no mention composer —
+                # `None` is `deliver.build`'s documented inert value, and the
+                # keyword has no default there precisely so this is a decision.
+                composer=None,
+                cacheable_tools=self._registry.cacheable_tools(),
+                tool_call_log_store=self._tool_call_log_store,
+                # The mirror is not subject to the room's participation
+                # cooldown — it is how a cooldown-HELD message is reviewed at
+                # all, so holding the mirror too would hide exactly that case.
+                send_permitted=True,
+            )
+            await handle.deliverer.deliver(
+                _mirror_text(
+                    occasion, ctx, verdict=verdict, texts=texts, held=held,
+                    stop_reason=stop_reason,
+                ),
+                source="shadow",
+            )
+        except Exception:
+            log.exception("participation shadow mirror failed (tag=%s)", ctx.tag_id)
+            self._metrics.inc("nora_errors_total", stage="participation_shadow")
 
     async def _feed(
         self, sent_texts: Sequence[str], conversation_id: str, platform: str,
@@ -1407,6 +1527,46 @@ class FirePath:
             self._metrics.inc(
                 "nora_errors_total", stage="fire_feedback", platform=platform,
             )
+
+
+def _mirror_text(
+    occasion: Event, ctx: TagContext, *, verdict: str,
+    texts: Sequence[str], held: bool, stop_reason: str | None,
+) -> str:
+    """The shadow mirror post (§10.6): the source room, the verdict, the text
+    and the window that closed.
+
+    `texts` is the sent messages for a spoke verdict; for a silent one it is
+    the held text (the cooldown kept it — what she WOULD have said) or the
+    decline draft (the prose she wrote instead of calling `send_reply`, which
+    doubles as her reasoning for declining). The window tail is the last few
+    transcript rows the determination saw, so the review reads the trigger in
+    context rather than as an orphaned quote.
+    """
+    lines = [
+        f"[shadow] {occasion.platform}/{occasion.conversation_id}",
+    ]
+    if verdict == "spoke":
+        lines.append("verdict: SPOKE — the room heard:")
+    elif held:
+        lines.append(
+            "verdict: SILENT — she concluded speak; the send cooldown held "
+            "it. She would have said:"
+        )
+    else:
+        lines.append("verdict: SILENT — she declined the floor.")
+        if texts:
+            lines.append("her draft (never sent; doubles as her reasoning):")
+    lines.extend(texts)
+    if stop_reason:
+        lines.append(f"(stop: {stop_reason})")
+    window = list(ctx.transcript)[-5:]
+    if window:
+        lines.append("window that closed:")
+        lines.extend(
+            f"- {row.sender_name}: {(row.body or '')[:120]}" for row in window
+        )
+    return "\n".join(lines)
 
 
 def _synthetic_message(

@@ -295,6 +295,8 @@ def _fire_path(
     records: FakeRecordStore | None = None,
     registry: ToolRegistry | None = None,
     participation_runner=None,
+    shadow_channel: str | None = None,
+    shadow_platform: str = "discord",
     timeout_seconds: float = 5.0,
     room_language_max_entries: int | None = None,
     event_registry: dict | None = None,
@@ -320,6 +322,7 @@ def _fire_path(
         ai_peer="nora", context_window=40,
         limits=LIMITS, timeout_seconds=timeout_seconds, clock=lambda: T0,
         participation_runner=participation_runner,
+        shadow_channel=shadow_channel, shadow_platform=shadow_platform,
         **extra,
     )
 
@@ -1464,3 +1467,149 @@ async def test_the_participation_turn_reads_the_may_speak_doctrine(
     assert "participation-conduct" in names
     assert "silence" in names
     assert doctrine.sha256 != doctrine_store.get(applies_to="tag").sha256
+
+
+# ---------------------------------------------------------------------------
+# The shadow mirror (design/dreamer-agent-loop/35 §10.6)
+# ---------------------------------------------------------------------------
+
+
+def _shadow_path(
+    *, doctrine_store, persons: Persons, metrics: Metrics,
+    room: _FireAdapter, shadow: _FireAdapter | None,
+    participation_runner, shadow_channel: str | None = "mirror-1",
+) -> FirePath:
+    """A fire path with the shadow mirror wired: the room on signal, the mirror
+    channel on discord (the operator-facing lean) — or `shadow=None` for the
+    missing-adapter case."""
+    adapters: dict[str, _FireAdapter] = {"signal": room}
+    if shadow is not None:
+        adapters["discord"] = shadow
+    return _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapters=adapters, runner=FakeAgentRunner([]),
+        participation_runner=participation_runner,
+        shadow_channel=shadow_channel,
+    )
+
+
+async def test_the_shadow_mirror_posts_a_spoke_determination(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """A speak determination mirrors: the room hears the reply, the shadow
+    channel gets the verdict, the actual text and the source room — through
+    the same `deliver.build`/guards, under its own audience. The mirror is
+    NOT a live send: `nora_participation_spoke_total` moves exactly once."""
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    path = _shadow_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow,
+        participation_runner=FakeAgentRunner(_send_turns("咁啱嘅")),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SENT
+    assert room.texts == ["咁啱嘅"]
+    assert len(shadow.sent) == 1
+    target, mirror = shadow.sent[0]
+    assert target.platform == "discord"
+    assert target.conversation_id == "mirror-1"
+    assert "signal/conv-1" in mirror            # the source room
+    assert "SPOKE" in mirror
+    assert "咁啱嘅" in mirror                    # the actual reply
+    # Live sends only: the mirror never reads as room speech.
+    assert metrics.get("nora_participation_spoke_total") == 1
+    assert metrics.get("nora_participation_spoke_total", platform="signal") == 1
+    assert metrics.get("nora_participation_spoke_total", platform="discord") == 0
+
+
+async def test_the_shadow_mirror_posts_a_silent_determination_with_the_draft(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The silence half: what she WOULD have said (the decline draft, which
+    doubles as her reasoning) and the verdict — the review surface the flip
+    decision is made from."""
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    path = _shadow_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow,
+        participation_runner=FakeAgentRunner([
+            ScriptedTurn(final_text="nothing here needs me"),
+        ]),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SILENT
+    assert room.sent == []
+    assert len(shadow.sent) == 1
+    _, mirror = shadow.sent[0]
+    assert "SILENT" in mirror
+    assert "declined the floor" in mirror
+    assert "nothing here needs me" in mirror    # the draft, never sent
+    assert metrics.get("nora_participation_spoke_total") == 0
+    assert metrics.get("nora_participation_silence_total", platform="signal") == 1
+
+
+async def test_the_shadow_mirror_shows_what_a_held_send_would_have_said(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The held-text seam: the cooldown-held branch retains the text
+    (`Deliverer.held_texts`), so a concluded-speak inside the cooldown is
+    reviewable — the one case whose words the room's history never records."""
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    path = _shadow_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow,
+        participation_runner=FakeAgentRunner(_send_turns("held back")),
+    )
+
+    outcome = await path.speak(_participation(), send_permitted=False)
+
+    assert outcome == fire_module.SILENT
+    assert room.sent == []
+    assert len(shadow.sent) == 1
+    _, mirror = shadow.sent[0]
+    assert "cooldown" in mirror
+    assert "held back" in mirror
+    assert metrics.get("nora_participation_spoke_total") == 0
+
+
+async def test_shadow_off_posts_nothing(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The shipped default (`shadow = false` -> no channel wired): no mirror,
+    no matter the verdict."""
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    path = _shadow_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow, shadow_channel=None,
+        participation_runner=FakeAgentRunner(_send_turns("咁啱嘅")),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SENT
+    assert room.texts == ["咁啱嘅"]
+    assert shadow.sent == []
+
+
+async def test_a_missing_shadow_adapter_fails_soft_and_is_counted(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """A shadow platform with no adapter wired must not break the reviewed
+    turn — review traffic never changes the outcome — but it is counted, not
+    silent (R-5): `nora_errors_total{stage="participation_shadow"}`."""
+    room = _FireAdapter()
+    path = _shadow_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=None,
+        participation_runner=FakeAgentRunner(_send_turns("咁啱嘅")),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SENT
+    assert room.texts == ["咁啱嘅"]
+    assert metrics.get("nora_errors_total", stage="participation_shadow") == 1
