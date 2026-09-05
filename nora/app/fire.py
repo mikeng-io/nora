@@ -119,7 +119,7 @@ from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import trace_attributes
+from nora.obs.tracing import TRACE_KIND, annotate, span, trace_attributes
 from nora.persons import Persons
 from nora.policy import Policy
 
@@ -993,6 +993,29 @@ class FirePath:
         if occasion.kind == "participation" and self._shadow_channel is not None:
             send_permitted = False
         try:
+            if occasion.kind == "participation":
+                # The participation turn's ROOT span (design/dreamer-agent-loop/35
+                # §9, Miles 2026-09-05: "include langfuse and jaeger — otherwise
+                # how can I analyse with observability"). `generation` kind: a
+                # model call can happen under it, and the trace is what the
+                # collector exists for — a participation turn that ends SILENT
+                # is still a determination worth seeing, exactly like a tag
+                # refused at admission (DEC-141's point). The outcome is
+                # annotated on the way out so Langfuse/Jaeger show
+                # SENT/SILENT/FAILED_* per determination.
+                with span(
+                    "participation",
+                    **{TRACE_KIND: "generation",
+                       "nora.platform": occasion.platform,
+                       "nora.conversation_id": occasion.conversation_id,
+                       "nora.occasion": occasion.kind,
+                       "nora.shadow": self._shadow_channel is not None},
+                ):
+                    outcome = await self._turn(
+                        occasion, ctx, send_permitted=send_permitted,
+                    )
+                    annotate(**{"nora.outcome": outcome})
+                    return outcome
             return await self._turn(occasion, ctx, send_permitted=send_permitted)
         finally:
             clear_tag_id()
@@ -1268,6 +1291,13 @@ class FirePath:
             completed = False
             return FAILED_ERROR
         finally:
+            # The participation root span's stop_reason (no-op on every other
+            # occasion — no span is current, and annotate on a non-recording
+            # span costs nothing). The disambiguating signal the eval gate
+            # reads: a SILENT determination that ended in invocation_timeout
+            # is an ERROR, not a decline.
+            if stop_reason is not None:
+                annotate(**{"nora.stop_reason": stop_reason})
             messages = handle.deliverer.delivered_count if handle is not None else 0
             if messages:
                 reason = deliver.truncation_reason(
