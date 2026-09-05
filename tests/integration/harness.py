@@ -24,16 +24,11 @@ import dataclasses
 import os
 import re
 import shutil
-import time
 from collections.abc import Callable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from nora.agent import factory
-from nora.agent.registry import ToolRegistry
 from nora.app.dispatch import Dispatcher
-from nora.app.fire import FirePath
 from nora.app.offline import build_offline_pipeline
 from nora.app.participation import ParticipationTrigger
 from nora.app.runtime import BackgroundTasks
@@ -474,7 +469,19 @@ async def build_handler(
         doctrine_store.get(applies_to="tag")     # warm the last-good cache before corrupting
         (doctrine_copy_dir / "constraints.md").write_text("not valid doctrine content\n")
 
-    dispatcher, engagement, background = build_offline_pipeline(
+    # The participation occasion's runner (design/dreamer-agent-loop/35): built
+    # BEFORE the pipeline so it can be threaded into `build_offline_pipeline`,
+    # which then builds the real FirePath + quiescence trigger itself — the one
+    # definition of that wiring, shared with `evals/` (which may not import
+    # `nora.app.fire` to build its own).
+    participation_runner = None
+    if participation_script is not None:
+        participation_runner = (
+            participation_script
+            if isinstance(participation_script, FakeAgentRunner)
+            else FakeAgentRunner(participation_script, on_call=calls.append)
+        )
+    dispatcher, engagement, background, participation_trigger = build_offline_pipeline(
         cfg, adapter=adapter, audit=store, memory=honcho_double, persons=persons,
         doctrine_store=doctrine_store, runner=runner, metrics=metrics,
         # None by default, which is what every scenario before DEC-86 wanted:
@@ -490,46 +497,10 @@ async def build_handler(
             (ParticipationPolicy(load_policy(policy_path)),)
             if participation_script is not None else ()
         ),
+        participation_runner=participation_runner,
+        participation_clock=participation_clock,
     )
     handler = _HandlerView(dispatcher=dispatcher, engagement=engagement, adapter=adapter)
-
-    participation_trigger = None
-    if participation_script is not None:
-        # The production wiring's mirror (composition.py): the occasion goes
-        # through a REAL FirePath — same deliver.build, guards, audit and
-        # accounting the deployment runs — with only the model scripted.
-        participation_runner = (
-            participation_script
-            if isinstance(participation_script, FakeAgentRunner)
-            else FakeAgentRunner(participation_script, on_call=calls.append)
-        )
-        fire_path = FirePath(
-            persons=persons, records=store, memory=honcho_double,
-            doctrine_store=doctrine_store, metrics=metrics,
-            runner=runner, adapters={adapter.platform: adapter},
-            registry=tool_registry if tool_registry is not None else ToolRegistry(
-                budget_overrides=cfg.llm.budgets),
-            canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-            ai_peer=cfg.memory.ai_peer, context_window=cfg.store.context_window,
-            limits=factory.build_limits(
-                output_tokens=cfg.llm.limits.output_tokens,
-                turns=cfg.llm.limits.turns,
-                total_tokens=cfg.llm.limits.total_tokens,
-            ),
-            timeout_seconds=cfg.heartbeat.timeout_seconds,
-            clock=lambda: datetime.now(UTC),
-            participation_runner=participation_runner,
-        )
-        participation_trigger = ParticipationTrigger(
-            speak=fire_path.speak,
-            slots=engagement._slots,
-            settle_seconds=cfg.participation.settle_seconds,
-            cooldown_seconds=cfg.participation.cooldown_minutes * 60,
-            clock=participation_clock or time.monotonic,
-        )
-        # Set post-construction, mirroring `set_script`'s harness-only seam:
-        # the trigger needs the slots `build_offline_pipeline` builds inside.
-        dispatcher._participation = participation_trigger
 
     harness = Harness(
         handler=handler,

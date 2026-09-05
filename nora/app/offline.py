@@ -17,7 +17,9 @@ keeps this module free of any network concern.
 
 from __future__ import annotations
 
-from collections.abc import Coroutine
+import time
+from collections.abc import Callable, Coroutine
+from datetime import UTC, datetime
 from typing import Any
 
 from nora.agent import factory
@@ -47,6 +49,7 @@ from nora.tag import Debounce
 
 from .assembler import build_assembler
 from .dispatch import Dispatcher
+from .fire import FirePath, gathering_occasion, reminder_occasion
 from .participation import ParticipationTrigger
 from .runtime import BackgroundTasks
 
@@ -81,7 +84,9 @@ def build_offline_pipeline(
     standing: StandingStore | None = None,
     participation: ParticipationTrigger | None = None,
     extra_engage_policies: tuple[EngagePolicy, ...] = (),
-) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks]:
+    participation_runner: Any = None,
+    participation_clock: Callable[[], float] | None = None,
+) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks, ParticipationTrigger | None]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
     Mirrors `build_dependencies`'s own pipeline-wiring tail exactly (same
@@ -92,6 +97,17 @@ def build_offline_pipeline(
     collaborators above: this module builds none of them (module docstring),
     so a caller that wants `<notes>`/`<facts>`/`<standing>` to render passes
     its own `nora.testing` in-memory doubles.
+
+    `participation_runner` is the participation occasion's eval seam
+    (design/dreamer-agent-loop/35 §9 gap 1): when given, this builds a REAL
+    `FirePath` — same `deliver.build`, guards and accounting as production —
+    plus the quiescence `ParticipationTrigger`, and wires the trigger into the
+    dispatcher, so an eval drives the participation path exactly as deployed
+    (`evals/` may not import `nora.app.fire` itself — the boundary that put
+    this module here). The trigger is the fourth return value (`None` when
+    neither `participation` nor `participation_runner` was given); the caller
+    drives `close_due_windows` on it, with `participation_clock` injecting the
+    clock the settle/cooldown durations are measured against.
     """
     metrics = metrics or Metrics()
     background = BackgroundTasks()
@@ -136,6 +152,12 @@ def build_offline_pipeline(
     # a replay path exists to rule out.
     tool_registry = tool_registry if tool_registry is not None else ToolRegistry(
         budget_overrides=cfg.llm.budgets)
+    # Hoisted out of the `EngagementPipeline(...)` call because the
+    # participation trigger below must hold the SAME instance — two slot maps
+    # would be two locks and no serialisation at all.
+    slots = ConversationSlots(
+        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
+    )
     engagement = EngagementPipeline(
         # One adapter, keyed by the platform it declares itself to be: an
         # offline harness replays a single platform's traffic, so this is the
@@ -163,9 +185,7 @@ def build_offline_pipeline(
         # One platform's roster, keyed by the adapter's own platform — the
         # same shape `adapters` above takes, for the same reason.
         rosters={adapter.platform: roster_source} if roster_source else {},
-        slots=ConversationSlots(
-            maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
-        ),
+        slots=slots,
         # `None` by default (Task 6): most offline/eval scenarios have no
         # retention store and don't need one — `EngagementPipeline` treats it
         # as fully inert, matching every other optional collaborator here. A
@@ -180,8 +200,63 @@ def build_offline_pipeline(
         # caller that wants to exercise the stage passes its own.
         debrief_wiring=debrief_wiring,
     )
+    participation_trigger = participation
+    if participation_trigger is None and participation_runner is not None:
+        # The production wiring's mirror (`composition.build_dependencies`):
+        # the occasion goes through a REAL FirePath — same deliver.build,
+        # guards, audit and accounting the deployment runs — with only the
+        # model swapped. `tests/architecture/test_assembler_parity.py` pins
+        # this FirePath(...) call's keyword NAMES to the composition root's,
+        # so a collaborator added on one side and forgotten here fails a test
+        # instead of letting the eval prompt drift from production's.
+        fire_path = FirePath(
+            persons=persons, records=audit, memory=memory,
+            doctrine_store=doctrine_store, metrics=metrics,
+            runner=runner, adapters={adapter.platform: adapter},
+            registry=tool_registry,
+            canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
+            ai_peer=cfg.memory.ai_peer,
+            context_window=cfg.store.context_window,
+            limits=limits,
+            # `[heartbeat]`, not `[llm]` — the same choice production makes;
+            # nobody is waiting on a fire turn.
+            timeout_seconds=cfg.heartbeat.timeout_seconds,
+            clock=lambda: datetime.now(UTC),
+            rosters={adapter.platform: roster_source} if roster_source else {},
+            preview_source=None,
+            llm_state=None,
+            tool_call_log_store=None,
+            room_language_max_entries=cfg.language.max_rendered_lexemes,
+            room_exchange_max_entries=cfg.language.max_rendered_exchanges,
+            event_registry={
+                "reminder": reminder_occasion,
+                "gathering": gathering_occasion,
+            },
+            standing=standing,
+            standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
+            # The SAME tier stores the assembler above was handed: the
+            # participation determination's prompt is supposed to carry
+            # whatever standing/notes/facts the room has — an eval whose
+            # FirePath read emptier tiers than its tag path would grade the
+            # knowledge-cut cases against a prompt production never builds.
+            notes=notes,
+            facts=facts,
+            policy=permissive_policy(),
+            max_room_facts=cfg.facts.max_room_facts,
+            max_sender_facts=cfg.facts.max_sender_facts,
+            participation_runner=participation_runner,
+        )
+        participation_trigger = ParticipationTrigger(
+            speak=fire_path.speak,
+            # The SAME `slots` the engagement pipeline holds — two instances
+            # would be two locks and no serialisation at all.
+            slots=slots,
+            settle_seconds=cfg.participation.settle_seconds,
+            cooldown_seconds=cfg.participation.cooldown_minutes * 60,
+            clock=participation_clock or time.monotonic,
+        )
     dispatcher = Dispatcher(
         ingest=ingest, engagement=engagement, background=background,
-        participation=participation,
+        participation=participation_trigger,
     )
-    return dispatcher, engagement, background
+    return dispatcher, engagement, background, participation_trigger

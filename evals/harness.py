@@ -381,7 +381,7 @@ async def run_case(
             if live else None
         )
         try:
-            dispatcher, _engagement, background = build_offline_pipeline(
+            dispatcher, _engagement, background, _participation_trigger = build_offline_pipeline(
                 cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
                 doctrine_store=doctrine_store, runner=runner, metrics=metrics,
                 tool_registry=tool_registry, roster_source=roster,
