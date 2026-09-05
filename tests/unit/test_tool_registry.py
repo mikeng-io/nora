@@ -542,11 +542,10 @@ def test_cacheable_tools_matches_the_declared_set():
     from nora.agent.registry import ToolRegistry
     assert ToolRegistry().cacheable_tools() == frozenset(
         {"place_info", "route", "web_search", "web_fetch", "weather", "transit",
-         "music_status", "social_fetch",
-         # DEC-155: a window of derived facts the substrate already holds —
-         # replayable without re-deriving. The R-31 gate itself is re-checked
-         # live on every call regardless of what the recall log replays.
-         "where_been"}
+         "music_status", "social_fetch"}
+        # where_been is deliberately NOT cacheable (Kimi audit B1): the recall
+        # log replays a persisted result verbatim with no guard re-check, so a
+        # cached `ok` would outlive the roster it was authorized under.
     )
 
 

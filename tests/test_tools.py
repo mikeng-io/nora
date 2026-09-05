@@ -184,7 +184,7 @@ def test_read_peer_card_is_gone_from_the_table():
     assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
 
 
-def test_exactly_nine_tools_are_cacheable():
+def test_exactly_eight_tools_are_cacheable():
     from nora.agent.tools import NATIVE_TOOLS
     cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
     assert cacheable == {
@@ -193,9 +193,9 @@ def test_exactly_nine_tools_are_cacheable():
         # disclosure decision baked into the moment it ran — same exemption
         # shape as `web_search`/`web_fetch`.
         "music_status", "social_fetch",
-        # where_been (DEC-155): a window of derived facts the substrate
-        # already holds; the R-31 gate is re-checked live on every call.
-        "where_been",
+        # where_been is deliberately NOT cacheable (Kimi audit B1): its R-31
+        # gate runs against the live roster, and the recall log replays
+        # verbatim with no guard re-check.
     }
 
 

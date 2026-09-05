@@ -505,13 +505,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # window with the numbers, so asking about last week reads the same
     # derived facts it would read today.
     #
-    # `cacheable=True` (spec §4.4, DEC-155's own pin): the result is a window
-    # of derived facts the substrate already holds — the same value-not-
-    # moment shape `place_info` declares. The disclosure decision is NOT
-    # cached with it: the R-31 gate runs live on every call, exactly as it
-    # does for `where_is`.
+    # `cacheable=False` (Kimi audit B1, 2026-09-05): the R-31 gate runs
+    # against the room's LIVE roster on every call, and the tool-recall log
+    # replays a persisted result verbatim with no guard re-check — so a
+    # cached `ok` would be replayable for 7 days after the roster changed
+    # (an unnamed account joins, `location_trusted` flips off). That is
+    # exactly the case the `cacheable` field's own contract excludes
+    # (tools.py:222-227: "none of this table's cacheable=True entries do").
+    # The spec pinned True; the audit overturned it.
     "where_been": NativeTool(4,
-                             time_shiftable=True, source_tier="confirmed", cacheable=True,
+                             time_shiftable=True, source_tier="confirmed", cacheable=False,
                              read_only=True,
                              side_effect_state="none", idempotency="idempotent", retry="safe",
                              output_contract="three_state"),

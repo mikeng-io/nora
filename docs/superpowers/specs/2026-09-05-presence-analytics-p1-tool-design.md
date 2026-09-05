@@ -191,9 +191,21 @@ their schemas; behaviour lives in conduct.md). It MUST contain:
 
 ### 4.4 Registry metadata
 
-- `NativeTool(4, read_only=True, time_shiftable=True, cacheable=True,
+- `NativeTool(4, read_only=True, time_shiftable=True, cacheable=False,
   source_tier="confirmed", side_effect_state="none", idempotency="idempotent",
   retry="safe", output_contract="three_state")`.
+
+  **`cacheable=False` — amended by Kimi audit B1 (2026-09-05).** The first
+  draft pinned True on the reasoning that the result is a window of derived
+  facts. The audit overturned it: the `cacheable` field's own contract
+  (tools.py:222-227) grants True only to tools whose result carries no
+  room/person-disclosure decision baked into the moment it ran, and
+  `cacheable_tools()` gates the tool-recall-log write path whose
+  `recall_lookups` replays a persisted result VERBATIM with no guard
+  re-check — so a cached `ok` would be replayable for 7 days after the
+  roster changed (an unnamed account joins, `location_trusted` flips off).
+  That is precisely the scenario the field exists to prevent, and the
+  reason `where_is` — a less sensitive read — is not cacheable.
 
 Budget 4, sized like `transit`/`place_info`: the calls are cheap local
 SELECTs (no network, no live-refresh block — unlike `where_is`'s held-2
