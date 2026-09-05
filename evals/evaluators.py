@@ -58,6 +58,15 @@ class HonchoFedOncePerReply:
         return Result(ok, f"honcho fed {t.honcho_feeds} time(s), expected {expected}")
 
 
+# The stop reasons that mean "the model was never successfully invoked" —
+# a timeout, an llm_error, or a budget cut. A turn ending in any of these is
+# an ERROR for eval purposes, never a correct silence (see evaluate()).
+_ERROR_STOP_REASONS = frozenset({
+    "invocation_timeout", "llm_error", "limit_total_tokens",
+    "limit_max_turns", "limit_request_timeout", "no_send_call",
+})
+
+
 class ParticipationVerdict:
     """The participation suite's speak/silence verdict (design/dreamer-agent-
     loop/35 §9 gap 3).
@@ -82,6 +91,18 @@ class ParticipationVerdict:
 
     def evaluate(self, t) -> Result:
         spoke = bool(t.sent)
+        # A turn that never successfully invoked the model is NOT a correct
+        # silence — it is an ERROR, and grading it as PASS would let a live
+        # model outage certify the flip gate (Claude Sonnet audit, 2026-09-05,
+        # BLOCKING). `FirePath._turn` catches timeouts/errors and returns a
+        # failure string without raising, so `Trajectory.sent` stays empty
+        # either way; `stop_reason` is the signal that disambiguates.
+        if not spoke and t.stop_reason in _ERROR_STOP_REASONS:
+            return Result(
+                False,
+                f"expected {self._expect}; the model was never successfully "
+                f"invoked (stop_reason={t.stop_reason!r}) — ERROR, not silence",
+            )
         ok = spoke == (self._expect == "speak")
         return Result(
             ok,

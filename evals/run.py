@@ -699,6 +699,12 @@ async def _run_participation_live(paths: tuple[Path, ...]) -> tuple[bool, list[d
               f"verdicts correct — false-speaks: {false_speaks or 'none'} "
               f"(knowledge-cut twins: {twin_failures or 'none'}), "
               f"missed speaks: {missed or 'none'}")
+        # The ERROR disambiguation (Claude Sonnet audit BLOCKING): a turn that
+        # never invoked the model is not a correct silence. Surface the
+        # stop_reason distribution so a live-model outage during a gate run is
+        # visible instead of reading as "zero false-speaks".
+        stops = Counter(r["stop_reason"] or "unrecorded" for r in results)
+        print("    stop_reason: " + ", ".join(f"{k}x{v}" for k, v in sorted(stops.items())))
         return all_passed, results
     finally:
         await client.close()
