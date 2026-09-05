@@ -96,7 +96,8 @@ def test_a_coordinate_pair_is_blocked_by_the_reply_scan_after_dec156():
     assert scan_reply("佢喺 22.410, 114.124 附近") == "coordinate"
     assert scan_reply("-33.87, 151.20") == "coordinate"
     assert scan_reply("22.410,114.124") == "coordinate"
-    assert scan_reply("lat 22.410 lng 114.124") is None  # no comma pair — model speech, docstring-handled
+    # no comma pair — model speech, docstring-handled
+    assert scan_reply("lat 22.410 lng 114.124") is None
     assert scan_reply("份嘢 $22.5 買的") is None
     assert scan_reply("2026-09-06 見") is None
     assert scan_reply("大概 20 分鐘前喺屋企") is None
