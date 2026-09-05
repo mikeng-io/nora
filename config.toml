@@ -76,10 +76,16 @@ tagger_card_conclusions = 8
 base_url = "http://host.docker.internal:20128/v1"   # OmniRoute OpenAI-compatible
 api_key_env = "OMNIROUTE_API_KEY"        # env var NAME, never the value
 
-# The `nora` OmniRoute combo (2026-09-06, operator): first member
-# ollamacloud/deepseek-v4-flash:0731, fallback opencode-go/deepseek-v4-flash.
-# The combo's first member is the SAME upstream ADR 0006 pinned for two
-# reasons that still hold:
+# The `nora` OmniRoute combo (2026-09-06, operator): members in combo order
+# opencode-go/deepseek-v4-flash → ollama-cloud/deepseek-v4-flash:0731
+# (priority strategy). NOTE: opencode-go is the upstream ADR 0006 measured as
+# breaking forced `tool_choice` (400 «Thinking mode does not support this
+# tool_choice») — the router fails over to the ollama-cloud member, which is
+# the one that actually serves (verified live 2026-09-06: forced tool_choice
+# through the combo returns a tool call from deepseek-v4-flash:0731). Every
+# tag call therefore pays one 400 round-trip before the working member. The
+# ollama-cloud member is the SAME upstream ADR 0006 pinned for two reasons
+# that still hold:
 #   1. ECONOMICS. ollama-cloud is subscription-based; opencode-zen is credit-based
 #      and was returning 403/429 «All credentials for model deepseek-v4-flash are
 #      cooling down» throughout a probing session. A route that rate-limits under
