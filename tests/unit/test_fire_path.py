@@ -1496,10 +1496,12 @@ def _shadow_path(
 async def test_the_shadow_mirror_posts_a_spoke_determination(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """A speak determination mirrors: the room hears the reply, the shadow
-    channel gets the verdict, the actual text and the source room — through
+    """TRUE SHADOW (Miles decision 2026-09-05): a speak determination while the
+    mirror is wired NEVER live-sends — the room hears NOTHING, the shadow
+    channel gets the verdict, the actual text and the source room, through
     the same `deliver.build`/guards, under its own audience. The mirror is
-    NOT a live send: `nora_participation_spoke_total` moves exactly once."""
+    NOT a live send: `nora_participation_spoke_total` stays 0 (the held
+    message never reached the room), and the draft is reviewable."""
     room, shadow = _FireAdapter(), _DiscordFireAdapter()
     path = _shadow_path(
         doctrine_store=doctrine_store, persons=persons, metrics=metrics,
@@ -1509,18 +1511,20 @@ async def test_the_shadow_mirror_posts_a_spoke_determination(
 
     outcome = await path.speak(_participation())
 
-    assert outcome == fire_module.SENT
-    assert room.texts == ["咁啱嘅"]
+    # True shadow: the room hears nothing; the determination is reviewable.
+    assert outcome == fire_module.SILENT
+    assert room.texts == []
     assert len(shadow.sent) == 1
     target, mirror = shadow.sent[0]
     assert target.platform == "discord"
     assert target.conversation_id == "mirror-1"
     assert "signal/conv-1" in mirror            # the source room
-    assert "SPOKE" in mirror
-    assert "咁啱嘅" in mirror                    # the actual reply
-    # Live sends only: the mirror never reads as room speech.
-    assert metrics.get("nora_participation_spoke_total") == 1
-    assert metrics.get("nora_participation_spoke_total", platform="signal") == 1
+    assert "SHADOW MODE held it" in mirror      # true shadow wording
+    assert "咁啱嘅" in mirror                    # the draft, never sent
+    # Live sends only: the mirror never reads as room speech, and the held
+    # draft never counts as a spoke.
+    assert metrics.get("nora_participation_spoke_total") == 0
+    assert metrics.get("nora_participation_spoke_total", platform="signal") == 0
     assert metrics.get("nora_participation_spoke_total", platform="discord") == 0
 
 
@@ -1557,11 +1561,15 @@ async def test_the_shadow_mirror_shows_what_a_held_send_would_have_said(
 ) -> None:
     """The held-text seam: the cooldown-held branch retains the text
     (`Deliverer.held_texts`), so a concluded-speak inside the cooldown is
-    reviewable — the one case whose words the room's history never records."""
+    reviewable — the one case whose words the room's history never records.
+
+    Shadow is OFF here (`shadow_channel=None`): with the mirror wired, the
+    shadow gate holds the send and the wording says SHADOW MODE (covered by
+    the spoke test above). This test exercises the cooldown wording alone."""
     room, shadow = _FireAdapter(), _DiscordFireAdapter()
     path = _shadow_path(
         doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        room=room, shadow=shadow,
+        room=room, shadow=shadow, shadow_channel=None,
         participation_runner=FakeAgentRunner(_send_turns("held back")),
     )
 
@@ -1569,10 +1577,11 @@ async def test_the_shadow_mirror_shows_what_a_held_send_would_have_said(
 
     assert outcome == fire_module.SILENT
     assert room.sent == []
-    assert len(shadow.sent) == 1
-    _, mirror = shadow.sent[0]
-    assert "cooldown" in mirror
-    assert "held back" in mirror
+    # Shadow off = no review surface: the cooldown-held text is retained by
+    # the Deliverer (the held-text seam) but there is no mirror to post it.
+    # The reviewable held-draft case is the shadow-mode spoke test above,
+    # which shows the held text under the SHADOW MODE wording.
+    assert shadow.sent == []
     assert metrics.get("nora_participation_spoke_total") == 0
 
 
@@ -1600,7 +1609,12 @@ async def test_a_missing_shadow_adapter_fails_soft_and_is_counted(
 ) -> None:
     """A shadow platform with no adapter wired must not break the reviewed
     turn — review traffic never changes the outcome — but it is counted, not
-    silent (R-5): `nora_errors_total{stage="participation_shadow"}`."""
+    silent (R-5): `nora_errors_total{stage="participation_shadow"}`.
+
+    TRUE SHADOW (Miles decision 2026-09-05): the shadow channel is wired, so
+    the turn NEVER live-sends even though the mirror adapter is missing — an
+    operator who turned shadow on expects the room to hear nothing, and a
+    broken mirror must not silently become a live send."""
     room = _FireAdapter()
     path = _shadow_path(
         doctrine_store=doctrine_store, persons=persons, metrics=metrics,
@@ -1610,6 +1624,6 @@ async def test_a_missing_shadow_adapter_fails_soft_and_is_counted(
 
     outcome = await path.speak(_participation())
 
-    assert outcome == fire_module.SENT
-    assert room.texts == ["咁啱嘅"]
+    assert outcome == fire_module.SILENT
+    assert room.texts == []
     assert metrics.get("nora_errors_total", stage="participation_shadow") == 1

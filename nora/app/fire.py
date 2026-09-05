@@ -983,6 +983,15 @@ class FirePath:
         # into — carries the tag id without naming it (nora.obs.logging's
         # contextvar bridge), so a fire turn is greppable exactly like a tag.
         bind_tag_id(ctx.tag_id)
+        # TRUE SHADOW (design/dreamer-agent-loop/35 §10.6, Miles decision
+        # 2026-09-05): while the mirror is wired, a participation turn NEVER
+        # live-sends — `send_permitted` is forced False so the Deliverer holds
+        # the message at the last inch and `_turn` mirrors the draft instead.
+        # The operator reviews determinations on the shadow channel; the room
+        # hears nothing until the flip (shadow = false). This is what makes
+        # shadow a review surface rather than a live send with a copy.
+        if occasion.kind == "participation" and self._shadow_channel is not None:
+            send_permitted = False
         try:
             return await self._turn(occasion, ctx, send_permitted=send_permitted)
         finally:
@@ -1510,6 +1519,11 @@ class FirePath:
                 _mirror_text(
                     occasion, ctx, verdict=verdict, texts=texts, held=held,
                     stop_reason=stop_reason,
+                    # The mirror is wired, so a held text is held by the
+                    # shadow gate (true shadow, Miles decision 2026-09-05),
+                    # never by the cooldown — the mirror exists to review
+                    # cooldown-held messages, so it is never cooldown-gated.
+                    shadow_hold=True,
                 ),
                 source="shadow",
             )
@@ -1553,6 +1567,7 @@ class FirePath:
 def _mirror_text(
     occasion: Event, ctx: TagContext, *, verdict: str,
     texts: Sequence[str], held: bool, stop_reason: str | None,
+    shadow_hold: bool = False,
 ) -> str:
     """The shadow mirror post (§10.6): the source room, the verdict, the text
     and the window that closed.
@@ -1563,6 +1578,12 @@ def _mirror_text(
     doubles as her reasoning for declining). The window tail is the last few
     transcript rows the determination saw, so the review reads the trigger in
     context rather than as an orphaned quote.
+
+    `shadow_hold` (Miles decision 2026-09-05): TRUE SHADOW — the mirror is
+    wired, so a concluded-speak is held by the shadow gate, not the cooldown.
+    The wording must say so: an operator reviewing the mirror needs to know
+    the room heard nothing because shadow is on, not because the cooldown
+    happened to hold it.
     """
     lines = [
         f"[shadow] {occasion.platform}/{occasion.conversation_id}",
@@ -1570,10 +1591,16 @@ def _mirror_text(
     if verdict == "spoke":
         lines.append("verdict: SPOKE — the room heard:")
     elif held:
-        lines.append(
-            "verdict: SILENT — she concluded speak; the send cooldown held "
-            "it. She would have said:"
-        )
+        if shadow_hold:
+            lines.append(
+                "verdict: SILENT — she concluded speak; SHADOW MODE held it "
+                "(the room hears nothing until the flip). She would have said:"
+            )
+        else:
+            lines.append(
+                "verdict: SILENT — she concluded speak; the send cooldown held "
+                "it. She would have said:"
+            )
     else:
         lines.append("verdict: SILENT — she declined the floor.")
         if texts:
