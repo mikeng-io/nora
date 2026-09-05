@@ -612,7 +612,10 @@ def _participation_window_context(case: Case) -> str:
     return "\n".join(lines)
 
 
-async def _run_participation_live(paths: tuple[Path, ...]) -> tuple[bool, list[dict]]:
+async def _run_participation_live(
+    paths: tuple[Path, ...], *, effort: str | None = None,
+    sink: EvalSink | None = None, run_name: str | None = None,
+) -> tuple[bool, list[dict]]:
     """The participation suite's live gate (design/dreamer-agent-loop/35 §9).
 
     Every case runs through the REAL participation path — real
@@ -657,7 +660,7 @@ async def _run_participation_live(paths: tuple[Path, ...]) -> tuple[bool, list[d
                         f"participation case {case.name!r} has no `expect:` — "
                         "the verdict (speak/silence) is what this suite grades"
                     )
-                trajectory = await run_case(case, live=True)
+                trajectory = await run_case(case, live=True, effort=effort)
                 verdict = ParticipationVerdict(case.expect).evaluate(trajectory)
                 all_passed = all_passed and verdict.passed
 
@@ -683,6 +686,11 @@ async def _run_participation_live(paths: tuple[Path, ...]) -> tuple[bool, list[d
                     "name": case.name, "expect": case.expect,
                     "spoke": bool(trajectory.sent), "passed": verdict.passed,
                     "judge": judge_verdict,
+                    # The disambiguating signal (Claude Sonnet audit BLOCKING):
+                    # a turn that never invoked the model is an ERROR, not a
+                    # correct silence — surfaced so the summary's stop_reason
+                    # distribution can read it.
+                    "stop_reason": trajectory.stop_reason,
                 })
                 status = "PASS" if verdict.passed else "FAIL"
                 print(f"[{status}] participation/{case.name} — expect={case.expect} "
@@ -705,6 +713,22 @@ async def _run_participation_live(paths: tuple[Path, ...]) -> tuple[bool, list[d
         # visible instead of reading as "zero false-speaks".
         stops = Counter(r["stop_reason"] or "unrecorded" for r in results)
         print("    stop_reason: " + ", ".join(f"{k}x{v}" for k, v in sorted(stops.items())))
+        # Langfuse export (Miles 2026-09-05: "include langfuse and jaeger —
+        # otherwise how can I analyse with observability"). The participation
+        # suite is the flip gate; its per-case verdicts belong in the same
+        # observability surface as every other suite. NullEvalSink when the
+        # CLI flag or config is off — never a failure.
+        if sink is not None:
+            dataset_name = "participation"
+            run_id = await sink.start_run(
+                dataset_name=dataset_name, run_name=run_name or "participation",
+            )
+            for r in results:
+                await sink.record_score(
+                    run_id=run_id, item_id=r["name"],
+                    name="participation_verdict",
+                    value=1.0 if r["passed"] else 0.0, data_type="BOOLEAN",
+                )
         return all_passed, results
     finally:
         await client.close()
@@ -867,7 +891,14 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
     elif suite == "participation":
         # Live drive of the real participation path; every one of the 15
         # cases must reach its expected verdict (see `_run_participation_live`).
-        ok, _results = asyncio.run(_run_participation_live(paths))
+        # Langfuse export rides the same `--export-langfuse` + config gate as
+        # every other suite (Miles 2026-09-05).
+        cfg = _load_eval_config()
+        sink = _build_sink(cfg, export=export_langfuse)
+        run_name = f"gate-participation-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
+        ok, _results = asyncio.run(_run_participation_live(
+            paths, effort=effort, sink=sink, run_name=run_name,
+        ))
     elif suite == "adversarial":
         # B1: the verdict cache is ON by default — an unchanged re-run costs 0 model
         # calls. --no-cache disables it; --force re-runs every case (and refreshes it).
