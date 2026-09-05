@@ -603,15 +603,20 @@ headers_env = ""                           # collector owns Langfuse auth; left 
 
 [evals]
 # The model that GRADES the adversarial live run (DEC-75). MUST differ from
-# llm.model's exact id (`ollamacloud/deepseek-v4-flash`) — the runner refuses a
-# string match.
+# llm.model's exact id (`nora`) — the runner refuses a string match.
 #
-# 2026-08-31 (operator): judge model → `ollamacloud/glm-5.3` (full GLM 5.3,
-# not flash — the judge's verdict BINDS the gate (DEC-75 Gap 2), so Miles chose
-# the strongest reasoning tier for grading). Verified present in the OmniRoute
-# catalog alongside `ollamacloud/glm-5.3-flash`; it clears the runner's guard
-# (llm.model is `ollamacloud/deepseek-v4-flash`; the ids do not string-match)
-# and matches `evals.judge.JUDGE_MODEL_TIER`'s "deep" intent.
+# 2026-09-06 (operator): judge model → the `nora-judge` OmniRoute combo
+# (priority: glm-cn/glm-5.3-flash → ollama-cloud/glm-5.3-flash). Clears the
+# runner's guard (`nora` vs `nora-judge` do not string-match).
+#
+# 2026-08-31 (operator, superseded): judge model → `ollamacloud/glm-5.3`
+# (full GLM 5.3, not flash — the judge's verdict BINDS the gate (DEC-75 Gap 2),
+# so Miles chose the strongest reasoning tier for grading). Verified present in
+# the OmniRoute catalog alongside `ollamacloud/glm-5.3-flash`; it cleared the
+# runner's guard (llm.model was `ollamacloud/deepseek-v4-flash`; the ids did
+# not string-match) and matched `evals.judge.JUDGE_MODEL_TIER`'s "deep" intent.
+# NOTE: the combo's members are FLASH tier, not the full GLM 5.3 the 08-31
+# decision picked — the operator's 09-06 instruction supersedes that choice.
 #
 # Historical notes, kept for provenance:
 # - A CONTROLLED measurement (A4: same frozen replies, k=3, 2026-08-20)
@@ -645,7 +650,7 @@ headers_env = ""                           # collector owns Langfuse auth; left 
 #                         llm.model, never on this one.
 # So this model is only ever the judge half. Raising judge_samples multiplies it
 # directly.
-judge_model = "ollamacloud/glm-5.3"
+judge_model = "nora-judge"
 # Majority-of-k judging (A2): single-sample detection is noisy (caught 1/3 vs
 # 3/3 across runs), so the gate binds the MAJORITY of 3 grades. Odd so a majority
 # always exists.
