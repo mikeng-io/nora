@@ -24,9 +24,6 @@ from nora.agent.room import Room
 from nora.agent.security import (
     looks_like_coordinate as _looks_like_coordinate,
 )
-from nora.agent.security import (
-    scan_identifiers,
-)
 from nora.agent.tools import build_tool_specs
 from nora.agent.whereis import Circle
 from nora.obs.metrics import Metrics
