@@ -127,7 +127,6 @@ from nora.language.fact_embedder import FactEmbedder
 from nora.language.knowledge_search import KnowledgeSearch
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
-from nora.language.note_revisitor import NoteRevisitor
 from nora.language.observer import LexemeObserver
 from nora.language.portrait_synthesizer import PortraitSynthesizer
 from nora.obs.health import LLMState
@@ -2572,34 +2571,40 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     entities=fact_entities, metrics=metrics,
                 ),
             )
-        # The note tier's REVISITOR, on the same two-gate rule the fact tier
-        # above is held to: `[dreamer]` decides whether the runtime exists,
-        # `[notes]` decides whether this tier is one of the things it runs.
-        # ADDITIVE to whatever the fact block built rather than replacing it —
-        # the two tiers are independent and an operator may run either alone.
-        #
-        # It takes `audit` for its evidence read, and that is the whole reason
-        # this adaptor needs no room-scoped TOOL: the evidence is selected in
-        # code, from the note's own `established_in`, where it can be capped and
-        # counted (§4.2's argument). A workspace-keyed adaptor handed a
-        # room-scoped tool would get a workspace where a conversation id is
-        # expected and be answered EMPTY — «I could not check» reported as
-        # «there was nothing», which for this adaptor would mean retiring a note
-        # against evidence that was never read.
-        if cfg.notes.enabled and note_store is not None:
-            dream_adaptors = (*dream_adaptors, NoteRevisitor(
-                notes=note_store,
-                record=audit,
-                max_revisits_per_tick=cfg.notes.max_revisits_per_tick,
-                evidence_messages_per_note=cfg.notes.revisit_evidence_messages,
-                metrics=metrics,
-            ))
         # The note tier's curator, on its OWN gate and behind the tier's.
         # `[notes] enabled` decides whether the index is injected and the four
         # tools reachable; `curator_enabled` decides whether a background pass
         # MERGES AND RETIRES. Two switches for two risks: the tag path only
         # reads, and this is the one thing in the tier that removes something
         # from her index.
+        #
+        # This is ALSO where `note-revisit` used to be wired, before the
+        # note-curator merge (design/dreamer-agent-loop/34, issue #99): the
+        # revisitor's due-selection, evidence grounding and wake/strike
+        # bookkeeping all live in `NoteCuratorAdaptor` now, so there is one
+        # gate here rather than two. **This is a real behaviour change worth
+        # naming rather than burying in a diff**: the revisitor previously
+        # retired notes whenever `[notes] enabled` alone was true (no separate
+        # switch), and now that machinery is folded into the pass that has
+        # always required `curator_enabled` too. `[dreamer]` and `[notes]
+        # enabled` are BOTH true in the current deployment, so the pre-merge
+        # revisitor really was ticking every cycle — this is a genuine
+        # behaviour change at the next deploy, not a hypothetical one, and
+        # `curator_enabled = false` (the deployed default) is what turns
+        # retiring off starting there. Read back 2026-09-06: the deployed
+        # `note` table holds 0 rows, so there was nothing for the revisitor
+        # to have retired regardless — the observable outcome is unaffected
+        # today, but only because the tier is still empty. An operator who
+        # had `curator_enabled` on gains the revisitor's due-selection and
+        # wake bookkeeping under the SAME flag they already used to accept
+        # "this pass merges and retires".
+        #
+        # It takes `audit` for its evidence read (inherited from the
+        # revisitor), and that is the whole reason this adaptor needs no
+        # room-scoped TOOL: the evidence is selected in code, from a note's own
+        # `established_in`, where it can be capped and counted. A
+        # workspace-keyed adaptor handed a room-scoped tool would get a
+        # workspace where a conversation id is expected and be answered EMPTY.
         #
         # THE GROUP'S calendar day, not UTC and not the store's clock. The
         # curator compares against a YYYYMMDD day, and "has the 9th passed" is
@@ -2623,9 +2628,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 *dream_adaptors,
                 NoteCuratorAdaptor(
                     notes=note_store,
+                    record=audit,
                     today=_today_hk,
                     max_groups_per_tick=cfg.notes.max_groups_per_tick,
                     max_expired_per_tick=cfg.notes.max_expired_per_tick,
+                    max_revisits_per_tick=cfg.notes.max_revisits_per_tick,
+                    evidence_messages_per_note=cfg.notes.revisit_evidence_messages,
                     metrics=metrics,
                 ),
             )
