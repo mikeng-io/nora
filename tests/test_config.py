@@ -617,15 +617,21 @@ def test_analytics_config_rejects_unknown_keys_directly():
         AnalyticsConfig(enabled=True, nonexistent_key=1)
 
 
-def test_min_trip_fixes_defaults_to_three_and_refuses_a_one_fix_trip():
+def test_min_trip_fixes_defaults_to_two_and_refuses_a_one_fix_trip():
     """Tier 5. `extract_trips`'s own noise gate: a run shorter than this is
     dropped rather than written as a trip. `ge=2`, not `ge=1` — a one-fix
     "trip" has no pair to run `derive_speed_kmh`/`haversine_distance_m`
     over, so its `distance_m` and `avg_speed_kmh` are both structurally
     0.0; admitting one would put a fabricated zero-speed sample into
     `presence_corridor_speed`'s percentiles, which is precisely the
-    "never assert what you cannot ground" rule."""
-    assert AnalyticsConfig().min_trip_fixes == 3
+    "never assert what you cannot ground" rule.
+
+    3 -> 2 (2026-09-05 live-data finding): Life360's 30-min cadence means a
+    real 30km drive produces only 2 movement fixes between stays; a 3-fix
+    floor dropped those trips as noise (miles_novak's 17:00 Tsing Long Highway
+    run). 2 is the minimum that still distinguishes movement from a stray
+    fix."""
+    assert AnalyticsConfig().min_trip_fixes == 2
     assert AnalyticsConfig(min_trip_fixes=2).min_trip_fixes == 2
     with pytest.raises(ValidationError):
         AnalyticsConfig(min_trip_fixes=1)

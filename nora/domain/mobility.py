@@ -26,6 +26,7 @@ from nora.domain.presence import haversine_distance_m
 
 __all__ = [
     "DWELL_CAP_MS",
+    "CHUNK_GAP_MS",
     "LabelResult",
     "RawFix",
     "SegmentationResult",
@@ -51,6 +52,21 @@ __all__ = [
 # The observed 1800s still-ceiling (config.toml's cadence_still_seconds)
 # plus slack (spec §3.3, design/27 §1.1).
 DWELL_CAP_MS = 1_900_000
+
+# The batch-split threshold for `_chunk_by_gap` (rollup Speed 1) — how long a
+# gap between two consecutive fixes must be before they are treated as
+# SEPARATE visits rather than one continuous presence. Deliberately a
+# CROSS-DAY span, NOT the same 31.7-min `DWELL_CAP_MS` dwell ceiling:
+# Life360's resting cadence is one fix every 10-55 minutes, so a subject
+# who stays home all day (WFH) produces fixes 30+ minutes apart that a
+# 31.7-min split would carve into dozens of sub-min-dwell fragments — the
+# production shape that left miles_novak with 195 home stays instead of one
+# 14.7h stay (2026-09-05 live-data finding). A 12h gap separates genuine
+# day-to-day returns (the original reason the split exists) while keeping
+# an all-day home presence in ONE chunk. `dwell_ms`'s own cap stays
+# `DWELL_CAP_MS` — that is a still-ceiling for how long a single fix's
+# position may be credited, a different job from batch partitioning.
+CHUNK_GAP_MS = 12 * 3_600_000
 
 _MINUTES_PER_DAY = 1440.0
 

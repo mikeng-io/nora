@@ -948,7 +948,7 @@ class AnalyticsConfig(BaseModel):
     # `distance_m` and `avg_speed_kmh` are structurally 0.0 — admitting
     # one would feed a fabricated zero-speed sample into
     # `presence_corridor_speed`'s percentiles.
-    min_trip_fixes: int = Field(default=3, ge=2)
+    min_trip_fixes: int = Field(default=2, ge=2)
     # Trip settlement (design/27 §4, 2026-08-20 trip-settlement design
     # §2.4): the safety valve against a stuck `is_driving` signal — if
     # Life360 ever keeps reporting `True` continuously (a stale/stuck
