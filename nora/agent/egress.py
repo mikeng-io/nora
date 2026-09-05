@@ -86,10 +86,24 @@ _IDENTIFIER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("keylike", _KEYLIKE),
 )
 
-# The reply scan is the identifier scan today: the model-name veto is
-# disabled (operator decision 2026-08-31, see the module docstring), so this
-# tuple is kept as the reply-scoped alias rather than a second pattern set.
-_REPLY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = _IDENTIFIER_PATTERNS
+# DEC-156 (2026-09-06): where_been/where_is results now CARRY lat/lng, so a
+# sloppy or injected turn can echo a coordinate into a reply — the model has
+# the material in its context for the first time. The pair pattern is the
+# same shape `looks_like_coordinate` (nora/agent/security.py) uses for tool
+# ARGUMENTS; it is REDEFINED here rather than imported because security.py
+# already imports from this module (a second import direction would be
+# circular). Range is NOT checked: an out-of-range pair is still a leaked
+# coordinate, and blocking it too is the safe direction.
+_COORD_PAIR = re.compile(r"-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+")
+
+# The reply scan is the identifier scan PLUS the coordinate pair: identifiers
+# are the floor at every exit, and coordinates are a reply-only exposure that
+# exists since DEC-156 put lat/lng into the model's context. (The model-name
+# veto stays disabled — operator decision 2026-08-31.)
+_REPLY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    *_IDENTIFIER_PATTERNS,
+    ("coordinate", _COORD_PAIR),
+)
 
 
 def _first_match(text: str, patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> str | None:
