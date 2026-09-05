@@ -335,6 +335,16 @@ async def run_case(
         seed = seed_from_dict(case.seed)
 
     cfg = load_eval_config((REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml"))
+    # The eval measures the DETERMINATION (does the model decide speak/silence
+    # correctly), never the shadow gate. A deployment config.toml with
+    # `[participation] shadow = true` (the true-shadow review surface) would
+    # otherwise hold every send at the Deliverer and make all speak cases
+    # fail vacuously — the suite would be grading the gate, not the model.
+    # Forced off here, unconditionally: shadow is a production rollout
+    # surface, and the eval's job is the model's grounded-value decision.
+    cfg = cfg.model_copy(update={
+        "participation": cfg.participation.model_copy(update={"shadow": False}),
+    })
     metrics = Metrics()
     doctrine_store = DoctrineStore(
         DOCTRINE_DIR, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
