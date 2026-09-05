@@ -174,17 +174,17 @@ def _circle(persons, *, with_pat=False) -> Circle:
     )
 
 
-def _room(persons, *, members, fail=False):
+def _room(persons, *, members, fail=False, tagger=None):
     return Room(
         platform="signal", conversation_id=GROUP,
         roster_source=FakeRosterSource(groups={GROUP: tuple(members)}, fail=fail),
-        persons=persons, self_ids=NORA,
+        persons=persons, self_ids=NORA, tagger=tagger,
     )
 
 
 def _where_been(
     persons, mobility, *, members, fail=False, location_trusted=False,
-    now_ms=NOW_MS, metrics=None, with_pat=False,
+    now_ms=NOW_MS, metrics=None, with_pat=False, tagger=None,
 ):
     """The built `where_been` closure, through `build_tool_specs` — the same
     wiring the tag path uses (registry -> specs -> call), with the registry's
@@ -193,7 +193,8 @@ def _where_been(
         store=None, conversation_id=GROUP, conversation_type="group",
         persons=persons, honcho=None, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
-        room=_room(persons, members=members, fail=fail), transit_source=None,
+        room=_room(persons, members=members, fail=fail, tagger=tagger),
+        transit_source=None,
         presence_circles=(_circle(persons, with_pat=with_pat),),
         location_trusted=location_trusted,
         mobility=mobility, clock=lambda: datetime.fromtimestamp(now_ms / 1000, tz=UTC),
@@ -255,12 +256,25 @@ async def test_where_been_refuses_an_unnamed_account(persons):
 
 async def test_where_been_degraded_room_is_unavailable_not_refused(persons):
     """A room she cannot READ is an ERROR, not a policy decision — the split
-    R-27 draws and the 2026-08-10 fail-closed audit fixed for `where_is`."""
+    R-27 draws and the 2026-08-10 fail-closed audit fixed for `where_is`.
+
+    `fail=True` plus a tagger is the TRUE degraded path: `Room.scope` narrows
+    to the tagger with `degraded=True` rather than going dark. Without the
+    tagger the same fail would hit `available=False` instead, which is a
+    different branch (`I can't work out who is in this group`).
+    """
     mobility = _FakeMobility()
-    tool = _where_been(persons, mobility, members=(MILES,), fail=True)
+    metrics = Metrics()
+    tagger = persons.resolve("signal", "+85290000101")
+    tool = _where_been(
+        persons, mobility, members=(MILES,), fail=True,
+        tagger=tagger, metrics=metrics,
+    )
     out = await tool("places", name="Miles")
-    assert out["status"] == "unavailable"
+    assert out["status"] == "unavailable"          # not "refused"
+    assert "circle" not in out["note"]             # no false claim about the room
     assert mobility.calls == []
+    assert _labelled(metrics, "nora_presence_disclosure_refusals_total", "reason", "degraded")
 
 
 async def test_where_been_counts_the_location_trusted_waiver(persons):
