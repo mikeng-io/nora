@@ -25,8 +25,8 @@ from zoneinfo import ZoneInfo
 from nora.domain.presence import haversine_distance_m
 
 __all__ = [
-    "DWELL_CAP_MS",
     "CHUNK_GAP_MS",
+    "DWELL_CAP_MS",
     "LabelResult",
     "RawFix",
     "SegmentationResult",

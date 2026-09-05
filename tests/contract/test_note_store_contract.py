@@ -50,6 +50,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nora.domain.notes import (
     Note,
+    NoteCreateCandidate,
     NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
@@ -100,6 +101,15 @@ class _NoteStore(Protocol):
     async def record_miss(
         self, *, workspace: str, probe: str, conversation_id: str, now_ms: int,
     ) -> int: ...
+    async def record_create_candidate(
+        self, *, workspace: str, title: str, description: str, body: str,
+        closing_condition: str, anchor_date: int,
+        anchor_entity_ids: tuple[str, ...], message_ids: tuple[int, ...],
+        now_ms: int,
+    ) -> NoteCreateCandidate: ...
+    async def set_create_candidate_status(
+        self, *, workspace: str, candidate_id: str, status: str, now_ms: int,
+    ) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -122,6 +132,12 @@ class _Harness:
     #: real `fact_entity` row per name because the join table's `entity_id` is
     #: a live foreign key; the memory arm writes its dict.
     resolve: Callable[[str, str, tuple[str, ...]], Awaitable[None]]
+    #: One `kind='create'` row by id, or `None` — needed only because
+    #: `set_create_candidate_status` returns a bare row count, and the
+    #: property that matters (did the guard actually block a second
+    #: decision) is invisible through that int, the same reason
+    #: `read_candidate` exists for the miss cache above.
+    read_create_candidate: Callable[[str], Awaitable[NoteCreateCandidate | None]]
 
 
 @pytest.fixture(scope="module")
@@ -194,7 +210,15 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
         ) -> None:
             memory.entities[note_id] = tuple(f"e-{n}" for n in names)
 
-        yield _Harness(memory, _retire_mem, _candidate_mem, _resolve_mem)
+        async def _read_create_candidate_mem(
+            candidate_id: str,
+        ) -> NoteCreateCandidate | None:
+            return memory.create_candidates.get(candidate_id)
+
+        yield _Harness(
+            memory, _retire_mem, _candidate_mem, _resolve_mem,
+            _read_create_candidate_mem,
+        )
         return
 
     # The ENGINE is per test (cheap); the DATABASE and its migrations are
@@ -255,9 +279,33 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
                     .on_conflict_do_nothing()
                 )
 
+    async def _read_create_candidate_sql(
+        candidate_id: str,
+    ) -> NoteCreateCandidate | None:
+        async with engine.connect() as conn:
+            row = (await conn.execute(
+                sa.select(NOTE_CANDIDATE).where(
+                    NOTE_CANDIDATE.c.id == candidate_id,
+                    NOTE_CANDIDATE.c.kind == "create",
+                )
+            )).one_or_none()
+        if row is None:
+            return None
+        return NoteCreateCandidate(
+            id=row.id, workspace=row.workspace, title=row.title,
+            description=row.description, body=row.body,
+            closing_condition=row.closing_condition,
+            anchor_date=row.anchor_date,
+            anchor_entity_ids=tuple(row.anchor_entity_ids),
+            message_ids=tuple(row.message_ids), status=row.status,
+            attempts=row.attempts, first_seen_at=row.first_seen_at,
+            last_seen_at=row.last_seen_at,
+        )
+
     try:
         yield _Harness(
             SqlNoteStore(engine), _retire_sql, _candidate_sql, _resolve_sql,
+            _read_create_candidate_sql,
         )
     finally:
         # Truncate rather than rebuild: same isolation guarantee this suite
@@ -753,6 +801,173 @@ async def test_record_miss_distinguishes_two_probes(notes: _Harness) -> None:
         workspace=WS, probe="where are we eating", conversation_id="conv-1",
         now_ms=NOW + 1,
     ) == 1
+
+
+# --- the create path: note_candidate(kind='create') (§4, issue #98) --------
+
+
+def _candidate_kwargs(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "workspace": WS, "title": "Wedding venue",
+        "description": "Where the September wedding is held is still open.",
+        "body": "Two venues on the shortlist. Nobody has called either.",
+        "closing_condition": "a venue is booked and confirmed",
+        "anchor_date": 20260919, "anchor_entity_ids": (), "message_ids": (1, 2),
+        "now_ms": NOW,
+    }
+    base.update(overrides)
+    return base
+
+
+async def test_record_create_candidate_stages_a_pending_row(
+    notes: _Harness,
+) -> None:
+    row = await notes.store.record_create_candidate(**_candidate_kwargs())
+
+    assert row.status == "pending"
+    assert row.attempts == 0
+    assert row.title == "Wedding venue"
+    assert row.anchor_date == 20260919
+    assert row.message_ids == (1, 2)
+    assert row.first_seen_at == NOW
+    assert row.last_seen_at == NOW
+
+
+async def test_record_create_candidate_dedupes_on_the_anchor_key_not_title(
+    notes: _Harness,
+) -> None:
+    """M10: two proposals sharing `(workspace, anchor_date,
+    anchor_entity_ids)` are ONE candidate, whatever their titles say — the
+    dedupe is the note tier's own anchor key, never `title`."""
+    first = await notes.store.record_create_candidate(
+        **_candidate_kwargs(title="Wedding venue", message_ids=(1,)),
+    )
+    second = await notes.store.record_create_candidate(
+        **_candidate_kwargs(
+            title="Ada's wedding", message_ids=(2,), now_ms=NOW + 1000,
+        ),
+    )
+
+    assert second.id == first.id, (
+        "same anchor key, different title — one candidate row, not two"
+    )
+    assert second.title == "Ada's wedding", "the later text refreshes the row"
+    assert second.attempts == 1
+    assert second.last_seen_at == NOW + 1000
+    assert set(second.message_ids) >= {1, 2}
+
+
+async def test_record_create_candidate_distinguishes_two_anchor_dates(
+    notes: _Harness,
+) -> None:
+    same_day = await notes.store.record_create_candidate(**_candidate_kwargs())
+    other_day = await notes.store.record_create_candidate(
+        **_candidate_kwargs(anchor_date=20260920),
+    )
+
+    assert same_day.id != other_day.id
+
+
+async def test_record_create_candidate_keys_on_workspace_as_well_as_anchor(
+    notes: _Harness,
+) -> None:
+    mine = await notes.store.record_create_candidate(**_candidate_kwargs())
+    theirs = await notes.store.record_create_candidate(
+        **_candidate_kwargs(workspace=OTHER_WS),
+    )
+
+    assert mine.id != theirs.id, (
+        "another workspace's candidate is not this workspace's occasion"
+    )
+
+
+async def test_record_create_candidate_normalises_entity_order_and_duplicates(
+    notes: _Harness,
+) -> None:
+    """An unsorted, duplicated entity list must key IDENTICALLY to its sorted,
+    de-duplicated form — the exact property `anchor_key` exists to guarantee
+    one layer up, and the whole reason the write is normalised before it
+    reaches the unique index rather than trusted from the caller."""
+    first = await notes.store.record_create_candidate(
+        **_candidate_kwargs(anchor_entity_ids=("ben", "ada", "ada")),
+    )
+    second = await notes.store.record_create_candidate(
+        **_candidate_kwargs(
+            anchor_entity_ids=("ada", "ben"), now_ms=NOW + 1000,
+        ),
+    )
+
+    assert second.id == first.id
+    assert first.anchor_entity_ids == ("ada", "ben")
+
+
+async def test_set_create_candidate_status_settles_the_row(
+    notes: _Harness,
+) -> None:
+    row = await notes.store.record_create_candidate(**_candidate_kwargs())
+
+    affected = await notes.store.set_create_candidate_status(
+        workspace=WS, candidate_id=row.id, status="created", now_ms=NOW + 1,
+    )
+
+    assert affected == 1
+    settled = await notes.read_create_candidate(row.id)
+    assert settled is not None
+    assert settled.status == "created"
+
+
+async def test_set_create_candidate_status_refuses_a_second_decision(
+    notes: _Harness,
+) -> None:
+    """Idempotent by construction: a row already settled must not be settled
+    again, whatever status the second call asks for — the gate decides a
+    candidate ONCE."""
+    row = await notes.store.record_create_candidate(**_candidate_kwargs())
+    await notes.store.set_create_candidate_status(
+        workspace=WS, candidate_id=row.id, status="refused", now_ms=NOW + 1,
+    )
+
+    second = await notes.store.set_create_candidate_status(
+        workspace=WS, candidate_id=row.id, status="created", now_ms=NOW + 2,
+    )
+
+    assert second == 0
+    settled = await notes.read_create_candidate(row.id)
+    assert settled is not None
+    assert settled.status == "refused", "the first decision stands"
+
+
+async def test_record_create_candidate_does_not_reopen_a_settled_row(
+    notes: _Harness,
+) -> None:
+    """A re-observation of a SETTLED occasion must not relitigate it — the
+    upsert's own `WHERE status = 'pending'` guard, checked from the write
+    side rather than only from `set_create_candidate_status`'s."""
+    row = await notes.store.record_create_candidate(**_candidate_kwargs())
+    await notes.store.set_create_candidate_status(
+        workspace=WS, candidate_id=row.id, status="refused", now_ms=NOW + 1,
+    )
+
+    reobserved = await notes.store.record_create_candidate(
+        **_candidate_kwargs(title="a different title entirely", now_ms=NOW + 2),
+    )
+
+    assert reobserved.id == row.id
+    assert reobserved.status == "refused"
+    assert reobserved.title == "Wedding venue", (
+        "a settled row's text is not overwritten by a later re-sighting"
+    )
+
+
+async def test_set_create_candidate_status_refuses_a_non_terminal_status(
+    notes: _Harness,
+) -> None:
+    row = await notes.store.record_create_candidate(**_candidate_kwargs())
+
+    with pytest.raises(ValueError):
+        await notes.store.set_create_candidate_status(
+            workspace=WS, candidate_id=row.id, status="pending", now_ms=NOW,
+        )
 
 
 # --- DreamSink: both implementations, and the refusals in particular --------

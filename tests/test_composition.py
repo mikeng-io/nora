@@ -1171,6 +1171,58 @@ async def test_the_curator_reads_the_day_from_the_operators_timezone(cfg):
     assert earliest > latest, "Kiritimati is ahead of Niue, always"
 
 
+async def test_note_candidates_needs_three_gates_not_two(cfg):
+    """`[dreamer]` decides the runtime exists, `[notes] enabled` decides the
+    tier is on, and `candidates_enabled` decides a background pass WRITES NEW
+    NOTES into that index at all — the create path's own two-risks argument,
+    on `curator_enabled`'s own precedent (design 33 §4, issue #98)."""
+    for overrides in (
+        {"dreamer.enabled": True},
+        {"dreamer.enabled": True, "notes.enabled": True},
+        {"notes.enabled": True, "notes.candidates_enabled": True},
+    ):
+        deps = await build_dependencies(override_config(cfg, overrides))
+        assert "note-candidates" not in [a.name for a in deps.dream_adaptors], (
+            f"{overrides} must not produce the create-path adaptor"
+        )
+
+
+async def test_all_three_gates_on_builds_note_candidates(cfg):
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "notes.enabled": True,
+        "notes.candidates_enabled": True,
+    }))
+
+    candidates = next(
+        a for a in deps.dream_adaptors if a.name == "note-candidates"
+    )
+    # Scope-keyed and watermarked, unlike the curator/revisitor: a note's
+    # arrangement spans days of conversation, so this needs a per-room
+    # watermark the same way `fact-candidates` does.
+    assert candidates.key_kind == "scope"
+    assert candidates.uses_watermark is True
+    assert candidates.tools == frozenset(), (
+        "the create path proposes; it never gets a write tool"
+    )
+    schedule = deps.dream_schedules["note-candidates"]
+    assert schedule.min_interval_seconds == 3600, "hourly (design 33 §5)"
+
+
+async def test_note_candidates_needs_no_fact_tier_to_build(cfg):
+    """`workspace_for` is built fresh under the notes gate rather than reused
+    from the `[facts]` block above it — this must not depend on `[facts]`
+    having run at all."""
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "notes.enabled": True,
+        "notes.candidates_enabled": True,
+        "facts.enabled": False,
+    }))
+
+    assert any(a.name == "note-candidates" for a in deps.dream_adaptors)
+
+
 async def test_a_missing_veto_file_refuses_to_start_readably(cfg, tmp_path):
     """**A refusal the operator can read**, not a traceback.
 

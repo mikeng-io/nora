@@ -125,6 +125,7 @@ from nora.language.fact_adaptor import (
 )
 from nora.language.fact_embedder import FactEmbedder
 from nora.language.knowledge_search import KnowledgeSearch
+from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.note_revisitor import NoteRevisitor
 from nora.language.observer import LexemeObserver
@@ -2625,6 +2626,49 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     today=_today_hk,
                     max_groups_per_tick=cfg.notes.max_groups_per_tick,
                     max_expired_per_tick=cfg.notes.max_expired_per_tick,
+                    metrics=metrics,
+                ),
+            )
+        # The note tier's CREATE PATH (design/dreamer-agent-loop/33 §4, issue
+        # #98) — a THIRD gate, on `NotesConfig.candidates_enabled`'s own
+        # two-risks argument: `[notes] enabled` decides whether the index and
+        # the read tools are reachable, `candidates_enabled` decides whether
+        # a background pass WRITES NEW NOTES into that index at all. An
+        # operator who turned `[notes]` on for the index did not thereby sign
+        # up for a background process creating notes on their behalf.
+        #
+        # Scope-keyed, like `fact-candidates` above and unlike the curator and
+        # revisitor: a note's arrangement spans days of conversation, so this
+        # needs a PER-ROOM watermark to see the whole exchange rather than a
+        # slice. `workspace_for` is the same translation `fact-candidates`
+        # needs and for the same reason (DEC-105) — a fresh closure rather
+        # than the one built under `cfg.facts.enabled` above, since that block
+        # may not have run at all.
+        if cfg.notes.enabled and cfg.notes.candidates_enabled and note_store is not None:
+            dream_schedules = {
+                **dream_schedules,
+                # Hourly — design 33 §5's "可能每一個鐘": a note arrangement
+                # spans days, not minutes, so this gives the adaptor a week's
+                # exchange to read without paying for a model call every
+                # 5-minute tick. `batch_limit=200`: "a week of one room's
+                # planning" (33 §5), the size the design itself argues for
+                # rather than the fact tier's 1000-messages-a-day figure,
+                # which is sized for a whole workspace's world-claims rather
+                # than one room's arrangements.
+                "note-candidates": AdaptorSchedule(
+                    min_interval_seconds=3600, batch_limit=200,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                NoteCandidateAdaptor(
+                    notes=note_store,
+                    candidates=note_store,
+                    workspace_for={
+                        conv.primary_id: conv.workspace
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.workspace
+                    }.get,
                     metrics=metrics,
                 ),
             )

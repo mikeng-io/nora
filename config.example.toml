@@ -1022,6 +1022,22 @@ curator_enabled = false
 # the domain type (title <= 60 chars, description <= 200) and by the curator
 # retiring closed notes.
 
+# The CREATE PATH (design/dreamer-agent-loop/33-note-dreamer-schedule.md §4,
+# issue #98) — a THIRD gate, behind [dreamer] and [notes] enabled, on the
+# SAME two-risks argument curator_enabled makes above: [notes] enabled decides
+# whether the index and the read tools are reachable; this decides whether a
+# background pass WRITES NEW NOTES into that index at all. An operator who
+# turned [notes] on for the index has not thereby signed up for a background
+# process creating notes on her behalf.
+#
+# ON, a scope-keyed, hourly, tool-free Dreamer pass reads each room's message
+# batch and the workspace's standing note index, proposes full notes for
+# anything not yet tracked, and a DETERMINISTIC gate — never the model —
+# decides whether that becomes a new note, a revision to one that already
+# covers the same occasion, or nothing. The model never writes a note
+# directly.
+candidates_enabled = false
+
 [standing]
 # The debrief stage's gate (design/dreamer-agent-loop/26-standing.md). ON, a
 # SECOND model reads each finished turn — success, silence, veto and timeout

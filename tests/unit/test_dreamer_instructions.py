@@ -370,6 +370,10 @@ NATIVELY_AUTHORED = {
     # byte-identity is not a property it can have. Declaring it here is the
     # deliberate one-line act this set exists to require.
     "note-revisit",
+    # The note tier's CREATE PATH (issue #98). Same reason as
+    # `note-curation`/`note-revisit`: a new adaptor has no prior prompt to
+    # have moved and no fixture that could pin one.
+    "note-candidates",
     # Pass 6, entity-resolution adjudication. NATIVE even though its reasoning
     # and its four worked examples are adapted from graphiti-core's
     # `dedupe_nodes.py` (Apache-2.0 — see THIRD_PARTY_NOTICES.md): this set is
