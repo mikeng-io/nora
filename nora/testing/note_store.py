@@ -63,7 +63,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 
 from nora.domain.notes import (
+    CANDIDATE_CREATED,
+    CANDIDATE_PENDING,
+    CANDIDATE_REFUSED,
     Note,
+    NoteCreateCandidate,
     NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
@@ -122,6 +126,15 @@ class InMemoryNoteStore:
     notes: dict[str, Note] = field(default_factory=dict)
     revisions: dict[str, NoteRevision] = field(default_factory=dict)
     candidates: dict[tuple[str, str], NoteCandidate] = field(default_factory=dict)
+    #: `kind='create'` rows, by id — the create path's own table (§4, issue
+    #: #98), sharing NOTHING with `candidates` above beyond the table they
+    #: both stand in for: that dict is the miss cache, keyed on
+    #: `(workspace, probe)`; this one has no probe at all and is looked up by
+    #: its OWN anchor key, `(workspace, anchor_date, anchor_entity_ids)`, in
+    #: `record_create_candidate` below — a linear scan rather than a second
+    #: index, which is fine at this store's scale and keeps one dict from
+    #: drifting out of step with the other.
+    create_candidates: dict[str, NoteCreateCandidate] = field(default_factory=dict)
     #: `note_entity`, as a dict: note id -> RESOLVED entity ids. Empty, like
     #: the real table, and **nothing here fills it in from
     #: `anchor_entity_ids`.** A double that quietly resolved the model's own
@@ -645,3 +658,94 @@ class InMemoryNoteStore:
         )
         self.candidates[key] = updated
         return updated.occurrence_count
+
+    # ---- the create path (§4, issue #98) -----------------------------------
+
+    async def record_create_candidate(
+        self,
+        *,
+        workspace: str,
+        title: str,
+        description: str,
+        body: str,
+        closing_condition: str,
+        anchor_date: int,
+        anchor_entity_ids: Sequence[str],
+        message_ids: Sequence[int],
+        now_ms: int,
+    ) -> NoteCreateCandidate:
+        """`SqlNoteStore.record_create_candidate`'s behaviour: upserts on the
+        anchor key `(workspace, anchor_date, anchor_entity_ids)` — sorted and
+        de-duplicated HERE, exactly as the SQL store normalises it before the
+        row reaches its own unique index — and the update is a no-op once the
+        row has left `pending`, matching the SQL upsert's `WHERE status =
+        'pending'` guard: a settled candidate is never relitigated by a later
+        re-observation.
+
+        `message_ids` is APPENDED to the existing row's own list, deduplicated
+        only WITHIN this call's own argument — not merged with the existing
+        array — mirroring the SQL store's `||` concatenation exactly, so the
+        two implementations agree on the one property the contract suite can
+        actually observe: old ids are never lost, and a repeat sighting may
+        legitimately grow the array rather than staying capped at its
+        distinct count. This attribution list is not the count either store's
+        uniqueness protects (that is the anchor key), so an occasional
+        duplicate in it costs nothing.
+        """
+        entities = tuple(sorted(set(anchor_entity_ids)))
+        ids = tuple(dict.fromkeys(message_ids))
+        existing = next(
+            (c for c in self.create_candidates.values()
+             if c.workspace == workspace and c.anchor_date == anchor_date
+             and c.anchor_entity_ids == entities),
+            None,
+        )
+        if existing is None:
+            candidate = NoteCreateCandidate(
+                id=self._shaped_id(next(self._ids), "cand"),
+                workspace=workspace, title=title, description=description,
+                body=body, closing_condition=closing_condition,
+                anchor_date=anchor_date, anchor_entity_ids=entities,
+                message_ids=ids, status=CANDIDATE_PENDING, attempts=0,
+                first_seen_at=now_ms, last_seen_at=now_ms,
+            )
+            self.create_candidates[candidate.id] = candidate
+            return candidate
+        if existing.status != CANDIDATE_PENDING:
+            # SETTLED: a re-observation of this occasion must not reopen a
+            # decision the gate already made. Returned unchanged, exactly as
+            # the SQL store's guarded upsert leaves the row untouched and
+            # reads it back.
+            return existing
+        updated = replace(
+            existing, title=title, description=description, body=body,
+            closing_condition=closing_condition, last_seen_at=now_ms,
+            attempts=existing.attempts + 1,
+            message_ids=(*existing.message_ids, *ids),
+        )
+        self.create_candidates[existing.id] = updated
+        return updated
+
+    async def set_create_candidate_status(
+        self, *, workspace: str, candidate_id: str, status: str, now_ms: int,
+    ) -> int:
+        """`SqlNoteStore.set_create_candidate_status`'s behaviour: refuses a
+        non-terminal status, and is a no-op — never a second decision — for a
+        row that is gone, in another workspace, or already terminal."""
+        if status not in (CANDIDATE_CREATED, CANDIDATE_REFUSED):
+            raise ValueError(
+                f"InMemoryNoteStore.set_create_candidate_status got "
+                f"status={status!r}; only a TERMINAL status may be set this "
+                f"way — {(CANDIDATE_CREATED, CANDIDATE_REFUSED)}"
+            )
+        existing = self.create_candidates.get(candidate_id)
+        if (
+            existing is None
+            or existing.workspace != workspace
+            or existing.status != CANDIDATE_PENDING
+        ):
+            return 0
+        self.create_candidates[candidate_id] = replace(
+            existing, status=status, last_seen_at=now_ms,
+        )
+        return 1

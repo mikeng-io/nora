@@ -1550,16 +1550,41 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the exact defect this block was written to close. They ship with their
     # adaptor.
     #
-    # `trigger` carries one value today (`miss`, the negative cache at
-    # `tools.py::note_search`). The label is here anyway: a second trigger is
-    # what §4.5 anticipates, and names are append-only while labels are not,
-    # so the axis has to be right the first time.
+    # `trigger` carried one value until issue #98 (the create path):
+    # `"create"` is the second one this comment anticipated — a FRESH
+    # `kind='create'` row staged by `nora.language.note_candidates`, counted
+    # only on the first sighting of an occasion (a re-observation refreshes
+    # the row without being a second "recording", exactly as a repeated miss
+    # is not a second miss).
     _CounterSpec(
         "nora_note_candidates_total",
         "Note candidates recorded by what raised them. trigger=\"miss\": a "
         "note_search that matched nothing, written to the negative cache so "
-        "the SECOND ask on the same ground is evidence rather than a guess.",
+        "the SECOND ask on the same ground is evidence rather than a guess. "
+        "trigger=\"create\": a full note proposal the note-candidates "
+        "adaptor staged for the deterministic gate — see "
+        "nora_note_candidate_gate_total for what the gate then decided.",
         ("trigger",),
+    ),
+    # ---- note-candidates (§4, issue #98): the create path -------------------
+    #
+    # The gate's OWN outcome, separate from the staging count above: a row can
+    # be staged (and counted there) many times across ticks before the gate
+    # ever decides it, so this is the reading that answers "did the tier
+    # actually write anything", not "how many proposals arrived".
+    _CounterSpec(
+        "nora_note_candidate_gate_total",
+        "The note-candidates adaptor's deterministic gate, by outcome: "
+        "created (materialized as a brand new note), updated (materialized "
+        "as a revision to a standing note sharing its anchor key — "
+        "unreachable in production today, since the anchor key's entity half "
+        "needs note_entity, which has no writer; issue #100), refused (a "
+        "duplicate with nothing new, or a malformed proposal the domain type "
+        "itself rejected), or deferred (a transient failure — a raced CAS, a "
+        "store exception, a note that moved or retired between the read and "
+        "the write, or a candidate already settled by an earlier tick — left "
+        "PENDING for the next tick to retry, never a decision).",
+        ("action",),
     ),
     # A DELIBERATE second series over calls already counted, on
     # `_record_created`'s precedent (`nora.agent.tools`) rather than against
