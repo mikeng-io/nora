@@ -58,6 +58,38 @@ class HonchoFedOncePerReply:
         return Result(ok, f"honcho fed {t.honcho_feeds} time(s), expected {expected}")
 
 
+class ParticipationVerdict:
+    """The participation suite's speak/silence verdict (design/dreamer-agent-
+    loop/35 §9 gap 3).
+
+    Grades `Trajectory.sent` — the room-visible truth — and says so here
+    because the alternative was considered and rejected: live-mode
+    `tool_calls` is reconstructed from Prometheus counters and is BLIND to a
+    `ReplyGuard`-vetoed call, so "called send_reply" and "the room heard it"
+    are different verdicts. `sent` matches the no-indicate design: the room
+    sees a message or nothing, and the eval grades exactly that.
+
+    `expect` is `"speak"` or `"silence"`; anything else is a case-authoring
+    error and fails closed.
+    """
+
+    def __init__(self, expect: str) -> None:
+        if expect not in ("speak", "silence"):
+            raise ValueError(
+                f"ParticipationVerdict expects 'speak' or 'silence', got {expect!r}"
+            )
+        self._expect = expect
+
+    def evaluate(self, t) -> Result:
+        spoke = bool(t.sent)
+        ok = spoke == (self._expect == "speak")
+        return Result(
+            ok,
+            f"expected {self._expect}; the room {'heard' if spoke else 'heard nothing'}"
+            + (f": {t.sent[-1][:80]!r}" if spoke else ""),
+        )
+
+
 # --- The intent graph (D2) -------------------------------------------------
 #
 # The evaluators above grade one turn's *mechanics* (did she reply, stay in

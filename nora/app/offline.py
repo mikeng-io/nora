@@ -41,7 +41,7 @@ from nora.engagement.context import RenderedClaimWriter, StandingNotesReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.pipeline import IngestPipeline
-from nora.ingest.policy import CompositePolicy, TriggerTextPolicy
+from nora.ingest.policy import CompositePolicy, ParticipationPolicy, TriggerTextPolicy
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import permissive_policy
@@ -86,6 +86,7 @@ def build_offline_pipeline(
     extra_engage_policies: tuple[EngagePolicy, ...] = (),
     participation_runner: Any = None,
     participation_clock: Callable[[], float] | None = None,
+    participation_opt_in: bool = False,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks, ParticipationTrigger | None]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
@@ -119,6 +120,16 @@ def build_offline_pipeline(
     # reaches the dispatcher with `EngageDecision.participation` set exactly
     # as production's wiring does it.
     policy: Any = TriggerTextPolicy(cfg.engagement.trigger.text)
+    # `participation_opt_in` is the eval half of the room gate: a real
+    # `ParticipationPolicy` over THIS harness's `permissive_policy()` (whose
+    # rooms are all opted in), so an untagged message is marked
+    # `EngageDecision.participation` exactly as production's opted-in rooms
+    # do. `evals/` may not import `nora.ingest.policy` itself — the boundary
+    # this module exists for.
+    if participation_opt_in:
+        extra_engage_policies = (
+            *extra_engage_policies, ParticipationPolicy(permissive_policy()),
+        )
     if extra_engage_policies:
         policy = CompositePolicy((policy, *extra_engage_policies))
     assembler = build_assembler(

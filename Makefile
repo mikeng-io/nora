@@ -7,6 +7,7 @@
 # command changes; this file follows them, not the other way round.
 
 .PHONY: test test-fast test-affected lint typecheck imports gate \
+        eval-participation \
         release-check release-notes release \
         build build-release up stop logs ps
 
@@ -47,6 +48,14 @@ test-affected:
 		echo "affected_tests: $$targets"; \
 		uv run pytest -q -n 8 $$targets; \
 	fi
+
+# --- eval gates (evals/run.py; the live ones need the LLM key env set) ---
+
+# The ambient-participation flip gate (design/dreamer-agent-loop/35 §9): all
+# 15 cases must reach their expected verdict — zero false-speaks on the
+# knowledge-cut twins, zero speaks on the pure-No five.
+eval-participation:
+	uv run python -m evals.run --suite participation
 
 # --- release fragments ---
 

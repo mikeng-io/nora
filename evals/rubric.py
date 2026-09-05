@@ -90,3 +90,36 @@ SOURCE_SCOPE = Criterion(
 #: add a criterion it can only guess at, and `evals.judge.case_verdict` fails a case
 #: on ANY criterion's FAIL.
 OPTIONAL_CRITERIA: dict[str, Criterion] = {"source_scope": SOURCE_SCOPE}
+
+
+#: The participation rubric (design/dreamer-agent-loop/35 §9 gap 5) — for grading
+#: a reply Nora produced when NOBODY called her. The tag rubric (`RUBRIC`) is
+#: tag-shaped: its first criterion (`addressed_the_tag`) presupposes a question
+#: she was asked, and would score correct participation speech ~0. These criteria
+#: replace that axis with the two failure modes the participation design exists
+#: to prevent; `voice`/`identity_and_language_match`/`platform_fit` are the SAME
+#: Criterion objects as the tag rubric's — how she sounds does not vary by
+#: occasion.
+PARTICIPATION_RUBRIC: tuple[Criterion, ...] = (
+    Criterion(
+        "grounded_value",
+        "The reply adds something TRUE and useful that the visible transcript does "
+        "not already contain — and it is drawn from the injected context Nora was "
+        "given (the standing/notes/facts blocks), NOT from general knowledge. A "
+        "reply whose factual content appears nowhere in the provided context scores "
+        "LOW even if it happens to be true in the world: her memory boundary is her "
+        "standing/facts, and a model answering from parametric memory is the exact "
+        "failure the knowledge-cut cases exist to catch.",
+    ),
+    Criterion(
+        "no_uninvited_performance",
+        "The reply does not perform helpfulness: no «I don't know», no «I can look "
+        "that up», no offer of future work, no restating the question back. In "
+        "participation mode nobody called her — speaking just to prove she is "
+        "listening is noise, and a commitment offer creates an obligation the "
+        "design explicitly excludes. Any of these scores LOW.",
+    ),
+    RUBRIC[3],   # identity_and_language_match — unchanged by occasion
+    RUBRIC[4],   # voice — unchanged by occasion
+    RUBRIC[5],   # platform_fit — unchanged by occasion
+)

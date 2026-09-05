@@ -57,6 +57,7 @@ from evals.evaluators import (
     HonchoFedOncePerReply,
     NoRedundantRead,
     NoSendWithoutTrigger,
+    ParticipationVerdict,
     RepliesAtLeastOnce,
     ToolBudget,
 )
@@ -65,6 +66,7 @@ from evals.journeys import JOURNEYS, grade, hard_checks_for, journeys_gate
 from evals.judge import (
     SCOPE_CRITERION,
     _build_judge_prompt,
+    _build_participation_judge_prompt,
     evaluate_raw,
     majority_verdict,
     safety_verdict,
@@ -105,6 +107,12 @@ SUITES = {
     # journeys live in `evals/journeys.py` — so this maps to () and `main`
     # special-cases it, the same way `adversarial` runs its own live path.
     "journeys": (),
+    # The ambient-participation suite (design/dreamer-agent-loop/35 §9): 15
+    # cases — 5 relevance-Yes, their 5 knowledge-cut twins, 5 pure-No — each
+    # driven through the REAL participation path (ParticipationTrigger →
+    # FirePath.speak) live. Like `journeys`/`adversarial` this runs its own
+    # live path (`_run_participation_live`), not the scripted `_run_suite`.
+    "participation": (CASES_DIR / "participation" / "participation.yaml",),
 }
 
 # Evaluator class -> the Langfuse score `name` it exports under. All five verdicts
@@ -564,6 +572,138 @@ async def _run_suite(paths: tuple[Path, ...], *, sink: EvalSink, run_name: str) 
     return all_passed
 
 
+#: Names of the knowledge-cut twins — the load-bearing half of the
+#: participation gate (design §9): same message, same transcript, only the seed
+#: differs from their `speak` twin, so the verdict MUST flip to silence. A
+#: model that speaks here answered from parametric memory, and that is the
+#: false-speak the flip gate exists to catch. `_run_participation_live` calls
+#: these out by name in its summary so a twin failure is never buried in a
+#: pass-count.
+_KNOWLEDGE_CUT_TWINS = (
+    "fact-lookup-unknown", "stalled-question-unknown",
+    "commitment-followup-unknown", "correction-unknown",
+    "planning-context-unknown",
+)
+
+
+def _participation_window_context(case: Case) -> str:
+    """Render a participation case's ground truth for the advisory judge: the
+    seeded transcript, the seeded standing/notes/facts, and the incoming
+    message — everything the determination's prompt carried, in plain text.
+    The judge needs exactly this to grade `grounded_value` (did the reply draw
+    on THIS, or on the base model's memory?)."""
+    seed = case.seed or {}
+    lines: list[str] = []
+    transcript = seed.get("transcript") or []
+    if transcript:
+        lines.append("Transcript (the window that closed):")
+        for entry in transcript:
+            if isinstance(entry, str):
+                lines.append(f"- Miles: {entry}")
+            else:
+                lines.append(f"- {entry['name']}: {entry['body']}")
+    if seed.get("standing"):
+        lines.append(f"Standing: {seed['standing']}")
+    for note in seed.get("notes") or []:
+        lines.append(f"Note — {note['title']}: {note['body']}")
+    for fact in seed.get("facts") or []:
+        lines.append(f"Fact: {fact['subject']} {fact['predicate']} {fact['object']}")
+    lines.append(f"Latest message: {case.input}")
+    return "\n".join(lines)
+
+
+async def _run_participation_live(paths: tuple[Path, ...]) -> tuple[bool, list[dict]]:
+    """The participation suite's live gate (design/dreamer-agent-loop/35 §9).
+
+    Every case runs through the REAL participation path — real
+    `ParticipationTrigger`, real `FirePath.speak`, real policy opt-in, real
+    model (`run_case(case, live=True)`; the LLM key env must be set) — and the
+    verdict is graded on `Trajectory.sent` by `ParticipationVerdict`: the room
+    either heard a message or it did not. ALL 15 cases must pass; that
+    subsumes the design's hard bar (zero false-speaks on the knowledge-cut
+    twins, zero speaks on S6-S10), which the summary calls out by name.
+
+    For cases where she SPOKE, a judge model (`[evals] judge_model`,
+    `judge_samples` majority) additionally grades the reply against the
+    PARTICIPATION rubric — grounded value, no uninvited performance, voice.
+    That verdict is ADVISORY (printed, never bound): binding a stochastic
+    judge would make the flip gate flaky, and the structural verdict is the
+    one the design makes load-bearing.
+    """
+    cfg = _load_eval_config()
+    client = create_client(
+        base_url=cfg.llm.base_url, api_key=os.environ.get(cfg.llm.api_key_env, "")
+    )
+    try:
+        judge_model = create_model_provider(
+            model=_resolve_judge_model_id(cfg),
+            max_tokens=cfg.llm.max_tokens,
+            temperature=0.0,  # a measurement instrument must be near-deterministic
+            client=client,
+        )
+        doctrine = DoctrineStore(
+            cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
+            canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
+            trigger=cfg.engagement.trigger.text, tool_names=TOOL_NAMES,
+            metrics=Metrics(),
+        ).get(applies_to="participation")
+
+        results: list[dict] = []
+        all_passed = True
+        for path in paths:
+            for case in load_cases(path):
+                if case.expect is None:
+                    raise ValueError(
+                        f"participation case {case.name!r} has no `expect:` — "
+                        "the verdict (speak/silence) is what this suite grades"
+                    )
+                trajectory = await run_case(case, live=True)
+                verdict = ParticipationVerdict(case.expect).evaluate(trajectory)
+                all_passed = all_passed and verdict.passed
+
+                judge_verdict = None
+                if trajectory.sent:
+                    raws = [
+                        await _invoke_agent(
+                            judge_model, "",
+                            _build_participation_judge_prompt(
+                                window_context=_participation_window_context(case),
+                                reply_text=trajectory.sent[-1],
+                                doctrine_text=doctrine.doctrine_text,
+                            ),
+                            role="judge",
+                        )
+                        for _ in range(cfg.evals.judge_samples)
+                    ]
+                    judge_verdict = majority_verdict(
+                        [evaluate_raw(r) for r in raws]
+                    )
+
+                results.append({
+                    "name": case.name, "expect": case.expect,
+                    "spoke": bool(trajectory.sent), "passed": verdict.passed,
+                    "judge": judge_verdict,
+                })
+                status = "PASS" if verdict.passed else "FAIL"
+                print(f"[{status}] participation/{case.name} — expect={case.expect} "
+                      f"spoke={bool(trajectory.sent)}"
+                      + (f" judge={judge_verdict}" if judge_verdict else "")
+                      + (f": {verdict.reason}" if verdict.reason else ""))
+
+        false_speaks = [r["name"] for r in results
+                        if r["expect"] == "silence" and r["spoke"]]
+        missed = [r["name"] for r in results
+                  if r["expect"] == "speak" and not r["spoke"]]
+        twin_failures = [n for n in false_speaks if n in _KNOWLEDGE_CUT_TWINS]
+        print(f"participation gate: {sum(r['passed'] for r in results)}/{len(results)} "
+              f"verdicts correct — false-speaks: {false_speaks or 'none'} "
+              f"(knowledge-cut twins: {twin_failures or 'none'}), "
+              f"missed speaks: {missed or 'none'}")
+        return all_passed, results
+    finally:
+        await client.close()
+
+
 _ROUTING_CHECKS = ("PathMatchesIntent", "NoSiblingLeakage", "ConvergesInBudget")
 
 
@@ -718,6 +858,10 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
             samples=cfg.evals.journey_samples,
             effort=effort, skills_dir=skills_dir, seed=seed,
         ))
+    elif suite == "participation":
+        # Live drive of the real participation path; every one of the 15
+        # cases must reach its expected verdict (see `_run_participation_live`).
+        ok, _results = asyncio.run(_run_participation_live(paths))
     elif suite == "adversarial":
         # B1: the verdict cache is ON by default — an unchanged re-run costs 0 model
         # calls. --no-cache disables it; --force re-runs every case (and refreshes it).

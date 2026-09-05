@@ -37,9 +37,15 @@ from strands.models.model import Model
 from strands_evals.evaluators.deterministic.trajectory import EvaluationOutput, ToolExecutionSpan
 from strands_evals.evaluators.evaluator import EvaluationData, Evaluator
 
-from .rubric import RUBRIC, SOURCE_SCOPE, Criterion
+from .rubric import PARTICIPATION_RUBRIC, RUBRIC, SOURCE_SCOPE, Criterion
 
-JUDGE_MODEL_TIER = "deep"    # GLM 5.3 (full); grading with the tested model is circular
+#: LEFTOVER LABEL, pinned by `tests/test_evals_rubric.py` — there is no
+#: `llm.deep` tier anywhere in config (the judge is `ollamacloud/glm-5.3` via
+#: `[evals] judge_model`, `config.example.toml`). The constant survives only
+#: because the rubric test pins its value; the ACTUAL judge model is resolved
+#: from config by `evals.run._resolve_judge_model_id`, never from this name.
+#: The one thing still true here: grading with the tested model is circular.
+JUDGE_MODEL_TIER = "deep"    # leftover label — see above; the judge is [evals] judge_model
 
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
@@ -266,6 +272,54 @@ def _build_judge_prompt(
     )
 
 
+def _build_participation_judge_prompt(
+    *, window_context: str, reply_text: str, doctrine_text: str,
+) -> str:
+    """The participation rubric's judge prompt (design/dreamer-agent-loop/35
+    §9 gap 5) — situation-shaped, NOT tag-shaped.
+
+    `_build_judge_prompt` asks the judge to grade «what Nora was asked»; a
+    participation turn has no asker, so that framing scores correct
+    participation speech ~0 on `addressed_the_tag`. Here the judge is told the
+    room did NOT call her, that she was offered the floor and chose to speak,
+    and is asked the two questions the participation design exists to answer:
+    did the reply add GROUNDED value (from the injected context, not
+    parametric memory), and did it avoid the uninvited-performance failure
+    mode («I don't know», «I can look that up»).
+
+    `window_context` is the whole ground truth of the turn: the closed
+    window's transcript AND the injected standing/notes/facts blocks the
+    determination saw. Without it `grounded_value` is ungradable — the judge
+    cannot tell "answered from the seeded fact" from "answered from the base
+    model", and the second is the failure the knowledge-cut twins gate on.
+    """
+    criteria_block = "\n".join(
+        f"- {c.name}: {c.description}" for c in PARTICIPATION_RUBRIC
+    )
+    return (
+        "You are grading one message from Nora, a group-chat AI, who was NOT "
+        "called. The room went quiet, she was offered the floor, and she chose "
+        "to speak. Nobody asked her anything; the question is whether speaking "
+        "earned its place. Score every criterion below from 0.0 (fails "
+        "completely) to 1.0 (fully satisfied), and state your confidence "
+        "(0.0-1.0) in that score.\n\n"
+        f"## Doctrine\n{doctrine_text}\n\n"
+        "## What Nora saw (the closed window's transcript and her injected "
+        "standing/notes/facts context)\n"
+        "This is the ONLY factual ground the reply may draw on (besides the "
+        "doctrine). Content that appears nowhere here came from the base "
+        "model's general knowledge — which is the `grounded_value` failure, "
+        "even when true in the world.\n"
+        f"```\n{window_context}\n```\n\n"
+        f"## Nora's message (what you are grading)\n{reply_text}\n\n"
+        f"## Criteria\n{criteria_block}\n\n"
+        "Return ONLY a JSON array, one object per criterion, in this exact "
+        "shape (a ```json fenced block is tolerated but not required):\n"
+        '[{"criterion": "<name>", "score": <0-1 float>, "confidence": <0-1 '
+        'float>, "rationale": "<one sentence>"}, ...]'
+    )
+
+
 class NoraOutputEvaluator(Evaluator):
     """LLM-as-judge over the six `RUBRIC` criteria (spec E.4).
 
@@ -290,9 +344,11 @@ class NoraOutputEvaluator(Evaluator):
         self.tag_input = tag_input
         self.reply_text = reply_text
         self.doctrine_text = doctrine_text
-        # JUDGE_MODEL_TIER == "deep" -> deepseek-v4-pro; never grade with the tested
-        # model (circular). A bare model-id string is enough here: no live judge
-        # model is invoked in this task (out of scope, same boundary as Task 40).
+        # The judge model comes from `[evals] judge_model` (see
+        # JUDGE_MODEL_TIER's note: the "deep" label is a leftover); never grade
+        # with the tested model (circular). A bare model-id string is enough
+        # here: no live judge model is invoked in this task (out of scope,
+        # same boundary as Task 40).
         self.model = model if model is not None else _DEFAULT_JUDGE_MODEL_ID
 
     def build_prompt(self) -> str:

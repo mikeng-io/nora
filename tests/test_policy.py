@@ -2,7 +2,7 @@
 
 import pytest
 
-from nora.policy import PolicyError, load_policy
+from nora.policy import PolicyError, load_policy, permissive_policy
 
 GROUP = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
 
@@ -220,3 +220,13 @@ def test_participation_flag_defaults_false_and_parses_true(policy, tmp_path):
     )
     opted_in = load_policy(_write(tmp_path, body))
     assert opted_in.conversation("signal", GROUP).participation is True
+
+
+def test_permissive_policy_opts_every_room_into_participation():
+    """The eval/testing double (design/dreamer-agent-loop/35 §9 gap 1): a
+    harness that wires `ParticipationPolicy(permissive_policy())` must have the
+    room gate OPEN so an untagged message can reach the participation occasion.
+    Inert in production — nothing ships `permissive_policy` into a live
+    `ParticipationPolicy`; and even in a harness it does nothing unless one is
+    wired."""
+    assert permissive_policy().conversation("signal", "g1").participation is True
