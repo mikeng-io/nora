@@ -10,8 +10,13 @@ reading that survives all of it is narrower and worse:
 
     **the contract suite was accepted as the completion gate.**
 
-`SqlNoteStore.record_wake` has roughly fifteen call sites in
-`tests/contract/test_note_store_contract.py` and zero in production.
+`SqlNoteStore.record_wake` had roughly fifteen call sites in
+`tests/contract/test_note_store_contract.py` and zero in production for the
+seven months between its build (2026-08-28) and the note-curator merge
+(design/dreamer-agent-loop/34, issue #99), which wired it into
+`NoteCuratorAdaptor.commit` — its row here is DELETED accordingly (see "wiring
+one up forces its row OUT", below), the exact graduation this file's own
+mechanism exists to require rather than merely permit.
 `SqlTurnVerdictStore.read` says outright that it is "present for the contract
 suite". `nora/domain/tag_trace_rederive.rebuild_state` has a named test
 asserting that it raises. In each case a green test measured that the verb
@@ -37,11 +42,11 @@ like a pile of bugs:
   `defect`               — a live write path creates state that no production
       code can act on or leave. These are the ones that want fixing.
 
-THE COUNTS, so they reconcile with something: TWELVE methods are pinned below.
+THE COUNTS, so they reconcile with something: ELEVEN methods are pinned below.
 TWO more are known to have no production caller and cannot be proven so here —
 `SqlTagTraceStore.recent` and `SqlTurnVerdictStore.read` — because their names
-are shared with other stores (see the ambiguity rule). Fourteen in total; the
-twelve are what this file can check.
+are shared with other stores (see the ambiguity rule). Thirteen in total; the
+eleven are what this file can check.
 
 HOW A CALLER IS RESOLVED, AND WHAT THAT STILL CANNOT SEE
 --------------------------------------------------------
@@ -212,17 +217,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("notes.py", "note_by_id"): _Pin(
         "read_back_affordance",
         "Retired-note lookup; no consumer designed.",
-    ),
-    ("notes.py", "record_wake"): _Pin(
-        "defect",
-        "THE PUREST INSTANCE of this file's subject. Built 2026-08-28, contract-"
-        "tested ~15x, invoked zero times — its own release fragment says "
-        "«Nothing calls it yet; the revisitor wires it separately» and that "
-        "second half never came. It is the ONLY writer of note.revisit_at / "
-        "strikes / last_wake_revision_id, so NoteRevisitor's `revisit_at` branch "
-        "is permanently False: a note with no anchor date is never revisited at "
-        "all, and the strikes starvation-breaker is inert. LATENT — the note "
-        "table holds 0 rows — so it costs nothing today and everything later.",
     ),
     ("notes.py", "revision_by_id"): _Pin(
         "read_back_affordance",

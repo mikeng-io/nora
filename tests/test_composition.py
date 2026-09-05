@@ -896,66 +896,28 @@ async def test_both_gates_on_builds_the_extractor_and_the_adjudicator(cfg):
     ]
 
 
-async def test_the_revisitor_needs_both_the_dreamer_and_the_notes_gate(cfg):
-    """The same two-question rule the fact tier is held to, and for the same
-    reason: an operator turning on the research loop has not thereby asked for
-    notes to start being retired."""
-    dreamer_only = await build_dependencies(
-        override_config(cfg, {"dreamer.enabled": True})
-    )
-    notes_only = await build_dependencies(
-        override_config(cfg, {"notes.enabled": True})
-    )
-
-    assert [a.name for a in dreamer_only.dream_adaptors] == []
-    assert notes_only.dream_adaptors == ()
-
-
-async def test_the_revisitor_is_wired_and_is_not_silently_inert(cfg):
-    """«Wired end to end and silently inert» is the failure the fact tier's own
-    composition comment names, and it is the one a wiring test has to rule out
-    — an adaptor that is constructed but reads nothing looks exactly like a
-    quiet notebook.
-
-    So this asserts more than presence: the adaptor is workspace-keyed (a note
-    is workspace-scoped, and a scope-keyed one would be handed a room and read
-    the wrong notebook), it is watermark-free (its input is the note table, not
-    a message batch, so a watermark would make it run once and never again),
-    and it holds NO tools (the reaching-a-person half is deliberately unbuilt —
-    see 27-note-dreamer §11.4; a tool appearing here means someone widened the
-    shared background-tool rule)."""
-    deps = await build_dependencies(
-        override_config(cfg, {"dreamer.enabled": True, "notes.enabled": True})
-    )
-
-    [revisitor] = [a for a in deps.dream_adaptors if a.name == "note-revisit"]
-    assert revisitor.key_kind == "workspace"
-    assert revisitor.uses_watermark is False
-    assert revisitor.tools == frozenset()
-    assert revisitor.objective == "note-revisit"
-    # The envelope key the runtime parses, and the field name inside an item,
-    # are BOTH load-bearing against the Dreamer's egress screen: an item
-    # carrying a note's `str(uuid4())` id is dropped wholesale before `accept`
-    # ever runs, which is what made an earlier revision of this adaptor 100%
-    # inert with no counter of its own moving. `tests/unit/test_note_revisitor
-    # .py::test_a_verdict_survives_the_dreamers_egress_screen` is the real
-    # guard; this pins the envelope key it is asserted against.
-    assert revisitor.envelope_key == "revisits"
-
-
-async def test_the_revisitor_is_additive_to_the_fact_tiers_adaptors(cfg):
+async def test_the_curator_is_additive_to_the_fact_tiers_adaptors(cfg):
     """The two tiers are independent and an operator may run either alone, so
     the note block must EXTEND whatever the fact block built rather than
     replace it. Written because the fact block assigns `dream_adaptors` and the
     note block appends to it — a future edit that assigns in both places would
-    drop one tier silently, and every other test here would stay green."""
+    drop one tier silently, and every other test here would stay green.
+
+    Also covers what were `test_the_revisitor_needs_both_the_dreamer_and_the_
+    notes_gate`/`test_the_revisitor_is_wired_and_is_not_silently_inert`/
+    `test_the_revisitor_is_additive_to_the_fact_tiers_adaptors` before the
+    note-curator merge (design/dreamer-agent-loop/34, issue #99) folded
+    `NoteRevisitor` into `NoteCuratorAdaptor`: there is one gate now
+    (`curator_enabled`, already covered by `test_the_curator_needs_three_gates_
+    not_two`/`test_all_three_gates_on_builds_the_curator` above), not two."""
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True, "facts.enabled": True, "notes.enabled": True,
+        "notes.curator_enabled": True,
     }))
 
     assert [a.name for a in deps.dream_adaptors] == [
         "fact-candidates", "fact-adjudication", "fact-entity-resolution",
-        "note-revisit",
+        "note-curation",
     ]
 
 
@@ -1117,6 +1079,13 @@ async def test_the_curator_needs_three_gates_not_two(cfg):
 
 
 async def test_all_three_gates_on_builds_the_curator(cfg):
+    """Also covers what the pre-merge `test_the_revisitor_is_wired_and_is_not_
+    silently_inert` asserted: `objective`/`envelope_key` are BOTH load-bearing
+    against the Dreamer's egress screen (a note id in an envelope item is
+    dropped wholesale before `accept` ever runs, which is what made an earlier
+    revision of the note-revisit machinery 100% inert with no counter of its
+    own moving), and `tools == frozenset()` is the reaching-a-person half
+    staying deliberately unbuilt post-merge too."""
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True,
         "notes.enabled": True,
@@ -1127,11 +1096,14 @@ async def test_all_three_gates_on_builds_the_curator(cfg):
         a for a in deps.dream_adaptors if a.name == "note-curation"
     )
     # Workspace-keyed and watermark-free: the notebook is workspace-scoped, and
-    # the questions it asks (what collides, what has expired) have no "since
-    # when" — a duplicate is a duplicate however long it has been one.
+    # the questions it asks (what collides, what has expired, what is due) have
+    # no "since when" — a duplicate is a duplicate however long it has been
+    # one.
     assert curator.key_kind == "workspace"
     assert curator.uses_watermark is False
     assert curator.tools == frozenset(), "the curator has nothing to look up"
+    assert curator.objective == "note-curation"
+    assert curator.envelope_key == "verdicts"
 
 
 async def test_the_curator_reads_the_day_from_the_operators_timezone(cfg):
