@@ -71,6 +71,18 @@ for both, rather than asking for a fifth thing the design does not name.
 formal merge of the two fields, at which point this adaptor stops filling in
 a value the model was never asked for.
 
+**A created note carries an explicit `revisit_at` from the moment it exists**
+(note-curator merge, design 34 §5.3 resolution (c), issue #99) — derived from
+its own anchor by `nora.domain.notes.default_revisit_at`, the SAME formula the
+merged curator uses after every later wake. Without this a gate-created note's
+first `record_wake` call would see no `tag:` revision in its chain (its only
+revision is background-authored) and no `revisit_at` either, charging a strike
+on a note nobody has had a chance to answer yet — 34 §5.3 rejected the
+alternative of seeding `last_wake_revision_id` at creation as a no-op (Kimi
+review finding N3): it changes nothing under `tag_path_progressed_since_wake`'s
+existing semantics, while an explicit `revisit_at` makes the first wake an
+ordinary scheduled one.
+
 **Entity resolution is explicitly OUT OF SCOPE — issue #100's, not this
 module's.** `anchor_entity_ids` is accepted from the model as free text,
 exactly like the tag path's `note_create` tool stores it: unresolved,
@@ -109,6 +121,7 @@ from nora.domain.notes import (
     NoteRevisionProposal,
     StaleNoteHeadError,
     anchor_key,
+    default_revisit_at,
 )
 from nora.domain.ports import DreamSink, Proposal
 from nora.language.note_render import render_notes
@@ -577,6 +590,15 @@ class NoteCandidateAdaptor:
                 established_in=established_in, body=row.body,
                 anchor_date=row.anchor_date,
                 anchor_entity_ids=row.anchor_entity_ids,
+                # design 34 §5.3 resolution (c): a gate-created note's first
+                # wake is a normal SCHEDULED wake, not a strike bootstrap.
+                # Same formula `nora.language.note_curator` uses after every
+                # later wake, so the two callers of `default_revisit_at`
+                # agree about what "next revisit" means for this note's own
+                # anchor shape.
+                revisit_at=default_revisit_at(
+                    anchor_date=row.anchor_date, now_ms=now_ms,
+                ),
             )
         except ValueError:
             log.warning(

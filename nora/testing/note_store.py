@@ -424,6 +424,24 @@ class InMemoryNoteStore:
             (n, self.revisions[n.head_revision_id].body) for n in hits[:limit]
         )
 
+    async def due_for_revisit(
+        self, *, workspace: str, now_ms: int, limit: int,
+    ) -> tuple[tuple[Note, str], ...]:
+        """`SqlNoteStore.due_for_revisit`: standing, `revisit_at` set and not
+        in the future, oldest `revisit_at` first — NOT also "or anchor
+        passed"; see the SQL store's own docstring for why that is the
+        caller's union to make, not this read's job."""
+        if limit <= 0:
+            return ()
+        hits = [
+            n for n in await self.standing(workspace=workspace)
+            if n.revisit_at is not None and n.revisit_at <= now_ms
+        ]
+        hits.sort(key=lambda n: (n.revisit_at or 0, n.id))
+        return tuple(
+            (n, self.revisions[n.head_revision_id].body) for n in hits[:limit]
+        )
+
     # ---- DreamSink -------------------------------------------------------
     #
     # **This double must refuse what Postgres refuses, and it does not get that
@@ -497,6 +515,10 @@ class InMemoryNoteStore:
                     head_revision_id=revision_id,
                     anchor_date=payload.anchor_date,
                     anchor_entity_ids=tuple(payload.anchor_entity_ids),
+                    # `SqlNoteStore.propose`'s own `_new_note` sets this from
+                    # the same field — the note-curator merge's §5.3
+                    # resolution (c).
+                    revisit_at=payload.revisit_at,
                 )
                 revision = NoteRevision(
                     id=revision_id, note_id=note_id, body=payload.body,

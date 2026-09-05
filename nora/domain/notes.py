@@ -91,6 +91,132 @@ NOTE_BODY_CEILING_CHARS = 32000
 #: epoch-ms, matching the fact tier.
 _MIN_ANCHOR_DATE = 1_000_00_00
 
+#: One calendar day, in epoch ms — shared by `anchor_bounds_ms` and
+#: `default_revisit_at` so the two never disagree about what a "day" is.
+MS_PER_DAY = 86_400_000
+
+#: The merged curator's wake policy (design/dreamer-agent-loop/34 §5.3, Kimi
+#: finding M2). Module constants rather than config: `[notes]` already has
+#: `max_revisits_per_tick`/`revisit_evidence_messages` as the operator-facing
+#: knobs for the wake PASS, and these two numbers are a judgement about the
+#: SHAPE of the schedule itself — how early to check an anchored note, how
+#: long a dateless one may go untouched — which is closer to `BODY_MAX_CHARS`
+#: (a domain decision, not a deployment one) than to a per-tick cap.
+#:
+#: **`REVISIT_LEAD_DAYS = 3`**: an anchored note's first (and, absent
+#: progress, only) early-close check lands three days before its anchor. 33
+#: §1's own framing is "an arrangement spans days, not minutes" — three days
+#: is long enough that a genuinely early close (booked weeks in advance) is
+#: still caught before the anchor, and short enough that the note is not
+#: pestered while the anchor is still comfortably far off. Once the anchor
+#: itself passes, `anchored_before` selects the note regardless of
+#: `revisit_at`, so this number only governs the PRE-anchor check.
+REVISIT_LEAD_DAYS = 3
+
+#: **`DATELESS_REVISIT_HORIZON_DAYS = 7`**: 33/34's own worked example for an
+#: undated note's wake cadence ("+7d, capped by the strike ceiling").
+DATELESS_REVISIT_HORIZON_DAYS = 7
+
+#: **`MAX_DATELESS_STRIKES = 4`**: at the horizon above, four strikes is
+#: roughly a month (4 * 7 days) of a dateless note waking with no tag-path
+#: progress before it is ELIGIBLE for dateless retirement (spec §9.6) — long
+#: enough that an undated question ("what are we playing next") is not
+#: aged out while people are still plausibly deciding, short enough that a
+#: note nobody has touched in a month is a real candidate for the notebook
+#: only growing. **Eligibility, not action**: `WakeOutcome` reports the
+#: strike count and the CALLER decides what follows (its own docstring), and
+#: this merge's curator only counts a note crossing the ceiling
+#: (`nora_note_curator_total{action="stale"}`) rather than auto-retiring it —
+#: building the retirement policy for a note nothing has said is a
+#: discharge-pipeline decision (issue #101) this merge does not make.
+MAX_DATELESS_STRIKES = 4
+
+
+def anchor_bounds_ms(anchor_date: int) -> tuple[int, int] | None:
+    """The FIRST and LAST instants of a `YYYYMMDD` anchor, in epoch ms, or
+    `None` if the value is not a date this can read.
+
+    Moved here from `nora.language.note_revisitor` in the note-curator merge
+    (design 34) — a pure function two modules need (the merged curator's
+    grounding check, and `default_revisit_at` below) belongs beside
+    `anchor_key`/`group_on_anchor_key`, not duplicated or imported sideways
+    between two `nora.language` modules.
+
+    Both start and end are returned, but **only the end had a reader before
+    this merge** — the curator's `default_revisit_at` is this function's
+    second caller and its first reader of the START.
+
+    END of the day, not the start: a note anchored to the 15th is not stale
+    at 00:00 on the 15th. Computed from the calendar rather than from a
+    stored timestamp because `anchor_date` IS an integer date — the tier
+    chose that shape deliberately, and re-deriving a moment from it is this
+    function's job rather than the store's.
+
+    Returns `None` rather than raising on a malformed value; the caller
+    treats `None` as "not decidable" — an unreadable anchor must leave the
+    note standing, not expire it, and must not compute a nonsense
+    `revisit_at` either.
+
+    **UTC, while the deployment runs in HKT — stated rather than fixed.** A
+    note anchored to the 9th therefore only reads as passed at 08:00 local on
+    the 10th. That is the CONSERVATIVE direction for expiry (it retires
+    later, never earlier) and it is why this is recorded instead of changed:
+    picking a timezone is a decision about what a note's DATE MEANS to the
+    people writing it, and that is the operator's, not this module's. *The
+    reading that would settle it:* a note whose anchor day matters to within
+    a few hours — a same-day deadline rather than a dinner.
+    """
+    import datetime as _dt
+
+    try:
+        day = _dt.date(
+            anchor_date // 10_000, anchor_date // 100 % 100, anchor_date % 100,
+        )
+    except (ValueError, TypeError):
+        return None
+    start = int(
+        _dt.datetime.combine(day, _dt.time.min, tzinfo=_dt.UTC).timestamp() * 1000
+    )
+    return start, start + MS_PER_DAY - 1
+
+
+def default_revisit_at(
+    *,
+    anchor_date: int | None,
+    now_ms: int,
+    lead_days: int = REVISIT_LEAD_DAYS,
+    dateless_horizon_days: int = DATELESS_REVISIT_HORIZON_DAYS,
+) -> int:
+    """The `revisit_at` a note gets, either at CREATION (design 34 §5.3
+    resolution (c), `nora.language.note_candidates`) or after a WAKE that
+    left the note standing (`nora.language.note_curator`'s `record_wake`
+    call) — the SAME formula both callers use, so a gate-created note's first
+    wake is a normal scheduled wake rather than a strike bootstrap.
+
+    **Anchored**: the anchor's own day START minus `lead_days` — early enough
+    to catch a note answered well before its moment, on the reasoning
+    `REVISIT_LEAD_DAYS` states. Once the anchor itself has passed this value
+    is in the past too (and stays there), which is harmless: `anchored_before`
+    selects a past-anchor note unconditionally, so an already-elapsed
+    `revisit_at` on such a note changes nothing about whether it is selected,
+    only that `due_for_revisit` would ALSO select it — deduplicated by the
+    caller, exactly as a merge-group member is excluded from the expired
+    render today.
+
+    **Dateless, or an anchor this cannot read**: `now_ms` plus
+    `dateless_horizon_days` — the bounded horizon 33/34 name for a note with
+    no moment to count down to. Falling back to the dateless horizon on an
+    unreadable anchor (rather than raising or returning `now_ms`) matches
+    `anchor_bounds_ms`'s own fail-conservative contract: a value this cannot
+    parse must still get SOME future wake, not an immediate one and not none
+    at all.
+    """
+    if anchor_date is not None:
+        bounds = anchor_bounds_ms(anchor_date)
+        if bounds is not None:
+            return bounds[0] - lead_days * MS_PER_DAY
+    return now_ms + dateless_horizon_days * MS_PER_DAY
+
 
 def _required(value: str, what: str) -> str:
     """Non-empty after stripping, or refuse. `'   '` is non-empty to `if not x`,
@@ -524,6 +650,17 @@ class NoteCreationProposal:
     body: str
     anchor_date: int | None = None
     anchor_entity_ids: tuple[str, ...] = field(default_factory=tuple)
+    #: The note-curator merge's §5.3 resolution (c): a note this proposal
+    #: creates gets an explicit wake time at CREATION, derived from its own
+    #: anchor via `default_revisit_at` — so its first wake is a normal
+    #: scheduled one, not a strike bootstrap (a gate-created chain has no
+    #: `tag:` revision either way, so `record_wake`'s progress test would
+    #: otherwise charge a strike on a note nobody has had a chance to answer
+    #: yet). `None` is a legal value — the tag path's own creates (through
+    #: `SqlNoteStore.create`, never this proposal type) do not set it, and
+    #: `record_wake` remains the only writer of a note's SUBSEQUENT
+    #: `revisit_at`.
+    revisit_at: int | None = None
 
     def __post_init__(self) -> None:
         for value, what in (

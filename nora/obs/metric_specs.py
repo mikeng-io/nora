@@ -1611,18 +1611,25 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # comment). The one case they differ in is the one worth counting: a title
     # that resolved to a DIFFERENT note between the read and the write.
     # ---------------------------------------------------------------------
-    # The REVISITOR (`nora.language.note_revisitor`) — the note tier's negative
-    # measurement, and the tier's only retiring writer. Everything here exists
-    # to keep one collapse visible: a note that was left standing because the
-    # pass COULD NOT TELL must never read the same as a notebook with nothing
-    # due in it.
+    # The revisitor's OWN negative-measurement series, folded into
+    # `nora_note_curator_*` by the note-curator merge
+    # (design/dreamer-agent-loop/34, issue #99): `NoteRevisitor` is gone, its
+    # due-selection/evidence/grounding logic lives in
+    # `nora.language.note_curator.NoteCuratorAdaptor` now, and the series
+    # below are its renamed replacements. A stale `nora_note_revisit_*` series
+    # left publishing would double-count the retirement readings this merge
+    # exists to unify — see `nora_note_retirements_total` further down, which
+    # is the one series this merge does NOT rename.
     # ---------------------------------------------------------------------
     _CounterSpec(
-        "nora_note_revisit_candidates_total",
-        "Notes the revisitor selected as due, by whether it had anything to "
-        "judge them against. FOUR values, and a reader who sees only three has "
-        "an out-of-date copy of this text. evidence=\"present\": the "
-        "conversation has "
+        "nora_note_curator_candidates_total",
+        "Notes the curator gathered evidence for, by whether it had anything "
+        "to judge them against — every anchored_before/due_for_revisit note "
+        "(the set that inherits the former revisitor's grounding), NOT a "
+        "merge-group member, which is judged on its body alone (deliberately "
+        "exempt — see nora.language.note_curator's own module docstring). "
+        "FOUR values, and a reader who sees only three has an out-of-date "
+        "copy of this text. evidence=\"present\": the conversation has "
         "spoken since the note was written. evidence=\"absent\": it has not, "
         "so NEITHER retirement is reachable and the note stays — silence is "
         "not an answer. evidence=\"self_only\": the conversation HAS spoken "
@@ -1636,58 +1643,32 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("evidence",),
     ),
     _CounterSpec(
-        "nora_note_revisit_verdicts_total",
-        "Verdicts the revisitor ACCEPTED, by kind. verdict=\"closed\": the "
-        "closing condition was met and the citation was grounded in the "
-        "evidence shown. verdict=\"expired\": the anchor date is behind the "
-        "clock and real evidence showed nothing answered it. "
-        "verdict=\"unresolved\": the model was asked and said it could not "
-        "tell — a REAL answer and often the right one, counted apart from the "
-        "refusals so a model that has stopped engaging cannot hide among them.",
-        ("verdict",),
-    ),
-    _CounterSpec(
-        "nora_note_revisit_refused_total",
-        "Verdicts the revisitor REFUSED, by reason — every one of these leaves "
-        "the note standing. reason=\"unknown_note\": the item named a handle "
-        "outside the set this tick asked about. The handle is a per-tick "
-        "ORDINAL, never the note id — a note id in an envelope item is "
-        "dropped wholesale by dream_screen before accept ever runs. "
-        "Retiring an unrelated note is the worst thing this pass can do. "
-        "reason=\"unmeasured\": the verdict was absent or outside the three "
-        "states, i.e. the question was not answered. reason=\"no_evidence\": "
-        "a retirement was proposed for a note with nothing to judge it "
-        "against. reason=\"citation_missing\" / \"citation_ungrounded\": a "
-        "closed verdict with no cited message, or one citing a message it was "
-        "never shown. reason=\"anchor_not_passed\": an expired verdict on a "
-        "note whose moment has not gone by — the clock decides that, not the "
-        "model. reason=\"anchor_not_covered\": the moment HAS gone by but the "
-        "evidence window does not span it — the room fell silent before the "
-        "anchor, or is busier than the window — so \u00abnothing answered "
-        "it\u00bb would be a claim about conversation this pass never read. "
-        "reason=\"contradictory\": the model gave one note both a closed and "
-        "an expired verdict, which is the definition of \u00abcannot tell "
-        "which\u00bb, and both answers throw the note away.",
-        ("reason",),
-    ),
-    _CounterSpec(
-        "nora_note_revisit_deferred_total",
-        "Due notes the revisitor did NOT judge this tick because "
-        "[notes].max_revisits_per_tick capped the batch. A backlog stated "
-        "rather than silently truncated: without this, a tick that judged ten "
+        "nora_note_curator_deferred_total",
+        "Ticks where [notes] max_revisits_per_tick capped the due-by-"
+        "revisit_at selection — a BIT, not a magnitude "
+        "(nora.domain.bounds' own over-fetch-by-one convention): "
+        "SqlNoteStore takes no metrics collaborator, so the curator "
+        "over-fetches by one and counts a tick where more were due than it "
+        "judged, rather than the exact backlog size the pre-merge revisitor "
+        "could see from an unbounded scan. A backlog stated rather than "
+        "silently truncated either way: without this, a tick that judged ten "
         "of forty due notes reads identically to a notebook with ten due.",
     ),
     _CounterSpec(
         "nora_note_retirements_total",
-        "Retirements the revisitor attempted, by reason and by whether they "
-        "MOVED anything. result=\"applied\": supersede affected a row. "
-        "result=\"no_rows\": it affected none — the note was already retired "
-        "or the id no longer resolves. That split is the point: supersede "
-        "returns 0 for an unknown target and never raises, so without it a "
-        "retirement that silently did nothing is indistinguishable from one "
-        "that was never attempted. result=\"refused\" with because="
-        "\"unknown\" is a foreign payload reaching commit, which is a wiring "
-        "fault rather than a note.",
+        "Retirements the curator attempted, by reason (because=\"merged\", "
+        "\"retired-expired\" or \"retired-closed\" — nora.domain.notes."
+        "NoteSupersedeReason's own vocabulary) and by whether they MOVED "
+        "anything — emitted by nora.language.note_curator."
+        "NoteCuratorAdaptor.commit since the note-curator merge (design 34, "
+        "issue #99; previously the revisitor's own). KEPT under this EXACT "
+        "name through the merge — it is the real retirement series and must "
+        "not fold into a renamed one. result=\"applied\": supersede affected "
+        "a row. result=\"no_rows\": it affected none — the note was already "
+        "retired or the id no longer resolves. That split is the point: "
+        "supersede returns 0 for an unknown target and never raises, so "
+        "without it a retirement that silently did nothing is "
+        "indistinguishable from one that was never attempted.",
         ("because", "result"),
     ),
     # ---- the curator's readings, shipped WITH the curator ------------------
@@ -1706,14 +1687,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_note_curator_total",
         "Curator actions by what it did: merge, merge_refused, "
-        "merge_failed, retire_failed, retire_stale, closed, moot. **merge_refused "
+        "merge_failed, retire_failed, retire_stale, closed, moot, expired, "
+        "dateless_stale. **merge_refused "
         "and retire_stale are NOT "
         "errors** — the survivor or the note moved under the pass, which is "
         "the tag path winning a race the CAS exists to arbitrate, and the "
         "work is re-selected next tick because the selection read is live "
-        "state rather than a cursor. retire_failed IS a fault. The vocabulary "
-        "is derived from nora.language.note_curator.CURATOR_ACTIONS and a test "
-        "asserts this text names exactly that set.",
+        "state rather than a cursor. retire_failed IS a fault. expired is the "
+        "note-curator merge's addition (design 34, issue #99) — the former "
+        "revisitor's word for the moment passing with nothing answering it, "
+        "now grounded the same way moot is. dateless_stale is OBSERVED, not a "
+        "retirement: a dateless note's strikes crossed the ceiling after a "
+        "wake with no tag-path progress, which makes it ELIGIBLE for dateless "
+        "retirement without this merge acting on it (issue #101's job). The "
+        "vocabulary is derived from nora.language.note_curator.CURATOR_ACTIONS "
+        "and a test asserts this text names exactly that set.",
         ("action",),
     ),
     # The measurement that turns "merge does nothing" from a silence into an
@@ -1735,7 +1723,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_note_curator_dropped_total",
         "Model answers the curator refused, by reason: malformed (a field "
-        "missing or a verdict outside the three the objective defines), "
+        "missing or a verdict outside the four the objective defines), "
         "unknown_note (a handle this run did not render), body_too_long (a "
         "merged body over the cap — the objective asked for more than it "
         "allows, which is fixed in the INSTRUCTION not the model), "
@@ -1747,7 +1735,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "conflicting_merged_body (two different bodies for one survivor, same "
         "rule on the more destructive path). A drop is "
         "never a guess — a retirement is a permanent removal from an index "
-        "nobody can see the inside of.",
+        "nobody can see the inside of. Five more reasons folded in by the "
+        "note-curator merge (design 34, issue #99), the former revisitor's own "
+        "grounding refusals — applied to a closed/expired/moot verdict about "
+        "an anchored_before/due_for_revisit note, NEVER to a merge-group "
+        "member, which stays exempt (judged on its body alone, unchanged "
+        "from the pre-merge curator): "
+        "no_evidence (nothing in the note's evidence window to judge a "
+        "retirement against — silence is not an answer), citation_missing / "
+        "citation_ungrounded (a closed verdict with no usable cited message, "
+        "or one citing a message this run never showed for that note), "
+        "anchor_not_passed (an expired/moot verdict on a note whose anchor "
+        "has not gone by, or has none at all — the clock decides that, not "
+        "the model), anchor_not_covered (the anchor HAS passed but the "
+        "evidence window does not span it — the room fell silent before the "
+        "anchor, or is busier than the window).",
         ("reason",),
     ),
     _CounterSpec(
@@ -2023,13 +2025,16 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "nora_note_curator_bodies_read",
         "Note bodies the curator FETCHED on its last tick for a workspace — "
         "the notes of every eligible merge group ([notes] max_groups_per_tick "
-        "GROUPS, so several notes each) plus every expired note it read "
-        "([notes] max_expired_per_tick, one body each). Written on every tick "
-        "including an idle one, where it is 0; absent means the pass did not "
-        "run. A note in a group AND past its date is fetched twice and counted "
-        "twice, because it spends a slot in both caps. Sitting at "
-        "max_expired_per_tick means the pass is reporting 'nothing to do' "
-        "about notes it never reached.",
+        "GROUPS, so several notes each), every expired note it read ([notes] "
+        "max_expired_per_tick, one body each), and every due-by-revisit_at "
+        "note it read ([notes] max_revisits_per_tick, one body each — folded "
+        "in by the note-curator merge, design 34/issue #99). Written on every "
+        "tick including an idle one, where it is 0; absent means the pass did "
+        "not run. A note selected by more than one of the three reads is "
+        "fetched once per read that selected it and counted that many times, "
+        "because it spends a slot in each cap it occupies. Sitting at a cap "
+        "means the pass is reporting 'nothing to do' about notes it never "
+        "reached.",
         ("workspace",),
     ),
     _GaugeSpec(
@@ -2039,22 +2044,24 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "wired and empty.",
         ("workspace",),
     ),
-    # The revisitor's own view of the same notebook, and deliberately a SECOND
+    # The curator's own view of the same notebook, and deliberately a SECOND
     # series rather than a reuse of the one above: that gauge is written on the
     # tag path and says what a TURN saw, this one is written on the Dreamer's
     # clock and says what the retiring pass saw. They diverge exactly when it
     # matters — a pass running against a notebook that has changed since the
     # last turn — and a single series would average the two into a number that
-    # answers neither question.
+    # answers neither question. Renamed from `nora_note_revisit_standing` by
+    # the note-curator merge (design 34, issue #99) — same reading, same
+    # writer's clock, now the curator's own rather than a second adaptor's.
     _GaugeSpec(
-        "nora_note_revisit_standing",
-        "Standing notes the revisitor read for a workspace on its last tick. "
+        "nora_note_curator_standing",
+        "Standing notes the curator read for a workspace on its last tick. "
         "0 means the pass ran and the notebook was empty; ABSENT means the "
         "pass has not run for that workspace at all, which is the distinction "
-        "that says whether the revisitor is wired.",
+        "that says whether the curator is wired.",
         ("workspace",),
     ),
-    # Pass 3's two LEVELS, and `nora_note_revisit_standing` immediately above
+    # Pass 3's two LEVELS, and `nora_note_curator_standing` immediately above
     # is the precedent for their shape.
     #
     # **They were counters and that was wrong.** `promote` recomputes both from

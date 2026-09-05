@@ -377,6 +377,40 @@ async def test_commit_creates_a_new_note_when_nothing_shares_its_anchor():
     )
 
 
+async def test_a_created_note_carries_an_explicit_revisit_at():
+    """The note-curator merge's §5.3 resolution (c), issue #99: a gate-created
+    note's first wake must be a normal SCHEDULED wake, not a strike bootstrap
+    — `record_wake`'s progress test finds no tag-path revision in a
+    background-authored chain either way, so an unset `revisit_at` would
+    charge a strike on a note nobody has had a chance to answer yet.
+
+    Asserted against `nora.domain.notes.default_revisit_at` itself, not a
+    hand-computed literal — the two callers (this adaptor and
+    `NoteCuratorAdaptor.commit`) must agree on what "next revisit" means for
+    one anchor shape, and a literal here could drift from that function
+    without this test ever seeing it.
+    """
+    from nora.domain.notes import default_revisit_at
+
+    adaptor, store = _adaptor()
+
+    await adaptor.commit(
+        key=SCOPE,
+        proposals=(_proposal(_CreateCandidate(
+            title="Wedding venue",
+            description="Where the wedding is held is still open.",
+            body="Two venues on the shortlist.",
+            closing_condition="a venue is booked",
+            anchor_date=20260919, anchor_entity_ids=(), message_ids=(1,),
+        )),),
+        now_ms=NOW,
+    )
+
+    [note] = await store.standing(workspace=WS)
+    assert note.revisit_at == default_revisit_at(anchor_date=20260919, now_ms=NOW)
+    assert note.revisit_at is not None
+
+
 async def test_commit_stages_the_candidate_row_before_deciding():
     """The gate's first act is always to STAGE — the row exists and is
     settled to a terminal status, whatever the gate then decides."""
