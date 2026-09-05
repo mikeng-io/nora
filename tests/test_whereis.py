@@ -192,7 +192,8 @@ async def test_an_addressless_fix_is_geocoded_on_demand(persons, store):
     out = await w.locate("Miles", now_ms=NOW)
     assert out["status"] == "ok"
     assert out["address"] == "Yoho Mall, Yuen Long"
-    assert "lat" not in out and "lng" not in out
+    # DEC-156: lat/lng always carried (fetch surface), never in a reply.
+    assert "lat" in out and "lng" in out
     assert geocoder.calls == [(22.44, 114.02)]           # the fix's own coordinate
 
 
@@ -673,7 +674,8 @@ async def test_whereis_names_the_saved_place_the_fix_sits_inside(persons, store)
     assert out["status"] == "ok"
     assert out["place"] == "Home"
     assert out["address"] == "Jvvilxgd Road"
-    assert "lat" not in out and "lng" not in out
+    # DEC-156: lat/lng always carried (fetch surface), never in a reply.
+    assert "lat" in out and "lng" in out
 
 
 async def test_whereis_outside_every_geofence_answers_without_a_place(persons, store):

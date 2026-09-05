@@ -102,20 +102,24 @@ async def test_places_and_routes_reads_are_select_only_and_capped():
     assert engine.connection.statements[2]._limit_clause.value == 5_000
 
 
-async def test_stays_for_subject_window_is_select_only_capped_and_strips_coordinates(monkeypatch):
-    """DEC-155 day arm: one SELECT, clamped, `window_ms=0` answers empty, and
-    the joined place is kind/label only — R-28 keeps lat/lng out of SQL."""
+async def test_stays_for_subject_window_is_select_only_capped_and_carries_latlng(monkeypatch):
+    """DEC-155 day arm: one SELECT, clamped, `window_ms=0` answers empty.
+    The joined place is kind/label, and DEC-156 adds the stay centroid
+    lat/lng — the fetch surface for a street-view/maps tool (never a reply,
+    R-28's speech half stands)."""
     start = _ts(2026, 9, 4, 9)
     engine = _Engine([
         _Result([
             SimpleNamespace(
                 started_ts=start, ended_ts=start + 3_600_000,
+                lat=22.410, lng=114.124,
                 place_kind="home", place_label="Home",
             ),
         ]),
         _Result([
             SimpleNamespace(
                 started_ts=start, ended_ts=start + 3_600_000,
+                lat=22.410, lng=114.124,
                 place_kind="unlabeled", place_label=None,
             ),
         ]),
@@ -132,9 +136,9 @@ async def test_stays_for_subject_window_is_select_only_capped_and_strips_coordin
     )
     assert rows == [{
         "started_ts": start, "ended_ts": start + 3_600_000,
+        "lat": 22.410, "lng": 114.124,
         "place_kind": "home", "place_label": "Home",
     }]
-    assert "lat" not in rows[0] and "lng" not in rows[0]
 
     unlabeled = await store.stays_for_subject_window(
         subject_id="miles", window_ms=24 * 60 * 60 * 1000,

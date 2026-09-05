@@ -150,9 +150,9 @@ DAY_TRIPS = {
 }
 DAY_STAYS = [
     {"started_ts": NEXT_DAY_STAY_TS, "ended_ts": NEXT_DAY_STAY_TS + 600_000,
-     "place_kind": None, "place_label": None},
+     "lat": 22.410, "lng": 114.124, "place_kind": None, "place_label": None},
     {"started_ts": DAY_STAY_TS, "ended_ts": DAY_STAY_TS + 3_600_000,
-     "place_kind": "home", "place_label": "Home"},
+     "lat": 22.410, "lng": 114.124, "place_kind": "home", "place_label": "Home"},
 ]
 
 
@@ -385,13 +385,16 @@ async def test_unlabeled_kind_survives_end_to_end(persons):
     assert out["people"][0]["places"][0]["label"] is None
 
 
-# ---- R-28: coordinates and corridor sequences never egress ------------------
+# ---- R-28 after DEC-156: sequence/radius never egress; day-stay lat/lng do ---
 
 
-async def test_r28_no_coordinate_or_sequence_anywhere_in_the_payload(persons):
-    """R-28: lat/lng and a corridor's road `sequence` never enter the tool
-    result, so no reply can carry them and no other tool can be handed one.
-    The existing scans still refuse both shapes — no new hole."""
+async def test_r28_speech_boundary_after_dec156(persons):
+    """DEC-156 narrowed R-28: the day arm's stays now CARRY lat/lng (the
+    fetch surface — the model may hand them to a street-view/maps tool), so
+    the old no-coordinate-anywhere scan is gone. What still holds: the
+    corridor road sequence NEVER leaves the tool, radius_m never does,
+    and the SPEECH half of R-28 is intact — coordinate strings are still
+    refused in replies."""
     mobility = _FakeMobility(
         places=[dict(MILES_PLACE), dict(UNLABELED_PLACE)], rhythm=list(RHYTHM_BINS),
         trips=TRIPS, stays=[dict(s) for s in DAY_STAYS],
@@ -401,7 +404,7 @@ async def test_r28_no_coordinate_or_sequence_anywhere_in_the_payload(persons):
     def _walk(node, arm):
         if isinstance(node, dict):
             for key, value in node.items():
-                assert key not in ("lat", "lng", "radius_m", "sequence"), (
+                assert key not in ("sequence", "radius_m"), (
                     f"{arm}: {key} leaked into the result"
                 )
                 _walk(value, arm)
@@ -411,13 +414,67 @@ async def test_r28_no_coordinate_or_sequence_anywhere_in_the_payload(persons):
 
     for what in ("places", "rhythm", "routes", "day"):
         out = await tool(what, name="Miles", date="2026-09-04")
-
         _walk(out, what)
-    # The existing scans still refuse the shapes they always refused.
+    day_out = await tool("day", name="Miles", date="2026-09-04")
+    stays = day_out["people"][0]["stays"]
+    assert stays[0]["lat"] == 22.410 and stays[0]["lng"] == 114.124
+    # The speech half of R-28 still refuses coordinate strings in replies.
     assert _looks_like_coordinate("22.31,114.16")
-    assert scan_identifiers("+85290000101") is not None
 
 
+async def test_day_carries_iso_timestamps_and_latlng(persons):
+    """DEC-156: unix-ms alone is unreadable to the model — the 02:16
+    max-tokens incident burned the budget on calculate conversions. Every
+    timestamp the tool emits carries an RFC 3339 form beside the raw ms, and
+    the day arm's stays carry the stay centroid for the fetch surface."""
+    mobility = _FakeMobility(
+        stays=[dict(s) for s in DAY_STAYS], trips=DAY_TRIPS,
+    )
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("day", name="Miles", date="2026-09-04")
+    assert out["status"] == "ok"
+    stays = out["people"][0]["stays"]
+    assert stays[0]["started_ts"] == DAY_STAY_TS
+    expected = datetime.fromtimestamp(
+        DAY_STAY_TS / 1000, tz=HK,
+    ).isoformat(timespec="seconds")
+    assert stays[0]["started_iso"] == expected
+    assert stays[0]["ended_iso"] == datetime.fromtimestamp(
+        (DAY_STAY_TS + 3_600_000) / 1000, tz=HK,
+    ).isoformat(timespec="seconds")
+    assert stays[0]["lat"] == 22.410 and stays[0]["lng"] == 114.124
+    trips = out["people"][0]["trips"]
+    assert trips[0]["started_iso"] == datetime.fromtimestamp(
+        DAY_TRIP_TS / 1000, tz=HK,
+    ).isoformat(timespec="seconds")
+
+
+async def test_places_and_routes_arms_carry_iso_timestamps(persons):
+    """DEC-156: places first/last seen and routes trips/corridors carry the
+    ISO forms too — no arm leaves the model with bare epoch values."""
+    mobility = _FakeMobility(
+        places=[dict(MILES_PLACE)], rhythm=list(RHYTHM_BINS),
+        trips=TRIPS, stays=[],
+    )
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("places", name="Miles")
+    place = out["people"][0]["places"][0]
+    assert place["first_seen_iso"] == datetime.fromtimestamp(
+        MILES_PLACE["first_seen_ts"] / 1000, tz=HK,
+    ).isoformat(timespec="seconds")
+    assert place["last_seen_iso"] == datetime.fromtimestamp(
+        MILES_PLACE["last_seen_ts"] / 1000, tz=HK,
+    ).isoformat(timespec="seconds")
+    routes = await tool("routes", name="Miles")
+    trip = routes["people"][0]["trips"][0]
+    assert trip["started_iso"] == datetime.fromtimestamp(
+        (NOW_MS - 3_600_000) / 1000, tz=HK,
+    ).isoformat(timespec="seconds")
+    corridor = routes["people"][0]["corridors"][0]
+    assert corridor["first_seen_iso"] == datetime.fromtimestamp(
+        (NOW_MS - 5 * DAY_MS) / 1000, tz=HK,
+    ).isoformat(timespec="seconds")
+    assert "sequence" not in corridor
 # ---- windows: days clamping, date handling ----------------------------------
 
 

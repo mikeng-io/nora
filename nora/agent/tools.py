@@ -3642,9 +3642,10 @@ Args:
             喺…»): a position said without its age reads as «right now», which
             you do not know. `place` is this household's own name for the spot
             («Home») — prefer it in your reply; `address` is the street
-            address. Both can appear together. If you get `lat`/`lng` instead,
-            say you only have a rough position — NEVER read coordinates aloud
-            and NEVER pass them to another tool. You may also get MEASURED
+            address. Both can appear together. `lat`/`lng` are always present
+            — NEVER read coordinates aloud, but you MAY pass them to a
+            street-view/maps fetch tool for an exact location (DEC-156). You
+            may also get MEASURED
             movement: `driving` (their phone says they are in a vehicle),
             `moving` (their recent positions are apart), `towards` (the saved
             place their distance has been CLOSING on), and `speed_kmh` (their
@@ -3744,6 +3745,18 @@ Args:
     _been_tz_name = "Asia/Hong_Kong"
     _been_arms = ("day", "places", "rhythm", "routes")
     _been_everyone = frozenset({"everyone", "大家"})
+
+    @staticmethod
+    def _been_iso(ts_ms: int) -> str:
+        """RFC 3339 with the substrate's timezone — the model-readable form of
+        a timestamp. DEC-156: unix-ms epoch values are unreadable to the model
+        (the 02:16 max-tokens incident burned its budget on `calculate` calls
+        converting them), so every timestamp the tool emits carries this form
+        alongside the raw ms."""
+        return (
+            datetime.fromtimestamp(ts_ms / 1000, tz=ZoneInfo(_been_tz_name))
+            .isoformat(timespec="seconds")
+        )
 
     async def where_been(
         what: str, name: str | None = None, days: int = 7, date: str | None = None,
@@ -3877,10 +3890,15 @@ Args:
             if what == "places":
                 rows = await mobility.places_with_aggregates(subject_id=subject_id)
                 places = [
-                    {k: row[k] for k in (
-                        "kind", "label", "confidence", "first_seen_ts",
-                        "last_seen_ts", "stay_count", "total_dwell_ms",
-                    )}
+                    {
+                        k: row[k] for k in (
+                            "kind", "label", "confidence", "first_seen_ts",
+                            "last_seen_ts", "stay_count", "total_dwell_ms",
+                        )
+                    } | {
+                        "first_seen_iso": _been_iso(row["first_seen_ts"]),
+                        "last_seen_iso": _been_iso(row["last_seen_ts"]),
+                    }
                     for row in rows
                 ]
                 return {"places": places} if places else {}
@@ -3897,14 +3915,31 @@ Args:
                 # store's hands — the corridor's id and sample counts are the
                 # speakable linkage; the sequence is not.
                 corridors = [
-                    {k: c[k] for k in (
-                        "id", "sample_count", "first_seen_ts", "last_seen_ts",
-                    )}
+                    {
+                        k: c[k] for k in (
+                            "id", "sample_count", "first_seen_ts", "last_seen_ts",
+                        )
+                    } | {
+                        "first_seen_iso": _been_iso(c["first_seen_ts"]),
+                        "last_seen_iso": _been_iso(c["last_seen_ts"]),
+                    }
                     for c in out["corridors"]
                 ]
                 if not out["trips"] and not corridors:
                     return {}
-                return {"trips": out["trips"], "corridors": corridors}
+                trips = [
+                    {
+                        k: t[k] for k in (
+                            "id", "started_ts", "ended_ts", "distance_m",
+                            "avg_speed_kmh", "fix_count", "corridor_id",
+                        )
+                    } | {
+                        "started_iso": _been_iso(t["started_ts"]),
+                        "ended_iso": _been_iso(t["ended_ts"]),
+                    }
+                    for t in out["trips"]
+                ]
+                return {"trips": trips, "corridors": corridors}
             # `day`: the store's window is trailing-from-now, so the fetch
             # window is `now - day_start` (its cutoff lands exactly on the
             # day's midnight) and the day's upper edge is filtered here. A
@@ -3916,15 +3951,27 @@ Args:
             stays = await mobility.stays_for_subject_window(
                 subject_id=subject_id, window_ms=fetch_ms,
             )
-            day_stays = [s for s in stays if s["started_ts"] < day_end_ms]
+            day_stays = [
+                {
+                    **s,
+                    "started_iso": _been_iso(s["started_ts"]),
+                    "ended_iso": _been_iso(s["ended_ts"]),
+                }
+                for s in stays if s["started_ts"] < day_end_ms
+            ]
             out = await mobility.trips_with_corridors(
                 subject_id=subject_id, window_ms=fetch_ms,
             )
             day_trips = [
-                {k: t[k] for k in (
-                    "started_ts", "ended_ts", "distance_m", "avg_speed_kmh",
-                    "fix_count",
-                )}
+                {
+                    k: t[k] for k in (
+                        "started_ts", "ended_ts", "distance_m", "avg_speed_kmh",
+                        "fix_count",
+                    )
+                } | {
+                    "started_iso": _been_iso(t["started_ts"]),
+                    "ended_iso": _been_iso(t["ended_ts"]),
+                }
                 for t in out["trips"] if t["started_ts"] < day_end_ms
             ]
             if not day_stays and not day_trips:
