@@ -134,6 +134,8 @@ def test_every_declared_tool_is_built(wiring):
         "calculate", "transit", "route",
         "place_info", "saved_places",
         "where_is",
+        # DEC-155: the derived-presence history tool (where someone HAS BEEN).
+        "where_been",
         "media_fetch",
         "generate_image",
         "media_search", "media_send",
@@ -182,7 +184,7 @@ def test_read_peer_card_is_gone_from_the_table():
     assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
 
 
-def test_exactly_eight_tools_are_cacheable():
+def test_exactly_nine_tools_are_cacheable():
     from nora.agent.tools import NATIVE_TOOLS
     cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
     assert cacheable == {
@@ -191,6 +193,9 @@ def test_exactly_eight_tools_are_cacheable():
         # disclosure decision baked into the moment it ran — same exemption
         # shape as `web_search`/`web_fetch`.
         "music_status", "social_fetch",
+        # where_been (DEC-155): a window of derived facts the substrate
+        # already holds; the R-31 gate is re-checked live on every call.
+        "where_been",
     }
 
 

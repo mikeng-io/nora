@@ -72,6 +72,8 @@ def test_the_registry_exposes_every_declared_tool():
         "calculate", "transit", "route",
         "place_info", "saved_places",
         "where_is",
+        # DEC-155: the derived-presence history tool (where someone HAS BEEN).
+        "where_been",
         "media_fetch",
         "generate_image",
         "media_search", "media_send",
@@ -152,6 +154,11 @@ def test_budgets_match_todays_table():
         # One message can ask after two people; each call is one local table
         # read, so like `calculate` this is sized by the question (DEC-59).
         "where_is": 2,
+        # 4 (DEC-155, the where_been spec §4.4), sized like `transit`/
+        # `place_info`: the calls are cheap local SELECTs — no network, no
+        # live-refresh block — so the currency is the model round trip, and
+        # one question can legitimately walk day -> places in a turn.
+        "where_been": 4,
         # The plugin-provided activation tool (DEC-50, activating DEC-48). It is
         # in `budgets()` ONLY so R-7 admits the `AgentSkills` activation call;
         # the registry does not BUILD it (see the tests below). Sized 2 since
@@ -535,7 +542,11 @@ def test_cacheable_tools_matches_the_declared_set():
     from nora.agent.registry import ToolRegistry
     assert ToolRegistry().cacheable_tools() == frozenset(
         {"place_info", "route", "web_search", "web_fetch", "weather", "transit",
-         "music_status", "social_fetch"}
+         "music_status", "social_fetch",
+         # DEC-155: a window of derived facts the substrate already holds —
+         # replayable without re-deriving. The R-31 gate itself is re-checked
+         # live on every call regardless of what the recall log replays.
+         "where_been"}
     )
 
 
@@ -583,6 +594,11 @@ ACT_VERBS = frozenset({
 # default safe.
 READ_ONLY = frozenset({
     "now", "calculate", "transit", "route", "where_is", "place_info",
+    # DEC-155: `where_been` reads the derived substrate — a read everywhere
+    # (SELECT-only store reads, no writes), Dreamer-ELIGIBLE but NOT granted
+    # (spec §7.4): a read verb that forgets the flag turns the classification
+    # test red by name, so it is pinned here like every other read.
+    "where_been",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
     "media_search",

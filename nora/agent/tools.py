@@ -56,6 +56,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import Any, Literal, Protocol, cast
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from nora.agent.security import _names_a_person, scan_identifiers
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
@@ -114,6 +115,7 @@ from ..domain.reminders import (
     remaining_occurrences,
 )
 from ..domain.tool_call_log import ToolCallLogStore
+from ..infra.sql.mobility import _ANALYTICS_TZ_NAME, _MAX_ANALYTICS_WINDOW_MS
 from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
 from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
 from ..infra.vision.preprocess import download_media, preprocess_media
@@ -123,8 +125,8 @@ from .egress import scan_reply
 from .links import LinkCarry
 from .ports import ToolSpec, adapt
 from .relay import Relay
-from .room import Room, RoomView, _key, _names_of
-from .whereis import DisclosureGuard, Whereis, resolvable_places
+from .room import Room, RoomView, _key, _names_of, find_by_name
+from .whereis import DisclosureGuard, Whereis, _dedupe, resolvable_places
 
 log = logging.getLogger("nora.tools")
 
@@ -491,6 +493,29 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                source_tier="remembered", read_only=True,
                                side_effect_state="none", idempotency="idempotent", retry="safe",
                                output_contract="three_state"),
+    # 4, sized like `transit`/`place_info` (the presence-analytics P1 spec
+    # §4.4, DEC-155): the calls are cheap local SELECTs (no network, no
+    # live-refresh block — unlike `where_is`'s held-2 refresh cost), so the
+    # currency is the model round trip, and one question can legitimately
+    # walk day -> places in a turn.
+    #
+    # **`time_shiftable=True` is the load-bearing declaration, and this is
+    # the FIRST DERIVED-DATA tool to set it** (DEC-40 reserved it for exactly
+    # this): every answer is a WINDOW answer — the past N days, or one named
+    # date — never a claim about right now, and the docstring carries the
+    # window with the numbers, so asking about last week reads the same
+    # derived facts it would read today.
+    #
+    # `cacheable=True` (spec §4.4, DEC-155's own pin): the result is a window
+    # of derived facts the substrate already holds — the same value-not-
+    # moment shape `place_info` declares. The disclosure decision is NOT
+    # cached with it: the R-31 gate runs live on every call, exactly as it
+    # does for `where_is`.
+    "where_been": NativeTool(4,
+                             time_shiftable=True, source_tier="confirmed", cacheable=True,
+                             read_only=True,
+                             side_effect_state="none", idempotency="idempotent", retry="safe",
+                             output_contract="three_state"),
     # DEC-146/R-82. The THIRD rung of the recall ladder and the shortest one:
     # `who_said` reads the window the prefill already rendered, `load_transcript`
     # reads OLDER rows off the store, `search_memory` reaches past what
@@ -2227,6 +2252,7 @@ def build_tool_specs(
     presence_source=None,
     presence_circles=(),
     location_trusted: bool = False,
+    mobility=None,
     refresher=None,
     geocoder=None,
     shortener=None,
@@ -2294,6 +2320,18 @@ def build_tool_specs(
     spec §4), wired the identical way: `None` in the offline/eval compositions
     and any composition that has not wired the tool-recall log, which is what
     makes `recall_lookups` answer `unavailable` (R-5) rather than crash.
+
+    `mobility` is `where_been`'s own collaborator (DEC-155, presence-analytics
+    P1): the derived-presence read the tool answers from — `SqlMobilityStore`,
+    the SAME instance the composition root builds for the web dashboards (one
+    pool, one lifecycle; the tool reads through the store only, never
+    `nora.analytics` internals). Wired the honest way `reminders`/
+    `compute_backend` are: `None` in the offline/eval compositions and any
+    composition that has not built the substrate, which is what makes
+    `where_been` answer `unavailable` (R-5), never `nothing_found` — an
+    unwired store is «I could not check», never «no derived pattern». The
+    disclosure side (`room`, `presence_circles`, `location_trusted`) is the
+    SAME seam `where_is` speaks through; only the read is new.
 
     `notes`/`note_workspace` are the note tier's pair, and they are ONE piece of
     wiring in two arguments rather than two independent ones: a note is keyed on
@@ -3679,6 +3717,367 @@ Args:
             (r for r in results if r.get("status") != "refused"), results[0],
         )
         _record(metrics, "where_is", str(answer.get("status", "unavailable")))
+        return answer
+
+    # ---- where_been (DEC-155, presence-analytics P1) ------------------------
+    #
+    # The SECOND consumer of the presence substrate (P2 = the web dashboards):
+    # ONE tool, four arms (`day`/`places`/`rhythm`/`routes` — the trigger
+    # families of the presence-analytics P1 spec §1), answering where someone
+    # HAS BEEN from the derived facts (stays/trips/places/corridors) through
+    # the SAME R-31 disclosure seam `where_is` speaks through. The guard
+    # composes `Room` + `DisclosureGuard` + `location_trusted` exactly as
+    # `Whereis.locate` does — same three-way fail-closed, same counted waiver,
+    # same R-47 name resolution — and reads `SqlMobilityStore` only AFTER the
+    # guard passes. `unlabeled` is a load-bearing third state the docstring
+    # forbids smoothing; coordinates and corridor road-sequences never enter a
+    # reply or pass to another tool (R-28); and the Dreamer is NOT granted
+    # this tool in this build (spec §7.4).
+    _been_day_ms = 24 * 60 * 60 * 1000
+    _been_arms = ("day", "places", "rhythm", "routes")
+    _been_everyone = frozenset({"everyone", "大家"})
+
+    async def where_been(
+        what: str, name: str | None = None, days: int = 7, date: str | None = None,
+    ) -> dict:
+        """Where somebody in this conversation HAS BEEN — today, usually, repeatedly.
+
+        Call this for HISTORY questions about movement patterns — never about
+        where someone is RIGHT NOW:
+          - `what="day"` — 「X 今日去咗邊度?」「X 今日做咗啲乜?」「X 琴日去咗邊?」 (pass
+            `date`): that day's trips and the stops they made. 「X 今日有冇返工?」
+            reads this together with `what="places"` (work presence that day).
+          - `what="places"` — 「X 平日去開邊度?」「X 成日去邊?」: the places this
+            household's sharing history derives for them — `kind` is `home`,
+            `work` or `unlabeled` — with confidence, stay counts and dwell.
+          - `what="rhythm"` — 「X 通常幾點返屋企?」「X 平日幾點起身?」: which hours of
+            the week they are usually stopping somewhere, with counts and dwell
+            per hour.
+          - `what="routes"` — 「你哋成日行嗰條路綫」: repeated trips, and the
+            corridors (shared routes) they ran along, with how often each has
+            been seen.
+
+        The boundary with `where_is` is the first rule: 「X 喺邊」「X 返咗屋企未」 is
+        a LIVE question — that is `where_is`. Anything about a PATTERN or a PAST
+        day is this tool, and a rhythm answer is about the past N days, never a
+        claim about right now — never present a pattern as a live location. A
+        PERSONAL place name (「屋企」「阿媽屋企」「公司」) resolves through
+        `saved_places`; a PATTERN (「平日去開邊」) is this tool.
+
+        `status` is one of six and they mean different things:
+          - `ok` — derived facts for the window. `people` lists who the
+            substrate has derived data for. A place's `kind` is `home`, `work`
+            or `unlabeled` — ALWAYS one of those three: if it is `unlabeled`,
+            say there is no pattern yet, confidently — never manufacture a
+            place from a label plus a guess. Numbers carry their window: quote
+            a stay count or dwell time only with 「過去 7 日」/ "over the past 7
+            days" (or name the date, for `day`).
+          - `refused` — you may not say here: someone in this conversation is
+            outside the location-sharing circle, or you can't confirm who is
+            here. Say that in one clause; do not hint at the pattern.
+          - `not_found` — nobody in this conversation goes by that name. Say
+            you're not sure who they mean — do not guess.
+          - `ambiguous` — more than one person here matches; `could_be` lists
+            them. Ask which one.
+          - `unavailable` — you could not check (nothing wired here, or the
+            read failed). Say so — never report it as "no pattern".
+          - `nothing_found` — the read worked and there is no derived pattern
+            for them in this window yet. Say there is nothing yet; do not
+            invent one.
+
+        `label`/`kind`/`confidence`/`stay_count` and times may enter your
+        reply. A raw coordinate (lat/lng) and a corridor's road `sequence`
+        NEVER do — never read one aloud and never pass one to another tool,
+        the same rule `where_is` carries. (These results carry neither; keep
+        it that way.)
+
+        Args:
+            what: "day", "places", "rhythm" or "routes" — exactly one of the
+                four.
+            name: Who they asked about, exactly as they said it (「阿豹」,
+                "Miles"). Leave it out for the people in THIS conversation (or
+                pass "everyone"/「大家」) — the group asking about the group.
+            days: How far back, in days (default 7, capped at 90). Used by
+                "rhythm" and "routes"; "places" carries its own first/last
+                seen.
+            date: For "day" only: the day they mean, "YYYY-MM-DD" (e.g.
+                "2026-09-04" for yesterday). Leave out for today.
+        """
+        # The closed `what` vocabulary (DEC-151's frozen `(platform, what)`
+        # shape). Anything else is ONE `unavailable` — fail-closed, never a
+        # silent `{}` and never a guessed arm.
+        if str(what) not in _been_arms:
+            _record(metrics, "where_been", "unavailable", reason="what")
+            return {
+                "status": "unavailable",
+                "note": "I can't answer that with where_been — it answers a day, "
+                        "usual places, a usual weekly rhythm, or repeated routes.",
+            }
+        if mobility is None or not presence_circles:
+            # The substrate or the circle roster is not wired (offline/eval
+            # compositions, or a deployment with no derived presence).
+            # `unavailable`, never `nothing_found` (R-5): a wiring gap must
+            # look like «I could not check», not «no derived pattern».
+            _record(metrics, "where_been", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't check where people have been right now. Say you "
+                        "have no way to see that — do not guess.",
+            }
+        # The window arithmetic, once per call: `days` for the rhythm/routes
+        # arms (clamped exactly as the store clamps: 0 answers an empty
+        # window, anything above 90 caps at the store's own bound), and for
+        # `day` the named date's [start, end) in the substrate's own timezone.
+        try:
+            now_ms = int(
+                (clock() if clock is not None else datetime.now(UTC)).timestamp() * 1000,
+            )
+            window_days = min(max(int(days), 0), _MAX_ANALYTICS_WINDOW_MS // _been_day_ms)
+        except (TypeError, ValueError):
+            _record(metrics, "where_been", "unavailable", reason="window")
+            return {
+                "status": "unavailable",
+                "note": "I couldn't read the window you gave me. Say so — do not guess one.",
+            }
+        window_ms = window_days * _been_day_ms
+        day_start_ms = day_end_ms = day_iso = None
+        if what == "day":
+            hk = ZoneInfo(_ANALYTICS_TZ_NAME)
+            try:
+                day = (
+                    datetime.strptime(str(date).strip(), "%Y-%m-%d").date()
+                    if date and str(date).strip()
+                    else datetime.fromtimestamp(now_ms / 1000, tz=hk).date()
+                )
+            except ValueError:
+                _record(metrics, "where_been", "unavailable", reason="date")
+                return {
+                    "status": "unavailable",
+                    "note": "Give me the day as YYYY-MM-DD — e.g. 2026-09-04 for "
+                            "yesterday.",
+                }
+            day_start_ms = int(
+                datetime(day.year, day.month, day.day, tzinfo=hk).timestamp() * 1000,
+            )
+            day_end_ms = day_start_ms + _been_day_ms
+            day_iso = day.isoformat()
+
+        async def _been_read(subject_id: str) -> dict:
+            """One arm's read for one subject, coordinates never selected and
+            corridor sequences never carried out (R-28). An empty answer means
+            «no derived data», which the caller renders as `nothing_found`."""
+            if what == "places":
+                rows = await mobility.places_with_aggregates(subject_id=subject_id)
+                places = [
+                    {k: row[k] for k in (
+                        "kind", "label", "confidence", "first_seen_ts",
+                        "last_seen_ts", "stay_count", "total_dwell_ms",
+                    )}
+                    for row in rows
+                ]
+                return {"places": places} if places else {}
+            if what == "rhythm":
+                bins = await mobility.rhythm_bins(
+                    subject_id=subject_id, window_ms=window_ms,
+                )
+                return {"rhythm": bins} if bins else {}
+            if what == "routes":
+                out = await mobility.trips_with_corridors(
+                    subject_id=subject_id, window_ms=window_ms,
+                )
+                # R-28: the corridor's road-name `sequence` never leaves the
+                # store's hands — the corridor's id and sample counts are the
+                # speakable linkage; the sequence is not.
+                corridors = [
+                    {k: c[k] for k in (
+                        "id", "sample_count", "first_seen_ts", "last_seen_ts",
+                    )}
+                    for c in out["corridors"]
+                ]
+                if not out["trips"] and not corridors:
+                    return {}
+                return {"trips": out["trips"], "corridors": corridors}
+            # `day`: the store's window is trailing-from-now, so the fetch
+            # window is `now - day_start` (its cutoff lands exactly on the
+            # day's midnight) and the day's upper edge is filtered here. A
+            # day outside the bounded 90-day window is honest emptiness —
+            # letting the store clamp would serve a PARTIAL day as if whole.
+            fetch_ms = now_ms - day_start_ms
+            if not 0 <= fetch_ms <= _MAX_ANALYTICS_WINDOW_MS:
+                return {}
+            stays = await mobility.stays_for_subject_window(
+                subject_id=subject_id, window_ms=fetch_ms,
+            )
+            day_stays = [s for s in stays if s["started_ts"] < day_end_ms]
+            out = await mobility.trips_with_corridors(
+                subject_id=subject_id, window_ms=fetch_ms,
+            )
+            day_trips = [
+                {k: t[k] for k in (
+                    "started_ts", "ended_ts", "distance_m", "avg_speed_kmh",
+                    "fix_count",
+                )}
+                for t in out["trips"] if t["started_ts"] < day_end_ms
+            ]
+            if not day_stays and not day_trips:
+                return {}
+            return {"stays": day_stays, "trips": day_trips}
+
+        async def _been_through(circle) -> dict:
+            """THE SAME three-way fail-closed `Whereis.locate` runs
+            (nora/agent/whereis.py), composed directly against
+            `DisclosureGuard` so the failure matrix cannot drift from
+            `where_is`'s: available → check; degraded → `unavailable` (an
+            ERROR, never a policy answer); unnamed or room ⊄ circle →
+            `refused` — unless the room is location-trusted (DEC-79), which
+            waives exactly what it waives there and is COUNTED when it does."""
+            view = await room.scope()
+            if not view.available:
+                return {
+                    "status": "unavailable",
+                    "note": "I can't work out who is in this group right now, so "
+                            "I can't say where anyone has been. Say so rather "
+                            "than guessing.",
+                }
+            room_person_ids = frozenset(p.person_id for p in view.people)
+            subset_ok = (
+                location_trusted or DisclosureGuard(circle).permits(room_person_ids)
+            )
+            unnamed_blocks = view.unnamed > 0 and not location_trusted
+            if view.degraded:
+                if metrics is not None:
+                    metrics.inc(
+                        "nora_presence_disclosure_refusals_total", reason="degraded",
+                    )
+                log.warning(
+                    "where_been could not verify the room (degraded): circle=%s "
+                    "location_trusted=%s", circle.circle_id, location_trusted,
+                )
+                return {
+                    "status": "unavailable",
+                    "note": "I can't confirm who is in this group right now, so I "
+                            "can't say where anyone has been. Say you couldn't "
+                            "check — do not guess, and do not blame anyone's "
+                            "sharing settings.",
+                }
+            if unnamed_blocks or not subset_ok:
+                # WHICH condition fired, so a refusal is diagnosable from the
+                # metric instead of inferred — the same labels `locate` uses.
+                reason = "unnamed" if unnamed_blocks else "not_subset"
+                if metrics is not None:
+                    metrics.inc(
+                        "nora_presence_disclosure_refusals_total", reason=reason,
+                    )
+                log.warning(
+                    "where_been refused (%s): circle=%s unnamed=%d subset_ok=%s "
+                    "location_trusted=%s",
+                    reason, circle.circle_id, view.unnamed, subset_ok,
+                    location_trusted,
+                )
+                return {
+                    "status": "refused",
+                    "note": "I can't share where people have been in this "
+                            "conversation — someone here is outside the "
+                            "location-sharing circle, or I can't confirm who is "
+                            "here. Say so; do not guess.",
+                }
+            # A WAIVED guard is counted, not silent — the same DEC-79 rule
+            # `Whereis.locate` runs one branch below its own guard.
+            if view.unnamed > 0 and location_trusted:
+                if metrics is not None:
+                    metrics.inc(
+                        "nora_presence_disclosure_waived_total", reason="unnamed",
+                    )
+                log.warning(
+                    "where_been disclosed into a location-trusted room holding %d "
+                    "unmapped account(s) (DEC-79 waiver): circle=%s",
+                    view.unnamed, circle.circle_id,
+                )
+            # R-47: who may be ASKED ABOUT resolves against the CIRCLE unioned
+            # with the room — the audience gate has already been cleared above.
+            # No name (or 「大家」) means the room's own people: the group asking
+            # about the group.
+            asked = None if name is None else str(name).strip()
+            if not asked or asked.casefold() in _been_everyone:
+                refs = _dedupe(view.people)
+                if not refs:
+                    return {
+                        "status": "nothing_found",
+                        "note": "I can't see who is in this conversation, so there "
+                                "is no derived pattern to report. Say so — do not "
+                                "guess.",
+                    }
+            else:
+                matches = _dedupe(find_by_name(circle.people, asked) + view.find(asked))
+                if not matches:
+                    return {
+                        "status": "not_found",
+                        "note": "Nobody in this conversation goes by that. Say "
+                                "you're not sure who they mean — do not guess.",
+                    }
+                if len(matches) > 1:
+                    return {
+                        "status": "ambiguous",
+                        "could_be": [p.name for p in matches],
+                        "note": "More than one person here goes by that. Ask which one.",
+                    }
+                refs = (matches[0],)
+            # The reads — AFTER the guard passes, and only through the store.
+            try:
+                people: list[dict] = []
+                seen_subjects: set[str] = set()
+                for ref in refs:
+                    subject_id = persons.subject_id_for(ref.person_id)
+                    if subject_id in seen_subjects:
+                        continue
+                    seen_subjects.add(subject_id)
+                    payload = await _been_read(subject_id)
+                    if payload:
+                        people.append({"person": ref.name, **payload})
+            except Exception:
+                log.exception("where_been read failed")
+                return {
+                    "status": "unavailable",
+                    "note": "I couldn't check where they've been just now. Say you "
+                            "couldn't look — don't say there's no pattern.",
+                }
+            if not people:
+                # The read WORKED: «there is no derived pattern yet» is a real
+                # answer, distinct from `unavailable` (R-27) — and it names
+                # its target and window so «yet» can never become a guess.
+                target = asked if asked else "anyone here"
+                if what == "day":
+                    target = f"{target} on {day_iso}"
+                return {
+                    "status": "nothing_found",
+                    "note": f"I have no derived pattern for {target} yet — nothing "
+                            "recorded in this window. Say there's nothing yet; "
+                            "do not invent one.",
+                }
+            return {
+                "status": "ok",
+                "what": what,
+                "window": {"date": day_iso} if what == "day" else {"days": window_days},
+                "people": people,
+            }
+
+        # The fold `where_is` runs: one gate per circle, first `ok` wins. With
+        # one circle (today's deployment) this is exactly the seam's own
+        # behaviour; with several, a non-`refused` answer from a circle the
+        # room IS a subset of outranks a `refused` from one it is not — the
+        # refusal is about the room/circle pair, and every read here stays
+        # behind the guard that authorised it.
+        results: list[dict] = []
+        for circle in presence_circles:
+            out = await _been_through(circle)
+            if str(out.get("status", "")) == "ok":
+                _record(metrics, "where_been", "ok", what=what, people=len(out["people"]))
+                return out
+            results.append(out)
+        answer = next(
+            (r for r in results if r.get("status") != "refused"), results[0],
+        )
+        _record(metrics, "where_been", str(answer.get("status", "unavailable")))
         return answer
 
     # ---- media_fetch: read a stored image back through MiMo (DEC-56) ---------
@@ -7285,6 +7684,7 @@ Args:
         _spec("place_info", place_info),
         _spec("saved_places", saved_places),
         _spec("where_is", where_is),
+        _spec("where_been", where_been),
         _spec("who_said", who_said),
         _spec("load_transcript", load_transcript),
         _spec("group_members", group_members),
@@ -7363,6 +7763,7 @@ def build_tools(
     presence_source=None,
     presence_circles=(),
     location_trusted: bool = False,
+    mobility=None,
     refresher=None,
     geocoder=None,
     shortener=None,
@@ -7399,6 +7800,7 @@ def build_tools(
         social_source=social_source,
         presence_source=presence_source, presence_circles=presence_circles,
         location_trusted=location_trusted,
+        mobility=mobility,
         refresher=refresher,
         geocoder=geocoder,
         shortener=shortener,

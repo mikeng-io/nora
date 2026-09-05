@@ -561,6 +561,13 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
 
     room_scoped = {
         "transit", "route", "where_is", "place_info", "saved_places",
+        # `where_been` (DEC-155) answers from the derived substrate but is
+        # gated by the SAME R-31 room/circle seam as `where_is` — the guard is
+        # the room, which a workspace-keyed Dreamer tick does not have, so
+        # room-scoped is the fail-closed side and the correct one. (It is
+        # deliberately NOT in WORKSPACE_SAFE_TOOLS: spec §7.4 records the
+        # grant was NOT made.)
+        "where_been",
         # The two parking verbs (2026-08-31), classified with the live-location
         # family they belong to (`transit`/`route`/`place_info` sit here too).
         # `find_parking` can even read the asker's PRESENCE when called with no
