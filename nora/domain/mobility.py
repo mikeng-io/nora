@@ -825,6 +825,17 @@ _DAY_MS = 86_400_000
 # ambiguous cases, both ~0.22-0.24, ~0.235 at the high end).
 _HOME_NIGHT_SHARE_MIN = 0.3
 
+# `is_home`'s ABSOLUTE distinct-night gate (2026-09-05 total-solution fix).
+# The share floor above is mathematically unreachable for WFH / stay-at-home
+# subjects: they are home all day, so `total_dwell` grows with every hour of
+# daytime presence while the night window (1:00-5:00) is capped at 4h/day —
+# night_share tops out at ~0.167 for a pure stay-at-home, far below 0.3.
+# Real corpus (2026-09-05): miles_novak 29 nights / delia_lindberg 24 / aaron_larsen 18 /
+# grant_carver 19 all fail the share gate but are genuine homes; delia_lindberg's
+# Thailand trip cluster has only 4 nights and must NOT label. 8 sits between
+# the false-positive floor (4) and the weakest genuine home (18).
+_HOME_MIN_NIGHTS_ABS = 8
+
 # `is_work`'s floor on absolute work-window dwell (spec gap: a share alone
 # has no notion of scale). One workday's worth of dwell — comfortably above
 # the ~2-3h a handful of incidental weekday-daytime visits accumulate, and
@@ -1018,19 +1029,14 @@ def label_place(
     every genuine workplace (`grant_carver` 56.9h, `clara_lawson`'s real
     cluster 53.6h) untouched.
 
-    One structural note (not a functional bug — every test below still
-    passes, and no input can reach the branch it guards): the explicit
-    `is_home and is_work` check can never actually be True, because
-    `is_home` requires `night_share >= _HOME_NIGHT_SHARE_MIN` (0.3) while
-    `is_work` requires `night_share < 0.1` — contradictory bounds on the
-    same variable make the two conditions mutually exclusive by
-    construction, independent of branch order, exactly as before this fix
-    (only the specific floor value changed, not this property). The "both
-    windows" ambiguous case (`aaron_larsen`'s real fixture) still correctly
-    resolves to `unlabeled`, but via `is_home`'s own share floor rejecting
-    it (and, independently, `is_work`'s `night_share < 0.1` term also
-    rejecting it), not via this check. Left as written (matching the
-    brief) since it is harmless defensive code, not incorrect."""
+    The explicit `is_home and is_work` check is REACHABLE since the
+    2026-09-05 total-solution fix: `is_home`'s absolute night-days arm
+    (`len(night_days) >= _HOME_MIN_NIGHTS_ABS`) no longer shares the
+    `night_share` variable with `is_work`'s `night_share < 0.1` term, so a
+    cluster with 8+ distinct nights of small dwell AND a large weekday
+    work-window dwell can satisfy both. That genuinely ambiguous signal
+    (sleeps there most nights, works there most weekdays) fail-closes to
+    `unlabeled` — never pick one arbitrarily."""
     if not stays:
         return LabelResult(kind="unlabeled", confidence=0.0, most_recent_support_ts=None)
 
@@ -1054,6 +1060,11 @@ def label_place(
 
     is_home = (
         night_share >= _HOME_NIGHT_SHARE_MIN and len(night_days) >= min_nights
+    ) or (
+        # Total-solution arm (2026-09-05): WFH / stay-at-home subjects can
+        # never clear the share floor (see `_HOME_MIN_NIGHTS_ABS`), so a
+        # high distinct-night count is accepted as home evidence on its own.
+        len(night_days) >= _HOME_MIN_NIGHTS_ABS
     )
     is_work = (
         work_share >= 0.5
