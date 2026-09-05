@@ -115,7 +115,6 @@ from ..domain.reminders import (
     remaining_occurrences,
 )
 from ..domain.tool_call_log import ToolCallLogStore
-from ..infra.sql.mobility import _ANALYTICS_TZ_NAME, _MAX_ANALYTICS_WINDOW_MS
 from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
 from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
 from ..infra.vision.preprocess import download_media, preprocess_media
@@ -3734,6 +3733,12 @@ Args:
     # reply or pass to another tool (R-28); and the Dreamer is NOT granted
     # this tool in this build (spec §7.4).
     _been_day_ms = 24 * 60 * 60 * 1000
+    # Same 90-day bound the store clamps to and the portal uses
+    # (`_MAX_ANALYTICS_DAYS`). Copied here rather than imported from
+    # `nora.infra.sql.mobility`'s private names — the web consumer does the
+    # same (api.py:_MAX_ANALYTICS_DAYS).
+    _been_max_days = 90
+    _been_tz_name = "Asia/Hong_Kong"
     _been_arms = ("day", "places", "rhythm", "routes")
     _been_everyone = frozenset({"everyone", "大家"})
 
@@ -3832,7 +3837,7 @@ Args:
             now_ms = int(
                 (clock() if clock is not None else datetime.now(UTC)).timestamp() * 1000,
             )
-            window_days = min(max(int(days), 0), _MAX_ANALYTICS_WINDOW_MS // _been_day_ms)
+            window_days = min(max(int(days), 0), _been_max_days)
         except (TypeError, ValueError):
             _record(metrics, "where_been", "unavailable", reason="window")
             return {
@@ -3842,7 +3847,7 @@ Args:
         window_ms = window_days * _been_day_ms
         day_start_ms = day_end_ms = day_iso = None
         if what == "day":
-            hk = ZoneInfo(_ANALYTICS_TZ_NAME)
+            hk = ZoneInfo(_been_tz_name)
             try:
                 day = (
                     datetime.strptime(str(date).strip(), "%Y-%m-%d").date()
@@ -3903,7 +3908,7 @@ Args:
             # day outside the bounded 90-day window is honest emptiness —
             # letting the store clamp would serve a PARTIAL day as if whole.
             fetch_ms = now_ms - day_start_ms
-            if not 0 <= fetch_ms <= _MAX_ANALYTICS_WINDOW_MS:
+            if not 0 <= fetch_ms <= _been_max_days * _been_day_ms:
                 return {}
             stays = await mobility.stays_for_subject_window(
                 subject_id=subject_id, window_ms=fetch_ms,
