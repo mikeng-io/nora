@@ -123,6 +123,15 @@ class ToolRegistry:
         relay: Relay | None = None,
         refresher: Any = None,
         geocoder: Any = None,
+        # The DERIVED-presence read behind `where_been` (DEC-155,
+        # presence-analytics P1): the composition root's ONE `SqlMobilityStore`
+        # (same engine, same lifecycle as every other store). NOT
+        # default-constructed, for the reason `route`/`presence` are not:
+        # there is no storeless default, so every composition that has not
+        # built the substrate — offline, eval — leaves `where_been` answering
+        # `unavailable`, honest and inert (R-5). The per-call R-31 guard lives
+        # in the tool itself, through the same `DisclosureGuard` seam.
+        mobility: Any = None,
         shortener: LinkShortener | None = None,
         ai_peer: str = "nora",
         reminders: ReminderStore | None = None,
@@ -242,6 +251,11 @@ class ToolRegistry:
         # 2026-08-14) — None leaves `where_is` falling back to Life360's own
         # address or the raw coordinate, same as no geocoder ever existing.
         self._geocoder = geocoder
+        # The derived-presence read behind `where_been` (DEC-155) — the same
+        # optional-collaborator shape as `presence` above: None in the
+        # offline/eval compositions, where the tool answers `unavailable`
+        # rather than a guessed empty (R-5).
+        self._mobility = mobility
         # The drop-service mint client ([shortener], cutover 2026-08-12 to
         # `drop`'s internal API; was n.example.net's Worker before that) — None
         # leaves long URLs in replies, and a failed mint does the same; never
@@ -631,6 +645,7 @@ class ToolRegistry:
             social_source=self._social,
             presence_source=self._presence, presence_circles=self._circles,
             location_trusted=location_trusted,
+            mobility=self._mobility,
             refresher=self._refresher,
             geocoder=self._geocoder,
             shortener=self._shortener,

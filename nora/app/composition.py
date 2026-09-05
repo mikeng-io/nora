@@ -1925,6 +1925,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         social=social_client,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,
+        # `where_been`'s read seam (DEC-155): the SAME `SqlMobilityStore` the
+        # web dashboards read through, built once above on the shared engine —
+        # no second store, no new lifecycle (one pool, one lifecycle).
+        mobility=mobility,
         relay=relay,
         refresher=refresher,
         geocoder=geocoder,

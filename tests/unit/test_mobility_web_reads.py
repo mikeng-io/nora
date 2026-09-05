@@ -100,3 +100,51 @@ async def test_places_and_routes_reads_are_select_only_and_capped():
     assert engine.connection.statements[0]._limit_clause.value == 100
     assert engine.connection.statements[1]._limit_clause.value == 5_000
     assert engine.connection.statements[2]._limit_clause.value == 5_000
+
+
+async def test_stays_for_subject_window_is_select_only_capped_and_strips_coordinates(monkeypatch):
+    """DEC-155 day arm: one SELECT, clamped, `window_ms=0` answers empty, and
+    the joined place is kind/label only — R-28 keeps lat/lng out of SQL."""
+    start = _ts(2026, 9, 4, 9)
+    engine = _Engine([
+        _Result([
+            SimpleNamespace(
+                started_ts=start, ended_ts=start + 3_600_000,
+                place_kind="home", place_label="Home",
+            ),
+        ]),
+        _Result([
+            SimpleNamespace(
+                started_ts=start, ended_ts=start + 3_600_000,
+                place_kind="unlabeled", place_label=None,
+            ),
+        ]),
+        _Result([]),
+    ])
+    monkeypatch.setattr(mobility_sql.time, "time", lambda: (start + 86_400_000) / 1000)
+    store = SqlMobilityStore(engine)
+
+    assert await store.stays_for_subject_window(subject_id="miles", window_ms=0) == []
+    assert engine.connection.statements == []
+
+    rows = await store.stays_for_subject_window(
+        subject_id="miles", window_ms=24 * 60 * 60 * 1000,
+    )
+    assert rows == [{
+        "started_ts": start, "ended_ts": start + 3_600_000,
+        "place_kind": "home", "place_label": "Home",
+    }]
+    assert "lat" not in rows[0] and "lng" not in rows[0]
+
+    unlabeled = await store.stays_for_subject_window(
+        subject_id="miles", window_ms=24 * 60 * 60 * 1000,
+    )
+    assert unlabeled[0]["place_kind"] == "unlabeled"
+    assert unlabeled[0]["place_label"] is None
+
+    await store.stays_for_subject_window(subject_id="miles", window_ms=10**30)
+
+    for statement in engine.connection.statements:
+        assert str(statement).lstrip().upper().startswith("SELECT")
+    assert engine.connection.statements[0]._limit_clause.value == 5_000
+    assert engine.connection.statements[2]._limit_clause.value == 5_000

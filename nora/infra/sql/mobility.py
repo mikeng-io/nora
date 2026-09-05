@@ -158,6 +158,57 @@ class SqlMobilityStore:
             for how in sorted(bins)
         ]
 
+    async def stays_for_subject_window(
+        self, *, subject_id: str, window_ms: int,
+    ) -> list[dict[str, Any]]:
+        """Read bounded stays for ONE subject inside a trailing window, with
+        the derived place's `kind`/`label` when the substrate linked one.
+
+        The `day` consumer's read (the presence-analytics P1 spec §3, DEC-155):
+        the same shape as `rhythm_bins` — one SELECT, clamped, `window_ms=0`
+        answers empty — plus a LEFT JOIN onto `presence_derived_places` so a
+        stay carries the KIND/LABEL of the place the substrate filed it under.
+        Coordinates are deliberately NOT selected: R-28 keeps them out of the
+        consumer's hands entirely, and the joined `kind`/`label` are the only
+        speakable part of the linkage (the `day` arm's "places visited").
+        SELECT-only, bounded by `_MAX_ANALYTICS_POINTS`, like every read the
+        web portal serves.
+        """
+        window_ms = min(max(window_ms, 0), _MAX_ANALYTICS_WINDOW_MS)
+        if window_ms == 0:
+            return []
+        cutoff_ms = int(time.time() * 1000) - window_ms
+        stmt = (
+            sa.select(
+                PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts,
+                PRESENCE_DERIVED_PLACES.c.kind.label("place_kind"),
+                PRESENCE_DERIVED_PLACES.c.label.label("place_label"),
+            )
+            .select_from(
+                PRESENCE_STAYS.outerjoin(
+                    PRESENCE_DERIVED_PLACES,
+                    PRESENCE_STAYS.c.place_id == PRESENCE_DERIVED_PLACES.c.id,
+                )
+            )
+            .where(
+                PRESENCE_STAYS.c.subject_id == subject_id,
+                PRESENCE_STAYS.c.started_ts >= cutoff_ms,
+            )
+            .order_by(PRESENCE_STAYS.c.started_ts.desc())
+            .limit(_MAX_ANALYTICS_POINTS)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [
+            {
+                "started_ts": row.started_ts,
+                "ended_ts": row.ended_ts,
+                "place_kind": row.place_kind,
+                "place_label": row.place_label,
+            }
+            for row in rows
+        ]
+
     async def trips_with_corridors(
         self, *, subject_id: str, window_ms: int,
     ) -> dict[str, list[dict[str, Any]]]:

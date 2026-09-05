@@ -134,6 +134,8 @@ def test_every_declared_tool_is_built(wiring):
         "calculate", "transit", "route",
         "place_info", "saved_places",
         "where_is",
+        # DEC-155: the derived-presence history tool (where someone HAS BEEN).
+        "where_been",
         "media_fetch",
         "generate_image",
         "media_search", "media_send",
@@ -191,6 +193,9 @@ def test_exactly_eight_tools_are_cacheable():
         # disclosure decision baked into the moment it ran — same exemption
         # shape as `web_search`/`web_fetch`.
         "music_status", "social_fetch",
+        # where_been is deliberately NOT cacheable (Kimi audit B1): its R-31
+        # gate runs against the live roster, and the recall log replays
+        # verbatim with no guard re-check.
     }
 
 

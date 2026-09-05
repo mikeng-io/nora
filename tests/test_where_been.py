@@ -1,0 +1,511 @@
+"""`where_been` (DEC-155, presence-analytics P1) — the derived-history tool
+and its R-31 disclosure seam.
+
+The load-bearing test is the guard matrix: `where_been` must fail-closed in
+EXACTLY the matrix `where_is` fails closed in (tests/test_whereis.py is the
+shape this file mirrors) — room ⊄ circle → `refused`, an unnamed account →
+`refused`, a degraded room → `unavailable` (never a policy answer), and the
+`location_trusted` waiver counted. The mobility store is a FAKE here on
+purpose: the disclosure decision is room-side, and the store reads are thin
+SELECTs whose shapes the store tests own — a fake keeps every guard answer
+reachable without a database, exactly the seam the where_been spec §7.1
+pins. The `unlabeled` third state and the R-28 no-egress assertions are the
+other two contract legs.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from nora.agent.room import Room
+from nora.agent.security import (
+    looks_like_coordinate as _looks_like_coordinate,
+)
+from nora.agent.security import (
+    scan_identifiers,
+)
+from nora.agent.tools import build_tool_specs
+from nora.agent.whereis import Circle
+from nora.obs.metrics import Metrics
+from nora.persons import load_persons
+from nora.testing import FakeRosterSource
+
+GROUP = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
+NORA = frozenset({"+85290000100"})
+MILES = frozenset({"+85290000101"})
+GRANT = frozenset({"+85290000104"})
+STRANGER = frozenset({"+85260000000"})
+UNNAMED = frozenset({"+85270000000"})  # a phone identity.toml does not map
+CIRCLE_ID = "circle-ridgeline"
+
+HK = ZoneInfo("Asia/Hong_Kong")
+NOW_MS = int(datetime(2026, 9, 5, 12, 0, tzinfo=HK).timestamp() * 1000)
+DAY_MS = 24 * 60 * 60 * 1000
+MAX_WINDOW_MS = 90 * DAY_MS
+
+IDENTITY = """
+[persons.miles_novak]
+first_name = "Miles"
+last_name  = "Novak"
+aliases = ["Miles"]
+[[persons.miles_novak.signal]]
+phone = "+85290000101"
+
+[persons.grant_carver]
+first_name = "Grant"
+last_name  = "Carver"
+aliases = ["Chi"]
+[[persons.grant_carver.signal]]
+phone = "+85290000104"
+
+[persons.pat_ho]
+first_name = "Pat"
+last_name  = "Ho"
+aliases = ["Miles"]
+[[persons.pat_ho.signal]]
+phone = "+85268886688"
+
+[persons.outsider]
+first_name = "Sam"
+last_name  = "Outsider"
+[[persons.outsider.signal]]
+phone = "+85260000000"
+"""
+
+
+@pytest.fixture
+def persons(tmp_path):
+    path = tmp_path / "identity.toml"
+    path.write_text(IDENTITY)
+    return load_persons(path)
+
+
+class _FakeMobility:
+    """The four `where_been` reads, recorded. The guard is room-side, so the
+    fake's whole job is to answer shaped rows and to say WHICH reads ran (an
+    arm must never read the store before the guard passes)."""
+
+    def __init__(self, *, places=None, rhythm=None, trips=None, stays=None):
+        self.places = places or []
+        self.rhythm = rhythm or []
+        self.trips = trips or {"trips": [], "corridors": []}
+        self.stays = stays or []
+        self.calls: list[tuple] = []
+
+    async def places_with_aggregates(self, *, subject_id):
+        self.calls.append(("places", subject_id))
+        return list(self.places)
+
+    async def rhythm_bins(self, *, subject_id, window_ms):
+        self.calls.append(("rhythm", subject_id, window_ms))
+        # The store's own clamp: `window_ms=0` answers empty (design/27 §3.5).
+        return list(self.rhythm) if window_ms > 0 else []
+
+    async def trips_with_corridors(self, *, subject_id, window_ms):
+        self.calls.append(("trips", subject_id, window_ms))
+        return self.trips if window_ms > 0 else {"trips": [], "corridors": []}
+
+    async def stays_for_subject_window(self, *, subject_id, window_ms):
+        self.calls.append(("stays", subject_id, window_ms))
+        return list(self.stays) if window_ms > 0 else []
+
+
+MILES_PLACE = {
+    "kind": "home", "label": "Home", "lat": 22.31, "lng": 114.16,
+    "radius_m": 50.0, "confidence": 0.9, "first_seen_ts": NOW_MS - DAY_MS,
+    "last_seen_ts": NOW_MS, "stay_count": 12, "total_dwell_ms": 400_000_000,
+}
+UNLABELED_PLACE = {
+    "kind": "unlabeled", "label": None, "lat": 22.44, "lng": 114.02,
+    "radius_m": 80.0, "confidence": 0.42, "first_seen_ts": NOW_MS - DAY_MS,
+    "last_seen_ts": NOW_MS, "stay_count": 3, "total_dwell_ms": 40_000_000,
+}
+RHYTHM_BINS = [{"hour_of_week": 40, "stay_count": 3, "total_dwell_ms": 7_200_000}]
+TRIPS = {
+    "trips": [{
+        "id": 1, "started_ts": NOW_MS - 3_600_000, "ended_ts": NOW_MS - 1_800_000,
+        "distance_m": 4200.0, "avg_speed_kmh": 28.0, "fix_count": 12,
+        "corridor_id": 7, "corridor_sample_count": 5,
+    }],
+    "corridors": [{
+        "id": 7, "sample_count": 5, "first_seen_ts": NOW_MS - 5 * DAY_MS,
+        "last_seen_ts": NOW_MS, "sequence": ["Tai Ho Road", "Castle Peak Road"],
+    }],
+}
+# One stay and one trip inside 2026-09-04 (HK), plus one of each the next
+# morning — the day filter must keep the in-day rows and drop the rest.
+DAY_STAY_TS = int(datetime(2026, 9, 4, 9, 0, tzinfo=HK).timestamp() * 1000)
+DAY_TRIP_TS = int(datetime(2026, 9, 4, 18, 0, tzinfo=HK).timestamp() * 1000)
+NEXT_DAY_STAY_TS = int(datetime(2026, 9, 5, 1, 0, tzinfo=HK).timestamp() * 1000)
+DAY_TRIPS = {
+    "trips": [{
+        "id": 2, "started_ts": DAY_TRIP_TS, "ended_ts": DAY_TRIP_TS + 1_800_000,
+        "distance_m": 3100.0, "avg_speed_kmh": 22.0, "fix_count": 9,
+        "corridor_id": 7, "corridor_sample_count": 5,
+    }],
+    "corridors": [],
+}
+DAY_STAYS = [
+    {"started_ts": NEXT_DAY_STAY_TS, "ended_ts": NEXT_DAY_STAY_TS + 600_000,
+     "place_kind": None, "place_label": None},
+    {"started_ts": DAY_STAY_TS, "ended_ts": DAY_STAY_TS + 3_600_000,
+     "place_kind": "home", "place_label": "Home"},
+]
+
+
+def _circle(persons, *, with_pat=False) -> Circle:
+    # `people` carries the RESOLVED roster — the same shape
+    # `circles_from_persons` builds from identity.toml: real `PersonRef`s with
+    # their aliases, so the R-47 ask-about side resolves the way production
+    # resolves it.
+    # Pat shares Miles's alias 「Miles」 — the ambiguous-name fixture needs
+    # BOTH matching people ask-about-able (the circle joined with the room),
+    # so `with_pat` puts him on this circle's roster too.
+    ids = (
+        ("grant_carver", "miles_novak", "pat_ho") if with_pat
+        else ("grant_carver", "miles_novak")
+    )
+    people = tuple(persons.by_person[pid] for pid in ids)
+    return Circle(
+        circle_id=CIRCLE_ID, person_ids=frozenset(ids), people=people,
+    )
+
+
+def _room(persons, *, members, fail=False, tagger=None):
+    return Room(
+        platform="signal", conversation_id=GROUP,
+        roster_source=FakeRosterSource(groups={GROUP: tuple(members)}, fail=fail),
+        persons=persons, self_ids=NORA, tagger=tagger,
+    )
+
+
+def _where_been(
+    persons, mobility, *, members, fail=False, location_trusted=False,
+    now_ms=NOW_MS, metrics=None, with_pat=False, tagger=None,
+):
+    """The built `where_been` closure, through `build_tool_specs` — the same
+    wiring the tag path uses (registry -> specs -> call), with the registry's
+    own clock and the guard's circles threaded exactly as composition does."""
+    specs = build_tool_specs(
+        store=None, conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=None, deliverer=None,
+        metrics=metrics if metrics is not None else Metrics(),
+        room=_room(persons, members=members, fail=fail, tagger=tagger),
+        transit_source=None,
+        presence_circles=(_circle(persons, with_pat=with_pat),),
+        location_trusted=location_trusted,
+        mobility=mobility, clock=lambda: datetime.fromtimestamp(now_ms / 1000, tz=UTC),
+    )
+    return next(s for s in specs if s.name == "where_been").call
+
+
+def _labelled(metrics, name, label_key, label_value):
+    """`Metrics.snapshot()` keys samples `(name, sorted label pairs)`; this
+    says whether one sample of `name` carries the given label value."""
+    return any(
+        n == name and (label_key, label_value) in labels
+        for (n, labels), _value in metrics.snapshot().items()
+    )
+
+
+# ---- the R-31 guard matrix — the same fail-closed answers `where_is` gives ----
+
+
+async def test_where_been_refuses_a_room_not_subset_of_the_circle(persons):
+    """R-31: a stranger in the room is outside the circle — REFUSED, never a
+    silent omission and never a read. Identical to `where_is`'s own refusal."""
+    mobility = _FakeMobility(places=[dict(MILES_PLACE)])
+    metrics = Metrics()
+    specs = build_tool_specs(
+        store=None, conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=metrics,
+        room=_room(persons, members=(MILES, GRANT, STRANGER)),
+        transit_source=None, presence_circles=(_circle(persons),),
+        mobility=mobility,
+        clock=lambda: datetime.fromtimestamp(NOW_MS / 1000, tz=UTC),
+    )
+    tool = next(s for s in specs if s.name == "where_been").call
+    out = await tool("places", name="Miles")
+    assert out["status"] == "refused"
+    assert "note" in out
+    # The guard runs BEFORE any store read — the refusal is not data-shaped.
+    assert mobility.calls == []
+    assert _labelled(metrics, "nora_presence_disclosure_refusals_total", "reason", "not_subset")
+
+
+async def test_where_been_refuses_an_unnamed_account(persons):
+    """An account the room holds but identity.toml cannot map is, by
+    definition, unverifiable against the circle — the LIKELIEST real trigger,
+    refused unless the room is location-trusted (DEC-79)."""
+    mobility = _FakeMobility()
+    specs = build_tool_specs(
+        store=None, conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=_room(persons, members=(MILES, UNNAMED)),
+        transit_source=None, presence_circles=(_circle(persons),), mobility=mobility,
+        clock=lambda: datetime.fromtimestamp(NOW_MS / 1000, tz=UTC),
+    )
+    tool = next(s for s in specs if s.name == "where_been").call
+    out = await tool("rhythm", name="Miles")
+    assert out["status"] == "refused"
+    assert mobility.calls == []
+
+
+async def test_where_been_degraded_room_is_unavailable_not_refused(persons):
+    """A room she cannot READ is an ERROR, not a policy decision — the split
+    R-27 draws and the 2026-08-10 fail-closed audit fixed for `where_is`.
+
+    `fail=True` plus a tagger is the TRUE degraded path: `Room.scope` narrows
+    to the tagger with `degraded=True` rather than going dark. Without the
+    tagger the same fail would hit `available=False` instead, which is a
+    different branch (`I can't work out who is in this group`).
+    """
+    mobility = _FakeMobility()
+    metrics = Metrics()
+    tagger = persons.resolve("signal", "+85290000101")
+    tool = _where_been(
+        persons, mobility, members=(MILES,), fail=True,
+        tagger=tagger, metrics=metrics,
+    )
+    out = await tool("places", name="Miles")
+    assert out["status"] == "unavailable"          # not "refused"
+    assert "circle" not in out["note"]             # no false claim about the room
+    assert mobility.calls == []
+    assert _labelled(metrics, "nora_presence_disclosure_refusals_total", "reason", "degraded")
+
+
+async def test_where_been_counts_the_location_trusted_waiver(persons):
+    """DEC-79: a location-trusted room waives the unnamed refusal — and the
+    waiver is COUNTED, never silent, the exact rule `Whereis.locate` runs."""
+    mobility = _FakeMobility(places=[dict(MILES_PLACE)])
+    metrics = Metrics()
+    tool = _where_been(
+        persons, mobility, members=(MILES, UNNAMED),
+        location_trusted=True, metrics=metrics,
+    )
+    out = await tool("places", name="Miles")
+    assert out["status"] == "ok"
+    # A WAIVED guard is counted, not silent — the DEC-79 instrument.
+    assert _labelled(metrics, "nora_presence_disclosure_waived_total", "reason", "unnamed")
+    assert ("places", "miles_novak") in mobility.calls
+
+
+async def test_where_been_resolves_a_circle_member_outside_the_room(persons):
+    """R-47: who may be ASKED ABOUT resolves against the CIRCLE unioned with
+    the room — Grant is not in this room but shares the circle, so the
+    answer is his derived pattern, never «nobody here goes by that»."""
+    mobility = _FakeMobility(places=[dict(MILES_PLACE)])
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("places", name="Chi")
+    assert out["status"] == "ok"
+    assert out["people"][0]["person"] == "Grant Carver"
+    assert ("places", "grant_carver") in mobility.calls
+
+
+# ---- the six-state contract -------------------------------------------------
+
+
+async def test_where_been_not_found_and_ambiguous(persons):
+    mobility = _FakeMobility()
+    tool = _where_been(persons, mobility, members=(MILES,))
+    miss = await tool("places", name="Nobody")
+    assert miss["status"] == "not_found"
+    assert "note" in miss
+    assert mobility.calls == []
+    # Two people in THIS room go by 「Miles」 (miles's alias and Pat's) — the
+    # resolution asks which one, exactly as `where_is` does.
+    pat = frozenset({"+85268886688"})
+    clash_tool = _where_been(
+        persons, mobility, members=(MILES, pat), with_pat=True,
+    )
+    clash = await clash_tool("places", name="Miles")
+    assert clash["status"] == "ambiguous"
+    assert set(clash["could_be"]) == {"Miles Novak", "Pat Ho"}
+    assert mobility.calls == []  # still no read behind an unresolved name
+
+
+async def test_where_been_answers_the_room_when_no_name_is_given(persons):
+    """name=None (or 「大家」) is the group asking about the group: one entry
+    per person the substrate has derived data for, and `nothing_found` — not
+    an error — when nobody has any."""
+    mobility = _FakeMobility(places=[dict(MILES_PLACE)])
+    tool = _where_been(persons, mobility, members=(MILES, GRANT))
+    out = await tool("places")
+    assert out["status"] == "ok"
+    assert out["window"] == {"days": 7}
+    assert sorted(p["person"] for p in out["people"]) == [
+        "Grant Carver", "Miles Novak",
+    ]
+    empty = _FakeMobility()
+    tool = _where_been(persons, empty, members=(MILES, GRANT))
+    out = await tool("places", name="大家")
+    # The read WORKED and found nothing — `nothing_found`, not `unavailable`
+    # (R-27): the store was consulted for every room member, honestly empty.
+    assert out["status"] == "nothing_found"
+    assert ("places", "miles_novak") in empty.calls
+    assert ("places", "grant_carver") in empty.calls
+
+
+async def test_where_been_unwired_is_unavailable_not_nothing_found(persons):
+    """mobility=None is the honest not-wired state (offline/eval
+    compositions): «I could not check», never «no derived pattern» (R-5)."""
+    tool = _where_been(persons, None, members=(MILES,))
+    out = await tool("places", name="Miles")
+    assert out["status"] == "unavailable"
+    assert "note" in out
+
+
+async def test_where_been_the_what_vocabulary_is_closed(persons):
+    """Any `what` outside the four arms is ONE `unavailable` — fail-closed,
+    never a silent `{}` and never a guessed arm."""
+    mobility = _FakeMobility(places=[dict(MILES_PLACE)])
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("anomaly")
+    assert out["status"] == "unavailable"
+    assert "note" in out
+    assert mobility.calls == []
+
+
+# ---- unlabeled survives end-to-end ------------------------------------------
+
+
+async def test_unlabeled_kind_survives_end_to_end(persons):
+    """design/27 §3.4: `unlabeled` is a precise, load-bearing answer, not a
+    gap — the fixture place's kind comes back AS `unlabeled`, and the model-
+    facing contract (the docstring) forbids smoothing it into a place."""
+    mobility = _FakeMobility(places=[dict(UNLABELED_PLACE), dict(MILES_PLACE)])
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("places", name="Miles")
+    assert out["status"] == "ok"
+    kinds = [p["kind"] for p in out["people"][0]["places"]]
+    assert kinds == ["unlabeled", "home"]
+    assert out["people"][0]["places"][0]["label"] is None
+
+
+# ---- R-28: coordinates and corridor sequences never egress ------------------
+
+
+async def test_r28_no_coordinate_or_sequence_anywhere_in_the_payload(persons):
+    """R-28: lat/lng and a corridor's road `sequence` never enter the tool
+    result, so no reply can carry them and no other tool can be handed one.
+    The existing scans still refuse both shapes — no new hole."""
+    mobility = _FakeMobility(
+        places=[dict(MILES_PLACE), dict(UNLABELED_PLACE)], rhythm=list(RHYTHM_BINS),
+        trips=TRIPS, stays=[dict(s) for s in DAY_STAYS],
+    )
+    tool = _where_been(persons, mobility, members=(MILES,))
+
+    def _walk(node, arm):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                assert key not in ("lat", "lng", "radius_m", "sequence"), (
+                    f"{arm}: {key} leaked into the result"
+                )
+                _walk(value, arm)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item, arm)
+
+    for what in ("places", "rhythm", "routes", "day"):
+        out = await tool(what, name="Miles", date="2026-09-04")
+
+        _walk(out, what)
+    # The existing scans still refuse the shapes they always refused.
+    assert _looks_like_coordinate("22.31,114.16")
+    assert scan_identifiers("+85290000101") is not None
+
+
+# ---- windows: days clamping, date handling ----------------------------------
+
+
+async def test_days_zero_answers_an_empty_window(persons):
+    """days=0 is an empty window: the read WORKS and answers nothing —
+    `nothing_found`, never `unavailable` (R-27 keeps the two apart)."""
+    mobility = _FakeMobility(rhythm=list(RHYTHM_BINS))
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("rhythm", name="Miles", days=0)
+    assert out["status"] == "nothing_found"
+    assert ("rhythm", "miles_novak", 0) in mobility.calls
+
+
+async def test_days_clamped_at_the_store_ceiling(persons):
+    """days=1000 caps at 90 — the same bound the store clamps, so the answer
+    names its window honestly."""
+    mobility = _FakeMobility(rhythm=list(RHYTHM_BINS))
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("rhythm", name="Miles", days=1000)
+    assert out["status"] == "ok"
+    assert out["window"] == {"days": 90}
+    assert ("rhythm", "miles_novak", MAX_WINDOW_MS) in mobility.calls
+
+
+async def test_day_honours_the_date_and_filters_the_upper_edge(persons):
+    """`date` is the day they mean: the fetch window starts at that day's
+    midnight (the store's cutoff lands on it) and the day's upper edge is
+    filtered in the tool — tomorrow-morning rows do not leak into yesterday."""
+    mobility = _FakeMobility(
+        stays=[dict(s) for s in DAY_STAYS], trips=DAY_TRIPS,
+    )
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("day", name="Miles", date="2026-09-04")
+    assert out["status"] == "ok"
+    assert out["window"] == {"date": "2026-09-04"}
+    day_start_ms = int(datetime(2026, 9, 4, tzinfo=HK).timestamp() * 1000)
+    fetch_ms = NOW_MS - day_start_ms
+    assert ("stays", "miles_novak", fetch_ms) in mobility.calls
+    stays = out["people"][0]["stays"]
+    assert [s["started_ts"] for s in stays] == [DAY_STAY_TS]
+    # places visited, from the substrate's own linkage: kind/label only.
+    assert stays[0]["place_kind"] == "home"
+    assert stays[0]["place_label"] == "Home"
+    trips = out["people"][0]["trips"]
+    assert [t["started_ts"] for t in trips] == [DAY_TRIP_TS]
+    assert ("trips", "miles_novak", fetch_ms) in mobility.calls
+
+
+async def test_day_outside_the_bounded_window_is_nothing_found(persons):
+    """A date older than the 90-day bound is honest emptiness — the store
+    would otherwise clamp and serve a PARTIAL day as if whole."""
+    mobility = _FakeMobility(stays=[dict(s) for s in DAY_STAYS])
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("day", name="Miles", date="2026-01-01")
+    assert out["status"] == "nothing_found"
+    assert mobility.calls == []
+
+
+async def test_day_defaults_to_today_and_rejects_a_malformed_date(persons):
+    mobility = _FakeMobility(stays=[dict(s) for s in DAY_STAYS])
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("day", name="Miles")
+    assert out["status"] == "ok"
+    assert out["window"] == {"date": "2026-09-05"}
+    bad = await tool("day", name="Miles", date="September 4")
+    assert bad["status"] == "unavailable"
+
+
+async def test_date_is_ignored_outside_the_day_arm(persons):
+    """`date` is a day-arm argument only: rhythm answers in days and carries
+    its window, whatever a stray `date` argument says."""
+    mobility = _FakeMobility(rhythm=list(RHYTHM_BINS))
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("rhythm", name="Miles", date="2026-09-04")
+    assert out["status"] == "ok"
+    assert out["window"] == {"days": 7}
+    assert ("rhythm", "miles_novak", 7 * DAY_MS) in mobility.calls
+
+
+# ---- the routes arm keeps the linkage, drops the sequence --------------------
+
+
+async def test_routes_carry_linkage_without_the_sequence(persons):
+    mobility = _FakeMobility(trips=TRIPS)
+    tool = _where_been(persons, mobility, members=(MILES,))
+    out = await tool("routes", name="Miles")
+    assert out["status"] == "ok"
+    payload = out["people"][0]
+    assert payload["trips"][0]["corridor_id"] == 7
+    assert payload["corridors"][0]["sample_count"] == 5
+    assert "sequence" not in payload["corridors"][0]
