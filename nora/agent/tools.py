@@ -492,6 +492,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                source_tier="remembered", read_only=True,
                                side_effect_state="none", idempotency="idempotent", retry="safe",
                                output_contract="three_state"),
+    # 2, like `where_is`: the group can ask after two coordinates in one turn
+    # («呢個同呢個係邊度»), each one reverse-geocode call (cached — a repeat
+    # of the same spot costs the cache, not Google). `time_shiftable=None`:
+    # an address for a coordinate is the same answer whenever asked. Not
+    # terminal — an address is the middle of an answer.
+    "reverse_geocode": NativeTool(2,
+                                  time_shiftable=None, source_tier="confirmed", read_only=True,
+                                  side_effect_state="none", idempotency="idempotent", retry="safe",
+                                  output_contract="three_state"),
     # 4, sized like `transit`/`place_info` (the presence-analytics P1 spec
     # §4.4, DEC-155): the calls are cheap local SELECTs (no network, no
     # live-refresh block — unlike `where_is`'s held-2 refresh cost), so the
@@ -4135,6 +4144,78 @@ Args:
         _record(metrics, "where_been", str(answer.get("status", "unavailable")))
         return answer
 
+    # ---- reverse_geocode (DEC-156's fetch surface, coordinate → place) -------
+    #
+    # DEC-156 put lat/lng into where_been/where_is results so the model could
+    # hand them to a maps tool; this is that tool's read half — the SAME
+    # `ReverseGeocoder` port `where_is` uses on demand (Google or HK-gov
+    # behind `[presence] geocode_provider`, both behind the durable
+    # `SqlGeocodeCacheStore`), exposed as ONE model-facing verb. The speech
+    # half of R-28 stays with the reply screen: an address may enter a reply,
+    # the coordinate it came from never does.
+
+    async def reverse_geocode(lat: float, lng: float) -> dict:
+        """What place is this coordinate? — the DEC-156 fetch surface.
+
+        Call this when a `where_been` or `where_is` result carried
+        `lat`/`lng` and the group wants the actual spot — 「呢個係邊度?」
+        「呢個座標係咩地方?」. Give it the coordinate EXACTLY as the other
+        tool gave it. Do not guess or round the numbers, and do not call this
+        with coordinates from anywhere else: a person TYPING a coordinate is
+        not how this tool is meant to be used (that ask is refused downstream
+        by design — coordinates come from the presence tools, never from
+        chat).
+
+        `status` is one of three:
+          - `ok` — `address` is the bilingual formatted address
+            (「中文 / English」), the same one `where_is` would carry; say it
+            in your reply. `lat`/`lng` echo what you passed.
+          - `not_found` — the geocoder knows no address there (open sea, a
+            dead zone). Say you couldn't pin a place to it — never guess one.
+          - `unavailable` — no geocoder wired, or the lookup failed. Say you
+            couldn't check — do not invent a place.
+
+        The coordinate NEVER enters your reply — an address does. (R-28's
+        speech half; the reply screen blocks the pair.)
+
+        Args:
+            lat: The latitude, exactly as a where_been/where_is result gave it.
+            lng: The longitude, exactly as a where_been/where_is result gave it.
+        """
+        if geocoder is None:
+            # No geocoder wired (offline/eval compositions, or `[presence]`
+            # with neither backend keyed). `unavailable`, never `not_found` —
+            # a wiring gap must look like «I could not check» (R-5).
+            _record(metrics, "reverse_geocode", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I can't look up coordinates right now. Say you couldn't "
+                        "check — do not guess a place.",
+            }
+        try:
+            lat_f = float(lat)
+            lng_f = float(lng)
+        except (TypeError, ValueError):
+            _record(metrics, "reverse_geocode", "unavailable", reason="args")
+            return {
+                "status": "unavailable",
+                "note": "Those aren't coordinates I can read. Ask the presence "
+                        "tools again for the spot.",
+            }
+        address = await geocoder.address_for(lat=lat_f, lng=lng_f)
+        if not address:
+            # The port answers None on a real miss AND on a backend failure —
+            # both are «no address found», never a crash (the port's own
+            # contract). `not_found` is the honest shape for both.
+            _record(metrics, "reverse_geocode", "not_found")
+            return {
+                "status": "not_found",
+                "note": "I couldn't pin a place to that coordinate. Say so — "
+                        "do not guess one.",
+            }
+        _record(metrics, "reverse_geocode", "ok")
+        return {"status": "ok", "address": address, "lat": lat_f, "lng": lng_f}
+
     # ---- media_fetch: read a stored image back through MiMo (DEC-56) ---------
     #
     # The window scanned for the handle. It must be at least as deep as the
@@ -7739,6 +7820,7 @@ Args:
         _spec("place_info", place_info),
         _spec("saved_places", saved_places),
         _spec("where_is", where_is),
+        _spec("reverse_geocode", reverse_geocode),
         _spec("where_been", where_been),
         _spec("who_said", who_said),
         _spec("load_transcript", load_transcript),
