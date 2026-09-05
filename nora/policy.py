@@ -146,6 +146,15 @@ class _PermissivePolicy(Policy):
         return Conversation(
             platform=platform, ids=frozenset({conversation_id}), persons=None,
             primary_id=conversation_id,
+            # Opted IN to participation (design/dreamer-agent-loop/35 Phase 2):
+            # the offline/eval harnesses this policy exists for must be able to
+            # drive the participation occasion — an untagged message reaching
+            # `ParticipationPolicy` here marks `EngageDecision.participation`
+            # exactly as an opted-in production room's would. Inert everywhere
+            # else: the verdict only matters when a harness has ALSO wired a
+            # `ParticipationPolicy` into its engage chain, which nothing does
+            # by default.
+            participation=True,
         )
 
     def is_allowed(self, *, platform: str, conversation_id: str, person_id: str | None) -> bool:

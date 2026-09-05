@@ -2292,10 +2292,34 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # retaining a `TagTrace` at all (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
+            # The note/fact tiers (design/dreamer-agent-loop/35 Phase 2) — S5's
+            # precedent one tier later: the participation determination grounds
+            # on «transcript + standing/notes/facts», which Phase 1's header
+            # already CLAIMED while `build_context` rendered neither. Wired for
+            # every fire occasion, gated exactly like the assembler's reads
+            # above: the SAME store instances (already `None` while the tier's
+            # `enabled = false`), and the SAME `allowlist` the assembler scopes
+            # its workspace reads through — two readers each carrying their own
+            # idea of a room's workspace is the DEC-105 violation.
+            notes=note_store,
+            facts=fact_store,
+            policy=allowlist,
+            max_room_facts=cfg.facts.max_room_facts,
+            max_sender_facts=cfg.facts.max_sender_facts,
             # The participation occasion's own runner (§4) — None whenever the
             # occasion is disabled, which is also exactly when no participation
             # Event can reach `speak` (no policy marks one, no trigger exists).
             participation_runner=participation_runner,
+            # The §10.6 shadow mirror: wired only when the operator turned BOTH
+            # the occasion AND the review surface on — a mirrored determination
+            # always cleared the room opt-in and the enabled gate first. The
+            # channel id is validated non-empty by `ParticipationConfig` when
+            # `shadow = true`.
+            shadow_channel=(
+                cfg.participation.shadow_channel
+                if cfg.participation.enabled and cfg.participation.shadow else None
+            ),
+            shadow_platform=cfg.participation.shadow_platform,
         )
     if lost_jobs and fire_path is not None:
         # Spawned, never awaited — a boot must not wait on a model call, and

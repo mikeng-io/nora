@@ -22,6 +22,15 @@ asserts:
 the wiring these calls describe actually RENDERS — this file only proves the
 two call sites cannot structurally drift apart.
 
+**FirePath, same trap, same fix** (design/dreamer-agent-loop/35 Phase 2). The
+fire path has its OWN context assembly — `build_context`, "This is the trap"
+(`nora/app/fire.py`) — and Phase 1 shipped it rendering no `<notes>`/`<facts>`
+at all while the participation header told the model they "came with it". The
+scan below pins the two `FirePath(...)` construction sites (production's
+`composition.py`, the eval/offline one in `offline.py`) to the same keyword
+set for the same reason as the assembler scan: a tier wired into one side and
+forgotten on the other is exactly the drift Phase 1 shipped.
+
 **Known limitations** (value-blind by design, documented rather than ignored):
 `_kwarg_names` compares NAMES only, never the values or gatings — a site that
 passes `standing=None` unconditionally, or gates a collaborator differently
@@ -84,4 +93,27 @@ def test_build_assembler_call_sites_pass_the_same_collaborators():
         f"the offline harness passes {sorted(offline_kwargs)} — a name only "
         f"on one side is the eval-injection-parity regression this test "
         f"exists to catch"
+    )
+
+
+def test_composition_and_offline_each_construct_firepath_exactly_once():
+    for path in (COMPOSITION, OFFLINE):
+        calls = _calls(path, "FirePath")
+        assert len(calls) == 1, (
+            f"{path.name} must construct its FirePath exactly once; found "
+            f"{len(calls)} — the participation occasion's prompt is assembled "
+            f"by FirePath.build_context, so the two sites drifting is the "
+            f"Phase 1 «no <notes>/<facts> on the fire path» bug re-shipping"
+        )
+
+
+def test_firepath_call_sites_pass_the_same_collaborators():
+    composition_kwargs = _kwarg_names(_calls(COMPOSITION, "FirePath")[0])
+    offline_kwargs = _kwarg_names(_calls(OFFLINE, "FirePath")[0])
+    assert composition_kwargs, "expected FirePath to be called with keyword arguments"
+    assert offline_kwargs == composition_kwargs, (
+        f"production passes {sorted(composition_kwargs)} to FirePath; "
+        f"the offline harness passes {sorted(offline_kwargs)} — a name only "
+        f"on one side means an eval measures a fire/participation prompt "
+        f"production never builds"
     )

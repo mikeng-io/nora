@@ -1117,6 +1117,27 @@ def test_the_participation_section_is_optional_and_ships_inert(toml_path):
     assert cfg.participation.enabled is False
     assert cfg.participation.settle_seconds == 10
     assert cfg.participation.cooldown_minutes == 10
+    # §10.6's review surface ships OFF too, and with no destination.
+    assert cfg.participation.shadow is False
+    assert cfg.participation.shadow_channel == ""
+    assert cfg.participation.shadow_platform == "discord"
+
+
+def test_shadow_mode_requires_a_channel(toml_path):
+    """`shadow = true` with no `shadow_channel` is a config error, not a
+    runtime condition — a mirror with nowhere to post would fail soft on every
+    determination, which is exactly the silent-instrumentation shape R-5
+    forbids. Refused at load."""
+    text = toml_path.read_text()
+    start = text.index("\n[participation]")
+    end = text.index("\n[engagement]")
+    toml_path.write_text(
+        text[:start]
+        + '\n[participation]\nenabled = true\nshadow = true\n'
+        + text[end:]
+    )
+    with pytest.raises(Exception, match="shadow_channel"):
+        load(toml_path)
 
 
 def test_a_standing_cap_above_the_database_ceiling_refuses_to_start(toml_path):
