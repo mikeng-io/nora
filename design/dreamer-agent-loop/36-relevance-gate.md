@@ -51,10 +51,12 @@ RELEVANCE GATE — one structured model call
   │
   └─ LIVE MODE (shadow off, operator flip):
        ├─ no_go / low score → silence. Nothing happens.
-       └─ go / high score → the MESSAGE IS HANDED TO NORA as normal
-            ingestion — the standard ingest → (if she chooses) engagement
-            path, with her full context and tools. The gate is admission
-            control, never a reply generator.
+       └─ go → the MESSAGE IS HANDED TO NORA as normal AMBIENT ingestion
+            (original sender identity preserved — platform, conversation,
+            sender, person — so her peer-card inject resolves correctly).
+            Nora then evaluates with MORE visibility (full context, memory,
+            standing) and may still choose silence. The gate is admission
+            control, never a reply mandate.
 ```
 
 ## 3. The gate call (the whole thing)
@@ -159,22 +161,33 @@ The flip is Miles's call. Shadow stays on until he says otherwise.
   review channel; live delivery to the room happens through Nora's existing
   paths
 
-## 8. Open questions (for Miles)
+## 8. Decisions (locked by Miles, 2026-09-06)
 
-1. **Name**: is "Relevance Gate" right, or do you prefer something else?
-2. **JSON strictness**: should the gate fail-closed (unparseable → no_go +
-   counted) or fail-open (unparseable → go)? Lean fail-closed: a gate that
-   silently forwards everything is not a gate.
-3. **GO handoff semantics**: when the gate says GO in live mode, should the
-   message be delivered to Nora with a synthetic tag (so she MUST respond),
-   or as plain ambient traffic (so she MAY consider it, and might still
-   stay silent)? This determines whether GO means "must answer" or just
-   "worthy of attention".
-4. **Threshold**: is there a score floor below which GO is treated as
-   NO-GO, or is the verdict the only gate? (Lean: verdict only in v1; the
-   score is for tuning, not enforcement, until shadow data says otherwise.)
-5. **Settle window**: keep 10s or tune after shadow data? (Lean: keep 10s
-   initially — it is a trigger, not a latency budget.)
+1. **Name: "Relevance Gate"** — confirmed.
+2. **JSON fail-closed**: an unparseable gate response is treated as NO-GO
+   and counted. (Miles: theoretically very low likelihood, but fail-closed is
+   the right default — a gate that silently forwards everything is not a
+   gate.)
+3. **GO handoff semantics: AMBIENT, not synthetic tag** — the key decision.
+   When the gate says GO in live mode, the ORIGINAL message is handed to
+   Nora as normal ambient message ingestion — NOT re-tagged. Nora then has
+   MORE visibility than the gate (full context, memory, standing, deeper
+   synthesis) and may still choose silence if her own evaluation says the
+   message does not deserve a reply. The Relevance Gate is admission control
+   ("this message is worth Nora's attention"), never a reply mandate. This
+   is the ambient principle that was agreed from the start: Nora can always
+   choose silence.
+4. **Sender identity is load-bearing**: the gate's handoff must preserve the
+   ORIGINAL message's full identity — platform, conversation_id, sender_id,
+   person_id — so Nora's normal inject path resolves the correct peer card
+   (the peer_card injected into her reply is keyed to WHO sent the message,
+   which the gate must not flatten away). A gate that hands over only the
+   body would silently degrade Nora's peer-card-scoped memory.
+5. **Score threshold: reference only, never enforcement**. The relevance
+   score is optional context for Nora's own evaluation (and for Miles's
+   shadow review), never a hard gate. The VERDICT (true/false) is the only
+   enforcement surface — simple, binary, no threshold tuning in v1.
+6. **Settle window: 10 seconds** — confirmed as-is.
 
 ## 9. Governance
 
