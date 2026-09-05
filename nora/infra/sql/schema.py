@@ -1842,17 +1842,110 @@ NOTE_CANDIDATE = sa.Table(
     sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
               server_default=sa.text("gen_random_uuid()")),
     sa.Column("workspace", sa.Text, nullable=False),
+    # Two row shapes share this table and its id space, migration `0049`
+    # (design/dreamer-agent-loop/33 §4, issue #98). `miss` is the negative
+    # cache below, unchanged; `create` is a full note proposal the
+    # `note-candidates` adaptor staged for the deterministic gate to decide
+    # create/update/refuse over (`nora.language.note_candidates`). Existing
+    # rows are all `miss`, via the column default — nothing to backfill.
+    sa.Column("kind", sa.Text, nullable=False, server_default=sa.text("'miss'")),
     # The miss cache, `fact_candidate`'s shape and for its reason: the SECOND
     # miss on the same ground is evidence rather than a guess, and without the
     # row the same gap is rediscovered forever with nothing accumulating.
-    sa.Column("probe", sa.Text, nullable=False),
-    sa.Column("first_seen_at", sa.BigInteger, nullable=False),
-    sa.Column("last_seen_at", sa.BigInteger, nullable=False),
+    # NULLABLE since `0049`: a `kind='create'` row has no probe in the
+    # miss-cache sense — it is not a question that came back empty, it is a
+    # note proposed outright.
+    sa.Column("probe", sa.Text),
+    # Reused for `kind='create'` rows as THAT candidate's own sighting
+    # window (first/last time this occasion was proposed) — see `0049`.
+    sa.Column("first_seen_at", sa.BigInteger),
+    sa.Column("last_seen_at", sa.BigInteger),
     sa.Column("occurrence_count", sa.Integer, nullable=False,
               server_default=sa.text("1")),
     sa.Column("observed_in", pg.ARRAY(sa.Text), nullable=False,
               server_default=sa.text("'{}'")),
+    # --- kind='create' only, migration 0049 (design 33 §4) ------------------
+    # A full note proposal, in the same shape `NoteCreationProposal` requires
+    # — staged here because there is no note yet to attach a revision to.
+    sa.Column("title", sa.Text),
+    sa.Column("description", sa.Text),
+    sa.Column("body", sa.Text),
+    sa.Column("closing_condition", sa.Text),
+    sa.Column("anchor_date", sa.Integer),
+    # RAW, unresolved entity text — exactly `note.anchor_entity_ids`'
+    # provenance (whatever the model wrote, verbatim), never `note_entity`'s
+    # resolved ids (entity resolution is issue #100's, not this adaptor's).
+    # SORTED AND DE-DUPLICATED by the writer before this column is set —
+    # never as the model wrote it — because it is half of the anchor-key
+    # index below, and an unsorted array would make `{ada,ben}` and
+    # `{ben,ada}` two keys for one occasion, the defect
+    # `nora.domain.notes.anchor_key` exists to close one layer up.
+    sa.Column("anchor_entity_ids", pg.ARRAY(sa.Text), nullable=False,
+              server_default=sa.text("'{}'")),
+    # Attribution: the messages this proposal was read off, mirroring
+    # `exchange_observation.message_ids` (`pg.ARRAY(sa.Integer)` —
+    # `messages.id` is `sa.Integer`), never `observed_in` above (conversation
+    # ids, for the miss cache).
+    sa.Column("message_ids", pg.ARRAY(sa.Integer), nullable=False,
+              server_default=sa.text("'{}'")),
+    sa.Column("status", sa.Text),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.UniqueConstraint("workspace", "probe", name="note_candidate_probe_key"),
+    sa.CheckConstraint(
+        "kind in ('miss', 'create')", name="note_candidate_kind_check",
+    ),
+    sa.CheckConstraint(
+        "kind <> 'miss' or (probe is not null and first_seen_at is not null "
+        "and last_seen_at is not null)",
+        name="note_candidate_miss_fields_check",
+    ),
+    sa.CheckConstraint(
+        "kind <> 'create' or (title is not null and description is not null "
+        "and body is not null and closing_condition is not null and "
+        "anchor_date is not null and status is not null)",
+        name="note_candidate_create_fields_check",
+    ),
+    sa.CheckConstraint(
+        "status is null or status in ('pending', 'created', 'refused')",
+        name="note_candidate_status_check",
+    ),
+    sa.CheckConstraint(
+        "title is null or (length(btrim(title)) > 0 and length(title) <= 60)",
+        name="note_candidate_title_fits_the_index_check",
+    ),
+    sa.CheckConstraint(
+        "description is null or (length(btrim(description)) > 0 and "
+        "length(description) <= 200)",
+        name="note_candidate_description_fits_the_index_check",
+    ),
+    sa.CheckConstraint(
+        "closing_condition is null or length(btrim(closing_condition)) > 0",
+        name="note_candidate_closing_condition_check",
+    ),
+    sa.CheckConstraint(
+        "body is null or length(btrim(body)) > 0",
+        name="note_candidate_body_has_content_check",
+    ),
+    sa.CheckConstraint(
+        f"body is null or length(body) <= {NOTE_BODY_CEILING_CHARS}",
+        name="note_candidate_body_fits_the_ceiling_check",
+    ),
+)
+
+#: `kind='create'` rows dedupe on the note tier's OWN anchor key —
+#: `(workspace, anchor_date, anchor_entity_ids)`, the same pair
+#: `nora.domain.notes.anchor_key`/`group_on_anchor_key` compare — NEVER on
+#: `title` (design 33 §4, Kimi review finding M10). A PARTIAL unique index
+#: rather than a table-wide one because `kind='miss'` rows share this table
+#: and have no anchor at all; scoping to `kind='create'` is what makes the
+#: expression a plain column list rather than a generated/computed one. See
+#: `note_candidate.anchor_entity_ids`'s own comment for why normalising the
+#: array at write time is what makes an ordinary equality index correct here.
+IDX_NOTE_CANDIDATE_CREATE_ANCHOR_KEY = sa.Index(
+    "note_candidate_create_anchor_key",
+    NOTE_CANDIDATE.c.workspace, NOTE_CANDIDATE.c.anchor_date,
+    NOTE_CANDIDATE.c.anchor_entity_ids,
+    unique=True, postgresql_where=sa.text("kind = 'create'"),
 )
 
 #: The one read on the turn's critical path: every standing note for this

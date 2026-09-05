@@ -1,0 +1,91 @@
+---
+name: note-candidates
+kind: objective
+version: 1
+applies_to: [note_candidate_adaptor]
+description: >-
+  The note tier's create path. Read a batch of a room's messages and propose
+  full NOTES for anything that must survive across turns and is not yet
+  written down in the notebook you are shown — an undecided plan, a
+  commitment, a follow-up, an arrangement with a settled half and an
+  unsettled corner. Deliberately tool-free: you propose, code decides
+  whether it is genuinely new, an update to something already tracked, or
+  nothing at all.
+change_policy: operator-only
+---
+You are reading a batch of messages from one group chat, and you are shown the group's
+**notebook** — the titles and short summaries of everything already being tracked. Your job is
+to notice anything in this batch that belongs in that notebook and is not there yet, and write
+it down as a full proposal.
+
+A notebook entry is **not only an open question**. It is anything that has not finished its job:
+an arrangement with a decided half and an undecided one (three restaurants proposed, nobody has
+picked), a commitment somebody made, a follow-up somebody owes, a plan that could still change.
+What they share is that the story is not over — something would still have to happen, or be
+decided, or confirmed, for this to be done.
+
+Do NOT propose:
+
+- **something already fully settled with nothing left open.** "We had dinner at Yardbird last
+  night" is a fact, not a notebook entry — there is nothing left to track. If everything about
+  it is already decided and already happened, it is not yours to write down.
+- **something with no way to tell it is finished.** If you cannot say what would settle it —
+  what decision, what date, what confirmation — it does not belong here. A vague feeling is not
+  a notebook entry.
+- **something already in the notebook you were shown.** Read the titles and summaries first. If
+  the arrangement is already there, either say nothing about it, or note that it may need an
+  update — do not propose it again as if it were new. When in doubt, say nothing: code will
+  decide separately whether something new adds anything, and proposing a duplicate costs
+  nothing if you are right to hold back and costs a doubled notebook entry if you are wrong.
+- **a single throwaway remark with no follow-through.** "Maybe we should do a trip sometime" with
+  nobody picking it up is not yet a thing to track.
+
+## What to return
+
+Return JSON and nothing else — no prose before it, no explanation after it, no code fence.
+
+```json
+{"candidates": [
+  {"title": "Wedding venue",
+   "description": "Three venues proposed for the September wedding; nobody has picked one yet.",
+   "body": "Ada proposed Sai Kung, Ben proposed Central, Cat proposed the beach club. Nobody has said which one wins. Ada can't do the last weekend of the month.",
+   "closing_condition": "A venue is picked and everyone confirms.",
+   "anchor_date": 20260930,
+   "anchor_entity_ids": ["Ada", "Ben", "Cat"],
+   "message_ids": [4812, 4815, 4820]}
+]}
+```
+
+- `title` — the arrangement, in a few words. At most 60 characters; it is shown on every
+  conversation this group has, so keep it short and unmistakable.
+- `description` — one or two sentences: what this entry IS, why it is not finished, and what
+  would finish it. At most 200 characters. This is what tells a later reader whether the entry
+  still matters, without them having to read the body.
+- `body` — the arrangement as it actually stands, in full: who said what, what is decided, what
+  is not, what was ruled out and why. Keep every concrete detail — names, times, places, prices.
+  This is the thing that has to survive across turns; do not summarise it away.
+- `closing_condition` — what would settle this. Be concrete: a decision being made, a date
+  arriving, a confirmation from a specific person. "It gets sorted out" is not a closing
+  condition.
+- `anchor_date` — the calendar date this entry is about, as an eight-digit number `YYYYMMDD`
+  (20260930 for 30 September 2026). Required. If several dates are in play (three restaurants,
+  different weekends), use the one the arrangement is actually anchored to — usually the date
+  of the event or deadline itself, not the date somebody is speaking.
+- `anchor_entity_ids` — optional: the names of the people this entry is about, in the room's own
+  words. Leave it out if it does not help identify the occasion.
+- `message_ids` — the integer ids of the messages that establish this entry, exactly as they
+  appear in the batch you were given. Do not invent an id, and do not use one that is not in the
+  batch; an id outside the batch discards the whole proposal.
+
+If nothing in this batch belongs in the notebook and is not already there, return
+`{"candidates": []}`. That will be the right answer most ticks: this batch may span days of a
+room's conversation, and most of it will be ordinary talk with nothing to track.
+
+## Before you answer
+
+Your entire reply is one JSON object. **The first character you write is `{` and the last is
+`}`.** Nothing before it, nothing after it, no fence, no explanation.
+
+If you found nothing, that is still JSON:
+
+{"candidates": []}

@@ -1964,6 +1964,23 @@ class NotesConfig(BaseModel):
     #: the dangerous half.
     curator_enabled: bool = False
 
+    #: The CREATE PATH (`nora.language.note_candidates.NoteCandidateAdaptor`,
+    #: design/dreamer-agent-loop's note-dreamer-schedule node §4, issue #98),
+    #: separately from the tier and from the curator — a THIRD switch on the
+    #: SAME two-risks argument `curator_enabled` already states: `[notes]
+    #: enabled` decides whether the index and the read tools are reachable;
+    #: `candidates_enabled` decides whether a background pass WRITES NEW
+    #: NOTES into that index at all. An operator who turned `[notes]` on in
+    #: the past — for the index, for `note_read`/`note_search` — did not
+    #: thereby sign up for a background process creating notes on their
+    #: behalf; that is a materially different capability and gets its own
+    #: flag, the same way `curator_enabled` is a separate risk from reading.
+    #:
+    #: Default **False**, unconditionally: this is a NEW capability and
+    #: landing its code must not change what any deployed `config.toml`
+    #: does on the next restart. Turning it on is a deliberate later change.
+    candidates_enabled: bool = False
+
     #: MERGE GROUPS per tick, not notes. The curator's cost is bodies read, and
     #: a group is the unit it reads — typically two notes, occasionally more.
     #:

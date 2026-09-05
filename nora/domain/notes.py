@@ -672,6 +672,60 @@ class WakeOutcome:
     reset: bool
 
 
+#: `note_candidate.status` for a `kind='create'` row (migration `0049`,
+#: design/dreamer-agent-loop/33-note-dreamer-schedule.md §4). `pending` is the
+#: staged proposal before the deterministic gate has run (or re-run after a
+#: transient failure); `created` is a proposal the gate materialized, as a new
+#: note OR as a revision to an existing one sharing its anchor key — the
+#: store's `status` column does not distinguish the two, because both are
+#: "this occasion is now represented in the notebook", which is the property
+#: `nora.language.note_candidates` needs to avoid reopening a settled
+#: candidate, not which verb did it; `refused` is a proposal the gate declined
+#: — a duplicate that added nothing, or a malformed candidate the domain type
+#: itself rejected.
+CANDIDATE_PENDING = "pending"
+CANDIDATE_CREATED = "created"
+CANDIDATE_REFUSED = "refused"
+CANDIDATE_STATUSES: tuple[str, ...] = (
+    CANDIDATE_PENDING, CANDIDATE_CREATED, CANDIDATE_REFUSED,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class NoteCreateCandidate:
+    """One `kind='create'` row of `note_candidate` — a full note proposal the
+    `note-candidates` adaptor (`nora.language.note_candidates`) read off a
+    room's transcript, staged for a deterministic gate to decide create,
+    update or refuse over. Migration `0049`; see its own docstring for the
+    column shapes and the two uniqueness domains this table now holds.
+
+    **In the SAME shape `NoteCreationProposal` requires**, deliberately: this
+    row exists only because there is no note yet to build one against, and it
+    is turned into exactly that proposal (or a `NoteRevisionProposal`, if the
+    gate finds a standing note sharing this occasion's anchor key) once the
+    gate has decided. A row that could not become one of those two proposals
+    would not have been accepted into this table to begin with.
+
+    `anchor_entity_ids` is stored SORTED and DE-DUPLICATED — never as the
+    model wrote it — because it is half of `note_candidate_create_anchor_key`;
+    see that index's own comment in `nora/infra/sql/schema.py`.
+    """
+
+    id: str
+    workspace: str
+    title: str
+    description: str
+    body: str
+    closing_condition: str
+    anchor_date: int
+    anchor_entity_ids: tuple[str, ...]
+    message_ids: tuple[int, ...]
+    status: str
+    attempts: int
+    first_seen_at: int
+    last_seen_at: int
+
+
 class NoteSupersedeReason:
     """The `because` values `SqlNoteStore.supersede` accepts, and the shape of
     the tier's retirement vocabulary.

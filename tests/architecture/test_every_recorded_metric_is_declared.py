@@ -147,6 +147,7 @@ _UNRESOLVABLE: frozenset[tuple[str, str, str, str]] = frozenset(
         ("nora/infra/sql/entities.py", "_set", "gauge", "name"),
         ("nora/instructions/reload.py", "_on_failure", "inc", "self._failure_counter"),
         ("nora/language/fact_adaptor.py", "_inc", "inc", "name"),
+        ("nora/language/note_candidates.py", "_inc", "inc", "name"),
         ("nora/language/note_curator.py", "_inc", "inc", "name"),
         ("nora/language/note_revisitor.py", "_gauge", "gauge", "name"),
         ("nora/language/note_revisitor.py", "_inc", "inc", "name"),

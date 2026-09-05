@@ -76,11 +76,16 @@ tagger_card_conclusions = 8
 base_url = "http://host.docker.internal:20128/v1"   # OmniRoute OpenAI-compatible
 api_key_env = "OMNIROUTE_API_KEY"        # env var NAME, never the value
 
-# PINNED to one upstream, not the `nora` combo — the combo fans out per request
-# and the upstreams disagree about forced `tool_choice`, so on it she was on a
-# coin flip. See ADR 0006 for the full measurement behind BOTH values here.
-#
-# opencode-zen → ollamacloud (2026-08-10). Two reasons, in order:
+# The `nora` OmniRoute combo (2026-09-06, operator): members in combo order
+# opencode-go/deepseek-v4-flash → ollama-cloud/deepseek-v4-flash:0731
+# (priority strategy). NOTE: opencode-go is the upstream ADR 0006 measured as
+# breaking forced `tool_choice` (400 «Thinking mode does not support this
+# tool_choice») — the router fails over to the ollama-cloud member, which is
+# the one that actually serves (verified live 2026-09-06: forced tool_choice
+# through the combo returns a tool call from deepseek-v4-flash:0731). Every
+# tag call therefore pays one 400 round-trip before the working member. The
+# ollama-cloud member is the SAME upstream ADR 0006 pinned for two reasons
+# that still hold:
 #   1. ECONOMICS. ollama-cloud is subscription-based; opencode-zen is credit-based
 #      and was returning 403/429 «All credentials for model deepseek-v4-flash are
 #      cooling down» throughout a probing session. A route that rate-limits under
@@ -94,7 +99,7 @@ api_key_env = "OMNIROUTE_API_KEY"        # env var NAME, never the value
 # flash-at-none obeyed 8/8 — so the larger model buys nothing and costs more.
 # Tagged :0731 (2026-08-30) — OmniRoute catalog re-sync after restart dropped
 # the bare id; upstream only exposes the tagged variant now. See catalog-400.
-model = "ollamacloud/deepseek-v4-flash:0731"
+model = "nora"
 # The provider's per-CALL ceiling — NOT the turn's budget (see [llm.limits]
 # below, which is where the loop's budget lives). Was 4000, an unmeasured
 # number that doubled as the loop budget; measured 2026-08-06, the largest
@@ -426,7 +431,7 @@ enabled = true
 #
 # Reopen with evidence from real runs, not before.
 # Tagged :0731 (2026-08-30) — same catalog-400 fix as [llm].model.
-model = "ollamacloud/deepseek-v4-flash:0731"
+model = "nora-dreamer"
 # NONE, and it is the fix for the knowledge tier's first production failure
 # (2026-08-28). Reasoning is billed as COMPLETION on this model, so the effort
 # setting is a budget it spends BEFORE writing anything — and at the tier's
@@ -598,15 +603,20 @@ headers_env = ""                           # collector owns Langfuse auth; left 
 
 [evals]
 # The model that GRADES the adversarial live run (DEC-75). MUST differ from
-# llm.model's exact id (`ollamacloud/deepseek-v4-flash`) — the runner refuses a
-# string match.
+# llm.model's exact id (`nora`) — the runner refuses a string match.
 #
-# 2026-08-31 (operator): judge model → `ollamacloud/glm-5.3` (full GLM 5.3,
-# not flash — the judge's verdict BINDS the gate (DEC-75 Gap 2), so Miles chose
-# the strongest reasoning tier for grading). Verified present in the OmniRoute
-# catalog alongside `ollamacloud/glm-5.3-flash`; it clears the runner's guard
-# (llm.model is `ollamacloud/deepseek-v4-flash`; the ids do not string-match)
-# and matches `evals.judge.JUDGE_MODEL_TIER`'s "deep" intent.
+# 2026-09-06 (operator): judge model → the `nora-judge` OmniRoute combo
+# (priority: glm-cn/glm-5.3-flash → ollama-cloud/glm-5.3-flash). Clears the
+# runner's guard (`nora` vs `nora-judge` do not string-match).
+#
+# 2026-08-31 (operator, superseded): judge model → `ollamacloud/glm-5.3`
+# (full GLM 5.3, not flash — the judge's verdict BINDS the gate (DEC-75 Gap 2),
+# so Miles chose the strongest reasoning tier for grading). Verified present in
+# the OmniRoute catalog alongside `ollamacloud/glm-5.3-flash`; it cleared the
+# runner's guard (llm.model was `ollamacloud/deepseek-v4-flash`; the ids did
+# not string-match) and matched `evals.judge.JUDGE_MODEL_TIER`'s "deep" intent.
+# NOTE: the combo's members are FLASH tier, not the full GLM 5.3 the 08-31
+# decision picked — the operator's 09-06 instruction supersedes that choice.
 #
 # Historical notes, kept for provenance:
 # - A CONTROLLED measurement (A4: same frozen replies, k=3, 2026-08-20)
@@ -640,7 +650,7 @@ headers_env = ""                           # collector owns Langfuse auth; left 
 #                         llm.model, never on this one.
 # So this model is only ever the judge half. Raising judge_samples multiplies it
 # directly.
-judge_model = "ollamacloud/glm-5.3"
+judge_model = "nora-judge"
 # Majority-of-k judging (A2): single-sample detection is noisy (caught 1/3 vs
 # 3/3 across runs), so the gate binds the MAJORITY of 3 grades. Odd so a majority
 # always exists.
@@ -723,7 +733,7 @@ encryption_key_env = "MEDIA_ENCRYPTION_KEY"
 # ollamacloud/minimax-m3 → ollamacloud/glm-5.3-flash (2026-08-30, benchmark:
 # GLM 5.3 Flash 2-4s vs M3-style 5-26s per image, accuracy parity except
 # hyphens/punctuation in dense OCR — verified through OmniRoute).
-vision_model = "ollamacloud/glm-5.3-flash"
+vision_model = "nora-image"
 vision_max_tokens = 1024
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608
@@ -1053,7 +1063,7 @@ enabled = false
 # the live OmniRoute catalog after the re-sync; this lane feeds the dream
 # consolidator AND the reply-path dispute classifier, so the bare id cost
 # real tags on 2026-08-30 (17:40Z recognition / 18:05Z dream 400s).
-model = "ollamacloud/deepseek-v4-flash:0731"
+model = "nora-dreamer"
 # timeout_seconds = 120.0
 #
 # false → true (operator, 2026-08-19). Plans 2 (exchange patterns, DEC-120)
@@ -1218,7 +1228,7 @@ enabled = true
 enabled = true
 # ollamacloud/minimax-m3 → ollamacloud/glm-5.3-flash (2026-08-30, benchmark:
 # 5-10x faster, accuracy parity; verified through OmniRoute).
-model = "ollamacloud/glm-5.3-flash"
+model = "nora-image"
 provider = "omniroute"
 
 [media.describe.audio]

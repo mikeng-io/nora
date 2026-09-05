@@ -106,12 +106,17 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.notes import (
+    CANDIDATE_CREATED,
+    CANDIDATE_PENDING,
+    CANDIDATE_REFUSED,
     Note,
+    NoteCreateCandidate,
     NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
@@ -141,6 +146,16 @@ def _row_to_note(r: Row[Any]) -> Note:
         revisit_at=r.revisit_at, strikes=r.strikes,
         last_wake_revision_id=r.last_wake_revision_id, event_id=r.event_id,
         reminder_id=r.reminder_id,
+    )
+
+
+def _row_to_create_candidate(r: Row[Any]) -> NoteCreateCandidate:
+    return NoteCreateCandidate(
+        id=r.id, workspace=r.workspace, title=r.title, description=r.description,
+        body=r.body, closing_condition=r.closing_condition,
+        anchor_date=r.anchor_date, anchor_entity_ids=tuple(r.anchor_entity_ids),
+        message_ids=tuple(r.message_ids), status=r.status, attempts=r.attempts,
+        first_seen_at=r.first_seen_at, last_seen_at=r.last_seen_at,
     )
 
 
@@ -1247,6 +1262,135 @@ class SqlNoteStore:
         async with self._engine.begin() as conn:
             count = (await conn.execute(stmt)).scalar_one()
         return int(count)
+
+    # ---- the create path (§4, issue #98) -----------------------------------
+
+    async def record_create_candidate(
+        self,
+        *,
+        workspace: str,
+        title: str,
+        description: str,
+        body: str,
+        closing_condition: str,
+        anchor_date: int,
+        anchor_entity_ids: Sequence[str],
+        message_ids: Sequence[int],
+        now_ms: int,
+    ) -> NoteCreateCandidate:
+        """Stage a proposed note (`kind='create'`) for the deterministic gate
+        in `nora.language.note_candidates` to decide over. Never called for a
+        `kind='miss'` row — that is `record_miss`, above, on ITS OWN
+        uniqueness domain.
+
+        **Upserts on THIS TIER'S OWN anchor key** —
+        `note_candidate_create_anchor_key`, `(workspace, anchor_date,
+        anchor_entity_ids)` — never on `title` (design 33 §4/M10): a
+        re-observation of the same occasion refreshes the staged proposal
+        rather than duplicating it. `anchor_entity_ids` is sorted and
+        de-duplicated HERE, not trusted from the caller, because it is half of
+        that key and an unsorted array would let two spellings of one
+        occasion collide under two different keys — the defect
+        `nora.domain.notes.anchor_key` exists to close one layer up.
+
+        **The upsert is guarded by `WHERE status = 'pending'`, and that guard
+        is the whole point.** A candidate the gate has already decided —
+        `created` or `refused` — is a SETTLED row: refreshing its text or its
+        sighting window on a later re-observation would relitigate a decision
+        this tier's whole design keeps out of the model's hands (§4's "the
+        model never writes a note directly"). So a re-sighting after
+        settlement is a no-op here: `RETURNING` yields no row for it (Postgres
+        treats a `DO UPDATE ... WHERE` whose condition is false as `DO
+        NOTHING` for that row), and the settled row is looked up and returned
+        instead — the caller always gets back the real row either way, and can
+        inspect its `status` before deciding whether to run the gate at all.
+        """
+        entities = sorted(set(anchor_entity_ids))
+        ids = list(dict.fromkeys(message_ids))
+        insert = pg_insert(NOTE_CANDIDATE).values(
+            id=str(uuid4()), workspace=workspace, kind="create",
+            title=title, description=description, body=body,
+            closing_condition=closing_condition, anchor_date=anchor_date,
+            anchor_entity_ids=entities, message_ids=ids,
+            status=CANDIDATE_PENDING, attempts=0,
+            first_seen_at=now_ms, last_seen_at=now_ms,
+        )
+        stmt = insert.on_conflict_do_update(
+            index_elements=[
+                NOTE_CANDIDATE.c.workspace, NOTE_CANDIDATE.c.anchor_date,
+                NOTE_CANDIDATE.c.anchor_entity_ids,
+            ],
+            index_where=sa.text("kind = 'create'"),
+            set_={
+                "title": insert.excluded.title,
+                "description": insert.excluded.description,
+                "body": insert.excluded.body,
+                "closing_condition": insert.excluded.closing_condition,
+                "last_seen_at": now_ms,
+                "attempts": NOTE_CANDIDATE.c.attempts + 1,
+                # APPENDED, not de-duplicated against the existing array — a
+                # repeated id in the attribution list costs nothing and is not
+                # the property this table's uniqueness protects. Contrast
+                # `record_miss`'s `observed_in`, where de-duplication DOES
+                # matter (a count that must not be inflated by one chatty
+                # room) — this attribution list is not that count.
+                "message_ids": NOTE_CANDIDATE.c.message_ids.op("||")(
+                    sa.literal(ids, type_=pg.ARRAY(sa.Integer))
+                ),
+            },
+            where=NOTE_CANDIDATE.c.status == CANDIDATE_PENDING,
+        ).returning(NOTE_CANDIDATE)
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(stmt)).one_or_none()
+            if row is None:
+                # The guard blocked the update: this occasion's candidate was
+                # already settled. Read it back rather than trusting the
+                # caller's own values, which the settled decision supersedes.
+                row = (await conn.execute(
+                    sa.select(NOTE_CANDIDATE).where(
+                        NOTE_CANDIDATE.c.workspace == workspace,
+                        NOTE_CANDIDATE.c.kind == "create",
+                        NOTE_CANDIDATE.c.anchor_date == anchor_date,
+                        NOTE_CANDIDATE.c.anchor_entity_ids == entities,
+                    )
+                )).one()
+        return _row_to_create_candidate(row)
+
+    async def set_create_candidate_status(
+        self, *, workspace: str, candidate_id: str, status: str, now_ms: int,
+    ) -> int:
+        """Advance one create-candidate to a TERMINAL status. Returns rows
+        affected — `0` if the row is gone, in another workspace, or already
+        terminal.
+
+        **Idempotent by construction, never a re-decision.** The `WHERE
+        status = 'pending'` guard means a second call for a row the gate
+        already settled affects nothing — the same discipline
+        `record_create_candidate`'s own upsert guard enforces, so the two
+        writers can never disagree about whether a row is still open to a
+        decision.
+        """
+        if status not in (CANDIDATE_CREATED, CANDIDATE_REFUSED):
+            raise ValueError(
+                f"SqlNoteStore.set_create_candidate_status got "
+                f"status={status!r}; only a TERMINAL status may be set this "
+                f"way — {(CANDIDATE_CREATED, CANDIDATE_REFUSED)}"
+            )
+        if not _is_uuid(candidate_id):
+            return 0
+        stmt = (
+            sa.update(NOTE_CANDIDATE)
+            .where(
+                NOTE_CANDIDATE.c.id == candidate_id,
+                NOTE_CANDIDATE.c.workspace == workspace,
+                NOTE_CANDIDATE.c.kind == "create",
+                NOTE_CANDIDATE.c.status == CANDIDATE_PENDING,
+            )
+            .values(status=status, last_seen_at=now_ms)
+        )
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return int(result.rowcount)
 
     @staticmethod
     def _head_join() -> sa.Select[Any]:
