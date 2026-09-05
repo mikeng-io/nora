@@ -763,11 +763,29 @@ class FirePath:
         block missing for the life of a deployment with nothing saying so is
         how `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
         """
-        convo = (
-            self._policy.conversation(occasion.platform, occasion.conversation_id)
-            if self._policy is not None
-            else None
-        )
+        try:
+            convo = (
+                self._policy.conversation(occasion.platform, occasion.conversation_id)
+                if self._policy is not None
+                else None
+            )
+        except Exception:
+            # Fail-soft like the three sibling reads (`_read_notes`,
+            # `_read_facts`, `_read_standing`): a Policy read that raises must
+            # not turn a deliverable reminder into a silent no-send (Claude
+            # Sonnet audit 2026-09-05 MINOR). Counted, because a block missing
+            # for the life of a deployment with nothing saying so is how
+            # `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
+            log.exception(
+                "policy conversation read failed for %s/%s — the note/fact "
+                "tiers cannot be scoped to a workspace; continuing without them",
+                occasion.platform, occasion.conversation_id,
+            )
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_workspace",
+                platform=occasion.platform,
+            )
+            return None
         if convo is None:
             log.warning(
                 "no policy conversation for %s/%s — the note/fact tiers cannot "
@@ -1497,7 +1515,10 @@ class FirePath:
             )
         except Exception:
             log.exception("participation shadow mirror failed (tag=%s)", ctx.tag_id)
-            self._metrics.inc("nora_errors_total", stage="participation_shadow")
+            self._metrics.inc(
+                "nora_errors_total", stage="participation_shadow",
+                platform=occasion.platform,
+            )
 
     async def _feed(
         self, sent_texts: Sequence[str], conversation_id: str, platform: str,
