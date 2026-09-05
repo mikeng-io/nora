@@ -85,3 +85,18 @@ def test_the_reply_scan_still_reports_the_identifier_when_both_are_present():
     but the counter should name the exposure that matters. `phone` tells the
     operator somebody's number nearly went out; `model` would not."""
     assert scan_reply("+85290000101 是 claude 講嘅") == "phone"
+
+
+def test_a_coordinate_pair_is_blocked_by_the_reply_scan_after_dec156():
+    """DEC-156 put lat/lng into where_been/where_is results — the model now
+    holds the material a reply could echo, so the reply screen blocks the
+    pair (the same shape `looks_like_coordinate` uses for tool ARGUMENTS;
+    redefined here because security.py imports from this module). Ordinary
+    numbers — prices, dates, counts — still pass."""
+    assert scan_reply("佢喺 22.410, 114.124 附近") == "coordinate"
+    assert scan_reply("-33.87, 151.20") == "coordinate"
+    assert scan_reply("22.410,114.124") == "coordinate"
+    assert scan_reply("lat 22.410 lng 114.124") is None  # no comma pair — model speech, docstring-handled
+    assert scan_reply("份嘢 $22.5 買的") is None
+    assert scan_reply("2026-09-06 見") is None
+    assert scan_reply("大概 20 分鐘前喺屋企") is None

@@ -734,3 +734,17 @@ async def test_a_reply_that_does_not_name_the_place_gets_no_link(store, doctrine
 
     assert await d.deliver("今日好熱") is True
     assert "n.example.net" not in sink.texts[0]
+
+
+async def test_a_reply_carrying_a_coordinate_pair_is_blocked(store, doctrine):
+    """DEC-156: where_been/where_is results carry lat/lng now, so the reply
+    screen blocks the coordinate PAIR — the material is in the model's
+    context for the first time and a sloppy turn could echo it (R-28's
+    speech half is enforced here, not just in the docstring)."""
+    sink = SinkSender()
+    d = _deliverer(store, doctrine, sink)
+
+    ok = await d.deliver("佢最新位置係 22.410, 114.124 附近")
+
+    assert ok is False
+    assert sink.texts == []

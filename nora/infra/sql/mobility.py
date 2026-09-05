@@ -168,9 +168,10 @@ class SqlMobilityStore:
         the same shape as `rhythm_bins` — one SELECT, clamped, `window_ms=0`
         answers empty — plus a LEFT JOIN onto `presence_derived_places` so a
         stay carries the KIND/LABEL of the place the substrate filed it under.
-        Coordinates are deliberately NOT selected: R-28 keeps them out of the
-        consumer's hands entirely, and the joined `kind`/`label` are the only
-        speakable part of the linkage (the `day` arm's "places visited").
+        Coordinates ARE selected (DEC-156): the `day` arm carries them so the
+        model can fetch an exact location via a street-view/maps tool. They
+        never enter a REPLY (R-28's speech half stands); the joined
+        `kind`/`label` remain the speakable part of the linkage.
         SELECT-only, bounded by `_MAX_ANALYTICS_POINTS`, like every read the
         web portal serves.
         """
@@ -181,6 +182,7 @@ class SqlMobilityStore:
         stmt = (
             sa.select(
                 PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts,
+                PRESENCE_STAYS.c.lat, PRESENCE_STAYS.c.lng,
                 PRESENCE_DERIVED_PLACES.c.kind.label("place_kind"),
                 PRESENCE_DERIVED_PLACES.c.label.label("place_label"),
             )
@@ -203,6 +205,8 @@ class SqlMobilityStore:
             {
                 "started_ts": row.started_ts,
                 "ended_ts": row.ended_ts,
+                "lat": row.lat,
+                "lng": row.lng,
                 "place_kind": row.place_kind,
                 "place_label": row.place_label,
             }

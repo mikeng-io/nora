@@ -577,14 +577,14 @@ class Whereis:
             # the model is told how old it is so it can say «20 分鐘前».
             "age_seconds": int(age_seconds),
             "wire_state": fix.wire_state.value,
-            # In-group disclosure is fine (§5.3): the place name and/or address,
-            # for Nora's REPLY. Raw coordinates are only here as a LAST fallback
-            # when the fix carries neither; they still never leave in a tool
-            # ARGUMENT (R-28, outbound stays hard-blocked).
+            # DEC-156: lat/lng ALWAYS carried — the model may pass them to a
+            # street-view/maps fetch tool for an exact location (Miles's
+            # request 2026-09-05). They never enter a REPLY (R-28's speech
+            # half stands; the docstring teaches the model the same rule).
             **({"place": place_name} if place_name else {}),
             **({"address": address} if address else {}),
-            **({} if (place_name or address) else
-               {"lat": fix.lat, "lng": fix.lng}),
+            "lat": fix.lat,
+            "lng": fix.lng,
             **movement,
         }
 
