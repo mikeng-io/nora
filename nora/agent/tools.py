@@ -455,7 +455,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # about a departure hours from now — 「夜晚八點去到」 asked at three in the
     # afternoon. `terminal=False`: a route is the middle of an answer, not the
     # end of one; she still has to say it.
-    "route": NativeTool(4,
+    "route": NativeTool(8,
                         time_shiftable=True, source_tier="confirmed", cacheable=True,
                         read_only=True,
                         side_effect_state="none", idempotency="idempotent", retry="safe",
@@ -472,7 +472,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # result so the model can say «20 分鐘前», but asked where someone will be
     # LATER this tool has nothing. `terminal=False`: a position is the middle of
     # an answer, never the end of one.
-    "where_is": NativeTool(2,
+    "where_is": NativeTool(8,
                           time_shiftable=False, source_tier="confirmed", read_only=True,
                            side_effect_state="none", idempotency="idempotent", retry="safe",
                            output_contract="three_state"),
@@ -522,7 +522,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # exactly the case the `cacheable` field's own contract excludes
     # (tools.py:222-227: "none of this table's cacheable=True entries do").
     # The spec pinned True; the audit overturned it.
-    "where_been": NativeTool(4,
+    "where_been": NativeTool(8,
                              time_shiftable=True, source_tier="confirmed", cacheable=False,
                              read_only=True,
                              side_effect_state="none", idempotency="idempotent", retry="safe",
@@ -3650,11 +3650,10 @@ Args:
             that fix is — ALWAYS carry the age into your reply («大概 20 分鐘前
             喺…»): a position said without its age reads as «right now», which
             you do not know. `place` is this household's own name for the spot
-            («Home») — prefer it in your reply; `address` is the street
-            address. Both can appear together. `lat`/`lng` are always present
-            — NEVER read coordinates aloud, but you MAY pass them to a
-            street-view/maps fetch tool for an exact location (DEC-156). You
-            may also get MEASURED
+            («Home») — prefer it in your reply. There is NO street address
+            here by design: when the group wants one, pass `lat`/`lng` (always
+            present — never read them aloud) to `reverse_geocode` and say the
+            address THAT returns (DEC-156). You may also get MEASURED
             movement: `driving` (their phone says they are in a vehicle),
             `moving` (their recent positions are apart), `towards` (the saved
             place their distance has been CLOSING on), and `speed_kmh` (their
@@ -3716,13 +3715,11 @@ Args:
             ).locate(person)
             if str(out.get("status", "")) == "ok":
                 _record(metrics, "where_is", "ok", age_seconds=out.get("age_seconds"))
-                # R-57: only `address` (street-level, reverse-geocoded) is a
-                # STORED POSITION `route` must screen for — `place` is this
-                # household's own saved name and was already a legitimate route
-                # argument before this rule existed.
-                address = out.get("address")
-                if isinstance(address, str) and address.strip():
-                    _disclosed_live_addresses.add(address.strip().casefold())
+                # R-57 moved with DEC-156's follow-through: where_is carries
+                # NO address any more (position + saved place + lat/lng only),
+                # so the disclosed-live-address set is filled by
+                # `reverse_geocode` — the tool that actually resolves a
+                # coordinate into the street address `route` screens for.
                 return out
             results.append(out)
         answer = next(
@@ -4214,6 +4211,10 @@ Args:
                         "do not guess one.",
             }
         _record(metrics, "reverse_geocode", "ok")
+        # R-57 (moved from where_is): a street address resolved THIS turn is a
+        # STORED POSITION `route` must screen for — an untrusted room cannot
+        # launder a live coordinate into a route origin through this tool.
+        _disclosed_live_addresses.add(address.strip().casefold())
         return {"status": "ok", "address": address, "lat": lat_f, "lng": lng_f}
 
     # ---- media_fetch: read a stored image back through MiMo (DEC-56) ---------

@@ -142,7 +142,10 @@ async def test_whereis_returns_the_latest_fix_with_its_age(persons, store):
     assert out["status"] == "ok"
     assert out["person"] == "Miles Novak"
     assert out["age_seconds"] == 20 * 60          # the fix's age reaches the model
-    assert out["address"] == "Yoho Mall"
+    # DEC-156 follow-through: NO address in the payload — lat/lng instead,
+    # for `reverse_geocode` to fetch one on demand.
+    assert "address" not in out
+    assert out["lat"] == 22.44 and out["lng"] == 114.02
     assert out["wire_state"] == "live"
 
 
@@ -158,7 +161,7 @@ async def test_whereis_forces_a_live_refresh_before_reading(persons, store):
     assert refresher.calls == ["miles_novak"]                # asked for the resolved person
     assert out["status"] == "ok"
     assert out["age_seconds"] == 0                        # the LIVE fix, not the 20-min-old one
-    assert out["address"] == "Live Spot"
+    assert "address" not in out
 
 
 async def test_whereis_falls_back_to_the_stored_fix_when_the_refresh_fails(persons, store):
@@ -171,7 +174,7 @@ async def test_whereis_falls_back_to_the_stored_fix_when_the_refresh_fails(perso
     out = await w.locate("Miles", now_ms=NOW)
     assert refresher.calls == ["miles_novak"]
     assert out["status"] == "ok"
-    assert out["address"] == "Yoho Mall"                 # the stored fix stands
+    assert "address" not in out                          # no address at all (DEC-156)
 
 
 # ── on-demand reverse-geocode (moved here from the collector, 2026-08-14) ────
@@ -182,30 +185,18 @@ async def test_whereis_falls_back_to_the_stored_fix_when_the_refresh_fails(perso
 # HERE, lazily, only when locate() has nothing cheaper to say — so the call
 # count assertions below are the actual point of these tests, not incidental.
 
-async def test_an_addressless_fix_is_geocoded_on_demand(persons, store):
-    """No Life360 address, no saved place: locate() reaches for the geocoder
-    itself, using the fix's own coordinate, and the geocoded address wins over
-    a raw lat/lng."""
-    await _record(store, person="miles_novak", ts=NOW - 5 * 60_000, address=None)
-    geocoder = _FakeGeocoder("Yoho Mall, Yuen Long")
-    w = _whereis(persons, store, members=(MILES, GRANT, NORA), geocoder=geocoder)
-    out = await w.locate("Miles", now_ms=NOW)
-    assert out["status"] == "ok"
-    assert out["address"] == "Yoho Mall, Yuen Long"
-    # DEC-156: lat/lng always carried (fetch surface), never in a reply.
-    assert "lat" in out and "lng" in out
-    assert geocoder.calls == [(22.44, 114.02)]           # the fix's own coordinate
-
-
-async def test_a_fix_with_a_life360_address_never_reaches_the_geocoder(persons, store):
-    """The cheaper answer wins without paying for the call at all — this is
-    the actual cost fix: a geocoder wired but never invoked when Life360
-    already gave an address."""
+async def test_no_address_is_ever_geocoded_or_carried(persons, store):
+    """DEC-156 follow-through (operator decision 2026-09-06): locate() NEVER
+    geocodes and NEVER carries an address — not Life360's own field, not an
+    on-demand lookup. The geocoder stays wired but untouched; the coordinate
+    is the fetch surface (`reverse_geocode` resolves it when asked)."""
     await _record(store, person="miles_novak", ts=NOW - 5 * 60_000, address="Grand Century Place")
     geocoder = _FakeGeocoder("should never be returned")
     w = _whereis(persons, store, members=(MILES, GRANT, NORA), geocoder=geocoder)
     out = await w.locate("Miles", now_ms=NOW)
-    assert out["address"] == "Grand Century Place"
+    assert out["status"] == "ok"
+    assert "address" not in out
+    assert out["lat"] == 22.44 and out["lng"] == 114.02
     assert geocoder.calls == []
 
 
@@ -541,7 +532,7 @@ async def test_the_whereis_tool_answers_through_the_wired_seam(persons, store):
     )
     out = await spec.call("Miles")
     assert out["status"] == "ok"
-    assert out["address"] == "Acme Tower"
+    assert "address" not in out        # DEC-156: no address — lat/lng is the fetch surface
 
 
 async def test_the_whereis_tool_never_discloses_via_a_circle_the_room_is_not_in(
@@ -558,7 +549,7 @@ async def test_the_whereis_tool_never_discloses_via_a_circle_the_room_is_not_in(
     )
     out = await spec.call("Miles")
     assert out["status"] == "ok"
-    assert out["address"] == "Yoho Mall"
+    assert "address" not in out        # DEC-156: no address — lat/lng is the fetch surface
 
 
 async def test_the_whereis_tool_refuses_when_no_wired_circle_contains_the_room(
@@ -588,7 +579,7 @@ async def test_location_trust_threads_through_build_tool_specs_to_the_tool(perso
         persons, room=room, presence_source=store, presence_circles=(CIRCLE,),
         location_trusted=True,
     ).call("Miles")
-    assert trusted["status"] == "ok" and trusted["address"] == "Trust Tower"
+    assert trusted["status"] == "ok" and "address" not in trusted
     strict = await _whereis_tool(
         persons, room=room, presence_source=store, presence_circles=(CIRCLE,),
         location_trusted=False,
@@ -673,8 +664,8 @@ async def test_whereis_names_the_saved_place_the_fix_sits_inside(persons, store)
     out = await w.locate("Miles", now_ms=NOW)
     assert out["status"] == "ok"
     assert out["place"] == "Home"
-    assert out["address"] == "Jvvilxgd Road"
-    # DEC-156: lat/lng always carried (fetch surface), never in a reply.
+    # DEC-156 follow-through: no address — the coordinate is the fetch surface.
+    assert "address" not in out
     assert "lat" in out and "lng" in out
 
 
@@ -691,7 +682,7 @@ async def test_whereis_outside_every_geofence_answers_without_a_place(persons, s
     )
     assert out["status"] == "ok"
     assert "place" not in out
-    assert out["address"] == "Jvvilxgd Road"
+    assert "address" not in out        # DEC-156: no address — lat/lng is the fetch surface
 
 
 async def test_resolvable_places_returns_the_subset_circles_places(persons, store):
