@@ -54,9 +54,11 @@ from nora.app.eval_support import (
     Metrics,
     ProductionSeed,
     build_eval_tool_registry,
+    build_live_participation_runner,
     build_live_runner,
     load_eval_config,
     load_persons,
+    seed_from_dict,
 )
 from nora.app.offline import build_offline_pipeline
 from nora.testing import (
@@ -127,16 +129,32 @@ class Case:
     expected_output: str | None = None
     trigger: bool = True
     prefill_sufficient: bool = True
+    # The participation suite (design/dreamer-agent-loop/35 §9 gaps 1-2):
+    # `expect` is the verdict the determination must reach — "speak" or
+    # "silence" — graded on `Trajectory.sent` (see `evals.evaluators.
+    # ParticipationVerdict` for why `sent`, not `tool_calls`). `seed` is the
+    # per-case seed MAPPING (transcript + standing/notes/facts), built into a
+    # `ProductionSeed` by `nora.app.eval_support.seed_from_dict` inside
+    # `run_case` — everything in it is keyed to the eval workspace there, so
+    # a case author cannot accidentally seed rows the eval room never reads.
+    expect: str | None = None
+    seed: dict | None = None
 
     @classmethod
     def from_dict(cls, raw: dict) -> Case:
         meta = raw.get("metadata") or {}
+        expect = raw.get("expect")
         return cls(
             name=raw["name"],
             input=raw["input"],
             expected_output=raw.get("expected_output"),
-            trigger=bool(meta.get("trigger", True)),
+            # Participation cases default to NO trigger prefix: the incoming
+            # message is untagged by construction (that is what makes it a
+            # participation candidate at all).
+            trigger=bool(meta.get("trigger", expect is None)),
             prefill_sufficient=bool(meta.get("prefill_sufficient", True)),
+            expect=expect,
+            seed=raw.get("seed"),
         )
 
 
@@ -254,6 +272,19 @@ def _build_body(case: Case) -> str:
     return f"{TRIGGER_TEXT} {case.input}"
 
 
+class _MutableClock:
+    """The participation trigger's clock (design §3.5): the harness advances it
+    past `settle_seconds` between noting the message and closing the window, so
+    a case runs in milliseconds rather than wall-clock seconds. Monotonic-shaped
+    (`float` seconds), matching `ParticipationTrigger`'s `clock` type."""
+
+    def __init__(self, start: float = 1_000_000.0) -> None:
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+
 async def run_case(
     case: Case, *, script: list[ScriptedTurn] | None = None, live: bool = False,
     effort: str | None = None, seed: ProductionSeed | None = None,
@@ -292,6 +323,16 @@ async def run_case(
     """
     turns = script or []
     tool_calls = [name for turn in turns for name, _ in turn.tool_calls]
+    # A participation case (design §9): the incoming message is UNTAGGED, noted
+    # by the real `ParticipationPolicy`/`ParticipationTrigger`, and exactly one
+    # determination runs through the real `FirePath.speak` once the harness
+    # clock settles the window. The verdict is read off `Trajectory.sent`.
+    participation = case.expect is not None
+    if case.seed is not None:
+        # Per-case seed (§9 gap 2) — built nora-side so every tier row lands in
+        # the eval workspace (the footgun: workspace-keyed rows seeded anywhere
+        # else silently never render).
+        seed = seed_from_dict(case.seed)
 
     cfg = load_eval_config((REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml"))
     metrics = Metrics()
@@ -339,9 +380,19 @@ async def run_case(
         # tier off in the deployment stays `None` in the eval too rather than
         # rendering a block production never would. In-memory doubles, never
         # the real SQL stores (`evals/` may not import `nora.infra`).
-        notes_store = InMemoryNoteStore() if cfg.notes.enabled else None
-        facts_store = InMemoryFactStore() if cfg.facts.enabled else None
-        standing_store = InMemoryStandingStore() if cfg.standing.enabled else None
+        #
+        # EXCEPT the participation suite, which wires all three
+        # UNCONDITIONALLY: the grounded-value gate (§3②) is meaningless with
+        # the tiers off, and the knowledge-cut twins must differ ONLY in seed
+        # content — a twin with the tier absent entirely would be a different
+        # prompt SHAPE, not a cut fact. An enabled-but-empty tier still renders
+        # its extent line («she holds N, shown none»), which is the honest
+        # shape a knowledge-cut case is graded against.
+        notes_store = InMemoryNoteStore() if (cfg.notes.enabled or participation) else None
+        facts_store = InMemoryFactStore() if (cfg.facts.enabled or participation) else None
+        standing_store = (
+            InMemoryStandingStore() if (cfg.standing.enabled or participation) else None
+        )
         if seed is not None:
             if notes_store is not None:
                 for note, revision in seed.notes:
@@ -369,6 +420,20 @@ async def run_case(
             build_live_runner(cfg, effort=effort, skills_dir=skills_dir)
             if live else FakeAgentRunner(turns)
         )
+        # The participation occasion's own runner — `tool_choice="auto"` in
+        # live mode (`build_live_participation_runner`, the mirror of
+        # production's composition), because the determination must be able to
+        # end in silence and the tag runner's `required` pin makes that
+        # inexpressible. Scripted mode replays the same `script` through a
+        # second fake, so the offline path exercises the REAL trigger and
+        # FirePath with only the model scripted.
+        participation_runner = None
+        if participation:
+            participation_runner = (
+                build_live_participation_runner(cfg, effort=effort, skills_dir=skills_dir)
+                if live else FakeAgentRunner(turns)
+            )
+        participation_clock = _MutableClock() if participation else None
         # Live mode wires the canned backends (F4) so the routing gate's siblings
         # answer `ok` and a leak is a real choice, not a fallback artifact. Scripted
         # mode keeps the bare registry — its tool_calls come from the script.
@@ -381,11 +446,14 @@ async def run_case(
             if live else None
         )
         try:
-            dispatcher, _engagement, background = build_offline_pipeline(
+            dispatcher, _engagement, background, trigger = build_offline_pipeline(
                 cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
                 doctrine_store=doctrine_store, runner=runner, metrics=metrics,
                 tool_registry=tool_registry, roster_source=roster,
                 notes=notes_store, facts=facts_store, standing=standing_store,
+                participation_runner=participation_runner,
+                participation_clock=participation_clock,
+                participation_opt_in=participation,
             )
             body = _build_body(case)
             # Mirrors tests/integration/harness.py::_HandlerView.on_event: parse the
@@ -395,6 +463,13 @@ async def run_case(
             message = await adapter.parse(group_event(body=body))
             if message is not None:
                 await dispatcher.on_message(message)
+            if participation and trigger is not None:
+                # The quiescence window (§3.5): noting the message opened it;
+                # advance past the settle window and close it, which runs the
+                # ONE determination for the whole window through FirePath.speak.
+                assert participation_clock is not None
+                participation_clock.now += cfg.participation.settle_seconds + 1.0
+                await trigger.close_due_windows()
             await _drain(background)
         finally:
             await audit.aclose()

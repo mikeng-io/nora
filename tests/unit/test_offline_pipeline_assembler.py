@@ -118,7 +118,7 @@ async def test_seeded_notes_facts_standing_render_in_the_assembled_prompt(tmp_pa
     )
 
     try:
-        dispatcher, _, background = build_offline_pipeline(
+        dispatcher, _, background, _trigger = build_offline_pipeline(
             cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
             doctrine_store=doctrine_store, runner=runner, metrics=metrics,
             notes=notes_store, facts=facts_store, standing=standing_store,

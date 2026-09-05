@@ -23,6 +23,7 @@ from typing import Any, cast
 import sqlalchemy as sa
 
 from nora.agent import factory
+from nora.agent import tool_choice as tool_choice_module
 from nora.agent.factory import create_client, create_model_provider
 from nora.agent.guards import LeakGuard
 from nora.agent.registry import ToolRegistry
@@ -49,6 +50,7 @@ from nora.testing import (
     CannedStreetParkingProvider,
     CannedTransitSource,
     CannedWeatherProvider,
+    transcript_rows,
 )
 
 from .agent_runner import LiveAgentRunner
@@ -100,6 +102,7 @@ __all__ = [
     "Persons",
     "ProductionSeed",
     "build_eval_tool_registry",
+    "build_live_participation_runner",
     "build_live_runner",
     "build_production_seed",
     "create_client",
@@ -107,6 +110,7 @@ __all__ = [
     "is_tagged",
     "load_config",
     "load_persons",
+    "seed_from_dict",
 ]
 
 
@@ -184,6 +188,46 @@ def build_live_runner(
         retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
         # The runner's `skills_dir` is typed `Path | None`; accept str for the
         # caller's convenience and normalize here.
+        skills_dir=Path(skills_dir) if skills_dir is not None else None,
+        agent_name=cfg.agent.name,
+    )
+
+
+def build_live_participation_runner(
+    cfg: Config, *, effort: str | None = None,
+    skills_dir: str | Path | None = None,
+) -> LiveAgentRunner:
+    """The participation occasion's live runner — `build_live_runner`'s mirror
+    of `composition.build_dependencies`'s `participation_runner` tail.
+
+    The one difference that matters: `tool_choice=AFTER_SPEAKING` ("auto"),
+    because a determination must be able to end in SILENCE and the tag tier's
+    `FIRST_CALL` ("required") pin makes that inexpressible — under it the
+    model must call something on the first pass and the only terminal call is
+    `send_reply`. An eval that graded participation on the tag runner would be
+    measuring a model forbidden from the outcome the suite exists to grade.
+    """
+    api_key = os.environ.get(cfg.llm.api_key_env, "")
+    if not api_key:
+        raise ValueError(
+            f"live eval runner needs the LLM key: environment variable "
+            f"{cfg.llm.api_key_env} is not set"
+        )
+    tier = cfg.llm
+    if effort is not None:
+        tier = tier.model_copy(update={"reasoning_effort": effort})
+    client = create_client(base_url=tier.base_url, api_key=api_key)
+    return LiveAgentRunner(
+        models=factory.ModelSource(
+            client=client,
+            spec=factory.ModelSpec(
+                model=tier.model, max_tokens=tier.max_tokens,
+                temperature=tier.temperature,
+                reasoning_effort=tier.reasoning_effort,
+                tool_choice=tool_choice_module.AFTER_SPEAKING,
+            ),
+        ),
+        retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
         skills_dir=Path(skills_dir) if skills_dir is not None else None,
         agent_name=cfg.agent.name,
     )
@@ -465,3 +509,124 @@ async def build_production_seed(
                           conclusions=conclusions, standing=standing,
                           notes=tuple(notes), facts=tuple(facts),
                           asserters=tuple(asserters))
+
+
+#: Timestamp base for case-file seeds — 2026-08-31 08:00 HKT, matching
+#: `evals.run._BODY_TS_BASE` so a per-case transcript ticks forward the same
+#: way a journey's does.
+_SEED_TS_BASE = 1_788_480_000_000
+
+
+def _seed_id(n: int, kind: str) -> str:
+    """UUID-SHAPED, like the real stores' ids — the same rule
+    `InMemoryNoteStore._shaped_id` states: the shape is what R-18's
+    identifier screen reads, so a case seed's ids must look like the thing
+    they stand in for. Deterministic, so a failure reproduces."""
+    return f"{n:08x}-0000-4000-8000-{ord(kind[0]):012x}"
+
+
+def seed_from_dict(raw: dict[str, Any]) -> ProductionSeed:
+    """Build a `ProductionSeed` from a case file's `seed:` mapping
+    (`evals/cases/participation/`) — the per-case seed `Case.from_dict`
+    gained for the participation suite (design/dreamer-agent-loop/35 §9
+    gap 2).
+
+    EVERYTHING is keyed to `_EVAL_WORKSPACE` ("nora"). That is the footgun
+    the design audit named: the note and fact tiers are workspace-keyed
+    (DEC-105) and the eval room resolves to this workspace through
+    `permissive_policy()`, so a seed row keyed anywhere else silently
+    vanishes — the case would grade a prompt missing the very block it is
+    about, and the knowledge-cut twin would "pass" for the wrong reason.
+
+    Shape (all keys optional):
+
+        seed:
+          transcript:             # prior room messages, oldest first
+            - "plain body"                       # the eval member speaks
+            - {name: "Grant", body: "..."}     # another (unmapped) member
+          standing: "where the conversation had got to"
+          notes:
+            - {title, description, body, uncertainty?, closing_condition?}
+          facts:
+            - {subject, predicate, object, asserter?}
+
+    The room slice of `<facts>` is matched by subject mention against the
+    transcript + incoming message (the same matcher recognition uses), so a
+    fact only renders when the conversation actually TALKS ABOUT its
+    subject — which is exactly the property the knowledge-cut cases lean
+    on. `asserter` names the person_id a `stated` fact is attributed to.
+    """
+    recents: list[TranscriptRow] = []
+    speakers: dict[str, tuple[str, str]] = {}   # name -> (sender_id, person-ish id)
+    for i, entry in enumerate(raw.get("transcript") or []):
+        if isinstance(entry, str):
+            name, body = "Miles", entry
+        else:
+            name, body = entry["name"], entry["body"]
+        if name not in speakers:
+            if name == "Miles":
+                speakers[name] = ("+852111", _EVAL_PERSON_ID)
+            else:
+                # An unmapped member: resolved to NO person, like a sender
+                # identity.toml does not know.
+                speakers[name] = (f"+8529{len(speakers):03d}", "")
+        sender_id, person_id = speakers[name]
+        recents.extend(transcript_rows(
+            [body], sender_id=sender_id, sender_name=name,
+            person_id=person_id or None,
+            ts_base=_SEED_TS_BASE + i * 60_000, id_start=1000 + i,
+        ))
+
+    standing = None
+    if raw.get("standing"):
+        # platform/conversation_id deliberately blank: `run_case` remaps the
+        # position onto the eval room (S4's key), exactly as it does for a
+        # `--seed-production` snapshot.
+        standing = Standing(
+            platform="", conversation_id="", body=raw["standing"],
+            fold_count=1, updated_at=_SEED_TS_BASE,
+        )
+
+    notes: list[tuple[Note, NoteRevision]] = []
+    for n, entry in enumerate(raw.get("notes") or []):
+        note_id = _seed_id(0x1000 + n, "note")
+        revision_id = _seed_id(0x2000 + n, "rev")
+        note = Note(
+            id=note_id, workspace=_EVAL_WORKSPACE,
+            title=entry["title"], description=entry["description"],
+            uncertainty=entry.get("uncertainty", "open"),
+            closing_condition=entry.get("closing_condition", "the room settles it"),
+            established_in="g1", created_at=_SEED_TS_BASE + n,
+            head_revision_id=revision_id,
+            anchor_date=entry.get("anchor_date", 20260901),
+        )
+        revision = NoteRevision(
+            id=revision_id, note_id=note_id, body=entry["body"],
+            parent_revision_id=None, written_at=_SEED_TS_BASE + n,
+            established_by="case-seed",
+        )
+        notes.append((note, revision))
+
+    facts: list[Fact] = []
+    asserters: list[FactAsserter] = []
+    for n, entry in enumerate(raw.get("facts") or []):
+        fact_id = _seed_id(0x3000 + n, "fact")
+        facts.append(Fact(
+            id=fact_id, workspace=_EVAL_WORKSPACE,
+            subject_id=entry["subject"], predicate=entry["predicate"],
+            object_entity_id=None, object_literal=entry["object"],
+            warrant_kind="stated", valid_from=_SEED_TS_BASE,
+            created_at=_SEED_TS_BASE + n,
+            instruction_sha256="a" * 64, model="case-seed",
+            established_by="case-seed",
+        ))
+        if entry.get("asserter"):
+            asserters.append(FactAsserter(
+                fact_id=fact_id, person_id=entry["asserter"],
+                message_id=1000 + n, asserted_at=_SEED_TS_BASE + n,
+            ))
+
+    return ProductionSeed(
+        recents=tuple(recents), standing=standing, notes=tuple(notes),
+        facts=tuple(facts), asserters=tuple(asserters),
+    )

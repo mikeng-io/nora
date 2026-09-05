@@ -87,8 +87,17 @@ from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.compute import ComputeJob
 from nora.domain.events import Event, EventFactory
-from nora.domain.models import NormalizedMessage, PersonRef, TagContext, TranscriptRow
+from nora.domain.facts import Fact, FactExtent, FactsView, mentions, normalise_name
+from nora.domain.models import (
+    ConversationTarget,
+    NormalizedMessage,
+    PersonRef,
+    TagContext,
+    TranscriptRow,
+)
+from nora.domain.notes import Note
 from nora.domain.ports import (
+    FactReader,
     JobResult,
     JobStatus,
     LinkPreviewSource,
@@ -104,6 +113,7 @@ from nora.domain.standing import (
     Standing,
 )
 from nora.domain.tool_call_log import ToolCallLogStore
+from nora.engagement.context import StandingNotesReader
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
@@ -111,6 +121,7 @@ from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import trace_attributes
 from nora.persons import Persons
+from nora.policy import Policy
 
 log = logging.getLogger("nora.app.fire")
 
@@ -145,6 +156,15 @@ FAILED_ERROR = "failed_error"
 # participation turn that says nothing is working.
 PARTICIPATION_AUDIENCE = "participation"
 SILENT = "silent"
+
+# The §10.6 shadow mirror's audience label: the mirror IS a send (it goes
+# through `deliver.build` and every guard that carries), but it is operator
+# review traffic, never room speech — its failures must not pollute the tag,
+# heartbeat or participation budgets, and a mirrored "spoke" must never read
+# as a live send on `nora_participation_spoke_total` (that counter moves only
+# on the live path below; the mirror has its own Deliverer and never touches
+# it).
+SHADOW_AUDIENCE = "participation-shadow"
 
 # How a recurrence reads in the fire header. English prose, like the rest of the
 # header: the header is the SITUATION she is told about, and `doctrine` decides
@@ -464,7 +484,14 @@ class FirePath:
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
+        notes: StandingNotesReader | None = None,
+        facts: FactReader | None = None,
+        policy: Policy | None = None,
+        max_room_facts: int = 8,
+        max_sender_facts: int = 4,
         participation_runner: AgentRunner | None = None,
+        shadow_channel: str | None = None,
+        shadow_platform: str = "discord",
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -504,6 +531,30 @@ class FirePath:
         # `debrief.run` did. That defect was fixed and then RE-CREATED here in
         # the same change; this is the second half of the same fix.
         self._standing_store_timeout_seconds = standing_store_timeout_seconds
+        # The note/fact tiers on the fire path (design/dreamer-agent-loop/35,
+        # Phase 2) — S5's exact precedent, one tier later. A participation
+        # determination grounds on «transcript + standing/notes/facts», which
+        # was a lie as shipped: Phase 1's own header told the model "whatever
+        # standing, notes and facts came with it" while `build_context` left
+        # both fields at their dataclass defaults, so no `<notes>`/`<facts>`
+        # block ever rendered on ANY fire occasion. Wired for every occasion
+        # kind, not gated to participation: one `build_context` shape, no
+        # per-occasion special case, and the tiers are default-disabled so no
+        # shipped prompt changes until an operator enables them.
+        #
+        # `policy` is here for exactly one read: both tiers are keyed on
+        # `Conversation.workspace` (DEC-105), so scoping them needs the same
+        # `Policy` instance the assembler holds — a fire path with its own
+        # idea of a room's workspace would render another social unit's notes
+        # into this one. `None` keeps both tiers inert, the pre-wiring shape
+        # every test construction site has.
+        self._notes = notes
+        self._facts = facts
+        self._policy = policy
+        # The two render caps `TranscriptInjection` takes off `FactsConfig`;
+        # same defaults (19 §6), threaded from cfg at the composition root.
+        self._max_room_facts = max_room_facts
+        self._max_sender_facts = max_sender_facts
         self._persons = persons
         self._records = records
         self._memory = memory
@@ -577,6 +628,16 @@ class FirePath:
         # kind, and a participation turn arriving with no runner composed is
         # a wiring fault, not a turn to run on the tag runner.
         self._participation_runner = participation_runner
+        # The §10.6 shadow mirror. `shadow_channel` None means shadow mode is
+        # OFF (the shipped default — `[participation] shadow = false`), and
+        # `_mirror` returns without doing anything; set, every participation
+        # determination — speak AND silence — is mirrored to that channel on
+        # `shadow_platform`, through the same `deliver.build`/guards as any
+        # send, under `SHADOW_AUDIENCE`. The composition root wires it only
+        # when `enabled` AND `shadow` are both on, so a mirrored determination
+        # always cleared the room opt-in first.
+        self._shadow_channel = shadow_channel
+        self._shadow_platform = shadow_platform
 
     async def build_context(self, occasion: Event) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
@@ -666,6 +727,14 @@ class FirePath:
                     "nora_errors_total", stage="fire_peer_card", platform=occasion.platform,
                 )
 
+        # Both workspace-keyed tiers resolve the workspace ONCE per turn — two
+        # resolutions would double-count the wiring gap `_workspace_for`
+        # reports, and the read is skipped entirely when neither tier is wired
+        # (the dormant default must not count a gap it does not have).
+        workspace: str | None = None
+        if self._notes is not None or self._facts is not None:
+            workspace = self._workspace_for(occasion)
+
         return TagContext(
             tag_id=uuid.uuid4().hex,
             message=_synthetic_message(occasion, ref),
@@ -674,6 +743,147 @@ class FirePath:
             peer_card=card,
             started_at=time.perf_counter(),
             standing=await self._read_standing(occasion),
+            notes=await self._read_notes(occasion, workspace),
+            facts=await self._read_facts(
+                occasion, workspace, transcript=transcript, tagger=ref,
+            ),
+        )
+
+    def _workspace_for(self, occasion: Event) -> str | None:
+        """The workspace this occasion's room belongs to, or `None`.
+
+        Both workspace-keyed tiers scope through the SAME `Policy` read, for
+        the reason `TranscriptInjection` carries one `_workspace_of` for both
+        (DEC-105): two tiers each carrying their own idea of a room's
+        workspace disagree the first time a deployment runs two social units.
+
+        `None` — a store wired but no `Policy` or no `Conversation` for the
+        room — is a WIRING GAP, not an empty tier: guessing a workspace would
+        render another unit's notes/facts into this room. Counted, because a
+        block missing for the life of a deployment with nothing saying so is
+        how `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
+        """
+        try:
+            convo = (
+                self._policy.conversation(occasion.platform, occasion.conversation_id)
+                if self._policy is not None
+                else None
+            )
+        except Exception:
+            # Fail-soft like the three sibling reads (`_read_notes`,
+            # `_read_facts`, `_read_standing`): a Policy read that raises must
+            # not turn a deliverable reminder into a silent no-send (Claude
+            # Sonnet audit 2026-09-05 MINOR). Counted, because a block missing
+            # for the life of a deployment with nothing saying so is how
+            # `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
+            log.exception(
+                "policy conversation read failed for %s/%s — the note/fact "
+                "tiers cannot be scoped to a workspace; continuing without them",
+                occasion.platform, occasion.conversation_id,
+            )
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_workspace",
+                platform=occasion.platform,
+            )
+            return None
+        if convo is None:
+            log.warning(
+                "no policy conversation for %s/%s — the note/fact tiers cannot "
+                "be scoped to a workspace; continuing without them",
+                occasion.platform, occasion.conversation_id,
+            )
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_workspace",
+                platform=occasion.platform,
+            )
+            return None
+        return convo.workspace
+
+    async def _read_notes(
+        self, occasion: Event, workspace: str | None,
+    ) -> tuple[Note, ...]:
+        """The standing note index, `TranscriptInjection._notes` mirrored.
+
+        Fail-SOFT and COUNTED, the same three states: no store is the dormant
+        default (not an error, not counted); no workspace is the wiring gap
+        above (counted there, once); a FAILED read is neither — a thinner
+        prompt beats a reminder that does not fire, but a note index that
+        exists and could not be fetched reported as «there are none» is the
+        `unavailable`-as-`nothing_found` substitution R-27 exists to prevent.
+        """
+        if self._notes is None or workspace is None:
+            return ()
+        try:
+            return tuple(await self._notes.standing(workspace=workspace))
+        except Exception:
+            log.exception("fire note-index read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_notes",
+                platform=occasion.platform,
+            )
+            return ()
+
+    async def _read_facts(
+        self, occasion: Event, workspace: str | None, *,
+        transcript: tuple[TranscriptRow, ...],
+        tagger: PersonRef | None,
+    ) -> FactsView:
+        """The `<facts>` block's three slices, `TranscriptInjection._facts`
+        mirrored — room (subjects the conversation has touched), sender (the
+        occasion's person, when it has one), and the extent line.
+
+        One deliberate omission: the render ledger (`_record_rendered`) is NOT
+        written here. It exists so a later correction can target «a claim Nora
+        just rendered», and this path retains no `TagTrace` for that loop to
+        consult (the Phase 1 deferral `__init__` names) — recording renders
+        nobody can later recognise would be a write with no reader.
+
+        Fail-SOFT and COUNTED like every sibling read: a thinner prompt beats
+        no turn, and a failed read is never folded silently into «no facts».
+        """
+        reader = self._facts
+        if reader is None or workspace is None:
+            return FactsView()
+        try:
+            haystack = normalise_name(
+                " ".join([occasion.body or "", *(r.body or "" for r in transcript)])
+            )
+            subjects: tuple[str, ...] = ()
+            if haystack:
+                subjects = tuple(
+                    subject
+                    for subject in await reader.standing_subjects(workspace=workspace)
+                    if mentions(haystack, normalise_name(subject))
+                )
+            room = await reader.standing_facts(
+                workspace=workspace, subject_ids=subjects, limit=self._max_room_facts,
+            )
+            sender: tuple[Fact, ...] = ()
+            if tagger is not None:
+                sender = await reader.facts_asserted_by(
+                    workspace=workspace, person_id=tagger.person_id,
+                    limit=self._max_sender_facts,
+                )
+            standing = await reader.standing_count(workspace=workspace)
+        except Exception:
+            log.exception("fire fact read failed; continuing without the block")
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_facts",
+                platform=occasion.platform,
+            )
+            return FactsView()
+        shown = {f.id for f in room} | {f.id for f in sender}
+        asserters: dict[str, tuple[str, ...]] = {}
+        for fact in (*room, *sender):
+            if fact.warrant_kind != "stated":
+                continue
+            rows = await reader.asserters(fact_id=fact.id)
+            if rows:
+                asserters[fact.id] = tuple(dict.fromkeys(a.person_id for a in rows))
+        return FactsView(
+            room=room, sender=sender,
+            extent=FactExtent(standing=standing, shown=len(shown)),
+            asserters=asserters,
         )
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
@@ -773,6 +983,15 @@ class FirePath:
         # into — carries the tag id without naming it (nora.obs.logging's
         # contextvar bridge), so a fire turn is greppable exactly like a tag.
         bind_tag_id(ctx.tag_id)
+        # TRUE SHADOW (design/dreamer-agent-loop/35 §10.6, Miles decision
+        # 2026-09-05): while the mirror is wired, a participation turn NEVER
+        # live-sends — `send_permitted` is forced False so the Deliverer holds
+        # the message at the last inch and `_turn` mirrors the draft instead.
+        # The operator reviews determinations on the shadow channel; the room
+        # hears nothing until the flip (shadow = false). This is what makes
+        # shadow a review surface rather than a live send with a copy.
+        if occasion.kind == "participation" and self._shadow_channel is not None:
+            send_permitted = False
         try:
             return await self._turn(occasion, ctx, send_permitted=send_permitted)
         finally:
@@ -979,7 +1198,7 @@ class FirePath:
                 display_name=self._display_name,
             )
 
-            failure, stop_reason = await self._invoke(
+            failure, stop_reason, final_text = await self._invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
                 tag_message=tag_message, ctx=ctx,
@@ -1006,6 +1225,14 @@ class FirePath:
                     # its message — `_invoke` has already filed the turn under
                     # `nora_participation_silence_total`, or as an ordinary
                     # silent failure if a budget cap cut it off.
+                    await self._mirror(
+                        occasion, ctx, doctrine, verdict="silent",
+                        texts=handle.deliverer.held_texts or (
+                            (final_text,) if final_text.strip() else ()
+                        ),
+                        held=bool(handle.deliverer.held_texts),
+                        stop_reason=stop_reason,
+                    )
                     return SILENT
                 return FAILED_ERROR
 
@@ -1018,6 +1245,11 @@ class FirePath:
             if participation:
                 self._metrics.inc(
                     "nora_participation_spoke_total", platform=occasion.platform,
+                )
+                await self._mirror(
+                    occasion, ctx, doctrine, verdict="spoke",
+                    texts=handle.deliverer.sent_texts, held=False,
+                    stop_reason=stop_reason,
                 )
             await self._feed(
                 handle.deliverer.sent_texts, occasion.conversation_id,
@@ -1065,10 +1297,11 @@ class FirePath:
         deliverer: Any,
         participation: bool = False,
         audience: str = AUDIENCE,
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[str | None, str | None, str]:
         """The model call, with the heartbeat's own timeout and its own
-        accounting. Returns `(failure, stop_reason)`: the §8.1 failure name — or
-        None if the loop finished — and how the loop ENDED.
+        accounting. Returns `(failure, stop_reason, final_text)`: the §8.1
+        failure name — or None if the loop finished — how the loop ENDED, and
+        the prose the model wrote (DEC-93).
 
         A `None` failure does NOT mean she spoke — `_turn` asks the `Deliverer`
         that. It means the invocation completed, which is a different fact, and
@@ -1080,6 +1313,12 @@ class FirePath:
         `None` (the invocation never returned) means something different from
         `"limit_turns"` — a distinction `_turn`'s `finally` cannot recover
         afterwards.
+
+        `final_text` travels for the §10.6 shadow mirror: on a participation
+        turn it is the DECLINE draft — what she would have said and why she
+        stayed silent — which the mirror posts for review. The DEC-93 recovery
+        branch below never fires on that occasion, so there it is only ever a
+        draft, never a delivered message.
         """
         started = time.perf_counter()
         stop_reason: str | None = None
@@ -1212,7 +1451,88 @@ class FirePath:
                     "nora_silent_failures_total", reason=reason,
                     platform=platform, audience=audience,
                 )
-        return failure, stop_reason
+        return failure, stop_reason, final_text
+
+    async def _mirror(
+        self, occasion: Event, ctx: TagContext, doctrine: Any, *,
+        verdict: str, texts: Sequence[str], held: bool,
+        stop_reason: str | None,
+    ) -> None:
+        """The §10.6 shadow mirror: post one participation determination —
+        speak AND silence — to the shadow channel, for operator review before
+        the flip.
+
+        NOT a third send path: the mirror goes through `deliver.build` and
+        the `Deliverer`'s guards (R-2/R-4/R-6/R-18, audit-first) exactly like
+        any send, under `SHADOW_AUDIENCE` so its failures never read as tag,
+        heartbeat or participation room speech. It is never counted on
+        `nora_participation_spoke_total` — that series moves only on the live
+        path in `_turn`, and this Deliverer is a separate one. It runs for
+        participation occasions only (`_turn`'s two call sites), and only
+        when the composition root wired a channel (`[participation] shadow =
+        true`, which itself sits on top of `enabled` and the room opt-in).
+
+        Fail-soft in both directions an operator cares about: a missing
+        adapter or a faulted send is logged and counted
+        (`nora_errors_total{stage="participation_shadow"}`), and NEVER changes
+        the reviewed turn's outcome — review traffic must not be able to break
+        the path it reviews.
+        """
+        if self._shadow_channel is None:
+            return
+        try:
+            adapter = self._adapters.get(self._shadow_platform)
+            if adapter is None:
+                raise KeyError(
+                    f"no platform adapter is wired for the shadow platform "
+                    f"{self._shadow_platform!r} — wired: {sorted(self._adapters)}"
+                )
+            identity = await adapter.resolve_identity()
+            handle = deliver.build(
+                store=self._records, adapter=adapter,
+                target=ConversationTarget(
+                    platform=self._shadow_platform,
+                    conversation_id=self._shadow_channel,
+                    # The mirror channel is operator-facing; `group` keeps the
+                    # audit row's conversation_type honest without a platform
+                    # round-trip to classify it.
+                    conversation_type="group",
+                ),
+                doctrine=doctrine, canary=self._canary, tag_id=ctx.tag_id,
+                nora_sender_id=identity.primary,
+                conversation_id=self._shadow_channel,
+                budgets=self._registry.budgets(),
+                terminal=self._registry.terminal_tools(), metrics=self._metrics,
+                audience=SHADOW_AUDIENCE,
+                # Plain operator-facing text: no roster, no mention composer —
+                # `None` is `deliver.build`'s documented inert value, and the
+                # keyword has no default there precisely so this is a decision.
+                composer=None,
+                cacheable_tools=self._registry.cacheable_tools(),
+                tool_call_log_store=self._tool_call_log_store,
+                # The mirror is not subject to the room's participation
+                # cooldown — it is how a cooldown-HELD message is reviewed at
+                # all, so holding the mirror too would hide exactly that case.
+                send_permitted=True,
+            )
+            await handle.deliverer.deliver(
+                _mirror_text(
+                    occasion, ctx, verdict=verdict, texts=texts, held=held,
+                    stop_reason=stop_reason,
+                    # The mirror is wired, so a held text is held by the
+                    # shadow gate (true shadow, Miles decision 2026-09-05),
+                    # never by the cooldown — the mirror exists to review
+                    # cooldown-held messages, so it is never cooldown-gated.
+                    shadow_hold=True,
+                ),
+                source="shadow",
+            )
+        except Exception:
+            log.exception("participation shadow mirror failed (tag=%s)", ctx.tag_id)
+            self._metrics.inc(
+                "nora_errors_total", stage="participation_shadow",
+                platform=occasion.platform,
+            )
 
     async def _feed(
         self, sent_texts: Sequence[str], conversation_id: str, platform: str,
@@ -1242,6 +1562,59 @@ class FirePath:
             self._metrics.inc(
                 "nora_errors_total", stage="fire_feedback", platform=platform,
             )
+
+
+def _mirror_text(
+    occasion: Event, ctx: TagContext, *, verdict: str,
+    texts: Sequence[str], held: bool, stop_reason: str | None,
+    shadow_hold: bool = False,
+) -> str:
+    """The shadow mirror post (§10.6): the source room, the verdict, the text
+    and the window that closed.
+
+    `texts` is the sent messages for a spoke verdict; for a silent one it is
+    the held text (the cooldown kept it — what she WOULD have said) or the
+    decline draft (the prose she wrote instead of calling `send_reply`, which
+    doubles as her reasoning for declining). The window tail is the last few
+    transcript rows the determination saw, so the review reads the trigger in
+    context rather than as an orphaned quote.
+
+    `shadow_hold` (Miles decision 2026-09-05): TRUE SHADOW — the mirror is
+    wired, so a concluded-speak is held by the shadow gate, not the cooldown.
+    The wording must say so: an operator reviewing the mirror needs to know
+    the room heard nothing because shadow is on, not because the cooldown
+    happened to hold it.
+    """
+    lines = [
+        f"[shadow] {occasion.platform}/{occasion.conversation_id}",
+    ]
+    if verdict == "spoke":
+        lines.append("verdict: SPOKE — the room heard:")
+    elif held:
+        if shadow_hold:
+            lines.append(
+                "verdict: SILENT — she concluded speak; SHADOW MODE held it "
+                "(the room hears nothing until the flip). She would have said:"
+            )
+        else:
+            lines.append(
+                "verdict: SILENT — she concluded speak; the send cooldown held "
+                "it. She would have said:"
+            )
+    else:
+        lines.append("verdict: SILENT — she declined the floor.")
+        if texts:
+            lines.append("her draft (never sent; doubles as her reasoning):")
+    lines.extend(texts)
+    if stop_reason:
+        lines.append(f"(stop: {stop_reason})")
+    window = list(ctx.transcript)[-5:]
+    if window:
+        lines.append("window that closed:")
+        lines.extend(
+            f"- {row.sender_name}: {(row.body or '')[:120]}" for row in window
+        )
+    return "\n".join(lines)
 
 
 def _synthetic_message(

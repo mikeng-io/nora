@@ -1,0 +1,185 @@
+# The participation suite (design/dreamer-agent-loop/35 §9): 15 cases —
+# 5 relevance-Yes (S1a-S5a), their 5 knowledge-cut twins (S1b-S5b), and 5
+# pure-No (S6-S10).
+#
+# Each case is `transcript + standing seed + incoming -> expected verdict`.
+# The incoming `input` is UNTAGGED by construction (that is what makes it a
+# participation candidate); it is driven through the real ParticipationPolicy
+# -> ParticipationTrigger -> FirePath.speak path (`evals.harness.run_case`),
+# and the verdict is graded on what the room actually HEARD (`Trajectory.sent`
+# — see `evals.evaluators.ParticipationVerdict`).
+#
+# The twins are the load-bearing half: same message, same transcript, only the
+# seed differs — the verdict MUST flip to silence when the grounding is cut. A
+# model that answers a twin from parametric memory has failed, however correct
+# the answer is in the world.
+#
+# Seed keys are documented on `nora.app.eval_support.seed_from_dict`; all tier
+# rows land in the eval workspace ("nora") from there, never keyed by hand.
+
+# --- S1: the question nobody answered -------------------------------------
+
+- name: fact-lookup-known
+  input: "does anyone know when AWS Community Day 2026 is?"
+  expect: speak
+  seed:
+    transcript:
+      - "喂 autumn 有咩 tech event 值得去?"
+      - "AWS Community Day 應該就快嘅"
+    facts:
+      - subject: "AWS Community Day"
+        predicate: "is scheduled for"
+        object: "October 26, 2026 at IVE (Tsing Yi)"
+        asserter: miles_novak
+
+- name: fact-lookup-unknown
+  input: "does anyone know when AWS Community Day 2026 is?"
+  expect: silence
+  seed:
+    transcript:
+      - "喂 autumn 有咩 tech event 值得去?"
+      - "AWS Community Day 應該就快嘅"
+    # NO fact — the knowledge cut. Same message, same transcript: the verdict
+    # must flip to silence.
+
+# --- S2: the stalled question ----------------------------------------------
+
+- name: stalled-question-known
+  input: "when is the next Raft update?"
+  expect: speak
+  seed:
+    transcript:
+      - "when is the next Raft update?"
+      - "anyway 聽日 lunch 食咩"
+      - "我唔care 你哋揀啦"
+    notes:
+      - title: "Raft roadmap"
+        description: "when the next Raft update ships"
+        body: "Raft's maintainer said the next update targets the week of October 19; no firm date announced."
+        uncertainty: "no firm date"
+        closing_condition: "Raft announces a date"
+
+- name: stalled-question-unknown
+  input: "when is the next Raft update?"
+  expect: silence
+  seed:
+    transcript:
+      - "when is the next Raft update?"
+      - "anyway 聽日 lunch 食咩"
+      - "我唔care 你哋揀啦"
+    # NO note — the knowledge cut.
+
+# --- S3: the commitment follow-up ------------------------------------------
+
+- name: commitment-followup-known
+  input: "so did anyone book the restaurant for Saturday?"
+  expect: speak
+  seed:
+    transcript:
+      - "Saturday dinner 8pm 好唔好"
+      - "好呀 邊度食"
+      - {name: "Grant", body: "上次話咗要訂嗰間 tapas 啦"}
+    standing: "Nora committed to confirming the tapas venue for Saturday's dinner and has not reported back yet."
+
+- name: commitment-followup-unknown
+  input: "so did anyone book the restaurant for Saturday?"
+  expect: silence
+  seed:
+    transcript:
+      - "Saturday dinner 8pm 好唔好"
+      - "好呀 邊度食"
+      - {name: "Grant", body: "上次話咗要訂嗰間 tapas 啦"}
+    # NO standing — the knowledge cut: with no position saying she owes the
+    # room an answer, the question is not hers to pick up.
+
+# --- S4: the correction ------------------------------------------------------
+
+- name: correction-known
+  input: "AWS Community Day is Oct 23 this year right?"
+  expect: speak
+  seed:
+    transcript:
+      - "喂 autumn 有咩 tech event 值得去?"
+    facts:
+      - subject: "AWS Community Day"
+        predicate: "is scheduled for"
+        object: "October 26, 2026 at IVE (Tsing Yi)"
+        asserter: miles_novak
+
+- name: correction-unknown
+  input: "AWS Community Day is Oct 23 this year right?"
+  expect: silence
+  seed:
+    transcript:
+      - "喂 autumn 有咩 tech event 值得去?"
+    # NO fact — the knowledge cut: she holds nothing that contradicts the
+    # claim, so the claim stands uncorrected.
+
+# --- S5: the planning-context question ---------------------------------------
+
+- name: planning-context-known
+  input: "weekday or weekend then?"
+  expect: speak
+  seed:
+    transcript:
+      - "Tai O 一日遊幾時去好"
+      - {name: "Grant", body: "我星期六要返工"}
+      - "咁即係得星期日或者平日"
+    notes:
+      - title: "Tai O trip timing"
+        description: "which day the Tai O day trip lands on"
+        body: "Grant works Saturdays, so the earlier discussion narrowed it to Sunday or a weekday; nobody has picked."
+        uncertainty: "day not picked"
+        closing_condition: "the group picks a day"
+
+- name: planning-context-unknown
+  input: "weekday or weekend then?"
+  expect: silence
+  seed:
+    transcript:
+      - "Tai O 一日遊幾時去好"
+      - {name: "Grant", body: "我星期六要返工"}
+      - "咁即係得星期日或者平日"
+    # NO note — the knowledge cut. (The constraint is visible in the
+    # transcript itself here; the cut removes the distilled context, and the
+    # design's answer to "is it worth her speaking" with nothing distilled is
+    # still silence — see §3②.)
+
+# --- S6-S10: pure-No — the verdict must be silence --------------------------
+
+- name: status-update
+  input: "check this out 👉 https://example.com/that-thing"
+  expect: silence
+  seed:
+    transcript:
+      - "你哋睇咗尋晚嗰場波未"
+      - "睇咗 勁"
+
+- name: private-exchange
+  input: "3ish"
+  expect: silence
+  seed:
+    transcript:
+      - {name: "Grant", body: "what time Saturday?"}
+
+- name: acknowledgment
+  input: "👍"
+  expect: silence
+  seed:
+    transcript:
+      - "done! thanks 🙏"
+
+- name: inside-joke
+  input: "AGAIN 😂😂 佢又嚟"
+  expect: silence
+  seed:
+    transcript:
+      - {name: "Grant", body: "唔該睇下呢個 meme"}
+      - "哈哈哈哈哈 邊個整嘅"
+
+- name: other-service-command
+  input: "/weather tomorrow"
+  expect: silence
+  seed:
+    transcript:
+      - "聽日會唔會落雨"

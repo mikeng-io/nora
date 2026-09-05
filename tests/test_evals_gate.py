@@ -255,6 +255,9 @@ def test_export_langfuse_suite_choice_is_scoped_to_deterministic_suites():
     """Documents the scope decision (see evals/run.py module docstring): the
     `adversarial` suite's live path is not wired to the sink in this phase, and
     neither is `journeys` (D4 tier 2) — both are live suites run before deploy,
-    not deterministic sink-exporting ones. This pins the deterministic suites
-    still resolve to the same corpus files, and the full suite set."""
-    assert set(SUITES) == {"trigger", "no_trigger", "all", "adversarial", "journeys"}
+    not deterministic sink-exporting ones. The same holds for `participation`
+    (design/dreamer-agent-loop/35 §9): a live suite with its own runner. This
+    pins the deterministic suites still resolve to the same corpus files, and
+    the full suite set."""
+    assert set(SUITES) == {"trigger", "no_trigger", "all", "adversarial",
+                           "journeys", "participation"}

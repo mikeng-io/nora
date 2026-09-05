@@ -25,6 +25,7 @@ from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from nora.domain.mobility import (
+    CHUNK_GAP_MS,
     DWELL_CAP_MS,
     LabelResult,
     RawFix,
@@ -127,7 +128,7 @@ class RollupConfig:
     corridor_max_edit_distance: int = 2
     corridor_min_samples: int = 3
     corridor_cluster_batch_limit: int = 500
-    min_trip_fixes: int = 3
+    min_trip_fixes: int = 2
     max_trip_duration_seconds: float = 10800.0
 
 
@@ -234,7 +235,7 @@ class MobilityRollup:
             # undecided group is re-read whole next cycle instead of being
             # consumed as a fragment.
             trip_hold_id: int | None = None
-            chunks = _chunk_by_gap(raw, DWELL_CAP_MS)
+            chunks = _chunk_by_gap(raw, CHUNK_GAP_MS)
             last_open_stay: Stay | None = None
             for i, chunk in enumerate(chunks):
                 seg = segment_stays(

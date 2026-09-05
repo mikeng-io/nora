@@ -362,6 +362,18 @@ harness as it stands** — four concrete gaps, each with its path:
    `addressed_the_tag` rubric that would score correct participation speech
    ~0. An participation judge rubric is a separate deliverable.
 
+**Phase 2 closed all five** (plus gap 0 found at implementation time: the
+fire path assembled neither the note nor the fact tier, so the determination
+never saw them — ratified and fixed first): the drive path is
+`build_offline_pipeline(participation_opt_in=...)` + `run_case`; the seed
+field is `Case.seed` built nora-side by `eval_support.seed_from_dict` (every
+tier row keyed to the eval workspace); the verdict signal is
+`Trajectory.sent` (`ParticipationVerdict`, chosen and documented); the parity
+scan covers the FirePath construction sites in composition.py AND offline.py;
+and the judge has a situation-shaped participation rubric
+(`PARTICIPATION_RUBRIC` / `_build_participation_judge_prompt`), with the
+`JUDGE_MODEL_TIER` label documented as the leftover it is.
+
 ## 10. Decisions (locked by Miles, 2026-09-05)
 
 1. **Determination layer: full model, no pre-filter** (Miles: 1A). Every
@@ -420,3 +432,39 @@ audience-labelled metrics + indicate suppression; (2) eval suite green on 15
 cases with zero false-speaks on knowledge-cut twins; (3) shadow mode review;
 (4) Miles authorizes live participation sends. No participation sending ships
 before the shadow gate closes.
+
+### 11.1 The flip procedure (Phase 2)
+
+Gate (1) shipped with Phase 1. Gates (2)–(4) are the Phase 2 deliverables,
+and each has a concrete, checkable form:
+
+1. **Eval green.** `make eval-participation` (`evals/run.py --suite
+   participation`) drives all 15 cases in
+   `evals/cases/participation/participation.yaml` through the real
+   participation path (real `ParticipationPolicy`/`ParticipationTrigger`/
+   `FirePath.speak`, real model) and exits non-zero unless every case reaches
+   its expected verdict. The hard bar, called out by name in the gate's own
+   summary: **zero false-speaks on the five knowledge-cut twins** (S1b–S5b —
+   same message, same transcript, only the seed differs; a speak there is the
+   model answering from parametric memory) and **zero speaks on S6–S10**. The
+   judge over the cases she spoke on (grounded value / no uninvited
+   performance / voice, `[evals] judge_model`) is advisory — printed, never
+   bound, because binding a stochastic judge would make the flip gate flaky.
+2. **Shadow review.** Turn shadow mode on: `[participation] enabled = true`,
+   `shadow = true`, `shadow_channel` set to the mirror channel
+   (`shadow_platform = "discord"` — the mirror is operator-facing and the
+   community surface is Discord), and `participation = true` on the rooms
+   under review in policy.toml. Every determination — speak AND silence —
+   posts to the mirror: for a speak, the actual reply and the window; for a
+   silence, what she WOULD have said (the decline draft, or the held text
+   when the send cooldown held a concluded-speak) plus the window that
+   closed. Mirror traffic goes through the same Deliverer/guards under
+   `audience="participation-shadow"` and is never counted in
+   `nora_participation_spoke_total`. Miles reviews the mirror for a soaking
+   period; §10.3's `cooldown_minutes` is tuned from this data.
+3. **The flip, on Miles's authorization only.** `shadow = false` (or simply
+   left on — the mirror is harmless), rooms stay opted in. Live sends were
+   already possible the moment `enabled = true` and a room opted in, so the
+   flip is a POLICY act, not a config change: Phase 2 changes no default —
+   `enabled` and `shadow` both ship `false`, and no committed config turns
+   either on.

@@ -28,12 +28,20 @@ from nora.app.fire import (
 )
 from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.events import Event
-from nora.domain.models import ConversationTarget, PersonRef
+from nora.domain.facts import Fact, FactAsserter, FactsView
+from nora.domain.models import ConversationTarget, DeliveryStatus, PersonRef
+from nora.domain.notes import Note, NoteRevision
 from nora.domain.ports import JobResult, JobStatus, PlatformIdentity, SendResult
 from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
-from nora.testing import FakeAgentRunner, ScriptedTurn
+from nora.policy import permissive_policy
+from nora.testing import (
+    FakeAgentRunner,
+    InMemoryFactStore,
+    InMemoryNoteStore,
+    ScriptedTurn,
+)
 from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
 from nora.testing.reminders import FakeReminderStore
 
@@ -287,6 +295,8 @@ def _fire_path(
     records: FakeRecordStore | None = None,
     registry: ToolRegistry | None = None,
     participation_runner=None,
+    shadow_channel: str | None = None,
+    shadow_platform: str = "discord",
     timeout_seconds: float = 5.0,
     room_language_max_entries: int | None = None,
     event_registry: dict | None = None,
@@ -312,6 +322,7 @@ def _fire_path(
         ai_peer="nora", context_window=40,
         limits=LIMITS, timeout_seconds=timeout_seconds, clock=lambda: T0,
         participation_runner=participation_runner,
+        shadow_channel=shadow_channel, shadow_platform=shadow_platform,
         **extra,
     )
 
@@ -1075,6 +1086,183 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
 
 
 # ---------------------------------------------------------------------------
+# The note/fact tiers on the fire path (design/dreamer-agent-loop/35 Phase 2)
+# ---------------------------------------------------------------------------
+# S5's precedent one tier later: the participation determination grounds on
+# «transcript + standing/notes/facts», which Phase 1's header already claimed
+# while `build_context` rendered neither block. These pin the read itself, the
+# fail-soft accounting, and the wiring-gap state.
+
+async def _fire_path_with_tiers(
+    persons, record_store, memory_store, doctrine_store, metrics, *,
+    notes=None, facts=None, policy="permissive",
+) -> FirePath:
+    """`fire_path`'s own builder plus the tier collaborators — same
+    model-side-collaborators-are-None shape, for the same reason: these tests
+    call `build_context` only. `policy="permissive"` resolves every room to
+    the `nora` workspace, matching where the seeds below are keyed."""
+    return FirePath(
+        persons=persons, records=record_store, memory=memory_store,
+        doctrine_store=doctrine_store, metrics=metrics,
+        runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
+        canary="test-canary", display_name="Nora",
+        ai_peer="nora", context_window=40, limits={},
+        timeout_seconds=120.0, clock=lambda: T0,
+        notes=notes, facts=facts,
+        policy=permissive_policy() if policy == "permissive" else None,
+    )
+
+
+def _seeded_note_store() -> InMemoryNoteStore:
+    store = InMemoryNoteStore()
+    store.notes["11111111-0000-4000-8000-000000000001"] = Note(
+        id="11111111-0000-4000-8000-000000000001", workspace="nora",
+        title="Raft roadmap", description="when the next Raft update ships",
+        uncertainty="no date announced", closing_condition="Raft announces a date",
+        established_in="conv-1", created_at=1,
+        head_revision_id="22222222-0000-4000-8000-000000000002",
+        anchor_date=20260101,
+    )
+    store.revisions["22222222-0000-4000-8000-000000000002"] = NoteRevision(
+        id="22222222-0000-4000-8000-000000000002",
+        note_id="11111111-0000-4000-8000-000000000001",
+        body="still no date", parent_revision_id=None,
+        written_at=1, established_by="test-seed",
+    )
+    return store
+
+
+def _seeded_fact_store() -> InMemoryFactStore:
+    store = InMemoryFactStore()
+    store.seed_fact(Fact(
+        id="33333333-0000-4000-8000-000000000003", workspace="nora",
+        subject_id="aws community day 2026", predicate="is on",
+        object_entity_id=None, object_literal="October 26 at IVE",
+        warrant_kind="stated", valid_from=1, created_at=1,
+        instruction_sha256="a" * 64, model="test-model",
+        established_by="test-seed",
+    ))
+    store.seed_asserters(FactAsserter(
+        fact_id="33333333-0000-4000-8000-000000000003",
+        person_id="miles", message_id=1, asserted_at=1,
+    ))
+    return store
+
+
+async def test_the_fire_path_reads_the_note_index(
+    persons, record_store, memory_store, doctrine_store, metrics,
+) -> None:
+    """The determination's `<notes>` block: the standing index for the room's
+    WORKSPACE, not the room — DEC-105's keying, mirrored from
+    `TranscriptInjection._notes`."""
+    fire = await _fire_path_with_tiers(
+        persons, record_store, memory_store, doctrine_store, metrics,
+        notes=_seeded_note_store(),
+    )
+
+    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+
+    assert [n.title for n in ctx.notes] == ["Raft roadmap"]
+
+
+async def test_the_fire_path_reads_the_fact_slices(
+    persons, record_store, memory_store, doctrine_store, metrics,
+) -> None:
+    """Both slices: the ROOM slice (the transcript mentions the subject) and
+    the SENDER slice (the occasion's person asserted the fact) — plus the
+    extent line and the stated-fact attribution."""
+    record_store.rows.append({
+        "id": 1, "platform": "signal", "conversation_id": "conv-1",
+        "sender_id": "+85212345678", "sender_name": "Miles", "person_id": "miles",
+        "ts": 1, "body": "does anyone know when AWS Community Day 2026 is?",
+        "is_nora": False, "delivery_status": DeliveryStatus.SENT,
+        "quoted_ts": None, "raw_json": {}, "media_json": None,
+    })
+    fire = await _fire_path_with_tiers(
+        persons, record_store, memory_store, doctrine_store, metrics,
+        facts=_seeded_fact_store(),
+    )
+
+    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+
+    assert [f.object_literal for f in ctx.facts.room] == ["October 26 at IVE"]
+    assert [f.object_literal for f in ctx.facts.sender] == ["October 26 at IVE"]
+    assert ctx.facts.extent.standing == 1
+    assert ctx.facts.asserters == {
+        "33333333-0000-4000-8000-000000000003": ("miles",),
+    }
+
+
+async def test_a_failed_note_read_is_counted_not_silent(
+    persons, record_store, memory_store, doctrine_store, metrics,
+) -> None:
+    """R-27 on this path: an index that exists but could not be read is
+    `unavailable` (counted), never folded silently into «there are none»."""
+    class _Down:
+        async def standing(self, *, workspace: str):
+            raise RuntimeError("db down")
+
+    fire = await _fire_path_with_tiers(
+        persons, record_store, memory_store, doctrine_store, metrics,
+        notes=_Down(),
+    )
+
+    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+
+    assert ctx.notes == ()
+    assert metrics.get("nora_errors_total", stage="fire_notes") == 1
+
+
+async def test_a_failed_fact_read_is_counted_not_silent(
+    persons, record_store, memory_store, doctrine_store, metrics,
+) -> None:
+    class _Down:
+        async def standing_subjects(self, *, workspace: str):
+            raise RuntimeError("db down")
+
+    fire = await _fire_path_with_tiers(
+        persons, record_store, memory_store, doctrine_store, metrics,
+        facts=_Down(),
+    )
+
+    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+
+    assert ctx.facts == FactsView()
+    assert metrics.get("nora_errors_total", stage="fire_facts") == 1
+
+
+async def test_wired_tiers_without_a_policy_are_a_counted_wiring_gap(
+    persons, record_store, memory_store, doctrine_store, metrics,
+) -> None:
+    """A store wired but no `Policy` to scope it by: both tiers default safely
+    AND the gap is counted ONCE for the turn — guessing a workspace would
+    render another social unit's notes into this room (DEC-105)."""
+    fire = await _fire_path_with_tiers(
+        persons, record_store, memory_store, doctrine_store, metrics,
+        notes=_seeded_note_store(), facts=_seeded_fact_store(), policy=None,
+    )
+
+    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+
+    assert ctx.notes == ()
+    assert ctx.facts == FactsView()
+    assert metrics.get("nora_errors_total", stage="fire_workspace") == 1
+
+
+async def test_the_dormant_default_reads_nothing_and_counts_nothing(
+    fire_path: FirePath, metrics,
+) -> None:
+    """No tier collaborators wired (the shipped `[notes]/[facts] enabled =
+    false`): empty fields, and no wiring-gap count — a deployment with the
+    tiers off does not HAVE the gap."""
+    ctx = await fire_path.build_context(reminder_occasion([_reminder()]))
+
+    assert ctx.notes == ()
+    assert ctx.facts == FactsView()
+    assert metrics.get("nora_errors_total", stage="fire_workspace") == 0
+
+
+# ---------------------------------------------------------------------------
 # participation — the fifth Event (design/dreamer-agent-loop/35)
 # ---------------------------------------------------------------------------
 # The occasion that goes THROUGH `FirePath.speak` like the four reminder-row
@@ -1279,3 +1467,163 @@ async def test_the_participation_turn_reads_the_may_speak_doctrine(
     assert "participation-conduct" in names
     assert "silence" in names
     assert doctrine.sha256 != doctrine_store.get(applies_to="tag").sha256
+
+
+# ---------------------------------------------------------------------------
+# The shadow mirror (design/dreamer-agent-loop/35 §10.6)
+# ---------------------------------------------------------------------------
+
+
+def _shadow_path(
+    *, doctrine_store, persons: Persons, metrics: Metrics,
+    room: _FireAdapter, shadow: _FireAdapter | None,
+    participation_runner, shadow_channel: str | None = "mirror-1",
+) -> FirePath:
+    """A fire path with the shadow mirror wired: the room on signal, the mirror
+    channel on discord (the operator-facing lean) — or `shadow=None` for the
+    missing-adapter case."""
+    adapters: dict[str, _FireAdapter] = {"signal": room}
+    if shadow is not None:
+        adapters["discord"] = shadow
+    return _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapters=adapters, runner=FakeAgentRunner([]),
+        participation_runner=participation_runner,
+        shadow_channel=shadow_channel,
+    )
+
+
+async def test_the_shadow_mirror_posts_a_spoke_determination(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """TRUE SHADOW (Miles decision 2026-09-05): a speak determination while the
+    mirror is wired NEVER live-sends — the room hears NOTHING, the shadow
+    channel gets the verdict, the actual text and the source room, through
+    the same `deliver.build`/guards, under its own audience. The mirror is
+    NOT a live send: `nora_participation_spoke_total` stays 0 (the held
+    message never reached the room), and the draft is reviewable."""
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    path = _shadow_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow,
+        participation_runner=FakeAgentRunner(_send_turns("咁啱嘅")),
+    )
+
+    outcome = await path.speak(_participation())
+
+    # True shadow: the room hears nothing; the determination is reviewable.
+    assert outcome == fire_module.SILENT
+    assert room.texts == []
+    assert len(shadow.sent) == 1
+    target, mirror = shadow.sent[0]
+    assert target.platform == "discord"
+    assert target.conversation_id == "mirror-1"
+    assert "signal/conv-1" in mirror            # the source room
+    assert "SHADOW MODE held it" in mirror      # true shadow wording
+    assert "咁啱嘅" in mirror                    # the draft, never sent
+    # Live sends only: the mirror never reads as room speech, and the held
+    # draft never counts as a spoke.
+    assert metrics.get("nora_participation_spoke_total") == 0
+    assert metrics.get("nora_participation_spoke_total", platform="signal") == 0
+    assert metrics.get("nora_participation_spoke_total", platform="discord") == 0
+
+
+async def test_the_shadow_mirror_posts_a_silent_determination_with_the_draft(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The silence half: what she WOULD have said (the decline draft, which
+    doubles as her reasoning) and the verdict — the review surface the flip
+    decision is made from."""
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    path = _shadow_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow,
+        participation_runner=FakeAgentRunner([
+            ScriptedTurn(final_text="nothing here needs me"),
+        ]),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SILENT
+    assert room.sent == []
+    assert len(shadow.sent) == 1
+    _, mirror = shadow.sent[0]
+    assert "SILENT" in mirror
+    assert "declined the floor" in mirror
+    assert "nothing here needs me" in mirror    # the draft, never sent
+    assert metrics.get("nora_participation_spoke_total") == 0
+    assert metrics.get("nora_participation_silence_total", platform="signal") == 1
+
+
+async def test_the_shadow_mirror_shows_what_a_held_send_would_have_said(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The held-text seam: the cooldown-held branch retains the text
+    (`Deliverer.held_texts`), so a concluded-speak inside the cooldown is
+    reviewable — the one case whose words the room's history never records.
+
+    Shadow is OFF here (`shadow_channel=None`): with the mirror wired, the
+    shadow gate holds the send and the wording says SHADOW MODE (covered by
+    the spoke test above). This test exercises the cooldown wording alone."""
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    path = _shadow_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow, shadow_channel=None,
+        participation_runner=FakeAgentRunner(_send_turns("held back")),
+    )
+
+    outcome = await path.speak(_participation(), send_permitted=False)
+
+    assert outcome == fire_module.SILENT
+    assert room.sent == []
+    # Shadow off = no review surface: the cooldown-held text is retained by
+    # the Deliverer (the held-text seam) but there is no mirror to post it.
+    # The reviewable held-draft case is the shadow-mode spoke test above,
+    # which shows the held text under the SHADOW MODE wording.
+    assert shadow.sent == []
+    assert metrics.get("nora_participation_spoke_total") == 0
+
+
+async def test_shadow_off_posts_nothing(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The shipped default (`shadow = false` -> no channel wired): no mirror,
+    no matter the verdict."""
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    path = _shadow_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow, shadow_channel=None,
+        participation_runner=FakeAgentRunner(_send_turns("咁啱嘅")),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SENT
+    assert room.texts == ["咁啱嘅"]
+    assert shadow.sent == []
+
+
+async def test_a_missing_shadow_adapter_fails_soft_and_is_counted(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """A shadow platform with no adapter wired must not break the reviewed
+    turn — review traffic never changes the outcome — but it is counted, not
+    silent (R-5): `nora_errors_total{stage="participation_shadow"}`.
+
+    TRUE SHADOW (Miles decision 2026-09-05): the shadow channel is wired, so
+    the turn NEVER live-sends even though the mirror adapter is missing — an
+    operator who turned shadow on expects the room to hear nothing, and a
+    broken mirror must not silently become a live send."""
+    room = _FireAdapter()
+    path = _shadow_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=None,
+        participation_runner=FakeAgentRunner(_send_turns("咁啱嘅")),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SILENT
+    assert room.texts == []
+    assert metrics.get("nora_errors_total", stage="participation_shadow") == 1

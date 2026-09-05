@@ -253,6 +253,17 @@ settle_seconds = 10
 # message per room per this many minutes. Evaluations run regardless; one that
 # concludes "speak" inside the cooldown stays silent (and is logged).
 cooldown_minutes = 10
+# Shadow mode (§10.6), the pre-flip review surface: every participation
+# determination — speak AND silence — is mirrored to shadow_channel, with the
+# source room, the verdict, the text (sent / held by the cooldown / the draft
+# she declined to send) and the window that closed. ON TOP of `enabled` and
+# the room opt-in, never instead of them. The mirror is a real channel the
+# operator reads (a Discord channel by default), reached through the same
+# Deliverer and guards as any send, under its own audience label — and never
+# counted in nora_participation_spoke_total.
+shadow = false
+# shadow_channel = "1234567890123456789"   # required when shadow = true
+# shadow_platform = "discord"              # the mirror's platform
 
 [engagement]
 policy = "trigger_text"

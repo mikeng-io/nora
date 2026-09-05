@@ -73,7 +73,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_silent_failures_total",
         "Failures kept silent from the group, by reason and by which path was "
-        "speaking (audience=\"tag\" | \"heartbeat\" | \"participation\").",
+        "speaking (audience=\"tag\" | \"heartbeat\" | \"participation\" | "
+        "\"participation-shadow\" — the §10.6 mirror, whose failures are "
+        "operator-review traffic, never room speech).",
         # `audience` is the ONE label the heartbeat adds to an existing series
         # (design spec §6.2, §13), and it is added rather than the fire path
         # getting its own silent-failure series, because isolation-by-omission

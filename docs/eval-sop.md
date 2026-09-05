@@ -141,3 +141,36 @@ This is the SOP, not a one-time setup:
 
 A routing bug you fixed but did not add a journey for is a bug you will ship
 again. Add the journey.
+
+
+## The participation suite — the flip gate (design/dreamer-agent-loop/35 §9)
+
+`make eval-participation` runs the 15-case participation suite: 5 relevance-Yes
+(S1a-S5a), their 5 knowledge-cut twins (S1b-S5b), and 5 pure-No (S6-S10). Each
+case is `transcript + standing seed + incoming -> expected verdict (speak /
+silence)`, driven through the REAL participation path (real
+`ParticipationTrigger`, real `FirePath.speak`, real policy opt-in, real model).
+
+**This is the flip gate.** Zero false-speaks on the knowledge-cut twins and
+zero speaks on S6-S10 is the hard bar the design makes load-bearing — a model
+that answers a twin from parametric memory has failed, however correct the
+answer is in the world.
+
+**Reading the output:** the verdict is graded on `Trajectory.sent` (the
+room-visible truth — a called-but-vetoed `send_reply` is not a message the
+room saw). The summary prints a `stop_reason` distribution: a turn that never
+successfully invoked the model (timeout, llm_error, budget cut) is an ERROR,
+not a correct silence — if the distribution shows `invocation_timeout` or
+`llm_error` on the silence-expected cases, the run is NOT green even if the
+verdicts print PASS. A live-model outage during a gate run must read as an
+outage, not as "zero false-speaks".
+
+**Where it runs:** the live gate needs the configured model endpoint reachable
+(`[llm] base_url`). The deployment's `host.docker.internal:20128` gateway is
+only reachable from the deploy host; on a dev box, point `[llm] base_url` at
+the local OmniRoute (`127.0.0.1:20128`) before running. The judge on spoke
+cases is advisory (printed, never bound) — binding a stochastic judge would
+make the flip gate flaky.
+
+**The loop:** a participation failure you fixed but did not add a case for is a
+failure you will ship again. Add the case (or tighten the twin).

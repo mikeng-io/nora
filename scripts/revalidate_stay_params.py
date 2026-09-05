@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import sqlalchemy as sa
 
-from nora.domain.mobility import DWELL_CAP_MS, RawFix, Stay, segment_stays
+from nora.domain.mobility import CHUNK_GAP_MS, RawFix, Stay, segment_stays
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import PRESENCE_FIXES
 
@@ -48,7 +48,7 @@ def _chunk_by_gap(fixes: list[RawFix], gap_ms: int) -> list[list[RawFix]]:
 
     Deliberately a local copy rather than an import of the rollup's private
     `_chunk_by_gap`: this repo does not reach across modules for a private
-    function. Only the public `DWELL_CAP_MS` is shared.
+    function. Only the public `CHUNK_GAP_MS` is shared.
     """
     if not fixes:
         return []
@@ -100,7 +100,7 @@ def _stays_for(
     the whole run, far below the resolution of what is being compared here.
     """
     stays: list[Stay] = []
-    for chunk in _chunk_by_gap(fixes, DWELL_CAP_MS):
+    for chunk in _chunk_by_gap(fixes, CHUNK_GAP_MS):
         result = segment_stays(
             chunk, subject_id=person_id, person_id=person_id, circle_id="",
             radius_m=radius_m, min_dwell_ms=min_dwell_ms,
