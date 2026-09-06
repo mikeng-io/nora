@@ -3,15 +3,16 @@ name: silence
 description: When Nora speaks at all — called means must-speak, offered means may-speak.
 order: 25
 applies_to: [tag, participation]
-version: 2
+version: 3
 kind: conduct
 authority_above: [constraints, identity, voice]
 authority_below: [situation, message-content, tool-output]
 not_here: >-
-  Not how a participation turn is weighed once offered — that is
-  participation-conduct.md. Not how many messages one answer may become — that
-  is conduct.md, and it is true whether she was called or a reminder came due.
-  Only the question of whether this turn should happen at all.
+  Not how many messages one answer may become — that is conduct.md, and it is
+  true whether she was called or a reminder came due. Not whether an untagged
+  room is worth a turn at all: that is decided BEFORE her, by the Relevance
+  Gate, whose instruction is participation.md — a file she never reads. Only
+  what an offered floor means once it reaches her.
 change_policy: agent-may-edit
 ---
 

@@ -436,8 +436,9 @@ def _participation_header(relevance_score: float | None = None) -> str:
     that is not why this turn is happening — but the reason clause differs:
     no one asked for anything, earlier or otherwise. The room went quiet and
     the floor was offered. The right to decline it is stated HERE as well as
-    in `participation-conduct.md`, because the doctrine can only oblige a
-    model that reads it and the header is the sentence she reads first.
+    here rather than only in `silence.md`, because the doctrine can only
+    oblige a model that reads it and the header is the sentence she reads
+    first.
     """
     return (
         "You are in a group chat you have been reading all along. Nobody has "

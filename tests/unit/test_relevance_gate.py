@@ -10,16 +10,18 @@ same thing to every prompt cannot fail the tests that matter here.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from types import SimpleNamespace
 
 import pytest
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.standing import Standing
 from nora.ingest.relevance_gate import (
+    GATE_AUDIENCE,
     GATE_ERROR_KINDS,
-    PROMPT,
     Completion,
     RelevanceGate,
+    build_prompt,
     parse_verdict,
     render_context,
 )
@@ -44,6 +46,25 @@ class _Client:
         if isinstance(self.answer, Exception):
             raise self.answer
         return Completion(content=str(self.answer), finish_reason=self.finish_reason)
+
+
+class _Doctrine:
+    """Stands in for `DoctrineStore`. Answers ONLY at the gate's audience —
+    asked for any other, it raises, which is what pins that the gate never
+    reaches for Nora's own doctrine (the superseded design injected all of it,
+    and the trace that killed that design showed the determination opening a
+    weather tool)."""
+
+    TEXT = "GATE INSTRUCTION: decide if the room needs the assistant."
+
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+
+    def get(self, *, applies_to: str = "tag"):
+        self.asked.append(applies_to)
+        if applies_to != GATE_AUDIENCE:
+            raise AssertionError(f"the gate asked for {applies_to!r} doctrine")
+        return SimpleNamespace(text=self.TEXT)
 
 
 class _Records:
@@ -113,6 +134,7 @@ def _row(
 def _gate(client: _Client, **kw) -> RelevanceGate:
     return RelevanceGate(
         client=client,
+        prompts=kw.pop("prompts", _Doctrine()),
         records=kw.pop("records", _Records(["anyone know the AWS date?"])),
         metrics=kw.pop("metrics", Metrics()),
         **kw,
@@ -141,8 +163,8 @@ async def test_the_prompt_is_exactly_the_instruction_plus_the_two_rendered_block
     gate = _gate(client, records=_Records(rows), standing=_StandingStore(standing))
     await gate.decide(platform="discord", conversation_id="g/1")
 
-    expected = PROMPT.format(
-        context=render_context((_row(rows[0], rid=1),), standing),
+    expected = build_prompt(
+        _Doctrine.TEXT, context=render_context((_row(rows[0], rid=1),), standing),
     )
     assert client.prompts[0] == expected
 
@@ -165,7 +187,7 @@ async def test_the_prompt_never_carries_doctrine_or_tools():
     client = _Client('{"verdict": "no_go", "relevance_score": 0.1}')
     await _gate(client).decide(platform="discord", conversation_id="g/1")
     prompt = client.prompts[0].lower()
-    for forbidden in ("doctrine", "send_reply", "tool", "you are nora"):
+    for forbidden in ("send_reply", "you are nora", "唔好"):
         assert forbidden not in prompt, f"{forbidden!r} reached the gate prompt"
 
 

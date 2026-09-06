@@ -2134,6 +2134,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     source="[relevance_gate] reasoning_effort",
                 ),
             ),
+            # The SAME store the turn reads, at a DIFFERENT audience. The gate
+            # gets `participation.md` and nothing else; Nora never sees that
+            # file and the gate never sees hers. Hot-reloads on mtime, which
+            # is what makes the shadow soak a tuning loop instead of a
+            # rebuild-per-edit loop.
+            prompts=doctrine_store,
             records=audit,
             metrics=metrics,
             # DEC-80's projection, the SAME `Persons` the fire path and the

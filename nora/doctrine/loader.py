@@ -60,7 +60,20 @@ _REQUIRED = (
 # `_scan`, because the whole point is that it cannot be hand-written. (The
 # former second derived kind, `capability`, was dropped by DEC-150 — tools are
 # described by their schemas.)
-AUTHORED_KINDS = ("constraint", "identity", "conduct")
+# `instrument` is the odd one and it is deliberate: the first three describe
+# NORA — who she is, how she behaves, what she may never do — and every rule
+# below that is scoped by kind assumes a reader with judgement, memory and
+# tools. `instrument` describes a MEASUREMENT: a cheap model call that decides
+# something about a room and has none of those. `participation.md` is the only
+# one, and it lives here rather than in code so the operator can tune the
+# Relevance Gate's instruction against live shadow verdicts without a rebuild.
+#
+# It is exempt from the tool-name and RFC-2119 rules that follow, for the same
+# reason `constraint` is exempt from the first: an instrument's instruction has
+# to name its own output values (`no_go`) and may legitimately speak in
+# absolutes, because it is specifying a decision procedure rather than
+# describing a person.
+AUTHORED_KINDS = ("constraint", "identity", "conduct", "instrument")
 DERIVED_KINDS = ("situation",)
 KINDS = (*AUTHORED_KINDS, *DERIVED_KINDS)
 

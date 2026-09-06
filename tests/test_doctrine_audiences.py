@@ -77,22 +77,33 @@ def test_the_participation_audience_is_not_degenerate(doctrine_store):
     the audience resolves to, and a thin corpus on the path that speaks
     UNCALLED is the worst version of thin."""
     text = doctrine_store.get(applies_to="participation").text
-    for name in (*AUTHORED, "silence", "participation-conduct"):
+    for name in (*AUTHORED, "silence"):
         assert f'name="{name}"' in text, f"{name} missing from the participation audience"
+    # And NOT the gate's instruction. `participation.md` describes an
+    # instrument, not a person: it tells a cheap upstream call how to decide
+    # whether her turn happens. Injected into HER prompt it would read as a
+    # rulebook about her own worth to the room.
+    assert 'name="participation"' not in text
 
 
-def test_participation_conduct_reaches_no_other_audience(doctrine_store):
-    """The may-speak rulebook is the participation occasion's own. On a tag it
-    would contradict must-speak; on a heartbeat turn it would licence the one
-    thing an obligation occasion may not do."""
-    needle = "a question nobody asked"
-    bodies = {
-        aud: " ".join(_bodies(doctrine_store, aud).split())
-        for aud in ("participation", "tag", "heartbeat")
-    }
-    assert needle in bodies["participation"]
-    assert needle not in bodies["tag"]
-    assert needle not in bodies["heartbeat"]
+def test_the_gate_instruction_reaches_no_audience_of_hers(doctrine_store):
+    """`participation.md` is the Relevance Gate's whole system prompt, isolated
+    on an audience no other file declares.
+
+    Both directions matter. Into one of HER audiences it would be a document
+    about when she is worth listening to, which is not doctrine. And the
+    gate's own audience must stay thin: the superseded design injected her
+    entire doctrine into the determination, and the trace that killed it
+    showed the determination opening a weather tool.
+    """
+    needle = "You are a relevance gate"
+    for aud in ("tag", "heartbeat", "participation"):
+        assert needle not in _bodies(doctrine_store, aud), f"leaked into {aud}"
+    gate = doctrine_store.get(applies_to="relevance_gate").text
+    assert needle in gate
+    assert gate.count("<section ") == 1
+    for hers in ("identity", "voice", "silence", "conduct", "constraints"):
+        assert f'name="{hers}"' not in gate
 
 
 def test_the_multi_message_rule_survives_in_both_audiences(doctrine_store):

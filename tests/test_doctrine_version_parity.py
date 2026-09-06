@@ -47,8 +47,10 @@ PINNED: dict[str, tuple[int, str]] = {
     "voice": (18, "e1e0195dc4d8d7cc5cbc04d0800b1481d56a7956f5b02afdb631dce8bf509db2"),
     "silence": (2, "55abb8beab124e1d7f696ebcdcd577093b0afa7d063c031cc01e4dd4e3e1b6cc"),
     "conduct": (24, "a304ae577f27a9fc547896185f13b4ac382f77b5643af03868a97af235e4136a"),
-    "participation-conduct": (
-        2, "c0e3e26d07acad69681357fabbc66820c414fb67d9f95df1e2364364fe954699",
+    # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
+    # authored file so a silent edit to what the gate is told is impossible.
+    "participation": (
+        1, "PLACEHOLDER",
     ),
     "constraints": (6, "1a814c41a079067b2143ee1b4417a9b9a85ca8922f3082120f3c29494fd3dc43"),
 }

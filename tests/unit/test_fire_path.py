@@ -1355,9 +1355,22 @@ async def test_a_participation_turn_without_a_runner_is_a_wiring_fault(
 async def test_the_participation_turn_reads_the_may_speak_doctrine(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """The determination runs on the `applies_to="participation"` assembly —
-    silence.md's may-speak half and participation-conduct.md — never the tag
-    assembly, whose must-speak reading would make silence a violation."""
+    """The turn runs on the `applies_to="participation"` assembly, and never on
+    the GATE's instruction — `participation.md` sits on its own audience and
+    describes an instrument, not her.
+
+    **That assembly is now byte-identical to the tag one, and this test says so
+    deliberately.** `participation-conduct.md` was the only file that differed,
+    and deleting it left every remaining file occasion-neutral: `silence.md`
+    carries BOTH halves (`[tag, participation]`) and the model picks the one
+    its situation names. So the occasion distinction no longer lives in
+    doctrine at all — it lives in `_participation_header`, the situation
+    paragraph, which is the sentence she reads first.
+
+    Asserting the equality rather than a difference is the honest pin: a later
+    participation-only file makes this test fail, which is exactly when
+    somebody should have to come back and re-read this docstring.
+    """
     adapter = _FireAdapter()
     calls: list = []
     path = _fire_path(
@@ -1372,9 +1385,11 @@ async def test_the_participation_turn_reads_the_may_speak_doctrine(
 
     doctrine = calls[-1]["doctrine"]
     names = {section.name for section in doctrine.sections}
-    assert "participation-conduct" in names
     assert "silence" in names
-    assert doctrine.sha256 != doctrine_store.get(applies_to="tag").sha256
+    assert "participation" not in names, "the gate's instruction reached her turn"
+    assert doctrine.sha256 == doctrine_store.get(applies_to="tag").sha256, (
+        "a participation-only doctrine file appeared — re-read this docstring"
+    )
 
 
 # ---------------------------------------------------------------------------
