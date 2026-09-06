@@ -457,12 +457,18 @@ def group_on_anchor_key(
     `no_entity_anchor` counts, and it now means «unresolved» rather than «the
     model typed nothing».
 
-    **The consequence, stated rather than discovered later: `note_entity` has
-    no writer, so merge is INERT in production today.** 27 §2 already decided
-    that — populating `note_entity` is "the curator's real precondition, NOT
-    its flag" — and `nora_note_curator_groups_refused_total` is the number that
-    says what building the writer would unlock. The retire half is unaffected
-    and is the half that answers "the notebook only grows".
+    **The consequence, stated rather than discovered later: `note_entity` had
+    no writer, so merge WAS inert in production — until issue #100
+    (`d10093af`).** 27 §2 already decided that — populating `note_entity` is
+    "the curator's real precondition, NOT its flag" — and #100 built exactly
+    that writer: `SqlNoteStore.create`/`propose` now resolve
+    `anchor_entity_ids` against the shared entity registry and write
+    `note_entity` in the same transaction. Merge is therefore REACHABLE
+    whenever entities resolve; `nora_note_curator_groups_refused_total` is
+    still the number that says how much of the notebook does not (a group
+    with nothing resolved is still refused and counted, per-candidate now
+    rather than always). The retire half is unaffected either way and is the
+    half that answers "the notebook only grows".
 
     **The refused half carries no bodies, and the asymmetry is deliberate.**
     Nothing reads a refused group's body — it is counted and discarded — so a
@@ -517,10 +523,15 @@ def group_on_anchor_key(
     # Merging those is the two-weddings failure with a different label, and it
     # is unrecoverable in the direction that matters.
     #
-    # The entity half is EMPTY FOR EVERY NOTE IN PRODUCTION, because
-    # `note_entity` has no writer anywhere in the system. So this branch
-    # refuses every group today. 27 §2 already decided that: populating
-    # `note_entity` is "the curator's real precondition, NOT its flag".
+    # The entity half was EMPTY FOR EVERY NOTE IN PRODUCTION, because
+    # `note_entity` had no writer anywhere in the system — until issue #100
+    # (`d10093af`) gave it one: `SqlNoteStore.create`/`propose` resolve
+    # `anchor_entity_ids` against the shared entity registry now, in the same
+    # transaction as the note write. This branch refuses a group whenever its
+    # entities did NOT resolve, which is a per-candidate outcome today rather
+    # than a certainty for every group. 27 §2 already decided the underlying
+    # rule: populating `note_entity` is "the curator's real precondition, NOT
+    # its flag".
     #
     # **The alternative that was rejected**: key on `Note.anchor_entity_ids`,
     # which IS populated — with whatever free text the model handed
@@ -533,9 +544,10 @@ def group_on_anchor_key(
     # self-attestation on a destructive operation, which is exactly what
     # keeping eligibility in code exists to avoid.
     #
-    # THE REVERSAL CONDITION: this comes out when `note_entity` gains a writer
-    # and entities resolve. The refused count is what says whether that is
-    # worth doing, measured against the real notebook rather than estimated.
+    # THE REVERSAL CONDITION HAS FIRED: `note_entity` gained a writer (#100)
+    # and entities now resolve. The refused count is what says how much of the
+    # notebook still does not, measured against the real notebook rather than
+    # estimated.
     eligible = [(k, v) for k, v in collided if k[1]]
     refused = [(k, v) for k, v in collided if not k[1]]
     return (
@@ -624,12 +636,15 @@ class NoteCreationProposal:
     **The anchor is required, and in practice it is a DATE.** `Note`
     `__post_init__` refuses a note anchored to nothing — without a referent
     there is nothing to look it up by later, nothing to compare for a merge,
-    and no way to retire it mechanically. `anchor_entity_ids` needs a populated
-    entity registry, and `note_entity` is empty; a type that accepted only
-    entity anchors would be a shape that cannot be satisfied in production. So
-    both are offered and at least one is required, which is `Note`'s own rule
-    stated one layer earlier, where the proposal can be refused instead of
-    raising inside a background tick.
+    and no way to retire it mechanically. `anchor_entity_ids` needs its
+    strings to actually RESOLVE against the entity registry (`note_entity`,
+    which gained a writer in issue #100 — see `group_on_anchor_key`'s own
+    docstring) — an anchor whose entities never match anything still resolves
+    to none, so a type that accepted only entity anchors would still be a
+    shape a candidate can fail to satisfy. So both are offered and at least
+    one is required, which is `Note`'s own rule stated one layer earlier,
+    where the proposal can be refused instead of raising inside a background
+    tick.
 
     **A create proposal never names a note, so it cannot collide with one — and
     the sink does NOT check whether a similar note already exists.** That is

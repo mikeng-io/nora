@@ -14,11 +14,14 @@ SAYS, which is the one thing a key comparison cannot read.
 column is whatever the model handed `note_create`, verbatim and unresolved, and
 a key over it is wrong in both directions at once: 「Grant 婚禮」/「Gabe's
 wedding」/「婚禮」 are three keys and one occasion, while two unrelated notes
-that both say 「wedding」 are one key and two occasions. Since nothing writes
-`note_entity`, **merge is inert in production and every group is refused and
-counted** — 27 §2's decision showing up as behaviour rather than as prose. The
-retire half is unaffected and is the half that answers «the notebook only
-grows».
+that both say 「wedding」 are one key and two occasions. **`note_entity` got a
+writer with issue #100** (`d10093af`) — `SqlNoteStore.create`/`propose` now
+resolve `anchor_entity_ids` against the shared entity registry and write it in
+the same transaction — so merge is REACHABLE whenever entities resolve; a
+group with nothing resolved is still refused and counted
+(`no_entity_anchor`), but that is now a per-candidate outcome, not a
+certainty for every group. The retire half is unaffected and is the half that
+answers «the notebook only grows».
 
 ## What merged in (design 34, issue #99)
 
@@ -70,19 +73,51 @@ room-scoped TOOL to do this with; §4.2's argument, inherited from the
 revisitor) — the citation/`_covers` grounding applies to them, exactly the set
 that inherits the revisitor's old logic.
 
-**Merge-GROUP members are deliberately exempt**, a judgement call this merge
-records rather than hides: eligibility for merging is entirely code-decided
-(the anchor key), the model is asked only what a body SAYS, and that has never
-needed evidence — a merge's `moot`/`closed` verdict on a colliding pair is the
-pre-merge curator's own behaviour, unchanged. Requiring a citation/`_covers`
-pass for a group member too would be a second, unrelated strengthening riding
-on this issue, would cost a `RecordStore.recent` read per group member for a
-merge path that is measured INERT in production (`note_entity` has no writer —
-M7), and would invalidate the whole pre-existing merge test suite for no
-argued benefit. *The reading that would reopen this:* `note_entity` gaining a
-writer and merge becoming a live path, at which point a group member's
-retirement risk is the same as any other note's and the exemption should be
-re-examined.
+**A note actually offered a merge THIS TICK is exempt**, a judgement call this
+merge records rather than hides: eligibility for merging is entirely
+code-decided (the anchor key), the model is asked only what a body SAYS, and
+that has never needed evidence — a merge's `moot`/`closed` verdict on a
+colliding pair is the pre-merge curator's own behaviour, unchanged. Requiring
+a citation/`_covers` pass for the merge action itself would be a second,
+unrelated strengthening riding on this issue, and would invalidate the whole
+pre-existing merge test suite for no argued benefit.
+
+**This is narrower than "is a candidate-group member" — deliberately, since
+2026-09-06.** The exemption used to key on group MEMBERSHIP alone
+(`note_id not in shown.due_or_anchored`, true of every member of every
+candidate group whether or not that group's merge was ever offered this
+tick). That was harmless only as long as `merge_groups` always returned empty
+— `note_entity` had no writer (see above), so no note was ever actually a
+group member in production. *The reading that would reopen this* was written
+down at the time: "`note_entity` gaining a writer and merge becoming a live
+path, at which point a group member's retirement risk is the same as any
+other note's and the exemption should be re-examined." Issue #100 fired it —
+merge groups are now reachable — and the re-examination found the bug this
+paragraph now describes: a model returning an individual `closed`/`moot`
+verdict for a note that IS in a candidate group, whose merge is NOT actually
+offered/accepted that same tick (declined, or simply not answered with a
+`merged_body`), retired via `supersede` with zero evidence or citation
+grounding — exactly the "silence is not an answer" guarantee this tier
+enforces everywhere else, silently bypassed for this one path.
+
+**The fix**: `_ground`'s exemption and `commit`'s `untouchable` set are now
+both computed from the SAME function, `_merged_away_ids` — every note id
+belonging to a group whose survivor's id is in `offered` (the model named
+that group with a `merged_body` at all this tick; see `_MergeOffered`'s own
+docstring for why the store-level OUTCOME does not narrow this further). A
+group member whose merge was not offered this tick falls into the ordinary
+evidence-grounded path any other note takes — and since `inputs` never
+gathers evidence for a merge-group member (immediately above), that path has
+none to check against, so such a verdict is refused `no_evidence` rather than
+guessed at. That is a real, if narrow, limitation of this fix: a note stuck in
+a group whose merge the model keeps declining cannot retire via an individual
+verdict either, until either the merge actually goes through or the group
+stops colliding — never a wrong retirement, which is the property that
+matters here. *The reading that would reopen THIS:* `inputs` gathering
+evidence for a merge-group member too (the read this paragraph's predecessor
+argued against paying for a genuinely inert path), at which point a declined
+group member could be judged on real evidence instead of always refused for
+having none.
 
 **Scope: merge, retire, and — on retirement — discharge (issue #101).** Merge
 and retire are also the pair that addresses the live problem — `config.toml`
@@ -552,6 +587,18 @@ class _Evidence:
     anchor_covered: bool
 
 
+#: The default for a note `_ground` must judge but `inputs` never gathered
+#: evidence for — every merge-group member whose merge is not offered/accepted
+#: this tick (see `_merged_away_ids`). Empty `message_ids` sends it straight
+#: into `_ground`'s existing `no_evidence` refusal, the same fail-closed
+#: outcome a real evidence read finding nothing produces — this is a stand-in
+#: for "never looked", not a new code path.
+_NO_EVIDENCE = _Evidence(
+    message_ids=frozenset(), has_anchor=False, anchor_passed=False,
+    anchor_covered=False,
+)
+
+
 @dataclass(frozen=True)
 class _Shown:
     """What THIS run put in front of the model, so `accept`/`commit` can
@@ -572,8 +619,11 @@ class _Shown:
     group_of: Mapping[str, str]
     #: survivor handle -> the LONGEST body in that group, in characters.
     longest_body: Mapping[str, int]
-    #: note id -> its gathered evidence, for EVERY note shown this tick
-    #: (group members included).
+    #: note id -> its gathered evidence, for every note `inputs` actually
+    #: gathered evidence for (`anchored_before`/`due_for_revisit`). A
+    #: merge-group member has NO entry here regardless of whether its merge is
+    #: offered this tick — `_ground` reads `_NO_EVIDENCE` for the ones it must
+    #: still judge on their own (see `_merged_away_ids`).
     evidence: Mapping[str, _Evidence]
     #: note id -> {message id -> row}, for the SAME evidence-bearing notes
     #: `evidence` covers (never populated for a merge-group member, which has
@@ -593,6 +643,34 @@ class _Shown:
     #: has nothing to do with the wake/strike breaker (§5.4 — "not two
     #: schedulers", but the two modes still apply to disjoint note sets).
     due_or_anchored: frozenset[str]
+
+
+def _merged_away_ids(
+    shown: _Shown, *, offered: frozenset[str],
+) -> frozenset[str]:
+    """Every note id belonging to a merge group whose SURVIVOR's resolved id
+    is in `offered` — the model named that group with a `merged_body` at all
+    this tick, whether or not the store-level `merge` call actually lands
+    (see `_MergeOffered`'s own docstring: the claim is what protects the
+    group, not the outcome).
+
+    **The one definition, shared by `_ground` and `commit`.** `_ground` uses
+    it to decide whether a note's individual verdict may skip evidence
+    grounding; `commit` uses the identical set, under the name `untouchable`,
+    to decide whether an individual verdict may retire the note at all. Before
+    this was split out, `_ground` answered a DIFFERENT, wider question
+    (`note_id not in shown.due_or_anchored`, true of every member of every
+    CANDIDATE group regardless of whether that group's merge was ever offered)
+    — the correctness bug the module docstring's "Merge-GROUP members" section
+    now documents. One function used by both call sites is what makes it
+    structurally impossible for them to drift apart again.
+    """
+    return frozenset(
+        shown.by_handle[h]
+        for g in shown.merge_groups
+        if shown.by_handle[g[0]] in offered
+        for h in g
+    )
 
 
 class NoteCuratorAdaptor:
@@ -983,6 +1061,17 @@ class NoteCuratorAdaptor:
         """
         shown = self._shown.get(key) or _Shown({}, (), {}, {}, {}, {}, {}, {}, frozenset())
         out: list[object] = self._merged_bodies(key=key, items=items)
+        # Every group whose SURVIVOR the model named with a `merged_body` this
+        # tick — `_merged_bodies` has already scanned the whole of `items` by
+        # this point, so this is complete before the per-item loop below reads
+        # it. `merged_away` is `commit`'s own `untouchable`, computed once and
+        # shared (`_merged_away_ids`) rather than derived twice: see the
+        # module docstring's "Merge-GROUP members" section for the bug two
+        # different definitions produced.
+        offered = frozenset(
+            p.survivor for p in out if isinstance(p, _MergeOffered)
+        )
+        merged_away = _merged_away_ids(shown, offered=offered)
         for item in items:
             if "verdict" not in item:
                 # A merge-only answer is not malformed.
@@ -1008,7 +1097,9 @@ class NoteCuratorAdaptor:
                     "note curator named a handle this run did not render")
                 continue
             grounded_verdict = self._ground(
-                resolved, verdict, why_raw, item, shown=shown)
+                resolved, verdict, why_raw, item, shown=shown,
+                merged_away=merged_away,
+            )
             # Discharge classification (issue #101) — only for a verdict that
             # is ACTUALLY closed and grounded, and only for a note evidence
             # grounding applies to at all (never a merge-group member, which
@@ -1034,6 +1125,7 @@ class NoteCuratorAdaptor:
     def _ground(
         self, note_id: str, verdict: str, why: str,
         item: Mapping[str, object], *, shown: _Shown,
+        merged_away: frozenset[str],
     ) -> _Verdict:
         """The grounding a `closed`/`expired`/`moot` claim must pass before it
         may ACT — never whether it was MADE (a claim that fails still returns
@@ -1044,18 +1136,25 @@ class NoteCuratorAdaptor:
         `open` is always grounded — there is nothing to check, and it is the
         ordinary answer.
 
-        **A merge-group member is EXEMPT entirely** (`note_id not in
-        shown.due_or_anchored`) — see the module docstring's "Merge-GROUP
-        members are deliberately exempt". Its verdict is accepted as-is, the
-        pre-merge curator's own behaviour: eligibility for merging is
-        code-decided and the model is asked only what a body SAYS, which has
-        never needed evidence.
+        **A note actually offered a merge this tick is EXEMPT entirely**
+        (`note_id in merged_away`, `_merged_away_ids` — see the module
+        docstring's "A note actually offered a merge THIS TICK is exempt").
+        Its verdict is accepted as-is, the pre-merge curator's own behaviour:
+        eligibility for merging is code-decided and the model is asked only
+        what a body SAYS, which has never needed evidence. This is narrower
+        than "is a candidate-group member" — a group member whose merge is
+        NOT offered/accepted this tick falls through to the ordinary check
+        below like any other note.
 
-        For a note `anchored_before`/`due_for_revisit` selected, `closed`,
+        For a note `anchored_before`/`due_for_revisit` selected, OR a
+        merge-group member whose merge this tick did not offer, `closed`,
         `expired` and `moot` all require the note's evidence window to be
         non-empty (`no_evidence`): a room that has said nothing since the note
         was written establishes that nobody has spoken, never that a question
-        went answered OR unanswered. Past that:
+        went answered OR unanswered — and a merge-group member has no
+        evidence window at all (`inputs` never gathers one for a candidate
+        group; see its own docstring), so this refusal is exactly what such a
+        note gets: refused for lack of evidence, never guessed at. Past that:
 
         - `closed` needs a `cited_message_id` that is actually one of the ids
           this run showed for THAT note (`citation_missing` /
@@ -1066,10 +1165,10 @@ class NoteCuratorAdaptor:
           SPAN that moment (`anchor_not_covered`, `_covers`'s own rule: the
           room fell silent before the anchor, or is busier than the window).
         """
-        if verdict == "open" or note_id not in shown.due_or_anchored:
+        if verdict == "open" or note_id in merged_away:
             return _Verdict(note_id=note_id, verdict=verdict, why=why, grounded=True)
 
-        evidence = shown.evidence[note_id]
+        evidence = shown.evidence.get(note_id, _NO_EVIDENCE)
         if not evidence.message_ids:
             self._inc("nora_note_curator_dropped_total", reason="no_evidence")
             return _Verdict(note_id=note_id, verdict=verdict, why=why, grounded=False)
@@ -1322,12 +1421,7 @@ class NoteCuratorAdaptor:
             retired += count
             self._inc("nora_note_curator_total", action="merge")
 
-        untouchable = {
-            shown.by_handle[h]
-            for g in shown.merge_groups
-            if shown.by_handle[g[0]] in offered
-            for h in g
-        }
+        untouchable = _merged_away_ids(shown, offered=frozenset(offered))
         retired_this_tick: set[str] = set()
         for note_id, verdict in verdicts.items():
             if (

@@ -1344,14 +1344,16 @@ enabled = true
 # The CURATOR — ON (operator, 2026-08-28). It merges notes about one occasion
 # and retires ones whose question is settled or whose moment has passed.
 #
-# What it does today is RETIRE, and only that. Merge eligibility joins
-# `note_entity`, which has no writer until entity resolution exists, so every
-# candidate group is refused and counted as `no_entity_anchor` (R-75). That is
-# not a bug and not a flag away: a merge keyed on the model's own words is
-# wrong in both directions at once — three spellings of one wedding are three
-# keys, and two unrelated notes that both say "wedding" are one — so the guard
-# refuses rather than guesses. `nora_note_curator_groups_refused_total` is the
-# number that sizes the entity writer when someone builds it.
+# Merge eligibility joins `note_entity` — issue #100 (`d10093af`) gave that
+# table a writer, so merge is REACHABLE whenever entities actually resolve; a
+# candidate group with nothing resolved is still refused and counted as
+# `no_entity_anchor` (R-75), but that is now a per-candidate outcome, not a
+# certainty for every group. A merge keyed on the model's own words is still
+# refused rather than guessed at either way — three spellings of one wedding
+# are three keys, and two unrelated notes that both say "wedding" are one —
+# `nora_note_curator_groups_refused_total` is the number that sizes what
+# still does not resolve. `curator_enabled` below, not entity resolution, is
+# what actually keeps this idle today.
 #
 # Retirement is not deletion. A retired note stays readable; it stops appearing
 # in what Nora is shown.
