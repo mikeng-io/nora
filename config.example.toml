@@ -223,13 +223,13 @@ timeout_seconds = 240
 
 [llm.limits]
 turns = 20
-# Raised 128000 -> 256000 to match the deployment (config.toml). These two
+# Raised 256000 -> 512000 to match the deployment (config.toml). These two
 # files MUST agree on the budget — `tests/test_turn_budget.py::
 # test_both_config_files_declare_the_same_budget` exists because "a budget fix
 # applied to one and not the other" is a state master has been in before. It is
 # not site-specific: it is the current known-good ceiling, and a template
 # disagreeing with it misleads every future investigation.
-total_tokens = 256000
+total_tokens = 512000
 # The loop's OUTPUT budget across every call of the turn, deliberately not
 # `llm.max_tokens` (which is one call's ceiling). It was literally that number
 # until 2026-08-06, so the whole loop could emit what one call could — and
