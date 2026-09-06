@@ -1498,7 +1498,22 @@ def test_the_adjudicator_has_room_to_converge(toml_path):
         "a budget at or below that exhausts the loop and reports an outage "
         "for a batch it had read"
     )
-    # The other three are what still bound it, and they are unchanged: a
-    # turn budget with nothing beside it is an unbounded research loop.
-    assert budget.total_tokens == 120_000
+    # 120_000 -> 2_000_000 (operator, 2026-09-07), which is this assertion's
+    # own docstring being taken up on its offer: "if the model starts needing
+    # more this is the number that has to move".
+    #
+    # It moved on evidence, not on preference. The first tick after the
+    # candidate filter opened (2026-09-06 17:56Z) reached the model for two
+    # workspaces, spent the loop on four `web_search` and two `web_fetch`
+    # calls, and emitted a ZERO-CHARACTER envelope in both — a fetched page is
+    # input-resident and re-paid on every later call, so 120k bought the
+    # research and left nothing to write the verdict with.
+    #
+    # The cadence is what makes the size sane rather than reckless: this
+    # adaptor runs ONCE A DAY per workspace, so a ceiling sized for a
+    # five-minute tick was bounding the wrong thing.
+    assert budget.total_tokens == 2_000_000
+    # `timeout_seconds` is now the BINDING bound, and that is the honest place
+    # for it: a research loop should be stopped by a clock a human would
+    # notice, not by a token budget it exhausts silently mid-answer.
     assert budget.timeout_seconds == 300.0

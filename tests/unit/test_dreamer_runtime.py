@@ -951,3 +951,59 @@ def test_deeply_nested_json_does_not_raise_into_the_caller():
     raw = "prefix " + "{\"a\":" * 20_000 + "1" + "}" * 20_000
 
     assert parse_envelope(raw, key="observations") is None
+
+
+def _named_tool(name: str):
+    """A built tool the way `_tool_budgets` reads one: by `tool_name`."""
+    def _t() -> None: ...
+    _t.tool_name = name          # type: ignore[attr-defined]
+    return _t
+
+
+def test_the_dreamer_applies_the_configured_tool_budget_over_the_table():
+    """**`[llm.budgets]` reaches the Dreamer, and until 2026-09-07 it did not.**
+
+    The tag path applies it through
+    `ToolRegistry(budget_overrides=cfg.llm.budgets).budgets()`; `_tool_budgets`
+    read `NATIVE_TOOLS[name].budget` straight off the table. So one number in
+    `config.toml` meant two ceilings depending on which loop asked, with
+    nothing naming the difference — and the Dreamer got the lower one, on the
+    loop that does the research.
+
+    Measured live, first tick after the knowledge tier's schedule landed:
+    `web_fetch = 6` was configured and `DreamGuard` vetoed the Dreamer at «you
+    already called web_fetch 2 time(s)» — the TABLE value — twelve times in one
+    run, which then produced a 0-char envelope.
+
+    Falsification: drop the `overrides` lookup in `_tool_budgets` and this
+    returns the table's 2.
+    """
+    from nora.agent.dreamer import _tool_budgets
+    from nora.agent.tools import NATIVE_TOOLS
+
+    adaptor = _Adaptor(sink=_Sink())
+    tools = [_named_tool("web_fetch")]
+
+    assert NATIVE_TOOLS["web_fetch"].budget == 2, (
+        "the table's own value — if this changes, the test below is comparing "
+        "against the wrong baseline and says nothing"
+    )
+    assert _tool_budgets(tools, adaptor) == {"web_fetch": 2}, "no override"
+    assert _tool_budgets(tools, adaptor, {"web_fetch": 6}) == {"web_fetch": 6}
+
+
+def test_an_override_naming_a_tool_the_adaptor_lacks_grants_nothing():
+    """A name present in `budgets` is what turns `DreamGuard`'s default-deny
+    into permission. `[llm.budgets]` is deployment-wide and names tools this
+    adaptor was never given, so folding one in unconditionally would hand a
+    workspace-keyed research loop a verb nobody granted it — the exact shape
+    `_tool_budgets`' own docstring refuses by reading BUILT tools."""
+    from nora.agent.dreamer import _tool_budgets
+
+    budgets = _tool_budgets(
+        [_named_tool("web_fetch")], _Adaptor(sink=_Sink()),
+        {"web_fetch": 6, "send_reply": 99},
+    )
+
+    assert budgets == {"web_fetch": 6}
+    assert "send_reply" not in budgets

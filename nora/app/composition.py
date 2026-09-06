@@ -2957,6 +2957,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             metrics=metrics,
             model_name=dream_model,
             schedules=dream_schedules,
+            # The SAME `[llm.budgets]` the tag path applies through
+            # `ToolRegistry(budget_overrides=...)`. Threaded here because the
+            # Dreamer was reading `NATIVE_TOOLS` directly, so one number in
+            # `config.toml` meant two different ceilings depending on which
+            # loop asked — and the Dreamer's was the lower one, on the loop
+            # that does the research.
+            tool_budget_overrides=cfg.llm.budgets,
         )
         # R-5's refuse-to-start shape, and the one check that must run at
         # STARTUP rather than at the first tick: an adaptor holding an act verb
