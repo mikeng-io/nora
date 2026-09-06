@@ -275,7 +275,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 # other files and define no public methods, so they are simply not here.
 _STORE_MODULES: frozenset[str] = frozenset(
     {
-        "announcements.py", "audit.py", "compute_jobs.py", "embeddings.py",
+        "announcements.py", "audit.py", "compute_jobs.py",
+        "dream_schedule.py", "embeddings.py",
         "entities.py", "exchange.py", "fact_candidates.py", "facts.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "mobility.py",

@@ -78,6 +78,7 @@ from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
 from nora.infra.sql.embeddings import SqlEmbeddingStore
 from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.exchange import SqlExchangeStore
@@ -643,6 +644,12 @@ class Dependencies:
     # shape; the fact-candidate extractor's entry is what moves it onto its
     # own daily interval, 1000-row batch and 256-item envelope cap.
     dream_schedules: Mapping[str, AdaptorSchedule]
+    # Where a watermark-free scheduled adaptor's last fire is remembered.
+    # ALWAYS built, even under `[dreamer] enabled = false`: it is one small
+    # store over an engine that already exists, and making it conditional
+    # would put a `None` on the one path whose whole purpose is to survive
+    # process boundaries. `dream_loop` ignores it when `schedules` is empty.
+    dream_schedule_clock: SqlDreamScheduleClock
     # `language_scopes`' workspace-keyed sibling. `Conversation.workspace`
     # (DEC-105) — several rooms of one workspace are ONE unit of work here, not
     # several, which is the whole reason a workspace-keyed adaptor could not
@@ -2552,6 +2559,47 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     batch_limit=1000,
                     max_items=256,
                 ),
+                # **The other two adaptors of this tier get a clock too, and
+                # until 2026-09-06 they had none.** `config.toml`'s own
+                # comment claimed all three ran daily; only this one did.
+                # Both are `uses_watermark = False`, so with no schedule entry
+                # they inherit the bare 5-minute tick — measured live at 21
+                # runs in 24 minutes across three workspaces, one per
+                # workspace per tick. That was invisible because both return
+                # `nothing_found` in ~0.4s when their queue is empty, which is
+                # exactly what a healthy quiet tier looks like.
+                #
+                # **The offsets are the ordering.** These three have a real
+                # data dependency — candidates write the queue, adjudication
+                # drains it, entity resolution reads what adjudication wrote —
+                # and `dream_loop` dispatches adaptors CONCURRENTLY with no
+                # ordering (design 33 §6 M6). Equal intervals alone would make
+                # them coincide every day, so a claim extracted this morning
+                # would wait until tomorrow to be adjudicated and until the day
+                # after to resolve. Offsetting the phases collapses that to one
+                # day.
+                #
+                # 06:00 and 07:00 UTC because `fact-candidates` is
+                # watermark-BEARING and has no slot to place: it fires when
+                # `lag > 0` AND its watermark row is 24h old, which in practice
+                # settles around 04:30 UTC (observed 2026-09-04/05/06). These
+                # sit after that, with an hour between them, and neither is
+                # tied to it — a phase offset is a deliberate gap, not a
+                # promise that the upstream pass has finished.
+                "fact-adjudication": AdaptorSchedule(
+                    min_interval_seconds=86400,
+                    phase_offset_seconds=6 * 3600,
+                    # Inert here (watermark-free adaptors never reach
+                    # `record.since`), set to the adaptor's real per-tick
+                    # ceiling so the number means something to a reader —
+                    # `note-curation`'s entry below makes the same choice.
+                    batch_limit=cfg.facts.max_adjudications_per_tick,
+                ),
+                "fact-entity-resolution": AdaptorSchedule(
+                    min_interval_seconds=86400,
+                    phase_offset_seconds=7 * 3600,
+                    batch_limit=cfg.facts.max_adjudications_per_tick,
+                ),
             }
             dream_adaptors = (
                 # PHASE A, scope-keyed: it reads one room's message batch.
@@ -2903,6 +2951,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         dreamer_runtime=dreamer_runtime,
         dream_adaptors=dream_adaptors,
         dream_schedules=dream_schedules,
+        dream_schedule_clock=SqlDreamScheduleClock(engine),
         workspace_scopes=workspace_scopes,
         events=events,
     )

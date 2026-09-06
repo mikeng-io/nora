@@ -1,0 +1,16 @@
+{
+  "type": "fix",
+  "summary": "The knowledge tier now actually produces knowledge: its adjudication pass had been dropping 100% of pending claims since it was enabled, and its three passes now run once a day on a clock that survives a restart instead of once every five minutes on one that did not.",
+  "details": [
+    "Adjudication was reaching zero candidates. `pending()` dropped any claim that was seen once AND whose subject resolved to no entity — measured against the live database as 53/53 in one workspace and 7/7 in the other, with 60 candidates sitting `pending` at `attempts = 0` and the tier holding exactly one fact, written 2026-08-28. The drop is now a RANK: such claims are adjudicated last instead of never, and `max_adjudications_per_tick` does the cost bounding it was always the thing actually doing.",
+    "The filter was a closed loop, and the loop was in the design rather than in the code: a subject resolves only via `fact_entity`; entities are minted only from standing facts at degree >= 2; a standing fact needs an adjudication; an adjudication needed a candidate that survived the filter. The only door in was an exact-triple recurrence, which 21 §6.2 makes structurally unavailable by forbidding either pass from canonicalising — `raft` and `Raft` are two rows that each count 1. Across 61 candidates in nine days, recurrence occurred zero times.",
+    "`fact-adjudication` and `fact-entity-resolution` had no schedule entry at all. Both are watermark-free, so they inherited the bare 5-minute Dreamer tick — 21 runs in 24 minutes across three workspaces — while `config.toml`'s own comment claimed all three knowledge adaptors ran daily. Both are daily now, and that comment is corrected in place.",
+    "The three passes run at different PHASES (candidates on its watermark, adjudication at 06:00 UTC, entity resolution at 07:00), so a claim extracted in the morning is adjudicated the same day rather than the next. `dream_loop` dispatches adaptors concurrently with no ordering, so equal intervals alone would have left them coinciding.",
+    "A scheduled adaptor's last fire is now persisted in a new `dream_schedule_state` table instead of a `time.monotonic()` dict inside the loop's own frame. The dict reset on every restart and the next tick always fired, so a daily adaptor was really a per-deploy one — and because `nora_dream_run_total` counts runs and not their reason, a reset clock and an elapsed one produced identical metrics."
+  ],
+  "limitations": [
+    "Opening the filter does not by itself make the tier produce good facts. Extraction still emits predicates that carry their own object (`releases_1.0_at_end_of_october = true`) and splits subjects on casing, and neither is addressed here.",
+    "The phase offsets are a deliberate gap, not a dependency: nothing checks that `fact-candidates` finished before `fact-adjudication` starts. A candidate written after 06:00 UTC waits for the next day's slot.",
+    "A backwards wall-clock jump can re-fire a scheduled adaptor once. That is the accepted cost of slot arithmetic over an absolute instant, and it is rarer than the per-deploy refiring it replaces."
+  ]
+}
