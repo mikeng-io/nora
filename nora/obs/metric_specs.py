@@ -756,6 +756,45 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "row stays PENDING and the next tick tries again).",
         ("outcome",),
     ),
+    # #110. Paired with `nora_loop_exhausted_fallbacks_total` below and read
+    # AGAINST it: a healthy deployment moves THIS one and leaves that one flat.
+    # `outcome="drafted"` is a cut-off turn that answered from what it had;
+    # `outcome="empty"` is one where the drafting call itself returned nothing
+    # (timeout, exception, or a model that said nothing) and the canned line
+    # went out after all — so a rising `empty` rate is the drafting timeout
+    # being too tight, NOT the feature working.
+    #
+    # `reason` carries the same three caps as the fallback counter so the two
+    # series line up: `drafted{reason=limit_total_tokens}` and
+    # `fallbacks{reason=limit_total_tokens}` sum to every turn that hit that
+    # cap before replying.
+    _CounterSpec(
+        "nora_budget_drafts_total",
+        "Turns cut off by an R-8 cap before a reply, where Nora made one more "
+        "tool-less completion over the context she had already gathered rather "
+        "than sending the canned apology (#110, operator 2026-09-06). "
+        "`outcome` is drafted (an answer went to the room) or empty (the "
+        "drafting call produced nothing and the canned line was delivered "
+        "instead — a sustained rate here means the draft timeout is too "
+        "tight). `reason` is the cap that fired.",
+        ("outcome", "reason"),
+    ),
+    # The DELIVERY half of #110, and deliberately separate from
+    # `nora_budget_drafts_total` above: that one counts what the RUNNER
+    # produced, this one counts what the room actually READ. They differ
+    # whenever `Deliverer` refuses (R-2/R-4/R-6/R-18) — a draft that was
+    # written and then screened out is a real event and must not read as a
+    # delivered one. Same `reason` vocabulary as its two neighbours so all
+    # three series line up on the cap that fired.
+    _CounterSpec(
+        "nora_budget_drafts_delivered_total",
+        "Budget-cut-off turns where a drafted answer (#110) actually reached "
+        "the room, as opposed to being produced and then refused by the "
+        "delivery guards. Read against nora_budget_drafts_total{drafted}: a "
+        "gap between them is the guards screening drafts, not the drafting "
+        "failing. `reason` is the cap that fired.",
+        ("reason",),
+    ),
     _CounterSpec(
         "nora_loop_exhausted_fallbacks_total",
         "Turns where the agent loop was cut off by an R-8 cap before the model "

@@ -38,6 +38,7 @@ defensive parser; see that function's docstring for the full argument.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -55,7 +56,34 @@ from nora.obs.metrics import Metrics
 # Spec §6.5 leaves the number itself unspecified for Phase 1 (a real `[debrief]`
 # config knob is future work, gated on §14) — this constant is that stand-in,
 # sized the same as `nora.agent.tag_trace_extract`'s own test fixtures.
+log = logging.getLogger(__name__)
+
 DEFAULT_MAX_TRACE_CHARS = 10_000
+
+# How long the budget-exhaustion draft (#110) may take, and the budget it runs
+# under. ITS OWN timeout, not the tier's: this call happens on a turn that has
+# ALREADY spent its whole budget and is late by definition, so inheriting the
+# tier's 240s would let one cut-off turn hold a conversation slot for minutes.
+# 45s is a single completion over context already in hand — no tools, no round
+# trips — and expiring costs the canned line, which is where the turn was
+# headed anyway.
+DEFAULT_DRAFT_TIMEOUT_SECONDS = 45.0
+# One cycle, and enough output for a real answer. `turns=1` is the load-bearing
+# one: it makes the draft structurally incapable of becoming another agent loop
+# even if `tool_choice="none"` is ignored by the provider. `total_tokens` only
+# has to cover the context being re-read, which is bounded by the cap that just
+# bound.
+DEFAULT_DRAFT_LIMITS: dict[str, int] = {
+    "turns": 1, "output_tokens": 4_000, "total_tokens": 1_100_000,
+}
+
+# The caps that mean "cut off mid-work", as opposed to a turn that finished or
+# one that died. Duplicated from `nora.engagement.stages.deliver` rather than
+# imported: `nora.app` must not import `nora.engagement` (the layering
+# `lint-imports` enforces), and this module needs the same three names.
+_BUDGET_STOP_REASONS = frozenset({
+    "limit_turns", "limit_total_tokens", "limit_output_tokens",
+})
 
 
 class LiveAgentRunner:
@@ -67,6 +95,7 @@ class LiveAgentRunner:
         agent_name: str = factory.DEFAULT_AGENT_NAME,
         max_trace_chars: int = DEFAULT_MAX_TRACE_CHARS,
         metrics: Metrics | None = None,
+        draft_timeout_seconds: float = DEFAULT_DRAFT_TIMEOUT_SECONDS,
     ) -> None:
         self._models = models
         # The agent's machine name (cfg.agent.name) — its Strands agent_id and
@@ -92,6 +121,10 @@ class LiveAgentRunner:
         # actually reads it; a fallback instance is only ever read by tests
         # and evals that do not assert on that counter.
         self._metrics = metrics if metrics is not None else Metrics()
+        # See DEFAULT_DRAFT_TIMEOUT_SECONDS. Injected through __init__ like
+        # every other collaborator (the test-seam policy: no `*_fn` hooks, no
+        # `_for_test` params), so a test can drive the timeout without a clock.
+        self._draft_timeout_seconds = draft_timeout_seconds
 
     async def invoke(
         self,
@@ -158,6 +191,39 @@ class LiveAgentRunner:
         # exists to stop. A shape that is not a string is not a stop reason.
         stop_reason = getattr(result, "stop_reason", None)
         stop_reason = stop_reason if isinstance(stop_reason, str) else None
+        text = factory.final_text(result)
+        # THE BUDGET-EXHAUSTION DRAFT (#110, operator 2026-09-06). The loop hit
+        # one of R-8's caps mid-work and left no prose behind, so the only thing
+        # the pipeline could deliver was a canned apology — on a turn that had
+        # usually already read everything it needed (trace 844eb6d1: seven
+        # pages, then 「sorry」). One more completion over this agent's OWN
+        # accumulated context turns that into an answer.
+        #
+        # HERE, not in the pipeline, because `agent` is the only thing that
+        # holds the full context and it does not outlive this method. The
+        # pipeline sees the result as a non-empty `final_text` and delivers it
+        # through exactly the branch that already handles DEC-93's recovered
+        # prose — no new delivery path, so R-4/R-6/R-18 and the audit row are
+        # untouched.
+        #
+        # Guarded on `text` being empty so this NEVER costs a call on a turn
+        # that already has words: a cut-off that left prose is DEC-93's case
+        # and needs no model. `guard.spoke` is not consulted — a turn that
+        # already sent something has `final_text == ""` too, and the pipeline
+        # checks `deliverer.delivered` before delivering anything from here.
+        drafted = False
+        if stop_reason in _BUDGET_STOP_REASONS and not text.strip():
+            text = await factory.draft_from_exhausted_loop(
+                agent,
+                timeout_seconds=self._draft_timeout_seconds,
+                limits=DEFAULT_DRAFT_LIMITS,
+            )
+            drafted = bool(text.strip())
+            self._metrics.inc(
+                "nora_budget_drafts_total",
+                outcome="drafted" if drafted else "empty",
+                reason=stop_reason,
+            )
         trace = extract_tag_trace(
             agent, baseline=baseline, tag_id=ctx.tag_id,
             conversation_id=ctx.message.conversation_id, transcript=(),
@@ -170,8 +236,13 @@ class LiveAgentRunner:
         # placeholder: this is the earliest point the real clock is knowable
         # and the trace must carry it before going anywhere persistent.
         trace = dataclasses.replace(trace, created_at=int(time.time() * 1000))
+        if drafted:
+            log.info(
+                "drafted a reply from an exhausted loop (tag=%s, reason=%s, %d chars)",
+                ctx.tag_id, stop_reason, len(text),
+            )
         return (
             stop_reason,
-            factory.final_text(result),
+            text,
             trace,
         )

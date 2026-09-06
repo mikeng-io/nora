@@ -933,12 +933,48 @@ class EngagementPipeline:
             # branch, so it is a real `False` on the tool-called-normally path
             # too (neither branch runs at all).
             recovered_delivered = False
-            if cut_off_before_reply and await handle.deliverer.deliver(
-                _EXHAUSTED_FALLBACK, source="fallback"
-            ):
-                self._metrics.inc(
-                    "nora_loop_exhausted_fallbacks_total", reason=stop_reason,
-                )
+            if cut_off_before_reply:
+                # #110: PREFER HER OWN WORDS OVER THE CANNED LINE.
+                #
+                # `final_text` on a budget cut-off is now one of two things,
+                # and both are hers: prose the cut-off completion happened to
+                # leave behind, or — when it left none — the drafting call
+                # `nora.app.agent_runner` makes over the context she had
+                # already gathered (`factory.draft_from_exhausted_loop`). This
+                # branch does not care which; it is the same question either
+                # way, "did she end up with something to say".
+                #
+                # The canned apology stays as the fallback-of-the-fallback,
+                # for the turn that genuinely has nothing — a cap that bound
+                # on the FIRST call, or a drafting call that timed out. It is
+                # never removed: R-23's never-silent guarantee is what this
+                # whole branch exists for, and improving the line must not
+                # cost the guarantee.
+                #
+                # `source` distinguishes them for `Deliverer`, and that is not
+                # cosmetic: `source="fallback"` is excluded from the Honcho
+                # feed because nobody composed it, while a drafted answer IS
+                # her own sentence and her memory of her own speech should
+                # contain it — exactly the argument DEC-93's recovery makes
+                # below for the same reason.
+                drafted = final_text.strip()
+                if drafted and await handle.deliverer.deliver(
+                    drafted, source="drafted"
+                ):
+                    self._metrics.inc(
+                        "nora_budget_drafts_delivered_total", reason=stop_reason,
+                    )
+                    log.warning(
+                        "delivered a draft from an exhausted loop "
+                        "(tag=%s, reason=%s, %d chars)",
+                        request.tag_id, stop_reason, len(drafted),
+                    )
+                elif await handle.deliverer.deliver(
+                    _EXHAUSTED_FALLBACK, source="fallback"
+                ):
+                    self._metrics.inc(
+                        "nora_loop_exhausted_fallbacks_total", reason=stop_reason,
+                    )
 
             # DEC-93: she WROTE a reply and did not put it through the tool.
             #

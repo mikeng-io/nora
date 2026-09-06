@@ -25,6 +25,7 @@ API key itself — this module no longer reads the environment.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -570,6 +571,107 @@ async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limi
                 ]
                 partial = "\n".join(p for p in parts if p.strip()).strip()
         raise PartialReplyError(partial) from None
+
+
+# What the model is asked for when its loop ran out mid-work. Deliberately NOT
+# "summarise": she is answering the person who asked, in her own voice, with
+# what she has — a summary of her own research reads like a report, not a
+# reply.
+#
+# It says nothing about budgets, tokens or limits, and that is load-bearing:
+# whatever comes back is DELIVERED to the group, and
+# `tests/integration/test_turn_budget_is_legible.py::
+# test_the_budget_fallback_says_nothing_diagnostic_to_the_group` pins that the
+# room never reads the machine's excuses. Telling the model it ran out of
+# budget is the surest way to make it say so.
+_DRAFT_INSTRUCTION = (
+    "Answer now, from what you already have in this conversation. Do not call "
+    "any tool and do not look anything else up — everything you are going to "
+    "get, you already have. Say what you found, in your own voice, to the "
+    "person who asked. If what you have is partial, say what you know and what "
+    "you could not pin down; do not apologise for the process and do not "
+    "mention searching, fetching, tools, or how much you read."
+)
+
+
+async def draft_from_exhausted_loop(
+    agent: Agent, *, timeout_seconds: float, limits: dict,
+) -> str:
+    """One more completion over the agent's OWN accumulated context, tools off.
+
+    WHY THIS EXISTS. A turn cut off by one of R-8's caps has usually done all
+    the work — trace 844eb6d1 (2026-09-06) read seven pages across four
+    `web_search` and three `web_fetch` calls, then stopped on
+    `limit_total_tokens` at call seven and the group received
+    the canned apology. She had the answer in front of her and sent an
+    apology (issue #110, operator: "This is exactly how it shouldn't be, not
+    like a friend, just like a bot").
+
+    WHY ON THE AGENT AND NOT FROM THE TRACE. The pipeline could draft from
+    `TagTrace.messages` without touching this layer, and that was the first
+    design. It is wrong: `DEFAULT_MAX_TRACE_CHARS` is 10,000, and the turn
+    above had accumulated ~45,600 tokens — the trace carries about 5% of what
+    she read. Drafting from it ships the feature and defeats its purpose. The
+    full context exists only on this `agent`, which is why the call belongs
+    here.
+
+    WHY A SECOND `invoke_async` IS NOT INSTANTLY RE-CUT. Strands' caps are
+    PER-INVOCATION: `_check_limits` reads
+    `event_loop_metrics.latest_agent_invocation`, documented in the SDK as
+    "scoped to the current invocation so caps don't fire prematurely on the
+    second invoke against a reused agent" (verified against 1.50.2). So this
+    call gets a fresh budget rather than inheriting the spent one. `limits` is
+    still passed — an unbounded call on a turn that just proved it can run
+    away is not a thing to write.
+
+    WHY `tool_choice` IS FLIPPED. The agent runs `tool_choice="required"`
+    (DEC-21) because that is what makes her reach for `send_reply` instead of
+    answering in prose. Here prose is exactly what is wanted, and leaving the
+    pin on would force yet another tool call — the one thing there is no
+    budget for. `update_config` is the supported route and is pinned by
+    `tests/test_strands_api_contract.py::test_obligation_7...`; the guard
+    already uses it. Restored in the `finally` because the agent is not
+    ours to leave altered, even though this one is discarded right after.
+
+    FAIL-CLOSED. Returns "" on a timeout, an exception, or a model that
+    answers with nothing. The caller keeps the canned line for that case: this
+    is an IMPROVEMENT on the fallback, never a replacement for having one, and
+    an exhausted turn must not also hang — hence its own timeout rather than
+    the tier's.
+    """
+    model = getattr(agent, "model", None)
+    previous: object = None
+    restore = False
+    if model is not None and hasattr(model, "get_config") and hasattr(model, "update_config"):
+        try:
+            previous = dict(model.get_config().get("params") or {})
+            model.update_config(params={**previous, "tool_choice": "none"})
+            restore = True
+        except Exception:  # noqa: BLE001 — a config knob is not worth losing the draft over
+            # A model shape that will not take the flip still gets the call —
+            # it may answer in prose anyway, and refusing to draft because a
+            # config knob moved is a worse failure than drafting with tools on.
+            log.warning("draft: could not disable tool_choice; drafting anyway")
+    try:
+        result = await asyncio.wait_for(
+            agent.invoke_async(
+                _DRAFT_INSTRUCTION, invocation_state={},
+                limits=limits,  # type: ignore[arg-type]
+            ),
+            timeout=timeout_seconds,
+        )
+    except Exception as exc:  # noqa: BLE001 — incl. TimeoutError; see FAIL-CLOSED above
+        # Never re-raise into a turn that has already failed once. The caller
+        # falls back to the canned line, which is where it was anyway.
+        log.warning("draft: exhausted-loop draft failed (%s)", type(exc).__name__)
+        return ""
+    finally:
+        if restore and model is not None:
+            try:
+                model.update_config(params=previous)
+            except Exception:  # noqa: BLE001 — the agent is discarded next line anyway
+                log.warning("draft: could not restore tool_choice")
+    return final_text(result)
 
 
 def final_text(result: Any) -> str:
