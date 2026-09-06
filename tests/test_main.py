@@ -502,6 +502,66 @@ async def test_build_app_leaves_search_unwired_when_verification_is_off(env, mon
         await app.shutdown()
 
 
+# ---- which search backend gets built (DEC-157) ------------------------------
+#
+# `[search] provider` is the whole user-facing feature, and "the config field
+# exists and is readable on `cfg`" is not evidence that it selects anything —
+# the same composition gap the `language_consolidators` tests above close.
+# These assert the CONSTRUCTED object and the key it resolved, because picking
+# the right class while reading the wrong env var is a silent way to answer
+# `unavailable` forever.
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected_class", "expected_key"),
+    [
+        ("tavily", "TavilySearchProvider", "tavily-key"),
+        ("exa", "ExaSearchProvider", "exa-key"),
+    ],
+)
+async def test_build_app_builds_the_search_backend_the_config_names(
+    env, monkeypatch, provider, expected_class, expected_key,
+):
+    """Both keys are exported, so the branch cannot pass by accident: only the
+    SELECTED backend's `api_key_env` may be the one that was read."""
+    monkeypatch.setenv("TAVILY_API_KEY", "tavily-key")
+    monkeypatch.setenv("EXA_API_KEY", "exa-key")
+    cfg = tomllib.loads(env.read_text())
+    cfg["language"] = {"enabled": True, "verify_known_entities": True}
+    cfg["search"] = {"enabled": True, "provider": provider}
+    env.write_text(tomli_w.dumps(cfg))
+
+    app = await build_app(env)
+    try:
+        client = app.deps.language_consolidators[0]._observer._search
+        assert type(client).__name__ == expected_class
+        assert client._api_key == expected_key
+    finally:
+        await app.shutdown()
+
+
+async def test_build_app_leaves_search_unwired_when_the_selected_backend_is_keyless(
+    env, monkeypatch,
+):
+    """The control, and the one that would have shipped broken: Tavily's key is
+    present and Exa's is not, so a branch that resolved the key before reading
+    `provider` would build a working-looking Exa client on Tavily's credential
+    and 401 on every call. Off means `None`, and both tools answer
+    `unavailable` (R-5), never a silent empty."""
+    monkeypatch.setenv("TAVILY_API_KEY", "tavily-key")
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
+    cfg = tomllib.loads(env.read_text())
+    cfg["language"] = {"enabled": True, "verify_known_entities": True}
+    cfg["search"] = {"enabled": True, "provider": "exa"}
+    env.write_text(tomli_w.dumps(cfg))
+
+    app = await build_app(env)
+    try:
+        assert app.deps.language_consolidators[0]._observer._search is None
+    finally:
+        await app.shutdown()
+
+
 async def test_app_run_spawns_the_lazy_adoption_backfill(env, monkeypatch):
     """The wiring, not the coroutine: build the real app, audit a message from a
     sender identity.toml *does* know, then drive `App.run()` long enough for the

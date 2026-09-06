@@ -57,7 +57,7 @@ from typing import Any
 
 import aiohttp
 
-from ..transit.arrivals import _wrap
+from ._shared import UNAVAILABLE_FETCH, UNAVAILABLE_SEARCH, clamp_chars, wrap
 
 log = logging.getLogger("nora.search")
 
@@ -108,7 +108,7 @@ class TavilySearchProvider:
             # The never-raises backstop: a contract violation degrades to
             # unavailable, never propagates into the loop (R-5).
             log.exception("tavily search failed")
-            return dict(_UNAVAILABLE_SEARCH)
+            return dict(UNAVAILABLE_SEARCH)
 
     async def _search(self, query: str) -> dict[str, Any]:
         body = {
@@ -129,12 +129,12 @@ class TavilySearchProvider:
                 # 401 (bad key), 422 (bad param), 429 (rate limit) all land here —
                 # the key never rides in a log line.
                 log.warning("tavily answered %s", response.status)
-                return dict(_UNAVAILABLE_SEARCH)
+                return dict(UNAVAILABLE_SEARCH)
         try:
             payload: Any = json.loads(text)
         except ValueError:
             log.warning("tavily did not return JSON")
-            return dict(_UNAVAILABLE_SEARCH)
+            return dict(UNAVAILABLE_SEARCH)
         results = payload.get("results") if isinstance(payload, dict) else None
         if not isinstance(results, list) or not results:
             return {"status": "nothing_found", "results": []}
@@ -166,11 +166,11 @@ class TavilySearchProvider:
             title = str(item.get("title") or "")
             content = str(item.get("content") or "")
             body_text = f"{title}\n{content}".strip() if title else content
-            clamped, truncated = _clamp_chars(body_text, self._content_max_chars)
+            clamped, truncated = clamp_chars(body_text, self._content_max_chars)
             # Title + snippet are page-controlled → the whole body is wrapped
             # `untrusted` with the source URL as provenance. The URL rides PLAIN
             # beside it so the model can cite it in the reply.
-            wrapped.append({"url": url, "content": _wrap(url, clamped), "truncated": truncated})
+            wrapped.append({"url": url, "content": wrap(url, clamped), "truncated": truncated})
         if not wrapped:
             return {"status": "nothing_found", "results": []}
         return {"status": "ok", "results": wrapped}
@@ -187,7 +187,7 @@ class TavilySearchProvider:
             # The never-raises backstop: a contract violation degrades to
             # unavailable, never propagates into the loop (R-5).
             log.exception("tavily extract failed")
-            return dict(_UNAVAILABLE_FETCH)
+            return dict(UNAVAILABLE_FETCH)
 
     async def _fetch(self, url: str) -> dict[str, Any]:
         body = {
@@ -206,12 +206,12 @@ class TavilySearchProvider:
                 # 401 (bad key), 422 (bad param), 429 (rate limit) all land here —
                 # the key never rides in a log line.
                 log.warning("tavily extract answered %s", response.status)
-                return dict(_UNAVAILABLE_FETCH)
+                return dict(UNAVAILABLE_FETCH)
         try:
             payload: Any = json.loads(text)
         except ValueError:
             log.warning("tavily extract did not return JSON")
-            return dict(_UNAVAILABLE_FETCH)
+            return dict(UNAVAILABLE_FETCH)
         # A real `/extract` 200 always carries BOTH `results` and
         # `failed_results` as lists — the submitted url lands in exactly one.
         # Either key missing or wrong-typed is the envelope not matching the
@@ -220,12 +220,12 @@ class TavilySearchProvider:
         # as a dead link.
         if not isinstance(payload, dict):
             log.warning("tavily extract returned a non-object envelope")
-            return dict(_UNAVAILABLE_FETCH)
+            return dict(UNAVAILABLE_FETCH)
         results = payload.get("results")
         failed = payload.get("failed_results")
         if not isinstance(results, list) or not isinstance(failed, list):
             log.warning("tavily extract envelope missing results/failed_results")
-            return dict(_UNAVAILABLE_FETCH)
+            return dict(UNAVAILABLE_FETCH)
         if not results:
             # The url landed in `failed_results` (a dead/blocked page) or in
             # neither list — both are Tavily's own miss, not a call failure.
@@ -236,7 +236,7 @@ class TavilySearchProvider:
         raw_content = str(item.get("raw_content") or "")
         if not raw_content:
             return {"status": "nothing_found"}
-        clamped, truncated = _clamp_chars(raw_content, self._extract_max_chars)
+        clamped, truncated = clamp_chars(raw_content, self._extract_max_chars)
         # Page-controlled → wrapped `untrusted` with the source URL as
         # provenance, the same discipline as a search snippet (R-13). The key
         # is `text`, NOT `content` — see the bridge client's identical note:
@@ -247,26 +247,6 @@ class TavilySearchProvider:
         return {
             "status": "ok",
             "url": url,
-            "text": _wrap(url, clamped),
+            "text": wrap(url, clamped),
             "truncated": truncated,
         }
-
-
-def _clamp_chars(text: str, max_chars: int) -> tuple[str, bool]:
-    """Clamp `text` to `max_chars`, stating whether it was truncated."""
-    if len(text) <= max_chars:
-        return text, False
-    return text[:max_chars], True
-
-
-_UNAVAILABLE_SEARCH: dict[str, Any] = {
-    "status": "unavailable",
-    "note": "I couldn't run that search just now. Say so — don't answer as if "
-            "you'd looked it up.",
-}
-
-_UNAVAILABLE_FETCH: dict[str, Any] = {
-    "status": "unavailable",
-    "note": "I couldn't open that link just now. Say so — don't answer as if "
-            "you'd read it.",
-}

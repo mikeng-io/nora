@@ -926,16 +926,45 @@ refresh_url = "http://presence:9101"
 refresh_timeout_seconds = 8
 
 [search]
-# web_search via Tavily (DEC-73). SearXNG + Firecrawl + the web_fetch verb are
-# RETIRED: Tavily returns ranked results WITH a content snippet each in ONE call,
-# from its own servers, so there is no self-hosted fetcher, no model-chosen-URL
-# fetch, and no SSRF surface (deploy/egress.sh is gone with them). The old
-# runaway-rounds failure — a weather tag spending its whole token budget fetching
-# pages and never answering — is dissolved by the one-call shape.
+# web_search + web_fetch (DEC-73, DEC-116). SearXNG + Firecrawl and the OLD
+# web_fetch are RETIRED: the provider returns ranked results WITH content in ONE
+# call, from its OWN servers, so there is no self-hosted fetcher, no
+# model-chosen-URL fetch over Nora's network, and no SSRF surface
+# (deploy/egress.sh is gone with them). The old runaway-rounds failure — a
+# weather tag spending its whole token budget fetching pages and never answering
+# — is dissolved by the one-call shape.
 enabled = true
+# DEC-157: `provider` picks the backend, and it is the ONLY thing that changes
+# when it is switched — the tools, their egress screen and their budgets are
+# handed a SearchProvider either way. Tavily here; "exa" swaps in [search.exa].
+# NOTE what this gives up: Tavily's min_score floor drops measured junk
+# (0.02-0.05 scores on opaque-ID and current-state queries), and Exa returns no
+# score at all, so on Exa there is no floor — its own ranking is the filter.
+# Live-probed 2026-09-06 before the switch: real /search and /contents calls
+# returning ok / nothing_found / unavailable correctly, and the probe found and
+# fixed a truncation bug no offline test could see (see [search.exa] below).
+provider = "exa"
+# max_results (5) / content_max_chars (1500) / extract_max_chars (3000) /
+# timeout_seconds (12.0) are provider-NEUTRAL and default in SearchConfig: they
+# bound what re-enters the model's input on every subsequent call, so a provider
+# swap must not silently become a token-budget change.
+
+[search.tavily]
 # api_key_env defaults to TAVILY_API_KEY; the key lives in .env (DEC-8, never
-# here). url / search_depth ("basic") / max_results (5) / content_max_chars
-# default in SearchConfig.
+# here). url / extract_url / search_depth ("basic") / extract_depth ("basic") /
+# min_score (0.1) default in TavilyBackendConfig.
+
+[search.exa]
+# LIVE since 2026-09-06. api_key_env defaults to EXA_API_KEY (the key is in
+# .env, DEC-8); url / contents_url / type ("auto") default in ExaBackendConfig.
+# The three deep* types run multi-step research and outrun timeout_seconds —
+# raise it first.
+#
+# Exa honours the maxCharacters we send, so a page can arrive ALREADY cut and
+# the local clamp finds nothing to clamp. The adapter reads the sent ceiling
+# back rather than reporting only its own clamp — without that, a cut page is
+# handed to the model as a complete one (found by live probe, HKO's front page
+# came back at exactly 3000 of a longer document).
 
 
 [social]

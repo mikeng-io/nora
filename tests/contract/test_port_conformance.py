@@ -244,19 +244,24 @@ def test_the_media_object_store_conforms_to_the_port():
     assert isinstance(SqlMediaObjectStore(engine), MediaObjectStore)
 
 
-def test_tavily_provider_satisfies_the_search_provider_port():
-    """`TavilySearchProvider` is `SearchProvider`'s only implementation today; the
-    port (DEC-73, extended DEC-116) exists so another backend plugs in behind
-    `web_search`/`web_fetch` with a shared contract. `isinstance` against the
-    `runtime_checkable` Protocol checks the `search`/`fetch` method names; the
-    behavioural contract (fail-soft, untrusted wrap, clamp, for both verbs) is
-    `tests/test_tavily.py`."""
-    from nora.domain.ports import SearchProvider
-    from nora.infra.search import TavilySearchProvider
+def test_both_search_adapters_satisfy_the_search_provider_port():
+    """`SearchProvider` (DEC-73, extended DEC-116) has TWO implementations since
+    DEC-157 — which is what the port was for: another backend plugs in behind
+    `web_search`/`web_fetch` and the tools cannot tell which answered.
 
-    provider = TavilySearchProvider(api_key="k")
-    assert isinstance(provider, SearchProvider)
-    assert hasattr(provider, "fetch")
+    `isinstance` against the `runtime_checkable` Protocol only checks the
+    `search`/`fetch` method NAMES. The behavioural contract — fail-soft, the
+    three states, the untrusted wrap and the clamp, on both verbs and both
+    backends — is `tests/contract/test_search_provider_contract.py`, with each
+    vendor's own wire shape in `tests/test_tavily.py` / `tests/test_exa.py`.
+    """
+    from nora.domain.ports import SearchProvider
+    from nora.infra.search import ExaSearchProvider, TavilySearchProvider
+
+    for impl in (TavilySearchProvider, ExaSearchProvider):
+        provider = impl(api_key="k")
+        assert isinstance(provider, SearchProvider), impl.__name__
+        assert hasattr(provider, "fetch"), impl.__name__
 
 
 def test_the_image_generator_adapter_satisfies_the_port():

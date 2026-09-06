@@ -681,20 +681,53 @@ enabled = false
 # identically today; v1 matches design/14's measurement). The three caps bound
 # the input-token cost of retrieved text, re-sent on every subsequent model call.
 [search]
-# web_search + web_fetch via Tavily (DEC-73, DEC-116) — one call returns ranked
-# results with content, a second opens a specific link; both fetch from Tavily's
-# own servers, no SSRF surface. Off here for the "explicitly on" house rule; a
-# real deployment sets enabled=true AND exports the key named by api_key_env.
+# web_search + web_fetch (DEC-73, DEC-116) — one call returns ranked results with
+# content, a second opens a specific link; both crawl from the PROVIDER's own
+# servers, no SSRF surface. Off here for the "explicitly on" house rule; a real
+# deployment sets enabled=true AND exports the key named by the chosen backend's
+# api_key_env below.
 enabled = false
-api_key_env = "TAVILY_API_KEY"   # NAMES the env var; the key never lives here (DEC-8)
-# url = "https://api.tavily.com/search"
-# search_depth = "basic"         # "basic" (1 credit) | "advanced" (2, richer)
+# DEC-157: the backend, and the only thing that changes when it is switched —
+# everything downstream is handed a SearchProvider and cannot tell which vendor
+# it got. What the swap DOES change is stated under [search.tavily] min_score.
+provider = "tavily"              # "tavily" | "exa"
+# Provider-NEUTRAL below: these bound what re-enters the model's input on every
+# subsequent call, so switching provider must not silently change the token
+# budget. They live here rather than per-backend for exactly that reason.
 # max_results = 5                 # ≤ 20
 # content_max_chars = 1500        # per-result snippet clamp (bounds re-sent tokens)
-# timeout_seconds = 12.0
-# extract_url = "https://api.tavily.com/extract"
-# extract_depth = "basic"        # "basic" (1 credit) | "advanced" (2, richer)
 # extract_max_chars = 3000        # fetched-page clamp (bounds re-sent tokens)
+# timeout_seconds = 12.0
+
+[search.tavily]
+api_key_env = "TAVILY_API_KEY"   # NAMES the env var; the key never lives here (DEC-8)
+# url = "https://api.tavily.com/search"
+# extract_url = "https://api.tavily.com/extract"
+# search_depth = "basic"         # "basic" (1 credit) | "advanced" (2, richer)
+# extract_depth = "basic"        # "basic" (1 credit) | "advanced" (2, richer)
+# min_score = 0.1                 # relevance floor; 0.0 disables it
+#
+# min_score is TAVILY-ONLY and that is measured, not an omission (DEC-157):
+# Tavily scores every result and the score separates signal from noise (junk
+# lands at 0.02-0.05, real answers above 0.15, measured 2026-08-31). Exa
+# deprecated `score` out of auto search and its current result schema has none,
+# so a floor there would have nothing to read — a no-op, or, held fail-closed,
+# a filter that drops everything. Choosing "exa" is choosing to give this up.
+
+[search.exa]
+api_key_env = "EXA_API_KEY"      # NAMES the env var; the key never lives here (DEC-8)
+# url = "https://api.exa.ai/search"
+# contents_url = "https://api.exa.ai/contents"
+# type = "auto"                   # instant | fast | auto | deep-lite | deep | deep-reasoning
+#
+# The three deep* types run multi-step research with synthesis and routinely
+# outrun timeout_seconds, which is sized for one round trip on the reply path.
+# Raise it deliberately before choosing one, or every call is `unavailable`.
+#
+# Exa honours the maxCharacters the adapter sends, so a page can arrive ALREADY
+# cut server-side. The adapter reads that ceiling back when it reports
+# `truncated`, because reporting only its OWN clamp hands the model a cut page
+# as a complete one (live probe, 2026-09-06).
 
 [social]
 # social_fetch (DEC-151) — READ-ONLY X/Instagram reads via the host-side
