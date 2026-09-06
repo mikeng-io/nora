@@ -452,3 +452,147 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
   without a shared contract suite both pass (`tests/contract/`).
 - A new behavioural rule gets an entry in `design/09-decision-index.md` and a
   named test registered in `tests/test_acceptance_rules.py::RULE_TESTS`.
+- Where a test LIVES, what config it LOADS and where its FAKES live are the
+  three rules of the next section (issue #113), each with its own gate under
+  `tests/architecture/`.
+
+## Test structure — where a test lives, what it loads, where its fakes live
+
+Filed as issue #113 (2026-09-07) from the operator's own words: *"our test
+cases and testing methodologies have no convention, no practice, no policy,
+and no standard."* Measured, not estimated: 324 test files across 8
+locations; **zero** documents defining what any test directory meant; the
+largest bucket the unnamed `tests/` root (144 files, 45%); **seven** distinct
+ways a test acquired a `Config`; 11 shared fakes in `nora/testing/` against
+**86** test files defining their own fakes inline.
+
+The cause was precise. The three test rules this file already carried — a fake
+must behave like the real server, collaborators come through `__init__`, a
+port's second implementation needs a contract suite — all govern whether a test
+is HONEST. None governed where a test lives or where it gets its inputs. The
+quality bar was high and the skeleton was absent. That gap was already costing
+correctness: the port-fake rule was being broken silently in dozens of files,
+because a fake defined inside a test module is invisible to every contract
+suite by construction, and nothing compared it to production.
+
+Three rules, each shipped with its gate — a rule with no test is a claim.
+
+### R-A. A test directory names what makes the test TRUE, not what it is about
+
+| directory | what makes a test here true |
+|---|---|
+| `tests/unit/` | pure logic — no I/O, no container, no network |
+| `tests/contract/` | ONE suite, N implementations of a port (fake AND production) |
+| `tests/integration/` | the wired pipeline, real Postgres, real HTTP servers |
+| `tests/infra/` | a real adapter against its real backend (Postgres, rustfs, docker) |
+| `tests/architecture/` | a property of the SOURCE, read off the AST, not the runtime |
+| `tests/web/` | the aiohttp control-plane surface |
+| `tests/domain/` | legacy subject-named bucket — `unit/` for new tests |
+| `tests/` root | **legacy** — holds no NEW test files; the 140-odd there move under R-A |
+
+`domain/`, `infra/` and `web/` are *subject*-named, a second taxonomy cutting
+across the first, and that is why 45% of files landed in the root: with two
+axes and no rule, the path of least resistance was neither. The taxonomy is
+written here so the next test has a home; **the move itself is deferred** (the
+largest diff and the least urgent) and tracked on #113. The gate that comes
+with the move — *a test collecting a container fixture outside `integration/`
+or `infra/` fails* — lands with it, not before, because today `contract/`
+legitimately collects `pg_url` for its SQL implementations.
+
+### R-B. A test gets its config from the TEMPLATE; only a test whose subject IS the deployment reads the real file
+
+Two fixtures in `tests/conftest.py`, both built on
+`tests.builders.copy_example_config` — the one place in the suite that knows the
+template's name:
+
+- `example_config_path` — a copy of `config.example.toml` in `tmp_path`, for a
+  test that edits the TOML before loading it.
+- `example_config` — that copy, loaded through the production loader with the
+  LLM-key placeholder set (the load is fail-closed on the key, as startup is).
+
+Seven acquisition patterns collapsed to two. The war-story that named the rule:
+four files loaded the eval harness's config through `load_eval_config((real,
+example))`, which prefers the DEPLOYMENT's file, so unit tests of `_build_sink`
+asserted the operator's `config.toml` — and went red the day the operator
+enabled the Langfuse export. A false dependency, recorded in
+`tests/test_evals_gate.py`'s own docstring, which is now the fixture's.
+
+The three files that DO read the real `config.toml` cannot take the fixture,
+and are pinned with the reason: `tests/builders.py` (the copier),
+`tests/test_env_template.py` (the F11 drift gate — pointed at the template it
+would compare the template to itself, green forever, measuring nothing) and
+`tests/test_turn_budget.py` (R-24 asserts the deployment's budgets against
+BOTH files because a fix applied to one is half a fix).
+
+**Gate:** `tests/architecture/test_config_comes_from_the_template.py`. Reads
+the AST, not a grep: `<repo root> / "config.toml"`, `Path("config.toml")`, an
+import of `load_eval_config`, or a module-level constant naming either file,
+outside the pinned three, fails. A message string mentioning the file does
+not. Every pinned file must still show a read — the positive control and the
+stale-pin check in one.
+
+**Side benefit:** the "should `config.toml` be tracked in git?" question that
+started the discussion dissolves — the coupling to the deployment file is now
+in one place with a stated reason, instead of four.
+
+### R-C. A fake standing in for a port lives in `nora/testing/` and passes that port's contract suite
+
+Inline classes are for local scaffolding only. «Standing in for a port» is
+read off the source: a class in `tests/` that defines EVERY public method of a
+`Protocol` in `nora/domain/ports.py`, each with EXACTLY the port's parameter
+names (or a `*args`/`**kwargs` wildcard). Exact, not a superset — a
+`describe(data, media_type, prompt, model, provider)` double is a
+`VisionClient`, not a `MediaInterpreter`, and a one-method port must not claim
+every class with a same-named method. A noisy gate is a disabled gate.
+
+Three structural exemptions, none by name: a class inside `tests/contract/`
+(under the suite by construction); a double whose port methods only FAIL (a
+bare `raise`, or a `sleep` stall then a raise — it implements nothing, so it
+cannot drift); and a subclass of a `nora.testing` fake (the contract-bound
+fake with one local twist).
+
+**Gate:** `tests/architecture/test_port_fakes_live_in_nora_testing.py`.
+Everything else is pinned in `_ALLOWED` with one of three reasons —
+`NO_SHARED_FAKE`, `DRIVES_THE_LOOP`, `FAULT_SWITCH_OVER_SHARED` — and the pin
+is checked BOTH ways: an unpinned stand-in fails, and a pin whose class no
+longer stands in fails too. The list is an inventory to burn down, never a
+place to add to. The positive control runs the matcher on `nora/testing/fakes.py`
+and must see the shared fakes it points at.
+
+**What the first landing found — the issue predicted "red tests that were
+green", and it was right:**
+
+- `tests/fakes.py::FakeHoncho` — 24 users, never under the memory-store
+  contract suite — had become a byte-for-byte behavioural copy of
+  `nora.testing.FakeMemoryStore`. Deleted; every user now imports the
+  contract-bound one.
+- `MediaObjectStore` had a SQL store and NO shared fake, so two files wrote
+  their own with DIFFERENT search semantics (one substring-matched
+  description/prompt/title, one returned every row). Writing the shared
+  `FakeMediaObjectStore` and its contract suite against
+  `SqlMediaObjectStore` turned one test red **against production**: the SQL
+  `search` combined words with `or_` while its own docstring said it ANDed
+  them — "birthday card miles" returned every birthday card. Fixed in the
+  store. No offline test could have found it, because every offline test ran
+  against a fake that invented its own semantics.
+- Three files each carried a one-method `ReverseGeocoder` fake; now
+  `FakeReverseGeocoder`, held to the port's shape in the geocoder suite beside
+  the Google and HK-gov backends.
+- The blob, roster and description-store copies in the tool tests were
+  replaced by the shared fakes — one of which had to learn to record the
+  `model` it was handed, because a test needed it and the inline copy had
+  been written instead of teaching the shared one.
+
+**Not done, and pinned rather than hidden:** 24 inline stand-ins remain in
+`_ALLOWED`, most for ports with no shared fake yet (the room-language readers,
+`SearchProvider`/`GifSource`/`SocialProvider`, `TrackSource`/`MusicToolBridge`,
+`DreamAdaptor`/`DreamSink`) and seven that steer `dream_loop`'s supervision
+rather than model a port. Each is a candidate; promoting one means a
+`nora/testing/` fake plus a contract suite against the production
+implementation, which is the work the rule exists to force.
+
+**Environment finding, recorded because it hid the suite from the operator's
+own laptop:** SQLAlchemy's async engine needs `greenlet`, and SQLAlchemy's own
+dependency marker skips macOS arm64, so on an Apple Silicon machine every
+SQL-touching test errored with "the greenlet library is required". The
+container is Linux and never saw it. `greenlet` is now declared directly.

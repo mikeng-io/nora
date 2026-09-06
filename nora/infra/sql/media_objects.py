@@ -72,10 +72,16 @@ class SqlMediaObjectStore:
         words = [w for w in query.split() if w]
         conditions = []
         if words:
-            # Description column OR provenance::text (which carries
-            # prompt/title for generated objects).
+            # EVERY word must match (AND across words), each against the
+            # description column OR provenance::text (which carries
+            # prompt/title for generated objects). This was `sa.or_` across
+            # words until 2026-09-07 — "birthday card miles" returned every
+            # birthday card — and nothing noticed because the port had no
+            # contract suite and each test file's fake invented its own
+            # search; `tests/contract/test_media_object_store_contract.py`
+            # is what turned it red.
             conditions.append(
-                sa.or_(
+                sa.and_(
                     *[
                         sa.or_(
                             MEDIA_OBJECTS.c.description.ilike(f"%{w}%"),

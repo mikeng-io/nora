@@ -41,8 +41,8 @@ def test_fake_memory_store_satisfies_memory_store():
     `isinstance` against a `runtime_checkable` `Protocol` checks method names
     only (see `test_runtime_checkable_protocols_only_check_method_names` below);
     unlike `HonchoClient`, `FakeMemoryStore` is also keyword-only exactly like the
-    port, so it does not carry `tests/fakes.py::FakeHoncho`'s older
-    positional-argument drift."""
+    port. It is the suite's only memory fake — `tests/fakes.py::FakeHoncho`, an
+    older uncontracted copy, was folded into it (R-C, issue #113)."""
     assert isinstance(FakeMemoryStore(), MemoryStore)
 
 

@@ -1,7 +1,7 @@
 from nora.domain.models import PersonRef
 from nora.persons import Persons
+from nora.testing import FakeMemoryStore
 from nora.web.memory import build_memory_payload
-from tests.fakes import FakeHoncho
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
 ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
@@ -15,7 +15,7 @@ async def test_returns_only_the_callers_own_entry_not_everyone_elses():
     """User-scoped (operator, 2026-08-19): a caller resolved to `miles` must
     never see `ada`'s memory, reversing the original v1 "showcase everyone
     to everyone" design (2026-08-17-nora-web-design.md §2)."""
-    honcho = FakeHoncho(
+    honcho = FakeMemoryStore(
         conclusions={"miles": ["likes climbing", "works in fintech"], "ada": ["plays guitar"]},
         cards={"miles": ["Name: Miles Novak"], "ada": ["Name: Ada"]},
     )
@@ -35,7 +35,7 @@ async def test_returns_only_the_callers_own_entry_not_everyone_elses():
 async def test_a_missing_person_id_returns_empty_not_everyone():
     """Fail-closed (R-5's shape): no resolved identity must never fall back
     to showing every whitelisted person's data."""
-    honcho = FakeHoncho(conclusions={"miles": ["x"]})
+    honcho = FakeMemoryStore(conclusions={"miles": ["x"]})
     persons = _persons(MILES)
 
     payload = await build_memory_payload(
@@ -46,7 +46,7 @@ async def test_a_missing_person_id_returns_empty_not_everyone():
 
 
 async def test_an_unrecognized_person_id_returns_empty_not_an_error():
-    honcho = FakeHoncho(conclusions={"miles": ["x"]})
+    honcho = FakeMemoryStore(conclusions={"miles": ["x"]})
     persons = _persons(MILES)
 
     payload = await build_memory_payload(
@@ -57,7 +57,7 @@ async def test_an_unrecognized_person_id_returns_empty_not_an_error():
 
 
 async def test_a_person_with_no_conclusions_or_card_is_reachable_but_empty():
-    honcho = FakeHoncho(conclusions={}, cards={})
+    honcho = FakeMemoryStore(conclusions={}, cards={})
     persons = _persons(MILES)
 
     payload = await build_memory_payload(
@@ -74,13 +74,13 @@ async def test_a_person_with_no_conclusions_or_card_is_reachable_but_empty():
 
 async def test_an_unreachable_honcho_is_reported_unavailable_not_empty():
     """R-27: an unreachable Honcho must never look identical to 'nothing
-    known' — FakeHoncho(fail=True) mirrors the live client's unreachable
+    known' — FakeMemoryStore(fail=True) mirrors the live client's unreachable
     shape (tests/fakes.py's Recollection(reachable=False)). `identity`
     still comes back `[]` (peer_card's own documented ambiguity — ports.py:
     it answers `[]` for both "down" and "knows nothing"), so `reachable`
     (sourced from `representation` alone) is the only unavailability signal
     this payload carries."""
-    honcho = FakeHoncho(fail=True)
+    honcho = FakeMemoryStore(fail=True)
     persons = _persons(MILES)
 
     payload = await build_memory_payload(
@@ -99,7 +99,7 @@ async def test_queries_honcho_as_the_ai_peer_observing_the_caller():
     """Nora's MODEL OF the person, not the person's self-model — the same
     (observer=ai_peer, observed=target) shape nora/engagement/context.py's
     _recall_self/_recall_tagger_card already use."""
-    honcho = FakeHoncho(conclusions={"miles": ["x"]})
+    honcho = FakeMemoryStore(conclusions={"miles": ["x"]})
     persons = _persons(MILES)
 
     await build_memory_payload(honcho=honcho, persons=persons, ai_peer="nora", person_id="miles")
@@ -111,7 +111,7 @@ async def test_identity_is_the_persons_own_self_scoped_peer_card_not_an_observer
     """`peer_card` takes only `peer_id` — no observer/observed pair — called
     with the PERSON's own honcho_peer_id, distinct from `representation`'s
     (ai_peer, target) shape asserted above."""
-    honcho = FakeHoncho(cards={"miles": ["Name: Miles Novak", "Aliases: Miles"]})
+    honcho = FakeMemoryStore(cards={"miles": ["Name: Miles Novak", "Aliases: Miles"]})
     persons = _persons(MILES)
 
     payload = await build_memory_payload(

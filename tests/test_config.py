@@ -1,7 +1,6 @@
 """Frozen config tree (spec D.1), pydantic loader over config.toml."""
 
 import re
-import shutil
 import tomllib
 from pathlib import Path
 
@@ -24,6 +23,7 @@ from nora.domain.facts import (
     FACT_PREDICATE_CEILING_CHARS,
     FACT_TERM_CEILING_CHARS,
 )
+from tests.builders import copy_example_config
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -46,11 +46,9 @@ def _set_key(text: str, key: str, value: str) -> str:
 
 
 @pytest.fixture
-def toml_path(tmp_path, monkeypatch):
+def toml_path(example_config_path, monkeypatch):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    dst = tmp_path / "config.toml"
-    shutil.copy(ROOT / "config.example.toml", dst)
-    return dst
+    return example_config_path
 
 
 def test_unknown_key_is_a_startup_failure(toml_path):
@@ -241,11 +239,11 @@ def test_config_uses_the_target_shape(toml_path):
     assert cfg.doctrine.reload == "mtime"
 
 
-def test_constructing_config_without_base_context_is_an_error():
+def test_constructing_config_without_base_context_is_an_error(example_config_path):
     """Paths can only be resolved relative to the config file's directory, so
     constructing a Config without that context must fail loudly rather than
     silently yielding unresolved relative paths."""
-    data = tomllib.loads((ROOT / "config.example.toml").read_text())
+    data = tomllib.loads(example_config_path.read_text())
     with pytest.raises(ValidationError, match="base directory context is required"):
         Config.model_validate(data)
 
@@ -875,11 +873,10 @@ def test_two_configs_do_not_share_one_defaulted_dreamer_section(tmp_path, monkey
     — and in the eval harness, which loads several configs, that is a corpus
     read from the wrong tree with nothing to notice."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    first = tmp_path / "a" / "config.toml"
-    second = tmp_path / "b" / "config.toml"
-    for dst in (first, second):
-        dst.parent.mkdir(parents=True)
-        shutil.copy(ROOT / "config.example.toml", dst)
+    for sub in ("a", "b"):
+        (tmp_path / sub).mkdir()
+    first = copy_example_config(tmp_path / "a")
+    second = copy_example_config(tmp_path / "b")
     a, b = load(first), load(second)
     assert a.dreamer.dir != b.dreamer.dir
     assert a.dreamer.dir == (first.parent / "nora" / "dreamer").resolve()

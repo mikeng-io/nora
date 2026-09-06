@@ -31,7 +31,7 @@ from nora.domain.ports import LinkPreview, Roster, Style, Styled, TextStyle
 from nora.domain.utf16 import utf16_len
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
-from nora.testing import FakeLinkPreviewSource
+from nora.testing import FakeLinkPreviewSource, FakeRosterSource
 
 GRANT_ACI = "b9f1c2de-4a55-4c1e-9a77-0c1d2e3f4a5b"
 GRANT_PHONE = "+85251234567"
@@ -58,33 +58,17 @@ def _persons(**extra: PersonRef) -> Persons:
     return Persons(by_person=by_person, index=index)
 
 
-class _Roster:
-    """A `RosterSource` that answers like signal-cli does, not like a stub.
-
-    `listGroups` pairs `number` WITH `uuid` per member — which is the whole
-    reason `Roster.members` is a tuple of frozenSETS — so this returns paired
-    id forms rather than a flat list, and a group it was not told about is
-    `available=False` rather than an empty roster (`SignalRoster`'s own
-    stale-group-state branch, CLAUDE.md constraint 3).
-    """
-
-    platform = "signal"
-
-    def __init__(
-        self, members: tuple[frozenset[str], ...] = (), *, available: bool = True,
-    ) -> None:
-        self.members = members
-        self.available = available
-        self.calls: list[str] = []
-
-    async def roster(self, *, conversation_id: str) -> Roster:
-        self.calls.append(conversation_id)
-        if not self.available:
-            return Roster(available=False)
-        return Roster(available=True, members=self.members)
-
-
 IN_ROOM = (frozenset({GRANT_ACI, GRANT_PHONE}), frozenset({MILES_ACI}))
+
+
+def _roster(members=IN_ROOM, *, available: bool = True) -> FakeRosterSource:
+    """`FakeRosterSource` keyed to this file's conversation. It answers like
+    signal-cli does, not like a stub: `listGroups` pairs `number` WITH `uuid`
+    per member — the whole reason `Roster.members` is a tuple of frozenSETS —
+    and `available=False` is the daemon not listing the group (stale group
+    state on a linked device, CLAUDE.md constraint 3), which the shared fake
+    reaches through an id it was not told about."""
+    return FakeRosterSource(groups={CONVERSATION: members} if available else {})
 
 
 def _draft(text: str) -> Styled:
@@ -109,7 +93,7 @@ def _composer(
         platform="signal", conversation_id=CONVERSATION,
         persons=persons if persons is not None else _persons(),
         metrics=metrics or Metrics(),
-        roster_source=roster if roster is not None else _Roster(IN_ROOM),
+        roster_source=roster if roster is not None else _roster(),
         preview_source=preview,
     )
 
@@ -224,7 +208,7 @@ async def test_a_person_who_is_not_in_this_room_is_not_tagged():
     room's. The same resolve-WITHIN-scope rule `nora.agent.room` enforces for
     lookups, applied outbound."""
     metrics = Metrics()
-    composer = _composer(roster=_Roster((frozenset({MILES_ACI}),)), metrics=metrics)
+    composer = _composer(roster=_roster((frozenset({MILES_ACI}),)), metrics=metrics)
 
     out = await composer.compose(_draft("@Grant 你幾高?"))
 
@@ -238,7 +222,7 @@ async def test_an_unreadable_roster_tags_nobody_rather_than_guessing():
     in is a state this deployment has actually hit (stale group state on a
     linked device), so this branch is a real one, not a hypothetical."""
     metrics = Metrics()
-    composer = _composer(roster=_Roster(available=False), metrics=metrics)
+    composer = _composer(roster=_roster(available=False), metrics=metrics)
 
     out = await composer.compose(_draft("@Grant 你幾高?"))
 
@@ -367,7 +351,7 @@ async def test_a_message_with_no_at_sign_never_reads_the_roster():
     """The cost argument. A daemon round trip at the front of every reply is
     the thing `Room`'s laziness exists to avoid, and the overwhelming majority
     of replies mention nobody."""
-    roster = _Roster(IN_ROOM)
+    roster = _roster()
     composer = _composer(roster=roster)
 
     await composer.compose(_draft("我唔知你幾高"))
@@ -376,7 +360,7 @@ async def test_a_message_with_no_at_sign_never_reads_the_roster():
 
 
 async def test_two_mentions_read_the_roster_once():
-    roster = _Roster(IN_ROOM)
+    roster = _roster()
     composer = _composer(roster=roster)
 
     await composer.compose(_draft("@Grant 同 @Miles 你哋幾高?"))
@@ -407,7 +391,7 @@ async def test_only_the_id_the_platform_confirmed_is_sent():
         index={("signal", stale): "grant", ("signal", GRANT_PHONE): "grant"},
     )
     composer = _composer(
-        persons=persons, roster=_Roster((frozenset({GRANT_PHONE}),)),
+        persons=persons, roster=_roster((frozenset({GRANT_PHONE}),)),
     )
 
     out = await composer.compose(_draft("@Grant"))

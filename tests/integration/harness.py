@@ -46,9 +46,9 @@ from nora.ingest.policy import ParticipationPolicy
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
-from nora.testing import FakeAgentRunner, ScriptedTurn
+from nora.testing import FakeAgentRunner, FakeMemoryStore, ScriptedTurn
 from tests.builders import load_example_config, override_config
-from tests.fakes import FakeHoncho, SinkSender
+from tests.fakes import SinkSender
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"
@@ -162,7 +162,7 @@ class _HandlerView:
 class Harness:
     handler: _HandlerView
     sink: SinkSender
-    honcho: FakeHoncho
+    honcho: FakeMemoryStore
     metrics: Metrics
     own_account: str
     doctrine_store: DoctrineStore
@@ -292,7 +292,7 @@ async def build_handler(
     tmp_path: Path,
     *,
     script=None,
-    honcho: FakeHoncho | None = None,
+    honcho: FakeMemoryStore | None = None,
     sink: SinkSender | None = None,
     identity_toml: str | None = None,
     own_account: str = OWN_ACCOUNT,
@@ -403,7 +403,7 @@ async def build_handler(
         metrics=metrics,
     )
 
-    honcho_double = honcho if honcho is not None else FakeHoncho()
+    honcho_double = honcho if honcho is not None else FakeMemoryStore()
     adapter = sink if sink is not None else _HarnessAdapter(account=own_account)
     calls: list = []
 

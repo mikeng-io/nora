@@ -37,7 +37,8 @@ from nora.domain.models import TranscriptRow
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from tests.fakes import FakeHoncho, SinkSender
+from nora.testing import FakeMemoryStore
+from tests.fakes import SinkSender
 
 pytestmark = pytest.mark.anyio
 
@@ -140,7 +141,7 @@ def _build(persons, *, window=WINDOW, metrics=None, store=None):
                 persons=persons)
     tools = build_tools(
         store=store, conversation_id=CONV, conversation_type="group",
-        persons=persons, honcho=FakeHoncho(), deliverer=SinkSender(),
+        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics, room=room, transit_source=_UNREACHABLE_TRANSIT,
         question="邊個話收隊", context_window=40, transcript=window,
     )

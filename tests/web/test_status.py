@@ -2,10 +2,9 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from nora.domain.reminders import Reminder, ReminderState
-from nora.testing import FakeRecordStore
+from nora.testing import FakeMemoryStore, FakeRecordStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.status import build_status_payload
-from tests.fakes import FakeHoncho
 
 
 def _reminder(
@@ -22,7 +21,7 @@ def _reminder(
 
 async def test_reports_uptime_from_started_at():
     payload = await build_status_payload(
-        store=FakeRecordStore(), honcho=FakeHoncho(), reminders=FakeReminderStore(),
+        store=FakeRecordStore(), honcho=FakeMemoryStore(), reminders=FakeReminderStore(),
         started_at=0.0,
     )
     assert payload["uptime_seconds"] > 0
@@ -30,7 +29,7 @@ async def test_reports_uptime_from_started_at():
 
 async def test_reports_store_and_honcho_reachability_when_healthy():
     payload = await build_status_payload(
-        store=FakeRecordStore(), honcho=FakeHoncho(), reminders=FakeReminderStore(),
+        store=FakeRecordStore(), honcho=FakeMemoryStore(), reminders=FakeReminderStore(),
         started_at=0.0,
     )
     assert payload["store"] == {"reachable": True}
@@ -39,7 +38,7 @@ async def test_reports_store_and_honcho_reachability_when_healthy():
 
 async def test_reports_honcho_unreachable_without_raising():
     payload = await build_status_payload(
-        store=FakeRecordStore(), honcho=FakeHoncho(fail=True), reminders=FakeReminderStore(),
+        store=FakeRecordStore(), honcho=FakeMemoryStore(fail=True), reminders=FakeReminderStore(),
         started_at=0.0,
     )
     assert payload["honcho"] == {"reachable": False}
@@ -53,7 +52,7 @@ async def test_reminders_summary_has_count_and_earliest_due_at():
     await store.create(_reminder(earlier))
 
     payload = await build_status_payload(
-        store=FakeRecordStore(), honcho=FakeHoncho(), reminders=store, started_at=0.0,
+        store=FakeRecordStore(), honcho=FakeMemoryStore(), reminders=store, started_at=0.0,
     )
 
     assert payload["reminders"]["count"] == 2
@@ -72,7 +71,7 @@ async def test_reminders_upcoming_is_ordered_by_due_at_with_platform_and_room():
     await store.create(_reminder(earlier, platform="signal", conversation_id="g1"))
 
     payload = await build_status_payload(
-        store=FakeRecordStore(), honcho=FakeHoncho(), reminders=store, started_at=0.0,
+        store=FakeRecordStore(), honcho=FakeMemoryStore(), reminders=store, started_at=0.0,
     )
 
     assert payload["reminders"]["upcoming"] == [
@@ -87,7 +86,7 @@ async def test_reminders_upcoming_is_capped_at_ten():
         await store.create(_reminder(datetime(2026, 8, 18, hour, tzinfo=UTC)))
 
     payload = await build_status_payload(
-        store=FakeRecordStore(), honcho=FakeHoncho(), reminders=store, started_at=0.0,
+        store=FakeRecordStore(), honcho=FakeMemoryStore(), reminders=store, started_at=0.0,
     )
 
     assert payload["reminders"]["count"] == 12
@@ -96,7 +95,7 @@ async def test_reminders_upcoming_is_capped_at_ten():
 
 async def test_reminders_summary_when_none_pending():
     payload = await build_status_payload(
-        store=FakeRecordStore(), honcho=FakeHoncho(), reminders=FakeReminderStore(),
+        store=FakeRecordStore(), honcho=FakeMemoryStore(), reminders=FakeReminderStore(),
         started_at=0.0,
     )
     assert payload["reminders"] == {"count": 0, "next_due_at": None, "upcoming": []}

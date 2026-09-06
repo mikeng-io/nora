@@ -12,13 +12,12 @@ from nora.domain.models import PersonRef
 from nora.domain.presence import PresenceFix, WireState
 from nora.domain.reminders import ReminderCaps
 from nora.persons import Persons
-from nora.testing import FakeRecordStore
+from nora.testing import FakeMemoryStore, FakeRecordStore
 from nora.testing.gatherings import FakeGatheringStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from nora.web.games import PulseGamesClient
 from tests.conftest import build_test_doctrine_store
-from tests.fakes import FakeHoncho
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
 ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
@@ -76,7 +75,7 @@ async def client(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeHoncho(conclusions={"miles": ["x"]}),
+        honcho=FakeMemoryStore(conclusions={"miles": ["x"]}),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"miles": MILES}, index={}),
         ai_peer="nora",
@@ -348,7 +347,7 @@ async def client_with_games(aiohttp_client, pulse_server):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeHoncho(),
+        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"miles": MILES}, index={}),
         ai_peer="nora",
@@ -522,7 +521,7 @@ async def client_with_presence(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeHoncho(),
+        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"miles": MILES, "ada": ADA}, index={}),
         ai_peer="nora",
@@ -614,7 +613,7 @@ async def client_with_events(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeHoncho(),
+        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(
             by_person={"miles": MILES, "daisy": DAISY, "sam": SAM},

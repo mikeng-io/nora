@@ -26,7 +26,7 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.presence import PresenceStore
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeRosterSource
+from nora.testing import FakeReverseGeocoder, FakeRosterSource
 
 GROUP = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
 NORA = frozenset({"+85290000100"})
@@ -94,21 +94,6 @@ def _whereis(persons, store, *, members, fail=False, tagger=None, metrics=None,
         circle=CIRCLE, presence=store, refresher=refresher, geocoder=geocoder,
         location_trusted=location_trusted, metrics=metrics,
     )
-
-
-class _FakeGeocoder:
-    """Records every call — the assertion that matters most here is HOW MANY
-    times this was reached, not just what it returned (the whole point of
-    moving this on-demand: it must be reached only when locate() actually
-    needs it)."""
-
-    def __init__(self, address="Yoho Mall"):
-        self._address = address
-        self.calls: list[tuple[float, float]] = []
-
-    async def address_for(self, *, lat, lng):
-        self.calls.append((lat, lng))
-        return self._address
 
 
 class _FakeRefresher:
@@ -191,7 +176,7 @@ async def test_no_address_is_ever_geocoded_or_carried(persons, store):
     on-demand lookup. The geocoder stays wired but untouched; the coordinate
     is the fetch surface (`reverse_geocode` resolves it when asked)."""
     await _record(store, person="miles_novak", ts=NOW - 5 * 60_000, address="Grand Century Place")
-    geocoder = _FakeGeocoder("should never be returned")
+    geocoder = FakeReverseGeocoder("should never be returned")
     w = _whereis(persons, store, members=(MILES, GRANT, NORA), geocoder=geocoder)
     out = await w.locate("Miles", now_ms=NOW)
     assert out["status"] == "ok"
@@ -205,7 +190,7 @@ async def test_a_saved_place_hit_never_reaches_the_geocoder(persons, store):
     the geocoder is ever considered, address or no address."""
     await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
     await _record(store, person="miles_novak", ts=NOW - 5 * 60_000, address=None)
-    geocoder = _FakeGeocoder("should never be returned")
+    geocoder = FakeReverseGeocoder("should never be returned")
     w = _whereis(persons, store, members=(MILES, GRANT, NORA), geocoder=geocoder)
     out = await w.locate("Miles", now_ms=NOW)
     assert out["place"] == "Home"

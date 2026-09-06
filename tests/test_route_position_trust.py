@@ -22,7 +22,7 @@ from nora.domain.models import PersonRef
 from nora.domain.presence import PresenceFix, SavedPlace, WireState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
-from nora.testing import FakeRosterSource
+from nora.testing import FakeReverseGeocoder, FakeRosterSource
 
 GROUP = "g1"
 FUNG_PHONE = "+85298765432"
@@ -48,11 +48,6 @@ class _CannedPresence:
 
     async def window(self, *, circle_id, person_id, since_ts, until_ts):
         return []
-
-
-class _FakeGeocoder:
-    async def address_for(self, *, lat: float, lng: float) -> str:
-        return "Tsuen Wan Road"
 
 
 class _RecordingClient:
@@ -91,7 +86,7 @@ def _tools(*, location_trusted: bool):
         persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
         room=room, transit_source=None, route_source=client,
         presence_source=_CannedPresence(), presence_circles=(circle,),
-        location_trusted=location_trusted, geocoder=_FakeGeocoder(),
+        location_trusted=location_trusted, geocoder=FakeReverseGeocoder("Tsuen Wan Road"),
         question="幾點翻到屋企", context_window=40,
     )
     by_name = {t.tool_name: t for t in tools}

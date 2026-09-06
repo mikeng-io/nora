@@ -8,8 +8,8 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
-from nora.testing import FakeAgentRunner, FakeToolCallLogStore, ScriptedTurn
-from tests.fakes import FakeHoncho, SinkSender
+from nora.testing import FakeAgentRunner, FakeMemoryStore, FakeToolCallLogStore, ScriptedTurn
+from tests.fakes import SinkSender
 
 CACHEABLE = frozenset({"place_info", "route", "web_search", "weather", "transit"})
 
@@ -249,7 +249,7 @@ async def _run_the_chain(*, tool_call_log_clock=None) -> tuple[Metrics, FakeTool
     registry = ToolRegistry(route=_FakeRoute(), tool_call_log_store=store)
     specs = registry.specs(
         store=_FakeStore(), conversation_id=CONVERSATION, conversation_type="group",
-        persons=_FakePersons(MILES), honcho=FakeHoncho(), deliverer=SinkSender(),
+        persons=_FakePersons(MILES), honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics, room=_e2e_room(),
     )
     specs_by_name = {s.name: s for s in specs}

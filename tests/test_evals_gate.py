@@ -180,39 +180,30 @@ async def test_a8_silent_failure_score_is_not_recorded_for_no_trigger_cases(monk
     assert not any(s["name"] == "a8_silent_failure" for s in sink.scores)
 
 
-def _example_cfg():
-    from nora.app.eval_support import load_eval_config
-
-    repo_root = Path(__file__).resolve().parents[1]
-    return load_eval_config((repo_root / "config.toml", repo_root / "config.example.toml"))
+def test_build_sink_is_null_when_the_export_flag_is_absent(example_config):
+    assert isinstance(_build_sink(example_config, export=False), NullEvalSink)
 
 
-def test_build_sink_is_null_when_the_export_flag_is_absent(monkeypatch):
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    assert isinstance(_build_sink(_example_cfg(), export=False), NullEvalSink)
-
-
-def test_build_sink_is_null_when_config_disables_langfuse_even_with_the_flag(monkeypatch):
+def test_build_sink_is_null_when_config_disables_langfuse_even_with_the_flag(example_config):
     """Both flag AND config must opt in — the flag alone is not enough.
 
-    The disabled config is built explicitly rather than read from this repo's
-    `config.toml`, which `_example_cfg()` prefers. An earlier version asserted
-    that file's live value, which made a unit test of `_build_sink`'s logic fail
-    the moment the deployment enabled the export — a false dependency, not a
-    real regression. This mirrors its sibling below, which overrides to True."""
+    The disabled config is built explicitly rather than read from a file. An
+    earlier version of this file loaded the deployment's `config.toml` and
+    asserted its live value, which made a unit test of `_build_sink`'s logic
+    fail the moment the operator enabled the export — a false dependency, not
+    a real regression, and the case R-B (issue #113) is named for. This
+    mirrors its sibling below, which overrides to True."""
     from tests.builders import override_config
 
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    cfg = override_config(_example_cfg(), {"evals.langfuse.enabled": False})
+    cfg = override_config(example_config, {"evals.langfuse.enabled": False})
     assert cfg.evals.langfuse.enabled is False
     assert isinstance(_build_sink(cfg, export=True), NullEvalSink)
 
 
-def test_build_sink_is_langfuse_when_both_flag_and_config_enable_it(monkeypatch):
+def test_build_sink_is_langfuse_when_both_flag_and_config_enable_it(example_config):
     from tests.builders import override_config
 
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    cfg = override_config(_example_cfg(), {"evals.langfuse.enabled": True})
+    cfg = override_config(example_config, {"evals.langfuse.enabled": True})
     assert isinstance(_build_sink(cfg, export=True), LangfuseEvalSink)
 
 

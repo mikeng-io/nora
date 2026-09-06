@@ -87,7 +87,7 @@ POLICY_ALLOWING_GROUP = (
 
 
 @pytest.fixture
-async def env(tmp_path, aiohttp_server, monkeypatch, pg_url):
+async def env(tmp_path, aiohttp_server, monkeypatch, pg_url, example_config_path):
     """A config.toml, an identity.toml, a policy.toml, a migrated database and
     a fake daemon — the whole 3am situation, with nothing else running.
 
@@ -111,7 +111,7 @@ async def env(tmp_path, aiohttp_server, monkeypatch, pg_url):
     app.router.add_post("/api/v1/rpc", rpc)
     daemon = await aiohttp_server(app)
 
-    with (ROOT / "config.example.toml").open("rb") as f:
+    with example_config_path.open("rb") as f:
         cfg = tomllib.load(f)
     cfg["platforms"]["signal"]["base_url"] = str(daemon.make_url("")).rstrip("/")
     cfg["store"]["data_dir"] = str(tmp_path)

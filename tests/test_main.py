@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
-async def env(tmp_path, monkeypatch, aiohttp_server, pg_url):
+async def env(tmp_path, monkeypatch, aiohttp_server, pg_url, example_config_path):
     # `pg_url` creates a fresh Postgres database and exports DATABASE_URL, which
     # the composition root reads (store.database_url_env).
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
@@ -30,7 +30,7 @@ async def env(tmp_path, monkeypatch, aiohttp_server, pg_url):
                          lambda r: web.json_response({"ok": True, "id": "session-1"}))
     daemon = await aiohttp_server(app)
 
-    with (ROOT / "config.example.toml").open("rb") as f:
+    with example_config_path.open("rb") as f:
         cfg = tomllib.load(f)
     base = str(daemon.make_url("")).rstrip("/")
     cfg["platforms"]["signal"]["base_url"] = base

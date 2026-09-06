@@ -62,7 +62,7 @@ async def test_a_reply_still_happens_with_no_peer_card(harness_factory):
     assert len(h.sink.sent) == 1
     # A reply happening is not, on its own, proof Honcho was actually down: Honcho is
     # never load-bearing for delivery either way. `fed == []` is the observable half —
-    # FakeHoncho.feed() short-circuits before appending when `fail` is set, and a
+    # FakeMemoryStore.feed() short-circuits before appending when `fail` is set, and a
     # delivered reply always feeds the exchange when Honcho is reachable (see
     # test_tagging.py::test_the_exchange_feed_happens_exactly_once_per_delivered_reply)
     # — so this is what actually distinguishes "the fault fired" from "it didn't".

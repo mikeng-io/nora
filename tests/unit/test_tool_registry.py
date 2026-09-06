@@ -14,7 +14,8 @@ from nora.agent.tools import NATIVE_TOOL_BUDGETS
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
-from tests.fakes import FakeHoncho, SinkSender
+from nora.testing import FakeMemoryStore
+from tests.fakes import SinkSender
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = ConversationTarget("signal", "g1", "group")
@@ -55,7 +56,7 @@ def _room() -> Room:
 def _built_tools(registry: ToolRegistry) -> list:
     return registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeHoncho(), deliverer=_deliverer(),
+        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(),
     )
 
@@ -295,7 +296,7 @@ def test_specs_carry_the_same_budgets_as_budgets():
     registry = ToolRegistry()
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeHoncho(), deliverer=_deliverer(),
+        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(),
     )
     # Every BUILT spec's budget matches `budgets()`. `budgets()` is a superset:
@@ -344,7 +345,7 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
     registry = ToolRegistry()
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeHoncho(), deliverer=_deliverer(),
+        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(),
     )
     assert {s.name: s.time_shiftable for s in specs} == {
@@ -517,7 +518,7 @@ def test_build_includes_only_the_allowed_mcp_servers_tools():
     registry = ToolRegistry(mcp_tools=_mcp_groups())
     tools = registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeHoncho(), deliverer=_deliverer(),
+        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"pulse"}),
     )
     names = {t.tool_name for t in tools}

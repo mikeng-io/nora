@@ -24,8 +24,8 @@ from nora.agent.tools import build_tools
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeRosterSource
-from tests.fakes import FakeHoncho, SinkSender
+from nora.testing import FakeMemoryStore, FakeRosterSource
+from tests.fakes import SinkSender
 
 GROUP = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
 
@@ -104,7 +104,7 @@ def _build(
     )
     tools = build_tools(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=honcho or FakeHoncho(), deliverer=SinkSender(),
+        persons=persons, honcho=honcho or FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics, room=room, transit_source=_UNREACHABLE_TRANSIT,
         question=question, context_window=40,
     )
@@ -315,7 +315,9 @@ async def test_lookup_person_still_names_the_tagger_when_the_daemon_is_down(pers
 
 
 async def test_recall_returns_what_is_remembered_about_someone_in_the_room(persons):
-    honcho = FakeHoncho(conclusions={"miles_novak": ["Miles is from Ridgeline", "Miles drinks espresso"]})
+    honcho = FakeMemoryStore(
+        conclusions={"miles_novak": ["Miles is from Ridgeline", "Miles drinks espresso"]},
+    )
     result = await _call(_build(persons=persons, honcho=honcho)["about"], person="俊爺")
     assert result["status"] == "ok"
     assert result["person"] == "Miles Novak"
@@ -326,7 +328,7 @@ async def test_recall_asks_the_question_the_group_actually_asked(persons):
     """`search_query` comes from the tagging message so the conclusions are
     curated to it — and it is Nora's to supply, never a parameter the model
     has to invent (DEC-24)."""
-    honcho = FakeHoncho(conclusions={"miles_novak": ["something"]})
+    honcho = FakeMemoryStore(conclusions={"miles_novak": ["something"]})
     tools = _build(persons=persons, honcho=honcho, question="佢係咪識踢波")
     await _call(tools["about"], person="Miles")
     assert honcho.queries == [("nora", "miles_novak", "佢係咪識踢波")]
@@ -337,7 +339,7 @@ async def test_recall_accepts_a_model_generated_query_override(persons):
     Honcho search angle), so a model-supplied situation query is meaningful,
     not invented. A personalization turn asks about the group's state, not the
     raw tag message."""
-    honcho = FakeHoncho(conclusions={"miles_novak": ["something"]})
+    honcho = FakeMemoryStore(conclusions={"miles_novak": ["something"]})
     tools = _build(persons=persons, honcho=honcho, question="有咩類似 game 推薦")
     await _call(tools["about"], person="Miles",
                 query="group 而家玩緊咩、打完咩、偏好咩")
@@ -349,7 +351,7 @@ async def test_recall_is_blind_to_someone_who_is_not_in_this_room(persons):
     """Same scope as `lookup_person`, and it has to be: a memory lookup that
     could reach any peer in the workspace is an address-book dump with extra
     steps (design/11 §1.5)."""
-    honcho = FakeHoncho(conclusions={"elsewhere_liu": ["a secret about her"]})
+    honcho = FakeMemoryStore(conclusions={"elsewhere_liu": ["a secret about her"]})
     result = await _call(_build(persons=persons, honcho=honcho)["about"], person="外人")
     assert result["status"] == "not_found"
     assert honcho.queries == []          # her peer is never even asked about
@@ -359,7 +361,7 @@ async def test_ask_memory_reasons_from_noras_model_of_the_person(persons):
     """`ask_memory` is the DIALECTIC verb: it reads `(observer=nora,
     observed=person)` through `chat`, carrying the tagging question and the
     model's chosen depth (design/24 §4). The answer is the reasoned string."""
-    honcho = FakeHoncho(conclusions={"miles_novak": ["plays five-a-side on Sundays"]})
+    honcho = FakeMemoryStore(conclusions={"miles_novak": ["plays five-a-side on Sundays"]})
     tools = _build(persons=persons, honcho=honcho, question="佢鍾唔鍾意踢波")
     result = await _call(tools["ask_memory"], person="Miles", depth="high")
     assert honcho.chats == [("nora", "miles_novak", "佢鍾唔鍾意踢波", "high")]
@@ -370,7 +372,7 @@ async def test_ask_memory_reasons_from_noras_model_of_the_person(persons):
 async def test_ask_memory_depth_falls_back_to_low_when_off_list(persons):
     """Depth is the model's per-question choice, but only from Honcho's ladder;
     anything off-list is the fast default, never passed through raw."""
-    honcho = FakeHoncho(conclusions={"miles_novak": ["likes hiking"]})
+    honcho = FakeMemoryStore(conclusions={"miles_novak": ["likes hiking"]})
     tools = _build(persons=persons, honcho=honcho)
     await _call(tools["ask_memory"], person="Miles", depth="turbo")
     assert honcho.chats[0][3] == "low"
@@ -379,7 +381,7 @@ async def test_ask_memory_depth_falls_back_to_low_when_off_list(persons):
 async def test_ask_memory_is_blind_to_someone_not_in_this_room(persons):
     """Same roster gate as `about`: a reasoning call that could reach any peer
     in the workspace is a cross-room leak with extra steps. Never asked."""
-    honcho = FakeHoncho(conclusions={"elsewhere_liu": ["a secret about her"]})
+    honcho = FakeMemoryStore(conclusions={"elsewhere_liu": ["a secret about her"]})
     result = await _call(_build(persons=persons, honcho=honcho)["ask_memory"], person="外人")
     assert result["status"] == "not_found"
     assert honcho.chats == []
@@ -389,7 +391,7 @@ async def test_ask_memory_withholds_a_reasoned_answer_that_names_an_identifier(p
     """R-18 fails closed on the whole reply, and this answer is ONE indivisible
     string — if it carries an identifier it is withheld whole, never handed to
     the model to echo (the `about` rationale, applied to a reasoned blob)."""
-    honcho = FakeHoncho(conclusions={"miles_novak": ["reach him on +85298765432"]})
+    honcho = FakeMemoryStore(conclusions={"miles_novak": ["reach him on +85298765432"]})
     tools = _build(persons=persons, honcho=honcho)
     result = await _call(tools["ask_memory"], person="Miles")
     assert result["status"] == "nothing_known"
@@ -400,7 +402,7 @@ async def test_ask_memory_withholds_a_reasoned_answer_that_names_an_identifier(p
 async def test_ask_memory_is_unavailable_when_honcho_cannot_answer(persons):
     """`chat` returns None for both unreachable and nothing-to-say; neither is a
     licence to claim ignorance of the PERSON — the tool says `unavailable`."""
-    honcho = FakeHoncho(conclusions={})           # miles_novak seeds nothing → chat None
+    honcho = FakeMemoryStore(conclusions={})           # miles_novak seeds nothing → chat None
     tools = _build(persons=persons, honcho=honcho)
     result = await _call(tools["ask_memory"], person="Miles")
     assert result["status"] == "unavailable"
@@ -411,7 +413,7 @@ async def test_search_memory_surfaces_only_roster_speakers_and_screens_identifie
     """design/24 §S.3: search_memory hands back RAW words, so it is the tightest-
     gated recall verb — only messages from people in THIS room (never Nora's own,
     never an off-room peer), and R-18 drops any line carrying an identifier."""
-    honcho = FakeHoncho()
+    honcho = FakeMemoryStore()
     honcho.messages = [
         ("miles_novak", "book 咗七點枱"),                 # a roster speaker → kept
         ("nora", "好呀"),                              # Nora's own reply → dropped
@@ -426,7 +428,7 @@ async def test_search_memory_surfaces_only_roster_speakers_and_screens_identifie
 
 
 async def test_search_memory_nothing_found_when_no_roster_speaker_matches(persons):
-    honcho = FakeHoncho()
+    honcho = FakeMemoryStore()
     honcho.messages = [("nora", "只有我講嘢")]           # only Nora → filtered → empty
     metrics = Metrics()
     tools = _build(persons=persons, honcho=honcho, metrics=metrics)
@@ -452,7 +454,7 @@ async def test_search_memory_reports_an_outage_as_unavailable_not_as_nothing_fou
 
     `MessageHits.reachable` is the real signal, and the fake carries it because
     the real client does."""
-    honcho = FakeHoncho()
+    honcho = FakeMemoryStore()
     honcho.messages = [("miles_novak", "book 咗七點枱")]   # would match, if it could run
     honcho.fail = True
     tools = _build(persons=persons, honcho=honcho)
@@ -474,7 +476,7 @@ async def test_search_memory_says_it_cannot_repeat_what_it_found_when_all_hits_a
     The egress filter is the identifier floor (`scan_reply`; the model-name
     veto was disabled 2026-08-31, so a line naming an LLM is quotable now and
     an identifier is what gets screened)."""
-    honcho = FakeHoncho()
+    honcho = FakeMemoryStore()
     honcho.messages = [("miles_novak", "個 script 我 send 咗俾 +85290000101 呀")]
     metrics = Metrics()
     tools = _build(persons=persons, honcho=honcho, metrics=metrics)
@@ -504,7 +506,7 @@ async def test_search_memory_does_not_refuse_for_an_unmapped_account_in_the_room
     just means THAT account's own words never come back, same as before. A
     hit from a NAMED person still surfaces even though a stranger is also
     in the room."""
-    honcho = FakeHoncho()
+    honcho = FakeMemoryStore()
     honcho.messages = [
         ("miles_novak", "book 咗七點枱"),                     # a named roster speaker → kept
         ("stranger_peer", "a stranger's own words"),      # unmapped sender → dropped
@@ -522,7 +524,7 @@ async def test_search_memory_still_searches_the_taggers_own_words_when_degraded(
     R-31's OTHER branch) used to refuse outright. It no longer does — the same
     per-hit roster filter that drops an unmapped account's words naturally
     narrows to just the tagger's here too, since `roster` only holds them."""
-    honcho = FakeHoncho()
+    honcho = FakeMemoryStore()
     honcho.messages = [("miles_novak", "book 咗七點枱")]
     tools = _build(
         persons=persons, honcho=honcho, roster_fails=True,
@@ -541,12 +543,12 @@ async def test_nothing_known_is_distinguishable_from_could_not_ask(persons):
     the life of the deployment."""
     empty = Metrics()
     quiet = await _call(
-        _build(persons=persons, honcho=FakeHoncho(), metrics=empty)["about"],
+        _build(persons=persons, honcho=FakeMemoryStore(), metrics=empty)["about"],
         person="Miles",
     )
     down = Metrics()
     broken = await _call(
-        _build(persons=persons, honcho=FakeHoncho(fail=True), metrics=down)["about"],
+        _build(persons=persons, honcho=FakeMemoryStore(fail=True), metrics=down)["about"],
         person="Miles",
     )
     assert quiet["status"] == "nothing_known"
@@ -558,7 +560,7 @@ async def test_nothing_known_is_distinguishable_from_could_not_ask(persons):
 
 
 async def test_a_raising_memory_store_lands_on_unavailable_not_on_empty(persons):
-    class Exploding(FakeHoncho):
+    class Exploding(FakeMemoryStore):
         async def representation(self, **kw):
             raise RuntimeError("connection reset")
 
@@ -572,7 +574,7 @@ async def test_recall_withholds_a_conclusion_that_carries_an_identifier(persons)
     can and do carry a phone number. R-18 fails closed on the WHOLE reply, so
     letting one through would cost the entire message rather than one fact —
     dropping it here is strictly better than blocking at egress."""
-    honcho = FakeHoncho(conclusions={"miles_novak": [
+    honcho = FakeMemoryStore(conclusions={"miles_novak": [
         "Miles is from Ridgeline",
         "Miles's number is +85290000101",
         "Miles's ACI is a1000001-0000-4000-8000-000000000001",
@@ -590,7 +592,7 @@ async def test_recall_keeps_a_conclusion_that_merely_names_an_llm(persons):
     (2026-08-31, see `egress.py`) — but this tool's choice was always the
     floor, and a number in the same list is still dropped because that one is
     unsafe everywhere."""
-    honcho = FakeHoncho(conclusions={"miles_novak": [
+    honcho = FakeMemoryStore(conclusions={"miles_novak": [
         "Miles ships an app that calls Claude and Gemini",
         "Miles prefers haiku over sonnet for cheap classification",
         "Miles's number is +85290000101",
@@ -619,7 +621,7 @@ async def test_no_room_scoped_tool_can_return_a_phone_number_or_an_aci(persons):
     """R-18 as a property of these tools rather than of the egress guard: what
     they hand the model must already be safe to say out loud, or the guard
     turns a leak into a silent turn."""
-    honcho = FakeHoncho(conclusions={"miles_novak": ["reachable on +85290000101"]})
+    honcho = FakeMemoryStore(conclusions={"miles_novak": ["reachable on +85290000101"]})
     tools = _build(persons=persons, members=(MILES, TYLER, STRANGER, NORA), honcho=honcho)
     answers = [
         await _call(tools["group_members"]),
@@ -653,7 +655,7 @@ async def test_about_the_tagger_points_at_the_block_instead_of_fetching_it(perso
     accepting. The HONCHO CALL not happening is what this pins: a version that
     fetched and then discarded would read identically at the tool's boundary.
     """
-    honcho = FakeHoncho(conclusions={"miles_novak": ["miles_novak asked about dinner"]})
+    honcho = FakeMemoryStore(conclusions={"miles_novak": ["miles_novak asked about dinner"]})
     tools = _build(
         persons=persons, honcho=honcho, tagger=persons.by_person["miles_novak"],
         tagger_card_injected=True,
@@ -668,7 +670,7 @@ async def test_about_the_tagger_points_at_the_block_instead_of_fetching_it(perso
 async def test_about_still_works_for_everybody_else_in_the_room(persons):
     """Only the TAGGER's history is injected. Everyone else has no block at
     all, so pointing them at one would be pointing at empty space."""
-    honcho = FakeHoncho(conclusions={"tyler_cortez": ["tyler_cortez likes hotpot"]})
+    honcho = FakeMemoryStore(conclusions={"tyler_cortez": ["tyler_cortez likes hotpot"]})
     tools = _build(
         persons=persons, honcho=honcho, tagger=persons.by_person["miles_novak"],
         tagger_card_injected=True,
@@ -685,7 +687,7 @@ async def test_about_the_tagger_does_the_real_lookup_when_no_block_landed(person
     answer AND when the knob is 0 — pointing at it in either case would tell
     her to read something that is not there, and she would answer «I don't
     remember them» from an empty space rather than from memory."""
-    honcho = FakeHoncho(conclusions={"miles_novak": ["miles_novak asked about dinner"]})
+    honcho = FakeMemoryStore(conclusions={"miles_novak": ["miles_novak asked about dinner"]})
     tools = _build(
         persons=persons, honcho=honcho, tagger=persons.by_person["miles_novak"],
         tagger_card_injected=False,
@@ -709,7 +711,7 @@ async def test_about_returns_identity_and_history_as_separate_keys(persons):
     equal weight — which is the mistake the prefill avoids by keeping
     `<peer_card>` and `<peer_history>` as separate blocks.
     """
-    honcho = FakeHoncho(
+    honcho = FakeMemoryStore(
         cards={"tyler_cortez": ["IDENTITY: Name: Tyler Cortez"]},
         conclusions={"tyler_cortez": ["tyler_cortez likes hotpot"]},
     )
@@ -729,7 +731,7 @@ async def test_a_person_with_only_a_card_is_not_reported_as_unknown(persons):
     «I remember nothing about them yet» — while Honcho held their name and
     aliases the whole time.
     """
-    honcho = FakeHoncho(cards={"tyler_cortez": ["IDENTITY: Name: Tyler Cortez"]})
+    honcho = FakeMemoryStore(cards={"tyler_cortez": ["IDENTITY: Name: Tyler Cortez"]})
     tools = _build(persons=persons, honcho=honcho)
 
     out = await _call(tools["about"], person="Tyler")
@@ -744,7 +746,7 @@ async def test_an_identifier_in_the_card_is_withheld_like_one_in_a_conclusion(pe
     identity claims distilled from what people said, and a phone number is
     exactly the shape of thing that lands in one. R-18 fails closed on the
     whole reply, so one leaked line costs the entire message."""
-    honcho = FakeHoncho(
+    honcho = FakeMemoryStore(
         cards={"tyler_cortez": ["IDENTITY: Phone: +85290000102", "IDENTITY: Name: Tyler"]},
         conclusions={"tyler_cortez": ["tyler_cortez likes hotpot"]},
     )
@@ -758,7 +760,7 @@ async def test_an_identifier_in_the_card_is_withheld_like_one_in_a_conclusion(pe
 
 
 async def test_a_person_with_neither_is_still_nothing_known(persons):
-    honcho = FakeHoncho()
+    honcho = FakeMemoryStore()
     tools = _build(persons=persons, honcho=honcho)
 
     out = await _call(tools["about"], person="Tyler")
@@ -783,7 +785,7 @@ async def test_a_person_with_neither_is_still_nothing_known(persons):
 async def test_about_frames_its_conclusions_as_untrusted_memory(persons):
     from nora.agent.tools import _MEMORY_FRAMING
 
-    honcho = FakeHoncho(
+    honcho = FakeMemoryStore(
         cards={"tyler_cortez": ["IDENTITY: Name: Tyler Cortez"]},
         conclusions={"tyler_cortez": ["tyler_cortez likes hotpot"]},
     )
@@ -799,7 +801,7 @@ async def test_ask_memory_frames_the_reasoners_prose_as_untrusted_memory(persons
     until this it reached the model as a bare string with nothing saying so."""
     from nora.agent.tools import _MEMORY_FRAMING
 
-    honcho = FakeHoncho(conclusions={"miles_novak": ["plays five-a-side on Sundays"]})
+    honcho = FakeMemoryStore(conclusions={"miles_novak": ["plays five-a-side on Sundays"]})
     tools = _build(persons=persons, honcho=honcho, question="佢鍾唔鍾意踢波")
 
     out = await _call(tools["ask_memory"], person="Miles", depth="high")
@@ -815,7 +817,7 @@ async def test_search_memory_frames_verbatim_group_words_as_untrusted_memory(per
     that used to carry none of the wrapping."""
     from nora.agent.tools import _MEMORY_FRAMING
 
-    honcho = FakeHoncho()
+    honcho = FakeMemoryStore()
     honcho.messages = [("miles_novak", "book 咗七點枱")]
     out = await _call(_build(persons=persons, honcho=honcho)["search_memory"], query="枱")
 
@@ -846,7 +848,7 @@ async def test_all_four_memory_tools_carry_one_identical_framing(persons):
 
     Give any one of them its own wording — or drop the `_memory_result` call —
     and this reds."""
-    honcho = FakeHoncho(
+    honcho = FakeMemoryStore(
         cards={"miles_novak": ["IDENTITY: Name: Miles Novak"]},
         conclusions={"miles_novak": ["likes hotpot"]},
     )
@@ -871,7 +873,7 @@ async def test_a_memory_tool_that_found_nothing_is_not_marked_untrusted(persons)
     carries only this module's own prose, and stamping it too would make the
     marker mean nothing — the same way `group_transcript`'s attribute would
     stop discriminating if every block wore it."""
-    honcho = FakeHoncho()
+    honcho = FakeMemoryStore()
     honcho.messages = [("nora", "只有我講嘢")]           # only Nora → filtered → empty
     tools = _build(persons=persons, honcho=honcho)
 

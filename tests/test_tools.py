@@ -17,7 +17,7 @@ from nora.agent.tools import (
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import GifCandidate, MediaObject
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
-from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment, Roster
+from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment
 from nora.domain.utf16 import utf16_len
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -25,7 +25,13 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
-from tests.fakes import FakeHoncho, SinkSender
+from nora.testing import (
+    FakeBlobStore,
+    FakeMediaObjectStore,
+    FakeMemoryStore,
+    FakeRosterSource,
+)
+from tests.fakes import SinkSender
 from tests.test_doctrine_loader import write
 
 TARGET = ConversationTarget("signal", "g1", "group")
@@ -97,7 +103,7 @@ async def wiring(pg_url, tmp_path):
     write(pdir, "identity.md", name="soul", order=10, body="You are Nora.")
     doctrine = DoctrineStore(pdir, canary="C", metrics=Metrics()).get()
     sink = SinkSender()
-    honcho = FakeHoncho(cards={"miles": ["likes espresso"]})
+    honcho = FakeMemoryStore(cards={"miles": ["likes espresso"]})
     deliverer = Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                           canary="C", tag_id="t1", nora_sender_id="nora",
                           message_cap=NATIVE_TOOL_BUDGETS["send_reply"],
@@ -507,24 +513,6 @@ async def test_send_reply_strips_media_markers_before_delivery(wiring):
     assert wiring["sink"].texts[-1] == " 佔位"
 
 
-class _RosterHolding:
-    """A `RosterSource` that reports exactly the members it was told about.
-
-    Deliberately not a stub that says yes to everything: DEC-86's whole gate is
-    that «in identity.toml» and «in this room» are different questions, so a
-    roster answering the same way for both would make the positive half of the
-    test below assert nothing.
-    """
-
-    platform = "signal"
-
-    def __init__(self, *members: str) -> None:
-        self._members = tuple(frozenset({m}) for m in members)
-
-    async def roster(self, *, conversation_id: str) -> Roster:
-        return Roster(available=True, members=self._members)
-
-
 JORDAN_ACI = "b9f1c2de-4a55-4c1e-9a77-0c1d2e3f4a5b"
 OTHER_ACI = "0f8ab3c1-7d22-4e10-8b41-9c5e6f7a8b90"
 
@@ -573,9 +561,14 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
         # handle — so the boundary rule is exercised rather than side-stepped.
         line = next(ln.strip() for ln in description.splitlines() if handle in ln)
 
+        # A roster that reports exactly the members it was told about, not a
+        # stub that says yes: DEC-86's whole gate is that «in identity.toml»
+        # and «in this room» are different questions, so a roster answering
+        # the same way for both would make the positive half assert nothing.
         present = OutboundComposer(
             platform="signal", conversation_id="g1", persons=persons,
-            metrics=Metrics(), roster_source=_RosterHolding(JORDAN_ACI),
+            metrics=Metrics(),
+            roster_source=FakeRosterSource(groups={"g1": (frozenset({JORDAN_ACI}),)}),
         )
         # DEC-82 made `compose` take a `Styled` — the reply and its style
         # ranges never travel separately — so the advertised line goes
@@ -590,7 +583,8 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
 
         absent = OutboundComposer(
             platform="signal", conversation_id="g1", persons=persons,
-            metrics=Metrics(), roster_source=_RosterHolding(OTHER_ACI),
+            metrics=Metrics(),
+            roster_source=FakeRosterSource(groups={"g1": (frozenset({OTHER_ACI}),)}),
         )
         assert (await absent.compose(render_markdown(line))).mentions == ()
 
@@ -898,63 +892,8 @@ async def test_generate_image_reference_respects_the_privacy_gate(wiring):
 # ---- media_search / media_send (DEC-138 — unified media library) ---------
 
 
-class _FakeMediaObjectStore:
-    """Fake `MediaObjectStore` — in-memory rows, no SQL."""
-
-    def __init__(self, objs: list[MediaObject] | None = None):
-        self.objs = list(objs or [])
-        self.saved: list[MediaObject] = []
-
-    async def save(self, *, obj: MediaObject) -> bool:
-        self.saved.append(obj)
-        self.objs.append(obj)
-        return True
-
-    async def search(
-        self, *, query: str, limit: int = 20,
-        sources: tuple[str, ...] = (),
-    ) -> tuple[MediaObject, ...]:
-        pool = self.objs
-        if sources:
-            pool = [o for o in pool if o.source in sources]
-        if not query:
-            return tuple(pool[:limit])
-        q = query.casefold()
-        return tuple(
-            o for o in pool[:limit]
-            if q in o.description.casefold() or q in o.prompt.casefold()
-            or q in o.title.casefold()
-        )
-
-    async def get(self, *, sha256: str) -> MediaObject | None:
-        return next((o for o in self.objs if o.sha256 == sha256), None)
-
-    async def by_prefix(
-        self, *, handle: str, limit: int = 20,
-    ) -> tuple[MediaObject, ...]:
-        return tuple(
-            o for o in self.objs[:limit] if o.sha256.startswith(handle)
-        )
-
-
-class _FakeBlobStore:
-    """Fake `BlobStore` — a content-addressed dict."""
-
-    def __init__(self, blobs: dict[str, bytes] | None = None):
-        self.blobs = dict(blobs or {})
-
-    async def put(self, *, data: bytes) -> str:
-        import hashlib
-        key = hashlib.sha256(data).hexdigest()
-        self.blobs[key] = data
-        return key
-
-    async def get(self, *, key: str) -> bytes | None:
-        return self.blobs.get(key)
-
-
 def _make_image(
-    sha256: str = "aabbccddeeff00112233445566778899",
+    sha256: str = "aabbccddeeff00112233445566778899" * 2,
     prompt: str = "a cat",
     source: str = "generated",
 ) -> MediaObject:
@@ -977,7 +916,7 @@ async def test_media_search_wiring_gap_is_unavailable(wiring):
 
 
 async def test_media_search_returns_metadata(wiring):
-    store = _FakeMediaObjectStore([_make_image()])
+    store = FakeMediaObjectStore([_make_image()])
     tools = _with_image_tools(wiring, generator=_ImageGenerator(), media_store=store)
     result = await _call(tools["media_search"], query="cat")
     assert result["status"] == "ok"
@@ -989,9 +928,11 @@ async def test_media_search_never_returns_inbound(wiring):
     """DEC-138 custody scope: media_search searches Nora's OWN media
     (generated/fetched), never inbound rows — other people's photos are not
     her library."""
-    store = _FakeMediaObjectStore([
-        _make_image(sha256="aabbccddeeff00112233445566778899", prompt="a cat", source="generated"),
-        _make_image(sha256="112233445566778899aabbccddeeff00", prompt="a cat", source="inbound"),
+    store = FakeMediaObjectStore([
+        _make_image(sha256="aabbccddeeff00112233445566778899" * 2, prompt="a cat",
+                    source="generated"),
+        _make_image(sha256="112233445566778899aabbccddeeff00" * 2, prompt="a cat",
+                    source="inbound"),
     ])
     tools = _with_image_tools(wiring, generator=_ImageGenerator(), media_store=store)
     result = await _call(tools["media_search"], query="cat")
@@ -1001,8 +942,9 @@ async def test_media_search_never_returns_inbound(wiring):
 
 
 async def test_media_send_sends_stored_bytes(wiring):
-    store = _FakeMediaObjectStore([_make_image()])
-    blobs = _FakeBlobStore({_make_image().sha256: b"PNGDATA"})
+    store = FakeMediaObjectStore([_make_image()])
+    blobs = FakeBlobStore()
+    blobs.blobs[_make_image().sha256] = b"PNGDATA"
     tools = _with_image_tools(wiring, generator=_ImageGenerator(),
                               media_store=store, blob_store=blobs)
     result = await _call(tools["media_send"], handle="aabbcc")
@@ -1011,8 +953,8 @@ async def test_media_send_sends_stored_bytes(wiring):
 
 
 async def test_media_send_unknown_handle_is_nothing_found(wiring):
-    store = _FakeMediaObjectStore([])
-    blobs = _FakeBlobStore({})
+    store = FakeMediaObjectStore([])
+    blobs = FakeBlobStore()
     tools = _with_image_tools(wiring, generator=_ImageGenerator(),
                               media_store=store, blob_store=blobs)
     result = await _call(tools["media_send"], handle="ffffff")
@@ -1024,11 +966,11 @@ async def test_media_send_collision_is_ambiguous(wiring):
     """DEC-138: a 6-hex prefix collision is a QUESTION, never a default —
     the old images_resend silently picked the first; media_send must refuse
     exactly like media_fetch does."""
-    store = _FakeMediaObjectStore([
-        _make_image(sha256="aabbcc14924244741244445555667788", prompt="cat one"),
-        _make_image(sha256="aabbcc99998888777766665555444433", prompt="cat two"),
+    store = FakeMediaObjectStore([
+        _make_image(sha256="aabbcc14924244741244445555667788" * 2, prompt="cat one"),
+        _make_image(sha256="aabbcc99998888777766665555444433" * 2, prompt="cat two"),
     ])
-    blobs = _FakeBlobStore({})
+    blobs = FakeBlobStore()
     tools = _with_image_tools(wiring, generator=_ImageGenerator(),
                               media_store=store, blob_store=blobs)
     result = await _call(tools["media_send"], handle="aabbcc")
@@ -1540,7 +1482,7 @@ async def test_knowledge_asserters_nothing_found_and_unavailable(wiring_with):
 
 
 class _RecordingHoncho:
-    """`FakeHoncho` records the query but not the SCOPE, and the scope is the
+    """`FakeMemoryStore` records the query but not the SCOPE, and the scope is the
     whole point of this verb: `conversation_id=None` is what makes the search
     workspace-wide (the client's `/search` endpoint), so the fake has to
     remember it."""
