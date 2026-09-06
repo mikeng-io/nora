@@ -1324,6 +1324,29 @@ async def test_a_scheduled_watermark_bearing_adaptor_still_needs_backlog_and_age
     assert ("facts", "g1", 2) in runner.calls
 
 
+async def test_a_scheduled_watermark_free_adaptor_tracks_last_fired_per_key():
+    """`last_fired_at` is keyed `f"{adaptor.name}:{key}"` (33 §5 N1a) — one
+    workspace's curator firing must never hold back or advance another's.
+    Both scopes fire on the first tick (nothing has fired yet for either
+    key), and neither refires inside the interval."""
+    language = _KeyedLanguage()
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({}), language, [], Metrics(),
+        scopes=lambda: ["g1", "g2"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("curator", uses_watermark=False)],
+        runtime=runner,
+        schedules={"curator": AdaptorSchedule(
+            min_interval_seconds=1e9, batch_limit=10)},
+    ), ticks=0.08)
+
+    calls = [c for c in runner.calls if c[0] == "curator"]
+    assert calls.count(("curator", "g1", 0)) == 1
+    assert calls.count(("curator", "g2", 0)) == 1
+
+
 async def test_the_watermark_is_held_when_the_run_reports_unavailable():
     """`ExtractionUnparseableError`'s guarantee, now a value instead of an
     exception. Advancing here consumes those messages permanently with nothing
