@@ -150,6 +150,7 @@ _UNRESOLVABLE: frozenset[tuple[str, str, str, str]] = frozenset(
         ("nora/language/note_candidates.py", "_inc", "inc", "name"),
         ("nora/language/note_curator.py", "_gauge", "gauge", "name"),
         ("nora/language/note_curator.py", "_inc", "inc", "name"),
+        ("nora/language/note_entity_adaptor.py", "_inc", "inc", "name"),
         ("nora/obs/metrics.py", "inc", "inc", "value"),
         ("nora/obs/metrics.py", "observe", "observe", "value"),
         ("nora/presence/collector.py", "_count", "inc", "name"),

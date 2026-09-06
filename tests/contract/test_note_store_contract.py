@@ -59,6 +59,7 @@ from nora.domain.notes import (
 )
 from nora.domain.ports import Proposal
 from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.schema import (
@@ -2610,3 +2611,199 @@ def test_merge_opens_exactly_one_transaction():
         f"`merge` opens {len(begins)} transactions; it must open exactly one, "
         f"or the append can commit while the retirement does not"
     )
+
+
+# --- the deterministic half of entity resolution (issue #100) --------------
+#
+# `note_entity` had no writer anywhere in production before this: every merge
+# group was refused because the resolved half of the anchor key was always
+# empty, regardless of what `anchor_entity_ids` said. The tests above this
+# section prove `merge_groups` reads `note_entity` correctly once it holds
+# rows; these prove `create`/`propose` are what puts rows there now, through
+# a REAL `entities` collaborator rather than the harness's `resolve` shortcut
+# (which exists so the merge-group tests do not have to depend on this half
+# ever landing).
+
+
+class _FakeResolver:
+    """The one verb `InMemoryNoteStore.resolver` needs — `(workspace, name)
+    -> entity id or None` — over a plain dict a test seeds directly. Standing
+    in for `SqlEntityStore.resolve` the way `_NoteEntityResolver` in
+    `nora.testing.note_store` describes: structural, not imported, because
+    `nora.testing` may not import `nora.infra`."""
+
+    def __init__(self, known: dict[tuple[str, str], str]) -> None:
+        self._known = known
+
+    async def resolve(self, *, workspace: str, name: str) -> str | None:
+        return self._known.get((workspace, name))
+
+
+@dataclass(frozen=True)
+class _ResolverHarness:
+    store: _NoteStore
+    #: Seed a resolvable name: after this call, resolving `name` in
+    #: `workspace` returns `entity_id`. The sql arm inserts a real
+    #: `fact_entity` row (`entity_id` becomes its canonical name, since
+    #: `SqlEntityStore.resolve` matches on canonical name or alias rather
+    #: than on the row's own `id`); the memory arm just populates the dict.
+    seed: Callable[[str, str, str], Awaitable[None]]
+    #: The RESOLVED entity ids `note_entity` holds for one note, or `()` —
+    #: the same per-implementation read `notes.resolve`'s sql arm above
+    #: constructs inline, pulled out here because these tests read it
+    #: rather than only writing it.
+    resolved: Callable[[str], Awaitable[tuple[str, ...]]]
+
+
+@pytest.fixture(params=["memory", "sql"])
+async def notes_with_resolver(request: Any) -> AsyncIterator[_ResolverHarness]:
+    if request.param == "memory":
+        known: dict[tuple[str, str], str] = {}
+        memory = InMemoryNoteStore(resolver=_FakeResolver(known))
+
+        async def _seed_mem(workspace: str, name: str, entity_id: str) -> None:
+            known[(workspace, name)] = entity_id
+
+        async def _resolved_mem(note_id: str) -> tuple[str, ...]:
+            return memory.entities.get(note_id, ())
+
+        yield _ResolverHarness(memory, _seed_mem, _resolved_mem)
+        return
+
+    engine = create_sql_engine(request.getfixturevalue("_notes_db"))
+    entities = SqlEntityStore(engine)
+    store = SqlNoteStore(engine, entities=entities)
+
+    async def _seed_sql(workspace: str, name: str, entity_id: str) -> None:
+        # `resolve` matches on canonical name or alias, never on the row's
+        # own `id` — so seeding a SECOND name against an `entity_id` already
+        # in the table (the acceptance test's two-spellings case) attaches an
+        # alias to the existing row rather than inserting a second row that
+        # would collide with the first on the primary key.
+        async with engine.begin() as conn:
+            existing = (await conn.execute(
+                sa.select(FACT_ENTITY.c.id).where(FACT_ENTITY.c.id == entity_id)
+            )).scalar_one_or_none()
+            if existing is None:
+                await conn.execute(pg_insert(FACT_ENTITY).values(
+                    id=entity_id, workspace=workspace, canonical_name=name,
+                    aliases=[], created_at=NOW,
+                ))
+            else:
+                await conn.execute(
+                    sa.update(FACT_ENTITY)
+                    .where(FACT_ENTITY.c.id == entity_id)
+                    .values(aliases=FACT_ENTITY.c.aliases.op("||")([name]))
+                )
+
+    async def _resolved_sql(note_id: str) -> tuple[str, ...]:
+        async with engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(NOTE_ENTITY.c.entity_id)
+                .where(NOTE_ENTITY.c.note_id == note_id)
+            )).all()
+        return tuple(r.entity_id for r in rows)
+
+    try:
+        yield _ResolverHarness(store, _seed_sql, _resolved_sql)
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text(
+                "truncate note, note_revision, note_entity, note_candidate, "
+                "fact_entity cascade"
+            ))
+        await engine.dispose()
+
+
+async def test_create_resolves_an_anchor_name_that_matches_fact_entity(
+    notes_with_resolver: _ResolverHarness,
+) -> None:
+    """The writer this issue adds: `create` resolves each anchor-entity
+    string against the shared registry and writes `note_entity`, in the same
+    call rather than as a separate step nothing ever performs."""
+    await notes_with_resolver.seed(WS, "Grant Carver", "0191f2c4-0000-7000-8000-0000000000aa")
+
+    note = await _make(
+        notes_with_resolver.store, anchor_date=20261011,
+        anchor_entity_ids=("Grant Carver",),
+    )
+
+    assert await notes_with_resolver.resolved(note.id) == (
+        "0191f2c4-0000-7000-8000-0000000000aa",
+    )
+
+
+async def test_create_leaves_an_unmatched_anchor_name_unresolved(
+    notes_with_resolver: _ResolverHarness,
+) -> None:
+    """The existing fail-closed default, unchanged: a name the registry does
+    not recognise stays a string with no entity, never a guess."""
+    note = await _make(
+        notes_with_resolver.store, anchor_date=20261011,
+        anchor_entity_ids=("Nobody Has Heard Of This",),
+    )
+
+    assert await notes_with_resolver.resolved(note.id) == ()
+
+
+async def test_propose_creation_resolves_its_anchor_names_too(
+    notes_with_resolver: _ResolverHarness,
+) -> None:
+    """The debrief/create-candidate path (`propose`'s `NoteCreationProposal`
+    branch) gets the identical treatment `create` does — the tag path is not
+    the only writer this issue's gap affected."""
+    await notes_with_resolver.seed(WS, "Ada", "0191f2c4-0000-7000-8000-0000000000bb")
+    payload = NoteCreationProposal(
+        title="t", description="d", uncertainty="u", closing_condition="c",
+        established_in="conv-1", body="b", anchor_date=20261011,
+        anchor_entity_ids=("Ada",),
+    )
+
+    ids = await notes_with_resolver.store.propose(
+        key=WS,
+        proposals=(
+            Proposal(
+                payload=payload, instruction_sha256="e" * 64, model="run-model",
+                established_by="run-1",
+            ),
+        ),
+        now_ms=NOW,
+    )
+
+    assert await notes_with_resolver.resolved(ids[0]) == (
+        "0191f2c4-0000-7000-8000-0000000000bb",
+    )
+
+
+async def test_two_notes_resolving_to_one_entity_become_a_merge_group(
+    notes_with_resolver: _ResolverHarness,
+) -> None:
+    """**The acceptance test for issue #100.** Two notes, two different
+    spellings of the same occasion, the SAME anchor date: before this issue
+    `merge_groups` would refuse this pair every time — `note_entity` had no
+    writer, so the resolved half of the anchor key was always empty. Now
+    `create` resolves both spellings to the one entity through the SAME
+    collaborator, and the curator's own read finds them collided — proving
+    merge is no longer inert end to end, through the real write path rather
+    than through the harness's `resolve` shortcut the tests above the file's
+    curator-selection section use."""
+    entity_id = "0191f2c4-0000-7000-8000-0000000000cc"
+    await notes_with_resolver.seed(WS, "Grant's wedding", entity_id)
+    await notes_with_resolver.seed(WS, "Grant 婚禮", entity_id)
+
+    a = await _make(
+        notes_with_resolver.store, title="Grant's wedding",
+        anchor_date=20261011, anchor_entity_ids=("Grant's wedding",),
+    )
+    b = await _make(
+        notes_with_resolver.store, title="婚禮 詳情",
+        anchor_date=20261011, anchor_entity_ids=("Grant 婚禮",),
+    )
+
+    groups, refused = await notes_with_resolver.store.merge_groups(
+        workspace=WS, limit=10,
+    )
+
+    assert refused == (), "a resolved pair must not also read as refused"
+    assert len(groups) == 1, "the two spellings resolve to one occasion"
+    assert {n.id for n, _ in groups[0]} == {a.id, b.id}

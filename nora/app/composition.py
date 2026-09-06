@@ -127,6 +127,7 @@ from nora.language.fact_embedder import FactEmbedder
 from nora.language.knowledge_search import KnowledgeSearch
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
+from nora.language.note_entity_adaptor import NoteEntityResolutionAdaptor
 from nora.language.observer import LexemeObserver
 from nora.language.portrait_synthesizer import PortraitSynthesizer
 from nora.obs.health import LLMState
@@ -964,9 +965,20 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # would be somebody else's switch. Off, `TranscriptInjection` gets
     # `notes=None` and `_notes` answers `()` without a query — the dormant
     # state the tier shipped in. No `metrics=`: `SqlNoteStore.__init__` takes
-    # an engine and nothing else on purpose (its own docstring), and the one
-    # read on the critical path is counted by `_notes` instead.
-    note_store: SqlNoteStore | None = SqlNoteStore(engine) if cfg.notes.enabled else None
+    # an engine and an optional `entities` collaborator and nothing else on
+    # purpose (its own docstring), and the one read on the critical path is
+    # counted by `_notes` instead.
+    #
+    # `entities=fact_entities` (issue #100) is the deterministic half of the
+    # note tier's own entity resolution — built above under `cfg.facts.
+    # enabled`, `None` when that tier is off. No separate flag: this is the
+    # same affordance `SqlFactStore(entities=fact_entities)` already gets,
+    # and the fail-closed default (every anchor stays unresolved) is what a
+    # note store built with `entities=None` already did before this issue —
+    # `[facts]` being off costs the note tier nothing it did not already pay.
+    note_store: SqlNoteStore | None = (
+        SqlNoteStore(engine, entities=fact_entities) if cfg.notes.enabled else None
+    )
 
     # Resolved here, not inside AdapterRegistry — the same convention every
     # other `*_env` secret (the LLM key, the route key) follows: composition.py
@@ -2637,6 +2649,32 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     metrics=metrics,
                 ),
             )
+            # The note tier's judgement half of entity resolution (issue
+            # #100), riding `curator_enabled` rather than a fourth flag of
+            # its own. The note tier already has three gates for three
+            # DIFFERENT risks an operator turning on `[notes]` did not
+            # thereby sign up for: the tag path only reads, this pass's own
+            # sibling above merges and retires, the create path (below)
+            # writes new notes. Attaching an alias to the shared entity
+            # registry carries none of those risks — it never touches a
+            # note's content, never creates a note, and never merges an
+            # entity row, so by itself it would not earn a gate. What makes
+            # `curator_enabled` the right one anyway is that this pass has no
+            # OTHER consumer: `note_entity` is read only by
+            # `group_on_anchor_key`, which only the curator calls. An
+            # operator who has not turned the curator on has nothing that
+            # would ever read what this pass writes — the exact "declared
+            # with no call site" shape CLAUDE.md warns against, one layer up
+            # from a metric. `fact_entities is not None` is the OTHER half:
+            # the table this pass reads and writes is the fact tier's, built
+            # only under `cfg.facts.enabled` above.
+            if fact_entities is not None:
+                dream_adaptors = (
+                    *dream_adaptors,
+                    NoteEntityResolutionAdaptor(
+                        entities=fact_entities, metrics=metrics,
+                    ),
+                )
         # The note tier's CREATE PATH (design/dreamer-agent-loop/33 §4, issue
         # #98) — a THIRD gate, on `NotesConfig.candidates_enabled`'s own
         # two-risks argument: `[notes] enabled` decides whether the index and
