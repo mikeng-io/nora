@@ -83,20 +83,27 @@ review finding N3): it changes nothing under `tag_path_progressed_since_wake`'s
 existing semantics, while an explicit `revisit_at` makes the first wake an
 ordinary scheduled one.
 
-**Entity resolution is explicitly OUT OF SCOPE — issue #100's, not this
-module's.** `anchor_entity_ids` is accepted from the model as free text,
-exactly like the tag path's `note_create` tool stores it: unresolved,
-unvalidated, written verbatim to the note it creates. The dedupe GATE never
-reads that free text, because `nora.domain.notes.anchor_key`'s entity half is
-RESOLVED entity ids from `note_entity`, which has no writer anywhere in this
-system. `_find_anchor_match` therefore always sees an empty entity half in
-production and ALWAYS answers "no match" — every candidate becomes a create,
-never an update, until #100 lands. That is the identical `no_entity_anchor`
-limitation `nora.language.note_curator`'s own merge eligibility already
-lives with, inherited rather than reinvented: an anchor whose entity half is
-empty is not "the same occasion", it is "unresolved", and guessing that two
-notes on one date are one occasion is the two-weddings failure with a
-different label.
+**Entity resolution is explicitly OUT OF SCOPE for this module — and #100
+landing elsewhere does NOT change that here.** `anchor_entity_ids` is
+accepted from the model as free text, exactly like the tag path's
+`note_create` tool stores it: unresolved, unvalidated, written verbatim to
+the note it creates. The dedupe GATE never reads that free text, because
+`nora.domain.notes.anchor_key`'s entity half is RESOLVED entity ids from
+`note_entity` — and issue #100 (`d10093af`) DID give that table a writer, on
+the note WRITE path (`SqlNoteStore.create`/`propose`). This module's own call
+into the gate is a separate, narrower thing: `_find_anchor_match` is called
+here with `entity_ids=()` and `resolved_entities={}` HARDCODED (this file's
+own call site, not a production-data fact), independent of whatever `note_
+entity` now holds. So `_find_anchor_match` still always sees an empty entity
+half from THIS caller and ALWAYS answers "no match" — every candidate becomes
+a create, never an update — and #100 does not change that; wiring a real
+`resolved_entities` read into this call site is separate, unbuilt work. That
+is the identical `no_entity_anchor` limitation `nora.language.note_curator`'s
+own merge eligibility no longer fully lives with (its OWN call site does read
+resolved entities post-#100) but this one still does: an anchor whose entity
+half is empty is not "the same occasion", it is "unresolved", and guessing
+that two notes on one date are one occasion is the two-weddings failure with
+a different label.
 """
 
 from __future__ import annotations

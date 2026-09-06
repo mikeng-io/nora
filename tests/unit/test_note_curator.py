@@ -12,12 +12,17 @@ costs a tick; a wrong retirement costs a note and nobody can tell), now
 exercised through `InMemoryNoteStore` + `_seed`/`_curator` rather than a
 revisitor-only fake.
 
-**Merge-group members are EXEMPT from evidence grounding** (module docstring's
-own judgement call) — every merge test below is therefore UNCHANGED by the
-merge: no evidence, no citation, exactly the pre-merge curator's behaviour. A
-STANDALONE anchored/due note now needs a citation for `closed` and `_covers`
-for `expired`/`moot`, which is why the handful of pre-existing standalone-note
-tests below now seed a `FakeRecordStore` too.
+**A note actually offered a merge THIS TICK is exempt from evidence grounding**
+(module docstring's own judgement call, narrowed 2026-09-06 — see its "A note
+actually offered a merge THIS TICK is exempt" section) — every merge test
+below that offers a `merged_body` is therefore UNCHANGED: no evidence, no
+citation, exactly the pre-merge curator's behaviour. A group member whose
+merge is NOT offered this tick, or a STANDALONE anchored/due note, needs the
+same grounding any other note does — a citation for `closed`, `_covers` for
+`expired`/`moot`, and evidence at all for either — which is why the handful of
+pre-existing standalone-note tests below seed a `FakeRecordStore`, and why a
+declined-merge group member (which `inputs` never gathers evidence for) is
+refused `no_evidence` rather than exempted.
 """
 
 from __future__ import annotations
@@ -530,12 +535,24 @@ async def test_a_merged_body_naming_the_wrong_member_still_holds_its_group():
         "nora_note_curator_dropped_total", reason="not_shown_in_group") == 1
 
 
-async def test_a_group_nobody_asked_to_merge_is_still_retired():
-    """**The positive control for the whole guard, and it is not optional.**
-    Protecting every SELECTED group would end a tick with nothing retired, and
-    every assertion above would still pass. This is the case the narrow version
-    of the guard was written for, kept because it is real: no merged body came
-    back, so there is nothing to preserve and the verdicts stand on their own.
+async def test_a_group_nobody_asked_to_merge_falls_through_to_grounding():
+    """**The positive control for the whole guard, updated for the evidence-
+    grounding fix (2026-09-06).** Protecting every SELECTED group forever,
+    regardless of whether its merge was ever offered, would end a tick with
+    nothing retired and every assertion above would still pass — that is
+    what this test still rules out, but the mechanism that now proves it is
+    different.
+
+    Before the fix, a group nobody asked to merge retired both members from
+    their bare verdicts alone (`written == 2`) — that was ONLY safe because
+    `merge_groups` always returned empty in production (`note_entity` had no
+    writer). Now that groups are reachable, a member whose merge was not
+    offered this tick reaches the SAME evidence-grounded path any other note
+    takes (`_ground`'s `merged_away` check), and `inputs` never gathered
+    evidence for it (it was rendered as a group member, not as a due/expired
+    note) — so it is correctly refused `no_evidence`, not guessed at. The
+    thing this test still confirms: the refusal is REACHED per-note (counted,
+    individual) rather than the group being silently, unconditionally exempt.
     """
     store = InMemoryNoteStore()
     a = await _seed(store, title="Grant wedding", anchor=20260101)
@@ -547,8 +564,13 @@ async def test_a_group_nobody_asked_to_merge_is_still_retired():
         {"note_id": _h(c, b), "verdict": "moot", "why": "the day passed"},
     ))
 
-    assert written == 2
-    assert await store.standing(workspace=WS) == ()
+    assert written == 0, "no evidence was ever gathered for either — fail closed"
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="no_evidence") == 2, (
+        "both verdicts reached _ground and were refused there, not silently "
+        "swallowed by group membership"
+    )
+    assert {n.id for n in await store.standing(workspace=WS)} == {a.id, b.id}
 
 
 async def test_the_survivor_of_a_merge_is_never_retired_in_the_same_tick():
@@ -590,23 +612,47 @@ async def test_the_survivor_of_a_merge_is_never_retired_in_the_same_tick():
     )
 
 
-async def test_a_merge_that_never_ran_does_not_suppress_its_retirements():
-    """`merged_away` was computed from the SELECTED groups rather than the
-    merged ones, so a group whose merge never ran had its retirements skipped
-    too — a tick could end with the survivor retired and the duplicate still
-    standing, inverted, silently."""
+async def test_untouchable_is_scoped_to_offered_groups_not_merely_selected_ones():
+    """`untouchable` (`_merged_away_ids`) must be computed from the groups the
+    model actually OFFERED a merge for (`_MergeOffered`), never from every
+    group `merge_groups` merely SELECTED — an earlier version keyed
+    protection on the wider set, so a group nobody even tried to merge had
+    its retirements silently skipped too, and a tick could end with the
+    survivor retired and the duplicate still standing, inverted.
+
+    Built directly against `commit()` with hand-constructed, already-GROUNDED
+    `_Verdict`s (bypassing `accept()`/`_ground` entirely) because the
+    evidence-grounding fix (2026-09-06, see the module docstring's "A note
+    actually offered a merge THIS TICK is exempt") means an ordinary
+    `accept()` round for a group nobody offered a merge for now refuses its
+    members `no_evidence` first — a real and correct refusal in its own
+    right (see `test_a_group_nobody_asked_to_merge_falls_through_to_
+    grounding`), but one that would mask whether `untouchable` ITSELF is
+    scoped correctly. This test isolates that one question.
+    """
+    from nora.language.note_curator import _Verdict
+
     store = InMemoryNoteStore()
     a = await _seed(store, title="Grant wedding", anchor=20260101)
     b = await _seed(store, title="Grant's wedding", anchor=20260101)
     metrics = Metrics()
+    curator = _curator(store, metrics)
+    await curator.inputs(key=WS, batch=())
 
-    # Verdicts only — no merged_body, so no merge runs for this group.
-    _, written = await _merge_round(store, metrics, lambda c: (
-        {"note_id": _h(c, a), "verdict": "moot", "why": "the day passed"},
-        {"note_id": _h(c, b), "verdict": "moot", "why": "the day passed"},
-    ))
+    # No `_MergeOffered` proposal at all — nobody asked to merge this group.
+    proposals = tuple(
+        Proposal(payload=v, instruction_sha256="a" * 64, model="m",
+                 established_by="run-1")
+        for v in (
+            _Verdict(note_id=a.id, verdict="moot", why="the day passed",
+                     grounded=True),
+            _Verdict(note_id=b.id, verdict="moot", why="the day passed",
+                     grounded=True),
+        )
+    )
+    written = await curator.commit(key=WS, proposals=proposals, now_ms=NOW + 5)
 
-    assert written == 2, "both retire; neither is suppressed by an absent merge"
+    assert written == 2, "neither is suppressed by having merely been selected"
     assert await store.standing(workspace=WS) == ()
 
 
@@ -1696,11 +1742,59 @@ async def test_coverage_is_not_required_to_close_a_note():
 # ---------------------------------------------------------------------------
 
 
-async def test_a_merge_group_member_needs_no_evidence_to_close():
-    """The module docstring's judgement call, made visible: a merge-group
-    member's verdict is accepted from its body alone, exactly as the
-    pre-merge curator did — no `FakeRecordStore` row, no `cited_message_id`,
-    and it still retires."""
+async def test_a_note_actually_merged_this_tick_needs_no_evidence():
+    """**Half of the old (buggy) test that remains true post-fix.** A note
+    genuinely part of an ACCEPTED merge this tick — its group's survivor
+    named with a `merged_body` this run kept — is exempt from evidence
+    grounding exactly as the pre-merge curator's own behaviour was: no
+    `FakeRecordStore` row, no `cited_message_id`, and the occasion still
+    merges/retires. See `test_a_group_member_whose_merge_is_declined_needs_
+    evidence_like_any_other_note` for the half of the old test that was the
+    bug (issue #100/2026-09-06: `note_entity` gained a writer, so a group
+    that never actually merges is now reachable in production, and this
+    exemption must not follow it there)."""
+    store = InMemoryNoteStore()
+    a = await _seed(store, title="Grant wedding", anchor=20261011,
+                    body="Ada can't do Fridays.")
+    b = await _seed(store, title="Grant's wedding", anchor=20261011,
+                    body="Ben found Sheung Wan.")
+    metrics = Metrics()
+
+    curator = _curator(store, metrics)
+    await curator.inputs(key=WS, batch=())
+    kept = await curator.accept(key=WS, items=(
+        {"note_id": _h(curator, a), "merged_body":
+            "Ada can't do Fridays. Ben found Sheung Wan."},
+        {"note_id": _h(curator, a), "verdict": "closed", "why": "they married"},
+        {"note_id": _h(curator, b), "verdict": "closed", "why": "duplicate"},
+    ))
+    written = await curator.commit(
+        key=WS, proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ), now_ms=NOW + 5,
+    )
+    assert written == 1, "the merge retires the duplicate; the survivor stands"
+    assert metrics.get("nora_note_curator_total", action="merge") == 1
+    assert metrics.get(
+        "nora_note_curator_candidates_total", evidence="present") == 0
+    assert metrics.get(
+        "nora_note_curator_candidates_total", evidence="absent") == 0
+
+
+async def test_a_group_member_whose_merge_is_declined_needs_evidence_like_any_other_note():
+    """**The bug: what the old test's name asserted as correct.** Before the
+    fix, ANY member of a CANDIDATE group was exempt from evidence grounding
+    regardless of whether its group's merge was offered this tick — a claim
+    that was safe only as long as `merge_groups` always returned empty in
+    production (`note_entity` had no writer). Issue #100 gave it a writer,
+    which makes this the live scenario that used to retire a note with ZERO
+    grounding: the model answers each member individually — no `merged_body`
+    at all, the merge is declined — and since `inputs` never gathers
+    evidence for a group member (it is rendered as a candidate, not as a
+    due/expired note), the corrected path refuses `no_evidence` rather than
+    accepting the bare verdict, exactly the "silence is not an answer"
+    guarantee this tier enforces everywhere else."""
     store = InMemoryNoteStore()
     a = await _seed(store, title="Grant wedding", anchor=20261011)
     b = await _seed(store, title="Grant's wedding", anchor=20261011)
@@ -1718,11 +1812,10 @@ async def test_a_merge_group_member_needs_no_evidence_to_close():
                      established_by="run-1") for k in kept
         ), now_ms=NOW + 5,
     )
-    assert written == 2
+    assert written == 0, "no evidence was ever gathered for either note"
     assert metrics.get(
-        "nora_note_curator_candidates_total", evidence="present") == 0
-    assert metrics.get(
-        "nora_note_curator_candidates_total", evidence="absent") == 0
+        "nora_note_curator_dropped_total", reason="no_evidence") == 2
+    assert {n.id for n in await store.standing(workspace=WS)} == {a.id, b.id}
 
 
 # ---------------------------------------------------------------------------
