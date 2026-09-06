@@ -267,6 +267,12 @@ class SqlNoteStore:
                 established_in=payload.established_in, created_at=now_ms,
                 head_revision_id=revision_id, anchor_date=payload.anchor_date,
                 anchor_entity_ids=tuple(payload.anchor_entity_ids),
+                # §5.3 resolution (c): a gate-created note's first wake is a
+                # normal scheduled one when the create path supplied a
+                # `revisit_at` (`nora.language.note_candidates`); `None` for
+                # the tag path's own creates, which do not go through this
+                # proposal type at all.
+                revisit_at=payload.revisit_at,
             ),
             NoteRevision(
                 id=revision_id, note_id=note_id, body=payload.body,
@@ -293,6 +299,11 @@ class SqlNoteStore:
             anchor_entity_ids=list(note.anchor_entity_ids),
             established_in=note.established_in, created_at=note.created_at,
             head_revision_id=note.head_revision_id,
+            # `create()`'s own `Note` never sets this (`revisit_at` defaults
+            # `None`); `propose()`'s `_new_note` does, for a gate-created note
+            # (§5.3 resolution (c)). Written unconditionally rather than only
+            # when not-None, so both callers share ONE insert.
+            revisit_at=note.revisit_at,
         ))
         await conn.execute(sa.insert(NOTE_REVISION).values(
             id=revision.id, note_id=revision.note_id, body=revision.body,
@@ -908,6 +919,55 @@ class SqlNoteStore:
                 NOTE.c.anchor_date < day,
             )
             .order_by(NOTE.c.anchor_date.asc(), NOTE.c.id.asc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return tuple((_row_to_note(r), r.body) for r in rows)
+
+    async def due_for_revisit(
+        self, *, workspace: str, now_ms: int, limit: int,
+    ) -> tuple[tuple[Note, str], ...]:
+        """Standing notes whose `revisit_at` has arrived, oldest `revisit_at`
+        first, with their head bodies — the note-curator merge's `due` read
+        (design 34 §4.1/§5.3), now that `record_wake` and the create path
+        (§5.3 resolution (c)) are the writers `revisit_at` never had.
+
+        **Deliberately NOT also "or the anchor has passed"**, unlike 34 §4.1's
+        prose description of the union. `anchored_before` already selects
+        every note whose anchor is behind `day`, unconditionally — restating
+        that condition here would make this read redundant with it rather
+        than complementary, for no gain: the caller unions the two results
+        and de-duplicates by note id exactly as it already excludes a
+        merge-group member from the expired render. This read's OWN
+        contribution is the notes `anchored_before` cannot see at all — a
+        dateless note (no anchor to pass) and an anchored note whose anchor
+        has not yet arrived but whose early-close check has (34 §5.3's lead
+        window).
+
+        `IS NOT NULL` is load-bearing: a note nothing has ever woken (no
+        create-path `revisit_at`, no prior wake, and no anchor for
+        `anchored_before` to have caught) has `revisit_at IS NULL` and stays
+        out of this read forever — matching `_is_due`'s old arithmetic ("a
+        note with neither trigger is not due"), now expressed in SQL rather
+        than by scanning `standing()` in Python.
+
+        `limit` is a plain `LIMIT`, not an over-fetch: the caller
+        (`nora.language.note_curator`) is the one with a metrics collaborator
+        to count a capped tick against, on `anchored_before`'s own precedent
+        of leaving that bookkeeping to the adaptor rather than the store.
+        """
+        if limit <= 0:
+            return ()
+        stmt = (
+            self._head_join()
+            .where(
+                NOTE.c.workspace == workspace,
+                NOTE.c.retired_at.is_(None),
+                NOTE.c.revisit_at.is_not(None),
+                NOTE.c.revisit_at <= now_ms,
+            )
+            .order_by(NOTE.c.revisit_at.asc(), NOTE.c.id.asc())
             .limit(limit)
         )
         async with self._engine.connect() as conn:

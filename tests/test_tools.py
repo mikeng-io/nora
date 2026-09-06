@@ -134,6 +134,8 @@ def test_every_declared_tool_is_built(wiring):
         "calculate", "transit", "route",
         "place_info", "saved_places",
         "where_is",
+        # DEC-156: the fetch surface — coordinate to place, the read half.
+        "reverse_geocode",
         # DEC-155: the derived-presence history tool (where someone HAS BEEN).
         "where_been",
         "media_fetch",

@@ -202,9 +202,11 @@ def _read_sites(cls, module) -> list:
 
     **Three parse shapes exist in this repo and the test has to cover all
     three.** A module-level function (`_parse_claim`); a method taking one item
-    (`NoteRevisitor._accept_one`); and a loop reading `item[...]` INLINE in
-    `accept` itself, with more keys read in a second method it calls — which is
-    what `NoteCuratorAdaptor` does.
+    (`NoteCuratorAdaptor._ground`, since the note-curator merge folded the
+    former `NoteRevisitor._accept_one` into it); and a loop reading `item[...]`
+    INLINE in `accept` itself, with more keys read in a second method it
+    calls — which is what `NoteCuratorAdaptor.accept` itself does before
+    handing a resolved note off to `_ground`.
 
     The first version bound only to a callable whose first argument was named
     `item`. That covered two shapes and reported the third as UNCOVERED: a red

@@ -1,0 +1,15 @@
+{
+  "type": "change",
+  "summary": "The note tier's two housekeeping adaptors are one now: NoteRevisitor's due-by-clock selection, evidence grounding, and wake/strike bookkeeping are folded into NoteCuratorAdaptor (design/dreamer-agent-loop/34, issue #99).",
+  "details": [
+    "note-curation now runs THREE SQL-only selection reads (merge_groups, anchored_before, and a new due_for_revisit) before any model call, and grounds a closed/expired/moot verdict against real evidence (a citation for closed, `_covers` for expired/moot) for every anchored or due-selected note -- a merge-group member stays exempt, judged on its body alone as the pre-merge curator always did.",
+    "record_wake gets its first production caller: a note the tick selected and left standing gets its wake recorded, resetting strikes on tag-path progress and advancing revisit_at on a lead-window-before-anchor / +7d-dateless-horizon schedule.",
+    "The create path (note-candidates) now writes an explicit revisit_at at creation time, derived from the note's own anchor, so a gate-created note's first wake is a normal scheduled wake rather than a strike bootstrap.",
+    "note-revisit is retired as a separate adaptor and objective; its metrics (nora_note_revisit_candidates_total, _verdicts_total, _refused_total, _deferred_total, nora_note_revisit_standing) are renamed under nora_note_curator_*. nora_note_retirements_total is kept under its exact pre-merge name.",
+    "BEHAVIOUR CHANGE: retiring a note (previously the revisitor's own behaviour whenever [notes] enabled + [dreamer] enabled, with no separate switch) now additionally requires [notes] curator_enabled -- the same two-risks gate the curator already used. [dreamer] and [notes] enabled are BOTH true in the current deployment, so the pre-merge revisitor was ticking every cycle; curator_enabled is false, so this genuinely turns retirement off starting at the next deploy. Read back 2026-09-06: the deployed `note` table holds 0 rows, so there was nothing for the revisitor to have retired regardless of which gate applies -- the observable outcome (no retirement happening) is unaffected, but that is because the tier is still empty, not because [dreamer] was off."
+  ],
+  "limitations": [
+    "A dateless note whose strikes cross the ceiling (MAX_DATELESS_STRIKES) is only OBSERVED (nora_note_curator_total{action=\"dateless_stale\"}), not auto-retired -- the discharge decision for a note nothing has said is issue #101's, not this merge's.",
+    "Merge eligibility is still inert in production (note_entity has no writer, issue #100) -- unaffected by this merge, unchanged from the pre-merge curator."
+  ]
+}

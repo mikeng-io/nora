@@ -364,15 +364,13 @@ NATIVELY_AUTHORED = {
     "standing-verdict",
     # Written for the curator, never lifted: the note tier had no
     # background pass before it, so there is no prior prompt to have
-    # moved and no fixture that could pin one.
+    # moved and no fixture that could pin one. Version 2 (issue #99) folds in
+    # the former `note-revisit` objective — merged into the same file rather
+    # than lifted from anywhere, so it stays here under the one name.
     "note-curation",
-    # Same, for the revisitor: a new objective has no pre-move fixture, so
-    # byte-identity is not a property it can have. Declaring it here is the
-    # deliberate one-line act this set exists to require.
-    "note-revisit",
     # The note tier's CREATE PATH (issue #98). Same reason as
-    # `note-curation`/`note-revisit`: a new adaptor has no prior prompt to
-    # have moved and no fixture that could pin one.
+    # `note-curation`: a new adaptor has no prior prompt to have moved and no
+    # fixture that could pin one.
     "note-candidates",
     # Pass 6, entity-resolution adjudication. NATIVE even though its reasoning
     # and its four worked examples are adapted from graphiti-core's

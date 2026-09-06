@@ -558,17 +558,15 @@ class Whereis:
             and fix.speed_kmh > _SPEED_FLOOR_KMH
         ):
             movement["speed_kmh"] = round(fix.speed_kmh, 1)
-        # ON-DEMAND reverse-geocode: only reached when there is no saved-place
-        # name AND Life360 gave no address of its own — the two cheaper answers
-        # above always win first. This is the ONE live external call `locate`
-        # makes, and it is paid for only by an actual question about an actual
-        # fix, not by a background poll cycle nobody asked about.
-        address = fix.address
-        if place_name is None and address is None and self._geocoder is not None:
-            try:
-                address = await self._geocoder.address_for(lat=fix.lat, lng=fix.lng)
-            except Exception:
-                log.exception("whereis on-demand geocode failed — answering without it")
+        # DEC-156 follow-through (operator decision 2026-09-06): NO address
+        # here — neither Life360's own raw field nor an on-demand reverse
+        # geocode. `where_is` answers POSITION (saved place + age + lat/lng);
+        # a street address is the `reverse_geocode` tool's job, fetched only
+        # when the model actually needs one. This removes the one live
+        # external call `locate` could make (the old hidden geocode cost a
+        # billed lookup per cold coordinate) and makes the two presence
+        # tools shape-identical: label + coordinate, address by explicit
+        # fetch only.
         return {
             "status": "ok",
             "person": ref.name,
@@ -577,12 +575,11 @@ class Whereis:
             # the model is told how old it is so it can say «20 分鐘前».
             "age_seconds": int(age_seconds),
             "wire_state": fix.wire_state.value,
-            # DEC-156: lat/lng ALWAYS carried — the model may pass them to a
-            # street-view/maps fetch tool for an exact location (Miles's
-            # request 2026-09-05). They never enter a REPLY (R-28's speech
-            # half stands; the docstring teaches the model the same rule).
+            # DEC-156: lat/lng ALWAYS carried — the model may pass them to
+            # `reverse_geocode` for a street address (Miles's request
+            # 2026-09-05). They never enter a REPLY (R-28's speech half
+            # stands; the docstring teaches the model the same rule).
             **({"place": place_name} if place_name else {}),
-            **({"address": address} if address else {}),
             "lat": fix.lat,
             "lng": fix.lng,
             **movement,

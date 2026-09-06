@@ -1311,6 +1311,38 @@ async def test_propose_can_start_a_note_that_does_not_exist_yet(
     assert head.model == "debrief-model"
 
 
+async def test_propose_writes_an_explicit_revisit_at_when_the_payload_carries_one(
+    notes: _Harness,
+) -> None:
+    """The note-curator merge's §5.3 resolution (c), issue #99:
+    `nora.language.note_candidates` supplies `revisit_at` on every
+    `NoteCreationProposal` it builds, so a gate-created note's first wake is a
+    normal scheduled wake rather than a strike bootstrap. Both stores must
+    write it — `create()` (the tag path's own shape) never sets this field,
+    so this is `propose`'s own behaviour, not something either implementation
+    gets from `create` by inheritance."""
+    ids = await notes.store.propose(
+        key=WS, proposals=(_creation(revisit_at=NOW + 1000),), now_ms=NOW,
+    )
+
+    found = await notes.store.read(workspace=WS, note_id=ids[0])
+    assert found is not None
+    assert found[0].revisit_at == NOW + 1000
+
+
+async def test_propose_leaves_revisit_at_null_when_the_payload_does_not_carry_one(
+    notes: _Harness,
+) -> None:
+    """`revisit_at` is optional on `NoteCreationProposal` — a caller that does
+    not supply one (there is none today besides note-candidates, but the type
+    does not require it) must not have a value invented for it."""
+    ids = await notes.store.propose(key=WS, proposals=(_creation(),), now_ms=NOW)
+
+    found = await notes.store.read(workspace=WS, note_id=ids[0])
+    assert found is not None
+    assert found[0].revisit_at is None
+
+
 async def test_the_two_payload_shapes_are_discriminated_not_coerced(
     notes: _Harness,
 ) -> None:
@@ -1499,6 +1531,81 @@ async def test_anchored_before_is_strict_and_workspace_scoped(
     ) == ()
     assert await notes.store.anchored_before(
         workspace="another-workspace", day=20270101, limit=10,
+    ) == ()
+
+
+# --- due_for_revisit (the note-curator merge's `due` read, design 34, ------
+# issue #99) — `record_wake` is the only production writer of `revisit_at`,
+# so these drive it through THAT verb rather than inventing a second write
+# path just for the test.
+
+
+async def test_due_for_revisit_selects_a_note_whose_revisit_at_has_arrived(
+    notes: _Harness,
+) -> None:
+    due = await _make(notes.store, title="Due", anchor_date=None,
+                      anchor_entity_ids=("ada",))
+    not_due = await _make(notes.store, title="Not due", anchor_date=None,
+                          anchor_entity_ids=("ben",))
+    # `_make`'s own `established_by="tag:turn-1"` means the first wake always
+    # finds tag-path progress (the note's only revision), so this sets
+    # `revisit_at` to `NOW - 1000` via the real production writer.
+    await notes.store.record_wake(
+        workspace=WS, note_id=due.id, next_revisit_at=NOW - 1000, now_ms=NOW,
+    )
+
+    hits = await notes.store.due_for_revisit(workspace=WS, now_ms=NOW, limit=10)
+
+    assert [n.id for n, _ in hits] == [due.id]
+    assert not_due.id not in {n.id for n, _ in hits}
+
+
+async def test_due_for_revisit_excludes_a_note_with_no_revisit_at(
+    notes: _Harness,
+) -> None:
+    """A note nothing has ever woken — no create-path `revisit_at`, no prior
+    wake — has `revisit_at IS NULL` and stays out of this read forever,
+    matching `_is_due`'s old arithmetic: a note with neither trigger is not
+    due."""
+    await _make(notes.store, title="Untouched", anchor_date=None,
+               anchor_entity_ids=("ada",))
+
+    assert await notes.store.due_for_revisit(
+        workspace=WS, now_ms=NOW, limit=10,
+    ) == ()
+
+
+async def test_due_for_revisit_is_strict_and_workspace_scoped(
+    notes: _Harness,
+) -> None:
+    note = await _make(notes.store, title="Due", anchor_date=None,
+                       anchor_entity_ids=("ada",))
+    await notes.store.record_wake(
+        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
+    )
+
+    # Strict: `revisit_at` in the future is not yet due.
+    assert await notes.store.due_for_revisit(
+        workspace=WS, now_ms=NOW, limit=10,
+    ) == ()
+    # Workspace-scoped: a note revisit-due in one workspace does not leak.
+    assert await notes.store.due_for_revisit(
+        workspace="another-workspace", now_ms=NOW + 2000, limit=10,
+    ) == ()
+
+
+async def test_due_for_revisit_does_not_select_a_retired_note(
+    notes: _Harness,
+) -> None:
+    note = await _make(notes.store, title="Due", anchor_date=None,
+                       anchor_entity_ids=("ada",))
+    await notes.store.record_wake(
+        workspace=WS, note_id=note.id, next_revisit_at=NOW - 1000, now_ms=NOW,
+    )
+    await notes.retire(note.id, NOW + 1)
+
+    assert await notes.store.due_for_revisit(
+        workspace=WS, now_ms=NOW + 2, limit=10,
     ) == ()
 
 
@@ -2286,6 +2393,7 @@ async def test_a_merge_runs_end_to_end_against_real_postgres(_notes_db) -> None:
     from nora.domain.ports import Proposal
     from nora.language.note_curator import NoteCuratorAdaptor
     from nora.obs.metrics import Metrics
+    from nora.testing.fakes import FakeRecordStore
 
     engine = create_sql_engine(_notes_db)
     try:
@@ -2312,9 +2420,12 @@ async def test_a_merge_runs_end_to_end_against_real_postgres(_notes_db) -> None:
             anchor_entity_ids=("grant",),
         )
         metrics = Metrics()
+        # `record` is unused by this test — no due/expired note is in play,
+        # only the merge path — but the merged constructor requires one
+        # (design 34, issue #99).
         curator = NoteCuratorAdaptor(
-            notes=store, today=lambda: 20260101, max_groups_per_tick=3,
-            max_expired_per_tick=10, metrics=metrics,
+            notes=store, record=FakeRecordStore(), today=lambda: 20260101,
+            max_groups_per_tick=3, max_expired_per_tick=10, metrics=metrics,
         )
 
         # NOTHING IS ELIGIBLE UNTIL `note_entity` RESOLVES, and this half of

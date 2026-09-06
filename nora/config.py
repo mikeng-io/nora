@@ -1910,7 +1910,9 @@ class NotesConfig(BaseModel):
 
     enabled: bool = False
 
-    # --- the REVISITOR (`nora.language.note_revisitor`) ------------------
+    # --- the due-by-`revisit_at` selection, folded from the former
+    # REVISITOR into `nora.language.note_curator.NoteCuratorAdaptor`
+    # (design/dreamer-agent-loop/34, issue #99) --------------------------
     #
     # `max_revisits_per_tick = 10`: how many DUE notes one pass judges. A
     # ceiling on the PROMPT as much as on the work — each candidate carries its
@@ -1918,7 +1920,7 @@ class NotesConfig(BaseModel):
     # below into the size of one model call. A workspace with more due than
     # this drains over several ticks, which is correct for a background pass
     # nobody is waiting on, and the overflow is COUNTED
-    # (`nora_note_revisit_deferred_total`) rather than silently truncated.
+    # (`nora_note_curator_deferred_total`) rather than silently truncated.
     #
     # `revisit_evidence_messages = 40`: messages of a note's own
     # `established_in` rendered as the evidence it is judged against.
