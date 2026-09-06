@@ -33,11 +33,28 @@ venv/
 *.swo
 .DS_Store
 
-# Local deployment config (config.example.toml / identity.example.toml are the
-# committed templates; config.toml itself is tracked — it holds no secret values,
-# api_key_env names the variable, never the key). Legacy pre-TOML names are kept
-# ignored too, so a leftover config.yaml or persons.yaml (which held real phone
-# numbers) on an operator's machine can never be committed by accident.
+# Local deployment config. `config.example.toml` / `identity.example.toml` are
+# the committed templates; the LIVE files are all three untracked now.
+#
+# `config.toml` was tracked until 2026-09-07 (operator decision) on the
+# argument that it holds no secret values — `api_key_env` names the variable,
+# never the key. What made that untenable was not secrecy, it was collision:
+# the live file is a bind-mount source that the operator edits in place, so a
+# tracked copy meant every merge touching it fought an uncommitted working
+# change, and each session had to stash-merge-restore-diff by hand to avoid
+# losing an edit. Untracked, `config.toml` belongs to the deployment and
+# `config.example.toml` carries the shape.
+#
+# The cost, stated so nobody rediscovers it: master no longer records what is
+# actually deployed, and `config.example.toml` is the only thing keeping a new
+# key reviewable. `tests/test_env_template.py` is what holds the two in step —
+# keep it that way, because `extra = "forbid"` turns a drifted example into a
+# container that will not boot.
+#
+# Legacy pre-TOML names are kept ignored too, so a leftover config.yaml or
+# persons.yaml (which held real phone numbers) on an operator's machine can
+# never be committed by accident.
+/config.toml
 /config.yaml
 /identity.toml
 /persons.yaml

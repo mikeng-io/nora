@@ -140,7 +140,19 @@ Three files, three lifetimes, deliberately not merged (DEC-8's argument):
 | `identity.toml` | **who people are** | a human joins |
 | `policy.toml` | **who may talk to her, and where** | trust changes |
 
-The last two are gitignored, bind-mounted read-only, and **loaded once at
+**All three are gitignored now** — `config.toml` joined the other two on
+2026-09-07 (operator decision). It was tracked on the argument that it holds no
+secret values, and what made that untenable was collision rather than secrecy:
+the live file is a bind-mount source the operator edits in place, so every
+merge touching it fought an uncommitted working change and each session had to
+stash-merge-restore-diff by hand to keep from losing an edit. `config.example.
+toml` is now the only committed record of the config's shape, and
+`tests/test_env_template.py` is what holds the two in step — that gate SKIPS
+where there is no local `config.toml` (a fresh clone) and runs for real on the
+deployment machine, which is the one whose drift would stop a container
+booting under `extra = "forbid"`.
+
+The last two are bind-mounted read-only and **loaded once at
 startup** — editing either without a restart changes nothing and warns you about
 nothing (`nora_unmapped_senders_total` is the tell). `identity.toml` takes one
 `[[persons.<id>.<platform>]]` block **per account**, all resolving to one
@@ -230,9 +242,11 @@ summary — update-in-place, separate from the Dreamer and Honcho).
 - **Never edit, commit, or merge on `master` in this checkout** — every change,
   including a one-line doc fix, starts in a worktree on its own branch and
   reaches `master` by merge. `master` here is a bind-mount source for the
-  running container (`nora/doctrine`, `config.toml`), so an edit on `master` is
-  a deploy: the doctrine hot-reloads on mtime and reaches the group with no gate
-  between the edit and production. **Landing a merge does not move you back
+  running container (`nora/doctrine`), so an edit on `master` is a deploy: the
+  doctrine hot-reloads on mtime and reaches the group with no gate between the
+  edit and production. (`config.toml` is bind-mounted from this checkout too,
+  but is untracked since 2026-09-07 — editing it is still a deploy at the next
+  restart, it is simply no longer something a merge can do to you.) **Landing a merge does not move you back
   in** — the next change starts in a new worktree too. 2026-08-21: a session
   merged, kept editing in place, and another session was seconds from building
   an image out of a mid-refactor tree with 16 tests red in it.

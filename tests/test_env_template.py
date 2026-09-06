@@ -5,6 +5,8 @@ import shutil
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from nora.config import LLMConfig, load
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,9 +61,37 @@ def _flatten(table: object, prefix: str = "") -> dict[str, object]:
 
 def _load_toml(name: str) -> dict[str, object]:
     path = ROOT / name
-    # Fail, never skip: a missing config.toml means this gate silently stopped
-    # measuring, which is the class of bug the whole file exists to catch.
+    # `config.example.toml` is TRACKED and its absence is a real failure — it
+    # is the only committed record of the config's shape, so a gate that
+    # skipped on it would be measuring nothing while looking green.
     assert path.is_file(), f"{name} is tracked in git and must exist"
+    return _flatten(tomllib.loads(path.read_text()))
+
+
+def _load_live_or_skip() -> dict[str, object]:
+    """`config.toml`, or a SKIP when this checkout has none.
+
+    It was tracked until 2026-09-07 and this file's loader said "fail, never
+    skip: a missing config.toml means this gate silently stopped measuring".
+    That was right while the file was guaranteed present. It is now the
+    deployment's own file and a fresh clone legitimately has none, so a hard
+    assert would fail for everyone who is not the operator — and a gate that
+    is red on every machine gets deleted, which loses the check entirely.
+
+    A SKIP rather than a silent pass: pytest prints it, so «this ran and
+    agreed» and «there was nothing here to compare against» stay different
+    readings. And the run that matters still exercises it — the operator's own
+    `make gate` before a deploy is executed on the machine that HAS the file,
+    which is exactly where a drifted example would do its damage.
+    """
+    path = ROOT / "config.toml"
+    if not path.is_file():
+        pytest.skip(
+            "no config.toml in this checkout — untracked since 2026-09-07, so "
+            "the live-vs-example cross-check has nothing to compare against "
+            "here. It runs on the deployment machine, which is the one whose "
+            "example drifting would break a boot."
+        )
     return _flatten(tomllib.loads(path.read_text()))
 
 
@@ -231,7 +261,7 @@ def test_config_example_declares_every_key_the_deployment_sets():
     The reverse is NOT an error: the template may state a value the deployment
     leaves at its default, which is how it documents defaults.
     """
-    live = _load_toml("config.toml")
+    live = _load_live_or_skip()
     example = _load_toml("config.example.toml")
     missing = sorted(set(live) - set(example) - _MAY_BE_ABSENT)
     assert not missing, (
@@ -251,7 +281,7 @@ def test_config_example_agrees_with_the_deployment_except_where_argued():
     known-good configuration, and a template disagreeing with them misleads
     every future investigation.
     """
-    live = _load_toml("config.toml")
+    live = _load_live_or_skip()
     example = _load_toml("config.example.toml")
     drifted = {
         key: (example[key], live[key])
@@ -305,6 +335,12 @@ def test_both_config_files_agree_on_the_dreamer_runtime_shape(tmp_path, monkeypa
     error anywhere.
     """
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    if not (ROOT / "config.toml").is_file():
+        pytest.skip(
+            "no config.toml in this checkout — untracked since 2026-09-07; "
+            "this test compares the template's Dreamer shape against the live "
+            "one and has nothing to compare against here."
+        )
     loaded = {}
     for name in ("config.example.toml", "config.toml"):
         dst = tmp_path / name.replace(".example", "") / "config.toml"
@@ -357,8 +393,15 @@ def test_config_example_sets_no_top_p():
     # comments, and that prose is the point of A6 — what must not appear is a
     # SET key, in either file or in the model that would accept one.
     assert "top_p" not in LLMConfig.model_fields
-    for name in ("config.example.toml", "config.toml"):
-        assert "llm.top_p" not in _load_toml(name), f"{name} sets top_p"
+    # The TEMPLATE is checked unconditionally — it is tracked, and it is what a
+    # new deployment copies. The live file is checked when this checkout has
+    # one; it is untracked since 2026-09-07 and a fresh clone has none.
+    assert "llm.top_p" not in _load_toml("config.example.toml")
+    live = ROOT / "config.toml"
+    if live.is_file():
+        assert "llm.top_p" not in _flatten(tomllib.loads(live.read_text())), (
+            "config.toml sets top_p"
+        )
 
 
 def test_config_example_has_no_secret_values():

@@ -51,7 +51,26 @@ MEASURED_TOKENS_PER_LOAD_TRANSCRIPT_ROW = 6_592 / 200      # ~33
 
 
 def _llm(name: str) -> dict:
-    return tomllib.loads((ROOT / name).read_text())["llm"]
+    """The `[llm]` table of one config file, or a SKIP when it is absent.
+
+    `config.example.toml` is tracked and always present. `config.toml` is the
+    deployment's own file and untracked since 2026-09-07, so a fresh clone has
+    none — and this file asserts against BOTH on purpose (the template is what
+    a new deployment copies; the live file is what this one actually runs).
+
+    A skip rather than a silent pass: pytest prints it, so a run that compared
+    the two and a run that had only one to look at stay distinguishable. On the
+    operator's machine — the one where a budget mistake reaches production —
+    the file is there and every assertion below is real.
+    """
+    path = ROOT / name
+    if not path.is_file():
+        pytest.skip(
+            f"no {name} in this checkout — untracked since 2026-09-07, so the "
+            "budget cross-check has nothing to read here. It runs on the "
+            "deployment machine, whose budget is the one that matters."
+        )
+    return tomllib.loads(path.read_text())["llm"]
 
 
 @pytest.mark.parametrize("config_name", CONFIGS)
