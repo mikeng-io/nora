@@ -176,7 +176,10 @@ their schemas; behaviour lives in conduct.md). It MUST contain:
 2. **Never smooth `unlabeled`.** «Clara seems to work in Kwun Tong» is
    the exact failure design/27 §3.4 names. If kind is `unlabeled`, say
    there's no pattern yet — confidently — and never manufacture a place from
-   `label` plus an address.
+   `label` plus an address. The SAME rule binds the `day` arm's per-stay
+   `place_kind: null` (added 2026-09-06 after a live guess): a null-kind
+   stop has NO label; say so and never infer a neighbourhood from its
+   coordinates.
 3. **Labels are household names; coordinates are not speech.** `label`/
    `kind`/`confidence`/`stay_count` may enter a reply. `lat`/`lng` and
    corridor `sequence` NEVER are read aloud and NEVER pass to another tool —

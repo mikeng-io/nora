@@ -3812,6 +3812,14 @@ Args:
             for them in this window yet. Say there is nothing yet; do not
             invent one.
 
+        A `day`-arm stay whose `place_kind` is null has NO label — the
+        substrate has nothing for that stop. Say so, confidently, the same
+        way you would say `unlabeled`: 「嗰個 stop 冇記錄到地方」. NEVER
+        infer a neighbourhood from the coordinates — 「睇座標估係旺角」 is
+        the exact failure this rule exists to prevent (2026-09-06: guessed
+        Mong Kok/Sham Shui Po from lat/lng, was wrong, the group caught it).
+        No label is an ANSWER, not a gap to paper over.
+
         `label`/`kind`/`confidence`/`stay_count` and times may enter your
         reply. A raw coordinate (lat/lng) and a corridor's road `sequence`
         NEVER do — never read one aloud and never pass one to another tool,
@@ -4165,8 +4173,8 @@ Args:
 
         `status` is one of three:
           - `ok` — `address` is the bilingual formatted address
-            (「中文 / English」), the same one `where_is` would carry; say it
-            in your reply. `lat`/`lng` echo what you passed.
+            (「中文 / English」); say it in your reply. `lat`/`lng` echo
+            what you passed.
           - `not_found` — the geocoder knows no address there (open sea, a
             dead zone). Say you couldn't pin a place to it — never guess one.
           - `unavailable` — no geocoder wired, or the lookup failed. Say you
