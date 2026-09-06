@@ -98,6 +98,30 @@ _MAY_DIFFER = {
     "image_gen.enabled",
     # Env-var NAMES are the operator's choice of what to call a secret.
     "media.encryption_key_env",
+    # The five model lanes, added 2026-09-06 after ea626821 routed them through
+    # NAMED OMNIROUTE COMBOS (`nora`, `nora-dreamer`, `nora-image`). A combo is
+    # not a model id — it is a name defined in the operator's own OmniRoute
+    # deployment, resolving to a primary plus a fallback that live entirely
+    # outside this repo. It is the same class of value as `llm.base_url` two
+    # blocks up: the deployment's own topology, which a fresh install cannot
+    # possibly have.
+    #
+    # This test's docstring still says these are "not site-specific … the
+    # current known-good configuration", and that was TRUE when it was written
+    # — the field then held a real upstream id. The combo indirection changed
+    # what the field means, and the guard did not follow, so it has been red on
+    # master ever since.
+    #
+    # WHAT THIS GIVES UP, stated because it is the cost: the template can no
+    # longer be checked against the live lane automatically. The convention
+    # that replaces it is that the template names the combo's FIRST MEMBER
+    # (`ollamacloud/deepseek-v4-flash:0731` is `nora`'s primary per ea626821's
+    # own message), so a reader of the template still sees the real upstream.
+    # Nothing here can verify that — combo membership lives in the router — so
+    # it is a convention, not a proof, and a lane retargeted in OmniRoute
+    # without touching the template will not be caught.
+    "llm.model", "dreamer.model", "language.model",
+    "media.vision_model", "media.describe.image.model", "evals.judge_model",
     # Three live opt-ins, added 2026-08-27. Each is the deployment spending
     # something the template must not spend on a fresh operator's behalf, which
     # is the same rule `image_gen.enabled` sits under above — NOT drift.
@@ -288,12 +312,16 @@ def test_both_config_files_agree_on_the_dreamer_runtime_shape(tmp_path, monkeypa
         "deployment's own value is an operator decision and is listed in "
         "_MAY_DIFFER."
     )
-    # Literal re-pinned 2026-08-30: both files now carry the `:0731` catalog
-    # tag (the bare id 400s against the re-synced OmniRoute catalog).
-    assert example.model == live.model == "ollamacloud/deepseek-v4-flash:0731", (
-        "the two files disagree about which model the Dreamer runs — an "
-        "operator decision (2026-08-21), so it is stated, not inferred"
+    # The TEMPLATE's Dreamer model is still pinned to a real upstream — a fresh
+    # install must get something it can actually reach. The LIVE side is no
+    # longer compared: since ea626821 it names the `nora-dreamer` OmniRoute
+    # combo, which resolves outside this repo (see `_MAY_DIFFER`). Asserting
+    # equality here was asserting that the operator had not adopted combos.
+    assert example.model == "ollamacloud/deepseek-v4-flash:0731", (
+        "the template must name a REACHABLE upstream for the Dreamer, not a "
+        "combo — a copied config has no OmniRoute combos defined"
     )
+    assert live.model, "the deployment must name a Dreamer lane at all"
     assert set(example.budgets) == set(live.budgets), (
         "the two files budget different adaptors: "
         f"{sorted(set(example.budgets) ^ set(live.budgets))}"

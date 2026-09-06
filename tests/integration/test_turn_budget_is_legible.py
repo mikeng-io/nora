@@ -29,7 +29,7 @@ than a mock.
 
 from nora.testing import ScriptedTurn, group_event
 
-# Comfortably past `[llm.limits] total_tokens` (512,000 since 2026-09-06; this
+# Comfortably past `[llm.limits] total_tokens` (1,024,000 since 2026-09-06; this
 # comment read 64,000 and then 256,000 for earlier generations of the value).
 # A real 6-call turn was measured at 32,426-36,748 tokens and the measured
 # 7-call research turn behind the 512k raise at 276,126, so this is a turn
@@ -40,11 +40,11 @@ from nora.testing import ScriptedTurn, group_event
 # 256k → 512k raise left this at 300,000, the scenario stopped tripping, and
 # two tests in this file went green while measuring nothing. That is the
 # failure mode the docstring predicted, so the prediction now has a date.
-_OVER_BUDGET = 600_000
+_OVER_BUDGET = 1_200_000
 
 # `[llm.limits] total_tokens` // `turns` — the spend that lands a 20-cycle
 # script on BOTH caps at the same cycle. See the ORDER test below.
-_PER_CYCLE = 512_000 // 20
+_PER_CYCLE = 1_024_000 // 20
 
 
 def _spent_the_budget_without_replying():
@@ -145,8 +145,8 @@ async def test_the_cap_that_binds_is_the_one_that_gets_the_blame(harness_factory
     that names the wrong cap is DEC-25's mistake again: it aims the next
     investigation at the token budget when the fix is the turn count.
 
-    20 cycles x 25,600 tokens lands exactly on both caps (`turns = 20`,
-    `total_tokens = 512000`) at the same cycle, which is the only arrangement
+    20 cycles x 51,200 tokens lands exactly on both caps (`turns = 20`,
+    `total_tokens = 1024000`) at the same cycle, which is the only arrangement
     that tests the ORDER rather than one cap or the other.
 
     LIKE `_OVER_BUDGET`, THE PER-CYCLE SPEND IS DERIVED FROM THE CAP and must

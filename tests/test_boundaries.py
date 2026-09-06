@@ -51,9 +51,45 @@ def test_doctrine_read_boundary():
         if path in allowed:
             continue
         text = path.read_text()
-        if ".md" in text and ("read_text" in text or "open(" in text):
+        if not ("read_text" in text or "open(" in text):
+            continue
+        # A `.md` in a COMMENT is not a read. The substring form of this check
+        # flagged `nora/config.py` on 2026-09-06 for the sentence
+        # «schedule.md §7, 19-between-tiers.md §1» next to an unrelated
+        # `path.open("rb")` that reads TOML — a file that touches no doctrine
+        # at all. That is the noise CONVENTIONS.md's R-29 story is about: a
+        # gate that cries wolf is a gate somebody switches off, and this one
+        # sat red on master. So the `.md` must appear in a real STRING
+        # LITERAL, which is the only form that can name a file to open.
+        if any(_md_literals(text)):
             offenders.append(str(path.relative_to(ROOT)))
     assert not offenders, f"doctrine files read outside loader.py: {offenders}"
+
+
+def _md_literals(source: str):
+    """Every string constant in `source` that names a `.md` file.
+
+    AST rather than substring: comments and docstrings-about-docs are not
+    reads. A docstring is itself a `Constant`, so it is excluded explicitly —
+    a module whose prose mentions `design/14.md` is documentation, not a
+    reader. What survives is a literal short enough to be a path or a suffix
+    test, which is the shape an actual read has.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:                     # not ours to police here
+        return
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef,
+                             ast.FunctionDef, ast.AsyncFunctionDef)):
+            doc = ast.get_docstring(node, clean=False)
+            if doc is not None:
+                docstrings.add(doc)
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and ".md" in node.value and node.value not in docstrings):
+            yield node.value
 
 
 def _imported_modules(path: Path) -> set[str]:

@@ -95,31 +95,53 @@ def _tools(*, location_trusted: bool):
         question="幾點翻到屋企", context_window=40,
     )
     by_name = {t.tool_name: t for t in tools}
-    return by_name["where_is"], by_name["route"], client
+    return by_name["where_is"], by_name["reverse_geocode"], by_name["route"], client
 
 
 async def _call(tool, **kwargs):
     return await tool._tool_func(**kwargs)
 
 
-async def test_a_disclosed_live_position_is_refused_as_a_route_argument_in_an_untrusted_room():
-    where_is, route, client = _tools(location_trusted=False)
-    disclosed = await _call(where_is, person="Fung")
-    assert disclosed["status"] == "ok"
-    assert disclosed["address"] == "Tsuen Wan Road"
+async def _disclose_live_address(where_is, reverse_geocode):
+    """The two-step journey R-57 now has to screen (13c530aa, DEC-156).
 
-    out = await _call(route, origin="Tsuen Wan Road", destination="Yoho Mall")
+    `where_is` STOPPED returning an address on 2026-09-06 — it answers a
+    position (saved place + age + lat/lng) and nothing else, so the single-call
+    shape these tests used no longer exists. Naming the street is now an
+    explicit second call to `reverse_geocode`, and that tool is what fills the
+    turn-scoped disclosed set `route` screens against.
+
+    Going through BOTH calls is the point, not ceremony: the coordinate has to
+    come from the live fix for the disclosure to be real. Handing
+    `reverse_geocode` a literal lat/lng would prove only that the tool talks to
+    the geocoder, never that a LIVE POSITION is what reached `route`.
+    """
+    position = await _call(where_is, person="Fung")
+    assert position["status"] == "ok"
+    # The address is gone from this payload — that IS the new contract, and a
+    # regression that put it back would make the screen below reachable by a
+    # path this file no longer covers.
+    assert "address" not in position
+    named = await _call(reverse_geocode, lat=position["lat"], lng=position["lng"])
+    assert named["status"] == "ok"
+    assert named["address"] == "Tsuen Wan Road"
+    return named["address"]
+
+
+async def test_a_disclosed_live_position_is_refused_as_a_route_argument_in_an_untrusted_room():
+    where_is, reverse_geocode, route, client = _tools(location_trusted=False)
+    address = await _disclose_live_address(where_is, reverse_geocode)
+
+    out = await _call(route, origin=address, destination="Yoho Mall")
     assert out["status"] == "refused"
     assert client.calls == []                       # never reached Google
 
 
 async def test_a_disclosed_live_position_may_route_in_a_trusted_room():
-    where_is, route, client = _tools(location_trusted=True)
-    disclosed = await _call(where_is, person="Fung")
-    assert disclosed["status"] == "ok"
-    assert disclosed["address"] == "Tsuen Wan Road"
+    where_is, reverse_geocode, route, client = _tools(location_trusted=True)
+    address = await _disclose_live_address(where_is, reverse_geocode)
 
-    out = await _call(route, origin="Tsuen Wan Road", destination="Yoho Mall")
+    out = await _call(route, origin=address, destination="Yoho Mall")
     assert out["status"] == "ok"
     assert client.calls == [("Tsuen Wan Road", "Yoho Mall")]
 
@@ -129,7 +151,7 @@ async def test_an_ordinary_place_name_is_never_screened_by_r57():
     BOTH trust states — R-57 only ever matches an address `where_is` actually
     said this turn, never an arbitrary string that merely looks like one."""
     for trusted in (False, True):
-        _where_is, route, client = _tools(location_trusted=trusted)
+        _where_is, _reverse_geocode, route, client = _tools(location_trusted=trusted)
         out = await _call(route, origin="天水圍站", destination="Yoho Mall")
         assert out["status"] == "ok", trusted
         assert client.calls == [("天水圍站", "Yoho Mall")], trusted

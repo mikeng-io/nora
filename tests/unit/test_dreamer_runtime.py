@@ -568,6 +568,18 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
         # deliberately NOT in WORKSPACE_SAFE_TOOLS: spec §7.4 records the
         # grant was NOT made.)
         "where_been",
+        # `reverse_geocode` (DEC-156) is a pure coordinate -> address lookup
+        # with no room state in its ARGUMENTS, which is exactly why it must be
+        # here rather than beside `weather`. Since 13c530aa it is the ONLY tool
+        # that resolves a street address, and R-57 has it fill the turn-scoped
+        # disclosed set `route` screens against. The coordinate it is handed
+        # comes from a live fix, and everything that gates a live fix —
+        # R-31's roster seam, `location_trusted` — is a property of the ROOM,
+        # which a workspace-keyed Dreamer tick does not have. Granting it would
+        # let a tick turn a person's live position into a street address with
+        # no such gate anywhere in the path. Same argument as `where_been`
+        # above, and the same fail-closed answer.
+        "reverse_geocode",
         # The two parking verbs (2026-08-31), classified with the live-location
         # family they belong to (`transit`/`route`/`place_info` sit here too).
         # `find_parking` can even read the asker's PRESENCE when called with no

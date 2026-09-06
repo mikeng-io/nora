@@ -20,6 +20,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from nora.app.eval_support import TOOL_NAMES, load_eval_config
 from nora.app.offline import build_offline_pipeline
 from nora.doctrine.loader import DoctrineStore
@@ -54,6 +56,24 @@ def _flatten(prefill: list[dict]) -> str:
         block["text"] for message in prefill for block in message["content"]
     )
 
+
+
+@pytest.fixture(autouse=True)
+def _omniroute_key(monkeypatch):
+    """`load_eval_config` loads the REAL config, and that load is fail-closed on
+    the LLM key — the same refusal that protects production
+    (`nora/config.py`: "refusing to start").
+
+    Every other test that loads the real config sets a placeholder for it
+    (`tests/test_production_seed.py`, `tests/test_config.py`); the tests in this
+    file did not, so they passed only on a machine that happened to export the
+    real key and were RED in any fresh worktree. That is a test asserting the
+    developer's shell, not the code.
+
+    Nothing here reaches a provider — the model is scripted — so a placeholder
+    is the honest value.
+    """
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
 
 async def test_seeded_notes_facts_standing_render_in_the_assembled_prompt(tmp_path):
     cfg = load_eval_config((REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml"))

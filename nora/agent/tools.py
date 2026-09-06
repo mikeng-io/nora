@@ -3752,7 +3752,11 @@ Args:
     _been_arms = ("day", "places", "rhythm", "routes")
     _been_everyone = frozenset({"everyone", "大家"})
 
-    @staticmethod
+    # NOT `@staticmethod`. These names live in a FUNCTION body, not a class, so
+    # the decorator wrapped a plain closure in a descriptor that only happens to
+    # be callable because Python 3.10 gave `staticmethod` a `__call__`. mypy
+    # reported it correctly ("staticmethod used with a non-method") and the gate
+    # sat red on it; the decorator never did anything here.
     def _been_iso(ts_ms: int) -> str:
         """RFC 3339 with the substrate's timezone — the model-readable form of
         a timestamp. DEC-156: unix-ms epoch values are unreadable to the model
@@ -3959,6 +3963,18 @@ Args:
             # day's midnight) and the day's upper edge is filtered here. A
             # day outside the bounded 90-day window is honest emptiness —
             # letting the store clamp would serve a PARTIAL day as if whole.
+            if day_start_ms is None:            # unreachable: set with `what`
+                # A WIRING BUG, not a runtime maybe — `day_start_ms` is bound
+                # in the same `what == "day"` branch that gates this code, so
+                # None here means the two got separated. Raising is fail-closed
+                # in the R-27 sense: `_been_read`'s caller resolves a raise to
+                # `unavailable` («I couldn't check»), where returning {} would
+                # claim `nothing_found` («you were nowhere that day») about a
+                # day nobody actually read.
+                raise RuntimeError(
+                    "where_been: what='day' without a day window — "
+                    "day_start_ms is bound by the same branch that reaches here"
+                )
             fetch_ms = now_ms - day_start_ms
             if not 0 <= fetch_ms <= _been_max_days * _been_day_ms:
                 return {}
