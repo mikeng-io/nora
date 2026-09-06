@@ -30,6 +30,7 @@ exception in the collector loop or a stalled cycle.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -40,6 +41,14 @@ if TYPE_CHECKING:
 log = logging.getLogger("nora.geocode")
 
 GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
+
+# A Plus Code (Open Location Code) appearing INSIDE a formatted address -
+# e.g. 香港新界元朗FQQQ+QQ or FQQQ+QQ, Yuen Long. No word boundary: the
+# backslash-b form fails at the CJK-alphanumeric edge, which is exactly
+# where Google embeds them for coordinates with no street address (live
+# finding 2026-09-06). Such an address is grid machinery, not something a
+# human reads aloud, so the selector treats it as a miss.
+_PLUS_CODE_IN_ADDRESS = re.compile(r"[A-Z0-9]{4}\+[A-Z0-9]{2,3}", re.IGNORECASE)
 
 
 class CachingBilingualGeocoder:
@@ -148,7 +157,16 @@ class GoogleGeocoder(CachingBilingualGeocoder):
         None on any failure — a non-200, a non-OK envelope status, non-JSON, or a
         transport error — so a missing address is never a dropped cycle."""
         lang = "zh-HK" if language == "zh" else "en"
-        params = {"latlng": f"{lat},{lng}", "key": self._api_key, "language": lang}
+        # `result_type` is Google's own reverse-geocode filter (Geocoding API
+        # request docs): it drops the pure `plus_code`-typed results. The
+        # embedded-in-a-premise form still needs the pattern screen in
+        # `_first_address` — the two layers cover each other's gaps.
+        params = {
+            "latlng": f"{lat},{lng}",
+            "key": self._api_key,
+            "language": lang,
+            "result_type": "street_address|route|premise|establishment",
+        }
         try:
             timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
             async with (
@@ -175,19 +193,33 @@ class GoogleGeocoder(CachingBilingualGeocoder):
 
 
 def _first_address(payload: Any) -> str | None:
-    """The first result's `formatted_address`, only when Google reported OK.
+    """The first PLUS-CODE-FREE result's `formatted_address`, only when Google
+    reported OK.
 
     A non-OK `status` (ZERO_RESULTS, OVER_QUERY_LIMIT, REQUEST_DENIED) arrives as
     a 200 with that status in the body — treat every non-OK as "no address",
     never as a partial result.
+
+    Results are not ordered by usefulness (Google's own client docs): for a
+    coordinate with no street address Google puts a PLUS CODE in
+    `results[0]` — sometimes typed `premise`/`street_address`, not only
+    `plus_code` — and the real `route` answer sits behind it (live case:
+    「香港新界元朗FQQQ+QQ」 beating 香港新界元朗南生圍路, 2026-09-06). A Plus
+    Code is grid machinery nobody reads aloud, so any result whose
+    formatted_address embeds one is skipped; the request-side
+    `result_type` filter alone cannot catch the embedded premise form. ALL
+    results plus-coded (open sea) is an honest None — `not_found`, never a
+    grid reference dressed as an address.
     """
     if not isinstance(payload, dict) or payload.get("status") != "OK":
         return None
     results = payload.get("results")
     if not isinstance(results, list) or not results:
         return None
-    first = results[0]
-    if not isinstance(first, dict):
-        return None
-    address = str(first.get("formatted_address") or "").strip()
-    return address or None
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        address = str(result.get("formatted_address") or "").strip()
+        if address and not _PLUS_CODE_IN_ADDRESS.search(address):
+            return address
+    return None
