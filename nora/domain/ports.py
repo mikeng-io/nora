@@ -1305,16 +1305,23 @@ class SearchProvider(Protocol):
     """`query -> {status, results}` web search, and `url -> {status, content}`
     page extraction, behind the `web_search`/`web_fetch` tools (DEC-73, DEC-116).
     NEVER raises — a transport/auth failure is `{"status": "unavailable"}`, never
-    an exception into the loop (R-5). `TavilySearchProvider` today; a PORT
-    (operator: "same as web_search — adaptor") so another backend plugs in with
-    no tool change. `search` returns ranked results, `fetch` returns one page's
-    content; both `untrusted`-wrapped and clamped, and a second implementation
-    means a shared contract suite both pass (tests/contract/). **Still no SSRF
-    surface** (DEC-73 (2)'s argument, unchanged by `fetch`'s return): the
-    provider is handed a URL over its own authenticated API and fetches it from
-    ITS servers, never Nora's — Nora's own network never makes a connection
-    chosen by model output, so the old `is_global`/`allowed_urls` apparatus
-    stays gone. Contrast `LinkPreviewSource` (DEC-87), which IS handed a URL and
+    an exception into the loop (R-5). A PORT (operator: "same as web_search —
+    adaptor") so another backend plugs in with no tool change — and since
+    DEC-157 that claim is SPENT rather than anticipated: `TavilySearchProvider`
+    and `ExaSearchProvider` both implement it, selected by `[search] provider`,
+    and the branch lives at the composition root alone. `search` returns ranked
+    results, `fetch` returns one page's content; both `untrusted`-wrapped and
+    clamped, and the second implementation means the shared contract suite both
+    pass (`tests/contract/test_search_provider_contract.py`) — including the
+    `unavailable` note, which is model-facing instruction and must not differ
+    with the operator's billing preference. **Still no SSRF surface** (DEC-73
+    (2)'s argument, unchanged by `fetch`'s return AND by the second backend):
+    the provider is handed a URL over its own authenticated API and fetches it
+    from ITS servers, never Nora's — Nora's own network never makes a
+    connection chosen by model output, so the old `is_global`/`allowed_urls`
+    apparatus stays gone. That is a property of every adapter behind this port,
+    not of one vendor, and an adapter that fetched over Nora's OWN network
+    would not satisfy it. Contrast `LinkPreviewSource` (DEC-87), which IS handed a URL and
     fetches it over Nora's own network, and so re-grew that guard."""
 
     async def search(self, *, query: str) -> dict[str, Any]: ...

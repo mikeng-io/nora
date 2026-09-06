@@ -995,47 +995,24 @@ class AnalyticsConfig(BaseModel):
         return self
 
 
-class SearchConfig(BaseModel):
-    """Web search AND page extraction for the `web_search`/`web_fetch` tools —
-    Tavily (DEC-73, DEC-116).
-
-    **Optional and every field defaults**, the `RouteConfig` shape. `enabled`
-    defaults **False** and ships that way: both tools reach a third party and
-    spend credits, so both are off until an operator turns this on AND a key is
-    present. Off (or keyless) leaves the registry without a provider and
-    `web_search`/`web_fetch` answer `unavailable` (R-5), never a silent empty.
-
-    SearXNG + Firecrawl and the OLD `web_fetch` are RETIRED (DEC-73): the
-    self-hosted fetcher, the model-chosen-URL fetch over Nora's OWN network, and
-    the SSRF surface with it — the `is_global`/`allowed_urls`/`deploy/egress.sh`
-    apparatus — are gone. `web_fetch` returns on DEC-116 via Tavily's separate
-    `/extract` endpoint, which fetches from Tavily's servers exactly as `/search`
-    does, so the SSRF argument is unchanged by its return.
+class TavilyBackendConfig(BaseModel):
+    """Tavily's own knobs — `[search.tavily]` (DEC-73, DEC-116, DEC-157).
 
     `api_key_env` NAMES the env var holding the Tavily key (DEC-8), never the key
     itself — shared by both verbs, one key. `search_depth` is `"basic"` (1
-    credit) or `"advanced"` (2, richer extraction); `max_results` bounds the
-    search count (Tavily allows ≤20); `content_max_chars` clamps each search
-    result's snippet. `extract_depth` is the same two-tier choice for `/extract`;
-    `extract_max_chars` clamps a fetched page's content — set higher than
-    `content_max_chars` because a page is one whole document rather than a
-    snippet, but still bounded: a tool result is re-sent on every subsequent
-    model call, so what accumulates must be bounded (the fetch-token lesson,
-    2026-08-08).
+    credit) or `"advanced"` (2, richer extraction); `extract_depth` is the same
+    two-tier choice for `/extract`. The size clamps and `max_results` are NOT
+    here: they bound what re-enters the model's input and must not change when
+    the operator swaps backends, so they live on `[search]` itself.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    enabled: bool = False
     api_key_env: str = "TAVILY_API_KEY"
     url: str = "https://api.tavily.com/search"
-    search_depth: Literal["basic", "advanced"] = "basic"
-    max_results: int = Field(default=5, ge=1, le=20)
-    content_max_chars: int = Field(default=1500, ge=1)
-    timeout_seconds: float = 12.0
     extract_url: str = "https://api.tavily.com/extract"
+    search_depth: Literal["basic", "advanced"] = "basic"
     extract_depth: Literal["basic", "advanced"] = "basic"
-    extract_max_chars: int = Field(default=3000, ge=1)
     # Relevance floor (2026-08-31, measured): Tavily scores every result, and
     # the score separates signal from noise cleanly on real queries — opaque-ID
     # lookups (a tweet/video ID searched as text) and current-state queries
@@ -1043,7 +1020,105 @@ class SearchConfig(BaseModel):
     # Results below the floor are dropped; if everything drops, the search
     # reads `nothing_found` — «I could not find that», never five junk links.
     # 0.0 disables the floor (Tavily's raw ranking only).
+    #
+    # TAVILY-ONLY, and that is a measurement rather than an omission (DEC-157):
+    # Exa's `/search` results carry NO `score` field at all — it was deprecated
+    # out of `auto` search and is absent from the current response schema — so
+    # there is nothing for a floor to read. A `min_score` under `[search.exa]`
+    # would be a knob with no call site: either a no-op or, fail-closed, a
+    # filter that drops every result. Switching provider to `exa` therefore
+    # GIVES UP this filter and leans on Exa's own ranking.
     min_score: float = Field(default=0.1, ge=0.0, le=1.0)
+
+
+class ExaBackendConfig(BaseModel):
+    """Exa's own knobs — `[search.exa]` (DEC-157).
+
+    `api_key_env` NAMES the env var holding the Exa key (DEC-8), never the key
+    itself — one key, both verbs, exactly as Tavily's is. `url` is `POST
+    /search`; `contents_url` is `POST /contents`, the SEPARATE endpoint behind
+    `web_fetch` (Tavily's `/extract` one endpoint over), and like `/search` it
+    is crawled from EXA'S servers, never Nora's — so DEC-73 (2)'s no-SSRF
+    argument carries across the swap unchanged.
+
+    `type` is Exa's search mode. `"auto"` is the balanced default; `"fast"` and
+    `"instant"` trade depth for latency. The three `deep*` modes run multi-step
+    research with synthesis and routinely outrun `[search] timeout_seconds`,
+    which is sized for a single round trip on the reply path — raise it
+    deliberately before choosing one, or the call is `unavailable` every time.
+
+    There is no `min_score` here on purpose; `[search.tavily] min_score` says
+    why.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    api_key_env: str = "EXA_API_KEY"
+    url: str = "https://api.exa.ai/search"
+    contents_url: str = "https://api.exa.ai/contents"
+    type: Literal[
+        "instant", "fast", "auto", "deep-lite", "deep", "deep-reasoning"
+    ] = "auto"
+
+
+class SearchConfig(BaseModel):
+    """Web search AND page extraction for the `web_search`/`web_fetch` tools —
+    Tavily or Exa, one at a time (DEC-73, DEC-116, DEC-157).
+
+    **Optional and every field defaults**, the `RouteConfig` shape. `enabled`
+    defaults **False** and ships that way: both tools reach a third party and
+    spend credits, so both are off until an operator turns this on AND the
+    selected backend's key is present. Off (or keyless) leaves the registry
+    without a provider and `web_search`/`web_fetch` answer `unavailable` (R-5),
+    never a silent empty.
+
+    SearXNG + Firecrawl and the OLD `web_fetch` are RETIRED (DEC-73): the
+    self-hosted fetcher, the model-chosen-URL fetch over Nora's OWN network, and
+    the SSRF surface with it — the `is_global`/`allowed_urls`/`deploy/egress.sh`
+    apparatus — are gone. `web_fetch` returns on DEC-116 via a SEPARATE
+    extraction endpoint on the same provider, which crawls from the provider's
+    servers exactly as its `/search` does, so the SSRF argument is unchanged by
+    its return AND by DEC-157's second backend: Exa crawls from Exa's servers on
+    the identical argument.
+
+    **`provider` selects the backend; the shape below is the reason it can.**
+    What lives HERE is provider-neutral — the switch, the result count, and the
+    two size clamps that bound what re-enters the model's input on every
+    subsequent call. Those must NOT move when the operator swaps backends, or a
+    provider change silently becomes a token-budget change (the fetch-token
+    lesson, 2026-08-08). What is genuinely one vendor's — endpoints, key name,
+    depth/mode vocabulary, Tavily's relevance floor — lives in `[search.tavily]`
+    / `[search.exa]`, so a third backend adds a sub-table and touches nothing
+    else.
+
+    `max_results` bounds the search count; `content_max_chars` clamps each
+    search result's snippet; `extract_max_chars` clamps a fetched page's content
+    — set higher than `content_max_chars` because a page is one whole document
+    rather than a snippet, but still bounded: a tool result is re-sent on every
+    subsequent model call, so what accumulates must be bounded.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    provider: Literal["tavily", "exa"] = "tavily"
+    max_results: int = Field(default=5, ge=1, le=20)
+    content_max_chars: int = Field(default=1500, ge=1)
+    extract_max_chars: int = Field(default=3000, ge=1)
+    timeout_seconds: float = 12.0
+    tavily: TavilyBackendConfig = TavilyBackendConfig()
+    exa: ExaBackendConfig = ExaBackendConfig()
+
+    @property
+    def api_key_env(self) -> str:
+        """The env var naming the SELECTED backend's key (DEC-8).
+
+        A property rather than a field: the composition root and its "enabled
+        but keyless" warning both need «which secret is missing» without
+        re-deriving the provider branch, and a real field would let a config
+        set a key name for a backend it is not using.
+        """
+        return self.exa.api_key_env if self.provider == "exa" else self.tavily.api_key_env
 
 
 class SocialConfig(BaseModel):

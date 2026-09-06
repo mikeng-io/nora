@@ -60,6 +60,7 @@ from nora.domain.ports import (
     RoomConsolidator,
     RoomPortraitSynthesizer,
     RosterSource,
+    SearchProvider,
 )
 from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.tool_call_log import ToolCallLogStore
@@ -1496,33 +1497,53 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         max_description_chars=cfg.media.sticker_description_max_chars,
         standing_event_wiring=standing_event_wiring,
     )
-    # `web_search`/`web_fetch` (Tavily, DEC-73/DEC-116) are wired ONLY when
-    # `[search] enabled` AND a key is present — the `route`-keyless gate. Off (or
-    # keyless) leaves the registry without a provider and both tools answer
-    # `unavailable` (R-5), never a silent empty. The key is resolved from the
-    # environment here (DEC-8), never read inside the adapter. One provider, one
-    # key, both verbs — no SearXNG/Firecrawl and no model-chosen-URL fetch over
-    # Nora's own network.
-    search_client = None
+    # `web_search`/`web_fetch` (DEC-73/DEC-116) are wired ONLY when `[search]
+    # enabled` AND the SELECTED backend's key is present — the `route`-keyless
+    # gate. Off (or keyless) leaves the registry without a provider and both
+    # tools answer `unavailable` (R-5), never a silent empty. The key is
+    # resolved from the environment here (DEC-8), never read inside an adapter.
+    #
+    # DEC-157 makes the backend an operator choice (`provider`), which is the
+    # port doing what DEC-73 (4) said it was for. The branch is HERE and only
+    # here: one provider, one key, both verbs, and everything downstream —
+    # the tools, their egress screen, their budgets, their tier — is handed a
+    # `SearchProvider` and cannot tell which vendor it got. Neither backend
+    # needs an SSRF gate: each crawls from its OWN servers, never Nora's,
+    # whether it is handed a query or a url.
+    search_client: SearchProvider | None = None
     if cfg.search.enabled:
         search_key = os.environ.get(cfg.search.api_key_env, "")
-        if search_key:
+        if search_key and cfg.search.provider == "exa":
+            from nora.infra.search import ExaSearchProvider
+            search_client = ExaSearchProvider(
+                api_key=search_key,
+                url=cfg.search.exa.url,
+                contents_url=cfg.search.exa.contents_url,
+                search_type=cfg.search.exa.type,
+                max_results=cfg.search.max_results,
+                content_max_chars=cfg.search.content_max_chars,
+                extract_max_chars=cfg.search.extract_max_chars,
+                timeout_seconds=cfg.search.timeout_seconds,
+            )
+        elif search_key:
             from nora.infra.search import TavilySearchProvider
             search_client = TavilySearchProvider(
                 api_key=search_key,
-                url=cfg.search.url,
+                url=cfg.search.tavily.url,
                 max_results=cfg.search.max_results,
-                search_depth=cfg.search.search_depth,
+                search_depth=cfg.search.tavily.search_depth,
                 content_max_chars=cfg.search.content_max_chars,
                 timeout_seconds=cfg.search.timeout_seconds,
-                extract_url=cfg.search.extract_url,
-                extract_depth=cfg.search.extract_depth,
+                extract_url=cfg.search.tavily.extract_url,
+                extract_depth=cfg.search.tavily.extract_depth,
                 extract_max_chars=cfg.search.extract_max_chars,
-                min_score=cfg.search.min_score,
+                min_score=cfg.search.tavily.min_score,
             )
         else:
             log.warning(
-                "search enabled but %s is unset — web_search stays unavailable",
+                "search enabled on provider %s but %s is unset — web_search "
+                "stays unavailable",
+                cfg.search.provider,
                 cfg.search.api_key_env,
             )
     # `social_fetch` (OpenCLI, DEC-151) is wired ONLY when `[social] enabled` —
