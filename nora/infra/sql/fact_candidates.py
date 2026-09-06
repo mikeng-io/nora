@@ -544,18 +544,25 @@ class SqlFactCandidateStore:
         research loop per candidate is the expensive step, so which
         candidates come back, and in what order, IS the budget.
 
-        The two DROPS, applied first:
+        The ONE DROP, applied first:
 
         1. Candidates already backed by a live, non-superseded `fact` with
            the same triple. There is nothing left to prove.
-        2. Unresolvable-subject candidates seen once — one-off noise. A
+
+        Then the ORDER:
+
+        2. Unresolvable-subject candidates seen once rank LAST — one-off
+           noise, adjudicated only if the tick's budget reaches them. A
            subject is "resolvable" when some `fact_entity` in the workspace
            carries it as its canonical name or as an ALIAS: alias resolution
            is the axis `FactEntity`'s own docstring calls load-bearing, and
-           checking `canonical_name` alone would drop a candidate about `big
+           checking `canonical_name` alone would miss a candidate about `big
            walk` because the entity is stored as `Big Walk`.
 
-        Then the ORDER:
+           **This was §5's second DROP until 2026-09-06, and as a drop it
+           matched every pending row the tier had ever held** — see the long
+           note at its `order_by` clause for the closed loop that made it so,
+           and why the loop was in the design rather than in this query.
 
         3. **Candidates that CONTRADICT a live fact first** — the same
            `(workspace, subject_id, predicate)` with a different object. This
@@ -665,10 +672,47 @@ class SqlFactCandidateStore:
                 c.c.workspace == workspace,
                 c.c.status == "pending",
                 ~same_triple_fact,
-                ~sa.and_(c.c.occurrence_count <= 1, ~subject_resolves),
             )
             .order_by(
                 sa.case((contradicts_a_fact, 0), else_=1),
+                # §5's rule 2, DEMOTED FROM A DROP TO A RANK (2026-09-06).
+                #
+                # It read `~and_(occurrence_count <= 1, ~subject_resolves)` in
+                # the WHERE — "drop unresolvable-subject candidates seen once,
+                # one-off noise" — and in production it dropped EVERYTHING:
+                # 53/53 in `friends` and 7/7 in `ridgeline`, measured against the
+                # live database. The tier wrote one fact on 2026-08-28 and none
+                # since, while 60 candidates sat `pending` with `attempts = 0`.
+                #
+                # It is a closed loop, and the loop is in the DESIGN, not in
+                # this query's translation of it:
+                #
+                #   a subject "resolves" only if some `fact_entity` carries it
+                #   -> `SqlEntityStore.promote` mints entities from STANDING
+                #      FACTS ONLY ("unadjudicated noise must not mint nodes"),
+                #      at degree >= 2
+                #   -> a standing fact requires an adjudication
+                #   -> an adjudication requires a candidate that survived HERE
+                #
+                # The only door in was `occurrence_count >= 2`, which needs the
+                # exact triple extracted twice — and 21 §6.2 forbids either
+                # pass from canonicalising ("the words are how it is matched
+                # back"), so `raft` and `Raft` are two rows that each count 1.
+                # Across 61 candidates in nine days, `occurrence_count > 1`
+                # occurred ZERO times. The design never said how a workspace's
+                # first entity appears; it assumed recurrence would carry the
+                # bootstrap, and recurrence is structurally unavailable.
+                #
+                # Demoting rather than deleting keeps the judgement §5 actually
+                # argued — a one-off claim about a subject nothing else
+                # mentions IS the weakest candidate and should be adjudicated
+                # last — while `max_adjudications_per_tick` (rule 7) does the
+                # bounding it was always the one doing. A cap is a budget; a
+                # WHERE clause that can match every row is an off switch.
+                sa.case(
+                    (sa.and_(c.c.occurrence_count <= 1, ~subject_resolves), 1),
+                    else_=0,
+                ),
                 c.c.occurrence_count.desc(),
                 c.c.last_seen_at.desc(),
                 # TIE-BREAK, and this is the ordering that spends the
