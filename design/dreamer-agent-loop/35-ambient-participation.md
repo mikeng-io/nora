@@ -10,7 +10,8 @@ edges:
   - {dst: 06-trigger, rel: revises, provenance: asserted}
   - {dst: 13-doctrine, rel: extends, provenance: asserted}
   - {dst: 08-state, rel: depends_on, provenance: asserted}
-version: 2
+version: 3
+superseded_in_part_by: 36-relevance-gate
 ---
 
 > **PARTLY DEPRECATED 2026-09-07 — the knowledge tier (the "fact tier") and the language tier have both been deprecated and their code deleted.** Every claim below about either tier is retained as a record of the reasoning; **none of it describes code that exists.** The note tier, Standing, the relevance gate and the Dreamer runtime itself are unaffected; **recognition** ([31](31-recognition.md)) went with the two tiers whose rows it marked.
@@ -19,6 +20,19 @@ version: 2
 
 
 # Ambient Participation
+
+> **PARTIALLY SUPERSEDED — read this first (2026-09-06).**
+> The **determination** designed here — a full agent turn, whole doctrine,
+> every tool, ~20-30k tokens, deciding whether to speak — is superseded by
+> `36-relevance-gate.md`. That judgement now costs one cheap structured call.
+>
+> Everything else in this document is **live and running**: the participation
+> occasion on `FirePath.speak`, its doctrine audience and
+> `participation-conduct.md`, the quiescence trigger, the slot and cooldown
+> policy, the occasion-gated recovery, the indicate suppression, the metrics
+> and the eval suite. The Relevance Gate stands IN FRONT of that turn; it does
+> not replace it. Rev 1 of design 36 said "retire participation" — that
+> instruction was wrong and is retracted there (§0).
 
 ## 1. The goal, stated as a failure
 

@@ -67,6 +67,7 @@ members:
   - 33-note-dreamer-schedule.md
   - 34-note-dreamer-consolidation.md
   - 35-ambient-participation.md
+  - 36-relevance-gate.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
