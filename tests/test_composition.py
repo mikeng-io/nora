@@ -1111,6 +1111,23 @@ async def test_all_three_gates_on_builds_the_curator(cfg):
     assert curator.envelope_key == "verdicts"
 
 
+async def test_the_curator_is_scheduled_as_a_true_cron_daily(cfg):
+    """Issue #102 / design 33 §5: the curator is time-driven, not data-driven
+    — an anchor date passes whether or not the room speaks — so it needs the
+    non-watermark schedule path (33 §5 N1a) rather than every-tick-with-
+    empty-`inputs()`-suppression. Daily, matching the fact tier's own cadence
+    (33 §5: "the curator is the tier's decay — daily matches the fact tier's
+    cadence")."""
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "notes.enabled": True,
+        "notes.curator_enabled": True,
+    }))
+
+    schedule = deps.dream_schedules["note-curation"]
+    assert schedule.min_interval_seconds == 86400, "daily (design 33 §5)"
+
+
 async def test_the_curator_reads_the_day_from_the_operators_timezone(cfg):
     """«Has the 9th passed» is a question about the ROOM's day, not the
     process's — a UTC boundary retires the 9th's note during the evening of the

@@ -2636,6 +2636,37 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 now = datetime.now(ZoneInfo(cfg.reminders.timezone))
                 return now.year * 10000 + now.month * 100 + now.day
 
+            # A TRUE CRON, not a data-gated one (design/dreamer-agent-loop/33
+            # §5, issue #102): `NoteCuratorAdaptor.uses_watermark = False` and
+            # its retirement/merge sweep must fire on the CALENDAR even when
+            # the room is silent — a note's anchor date passes whether or not
+            # anybody is talking. `AdaptorSchedule` only gates a watermark-free
+            # adaptor's clock once `_dream_adaptor_once` checks the schedule
+            # BEFORE the watermark early return (33 §5 N1a, `runtime.py`); with
+            # that path in place this entry makes the curator fire once daily
+            # instead of every ~300s tick paying a SQL round-trip forever for
+            # nothing (empty-`inputs()` suppression already avoided the model
+            # call — this removes the wasted read too). Daily to match the
+            # fact tier's own cadence change (33 §5's "the curator is the
+            # tier's decay — daily matches the fact tier's cadence"): a note
+            # arrangement spans days, so a check more often than once a day
+            # buys nothing an hourly `note-candidates` tick has not already
+            # fed it.
+            dream_schedules = {
+                **dream_schedules,
+                "note-curation": AdaptorSchedule(
+                    min_interval_seconds=86400,
+                    # Inert for this adaptor: `batch_limit` sizes a
+                    # watermark-bearing adaptor's `record.since` read, and the
+                    # curator is watermark-free — `_dream_adaptor_once` never
+                    # reaches that read for it, always running with an empty
+                    # batch. Set to the curator's own per-tick expiry cap
+                    # rather than an unrelated magic number, so a reader
+                    # checking this value against the adaptor's actual
+                    # per-tick ceiling finds one that means something.
+                    batch_limit=cfg.notes.max_expired_per_tick,
+                ),
+            }
             dream_adaptors = (
                 *dream_adaptors,
                 NoteCuratorAdaptor(
