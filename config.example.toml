@@ -622,7 +622,7 @@ refresh_timeout_seconds = 8
 
 # The presence analytics substrate — the DERIVED layer (docs/superpowers/
 # specs/2026-08-18-presence-analytics-substrate-design.md), DEC-115. Ships
-# INERT like [presence]/[search]/[compute]/[language]: turning it on is an
+# INERT like [presence]/[search]/[compute]: turning it on is an
 # operator decision, never something a missing section decides. Computation
 # knobs ONLY — no consumer knobs (spec §1.1).
 [analytics]
@@ -845,141 +845,6 @@ timezone = "Asia/Hong_Kong"   # the wall clock a recurrence KEEPS. An IANA zone
                            # 08:00 local across a DST boundary, and +08:00
                            # cannot say that.
 
-[language]
-# The Dreamer — a background clock (`dream_loop`) that distils the slang a
-# room has made its own out of its own message record, and renders a small
-# block of it into every tag's/fire turn's prefill.
-#
-# Ships INERT, like [presence]/[search]/[compute]: a new subsystem does not
-# switch itself on, and a config.toml written before this section existed
-# keeps loading with the Dreamer off.
-enabled = false
-# The loop's WAKE interval — the same "best case for lateness, not a bound"
-# shape [heartbeat].tick_seconds documents.
-tick_seconds = 300
-# First fire condition: `lag > safety_lag` fires once this many unconsolidated
-# human messages have piled up, independent of how quiet the room has gone —
-# the anti-runaway bound for a room that never falls quiet.
-safety_lag = 300
-# Second fire condition (paired with lag > 0): the room has gone quiet for
-# this long, the natural moment to consolidate a finished conversation.
-quiet_seconds = 1800
-# Third fire condition, and the only one that does NOT require lag > 0 — it
-# fires at lag == 0 ON PURPOSE, because rescoring is what lets a lexeme's
-# recognition_score DECAY; without this a dormant room's lexicon would never
-# fade and would render `live` forever, describing a slang era that ended.
-max_age_seconds = 86400
-# The ceiling `RecordStore.since` reads per cycle — bounds both the one model
-# call's prompt size and the store's single INSERT statement. A scope whose
-# lag exceeds this drains over several ticks rather than one.
-batch_limit = 400
-# The RENDER cap threaded to `build_prefill`'s room-language block — matches
-# that call's own default (Task 10's reviewed value) rather than raising it:
-# this block sits in the UNCACHED tier, so every extra entry is paid on every
-# turn. Deliberately smaller than the STORE limit (15, not configurable here)
-# that `TranscriptInjection` reads with — the store fetches wider than what is
-# rendered so the renderer has room to drop a few exampleless entries and
-# still fill the block; equal numbers make it silently under-fill. Nora
-# refuses to start if this is raised to or past the store limit.
-max_rendered_lexemes = 6
-# The ONE completion LexemeObserver makes per cycle. Defaults to [llm].model's
-# own value — the Dreamer is a background job nobody is waiting on, so reusing
-# the deployment's already-working tier is reasonable, but this is a SEPARATE
-# knob for an operator who wants a cheaper or differently-tuned model for a
-# bulk classification task than for a live conversational turn.
-# Tagged :0731 (2026-08-30) — same catalog-400 fix as [llm].model: the bare id
-# 400s against the live OmniRoute catalog after the re-sync.
-model = "ollamacloud/deepseek-v4-flash:0731"
-# Bounds _LanguageModelClient.complete (nora.app.composition) — matches
-# [llm].timeout_seconds's own value; every other model call in the codebase
-# is explicitly bounded and this was the one quiet exception (a hung call
-# here gets skipped tick after tick instead of ever raising, so the backoff
-# non-negotiable 4 exists for never engages without this).
-timeout_seconds = 120.0
-# A THIRD gate (alongside this section's own `enabled` and [search]'s), off
-# by default even when both of those are on: checks a candidate against
-# [search] before recording it, to catch a real-world thing (e.g. an actual
-# game) getting flagged as room-coined slang. Costs an extra search credit
-# and an extra model completion per candidate, which is why it needs its own
-# opt-in rather than riding [search].enabled.
-verify_known_entities = false
-# Caps how many of one cycle's candidates get the extra (search + classify)
-# round trip — bounds worst-case tail latency without touching the common
-# case (live traffic sees 0-3 candidates per fired batch). Candidates past
-# the cap are kept unverified, not dropped.
-verify_max_candidates = 10
-# Dreamer Plan 2 (2026-08-20 exchange-patterns design) — gated by the SAME
-# `enabled` flag above, not a second one. Classifies recurring interaction
-# patterns (e.g. "these two trade insults, back and forth") from a CLOSED
-# set of acts only — no free-text gloss field exists for this feature at
-# any layer, and no row can describe fewer than two people (DB CHECK) — the
-# two structural guarantees behind DEC-120's withhold rule.
-#
-# Unset (commented) defaults to `model` above.
-# exchange_model = "ollamacloud/deepseek-v4-flash"
-# The RENDER cap for the room-exchange block — deliberately smaller than
-# max_rendered_lexemes: same uncached tier, but a pattern is a claim about
-# TWO people rather than one word. Nora refuses to start if this is raised
-# to or past the (not configurable) store limit of 10.
-max_rendered_exchanges = 4
-
-[facts]
-# The knowledge tier's gate (design/dreamer-agent-loop/, decision index
-# DEC-144 / R-77 / R-78 / R-79 / R-80). It is a running subsystem behind a
-# flag, not a placeholder — the text here said "nothing writes a fact yet"
-# long after three adaptors wrote.
-#
-# `enabled = true` switches on: extraction, adjudication and entity
-# resolution on the Dreamer's tick; the embedding sweep after them; the
-# <facts> block in every tag's prefill; the correction loop on the REPLY
-# PATH, which holds the conversation's slot for up to
-# dispute_classify_timeout_seconds; and the search_knowledge verb.
-#
-# Ships INERT, like every other subsystem's first deployment: a config.toml
-# written before this section existed keeps loading with facts off.
-enabled = false
-# The dense retrieval channel's endpoint — bge-m3 over Ollama (23 §9),
-# reached the way [stt] and [llm] reach host services. EMPTY IS A REAL
-# DEPLOYMENT rather than a broken one: the tier then runs on the lexical
-# channel alone, which loses cross-lingual and paraphrased recall in a way
-# that is measured and counted, never silent.
-#
-# The width is 1024 and the `embedding` column is created at it, so a model
-# of another width needs its own column rather than this key alone (24 §7.5).
-embedding_url = ""
-# embedding_model = "bge-m3"
-# embedding_timeout_seconds = 30.0
-# One TICK's cost, and one failed call's blast radius. They bound different
-# things: a sweep of 200 in batches of 32 that dies on the third batch has
-# written 64 correct rows and left 136 stale, which is intended.
-# max_embed_rows_per_sweep = 200
-# embed_batch_size = 32
-# The Phase B cap — one research loop (search + classify) per surviving
-# candidate is the expensive step, same shape and same default as
-# [language]'s verify_max_candidates.
-max_adjudications_per_tick = 10
-# The RENDER cap on the <facts> block — same per-turn-cost argument as
-# [language]'s max_rendered_lexemes/max_rendered_exchanges: this block sits
-# in the same uncached volatile tail, and a fact line additionally carries a
-# source URL and an excerpt.
-# 19 §6's two render caps, one per slice. ROOM is the working set — more
-# than eight and the block competes with the transcript beside it. SENDER
-# is the narrowest slice and the most often empty, and four is enough to
-# ground "you told us...".
-max_room_facts = 8
-max_sender_facts = 4
-
-# 31 §3.4: how far back a message may reach when deciding what Nora "just
-# rendered". Twenty-four hours because a correction arrives either in the
-# same sitting or after somebody looked something up overnight. The render
-# ledger is pruned at TWICE this, so a row stays readable for one window
-# after it stops being eligible — which is what lets the prune be a
-# background sweep rather than a deletion racing the read.
-recognition_window_hours = 24
-# How long a resolved fact_candidate (a not_covered verdict, or a superseded
-# fact) is kept before a future prune sweep drops it — matches the tool-
-# recall-log's own retention_days = 180 for the same shape of row.
-retention_days = 180
 
 [notes]
 # The note tier's gate (docs/superpowers/specs/2026-08-21-note-tier-design.md).
@@ -988,8 +853,8 @@ retention_days = 180
 # — and renders it as <notes>. OFF, no store is built, no query runs, and the
 # block never appears.
 #
-# Ships INERT, like [facts] above: a config.toml written before this section
-# existed keeps loading with the tier off.
+# Ships INERT, like [presence]/[search]/[compute]: a config.toml written
+# before this section existed keeps loading with the tier off.
 #
 # 2026-08-21: the four tools landed, so ON is no longer only a SELECT — she can
 # now create and revise notes herself (`note_create`/`note_update`, gated by a
@@ -1000,8 +865,9 @@ retention_days = 180
 # never tidied — fine at this scale, and the thing to watch before it is not.
 #
 # 2026-08-28: the curator's MERGE and RETIRE halves landed — see
-# curator_enabled below. Promote-to-event and fact-coherence rewriting are
-# still absent (they need the Events and knowledge tiers).
+# curator_enabled below. Promote-to-event is still absent (it needs the Events
+# tier). Fact-coherence rewriting is GONE rather than pending: the knowledge
+# tier it would have written into was deleted (2026-09-07).
 enabled = false
 
 # The CURATOR, on its own gate and behind the tier's. Three flags have to be on
@@ -1013,7 +879,7 @@ enabled = false
 # tier that REMOVES something from her index. An operator turning notes on has
 # not thereby asked for a background pass that reorganises them.
 #
-# What it does when on, every [language] tick, per workspace:
+# What it does when on, on the schedule below, per workspace:
 #
 #   MERGE   — notes sharing an anchor (the same anchor_date AND the same
 #             RESOLVED people) are one occasion written twice. The merged body
@@ -1061,9 +927,7 @@ curator_enabled = false
 # over 32000. NEITHER IS CONFIGURABLE, and there is deliberately no knob here:
 # the operating cap is enforced in the type that constructs a revision, where a
 # refusal is reviewable and names the cap, and a type cannot read this file.
-# No render cap here, unlike [facts]' max_rendered_facts, and that is a
-# No render cap here, unlike [facts]' two slice caps, and that is a
-# decision rather than an omission: §5.1 makes the index uncapped, because a
+# No render cap here, and that is a decision rather than an omission: §5.1 makes the index uncapped, because a
 # note silently missing from it is invisible to her and invisible is
 # indistinguishable from absent. The budget is held by the per-entry caps in
 # the domain type (title <= 60 chars, description <= 200) and by the curator
@@ -1088,21 +952,23 @@ candidates_enabled = false
 # The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
 # schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH gate, on its
 # own rather than riding curator_enabled: that pass merges and retires NOTES,
-# this one WRITES to three other tiers entirely (an Event, a fact with a
-# warrant, a Honcho conclusion about a named person) the moment a note it was
-# already retiring turns out to hold a settled commitment, world-claim or
-# person-claim. An operator who accepted "this pass merges and retires notes"
-# has not thereby accepted "this pass also creates calendar events and writes
-# permanent memories about people".
+# this one WRITES to two other tiers entirely (an Event, a Honcho conclusion
+# about a named person) the moment a note it was already retiring turns out to
+# hold a settled commitment or person-claim. An operator who accepted "this
+# pass merges and retires notes" has not thereby accepted "this pass also
+# creates calendar events and writes permanent memories about people".
+#
+# There was a THIRD route, a world-claim into the knowledge tier's fact store.
+# That tier was deleted (2026-09-07) and the route went with it; the objective
+# no longer asks for a world_claim and one is dropped if a model invents it.
 #
 # ON, discharge runs in the SAME curator tick that decides a note has closed
 # — never a separate adaptor — and only for a GROUNDED `closed` verdict that
 # actually retires; an `expired`/`moot` note answered nothing, so there is
 # nothing settled to route. Each classified item is written through the
 # OWNING tier's own existing API (never a new write path): a commitment
-# through the Gathering service, a world-claim through the fact store with a
-# `source` warrant citing the note, a person-claim through Honcho's
-# conclusion lane. "Nothing to discharge" is the ordinary, common answer and
+# through the Gathering service, a person-claim through Honcho's conclusion
+# lane. "Nothing to discharge" is the ordinary, common answer and
 # is not an error.
 discharge_enabled = false
 
@@ -1113,8 +979,7 @@ discharge_enabled = false
 # stands. That paragraph is then injected as <standing> at the top of the next
 # turn. OFF, no fold runs, nothing is written, and the block never appears.
 #
-# READ THIS BEFORE TURNING IT ON. Unlike [facts], [notes] and [language], this
-# tier is NOT background: it runs INSIDE the conversation's slot, immediately
+# READ THIS BEFORE TURNING IT ON. Unlike [notes], this tier is NOT background: it runs INSIDE the conversation's slot, immediately
 # after the reply is delivered. Its cost is user-visible — but not to the
 # person it just answered, who already has their reply. It lands on the SECOND
 # person queued behind a busy conversation. The gate is nora_debrief_seconds
@@ -1332,9 +1197,30 @@ strict = true
 # (DEC-128: "a flag that gates nothing is a flag an operator will eventually
 # set expecting it to gate something"); it describes a subsystem now, and a
 # new subsystem does not switch itself on — [presence]/[search]/[compute]/
-# [language]/[analytics]/[facts] all shipped inert too. Off, no DreamerRuntime
-# is constructed and the existing consolidators run exactly as they do today.
+# [analytics] all shipped inert too. Off, no DreamerRuntime is constructed,
+# dream_loop is never spawned, and no adaptor ever ticks.
 enabled = false
+# THE CLOCK'S OWN FIVE NUMBERS. They were [language]'s until that tier was
+# deleted, which was always wrong on its own terms: they bound dream_loop,
+# which ticks EVERY scheduled adaptor, and a tier flag owning the runtime's
+# clock is what made `enabled = true` inert for five days in August 2026.
+# Same values, same meanings, different section.
+#
+# The loop's WAKE interval — the same "best case for lateness, not a bound"
+# shape [heartbeat].tick_seconds documents.
+tick_seconds = 300
+# First fire condition: `lag > safety_lag` fires once this many messages have
+# gone unread by an adaptor, however recently the room spoke.
+safety_lag = 300
+# Second: SOME lag plus this much silence. Never interrupt a live conversation
+# to read it.
+quiet_seconds = 1800
+# Third: the watermark row's own age, which fires at ZERO lag — the only
+# condition that reaches a quiet room at all.
+max_age_seconds = 86400
+# The most messages one cycle reads. A per-adaptor AdaptorSchedule entry
+# overrides it; this is the shared default.
+batch_limit = 400
 # NONE, and it is the fix for the knowledge tier's first production failure.
 # Reasoning is billed as COMPLETION on this model family, so the effort is a
 # budget spent BEFORE any answer text — and at "low" the extractor spends all
@@ -1357,10 +1243,10 @@ reasoning_effort = "none"
 #
 # Plan gate D2 asked "which model should the Dreamer run" and answered
 # "measure it against the motivating corpus". That gate is CLOSED as
-# unanswerable in its own terms right now: nothing is deployed, the fact tier
-# holds zero rows, and a research loop's quality cannot be graded against an
-# empty store. Measuring before there is anything to measure produces a number
-# that looks like evidence and is not.
+# unanswerable in its own terms right now: no adaptor's store holds enough
+# rows for a background loop's quality to be graded against it. Measuring
+# before there is anything to measure produces a number that looks like
+# evidence and is not.
 #
 # Running Nora's own model is also the honest test of the architecture's
 # central claim — that the Dreamer does better because it is DIFFERENTLY
@@ -1373,105 +1259,6 @@ reasoning_effort = "none"
 # Tagged :0731 (2026-08-30) — same catalog-400 fix as [llm].model.
 model = "ollamacloud/deepseek-v4-flash:0731"
 
-# One budget block per adaptor — NOT one global ceiling: proving a fact is
-# worth more calls than glossing a word, and a single number would starve the
-# first or overpay for the second. An adaptor with no block here runs under
-# DreamBudgetConfig's own field defaults (the same four numbers), never
-# unbounded and never a KeyError; a PARTIAL block fills its missing fields from
-# those same defaults rather than zeroing them.
-#
-# All four numbers are UNMEASURED STARTING POINTS, not measurements — the same
-# honesty [analytics]'s stay_radius_m carries ("INHERITED, not measured").
-# turns/output_tokens are [llm.limits]'s shipped 20/12000 scaled down for a
-# background job nobody waits on; total_tokens is that section's 128000/3.
-#
-# timeout_seconds is NOT OPTIONAL. Unlike a tag turn's timeout a hung Dreamer
-# call is QUIET: dream_loop marks the scope `running` and skips it every
-# subsequent tick (nora_dream_skipped_total{reason="in_flight"}) without ever
-# raising, so the exponential backoff — which only fires on an EXCEPTION —
-# never engages and a hung provider is skipped FOREVER rather than backed off.
-# 120 matches [llm].timeout_seconds and [language].timeout_seconds rather than
-# inventing a third number; it wraps the WHOLE run, not one call.
-[dreamer.budgets.room_language]
-turns = 6
-total_tokens = 40000
-output_tokens = 4000
-timeout_seconds = 120
-
-[dreamer.budgets.room_exchange]
-turns = 6
-total_tokens = 40000
-output_tokens = 4000
-timeout_seconds = 120
-
-# The two adaptors that EXIST today (`nora/language/fact_adaptor.py`). The two
-# above are for Phase 3's migration of the room consolidators and name nothing
-# yet — `budget_for` falls back to the defaults for an unknown key, silently,
-# so a section naming only future adaptors would leave the real ones on
-# defaults nobody chose (2026-08-21 review).
-#
-# UNMEASURED starting points, like their neighbours. The adjudicator's are
-# deliberately LARGER: proving a claim against the open web is search, read,
-# notice the page does not cover the question, search differently — several
-# fetches, each a page of tokens — while the extractor makes ONE tool-free
-# call over a message batch and is sized well under the shared default.
-[dreamer.budgets.fact-candidates]
-# Enlarged (design/dreamer-agent-loop/32 §3.2): the extractor's own clock
-# (§3.1) turns a 30-minute 100-message pass into a DAILY 1000-message one.
-turns = 20
-total_tokens = 200000
-output_tokens = 4000
-timeout_seconds = 3600
-
-[dreamer.budgets.fact-adjudication]
-# 10 -> 20, MEASURED. Five runs of the shipped objective against the shipped
-# prompt, with a web_search schema attached and a plausible result returned
-# each turn, converged at turns 9, 15, 14, 10 and 13. Against a budget of 10,
-# FOUR OF FIVE would have exhausted it — and an exhausted loop hands
-# `parse_envelope` whatever text accumulated, which the runtime reports as
-# `unavailable` while holding the watermark. That is a batch that WAS read,
-# re-read forever, under a counter saying the model could not be reached.
-#
-# 20 is the observed maximum plus a third. It is not the right long-term
-# answer: the objective never tells the model how much research is enough, so
-# the loop is bounded by the budget rather than by the question — the same
-# shape as extraction having no candidate cap. Raising the ceiling buys
-# convergence today and does not make the loop self-limiting.
-#
-# `total_tokens` and `timeout_seconds` are unchanged and still bound it: 15
-# turns at the observed sizes is well inside 120k tokens and 300 seconds.
-turns = 20
-# 120000 -> 2000000 (operator, 2026-09-07). MEASURED, and the measurement is
-# the first real run this pass ever had: with the candidate filter opened, the
-# 2026-09-06 17:56Z tick reached the model for `friends` and `ridgeline`, spent
-# the loop on four `web_search` and two `web_fetch` calls, and emitted a
-# ZERO-CHARACTER envelope in both. A fetched page is input-resident and is
-# re-paid on every later call of the loop, so 120k buys the research and
-# nothing left to write the verdict with.
-#
-# 2,000,000 rather than a cautious step, and the reason is the cadence: this
-# adaptor runs ONCE A DAY per workspace. A ceiling sized for a 5-minute tick
-# was sizing the wrong thing — the operator's own framing, and the same
-# argument that took `[llm] total_tokens` to 1,024,000 for a turn a person is
-# actually waiting on. Nobody waits on this one, and it gets one attempt a day
-# to be worth having run.
-#
-# `timeout_seconds = 300` is now the binding constraint, not the tokens, which
-# is the honest place for the bound: a research loop should be stopped by the
-# clock a human would notice, not by a budget it silently exhausts mid-answer.
-total_tokens = 2000000
-output_tokens = 8000
-timeout_seconds = 300
-
-# Pass 6, entity-resolution adjudication. Sized like the EXTRACTOR, not like the
-# adjudicator: tool-free and single-shot, and its whole input is a short list of
-# names against a short list of candidates. Deciding whether two names mean one
-# thing is a judgement about the two names, not research.
-[dreamer.budgets.fact-entity-resolution]
-turns = 2
-total_tokens = 20000
-output_tokens = 2000
-timeout_seconds = 60
 
 [obs.logging]
 level = "INFO"

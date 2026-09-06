@@ -4,7 +4,7 @@ workspace keying, the `sent`-based verdict, and the offline drive path that
 lets a case assert speak/silence through the REAL ParticipationTrigger and
 FirePath with only the model scripted.
 
-The 15-case corpus itself (`evals/cases/participation/participation.yaml`) is
+The 11-case corpus itself (`evals/cases/participation/participation.yaml`) is
 graded LIVE by `make eval-participation`; what these tests pin offline is that
 the harness CAN drive the path and that the seeds reach the determination's
 prompt.
@@ -29,7 +29,6 @@ from nora.testing import (
     FakeAgentRunner,
     FakeMemoryStore,
     FakeRecordStore,
-    InMemoryFactStore,
     InMemoryNoteStore,
     InMemoryStandingStore,
     ScriptedTurn,
@@ -45,14 +44,16 @@ _IDENTITY_TOML = (
     '[[persons.miles_novak.signal]]\nphone = "+852111"\n'
 )
 
-_FACT_SEED = {
+#: The knowledge-cut shape, on the NOTE tier. It was a `facts:` seed until the
+#: knowledge tier was deleted; the property under test is the seed reaching the
+#: determination's prompt, which is the tier-neutral half.
+_GROUNDED_SEED = {
     "transcript": ["does anyone know when AWS Community Day 2026 is?"],
-    "facts": [
+    "notes": [
         {
-            "subject": "AWS Community Day",
-            "predicate": "is scheduled for",
-            "object": "October 26, 2026 at IVE (Tsing Yi)",
-            "asserter": "miles_novak",
+            "title": "AWS Community Day date",
+            "description": "when AWS Community Day 2026 lands",
+            "body": "October 26, 2026 at IVE (Tsing Yi), per the organisers.",
         },
     ],
 }
@@ -87,13 +88,13 @@ def _flatten(prefill: list[dict]) -> str:
 
 def test_case_from_dict_reads_expect_and_seed():
     case = Case.from_dict({
-        "name": "fact-lookup-known",
+        "name": "stalled-question-known",
         "input": "does anyone know when AWS Community Day 2026 is?",
         "expect": "speak",
-        "seed": _FACT_SEED,
+        "seed": _GROUNDED_SEED,
     })
     assert case.expect == "speak"
-    assert case.seed == _FACT_SEED
+    assert case.seed == _GROUNDED_SEED
 
 
 def test_a_participation_case_defaults_to_no_trigger():
@@ -117,27 +118,22 @@ def test_a_participation_case_defaults_to_no_trigger():
 
 
 def test_seed_from_dict_keys_every_tier_to_the_eval_workspace():
-    """Notes/facts keyed outside workspace "nora" silently never render in the
+    """A note keyed outside workspace "nora" silently never renders in the
     eval room — the twin would then "pass" for the wrong reason. Every seeded
     row must carry the eval workspace."""
     seed = seed_from_dict({
         "transcript": ["hi", {"name": "Grant", "body": "yo"}],
         "standing": "the group is mid-planning",
         "notes": [{"title": "t", "description": "d", "body": "b"}],
-        "facts": [{"subject": "s", "predicate": "p", "object": "o",
-                   "asserter": "miles_novak"}],
     })
     assert len(seed.recents) == 2
     assert seed.standing is not None
     assert all(note.workspace == "nora" for note, _ in seed.notes)
-    assert all(fact.workspace == "nora" for fact in seed.facts)
-    assert len(seed.asserters) == 1
 
 
 def test_seed_from_dict_is_deterministic():
-    a = seed_from_dict(_FACT_SEED)
-    b = seed_from_dict(_FACT_SEED)
-    assert [f.id for f in a.facts] == [f.id for f in b.facts]
+    a = seed_from_dict(_GROUNDED_SEED)
+    b = seed_from_dict(_GROUNDED_SEED)
     assert [n.id for n, _ in a.notes] == [n.id for n, _ in b.notes]
 
 
@@ -169,11 +165,9 @@ CORPUS = (
 )
 
 EXPECTED_VERDICTS = {
-    "fact-lookup-known": "speak", "fact-lookup-unknown": "silence",
     "stalled-question-known": "speak", "stalled-question-unknown": "silence",
     "commitment-followup-known": "speak",
     "commitment-followup-unknown": "silence",
-    "correction-known": "speak", "correction-unknown": "silence",
     "planning-context-known": "speak", "planning-context-unknown": "silence",
     "status-update": "silence", "private-exchange": "silence",
     "acknowledgment": "silence", "inside-joke": "silence",
@@ -181,11 +175,15 @@ EXPECTED_VERDICTS = {
 }
 
 
-def test_the_corpus_is_the_15_cases_with_their_verdicts():
-    """§9's suite, pinned: 5 relevance-Yes, their 5 knowledge-cut twins, 5
+def test_the_corpus_is_the_11_cases_with_their_verdicts():
+    """§9's suite, pinned: 3 relevance-Yes, their 3 knowledge-cut twins, 5
     pure-No. Every case carries its seed (the twins' seeds differ from their
     speak twin ONLY by the cut tier) and a verdict `ParticipationVerdict`
-    accepts."""
+    accepts.
+
+    It was 15. The `fact-lookup` and `correction` pairs were grounded in the
+    KNOWLEDGE TIER and went with it — a pair with no grounding to cut cannot
+    flip, and a case that cannot flip measures nothing."""
     from evals.harness import load_cases
 
     cases = load_cases(CORPUS)
@@ -197,8 +195,8 @@ def test_the_corpus_is_the_15_cases_with_their_verdicts():
     # The twin structure: each -unknown case's transcript+input equals its
     # -known twin's — ONLY the seed's tier content differs.
     by_name = {c.name: c for c in cases}
-    for stem in ("fact-lookup", "stalled-question", "commitment-followup",
-                 "correction", "planning-context"):
+    for stem in ("stalled-question", "commitment-followup",
+                 "planning-context"):
         known, unknown = by_name[f"{stem}-known"], by_name[f"{stem}-unknown"]
         assert known.input == unknown.input
         assert (known.seed or {}).get("transcript") == (unknown.seed or {}).get("transcript")
@@ -211,8 +209,8 @@ async def test_run_case_drives_a_participation_case_to_speak():
     """A real ParticipationTrigger + real FirePath + scripted model that calls
     `send_reply` — the room must hear it (the verdict signal is `sent`)."""
     case = Case.from_dict({
-        "name": "fact-lookup-known", "input": "so when is it?",
-        "expect": "speak", "seed": _FACT_SEED,
+        "name": "stalled-question-known", "input": "so when is it?",
+        "expect": "speak", "seed": _GROUNDED_SEED,
     })
     trajectory = await run_case(
         case,
@@ -229,7 +227,7 @@ async def test_run_case_drives_a_participation_case_to_silence():
     """The same drive path, model declines the floor (prose, no send_reply):
     the room hears nothing."""
     case = Case.from_dict({
-        "name": "fact-lookup-unknown", "input": "so when is it?",
+        "name": "stalled-question-unknown", "input": "so when is it?",
         "expect": "silence", "seed": {"transcript": ["so when is it?"]},
     })
     trajectory = await run_case(
@@ -254,14 +252,12 @@ async def _drive_participation(tmp_path: Path, seed: dict | None,
         tool_names=TOOL_NAMES, metrics=metrics,
     )
     notes_store = InMemoryNoteStore()
-    facts_store = InMemoryFactStore()
     standing_store = InMemoryStandingStore()
     audit = FakeRecordStore()
     if seed is not None:
         built = seed_from_dict(seed)
-        # The transcript half of the seed: the fact tier's room slice matches
-        # subject mentions against these rows + the incoming message, exactly
-        # as `run_case` seeds them (remapped onto the eval room).
+        # The transcript half of the seed, seeded exactly as `run_case` does
+        # (remapped onto the eval room).
         for row in built.recents:
             audit.rows.append({
                 "id": row.id, "platform": "signal", "conversation_id": "g1",
@@ -274,10 +270,6 @@ async def _drive_participation(tmp_path: Path, seed: dict | None,
         for note, revision in built.notes:
             notes_store.notes[note.id] = note
             notes_store.revisions[revision.id] = revision
-        for fact in built.facts:
-            facts_store.seed_fact(fact)
-        if built.asserters:
-            facts_store.seed_asserters(*built.asserters)
 
     identity_path = tmp_path / "identity.toml"
     identity_path.write_text(_IDENTITY_TOML)
@@ -291,8 +283,7 @@ async def _drive_participation(tmp_path: Path, seed: dict | None,
             cfg, adapter=adapter, audit=audit, memory=FakeMemoryStore(),
             persons=load_persons(identity_path), doctrine_store=doctrine_store,
             runner=FakeAgentRunner([ScriptedTurn(final_text="tag")]),
-            metrics=metrics, notes=notes_store, facts=facts_store,
-            standing=standing_store,
+            metrics=metrics, notes=notes_store, standing=standing_store,
             participation_runner=participation_runner,
             participation_clock=lambda: clock[0],
             participation_opt_in=True,
@@ -311,20 +302,20 @@ async def _drive_participation(tmp_path: Path, seed: dict | None,
     return adapter, metrics, calls
 
 
-async def test_the_seeded_fact_reaches_the_participation_prompt(tmp_path):
+async def test_the_seeded_grounding_reaches_the_participation_prompt(tmp_path):
     """The knowledge-cut mechanism, pinned: the same incoming message with the
-    fact seeded renders `<facts>` in the determination's prompt; without the
-    seed it does not. This is what makes a twin's silence meaningful — the
-    twin's prompt lacks the answer, not the whole tier."""
+    note seeded renders it in the determination's prompt; without the seed it
+    does not. This is what makes a twin's silence meaningful — the twin's
+    prompt lacks the answer, not the whole tier."""
     adapter, metrics, calls = await _drive_participation(
         tmp_path,
-        _FACT_SEED,
+        _GROUNDED_SEED,
         [ScriptedTurn(tool_calls=[("send_reply", {"text": "Oct 26 at IVE"})],
                       final_text="Oct 26 at IVE")],
     )
     assert calls, "the participation runner was never invoked"
     rendered = _flatten(calls[0]["pre_fill"])
-    assert "October 26, 2026 at IVE (Tsing Yi)" in rendered
+    assert "AWS Community Day date" in rendered
     assert adapter.texts == ["Oct 26 at IVE"]
     # The mirror of the gate's live accounting: a live participation send,
     # counted as such.
@@ -336,7 +327,7 @@ async def test_the_seeded_fact_reaches_the_participation_prompt(tmp_path):
         [ScriptedTurn(final_text="I don't have that")],
     )
     assert calls2
-    assert "October 26, 2026 at IVE (Tsing Yi)" not in _flatten(calls2[0]["pre_fill"])
+    assert "AWS Community Day date" not in _flatten(calls2[0]["pre_fill"])
     assert adapter2.texts == []
     assert metrics2.get("nora_participation_silence_total", platform="signal") == 1
     assert metrics2.get("nora_participation_spoke_total") == 0

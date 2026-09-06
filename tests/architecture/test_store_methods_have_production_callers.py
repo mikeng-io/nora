@@ -42,11 +42,11 @@ like a pile of bugs:
   `defect`               — a live write path creates state that no production
       code can act on or leave. These are the ones that want fixing.
 
-THE COUNTS, so they reconcile with something: ELEVEN methods are pinned below.
+THE COUNTS, so they reconcile with something: SIX methods are pinned below.
 TWO more are known to have no production caller and cannot be proven so here —
 `SqlTagTraceStore.recent` and `SqlTurnVerdictStore.read` — because their names
-are shared with other stores (see the ambiguity rule). Thirteen in total; the
-eleven are what this file can check.
+are shared with other stores (see the ambiguity rule). Eight in total; the six
+are what this file can check.
 
 HOW A CALLER IS RESOLVED, AND WHAT THAT STILL CANNOT SEE
 --------------------------------------------------------
@@ -163,50 +163,27 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "Its own docstring: «the operator's read, and what the tests assert the "
         "ledger on». No consumer designed.",
     ),
-    ("embeddings.py", "forget"): _Pin(
+    ("entities.py", "resolve_or_create"): _Pin(
         "defect",
-        "`supersede` IS wired (nora/language/fact_adaptor.py) and facts.py names "
-        "`forget` as its write-side answer, so a retracted fact keeps its vector "
-        "forever. NOT cost-only, which an earlier version of this row claimed: "
-        "knowledge_search grounds AFTER fusing, so orphaned vectors occupy "
-        "channel top-k and fused slots ahead of the standing filter and can "
-        "starve standing facts out of the result — which then surfaces as "
-        "`nothing_found`. Re-grounding does guarantee a retracted claim is never "
-        "RENDERED; it does not stop one crowding out a live one.",
-    ),
-    ("fact_candidates.py", "candidate_by_id"): _Pin(
-        "read_back_affordance",
-        "fact_candidates.py: «Not on `FactCandidateReader`: `pending` is the "
-        "port's job … a by-id read is this store's own surface».",
-    ),
-    ("facts.py", "clear_disputed"): _Pin(
-        "defect",
-        "Half of a state machine whose other half is LIVE. `mark_disputed` fires "
-        "from nora/engagement/recognition.py on a member's objection, and the "
-        "mark then surfaces whenever that subject is selected into <facts> — not "
-        "on every later turn, since the room slice is filtered to the subjects "
-        "in play and capped. Supersession is the only exit (facts.py's "
-        "`supersede` nulls all four dispute columns), so a dispute that was "
-        "itself wrong cannot be dismissed. Pairs with `disputed_facts`.",
-    ),
-    ("facts.py", "disputed_facts"): _Pin(
-        "defect",
-        "The disputed backlog its own docstring calls «the priority queue's "
-        "input», with no drain: nora/language/fact_adaptor.py contains zero "
-        "occurrences of the string `disput`. With `clear_disputed`, this makes a "
-        "wired write path a one-way door on a rendered column.",
-    ),
-    ("facts.py", "fact_by_id"): _Pin(
-        "read_back_affordance",
-        "History/audit read-back; no consumer designed.",
-    ),
-    ("facts.py", "recent_facts"): _Pin(
-        "defect",
-        "STALE CLAIM, not a missing loop. Its docstring asserts it «runs on the "
-        "same critical path, inside the same asyncio.gather». Three fact reads "
-        "do reach the prefill — `standing_facts`, `facts_asserted_by` and "
-        "`standing_count` — and this is not one of them; it had a caller on "
-        "origin/master and lost it. The defect is the false docstring.",
+        "**THE `fact_entity` REGISTRY NOW HAS NO WRITER.** This is the "
+        "deterministic MINT half — normalise, look up canonical_name and "
+        "aliases, create what is missing — and its only production caller was "
+        "`SqlFactStore._resolve_subjects`, which minted an entity for the "
+        "subject of every fact written. That store was deleted with the "
+        "knowledge tier (2026-09-07). `SqlNoteStore` reads `resolve` on every "
+        "note write and DELIBERATELY never mints (nora/infra/sql/entities.py's "
+        "own module docstring: «this tier only ever links a name to an entity "
+        "that already exists»), so with nothing minting, every anchor name "
+        "resolves to nothing forever, `note_entity` stays empty, and "
+        "`NoteEntityResolutionAdaptor`'s near-miss queue is every anchor the "
+        "room has ever written with no existing row to merge into. The tier is "
+        "wired end to end and inert — this file's own named pathology. "
+        "OPERATOR DECISION, deliberately not taken inside a deletion: either "
+        "the note tier gains a minting path (`resolve_or_create` on note "
+        "write, or a create arm on the resolution adaptor), or the registry "
+        "and `note_entity` go too. Kept and pinned rather than deleted so the "
+        "choice is visible instead of arriving as an empty table nobody can "
+        "explain.",
     ),
     ("mobility.py", "trips_for_subject"): _Pin(
         "read_back_affordance",
@@ -221,14 +198,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("notes.py", "revision_by_id"): _Pin(
         "read_back_affordance",
         "Revision-by-id read-back; no consumer designed.",
-    ),
-    ("rendered_claims.py", "window_ms"): _Pin(
-        "defect",
-        "An accessor built to be the single source of the recognition window, "
-        "whose one would-be consumer (nora/engagement/recognition.py) recomputes "
-        "the same arithmetic instead. Both are fed from the same config key, so "
-        "they agree TODAY; the duplication is the defect, not a current wrong "
-        "answer.",
     ),
 }
 
@@ -245,17 +214,14 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 # and `turn_verdicts.read`.
 _AMBIGUOUS: frozenset[str] = frozenset(
     {
-        "aclose", "append", "append_observations", "claim", "create", "delete",
-        "describe", "enqueue", "get", "mark", "mark_disputed", "pending",
-        "propose", "prune", "prune_all", "put", "read", "recent", "record",
-        "rescore", "resolve", "rsvps_for", "save", "search", "supersede",
-        "sweep_firing", "update", "upsert", "watermark",
-        # `SqlEntityStore.lookup` (32 §3.4) shares its name with
-        # `TransitCatalogue.lookup` and `VersionManifest.lookup`, both
-        # non-Protocol classes — a call to `.lookup(...)` cannot be
-        # attributed, so the name is UNCHECKED, never clean. Its caller is
-        # `nora.agent.tools`' `knowledge_entity`/`get_knowledge`, pinned by
-        # `tests/test_tools.py` instead.
+        "aclose", "append", "claim", "create", "delete",
+        "describe", "enqueue", "get", "mark", "put", "read", "recent",
+        "resolve", "rsvps_for", "save", "search",
+        "sweep_firing", "update", "watermark",
+        # `SqlEntityStore.lookup` shares its name with `TransitCatalogue.lookup`
+        # and `VersionManifest.lookup`, both non-Protocol classes — a call to
+        # `.lookup(...)` cannot be attributed, so the name is UNCHECKED, never
+        # clean. Its production caller is `SqlNoteStore`'s own resolution path.
         "lookup",
     }
 )
@@ -276,18 +242,20 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 _STORE_MODULES: frozenset[str] = frozenset(
     {
         "announcements.py", "audit.py", "compute_jobs.py",
-        "dream_schedule.py", "embeddings.py",
-        "entities.py", "exchange.py", "fact_candidates.py", "facts.py",
+        "dream_schedule.py", "entities.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py", "presence.py",
-        "reminders.py", "rendered_claims.py", "room_portrait.py",
+        "reminders.py",
         "standing.py", "tag_traces.py", "tool_call_log.py", "turn_verdicts.py",
     }
 )
 
 # Secondary, against the walk going thin WITHIN the modules it does reach.
-_MIN_METHOD_NAMES = 115
+# LOWERED 2026-09-07 with the knowledge and language tiers deletion, which took
+# six store modules out of the package; the walk now finds 104 names, and the
+# floor sits just under that rather than at a round number far below it.
+_MIN_METHOD_NAMES = 100
 
 
 class _Method(NamedTuple):

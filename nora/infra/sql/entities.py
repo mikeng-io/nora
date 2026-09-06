@@ -1,39 +1,35 @@
-"""`SqlEntityStore` — the entity table's writer and reader, and pass 3.
+"""`SqlEntityStore` — the shared entity registry's reader and writer.
 
-`fact_entity` shipped with an alias mechanism, a foreign key from the note tier,
-and **no writer and no reader anywhere in `nora/`**. This is both.
+`fact_entity` is a TIER-NEUTRAL NAME REGISTRY. It keeps its `fact_` prefix
+because the table does, and the table keeps it because renaming a table with a
+foreign key pointed at it is a migration and not a tidy-up — but an entity
+("Big Walk") is a shared name, not any one tier's property. That is why this
+module and its table outlived the knowledge tier that first built them: the
+note tier holds a foreign key into it (`note_entity.entity_id`, issue #100).
 
-**The note tier is a SECOND, narrower consumer of this same registry** (issue
-#100). `SqlNoteStore` reads `resolve` on every note write — never
-`resolve_or_create`: this tier only ever links a name to an entity that
-already exists, and never mints one, so `note_entity`'s FK grows only where a
-name happened to line up with something the FACT tier already asserted.
-`unresolved_note_anchor_names` below is `unresolved_names`'s note-tier twin,
-feeding the same `similar_entities` / `attach_alias` verbs pass 6 already
-uses — the near-miss judgement pass is one adaptor
-(`nora.language.note_entity_adaptor.NoteEntityResolutionAdaptor`) mirroring
-`FactEntityResolutionAdaptor`'s shape, reading and writing this same table.
+`SqlNoteStore` reads `resolve` on every note write — never
+`resolve_or_create`: that tier only ever links a name to an entity that
+already exists, and never mints one. `unresolved_note_anchor_names` below is
+its near-miss queue, feeding the `similar_entities` / `attach_alias` verbs the
+judgement pass (`nora.language.note_entity_adaptor
+.NoteEntityResolutionAdaptor`) uses.
 
-**Two verbs, and the split is `21-substrate-contract.md` §5's.**
-
-- `resolve_or_create` is the DETERMINISTIC half: normalise, look up
-  `canonical_name` and `aliases`, create what is missing. Free, no model.
-  `MERGE` semantics, which is what a graph does natively and what a relational
-  store has to do explicitly. **It runs on every FACT write, on the SUBJECT
-  end**, from `SqlFactStore._resolve_subjects` inside the edge's own
-  transaction (§4) — the sentence here used to say "on every write" while the
-  only caller was `promote`, which is the document and the code disagreeing
-  with the code losing silently. Subjects and not objects because §6 writes the
-  object as a literal and derives entity-hood later (R-78); facts and not
-  candidates because unadjudicated noise must not mint nodes.
-- `promote` is pass 3 (`25-knowledge-pipeline.md` §4): decide which object
-  LITERALS have earned entity-hood, by arithmetic over the store's own
-  contents. No model here either.
+**THE REGISTRY CURRENTLY HAS NO WRITER, AND THAT IS A KNOWN GAP.**
+`resolve_or_create` is the DETERMINISTIC mint half — normalise, look up
+`canonical_name` and `aliases`, create what is missing, `MERGE` semantics —
+and its only production caller was the deleted fact store, which minted an
+entity for the subject of every fact it wrote. Nothing mints today, so every
+note anchor resolves to nothing and `note_entity` stays empty. The method is
+kept and PINNED in
+`tests/architecture/test_store_methods_have_production_callers.py` with that
+reason, so the operator's choice — give the note tier a minting path, or drop
+the registry too — is visible rather than arriving later as an empty table
+nobody can explain.
 
 The half that is missing on purpose is ADJUDICATION — genuine near-misses a
 deterministic pass cannot settle (`HKO` / `Hong Kong Observatory`). That is a
-Dreamer pass, and until it exists an unresolved name stays unresolved rather
-than being guessed at.
+Dreamer pass (`NoteEntityResolutionAdaptor`), and an unresolved name stays
+unresolved rather than being guessed at.
 
 **Normalisation is `nora.domain.facts.normalise_name` and nothing else.** It is
 imported rather than reimplemented in SQL because NFKC and `casefold` are not
@@ -42,10 +38,10 @@ normalisations is two definitions of identity. The comparison work therefore
 happens in Python over the workspace's standing rows, which `25` §4 already
 prices as "one aggregate over a few thousand rows".
 
-**Entity creation is a SIDE EFFECT of writing an edge** (§4). There is no
-entity verb in any adaptor's tool set, no entity-creation pass, no vocabulary
-seeded ahead of use. The substrate grows only where something actually asserted
-a relation.
+**Entity creation was a SIDE EFFECT of writing an edge** (§4), never a verb in
+an adaptor's tool set and never a vocabulary seeded ahead of use: the registry
+grew only where something actually asserted a relation. With the edge writer
+deleted it grows nowhere — see the gap named above.
 """
 
 from __future__ import annotations
@@ -163,7 +159,7 @@ class SqlEntityStore:
         entities an edge implies IN THE SAME TRANSACTION that writes the edge,
         or the store can hold an edge whose endpoints do not exist and an
         entity nothing references. Atomicity is not a separate question, so
-        this cannot open its own. `SqlFactStore.propose` is the caller that
+        this cannot open its own. A tier's own write verb is the caller that
         makes that true — it passes its own `conn`, so a failed fact insert
         rolls back the entities it implied along with it.
 
@@ -251,19 +247,18 @@ class SqlEntityStore:
         """The note tier's own near-miss queue: anchor-entity strings off
         STANDING notes in this workspace that resolve to no entity today.
 
-        `unresolved_names` immediately above is the fact tier's version of
-        this same question, read from `fact_candidate`; this tier has no
-        candidate queue for it to read, so the raw strings come from
-        `note.anchor_entity_ids` instead — exactly what the deterministic half
-        (`SqlNoteStore`'s own resolution, run inline on every create/propose)
-        could not settle at write time. A name that resolves NOW but did not
+        The knowledge tier had a twin of this read over `fact_candidate`; it
+        went with that tier. This tier has no candidate queue, so the raw
+        strings come from `note.anchor_entity_ids` — exactly what the
+        deterministic half (`SqlNoteStore`'s own resolution, run inline on
+        every create/propose) could not settle at write time. A name that resolves NOW but did not
         when the note was written (the entity arrived later, from either
         tier) is correctly excluded here too: it is not a near-miss, it is an
         exact match the deterministic pass will pick up the next time this
         note is touched, and offering it to the model would ask a question
         that already has a free answer.
 
-        Same shape as `unresolved_names` in every other respect: deduplicated
+        Deduplicated
         on the NORMALISED form (one name written three ways is one question),
         ordered by the SURFACE rather than left to dict/set iteration order
         (an unordered `[:limit]` would starve whichever name a given tick's

@@ -54,7 +54,7 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
-from typing import Any, Literal, Protocol, cast
+from typing import Literal, Protocol, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -63,7 +63,6 @@ from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
 from nora.agent.security import screen_and_resolve_place as _screen_and_resolve_place
 
 from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
-from ..domain.facts import Fact, FactAsserter, FactEntity, FactPremise
 from ..domain.gatherings import (
     RSVP,
     AmbiguousOpenGatheringsError,
@@ -903,54 +902,10 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                             source_tier="remembered", read_only=True,
                             side_effect_state="none", idempotency="idempotent", retry="safe",
                             output_contract="three_state"),
-    # `source_tier="remembered"`: what she holds, not what she is looking at.
-    # Budget 2 — a question may legitimately need a follow-up search when the
-    # first phrasing misses, and the verb is one database read plus one small
-    # embedding call, not a research loop.
-    "search_knowledge": NativeTool(2,
-                                   source_tier="remembered", read_only=True,
-                                   side_effect_state="none", idempotency="idempotent",
-                                   retry="safe",
-                                   output_contract="three_state"),
     "note_search": NativeTool(2,
                               source_tier="remembered", read_only=True,
                               side_effect_state="none", idempotency="idempotent", retry="safe",
                               output_contract="three_state"),
-    # The knowledge tier's GRAPH reads (design/dreamer-agent-loop/32 §3.4),
-    # all `read_only`/`remembered` on `search_knowledge`'s exact template.
-    # They exist for the Dreamer's workspace-keyed adjudicator — a claim is
-    # read together with its premises, its asserters and the entity it
-    # resolves to, at breakdown time — and they are workspace-safe only
-    # because the workspace is now SUPPLIED from the adaptor's key (see
-    # `_workspace()`); granted to the tag path by the same declaration, where
-    # the resolver answers the same value.
-    #
-    # `get_knowledge` is 3 like `note_read`: one lookup usually answers, a
-    # second and third cover "the other spelling" after an unresolved name.
-    "get_knowledge": NativeTool(3,
-                                source_tier="remembered", read_only=True,
-                                side_effect_state="none", idempotency="idempotent",
-                                retry="safe",
-                                output_contract="three_state"),
-    # The two edge verbs are 2 like `note_search`: one call per fact under
-    # review, one refinement if the first id was misread.
-    "knowledge_premises": NativeTool(2,
-                                     source_tier="remembered", read_only=True,
-                                     side_effect_state="none", idempotency="idempotent",
-                                     retry="safe",
-                                     output_contract="three_state"),
-    "knowledge_asserters": NativeTool(2,
-                                      source_tier="remembered", read_only=True,
-                                      side_effect_state="none", idempotency="idempotent",
-                                      retry="safe",
-                                      output_contract="three_state"),
-    # 3 like `get_knowledge`: resolve a name, then the two spellings the
-    # first answer surfaced.
-    "knowledge_entity": NativeTool(3,
-                                   source_tier="remembered", read_only=True,
-                                   side_effect_state="none", idempotency="idempotent",
-                                   retry="safe",
-                                   output_contract="three_state"),
     # 4 like its room-scoped sibling `search_memory`: it IS that verb with
     # the scope widened to the workspace (32 §5 closed decision 1), sized by
     # the same "search, then refine once or twice" reasoning.
@@ -1228,18 +1183,6 @@ RECALL_LOOKUPS_WINDOW_DAYS = 7
 # larger scale, since this is a WHOLE response re-sent on every subsequent
 # model call in the turn, not one search result.
 RECALL_LOOKUPS_MAX_CHARS = 8000
-
-# How many rows one `search_knowledge` hands back. `23` §9's 8, and it matches
-# `19` §6's room slice on purpose so the verb and the <facts> block speak in the
-# same unit — a model that reads "8 shown" in the block and gets a different
-# number from the verb has to reconcile two counts that mean the same thing.
-#
-# NOT a model-supplied parameter, DEC-24's rule: a parameter is a value the
-# model must invent on every call, so each one buys a way to get the call
-# wrong. The design's signature carries `limit` and `hops`; both are omitted
-# here for that reason, and `hops` additionally because the structural channel
-# is not built yet — a knob the code cannot honour is worse than an absent one.
-KNOWLEDGE_SEARCH_LIMIT = 8
 
 # How many notes one `note_search` hands back, and it is NOT a model-supplied
 # parameter on purpose (DEC-24's rule: a parameter is a value the model must
@@ -2234,61 +2177,6 @@ class EventsCollaborator(Protocol):
     ) -> VenueSuggestions: ...
 
 
-class KnowledgeCollaborator(Protocol):
-    """Structural type for the retrieval verb —
-    `nora.language.knowledge_search.KnowledgeSearch` in production.
-
-    A local Protocol for `NoteCollaborator`'s reason: `nora.agent` sits above
-    `nora.language` in the layered import contract, so this module can only
-    name the SHAPE. One verb, because one verb is all the tool layer calls.
-
-    The return is deliberately not typed beyond «has `status` and `hits`»: a
-    tool must not depend on a dataclass it cannot import, and the two fields
-    are the whole contract.
-    """
-
-    async def search(
-        self, *, scope: str, query: str, limit: int,
-    ) -> Any: ...
-
-
-class FactReadCollaborator(Protocol):
-    """Structural type for the fact store's READ half —
-    `nora.infra.sql.facts.SqlFactStore` in production.
-
-    A local Protocol for `KnowledgeCollaborator`'s reason, one seam over: the
-    tool layer may not name the SQL store, and `nora.domain.ports.FactReader`
-    is not widened for it because these three verbs' consumer is the TOOL
-    surface (design/dreamer-agent-loop/32 §3.4), not the render path that port
-    exists to serve. The returns ARE typed — `Fact`/`FactAsserter`/
-    `FactPremise` live in `nora.domain`, which every layer may import, so the
-    «not typed beyond…» argument `KnowledgeCollaborator` makes does not apply.
-
-    `premises` has no production WRITER yet: `fact_premise` holds 0 rows until
-    a `warrant_kind='premises'` write path exists, and the read ships ahead of
-    it on purpose (32 §3.4) — the same way the candidate table shipped ahead
-    of its adjudicator.
-    """
-
-    async def standing_facts(
-        self, *, workspace: str, subject_ids: Sequence[str], limit: int,
-    ) -> tuple[Fact, ...]: ...
-
-    async def asserters(self, *, fact_id: str) -> tuple[FactAsserter, ...]: ...
-
-    async def premises(self, *, fact_id: str) -> tuple[FactPremise, ...]: ...
-
-
-class EntityReadCollaborator(Protocol):
-    """Structural type for `SqlEntityStore.lookup` — same seam and same
-    reason as `FactReadCollaborator`. One verb: resolve a NAME to the entity
-    (canonical name + aliases) it belongs to, or `None`. **RAISES on a store
-    outage**, exactly as `SqlEntityStore.resolve` does — `None` is reserved
-    for «no such entity» and the tool maps the exception to `unavailable`."""
-
-    async def lookup(self, *, workspace: str, name: str) -> FactEntity | None: ...
-
-
 class NoteCollaborator(Protocol):
     """Structural type for the note store — `nora.infra.sql.notes.SqlNoteStore`
     in production, `nora.testing.note_store.InMemoryNoteStore` in tests.
@@ -2406,9 +2294,6 @@ def build_tool_specs(
     notes: NoteCollaborator | None = None,
     note_workspace: Callable[[str, str], str | None] | None = None,
     workspace_for: Callable[[str, str], str | None] | None = None,
-    knowledge: KnowledgeCollaborator | None = None,
-    facts: FactReadCollaborator | None = None,
-    entities: EntityReadCollaborator | None = None,
     supplied_workspace: str | None = None,
     music: MusicToolBridge | None = None,
     image_generator: ImageGenerator | None = None,
@@ -2504,13 +2389,6 @@ def build_tool_specs(
     optional collaborator above uses. All four music tools ALSO refuse on
     `room.platform != "discord"` before ever touching it, so a non-Discord
     room never reaches this collaborator at all.
-
-    `facts`/`entities` are the knowledge tier's GRAPH reads (32 §3.4) —
-    `get_knowledge`/`knowledge_premises`/`knowledge_asserters`/
-    `knowledge_entity`'s own pair, wired the identical honest way
-    `knowledge` is: both `None` while `[facts] enabled = false`, and the four
-    verbs answer `unavailable` (R-5) rather than crash or report an
-    unconsulted store as an empty one.
 
     `supplied_workspace` is the Dreamer's half of the key-path fix (32 §3.4,
     and `08-state.md` §10's named trap): a WORKSPACE-keyed adaptor's key IS
@@ -6767,14 +6645,14 @@ Args:
         room, and every verb that needs one answers `unavailable` on it:
         reading the wrong workspace's notebook is worse than reading none.
 
-        **Shared by the note tier and the knowledge tier**, because it is one
-        value — `policy.conversation(...).workspace` — and two resolvers for
-        it would be two definitions of which social unit a room belongs to.
+        **Shared by every workspace-keyed verb**, because it is one value —
+        `policy.conversation(...).workspace` — and two resolvers for it would
+        be two definitions of which social unit a room belongs to.
         `workspace_for` is the parameter; `note_workspace` is its older name,
         still accepted so the note tier's call sites keep working. Preferring
-        one over the other rather than requiring both means the knowledge tier
-        does not silently depend on the NOTE tier being wired, which it would
-        have if it had simply read `note_workspace`.
+        one over the other rather than requiring both means a verb outside the
+        note tier does not silently depend on the NOTE tier being wired, which
+        it would have if it had simply read `note_workspace`.
         """
         if supplied_workspace:
             return supplied_workspace
@@ -6875,86 +6753,6 @@ Args:
             "revision_id": head.id,
         }
 
-    async def search_knowledge(query: str) -> dict:
-        """Look through what I actually know about this room. Call this when
-you need something from the store of things people have said and I have
-checked — rather than what is in front of me right now.
-
-<facts> shows a handful and tells you how many more I hold. This is
-how you reach the rest. It is for a QUESTION: 「邊個做嘅大步行」,
-「big walk 係咩嚟」 — give it the question, not a keyword, because it
-searches by meaning as well as by the words themselves and a question
-carries more of both.
-
-It finds things written in another language from the one you ask in.
-It does not invent: everything it returns is something somebody here
-said and I checked.
-
-Outcomes: `ok` with what I hold, closest first; `nothing_found` when
-the room genuinely has not discussed it — a real answer; `unavailable`
-when I could not look, which is NOT the same and you should not report
-it as «we have never talked about that».
-
-Args:
-    query: The question, in the words you would ask it."""
-        if knowledge is None:
-            _record(metrics, "search_knowledge", "unavailable", reason="off")
-            return {
-                "status": "unavailable",
-                "note": "I can't reach what I know right now.",
-            }
-        workspace = _workspace() or ""
-        if not workspace:
-            # A conversation with no workspace is one nothing was ever written
-            # under, so there is nothing to search rather than a failure — but
-            # it is `unavailable` and not `nothing_found`, because "no
-            # workspace configured" is a WIRING gap and R-27's whole rule is
-            # that a wiring gap is never «there's nothing».
-            _record(
-                metrics, "search_knowledge", "unavailable", reason="no_workspace")
-            return {
-                "status": "unavailable",
-                "note": "I can't reach what I know right now.",
-            }
-        probe = query.strip()
-        if not probe:
-            _record(metrics, "search_knowledge", "refused", reason="empty")
-            return {
-                "status": "refused",
-                "note": "Give me the question you want me to look up.",
-            }
-        result = await knowledge.search(
-            scope=workspace, query=probe, limit=KNOWLEDGE_SEARCH_LIMIT,
-        )
-        if result.status == "unavailable":
-            _record(metrics, "search_knowledge", "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't search what I know just now.",
-            }
-        if not result.hits:
-            _record(metrics, "search_knowledge", "nothing_found")
-            return {"status": "nothing_found"}
-        _record(
-            metrics, "search_knowledge", "ok", count=len(result.hits))
-        return {
-            "status": "ok",
-            # The TEXT and nothing else. No row_key, no entity id, no score:
-            # anything a model echoes back is an ordinal handle and never a
-            # stored identifier, and this verb has nothing for it to echo — so
-            # the safest shape is the one with no identifier in it at all.
-            # `dream_screen` drops any item carrying a uuid, silently, and a
-            # result shaped to trip it would look healthy on every counter.
-            "facts": [
-                # The dispute mark rides WITH the text rather than as a field
-                # (R-79): the model reads one line, and a claim she holds
-                # under objection must not read as one she does not. The
-                # `<facts>` block renders it the same way.
-                f"{hit.text} — disputed" if hit.disputed else hit.text
-                for hit in result.hits
-            ],
-        }
-
     async def note_search(query: str) -> dict:
         """Look INSIDE notes for something their titles don't say.
 
@@ -7029,288 +6827,6 @@ Args:
                 {"title": note.title, "description": note.description, "body": body}
                 for note, body in hits
             ],
-        }
-
-    # The knowledge tier's GRAPH verbs (design/dreamer-agent-loop/32 §3.4).
-    # The schema is already a graph — `fact_entity` (nodes), `fact_premise`
-    # (dependency edges), `fact_asserter` (attribution edges) — and these four
-    # expose the edges, so a claim is read together with its premises, its
-    # asserters and the entity it resolves to AT BREAKDOWN TIME, not after.
-    # All four share `search_knowledge`'s discipline: three states, a store
-    # outage is `unavailable` and never `nothing_found`, and a wiring gap
-    # (`facts`/`entities` is None — `[facts] enabled = false`) is `unavailable`
-    # for the same reason `knowledge=None` is.
-
-    knowledge_off = {
-        "status": "unavailable",
-        "note": "I can't reach what I know right now.",
-    }
-
-    def _fact_stores() -> tuple[FactReadCollaborator, EntityReadCollaborator] | None:
-        """Both halves of the graph wiring, checked as one — `_notebook()`'s
-        shape. A store without its entity resolver cannot answer
-        `get_knowledge` at all (the name must resolve before any fact read),
-        and answering «nothing found» from either absence is the
-        `unavailable`-reported-as-`nothing_found` collapse R-27 forbids.
-        Returning the pair rather than a bool keeps the narrowing the type
-        checker's job, the way `_notebook()` returning the store does."""
-        if facts is None or entities is None:
-            return None
-        return facts, entities
-
-    async def get_knowledge(subject: str) -> dict:
-        """List everything currently standing that I hold ABOUT a named thing.
-
-        `search_knowledge` answers a QUESTION by meaning; this answers «what
-        do I hold on THIS subject» — the live facts whose subject resolves to
-        the same entity, disputes marked. Reach for it when a claim names its
-        subject directly and you want the whole picture on it, not the nearest
-        matches to a phrasing.
-
-        Outcomes: `ok` with the standing facts — each with the `id` that
-        `knowledge_premises` and `knowledge_asserters` take; `nothing_found`
-        when the name resolves to nothing I know or nothing standing mentions
-        it — a real answer; `unavailable` when I could not look, which is NOT
-        the same and must never be reported as «I hold nothing on that».
-
-        Args:
-            subject: The name to look up, the way somebody here writes it.
-        """
-        pair = _fact_stores()
-        if pair is None:
-            _record(metrics, "get_knowledge", "unavailable", reason="off")
-            return dict(knowledge_off)
-        fact_store, entity_store = pair
-        workspace = _workspace() or ""
-        if not workspace:
-            _record(
-                metrics, "get_knowledge", "unavailable", reason="no_workspace")
-            return dict(knowledge_off)
-        probe = subject.strip()
-        if not probe:
-            _record(metrics, "get_knowledge", "refused", reason="empty")
-            return {
-                "status": "refused",
-                "note": "Give me the name you want me to look up.",
-            }
-        # Resolve FIRST, always. `fact.subject_id` stores the claim's surface
-        # TEXT verbatim, not an entity id, so the facts read below is asked
-        # with the entity's canonical name and every alias — the strings that
-        # actually appear in `subject_id`. A name that resolves to nothing is
-        # `nothing_found`, never an empty `ok` (32 §3.4).
-        try:
-            entity = await entity_store.lookup(workspace=workspace, name=probe)
-        except Exception:
-            log.exception("get_knowledge could not resolve its subject")
-            _record(metrics, "get_knowledge", "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't look that up just now. Say you couldn't "
-                        "check — not that nothing is known.",
-            }
-        if entity is None:
-            _record(metrics, "get_knowledge", "nothing_found")
-            return {"status": "nothing_found"}
-        try:
-            rows = await fact_store.standing_facts(
-                workspace=workspace,
-                subject_ids=[entity.canonical_name, *entity.aliases],
-                limit=KNOWLEDGE_SEARCH_LIMIT,
-            )
-        except Exception:
-            log.exception("get_knowledge failed")
-            _record(metrics, "get_knowledge", "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't look that up just now. Say you couldn't "
-                        "check — not that nothing is known.",
-            }
-        if not rows:
-            _record(metrics, "get_knowledge", "nothing_found")
-            return {"status": "nothing_found"}
-        _record(metrics, "get_knowledge", "ok", count=len(rows))
-        return {
-            "status": "ok",
-            "facts": [
-                {
-                    # The id IS in this shape, deliberately, and
-                    # `search_knowledge`'s no-identifier rule (pinned by
-                    # `tests/test_tools.py`) does not extend here: the id is
-                    # the HANDLE `knowledge_premises`/`knowledge_asserters`
-                    # take, and a graph read whose edges cannot be followed is
-                    # a flat list wearing the graph's name. What makes that
-                    # safe is the DIRECTION: `dream_screen` drops a uuid in a
-                    # model-written ENVELOPE item, and the verdict schema has
-                    # no fact-id field — `supersedes` goes by per-tick
-                    # ordinal handle — so the id can be read, never echoed
-                    # into a write.
-                    "id": f.id,
-                    "claim": (
-                        f"{f.subject_id} │ {f.predicate} │ {f.object_literal}"
-                        # The dispute mark rides WITH the text (R-79), exactly
-                        # as in `search_knowledge`.
-                        + (" — disputed" if f.disputed_at else "")
-                    ),
-                }
-                for f in rows
-            ],
-        }
-
-    async def knowledge_premises(fact_id: str) -> dict:
-        """Show which facts a given fact RESTS ON — its premise edges.
-
-        Call this when you are weighing a claim that was deduced FROM other
-        claims rather than asserted from a source: it lists the ids of the
-        claims it was deduced from, so a fact that rests on a shaky premise
-        is read that way. The ids come from `get_knowledge`'s results.
-
-        Outcomes: `ok` with the premise fact ids; `nothing_found` when no
-        premises are recorded for it (most facts have none — they stand on a
-        source directly); `unavailable` when I could not look.
-
-        Args:
-            fact_id: The fact's id, exactly as `get_knowledge` returned it.
-        """
-        if facts is None:
-            _record(metrics, "knowledge_premises", "unavailable", reason="off")
-            return dict(knowledge_off)
-        store = facts
-        probe = fact_id.strip()
-        if not probe:
-            _record(metrics, "knowledge_premises", "refused", reason="empty")
-            return {
-                "status": "refused",
-                "note": "Give me the fact id you want the premises of.",
-            }
-        try:
-            edges = await store.premises(fact_id=probe)
-        except Exception:
-            log.exception("knowledge_premises failed")
-            _record(metrics, "knowledge_premises", "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't look that up just now. Say you couldn't "
-                        "check — not that there are no premises.",
-            }
-        if not edges:
-            _record(metrics, "knowledge_premises", "nothing_found")
-            return {"status": "nothing_found"}
-        _record(metrics, "knowledge_premises", "ok", count=len(edges))
-        # Ids ONLY. Rendering each premise's claim would need a by-id read per
-        # edge — a join the store does not offer the tool layer — and the id
-        # is itself the handle a follow-up needs.
-        return {
-            "status": "ok",
-            "premises": [e.premise_fact_id for e in edges],
-        }
-
-    async def knowledge_asserters(fact_id: str) -> dict:
-        """Show who ASSERTED a given fact, when, and in which message.
-
-        Attribution the tier records at write time: the people a claim traces
-        back to. Use it to weigh a claim — something six people said reads
-        differently from something one person said once. The ids come from
-        `get_knowledge`'s results. Recording who said a thing is not
-        permission to repeat it into the room; this is for YOUR reasoning.
-
-        Outcomes: `ok` with one entry per asserter; `nothing_found` when the
-        fact names nothing attributable; `unavailable` when I could not look.
-
-        Args:
-            fact_id: The fact's id, exactly as `get_knowledge` returned it.
-        """
-        if facts is None:
-            _record(metrics, "knowledge_asserters", "unavailable", reason="off")
-            return dict(knowledge_off)
-        store = facts
-        probe = fact_id.strip()
-        if not probe:
-            _record(metrics, "knowledge_asserters", "refused", reason="empty")
-            return {
-                "status": "refused",
-                "note": "Give me the fact id you want the asserters of.",
-            }
-        try:
-            rows = await store.asserters(fact_id=probe)
-        except Exception:
-            log.exception("knowledge_asserters failed")
-            _record(metrics, "knowledge_asserters", "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't look that up just now. Say you couldn't "
-                        "check — not that nobody said it.",
-            }
-        if not rows:
-            _record(metrics, "knowledge_asserters", "nothing_found")
-            return {"status": "nothing_found"}
-        _record(metrics, "knowledge_asserters", "ok", count=len(rows))
-        return {
-            "status": "ok",
-            # What the rows carry (21 §7.5): who, when, in which message —
-            # the attribution edge itself, nothing derived.
-            "asserters": [
-                {
-                    "person_id": a.person_id,
-                    "message_id": a.message_id,
-                    "asserted_at": a.asserted_at,
-                }
-                for a in rows
-            ],
-        }
-
-    async def knowledge_entity(name: str) -> dict:
-        """Show which single thing a name actually resolves to.
-
-        The room writes one thing many ways — `big walk`, `Big Walk`,
-        「大步行」 — and they are ONE entity with aliases. Call this before
-        treating two spellings as two things, or one spelling as certainly
-        the thing you mean.
-
-        Outcomes: `ok` with the canonical name and every alias on record;
-        `nothing_found` when the name resolves to nothing I know — a real
-        answer; `unavailable` when I could not look.
-
-        Args:
-            name: The name to resolve, the way somebody here writes it.
-        """
-        if entities is None:
-            _record(metrics, "knowledge_entity", "unavailable", reason="off")
-            return dict(knowledge_off)
-        entity_store = entities
-        workspace = _workspace() or ""
-        if not workspace:
-            _record(
-                metrics, "knowledge_entity", "unavailable", reason="no_workspace")
-            return dict(knowledge_off)
-        probe = name.strip()
-        if not probe:
-            _record(metrics, "knowledge_entity", "refused", reason="empty")
-            return {
-                "status": "refused",
-                "note": "Give me the name you want me to resolve.",
-            }
-        try:
-            entity = await entity_store.lookup(workspace=workspace, name=probe)
-        except Exception:
-            log.exception("knowledge_entity failed")
-            _record(metrics, "knowledge_entity", "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't look that up just now. Say you couldn't "
-                        "check — not that the name is unknown.",
-            }
-        if entity is None:
-            _record(metrics, "knowledge_entity", "nothing_found")
-            return {"status": "nothing_found"}
-        _record(metrics, "knowledge_entity", "ok")
-        return {
-            "status": "ok",
-            # The SURFACES, never the id: nothing downstream takes an entity
-            # id, so rendering one would be an identifier in a prompt with no
-            # legitimate echo — `search_knowledge`'s own rule, applied where
-            # it does hold.
-            "canonical_name": entity.canonical_name,
-            "aliases": list(entity.aliases),
         }
 
     async def search_memory_workspace(query: str) -> dict:
@@ -8024,11 +7540,6 @@ Args:
         _spec("rsvp_event", rsvp_event),
         _spec("cancel_event", cancel_event),
         _spec("suggest_venue", suggest_venue),
-        _spec("search_knowledge", search_knowledge),
-        _spec("get_knowledge", get_knowledge),
-        _spec("knowledge_premises", knowledge_premises),
-        _spec("knowledge_asserters", knowledge_asserters),
-        _spec("knowledge_entity", knowledge_entity),
         _spec("search_memory_workspace", search_memory_workspace),
         _spec("note_read", note_read),
         _spec("note_search", note_search),
@@ -8083,9 +7594,6 @@ def build_tools(
     notes: NoteCollaborator | None = None,
     note_workspace: Callable[[str, str], str | None] | None = None,
     workspace_for: Callable[[str, str], str | None] | None = None,
-    knowledge: KnowledgeCollaborator | None = None,
-    facts: FactReadCollaborator | None = None,
-    entities: EntityReadCollaborator | None = None,
     supplied_workspace: str | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
@@ -8115,8 +7623,8 @@ def build_tools(
         ai_peer=ai_peer,
         links=links, giphy_source=giphy_source,
         notes=notes, note_workspace=note_workspace,
-        knowledge=knowledge, workspace_for=workspace_for,
-        facts=facts, entities=entities, supplied_workspace=supplied_workspace,
+        workspace_for=workspace_for,
+        supplied_workspace=supplied_workspace,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         media_store=media_store,
     )

@@ -67,7 +67,6 @@ from nora.testing import (
     FakeMemoryStore,
     FakeRecordStore,
     FakeRosterSource,
-    InMemoryFactStore,
     InMemoryNoteStore,
     InMemoryStandingStore,
     ScriptedTurn,
@@ -133,7 +132,7 @@ class Case:
     # `expect` is the verdict the determination must reach — "speak" or
     # "silence" — graded on `Trajectory.sent` (see `evals.evaluators.
     # ParticipationVerdict` for why `sent`, not `tool_calls`). `seed` is the
-    # per-case seed MAPPING (transcript + standing/notes/facts), built into a
+    # per-case seed MAPPING (transcript + standing/notes), built into a
     # `ProductionSeed` by `nora.app.eval_support.seed_from_dict` inside
     # `run_case` — everything in it is keyed to the eval workspace there, so
     # a case author cannot accidentally seed rows the eval room never reads.
@@ -384,14 +383,14 @@ async def run_case(
                 })
             memory = FakeMemoryStore(cards=dict(seed.cards),
                                  conclusions=dict(seed.conclusions))
-        # The note/fact/standing tiers, gated the same way `nora.app.
+        # The note/standing tiers, gated the same way `nora.app.
         # composition.build_dependencies` gates them — `cfg` here is the same
         # shipped `config.toml`/`config.example.toml` production reads, so a
         # tier off in the deployment stays `None` in the eval too rather than
         # rendering a block production never would. In-memory doubles, never
         # the real SQL stores (`evals/` may not import `nora.infra`).
         #
-        # EXCEPT the participation suite, which wires all three
+        # EXCEPT the participation suite, which wires both
         # UNCONDITIONALLY: the grounded-value gate (§3②) is meaningless with
         # the tiers off, and the knowledge-cut twins must differ ONLY in seed
         # content — a twin with the tier absent entirely would be a different
@@ -399,7 +398,6 @@ async def run_case(
         # its extent line («she holds N, shown none»), which is the honest
         # shape a knowledge-cut case is graded against.
         notes_store = InMemoryNoteStore() if (cfg.notes.enabled or participation) else None
-        facts_store = InMemoryFactStore() if (cfg.facts.enabled or participation) else None
         standing_store = (
             InMemoryStandingStore() if (cfg.standing.enabled or participation) else None
         )
@@ -408,11 +406,6 @@ async def run_case(
                 for note, revision in seed.notes:
                     notes_store.notes[note.id] = note
                     notes_store.revisions[revision.id] = revision
-            if facts_store is not None:
-                for fact in seed.facts:
-                    facts_store.seed_fact(fact)
-                if seed.asserters:
-                    facts_store.seed_asserters(*seed.asserters)
             if standing_store is not None and seed.standing is not None:
                 # Remapped onto the eval room's own key (S4) — `seed.standing`
                 # carries whatever room production last folded, which is never
@@ -460,7 +453,7 @@ async def run_case(
                 cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
                 doctrine_store=doctrine_store, runner=runner, metrics=metrics,
                 tool_registry=tool_registry, roster_source=roster,
-                notes=notes_store, facts=facts_store, standing=standing_store,
+                notes=notes_store, standing=standing_store,
                 participation_runner=participation_runner,
                 participation_clock=participation_clock,
                 participation_opt_in=participation,

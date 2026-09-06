@@ -3,8 +3,17 @@
 Shipped with ONE implementation — a fake — for the reason
 `tests/contract/test_dream_sink_contract.py` states for the same situation: a
 port declared with nothing exercising it is a shape nobody has checked is
-satisfiable. The two room adaptors join in Phase 3 and the fact adaptor in
-Phase 4, each by adding one `IMPLEMENTATIONS` entry.
+satisfiable. Another joins by adding one `IMPLEMENTATIONS` entry.
+
+**It is back to one, and that is a KNOWN GAP rather than the shipped state.**
+The knowledge tier's three adaptors were the real entries here and went with
+that tier; the note tier's three (`NoteCandidateAdaptor`,
+`NoteCuratorAdaptor`, `NoteEntityResolutionAdaptor`) have never been in this
+map. A contract suite exercising only its own fake measures the SHAPE and no
+production behaviour — CLAUDE.md's "if reverting the code under test doesn't
+turn the test red, the test is decorative" — so the note adaptors joining is
+the next thing this file needs, and it is written here rather than left for a
+reader to notice from a one-entry dict.
 
 **The rule this file is built against, inherited from the sink suite where it
 was learned four times over:** anything the shared suite needs that is not on
@@ -12,8 +21,8 @@ was learned four times over:** anything the shared suite needs that is not on
 once and assumed to fit whoever joins next. Two things need it here:
 
 1. **Legal envelope items.** `accept` takes
-   `Sequence[Mapping[str, object]]` — a room-language observation and a fact
-   verdict are both legal and neither is legal for the other. So an entry
+   `Sequence[Mapping[str, object]]` — one adaptor's item shape is not
+   another's, and neither is legal for the other. So an entry
    carries `make_items()` (a batch this adaptor parses cleanly) and
    `make_malformed_item()` (one it must DROP), never one shared literal.
 2. **Reading back what `commit` wrote.** `DreamAdaptor` has no read verb —
@@ -25,8 +34,8 @@ once and assumed to fit whoever joins next. Two things need it here:
 `accept` drops rather than raises; `commit(key, ())` is legal and distinct from
 not calling `commit` at all; `tools` narrows the read-only ceiling rather than
 widening it; `objective` names a file that actually exists. A test that asserted
-what a term or a predicate looked like would be the fact-vocabulary defect the
-sink suite found in itself, rebuilt here.
+what a term or a predicate looked like would be the one-tier-vocabulary defect
+the sink suite found in itself, rebuilt here.
 
 **`_FakeAdaptor` stays HERE rather than in `nora/testing/`**, the same rule
 that binds `_FakeDreamSink` to its suite: `nora/testing/fakes.py` stands in for
@@ -52,13 +61,6 @@ import pytest
 from nora.agent.registry import ToolRegistry
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.ports import DreamAdaptor, Proposal
-from nora.language.fact_adaptor import (
-    FactAdaptor,
-    FactCandidateAdaptor,
-    FactEntityResolutionAdaptor,
-)
-from nora.testing.fact_candidate_store import InMemoryFactCandidateStore
-from nora.testing.fact_store import InMemoryFactStore
 
 DREAMER_DIR = Path(__file__).resolve().parents[2] / "nora" / "dreamer"
 
@@ -117,7 +119,7 @@ class _FakeAdaptor:
     # A real objective file, not an invented name: the contract asserts that an
     # adaptor's objective RESOLVES, and a fake pointing at a name nobody ships
     # would make that test pass by never being able to fail.
-    objective = "room-language"
+    objective = "note-curation"
     envelope_key = "observations"
     tools = frozenset({"load_transcript", "now"})
 
@@ -170,211 +172,6 @@ def _fake_empty_commits(_adaptor: object, sink: object) -> int:
     return sink.empty_commits
 
 
-# ---------------------------------------------------------------------------
-# the fact tier: two real adaptors over the two in-memory stores
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _CountsEmptyProposes:
-    """A thin spy over a real sink that counts `propose(key, ())` calls.
-
-    Not a third `DreamSink` implementation — it holds no rows and decides
-    nothing, it delegates every verb (`__getattr__` covers `supersede`,
-    `pending`, `standing_facts`) to the in-memory store behind it, which is
-    the implementation the sink contract suite already measures. It exists
-    only because `test_committing_nothing_is_a_legal_call_that_reaches_the_
-    sink` has to tell "reached the sink and wrote nothing" apart from "was
-    never called", and a return of 0 looks identical either way. `_CountingSink`
-    above counts the same thing for the fake, for the same reason.
-    """
-
-    inner: object
-    empty_commits: int = 0
-
-    async def propose(
-        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
-    ) -> Sequence[str]:
-        if not proposals:
-            self.empty_commits += 1
-        return await self.inner.propose(  # type: ignore[attr-defined]
-            key=key, proposals=proposals, now_ms=now_ms,
-        )
-
-    def __getattr__(self, name: str) -> object:
-        if name == "inner":                       # pre-`__init__` recursion guard
-            raise AttributeError(name)
-        return getattr(self.inner, name)
-
-
-def _build_fact_candidates() -> tuple[object, object]:
-    sink = _CountsEmptyProposes(InMemoryFactCandidateStore())
-    # The extractor is SCOPE-keyed and the candidate table is WORKSPACE-keyed
-    # (DEC-105), so it translates; the composition root builds this closure
-    # from the same allowlist `language_scopes`/`workspace_scopes` read.
-    adaptor = FactCandidateAdaptor(
-        candidates=sink, workspace_for=lambda scope: "ws-main",
-    )
-    return adaptor, sink
-
-
-def _fact_candidate_items() -> tuple[Mapping[str, object], ...]:
-    return (
-        {"subject": "big walk", "predicate": "unlocked_by",
-         "object": "the four coloured towers", "message_ids": [41]},
-        {"subject": "big walk", "predicate": "contains",
-         "object": "a black tower", "message_ids": [42]},
-    )
-
-
-def _fact_candidate_malformed_item() -> Mapping[str, object]:
-    # Wrong type for two triple fields and an unparseable message id. The
-    # triple is half of `fact_candidate_triple_key`, so a coerced `"7"`/`"None"`
-    # would be a durable key nobody can ever match back — see
-    # `nora.language.fact_adaptor._text`.
-    return {"subject": 7, "predicate": None, "object": "x", "message_ids": "later"}
-
-
-def _build_fact_adjudication() -> tuple[object, object]:
-    facts = _CountsEmptyProposes(InMemoryFactStore())
-    adaptor = FactAdaptor(
-        facts=facts, candidates=InMemoryFactCandidateStore(),
-        max_adjudications_per_tick=10,
-    )
-    return adaptor, facts
-
-
-def _fact_verdict_items() -> tuple[Mapping[str, object], ...]:
-    """Two `supported` verdicts, and `supersedes` deliberately absent from
-    both.
-
-    A `contradicted` verdict must name a fact id THIS RUN SHOWED THE MODEL,
-    and the suite calls `accept` without first calling `inputs` — so a
-    contradiction here would be correctly dropped as `unknown_supersedes` and
-    `test_accept_parses_a_legal_batch` would fail on working code. The
-    contradiction path is `tests/unit/test_fact_adaptor.py`'s, where a run can
-    be given its inputs first.
-    """
-    return (
-        {"subject": "big walk", "predicate": "unlocked_by",
-         "object": "the four coloured towers", "status": "supported",
-         "addresses_claim": True,
-         "source_url": "https://example.test/guide",
-         "source_excerpt": "The black tower opens once all four are complete."},
-        {"subject": "big walk", "predicate": "gourds_required",
-         "object": "three", "status": "supported", "addresses_claim": True,
-         "source_url": "https://example.test/patch-2-4",
-         "source_excerpt": "Patch 2.4 reduced the gourd requirement to three."},
-    )
-
-
-def _fact_verdict_malformed_item() -> Mapping[str, object]:
-    # Well-typed and still illegal: a `supported` verdict with no source.
-    # `FactVerdict.__post_init__` refuses it by RAISING, which is right for a
-    # constructor and fatal for a background tick — so this item also fixes as
-    # a contract that `accept` catches that `ValueError` rather than letting it
-    # reach a runtime that would report the whole batch unread.
-    return {
-        "subject": "big walk", "predicate": "contains", "object": "a shop",
-        "status": "supported", "addresses_claim": True,
-    }
-
-
-def _fact_written(_adaptor: object, sink: object) -> int:
-    assert isinstance(sink, _CountsEmptyProposes)
-    store = sink.inner
-    assert isinstance(store, InMemoryFactStore)
-    return len(store._facts)
-
-
-def _candidate_written(_adaptor: object, sink: object) -> int:
-    assert isinstance(sink, _CountsEmptyProposes)
-    store = sink.inner
-    assert isinstance(store, InMemoryFactCandidateStore)
-    return len(store._by_triple)
-
-
-def _spy_empty_commits(_adaptor: object, sink: object) -> int:
-    assert isinstance(sink, _CountsEmptyProposes)
-    return sink.empty_commits
-
-
-class _StubEntities:
-    """The entity side of pass 6, matching production WHERE THE ADAPTOR
-    BRANCHES — `similar_entities` returning nothing is what decides a name is
-    not offered, and `attach_alias` returning False for one already present is
-    the branch `commit`'s count depends on."""
-
-    def __init__(self) -> None:
-        self.attached: list[tuple[str, str]] = []
-
-    async def unresolved_names(self, *, workspace: str, limit: int):
-        return ("HKO", "big walk")[:limit]
-
-    async def similar_entities(self, *, workspace: str, name: str, limit: int):
-        rows = {
-            "HKO": (
-                ("0191f2c4-0000-7000-8000-0000000000aa",
-                 "Hong Kong Observatory"),
-                ("0191f2c4-0000-7000-8000-0000000000bb", "HK Observatory"),
-            ),
-            "big walk": (
-                ("0191f2c4-0000-7000-8000-0000000000cc", "Big Walk"),
-            ),
-        }
-        return rows.get(name, ())[:limit]
-
-    async def attach_alias(self, *, workspace: str, entity_id: str, alias: str):
-        if (entity_id, alias) in self.attached:
-            return False
-        self.attached.append((entity_id, alias))
-        return True
-
-
-def _build_fact_entity_resolution() -> tuple[object, object]:
-    entities = _StubEntities()
-    return FactEntityResolutionAdaptor(entities=entities), entities
-
-
-async def _prepare_fact_entity_resolution(adaptor: object) -> None:
-    """Call `inputs` first, which every other implementation can skip.
-
-    This adaptor's items are ORDINAL HANDLES — `{"name": "1", "entity": "a"}`
-    — and a handle means nothing except against the render that assigned it.
-    The suite calling `accept` alone is exactly the shape that produced the
-    raw-handle write: `accept` had no map, kept `EntityResolution(name="1",
-    entity_id="a")`, counted it `merged`, and `commit` handed `"a"` to a uuid
-    column. That branch now refuses, so the contract has to show the adaptor
-    what it is about to be asked about — which is what the runtime does.
-    """
-    assert isinstance(adaptor, FactEntityResolutionAdaptor)
-    await adaptor.inputs(key=KEY, batch=())
-
-
-def _fact_resolution_items() -> tuple[Mapping[str, object], ...]:
-    """Two merges, and `entity: null` deliberately absent from both.
-
-    A split is the commonest real answer and it produces NO payload — which is
-    correct, and which would make `test_accept_parses_a_legal_batch` fail on
-    working code, since that contract counts one payload per item. Same
-    reasoning as `_fact_verdict_items` leaving out `supersedes`. The split path
-    is `tests/unit/test_entity_resolution_adaptor.py`'s.
-    """
-    return (
-        {"name": "1", "entity": "a"},
-        {"name": "2", "entity": "a"},
-    )
-
-
-def _fact_resolution_malformed_item() -> Mapping[str, object]:
-    return {"name": 7, "entity": "a"}
-
-
-def _resolution_written(_adaptor: object, backing: object) -> int:
-    assert isinstance(backing, _StubEntities)
-    return len(backing.attached)
-
-
 @dataclass(frozen=True)
 class _Impl:
     """One implementation's entry.
@@ -409,31 +206,6 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
         make_malformed_item=_fake_malformed_item,
         written=_fake_written,
         empty_commits=_fake_empty_commits,
-    ),
-    "fact-candidates": _Impl(
-        build=_build_fact_candidates,
-        make_items=_fact_candidate_items,
-        make_malformed_item=_fact_candidate_malformed_item,
-        written=_candidate_written,
-        empty_commits=_spy_empty_commits,
-    ),
-    "fact-adjudication": _Impl(
-        build=_build_fact_adjudication,
-        make_items=_fact_verdict_items,
-        make_malformed_item=_fact_verdict_malformed_item,
-        written=_fact_written,
-        empty_commits=_spy_empty_commits,
-    ),
-    # CLAUDE.md: a port never gains a second implementation without a shared
-    # contract suite. This one was the third `DreamAdaptor` and it was not
-    # here — which is how the raw-handle write survived, because the only
-    # caller that reached `accept` without `inputs` was imaginary.
-    "fact-entity-resolution": _Impl(
-        build=_build_fact_entity_resolution,
-        make_items=_fact_resolution_items,
-        make_malformed_item=_fact_resolution_malformed_item,
-        written=_resolution_written,
-        prepare=_prepare_fact_entity_resolution,
     ),
 }
 

@@ -126,12 +126,18 @@ _METRICS_METHODS = frozenset({"inc", "gauge", "observe", "gauge_function"})
 #
 # The first version asserted a bare "> 150" and a reviewer showed why that is
 # not a control: losing the forwarding-wrapper derivation — the exact
-# regression this file is about — still leaves 211 reads, which sailed through
-# green. Both axes are asserted because the read count alone also survives it;
-# the distinct-name count drops to 111 and is what actually catches it. Checked
-# by degrading _forwarding_wrappers to return nothing: 211/111, red on both.
-_MIN_NAME_READS = 240
-_MIN_DISTINCT_NAMES = 130
+# regression this file is about — still leaves a large read count, which
+# sailed through green. Both axes are asserted because the read count alone
+# also survives it; the distinct-name count is what actually catches it.
+#
+# LOWERED 2026-09-07 with the knowledge and language tiers' deletion, which
+# removed 34 declared metrics and every recording site behind them. The tree
+# now holds 263 reads over 122 names; the floors sit just under those, on the
+# same "just under, never a round number far below" rule the paragraph above
+# argues for. Re-checked by degrading `_forwarding_wrappers` to return
+# nothing: 209/104, red on both.
+_MIN_NAME_READS = 255
+_MIN_DISTINCT_NAMES = 118
 
 # Recording sites whose name argument cannot be read statically, pinned by
 # (path, enclosing function, method, argument source text). Every row is either
@@ -142,11 +148,7 @@ _MIN_DISTINCT_NAMES = 130
 # one genuine gap: its name is bound at construction, so it is unchecked here.
 _UNRESOLVABLE: frozenset[tuple[str, str, str, str]] = frozenset(
     {
-        ("nora/engagement/recognition.py", "_inc", "inc", "name"),
-        ("nora/infra/sql/entities.py", "_inc", "inc", "name"),
-        ("nora/infra/sql/entities.py", "_set", "gauge", "name"),
         ("nora/instructions/reload.py", "_on_failure", "inc", "self._failure_counter"),
-        ("nora/language/fact_adaptor.py", "_inc", "inc", "name"),
         ("nora/language/note_candidates.py", "_inc", "inc", "name"),
         ("nora/language/note_curator.py", "_gauge", "gauge", "name"),
         ("nora/language/note_curator.py", "_inc", "inc", "name"),

@@ -96,19 +96,17 @@ avoid:
   threaded today (`nora/infra/sql/audit.py:35`, `SqlRecordStore.__init__`'s
   `max_per_conversation` parameter).
 
-- `RoomConsolidator`/`RoomLanguageReader` are the Dreamer's write/read split
-  (`nora.domain.models.RoomLexeme`/`RoomLanguage` are their shared vocabulary).
-  Two Protocols, not one, because the two halves are consumed from different
-  places under different obligations: `consolidate` runs from the background
-  cycle's own loop and may take its time, while `room_language` is read from
-  `TranscriptInjection` on the turn's critical path and — like every read a
-  live turn depends on — must never raise (an unavailable store degrades to an
-  EMPTY `RoomLanguage`, never an exception the turn has to catch). Folding both
-  onto one Protocol would force every future write-side implementation
-  (a fact table, not just a lexicon) to also be a valid read-side one, which is
-  not true in general. `scope_id` is a parameter on `consolidate`, not
-  instance state, because one consolidator instance serves every scope the
-  deployment has (see the Protocol's own docstring).
+- **A tier's WRITE half and its READ half are separate Protocols**, and the
+  rule outlived the pair that established it (`RoomConsolidator` /
+  `RoomLanguageReader`, deleted with the language tier). The two halves are
+  consumed from different places under different obligations: a write runs
+  from the Dreamer's background cycle and may take its time, while a read
+  reached from `TranscriptInjection` sits on the turn's critical path and —
+  like every read a live turn depends on — must never raise (an unavailable
+  store degrades to an EMPTY value, never an exception the turn has to catch).
+  Folding both onto one Protocol would force every future write-side
+  implementation to also be a valid read-side one, which is not true in
+  general.
 
 - `MemoryStore.ensure_*` is declared **idempotent under concurrency**.
   `HonchoClient.ensure_peer`/`ensure_session` are check-then-act over
@@ -204,9 +202,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from nora.domain.facts import Fact as Fact
-from nora.domain.facts import FactAsserter as FactAsserter
-from nora.domain.facts import FactCandidate as FactCandidate
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBlob as MediaBlob
@@ -217,9 +212,6 @@ from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
     NormalizedMessage,
-    RoomExchange,
-    RoomLanguage,
-    RoomPortrait,
     TagContext,
     TranscriptRow,
     UnattributedRow,
@@ -716,87 +708,6 @@ class RecordStore(Protocol):
     async def stats(self) -> dict[str, Any]: ...
 
     async def aclose(self) -> None: ...
-
-
-@runtime_checkable
-class RoomConsolidator(Protocol):
-    """One derivation pass over a batch of human messages for ONE scope.
-
-    `scope_id` is a parameter and not an attribute because one consolidator
-    instance serves every scope the deployment has — the loop ticks each in
-    turn, and an instance-per-scope would make the object graph depend on
-    policy.toml.
-    """
-
-    name: str
-
-    async def consolidate(
-        self, *, scope_id: str, batch: Sequence[TranscriptRow]
-    ) -> int:
-        """Returns OBSERVATIONS APPENDED — fixed here so a second
-        implementation cannot mean something else by it. The contract suite
-        asserts it: a batch yielding nothing returns 0, and a re-run over the
-        same batch also returns 0 because the natural key makes it idempotent.
-        """
-        ...
-
-
-@runtime_checkable
-class RoomLanguageReader(Protocol):
-    """The READ half, separated so `TranscriptInjection` keeps taking only
-    Protocol-typed collaborators. The write side stays unabstracted — a lexicon
-    and a future fact table differ in shape and lifetime — but this one call
-    site is on the turn's critical path and must be fakeable."""
-
-    async def room_language(self, *, scope_id: str, limit: int) -> RoomLanguage:
-        """Top `limit` rendered-state lexemes by score. Never raises: an
-        unavailable store yields an EMPTY `RoomLanguage`, because this block is
-        background she may draw on and never the ground for a claim."""
-        ...
-
-
-@runtime_checkable
-class RoomExchangeReader(Protocol):
-    """The READ half of Dreamer Plan 2 (2026-08-20 exchange-patterns design) —
-    the exchange sibling of `RoomLanguageReader`, same reasoning: separated so
-    `TranscriptInjection` keeps taking only Protocol-typed collaborators, and
-    read from the turn's critical path so it must never raise."""
-
-    async def room_exchange(self, *, scope_id: str, limit: int) -> RoomExchange:
-        """Top `limit` rendered-state exchange patterns by score. Never
-        raises: an unavailable store yields an EMPTY `RoomExchange` — this
-        block is background she may draw on, never the ground for a claim
-        about any one person."""
-        ...
-
-
-@runtime_checkable
-class RoomPortraitReader(Protocol):
-    """The READ half of Dreamer Plan 3 (2026-08-20 room-portrait design) —
-    the portrait sibling of `RoomLanguageReader`/`RoomExchangeReader`, same
-    reasoning: separated so `TranscriptInjection` keeps taking only
-    Protocol-typed collaborators, and read from the turn's critical path so
-    it must never raise."""
-
-    async def room_portrait(self, *, scope_id: str) -> RoomPortrait:
-        """The one current narrative for `scope_id`. Never raises: an
-        unavailable store yields an EMPTY `RoomPortrait`."""
-        ...
-
-
-@runtime_checkable
-class RoomPortraitSynthesizer(Protocol):
-    """The WRITE/trigger side of Dreamer Plan 3 — deliberately NOT
-    `RoomConsolidator`. A portrait's real input is Plan 1/2's already-
-    consolidated state (`room_lexeme`/`room_exchange`), not a batch of raw
-    messages, so this Protocol carries no `batch` parameter and no
-    "observations appended" return — nothing downstream needs to count a
-    portrait synthesis the way `_dream_once`'s watermark advance needs to
-    count consolidator appends. `scope_id` is a parameter, not instance
-    state, for the same reason it is on `RoomConsolidator.consolidate`: one
-    instance serves every scope the deployment has."""
-
-    async def synthesize(self, *, scope_id: str) -> None: ...
 
 
 @runtime_checkable
@@ -1693,177 +1604,6 @@ class DreamSink(Protocol):
         on the implementing side (`stale|wrong|merged` in the fact tier) — which
         it could not be if it had to carry a successor id as free text.
         """
-        ...
-
-
-@runtime_checkable
-class FactReader(Protocol):
-    """The fact tier's own read half — never on `DreamSink`, which the
-    module's own three-word rule ("two verbs, deliberately no third") makes
-    load-bearing rather than negotiable. A read verb belongs to each tier's
-    own interface, not to the shared write boundary; this is the fact tier's,
-    the way `RoomLanguageReader` is the language tier's.
-
-    `standing_facts` is the one read on a tag's critical path — the facts a
-    turn actually renders — so it carries `RoomLanguageReader.room_language`'s
-    own guarantee: **NEVER raises.** An unavailable store degrades to `()`,
-    the same "silence beats a wrong answer" shape every other critical-path
-    read in this module uses; a caller on that path cannot afford one failed
-    read to cancel its siblings in a `asyncio.gather`.
-
-    `fact_by_id` is a history read — retrieving one fact by id, including a
-    superseded one, for whatever wants to show "what did we used to believe"
-    rather than "what do we believe now". It carries no such promise: it is
-    not on the hot path this module's other never-raises reads protect, and a
-    caller that asks for a specific id by name can be trusted to handle not
-    getting an answer.
-    """
-
-    async def standing_facts(
-        self, *, workspace: str, subject_ids: Sequence[str], limit: int,
-    ) -> tuple[Fact, ...]:
-        """The standing (non-superseded) facts for `subject_ids` in
-        `workspace`, most recent first, capped at `limit`. Never raises."""
-        ...
-
-    async def recent_facts(self, *, workspace: str, limit: int) -> tuple[Fact, ...]:
-        """The workspace's most recent standing facts, capped at `limit`, with
-        NO subject filter. Never raises — same reason as `standing_facts`.
-
-        **This is what the `<facts>` block renders, and the subject-free shape
-        is a deliberate first cut.** §4 of the fact-tier design describes the
-        adaptor's input as "the live fact set for the subjects in play", and
-        §13.1 leaves the mechanism for deciding WHICH subjects — entity
-        resolution over `fact_entity.aliases` — explicitly open and unbuilt.
-        Rather than invent a resolution rule at the render site and have two
-        places disagree about what a subject is, this reads the tier's most
-        recent standing rows and lets the cap bound the cost.
-
-        It is defensible rather than merely expedient: the tier only ever holds
-        claims THIS workspace asserted and the Dreamer adjudicated, so it is
-        not a general world model whose rows would be off-topic by
-        construction. When entity resolution lands it NARROWS this — a strict
-        improvement, not a rewrite — and the caller stops passing a bare
-        workspace.
-
-        Separate from `standing_facts` rather than a defaulted parameter on it:
-        one takes a subject set and one deliberately has none, and a
-        `subject_ids=()` that meant "everything" would collide with
-        `standing_facts`' own documented behaviour, where an empty set returns
-        NOTHING (fail-closed, so a caller that resolved no subjects renders no
-        facts rather than all of them).
-        """
-        ...
-
-    async def fact_by_id(self, *, workspace: str, fact_id: str) -> Fact | None:
-        """One fact by id, standing or superseded. `None` if it does not
-        exist in `workspace` — never a proxy for "the store could not be
-        reached"."""
-        ...
-
-    async def facts_asserted_by(
-        self, *, workspace: str, person_id: str, limit: int,
-    ) -> tuple[Fact, ...]:
-        """Standing facts THIS person asserted, most recent first — 19 §6's
-        sender slice, and the first read the asserter junction exists for.
-
-        It grounds «you told us…», and it is the narrowest slice and the most
-        often empty, which is why its cap is the smallest. Never raises: it
-        runs beside the render.
-        """
-        ...
-
-    async def standing_subjects(self, *, workspace: str) -> tuple[str, ...]:
-        """Every DISTINCT subject the workspace's standing facts name.
-
-        The room slice's haystack-side input: the render site matches these
-        against the conversation's text rather than asking the database to,
-        because the matcher is `nora.domain.facts.mentions` and there is
-        exactly one of it — a SQL `LIKE` here would be a second definition of
-        what "mentions" means, and the two would drift on the first CJK case.
-
-        `()` on an unreachable store, for `standing_facts`' reason. Bounded by
-        the workspace's distinct subjects, which is small while it is small;
-        the cost is reported rather than assumed.
-        """
-        ...
-
-    async def standing_count(self, *, workspace: str) -> int | None:
-        """How many standing facts the workspace holds, for the extent line.
-
-        **Counts, never rows** (19 §6, 23 §3). Without it the block is a subset
-        presented as the whole, with no signal that more exists or that a verb
-        is worth reaching for — the defect the recency window had.
-
-        **`None` on an unreachable store, never `0`** (issue #71). This port
-        said `0` was "the honest degradation" and that "a wrong number here
-        would be a claim about the size of what she knows" — in the same
-        paragraph, because `0` IS that claim: it renders as «0 in all, all
-        shown», telling her she holds nothing about this room during an
-        outage, on the one line whose purpose is to say how much she has NOT
-        been shown. Its five sibling reads degrade to `()`, which is silence;
-        this one degraded to a confident number, and a wrong number is not
-        silence. The render omits the line on `None`.
-        """
-        ...
-
-    async def asserters(self, *, fact_id: str) -> tuple[FactAsserter, ...]:
-        """WHO claimed this fact, oldest first (`21-substrate-contract.md`
-        §7). `()` both for a fact nobody could be attributed to and for a
-        `fact_id` naming nothing.
-
-        **The two are deliberately not distinguished HERE**, unlike everywhere
-        else in this module: a caller of this verb is rendering, `§7.5` is
-        explicit that recording an asserter is not permission to say so, and a
-        renderer that branched on the difference would be deciding disclosure
-        from a read's shape. The distinction that matters — «nobody» versus «I
-        could not check» — is made where it can be acted on, at the WRITE, on
-        `nora_fact_asserter_total`.
-
-        Never raises, for `standing_facts`' reason: this runs beside the
-        render.
-        """
-        ...
-
-
-@runtime_checkable
-class FactCandidateReader(Protocol):
-    """The CANDIDATE tier's read half, and a separate port from `FactReader`
-    for the reason `FactReader`'s own docstring gives: a read verb belongs to
-    each tier's own interface, never to `DreamSink`, whose "two verbs and
-    deliberately no third" is the enforcement rather than a convention. It is
-    separate from `FactReader` as well because the two answer different
-    questions of different tables — «what do we believe» versus «what have we
-    not settled yet» — and a caller that renders facts into a turn has no
-    business being handed the unadjudicated pile.
-
-    **`pending` is the deterministic filter of the fact-tier design's §5, and
-    that filter is CODE, not a model.** One research loop per candidate is the
-    expensive step, so the order candidates come back in IS the cost decision:
-    contradictions of standing facts first (the tier's purpose), then
-    recurrence. An implementation that returns candidates in arbitrary order
-    still type-checks and still looks like it works — it just spends the
-    tick's budget on the wrong claims, silently.
-
-    **No never-raises promise, unlike `FactReader.standing_facts`.** That one
-    is on a tag's critical path, where silence beats a wrong answer and a
-    raised read cancels its siblings in a `asyncio.gather`. This one runs in
-    the Dreamer's background tick, where the caller is *waiting on the
-    answer to decide what to do*: degrading an unreachable store to `()` there
-    would say «there is nothing to adjudicate» when the truth is «I could not
-    check» — `unavailable` reported as `nothing_found`, the one substitution
-    R-27 exists to forbid. It raises, and the tick's own error handling
-    counts it.
-    """
-
-    async def pending(
-        self, *, workspace: str, limit: int,
-    ) -> tuple[FactCandidate, ...]:
-        """The candidates worth adjudicating in `workspace`, most valuable
-        first, capped at `limit`. Only `status == "pending"` is ever
-        returned — `not_covered` is the negative cache (§5.1) and returning
-        it would re-spend a research loop on the claim the tier already
-        failed to settle. `limit <= 0` yields `()`."""
         ...
 
 

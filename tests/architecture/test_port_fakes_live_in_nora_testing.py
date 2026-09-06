@@ -79,26 +79,11 @@ SHARED_FAKES = ROOT / "nora" / "testing" / "fakes.py"
 _NO_SHARED_FAKE = "NO_SHARED_FAKE: no nora/testing fake for this port yet"
 _DRIVES_THE_LOOP = "DRIVES_THE_LOOP: steers dream_loop's supervision, not the port's semantics"
 _ALLOWED: dict[str, str] = {
-    # RoomLanguageReader / RoomExchangeReader / RoomPortraitReader — the
-    # engagement block's four reads; production readers are the SQL stores.
-    "tests/test_acceptance_rules.py::_FakeLanguageReader": _NO_SHARED_FAKE,
-    "tests/test_acceptance_rules.py::_FakeExchangeReader": _NO_SHARED_FAKE,
-    "tests/unit/test_engagement_context.py::FakeLanguageReader": _NO_SHARED_FAKE,
-    "tests/unit/test_engagement_context.py::FakePortraitReader": _NO_SHARED_FAKE,
-    "tests/unit/test_room_portrait_synthesizer.py::_Reader": _NO_SHARED_FAKE,
-    # FactReader — `InMemoryFactStore` satisfies the port but records neither
-    # the call shape (workspace, limit, person) nor a `raises` switch, and the
-    # block's tests assert exactly those. Promote by teaching the store to record.
-    "tests/unit/test_engagement_context.py::_FakeFactReader": (
-        "FAULT_SWITCH_OVER_SHARED: InMemoryFactStore records no call shape and has "
-        "no fail switch; the fact-block tests assert both"
-    ),
     # SearchProvider / GifSource / SocialProvider — the web tier. The search
     # contract suite is envelope-driven (each vendor's real wire shape) and has
     # no in-memory implementation yet; `CannedSearchProvider` (evals) answers
     # every query `ok` and is not under it either.
     "tests/test_web_fetch_tool.py::_FakeSearchProvider": _NO_SHARED_FAKE,
-    "tests/unit/test_language_observer.py::FakeSearch": _NO_SHARED_FAKE,
     "tests/test_tools.py::_GifSource": _NO_SHARED_FAKE,
     "tests/test_social_fetch_tool.py::_FakeSocialProvider": _NO_SHARED_FAKE,
     # TrackSource / MusicToolBridge — nora/testing/music.py holds the two
@@ -117,17 +102,6 @@ _ALLOWED: dict[str, str] = {
         "FAULT_SWITCH_OVER_SHARED: composes InMemoryTurnVerdictStore to add a blind "
         "switch on latest_ungrounded"
     ),
-    # RoomConsolidator / RoomPortraitSynthesizer — dream_loop's supervision
-    # tests: what happens when a consolidator is slow, fails, or reports N
-    # appended rows. The shared in-suite fake is `_FakeRoomConsolidator` in
-    # tests/contract/test_room_consolidator_contract.py.
-    "tests/unit/test_runtime.py::SlowConsolidator": _DRIVES_THE_LOOP,
-    "tests/unit/test_runtime.py::RecordingConsolidator": _DRIVES_THE_LOOP,
-    "tests/unit/test_runtime.py::FailingConsolidator": _DRIVES_THE_LOOP,
-    "tests/unit/test_runtime.py::BadConsolidator": _DRIVES_THE_LOOP,
-    "tests/unit/test_runtime.py::AlwaysFailingConsolidator": _DRIVES_THE_LOOP,
-    "tests/unit/test_runtime.py::_CountingConsolidator": _DRIVES_THE_LOOP,
-    "tests/unit/test_runtime.py::_RecordingPortrait": _DRIVES_THE_LOOP,
 }
 
 

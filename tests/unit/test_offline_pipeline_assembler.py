@@ -1,5 +1,5 @@
-"""Proves `build_offline_pipeline`'s new collaborators (`notes`/`facts`/
-`standing`, threaded through `nora.app.assembler.build_assembler` — see
+"""Proves `build_offline_pipeline`'s remaining tier collaborators
+(`notes`/`standing`, threaded through `nora.app.assembler.build_assembler` — see
 `tests/architecture/test_assembler_parity.py` for the structural half of this
 guarantee) actually reach the model-visible prompt, not just that they are
 accepted as parameters and silently dropped somewhere on the way to
@@ -25,7 +25,6 @@ import pytest
 from nora.app.eval_support import TOOL_NAMES
 from nora.app.offline import build_offline_pipeline
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.facts import Fact, FactAsserter
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.standing import Standing
 from nora.obs.metrics import Metrics
@@ -35,7 +34,6 @@ from nora.testing import (
     FakeAgentRunner,
     FakeMemoryStore,
     FakeRecordStore,
-    InMemoryFactStore,
     InMemoryNoteStore,
     InMemoryStandingStore,
     ScriptedTurn,
@@ -76,7 +74,7 @@ def _omniroute_key(monkeypatch):
     """
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
 
-async def test_seeded_notes_facts_standing_render_in_the_assembled_prompt(
+async def test_seeded_notes_and_standing_render_in_the_assembled_prompt(
     tmp_path, example_config,
 ):
     cfg = example_config
@@ -107,25 +105,6 @@ async def test_seeded_notes_facts_standing_render_in_the_assembled_prompt(
         written_at=1, established_by="tag-seed",
     )
 
-    # Seeded onto the SENDER slice (`facts_asserted_by`, keyed on the
-    # attribution `seed_asserters` records) rather than the room slice
-    # (`standing_facts`, keyed on a substring match against the transcript) —
-    # deterministic, where a transcript-text match would tie this test to
-    # `mentions()`'s normalisation rules for no reason this file needs to care
-    # about.
-    facts_store = InMemoryFactStore()
-    fact_id = "33333333-0000-4000-8000-000000000003"
-    facts_store.seed_fact(Fact(
-        id=fact_id, workspace="nora",
-        subject_id="miles", predicate="prefers", object_entity_id=None,
-        object_literal="oat milk", warrant_kind="stated",
-        valid_from=1, created_at=1, instruction_sha256="a" * 64,
-        model="test-model", established_by="tag-seed",
-    ))
-    facts_store.seed_asserters(
-        FactAsserter(fact_id=fact_id, person_id="miles_novak", message_id=1, asserted_at=1),
-    )
-
     standing_store = InMemoryStandingStore()
     await standing_store.write(standing=Standing(
         platform="signal", conversation_id="g1",
@@ -144,7 +123,7 @@ async def test_seeded_notes_facts_standing_render_in_the_assembled_prompt(
         dispatcher, _, background, _trigger = build_offline_pipeline(
             cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
             doctrine_store=doctrine_store, runner=runner, metrics=metrics,
-            notes=notes_store, facts=facts_store, standing=standing_store,
+            notes=notes_store, standing=standing_store,
         )
         message = await adapter.parse(group_event(body="nora.000 hi"))
         assert message is not None
@@ -177,5 +156,3 @@ async def test_seeded_notes_facts_standing_render_in_the_assembled_prompt(
     # and description only", by design).
     assert "a tracked uncertainty" in rendered
     assert "whether the venue is booked" in rendered
-    assert "<facts " in rendered
-    assert "oat milk" in rendered

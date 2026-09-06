@@ -23,9 +23,9 @@ def test_config_example_exists_and_parses():
         "agent",
         "platforms", "llm", "memory", "store", "media", "route", "presence",
         "analytics", "shortener", "compute",
-        "search", "weather", "preview", "heartbeat", "reminders", "language",
+        "search", "weather", "preview", "heartbeat", "reminders",
         "speech", "social",
-        "facts", "notes", "standing", "music", "image_gen",
+        "notes", "standing", "music", "image_gen",
         "version", "engagement", "participation", "doctrine", "dreamer",
         "identity_file", "policy_file",
         "obs", "evals", "tools",
@@ -106,14 +106,6 @@ _MAY_DIFFER = {
     "obs.tracing.endpoint", "obs.tracing.exporter", "obs.tracing.headers_env",
     "evals.langfuse.host", "evals.langfuse.headers_env",
     "presence.refresh_url", "shortener.base_url", "notes.curator_enabled",
-    # `facts.embedding_url` is a HOST address like its neighbours above — this
-    # deployment reaches an Ollama on its own host gateway, and a fresh one
-    # has no reason to inherit that. Empty is the template's value on purpose:
-    # it is a real deployment (the tier runs on the lexical channel alone,
-    # counted as not_configured, never silently), so shipping empty leaves a
-    # new install working and less capable rather than pointing at a service
-    # it does not have.
-    "facts.embedding_url",
     # image_gen.enabled is the LIVE operator decision (2026-08-26: enabled
     # after live smoke on the subscription lane); the template stays the
     # ships-OFF default (DEC-43 posture) so a fresh deployment is inert by
@@ -150,7 +142,7 @@ _MAY_DIFFER = {
     # Nothing here can verify that — combo membership lives in the router — so
     # it is a convention, not a proof, and a lane retargeted in OmniRoute
     # without touching the template will not be caught.
-    "llm.model", "dreamer.model", "language.model",
+    "llm.model", "dreamer.model",
     "media.vision_model", "media.describe.image.model", "evals.judge_model",
     # Three live opt-ins, added 2026-08-27. Each is the deployment spending
     # something the template must not spend on a fresh operator's behalf, which
@@ -170,7 +162,7 @@ _MAY_DIFFER = {
     # holding a key, or speaking on a timer is an operator decision, never
     # something a copied file makes. The live deployment has opted in.
     "analytics.enabled", "compute.enabled", "evals.langfuse.enabled",
-    "heartbeat.enabled", "language.enabled", "language.verify_known_entities",
+    "heartbeat.enabled",
     "platforms.discord.enabled", "presence.enabled", "preview.enabled",
     "route.enabled", "search.enabled", "shortener.enabled",
     "tools.mcp.pulse.enabled", "weather.enabled", "speech.stt.enabled",
@@ -194,12 +186,11 @@ _MAY_DIFFER = {
     # deployment has opted OUT (operator, 2026-08-21) — `@mention` and
     # reply-to-her still engage her either way.
     "engagement.trigger.enabled",
-    # The Dreamer runtime and the fact tier, live here since 2026-08-21 and
-    # INERT in the template for the same reason as their neighbours above: the
-    # Dreamer spends model calls on a background clock and the fact tier writes
-    # claims into a block every tagged turn reads. A copied file must not do
-    # either without somebody deciding to.
-    "dreamer.enabled", "facts.enabled",
+    # The Dreamer runtime, live here since 2026-08-21 and INERT in the
+    # template for the same reason as its neighbours above: it spends model
+    # calls on a background clock. A copied file must not do that without
+    # somebody deciding to.
+    "dreamer.enabled",
     # RustFS media custody (DEC-136) and the Discord music bot (design/
     # discord-music/), both live here since 2026-08-23 for the same reason
     # as their neighbours above -- opted in by the operator, INERT in the

@@ -28,16 +28,12 @@ from nora.config import Config
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.ports import (
     EngagePolicy,
-    FactReader,
     MemoryStore,
     RecordStore,
-    RoomExchangeReader,
-    RoomLanguageReader,
-    RoomPortraitReader,
     RosterSource,
     StandingStore,
 )
-from nora.engagement.context import RenderedClaimWriter, StandingNotesReader
+from nora.engagement.context import StandingNotesReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.pipeline import IngestPipeline
@@ -71,16 +67,8 @@ def build_offline_pipeline(
     standing_event_wiring: Any = None,
     # The assembler's remaining collaborators (`nora.app.assembler.
     # build_assembler`), all optional and `None` by default so every existing
-    # caller keeps working unchanged. `language`/`exchange`/`portrait` stay
-    # `None` here even where a caller wires the others: production's own
-    # `[language] enabled = false` means both sides are `None` by construction
-    # today, and a caller that wants to exercise that tier passes its own.
-    language: RoomLanguageReader | None = None,
-    exchange: RoomExchangeReader | None = None,
-    portrait: RoomPortraitReader | None = None,
+    # caller keeps working unchanged.
     notes: StandingNotesReader | None = None,
-    facts: FactReader | None = None,
-    rendered: RenderedClaimWriter | None = None,
     standing: StandingStore | None = None,
     participation: ParticipationTrigger | None = None,
     extra_engage_policies: tuple[EngagePolicy, ...] = (),
@@ -96,7 +84,7 @@ def build_offline_pipeline(
     the split `build_dependencies` doesn't need since production always wants
     the real collaborators. The same is true of the assembler's own
     collaborators above: this module builds none of them (module docstring),
-    so a caller that wants `<notes>`/`<facts>`/`<standing>` to render passes
+    so a caller that wants `<notes>`/`<standing>` to render passes
     its own `nora.testing` in-memory doubles.
 
     `participation_runner` is the participation occasion's eval seam
@@ -135,8 +123,7 @@ def build_offline_pipeline(
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=permissive_policy(),
-        language=language, exchange=exchange, portrait=portrait,
-        notes=notes, facts=facts, rendered=rendered, standing=standing,
+        notes=notes, standing=standing,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -237,8 +224,6 @@ def build_offline_pipeline(
             preview_source=None,
             llm_state=None,
             tool_call_log_store=None,
-            room_language_max_entries=cfg.language.max_rendered_lexemes,
-            room_exchange_max_entries=cfg.language.max_rendered_exchanges,
             event_registry={
                 "reminder": reminder_occasion,
                 "gathering": gathering_occasion,
@@ -247,14 +232,11 @@ def build_offline_pipeline(
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The SAME tier stores the assembler above was handed: the
             # participation determination's prompt is supposed to carry
-            # whatever standing/notes/facts the room has — an eval whose
+            # whatever standing/notes the room has — an eval whose
             # FirePath read emptier tiers than its tag path would grade the
             # knowledge-cut cases against a prompt production never builds.
             notes=notes,
-            facts=facts,
             policy=permissive_policy(),
-            max_room_facts=cfg.facts.max_room_facts,
-            max_sender_facts=cfg.facts.max_sender_facts,
             participation_runner=participation_runner,
             # The §10.6 shadow mirror, mirrored from the composition root's
             # gating (the parity test pins these kwarg NAMES to production's):

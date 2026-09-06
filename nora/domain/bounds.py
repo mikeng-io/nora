@@ -19,9 +19,9 @@ applied in the CALLER, while the total was still in scope: `NoteCuratorAdaptor`
 `nora_note_curator_deferred_total` when more came back than it judged —
 `SqlNoteStore` itself takes no metrics collaborator (its own constructor's
 stated affordance), so this is a caller applying the SAME over-fetch-by-one
-probe this module hands to `audit.recent`/`fact_candidates.pending`, one layer
-up. Nobody in this repo has ever failed to count a bound they could see. They
-fail exactly when the bound is one layer down, in SQL.
+probe this module hands to `audit.recent`, one layer up. Nobody in this repo
+has ever failed to count a bound they could see. They fail exactly when the
+bound is one layer down, in SQL.
 
 **Counting the post-cut length is not a weaker version of this — it is a
 different measurement wearing its clothes.** `count=len(hits)` after a `LIMIT
@@ -54,8 +54,8 @@ It does NOT close **model** calibration. Turning "there was more" into text the
 model reads is per-site render work — `fact_render`'s extent line is the model
 of it — and follows separately. One change, two audiences, and only one of them
 is served class-wide. Saying so here rather than letting the next reader assume
-both: a `search_knowledge` result is still handed to the model as `ok` with no
-hint that its list was a ceiling.
+both: a bounded tool result is still handed to the model as `ok` with no hint
+that its list was a ceiling.
 
 THE REVERSAL CONDITION
 ----------------------
@@ -76,14 +76,15 @@ three ways — but an operator must read its always-1 as foreseen, not as a
 discovery. Its useful reading is the DAY it stops: a room whose transcript
 window suddenly fits is a room that went quiet or got pruned.
 
-`fact_candidates.pending` is the genuinely event-shaped one: it truncates only
-under real backlog, and it already ships the unbounded census this condition
-prescribes (`nora_fact_entity_unresolved`, set on every read and deliberately
-not derived from the page). `audit.recent` has no such companion, and that
-asymmetry is the thing to fix first if this series is ever to be read as a
-rate. An earlier draft of this paragraph had these two sites the wrong way
-round; the correction came from reading the config and the row counts rather
-than from the argument.
+`audit.recent` is the ONLY site wired today, and it is the one whose reading is
+always-1 — so this series carries no rate information at all right now. The
+companion it needs is an unbounded queue-DEPTH gauge, and it has none. That is
+the thing to fix first if this series is ever to be read as a rate.
+
+The second site, `fact_candidates.pending`, was the genuinely event-shaped one
+— truncating only under real backlog, and shipping the unbounded census this
+condition prescribes. It went with the knowledge tier. Its removal is why the
+paragraph above is the whole story rather than half of it.
 """
 
 from __future__ import annotations
@@ -108,7 +109,6 @@ T = TypeVar("T")
 # `tests/architecture/test_bounded_reads_are_counted.py` fails on one.
 BoundSite = Literal[
     "audit.recent",
-    "fact_candidates.pending",
 ]
 
 BOUND_SITES: frozenset[str] = frozenset(get_args(BoundSite))

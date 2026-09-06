@@ -855,51 +855,12 @@ async def test_the_dreamer_runs_on_a_model_that_can_stop(cfg):
     assert model.config["params"]["tool_choice"] == "auto"
 
 
-async def test_the_fact_adaptors_need_both_gates_on(cfg):
-    """`[dreamer]` decides whether the runtime EXISTS; `[facts]` decides
-    whether this tier is one of the things it runs. Two questions — an operator
-    turning on the research loop has not thereby asked for a fact store to
-    start filling — so neither flag alone produces an adaptor."""
-    dreamer_only = await build_dependencies(
-        override_config(cfg, {"dreamer.enabled": True})
-    )
-    facts_only = await build_dependencies(
-        override_config(cfg, {"facts.enabled": True})
-    )
-
-    assert dreamer_only.dream_adaptors == ()
-    assert facts_only.dream_adaptors == ()
-    assert facts_only.dreamer_runtime is None
-
-
-async def test_both_gates_on_builds_the_extractor_and_the_adjudicator(cfg):
-    deps = await build_dependencies(
-        override_config(cfg, {"dreamer.enabled": True, "facts.enabled": True})
-    )
-
-    names = [a.name for a in deps.dream_adaptors]
-    assert names == [
-        "fact-candidates", "fact-adjudication", "fact-entity-resolution",
-    ]
-    # The halves are keyed DIFFERENTLY, which is the whole reason `dream_loop`
-    # had to learn to schedule per adaptor: the extractor reads one room's
-    # messages, the adjudicator settles claims for a workspace, and pass 6
-    # reads the entity table for one — workspace-keyed and watermark-free for
-    # the adjudicator's reason, since its input is a table and not a batch.
-    assert [a.key_kind for a in deps.dream_adaptors] == [
-        "scope", "workspace", "workspace",
-    ]
-    assert [a.uses_watermark for a in deps.dream_adaptors] == [
-        True, False, False,
-    ]
-
-
-async def test_the_curator_is_additive_to_the_fact_tiers_adaptors(cfg):
-    """The two tiers are independent and an operator may run either alone, so
-    the note block must EXTEND whatever the fact block built rather than
-    replace it. Written because the fact block assigns `dream_adaptors` and the
-    note block appends to it — a future edit that assigns in both places would
-    drop one tier silently, and every other test here would stay green.
+async def test_the_curators_adaptors_are_appended_not_assigned(cfg):
+    """The note tier's blocks APPEND to `dream_adaptors` rather than assigning
+    it, so a future tier arriving beside them cannot drop one silently. The
+    knowledge tier's three adaptors used to be the other half of this test and
+    are deleted with it; the append discipline is what survives and is what a
+    new tier will land next to.
 
     Also covers what were `test_the_revisitor_needs_both_the_dreamer_and_the_
     notes_gate`/`test_the_revisitor_is_wired_and_is_not_silently_inert`/
@@ -914,12 +875,11 @@ async def test_the_curator_is_additive_to_the_fact_tiers_adaptors(cfg):
     `NoteEntityResolutionAdaptor`'s own module docstring for why it has no
     flag of its own."""
     deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "facts.enabled": True, "notes.enabled": True,
+        "dreamer.enabled": True, "notes.enabled": True,
         "notes.curator_enabled": True,
     }))
 
     assert [a.name for a in deps.dream_adaptors] == [
-        "fact-candidates", "fact-adjudication", "fact-entity-resolution",
         "note-curation", "note-entity-resolution",
     ]
 
@@ -932,9 +892,10 @@ async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg):
     absence of an exception."""
     from nora.agent.registry import ToolRegistry
 
-    deps = await build_dependencies(
-        override_config(cfg, {"dreamer.enabled": True, "facts.enabled": True})
-    )
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True,
+        "notes.curator_enabled": True, "notes.candidates_enabled": True,
+    }))
 
     ceiling = ToolRegistry().read_only_tools()
     for adaptor in deps.dream_adaptors:
@@ -1146,12 +1107,11 @@ async def test_every_watermark_free_adaptor_that_is_wired_has_a_schedule(cfg):
     gets a deliberate schedule or fails here.
 
     A watermark-BEARING adaptor is exempt: it has a cursor to age, and no
-    entry means the shared `[language]` lag/quiet/age shape, which is a real
+    entry means the shared `[dreamer]` lag/quiet/age shape, which is a real
     schedule rather than every-tick.
     """
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True,
-        "facts.enabled": True,
         "notes.enabled": True,
         "notes.curator_enabled": True,
     }))
@@ -1164,34 +1124,6 @@ async def test_every_watermark_free_adaptor_that_is_wired_has_a_schedule(cfg):
         "watermark-free adaptor(s) with no AdaptorSchedule — each one runs on "
         f"the bare 5-minute tick: {unscheduled}"
     )
-
-
-async def test_the_knowledge_tiers_three_passes_run_daily_at_distinct_phases(cfg):
-    """The ordering, which is the offsets and nothing else. `dream_loop`
-    dispatches adaptors CONCURRENTLY (design 33 §6 M6), so equal intervals
-    alone would leave the three coinciding every day and a claim extracted in
-    the morning would wait until tomorrow to be adjudicated.
-
-    `fact-candidates` is watermark-BEARING and has no slot to place — it fires
-    on `lag > 0` AND a 24h-old watermark — so only the two watermark-free
-    passes carry an offset, and they must not share one.
-    """
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
-        "facts.enabled": True,
-    }))
-
-    adjudication = deps.dream_schedules["fact-adjudication"]
-    resolution = deps.dream_schedules["fact-entity-resolution"]
-
-    assert adjudication.min_interval_seconds == 86400
-    assert resolution.min_interval_seconds == 86400
-    assert adjudication.phase_offset_seconds == 6 * 3600
-    assert resolution.phase_offset_seconds == 7 * 3600
-    assert (
-        adjudication.phase_offset_seconds != resolution.phase_offset_seconds
-    ), "same offset collapses the two passes back onto one tick"
-    assert deps.dream_schedules["fact-candidates"].min_interval_seconds == 86400
 
 
 async def test_the_curator_reads_the_day_from_the_operators_timezone(cfg):
@@ -1269,90 +1201,17 @@ async def test_all_three_gates_on_builds_note_candidates(cfg):
     assert schedule.min_interval_seconds == 3600, "hourly (design 33 §5)"
 
 
-async def test_note_candidates_needs_no_fact_tier_to_build(cfg):
+async def test_note_candidates_builds_its_own_workspace_resolver(cfg):
     """`workspace_for` is built fresh under the notes gate rather than reused
-    from the `[facts]` block above it — this must not depend on `[facts]`
-    having run at all."""
+    from another tier's block — this must not depend on any other tier having
+    run at all."""
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True,
         "notes.enabled": True,
         "notes.candidates_enabled": True,
-        "facts.enabled": False,
     }))
 
     assert any(a.name == "note-candidates" for a in deps.dream_adaptors)
-
-
-async def test_a_missing_veto_file_refuses_to_start_readably(cfg, tmp_path):
-    """**A refusal the operator can read**, not a traceback.
-
-    `load_veto_list` refuses a configured-but-missing path on purpose — a
-    mount that failed to attach must not read as "nothing vetoed". But the
-    call was inline and unwrapped, so `FileNotFoundError` propagated out of
-    `build_dependencies` through `build_app` to `asyncio.run`, and
-    `__main__` catches `StartupError` only. The operator got a Python
-    traceback.
-
-    Every neighbouring step in this function converts, and the `[facts]` cap
-    check's own comment names a raw exception escaping from here as "the one
-    boot failure in this function with no operator-readable message". This
-    was that exception.
-
-    The message text is asserted too, not merely the type: the whole value of
-    the refusal is that it distinguishes «no list configured» from «the list
-    you configured is not there», and a `StartupError` that lost that
-    sentence would be a readable message saying nothing.
-    """
-    missing = tmp_path / "not-there" / "veto.txt"
-
-    with pytest.raises(StartupError, match="veto_file") as caught:
-        await build_dependencies(override_config(cfg, {
-            "facts.enabled": True,
-            "facts.veto_file": missing,
-        }))
-
-    assert "failed to mount" in str(caught.value)
-
-
-async def test_the_knowledge_tier_is_wired_and_not_merely_granted(cfg):
-    """**A capability she is told she has and cannot use is the phantom-metric
-    rule one layer up, and it costs tokens on every request.**
-
-    `search_knowledge` was in `NATIVE_TOOLS` unconditionally while composition
-    constructed none of it — so the tool went into every model call's schema,
-    `ToolRegistry.capability()` rendered "searches what she knows by meaning
-    as well as by words, across languages" into the doctrine block
-    immediately above the closed-world clause telling her that list is the
-    WHOLE of what she can do, and the verb could only ever answer
-    `unavailable`.
-
-    Asserted through `build_dependencies` against a real database rather than
-    by grepping the composition source, because the failure was that the wire
-    did not exist and a grep would have found the tool name either way.
-    """
-    deps = await build_dependencies(override_config(cfg, {
-        "facts.enabled": True,
-        "facts.embedding_url": "http://127.0.0.1:1/nowhere",
-    }))
-
-    registry = deps.engagement._tool_registry
-    assert registry._knowledge is not None, (
-        "the retrieval verb must have a collaborator behind it, or the grant "
-        "is a capability she cannot use"
-    )
-    assert registry._workspace_for is not None, (
-        "and a workspace resolver of its own, so it does not depend on the "
-        "note tier being wired"
-    )
-
-
-async def test_the_knowledge_tier_stays_dark_with_the_flag_off(cfg):
-    """The other half, and the reason the grant is safe: with `[facts]` off
-    nothing is constructed, so the tool answers `unavailable` for the honest
-    reason rather than because a wire is missing."""
-    deps = await build_dependencies(cfg)
-
-    assert deps.engagement._tool_registry._knowledge is None
 
 
 async def test_the_dreamer_model_is_built_with_the_dreamers_own_effort(cfg):

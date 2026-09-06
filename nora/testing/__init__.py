@@ -37,29 +37,6 @@ port (`ComputeJobStore`, Nora Compute spec §4) rather than one of
 `nora.infra.sql.compute_jobs.SqlComputeJobStore` by
 `tests/contract/test_compute_job_store_contract.py`.
 
-`InMemoryFactStore` (`DreamSink` + the fact tier's own `FactReader`) is bound
-to `nora.infra.sql.facts.SqlFactStore` by
-`tests/contract/test_dream_sink_contract.py`, and lives in its own module
-(`nora.testing.fact_store`) rather than `fakes.py` because it ships alongside
-`fact_proposal_factory` — a builder for a valid `Proposal` another tier's own
-contract suite hands to *its own* store to prove a foreign payload is
-refused, which only stays usable there if it is domain-only.
-
-`InMemoryFactCandidateStore` (`DreamSink` + `FactCandidateReader`) is the same
-arrangement one table over, bound to
-`nora.infra.sql.fact_candidates.SqlFactCandidateStore` by
-`tests/infra/test_fact_candidate_store.py`, which is parametrized over both
-and asserts every refusal and the whole of §5's selection filter against
-each. It ships with `fact_candidate_proposal_factory` for the same reason its
-fact-tier sibling does. It is NOT in
-`tests/contract/test_dream_sink_contract.py`'s `IMPLEMENTATIONS` — neither
-implementation of this tier is, and that is a reported gap rather than an
-oversight: three of that suite's shared assertions read back columns
-`fact_candidate` does not have (`instruction_sha256`/`model`, a successor, a
-supersession warrant), so joining could not be the "genuinely one entry" that
-file's docstring promises without a schema change this branch is not
-permitted to make.
-
 `InMemoryStandingStore` is the same rule again for Standing, bound to
 `nora.infra.sql.standing.SqlStandingStore` by
 `tests/contract/test_standing_store_contract.py`. Its one production refusal
@@ -71,7 +48,7 @@ objects rather than dicts.
 `tests/contract/test_note_store_contract.py`. It lives in its own module
 (`nora.testing.note_store`) alongside `NoteCandidate`, the dataclass shape of a
 `note_candidate` row, which the suite reads back to check the miss cache
-accumulates. Like `InMemoryFactStore` it makes its production sibling's
+accumulates. Like `InMemoryStandingStore` it makes its production sibling's
 refusals rather than accepting everything — the compare-and-swap on a note's
 head is the one that matters: a fake that took a stale parent would turn a
 missing guarantee into a passing gate.
@@ -105,11 +82,6 @@ from nora.testing.eval_backends import (
     CannedTransitSource,
     CannedWeatherProvider,
 )
-from nora.testing.fact_candidate_store import (
-    InMemoryFactCandidateStore,
-    fact_candidate_proposal_factory,
-)
-from nora.testing.fact_store import InMemoryFactStore, fact_proposal_factory
 from nora.testing.fakes import (
     FakeAdapter,
     FakeArtifactIngest,
@@ -176,16 +148,12 @@ __all__ = [
     "FakeToolCallLogStore",
     "FakeTranscriber",
     "InMemoryDreamScheduleClock",
-    "InMemoryFactCandidateStore",
-    "InMemoryFactStore",
     "InMemoryNoteStore",
     "InMemoryStandingStore",
     "InMemoryTurnVerdictStore",
     "NoteCandidate",
     "ScriptedModel",
     "ScriptedTurn",
-    "fact_candidate_proposal_factory",
-    "fact_proposal_factory",
     "group_event",
     "limit_stop_reason",
     "transcript_rows",

@@ -608,19 +608,16 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
     }
     # The workspace-safe half is `WORKSPACE_SAFE_TOOLS` itself, read from the
     # module. Since design/dreamer-agent-loop/32 §3.4 that set includes the
-    # eight workspace-scoped reads this test used to hold HERE, fail-closed:
-    # `search_knowledge`, `note_read`, `note_search` (they resolved their
-    # workspace THROUGH THE ROOM, and the Dreamer's synthetic room could never
-    # answer that) and the five reads that shipped WITH the fix
-    # (`get_knowledge`, `knowledge_premises`, `knowledge_asserters`,
-    # `knowledge_entity`, `search_memory_workspace`). They moved when the key
+    # workspace-scoped reads this test used to hold HERE, fail-closed:
+    # `note_read`/`note_search` resolved their workspace THROUGH THE ROOM and
+    # the Dreamer's synthetic room could never answer that, and
+    # `search_memory_workspace` shipped WITH the fix. They moved when the key
     # path became SUPPLIED — `DreamerRuntime.run` hands a workspace-keyed
     # adaptor's key to the tool layer AS the workspace — which is exactly the
-    # move these entries' own comments said to make.
+    # move these entries' own comments said to make. The knowledge tier's five
+    # verbs were here too and went with that tier.
     workspace_scoped = {
-        "search_knowledge", "note_read", "note_search",
-        "get_knowledge", "knowledge_premises", "knowledge_asserters",
-        "knowledge_entity", "search_memory_workspace",
+        "note_read", "note_search", "search_memory_workspace",
     }
     assert workspace_scoped <= WORKSPACE_SAFE_TOOLS, (
         "a workspace-scoped read fell out of WORKSPACE_SAFE_TOOLS — 32 §3.4 "

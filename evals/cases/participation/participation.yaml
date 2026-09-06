@@ -1,6 +1,12 @@
-# The participation suite (design/dreamer-agent-loop/35 §9): 15 cases —
-# 5 relevance-Yes (S1a-S5a), their 5 knowledge-cut twins (S1b-S5b), and 5
-# pure-No (S6-S10).
+# The participation suite (design/dreamer-agent-loop/35 §9): 11 cases —
+# 3 relevance-Yes, their 3 knowledge-cut twins, and 5 pure-No (S6-S10).
+#
+# There were 15. Two twin pairs (S1 "fact-lookup", S4 "correction") were
+# grounded in the KNOWLEDGE TIER, which is deleted: with no fact seed there is
+# no grounding for the -known half to draw on, so the pair could not flip and
+# a case that cannot flip measures nothing. Deleted with the tier rather than
+# rewritten onto another tier's seed, which would have been a different case
+# wearing the old name.
 #
 # Each case is `transcript + standing seed + incoming -> expected verdict`.
 # The incoming `input` is UNTAGGED by construction (that is what makes it a
@@ -16,31 +22,6 @@
 #
 # Seed keys are documented on `nora.app.eval_support.seed_from_dict`; all tier
 # rows land in the eval workspace ("nora") from there, never keyed by hand.
-
-# --- S1: the question nobody answered -------------------------------------
-
-- name: fact-lookup-known
-  input: "does anyone know when AWS Community Day 2026 is?"
-  expect: speak
-  seed:
-    transcript:
-      - "喂 autumn 有咩 tech event 值得去?"
-      - "AWS Community Day 應該就快嘅"
-    facts:
-      - subject: "AWS Community Day"
-        predicate: "is scheduled for"
-        object: "October 26, 2026 at IVE (Tsing Yi)"
-        asserter: miles_novak
-
-- name: fact-lookup-unknown
-  input: "does anyone know when AWS Community Day 2026 is?"
-  expect: silence
-  seed:
-    transcript:
-      - "喂 autumn 有咩 tech event 值得去?"
-      - "AWS Community Day 應該就快嘅"
-    # NO fact — the knowledge cut. Same message, same transcript: the verdict
-    # must flip to silence.
 
 # --- S2: the stalled question ----------------------------------------------
 
@@ -91,29 +72,6 @@
       - {name: "Grant", body: "上次話咗要訂嗰間 tapas 啦"}
     # NO standing — the knowledge cut: with no position saying she owes the
     # room an answer, the question is not hers to pick up.
-
-# --- S4: the correction ------------------------------------------------------
-
-- name: correction-known
-  input: "AWS Community Day is Oct 23 this year right?"
-  expect: speak
-  seed:
-    transcript:
-      - "喂 autumn 有咩 tech event 值得去?"
-    facts:
-      - subject: "AWS Community Day"
-        predicate: "is scheduled for"
-        object: "October 26, 2026 at IVE (Tsing Yi)"
-        asserter: miles_novak
-
-- name: correction-unknown
-  input: "AWS Community Day is Oct 23 this year right?"
-  expect: silence
-  seed:
-    transcript:
-      - "喂 autumn 有咩 tech event 值得去?"
-    # NO fact — the knowledge cut: she holds nothing that contradicts the
-    # claim, so the claim stands uncorrected.
 
 # --- S5: the planning-context question ---------------------------------------
 

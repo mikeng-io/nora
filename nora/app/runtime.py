@@ -42,7 +42,7 @@ from typing import Any, Protocol
 from .. import tag as tag_module
 from ..agent.dreamer import AdaptorSchedule
 from ..domain.models import TranscriptRow
-from ..domain.ports import DreamAdaptor, RoomConsolidator, RoomPortraitSynthesizer
+from ..domain.ports import DreamAdaptor
 from ..obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.runtime")
@@ -278,16 +278,16 @@ class _ConsolidationCursor(Protocol):
     call — the cursor/measurement surface, never the append/rescore/read one.
 
     `_SinceReadable`'s own docstring makes this argument for `RecordStore`;
-    it applies MORE strongly here, not less. The concrete `SqlLanguageStore`
-    also hands out `append_observations`, `rescore` and `room_language` — the
-    surface `LanguageConsolidator` owns, not this loop — and an accidental
-    call to any of them from here would bypass this whole module's central
-    invariant (watermark-last, in the same "cycle" as the consolidator's own
-    append) with nothing to catch it. There is no existing named port for
-    this surface: `RoomLanguageReader` covers only `room_language`, the ONE
-    method this Protocol deliberately excludes. Narrowing to exactly what is
-    called is what makes that exclusion a fact a type checker enforces,
-    rather than a habit a future edit could quietly break.
+    it applies MORE strongly here, not less. The concrete store used to hand
+    out `append_observations`/`rescore`/`room_language` beside these six — the
+    room-language tier's own surface, not this loop's — and an accidental call
+    to any of them from here would have bypassed this module's central
+    invariant (watermark-last, in the same cycle as the adaptor's own write)
+    with nothing to catch it. That tier is deleted and the store is now the
+    cursor and nothing else, so the narrowing costs nothing today; it stays
+    because the NEXT thing added to that store will not be the cursor's, and
+    naming exactly what is called is what makes the exclusion a fact a type
+    checker enforces rather than a habit a future edit could quietly break.
     """
 
     async def watermark_for(self, *, consolidator_name: str, scope_id: str) -> int: ...
@@ -558,14 +558,15 @@ async def _dream_adaptor_once(
     clock: _ScheduleClock | None = None,
     now_ms: int | None = None,
 ) -> str | None:
-    """One adaptor, one key, one cycle — `_dream_once`'s shape generalised off
-    the hardcoded `"language"` cursor and off `RoomConsolidator`.
+    """One adaptor, one key, one cycle — the room consolidators' cycle
+    generalised off their hardcoded `"language"` cursor and off the
+    `RoomConsolidator` port, both of which are deleted.
 
     An adaptor with `uses_watermark = False` gets NO watermark, lag, quiet or
-    age condition and runs on every tick with an empty batch;
-    `RoomPortraitSynthesizer` is the standing precedent for a dream-loop
-    participant with none of those, and the fact adaptor is the second — its
-    input is the candidate table, not a raw-message proxy for it. The ONE
+    age condition and runs on every tick with an empty batch. That is the
+    right shape whenever an adaptor's real input is a TABLE rather than a
+    message batch — a raw-message proxy for it would fire on the wrong
+    signal. The ONE
     exception is a watermark-free adaptor with an `AdaptorSchedule` entry: it
     fires on a daily SLOT rather than on backlog, because there is no
     watermark to age and no lag to read (design/dreamer-agent-loop/33 §5 N1a).
@@ -743,10 +744,10 @@ async def _dream_adaptor_once(
 
 async def dream_loop(
     record: _SinceReadable, language: _ConsolidationCursor,
-    consolidators: Sequence[RoomConsolidator], metrics: Metrics, *,
+    metrics: Metrics, *,
     scopes: Callable[[], Sequence[str]], tick_seconds: float,
     safety_lag: int, quiet_seconds: float, max_age_seconds: float,
-    batch_limit: int, portrait: RoomPortraitSynthesizer | None = None,
+    batch_limit: int,
     instructions: _InstructionVersions | None = None,
     adaptors: Sequence[DreamAdaptor] = (),
     runtime: _AdaptorRunner | None = None,
@@ -947,65 +948,22 @@ async def dream_loop(
         finally:
             running.discard(unit)
 
-    async def _run_one(scope_id: str) -> None:
-        try:
-            await _dream_once(
-                record=record, language=language, consolidators=consolidators,
-                metrics=metrics, scope_id=scope_id, safety_lag=safety_lag,
-                quiet_seconds=quiet_seconds, max_age_seconds=max_age_seconds,
-                batch_limit=batch_limit, portrait=portrait,
-            )
-            failures.pop(scope_id, None)
-            last_failure_at.pop(scope_id, None)
-        except Exception:
-            log.exception("dream cycle failed for %s", scope_id)
-            metrics.inc("nora_errors_total", stage="dream")
-            failures[scope_id] = failures.get(scope_id, 0) + 1
-            last_failure_at[scope_id] = time.monotonic()
-        finally:
-            running.discard(scope_id)
-
     try:
         while True:
             await asyncio.sleep(tick_seconds)
             _log_instruction_versions(instructions)
-            for scope_id in scopes():
-                if scope_id in running:
-                    # A slow extraction is still going. Skipping is the whole
-                    # guarantee: re-entering would read the same un-advanced
-                    # watermark and append the same evidence twice, and the
-                    # rendered «12x, 3 people» would be a fabricated number.
-                    metrics.inc("nora_dream_skipped_total", reason="in_flight")
-                    continue
-                if failures.get(scope_id) and not _backoff_elapsed(
-                    scope_id, failures[scope_id], last_failure_at,
-                ):
-                    continue
-                running.add(scope_id)
-                task = asyncio.create_task(_run_one(scope_id))
-                tasks.add(task)
-                task.add_done_callback(tasks.discard)
             if runtime is None:
                 continue
             for adaptor in adaptors:
                 for key in _keys_for(adaptor):
                     # `unit`, not `key`: the lock, the failure count and the
                     # backoff are all per (adaptor, key) — see the SIXTH note.
-                    # Sharing the `running` set with the consolidator path is
-                    # safe because a consolidator entry is a bare `scope_id`
-                    # and an adaptor entry always carries a `:`; an adaptor
-                    # named to collide with a scope id would be caught by the
-                    # runtime's own per-adaptor metric labels long before this
-                    # mattered, and nothing here can invent one.
                     unit = f"{adaptor.name}:{key}"
                     if unit in running:
                         # A DISTINCT reason value rather than a new label:
                         # `nora_dream_skipped_total` carries `("reason",)` and
                         # nothing else, and adding a label to a live series
-                        # breaks whatever is summing it. Without this, an
-                        # adaptor stuck for hours and a consolidator stuck for
-                        # hours are the same number on the one series that
-                        # answers «is the Dreamer wedged?» (2026-08-21 review).
+                        # breaks whatever is summing it.
                         metrics.inc(
                             "nora_dream_skipped_total",
                             reason="in_flight_adaptor")
@@ -1039,97 +997,3 @@ async def dream_loop(
         for task in pending:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-
-
-async def _dream_once(
-    *, record: _SinceReadable, language: _ConsolidationCursor,
-    consolidators: Sequence[RoomConsolidator], metrics: Metrics, scope_id: str,
-    safety_lag: int, quiet_seconds: float, max_age_seconds: float, batch_limit: int,
-    portrait: RoomPortraitSynthesizer | None = None,
-) -> None:
-    watermark = await language.watermark_for(
-        consolidator_name="language", scope_id=scope_id)
-
-    # The fail-closed tell. A watermark below the oldest surviving row means
-    # messages were deleted before they were ever read — R-27's `unavailable`
-    # («I could not see those»), never `nothing_found` («nothing happened»).
-    # Structurally zero while `store.prune_enabled` is false; this is what
-    # notices if anyone turns the sweep back on.
-    if await language.watermark_is_behind_the_record(
-            scope_id=scope_id, watermark=watermark):
-        metrics.inc("nora_dream_evidence_lost_total", scope=scope_id)
-
-    lag = await language.lag(scope_id=scope_id, after_id=watermark)
-    quiet = await language.seconds_since_last_message(scope_id=scope_id)
-    age = await language.watermark_age_seconds(
-        consolidator_name="language", scope_id=scope_id)
-
-    fires = (
-        lag > safety_lag
-        or (lag > 0 and quiet >= quiet_seconds)
-        or age >= max_age_seconds      # fires at lag == 0 ON PURPOSE
-    )
-    if not fires:
-        return
-
-    batch = await record.since(
-        conversation_id=scope_id, after_id=watermark, limit=batch_limit)
-
-    appended_total = 0
-    for consolidator in consolidators:
-        # An empty batch still reaches the consolidator, which still rescores.
-        # Decay is TIME-driven: two of the three fire conditions need lag > 0,
-        # so without this a dormant room never fades a word and its lexicon
-        # stays `live` describing a slang era that ended months ago.
-        appended_total += await consolidator.consolidate(scope_id=scope_id, batch=batch)
-
-    if batch:
-        # LAST, and after the appends have committed. The unsafe direction is
-        # watermark-first: a crash between the two loses that range forever,
-        # with nothing able to notice — `nora_dream_evidence_lost_total` above
-        # measures the PRUNING case and is structurally blind to this one.
-        # Append-first plus the natural-key constraint makes a retry a no-op
-        # instead, so over-reading is the safe failure and under-reading is not.
-        await language.advance_watermark(
-            consolidator_name="language", scope_id=scope_id,
-            last_message_id=batch[-1].id,
-        )
-    else:
-        # PLAN DEFECT found and fixed: without this, the 24h/age-only firing
-        # (the ONE condition that fires at `lag == 0`) is a LATCH with no
-        # reset. `watermark_age_seconds` reads `updated_at`, and — before this
-        # branch existed — `updated_at` was written ONLY by the `if batch:`
-        # arm above, which an empty batch never reaches. So a scope that has
-        # never been consolidated stays at `age = inf` forever (fires every
-        # tick, and can never write a row to stop it), and a scope that WAS
-        # consolidated once and then went dormant fires once at 24h and then
-        # NEVER STOPS FIRING — `updated_at` stays pinned at its old value,
-        # `age` never drops back under `max_age_seconds`, and a background job
-        # meant to run once a day instead reruns a full `rescore` on every
-        # tick forever (288x/day at the shipped 300s cadence), unattended.
-        # Refresh the row at the SAME `last_message_id` (the watermark did not
-        # move — nothing was appended, so there is nothing to lose) purely to
-        # reset the clock `watermark_age_seconds` reads. `advance_watermark`'s
-        # own natural key makes this an idempotent no-op on the CURSOR value;
-        # only `updated_at` changes.
-        await language.advance_watermark(
-            consolidator_name="language", scope_id=scope_id,
-            last_message_id=watermark,
-        )
-
-    # Dreamer Plan 3 (2026-08-20 room-portrait design). Triggered on the REAL
-    # property — did Plan 1/2 actually append new evidence this cycle — not a
-    # raw-message proxy for it (see `dream_loop`'s FOURTH docstring note and
-    # the design doc's "Trigger shape" for why this is not a `RoomConsolidator`
-    # sharing the lag/quiet/age conditions above). Own try/except: a portrait
-    # failure is independent of Plan 1/2's own health and must not trigger
-    # THEIR backoff (`_run_one`'s `except Exception` catches everything this
-    # function raises, so leaving this unguarded would couple an unrelated
-    # concern into Plan 1/2's failure count) — nor must it block the watermark
-    # advance above, which has already happened by the time this runs.
-    if portrait is not None and appended_total > 0:
-        try:
-            await portrait.synthesize(scope_id=scope_id)
-        except Exception:
-            log.exception("portrait synthesis failed for %s", scope_id)
-            metrics.inc("nora_errors_total", stage="portrait")

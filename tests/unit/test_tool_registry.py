@@ -103,12 +103,9 @@ def test_the_registry_exposes_every_declared_tool():
         "note_read", "note_search", "note_create", "note_update",
         # The remember verb — the conclusion write lane (2026-08-30).
         "remember",
-        # The knowledge tier's retrieval verb (23 §9) and its graph reads
-        # (design/dreamer-agent-loop/32 §3.4), plus the workspace-wide memory
-        # variant built for the Dreamer's workspace key.
-        "search_knowledge",
-        "get_knowledge", "knowledge_premises", "knowledge_asserters",
-        "knowledge_entity", "search_memory_workspace",
+        # The workspace-wide memory variant, built for the Dreamer's
+        # workspace key.
+        "search_memory_workspace",
     }
 
 
@@ -262,16 +259,9 @@ def test_budgets_match_todays_table():
         # model looping on a tool it should have trusted to have worked (the
         # remember verb's write lane, 2026-08-30).
         "remember": 1,
-        "search_knowledge": 2,
-        # The knowledge tier's graph verbs and the workspace-wide memory
-        # variant (32 §3.4). `get_knowledge`/`knowledge_entity` are 3 like
-        # `note_read` (one lookup answers, a second and third cover the other
-        # spelling); the two edge verbs are 2 like `note_search` (one call
-        # per fact under review, one refinement after a misread id);
         # `search_memory_workspace` is 4 like its room-scoped sibling — the
         # same verb at a wider scope, the same sizing.
-        "get_knowledge": 3, "knowledge_premises": 2, "knowledge_asserters": 2,
-        "knowledge_entity": 3, "search_memory_workspace": 4,
+        "search_memory_workspace": 4,
     }
 
 
@@ -623,13 +613,11 @@ READ_ONLY = frozenset({
     # The two parking verbs (2026-08-31): live reads that act on nothing —
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",
-    "note_read", "note_search", "search_knowledge",
-    # The knowledge tier's graph reads and the workspace-wide memory variant
-    # (design/dreamer-agent-loop/32 §3.4) — all pure reads of stores the tag
-    # path already trusts, granted to the Dreamer's workspace-keyed
-    # adjudicator through `WORKSPACE_SAFE_TOOLS`.
-    "get_knowledge", "knowledge_premises", "knowledge_asserters",
-    "knowledge_entity", "search_memory_workspace",
+    "note_read", "note_search",
+    # The workspace-wide memory variant — a pure read of a store the tag path
+    # already trusts, granted to a workspace-keyed adaptor through
+    # `WORKSPACE_SAFE_TOOLS`.
+    "search_memory_workspace",
     "music_status",
     # DEC-151: social_fetch is a pure read at all three layers — the tool's
     # closed vocabulary, the bridge's host-side allowlist, this declaration.

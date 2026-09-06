@@ -39,7 +39,6 @@ from nora.domain.models import (
     ConversationTarget,
     NormalizedMessage,
     PersonRef,
-    Quote,
 )
 from nora.domain.ports import (
     EngageDecision,
@@ -274,10 +273,8 @@ def _build_pipeline(
     tool_registry=None,
     queue_max: int = 16,
     policy=None,
-    room_language_max_entries=None,
     tag_trace_store=None,
     debrief_wiring=None,
-    recogniser=None,
 ):
     # Always a real (fake) store, never `None`: every scenario below can read
     # `pipeline._tag_trace_store.saved` (mirroring how `pipeline._slots` is
@@ -295,8 +292,6 @@ def _build_pipeline(
         the_adapter = adapter or _FakeAdapter()
         adapters = {the_adapter.platform: the_adapter}
     extra = {}
-    if room_language_max_entries is not None:
-        extra["room_language_max_entries"] = room_language_max_entries
     pipeline = EngagementPipeline(
         adapters=adapters,
         audit=audit,
@@ -322,7 +317,6 @@ def _build_pipeline(
         policy=policy if policy is not None else permissive_policy(),
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
-        recogniser=recogniser,
         **extra,
     )
     return pipeline, metrics, audit, memory, background
@@ -2111,27 +2105,6 @@ async def test_an_unwired_platform_refuses_rather_than_picking_an_adapter():
     )
 
 
-async def test_the_configured_room_language_render_cap_reaches_build_prefill(monkeypatch):
-    """Task 11: `[language].max_rendered_lexemes` is inert unless it actually
-    reaches `build_prefill`'s `room_language_max_entries` — this is what
-    proves the wiring, not merely that the constructor accepts the
-    parameter."""
-    from nora.engagement import pipeline as pipeline_module
-
-    captured: list[int] = []
-    real_build_prefill = pipeline_module.build_prefill
-
-    def _spy(*args, **kwargs):
-        captured.append(kwargs["room_language_max_entries"])
-        return real_build_prefill(*args, **kwargs)
-
-    monkeypatch.setattr(pipeline_module, "build_prefill", _spy)
-    pipeline, *_ = _build_pipeline(room_language_max_entries=1)
-    await pipeline.run(_request())
-
-    assert captured == [1]
-
-
 # ---------------------------------------------------------------------------
 # The debrief stage's wiring (design/dreamer-agent-loop/26-standing, R-69).
 #
@@ -2852,81 +2825,3 @@ async def test_a_queued_tag_with_no_carried_context_starts_its_own_trace(exporte
                    and s.attributes["nora.tag_id"] == "t2")
     assert t2_turn.parent is None, "an un-carried queued tag is its own root"
     assert t2_turn.context.trace_id != t1_root.context.trace_id
-
-
-# ---------------------------------------------------------------------------
-# recognition wiring: what `quotes_nora` is computed FROM
-# ---------------------------------------------------------------------------
-
-
-class _RecordingRecogniser:
-    """Records the kwargs, and nothing else. The unit under test here is the
-    PIPELINE's computation of `quotes_nora`, not what recognition does with
-    it — `tests/unit/test_recognition.py` owns the latter."""
-
-    def __init__(self) -> None:
-        self.calls: list[dict] = []
-
-    async def recognise(self, **kw) -> int:
-        self.calls.append(kw)
-        return 0
-
-
-class _Identity:
-    def __init__(self, aliases: frozenset[str]) -> None:
-        self.aliases = aliases
-
-
-def _quoting(author_id: str) -> NormalizedMessage:
-    return NormalizedMessage(
-        platform="signal", conversation_id="g1", conversation_type="group",
-        sender_id="+852111", sender_name="Miles", timestamp=1,
-        body="唔係呀", raw={},
-        quote=Quote(author_id=author_id, text="big walk means a walk",
-                    quoted_ts=999),
-    )
-
-
-@pytest.mark.parametrize(
-    ("author_id", "expected", "why"),
-    [
-        ("nora-aci", True, "a reply to HER opens the window"),
-        ("+852999", False, "a reply to another member does not"),
-    ],
-)
-async def test_quotes_nora_is_the_quoted_author_and_not_merely_a_quote(
-    author_id, expected, why,
-):
-    """**The negative case is the whole point of this test.**
-
-    `_recognise` passed `msg.quote is not None`, under the name
-    `parent_is_nora`. Any quote-reply to anybody therefore set it, and
-    recognition's T1 channel puts the ENTIRE 24-hour rendered-claim window in
-    front of the classifier when it is true and the body matches no surface.
-    Two members quoting each other was enough.
-
-    Every fixture in `test_recognition.py` builds its quote with
-    `author_id="nora"`, so nothing there could distinguish the two readings —
-    the value was only ever passed in by hand. This asserts the computation
-    the pipeline actually performs, against her alias set, both ways.
-    """
-    recogniser = _RecordingRecogniser()
-    pipeline, *_ = _build_pipeline(recogniser=recogniser)
-
-    await pipeline._recognise(
-        _request(_quoting(author_id)), _Identity(frozenset({"nora-aci"})),
-    )
-
-    assert [c["quotes_nora"] for c in recogniser.calls] == [expected], why
-
-
-async def test_a_message_with_no_quote_at_all_does_not_quote_nora():
-    """The third state, and it must not be confused with the negative: a bare
-    message is not a reply to anyone, and `Quote` is `None` rather than a quote
-    of somebody else."""
-    recogniser = _RecordingRecogniser()
-    pipeline, *_ = _build_pipeline(recogniser=recogniser)
-
-    await pipeline._recognise(_request(), _Identity(frozenset({"nora-aci"})))
-
-    assert recogniser.calls[0]["quotes_nora"] is False

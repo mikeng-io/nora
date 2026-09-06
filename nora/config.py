@@ -18,16 +18,9 @@ from pydantic import (
     Field,
     ValidationError,
     ValidationInfo,
-    field_validator,
     model_validator,
 )
 
-from nora.domain.facts import (
-    DEFAULT_MAX_PREDICATE_CHARS,
-    DEFAULT_MAX_TERM_CHARS,
-    FACT_PREDICATE_CEILING_CHARS,
-    FACT_TERM_CEILING_CHARS,
-)
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -1402,353 +1395,6 @@ class RemindersConfig(BaseModel):
     timezone: str = "Asia/Hong_Kong"
 
 
-class LanguageConfig(BaseModel):
-    """The Dreamer — `nora.app.runtime.dream_loop`, distilling the slang a
-    room has made its own out of its own message record (the
-    2026-08-15 room-language-dreamer design doc under
-    docs/superpowers/specs).
-
-    **The whole section is optional and every field defaults**, the
-    `[route]`/`[presence]` shape: a `config.toml` written before this
-    section existed must keep loading, which `extra="forbid"` makes a real
-    constraint rather than a courtesy.
-
-    `enabled` defaults to **False** — a new subsystem does not switch itself
-    on. Off, `nora.__main__.App.run` never spawns `dream_loop` (logging the
-    same shape `store.prune_enabled` uses) and composition wires
-    `language=None` into `TranscriptInjection`, exactly the "not yet wired"
-    state Task 9 shipped it in — no model call is ever scheduled and the
-    prefill's room-language block never renders.
-
-    `tick_seconds = 300` (5 min): the loop's WAKE interval, the same
-    "best case for lateness, not a bound" shape `[heartbeat].tick_seconds`
-    documents — one tick runs every due scope in turn, so a busy deployment
-    with many rooms can take longer than one interval to get back to a
-    given scope. Five minutes is frequent enough that a burst of slang gets
-    noticed within a session, without polling a per-scope `lag` count on
-    every idle room every few seconds.
-
-    `safety_lag = 300`: the first fire condition — `lag > safety_lag` fires
-    once 300 unconsolidated human messages have piled up, independent of how
-    quiet the room has gone since. This is the anti-runaway bound: a room
-    that never falls quiet (so the second condition below never fires)
-    still gets consolidated before its backlog grows large enough to bump
-    into `batch_limit` and force a multi-tick catch-up.
-
-    `quiet_seconds = 1800` (30 min): the second fire condition, paired with
-    `lag > 0` — a room that has gone quiet for half an hour is a
-    conversation that has PAUSED, the natural moment to consolidate what it
-    just said without cutting off a burst still in progress. Deliberately
-    shorter than `[heartbeat].tick_seconds` is long (60s) is a different
-    question entirely: that bounds a reminder's lateness to a human waiting
-    on it, this bounds how long a finished conversation sits unconsolidated
-    with nobody waiting on anything.
-
-    `max_age_seconds = 86400` (24h): the third fire condition, and the ONLY
-    one that does not require `lag > 0` — it fires at `lag == 0` ON PURPOSE.
-    `LanguageConsolidator.consolidate` rescores unconditionally, and rescore
-    is what lets a word's `recognition_score` DECAY over time; a dormant
-    room whose lag never grows would otherwise never rescore and its
-    lexicon would render `live` forever, describing a slang era that ended
-    months ago. 24h is the cadence that keeps decay visible without
-    rescoring a silent room needlessly often.
-
-    `batch_limit = 400`: the ceiling `RecordStore.since` reads per cycle.
-    Bounds both the one model call's prompt size and
-    `SqlLanguageStore.append_observations`'s single `INSERT ... SELECT`
-    (each candidate costs ~7 bind params in one `UNION ALL`, so a batch
-    above ~4,600 candidates would approach Postgres's 32,767-parameter
-    ceiling — 400 messages, each yielding at most a handful of candidates,
-    sits far under that). A scope whose `lag` exceeds this drains over
-    several ticks rather than one, which is correct: this is a background
-    distillation, not a turn anyone is waiting on.
-
-    `max_rendered_lexemes = 6`: the RENDER cap, threaded to
-    `nora.agent.prefill.build_prefill`'s `room_language_max_entries` via
-    `EngagementPipeline`/`FirePath` — MATCHES that call's own default
-    (`DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES = 6`, Task 10's reviewed value)
-    rather than raising it. This block sits in the UNCACHED volatile tier, so
-    every extra rendered entry is paid on EVERY turn; doubling that per-turn
-    cost to 12 was an earlier draft's unmeasured guess, and the reasoning
-    for it (below) argues the OPPOSITE direction from what it concluded — a
-    LARGER cap gives the renderer LESS room to drop an exampleless entry
-    before under-filling, not more, so "give it more room" was never a
-    reason to go above 6. Raise this only against a measured per-turn token
-    cost, the same discipline `LLMConfig.max_tokens`'s own docstring insists
-    on for its budget.
-    Deliberately smaller than
-    `nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT` (15), which
-    this section does NOT override — `SqlLanguageStore.room_language`
-    applies its `LIMIT` with no filter on whether an entry has a quotable
-    example, and the renderer then drops exampleless entries and cannot
-    reach further down the ranked list to backfill. Equal numbers make the
-    block silently under-fill on any tick where even one top-ranked lexeme
-    has no example yet; keeping the store fetch wider than what is rendered
-    is what gives the renderer room to drop a few and still fill the block.
-    `Config._render_cap_stays_below_the_store_limit` REFUSES to start rather
-    than merely document the relation — the `[reminders]`/`[heartbeat]`
-    precedent (`Config._lead_clears_the_tick`): that relation "was a comment
-    in three files and a rule in none," and an operator raising this value
-    past the store limit would silently under-fill the block instead of
-    being told why.
-
-    `model`: the ONE completion `LexemeObserver` makes per cycle. Defaults to
-    `[llm].model`'s own value (`"ollamacloud/deepseek-v4-flash"`) — the
-    Dreamer is a background job nobody is waiting on, so reusing the
-    deployment's already-working tier is a reasonable default, but this is a
-    SEPARATE knob because an operator may want a cheaper or differently-tuned
-    model for a bulk classification task than for a live conversational turn.
-
-    `timeout_seconds = 120.0`: bounds `_LanguageModelClient.complete`
-    (`nora.app.composition`), matching `[llm].timeout_seconds`'s own shipped
-    value rather than inventing a second number with no basis — this call is
-    the same shape (one `chat.completions.create`), just over a batch prompt
-    instead of a turn's tools/doctrine. Every other model call in the
-    codebase is explicitly bounded (`nora.engagement.stages.invoke`'s
-    `asyncio.wait_for`, `nora.infra.vision.client.derive_vision_timeout`);
-    this was the one exception, and quietly so — a hung call here leaves
-    `dream_loop` marking the scope `running` and skipping it tick after tick
-    (`nora_dream_skipped_total{reason="in_flight"}`) with no exception ever
-    raised, so the exponential backoff non-negotiable 4 exists for — which
-    only triggers on an exception — never engages. See
-    `_LanguageModelClient`'s own docstring for the full argument.
-
-    `verify_known_entities = False`: a THIRD gate, alongside `enabled` and
-    `[search].enabled`, before `LexemeObserver` gets a `SearchProvider`
-    collaborator at all (the 2026-08-20 dreamer-known-entity-check design
-    doc under `docs/superpowers/specs`). Confirmed false
-    positives from live traffic — "Big Walk" (an actual game Pulse already
-    tracks) recorded as room-coined slang — are what this exists to catch:
-    a well-formed candidate whose `canonical_form` turns up an established
-    public meaning on `web_search` is dropped rather than stored. Off by
-    default even when both other gates are on: verifying spends an extra
-    Tavily credit AND an extra model completion per candidate, and turning
-    search on for the chat agent is not the same decision as spending that
-    budget on the Dreamer too.
-
-    `verify_max_candidates = 10`: bounds how many of one cycle's candidates
-    get the (search + classify) round trip — live traffic sees 0-3 candidates
-    per fired batch, so this caps the WORST-CASE tail latency
-    (`verify_max_candidates * (search_timeout + model_timeout)`) without
-    touching the common case. Candidates beyond the cap are kept unverified,
-    the same fail-open direction the whole step takes on any failure (see the
-    design doc) — "did not get to check" is never treated as "assume the
-    worst."
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    enabled: bool = False
-    tick_seconds: float = Field(default=300.0, gt=0)
-    safety_lag: int = Field(default=300, ge=1)
-    quiet_seconds: float = Field(default=1800.0, ge=0)
-    max_age_seconds: float = Field(default=86_400.0, gt=0)
-    batch_limit: int = Field(default=400, ge=1)
-    max_rendered_lexemes: int = Field(default=6, ge=1)
-    model: str = "ollamacloud/deepseek-v4-flash"
-    timeout_seconds: float = Field(default=120.0, gt=0)
-    verify_known_entities: bool = False
-    verify_max_candidates: int = Field(default=10, ge=1)
-
-    # Dreamer Plan 2 (2026-08-20 exchange-patterns design) — gated by this
-    # SAME `enabled` flag, not a second one: both consolidators are the one
-    # Dreamer's work over the one shared watermark (`nora.app.runtime
-    # ._dream_once`), and splitting them onto independent on/off switches is
-    # an operator decision this design does not make unasked.
-    #
-    # `exchange_model`: `None` defaults to `model` above (one level down from
-    # how `model` itself defaults to `[llm].model`) — a separate knob exists
-    # because an operator may reasonably want a different tier for
-    # closed-set act classification than for open-vocabulary lexeme glossing.
-    exchange_model: str | None = None
-    # `max_rendered_exchanges = 4`, deliberately smaller than
-    # `max_rendered_lexemes = 6`: this block sits in the SAME uncached
-    # volatile tier (`nora.language.render`'s own cost argument), and an
-    # exchange-pattern line is a claim about TWO people rather than one word
-    # — reason enough to be more conservative about how many ride on every
-    # turn's token cost, not less.
-    max_rendered_exchanges: int = Field(default=4, ge=1)
-
-
-class FactsConfig(BaseModel):
-    """The fact tier's gate (the `2026-08-20-fact-tier-design` spec under
-    `docs/superpowers/specs/`).
-
-    Nothing writes a fact yet (the schema and the `<facts>` block ship dormant,
-    Tasks 1/2/5 of that plan); this section is the flag the future adaptor
-    checks and the three bounds it stays inside once it runs.
-
-    **The whole section is optional and every field defaults**, the
-    `[route]`/`[language]` shape: a `config.toml` written before this section
-    existed must keep loading, which `extra="forbid"` makes a real constraint
-    rather than a courtesy.
-
-    `enabled` defaults to **False** — a new subsystem does not switch itself
-    on, and this one in particular writes claims into a block every tagged
-    turn reads.
-
-    **The workspace startup check the design doc's §7 argued for was CUT**
-    (operator, 2026-08-20): the store's read scopes `WHERE workspace = ...` in
-    SQL, so a fact cannot reach a room outside its own workspace regardless of
-    what a startup refusal would add on top — the property is structural, not
-    something this section asserts. `SqlFactStore.standing_facts` is built and
-    does scope that way; what keeps the tier dark in production is `enabled`
-    below, not a missing reader.
-
-    `max_adjudications_per_tick = 10`: the Phase B cap — one research loop
-    (search + classify) per surviving candidate is the expensive step, same
-    shape and same default as `LanguageConfig.verify_max_candidates`, which
-    bounds the analogous (search + classify) round trip for slang.
-
-    `max_room_facts = 8` / `max_sender_facts = 4`: 19 §6's two render caps, one
-    per slice. The ROOM slice is the working set — more than eight and the
-    block competes with the transcript it sits beside. The SENDER slice is the
-    narrowest and the most often empty, and four is enough to ground «you told
-    us…». They replace one `max_rendered_facts`, which was the same
-    per-turn-cost argument as `LanguageConfig.max_rendered_lexemes` (6) and
-    `max_rendered_exchanges` (4) — this block sits in the same uncached
-    volatile tail, and a fact line additionally carries a source URL and an
-    excerpt, so raise it only against a measured per-turn token cost.
-
-    `retention_days = 180`: how long a resolved `fact_candidate` (a
-    `not_covered` verdict, or a superseded fact) is kept before a future prune
-    sweep drops it — matching the tool-recall-log's own `retention_days = 180`
-    for the same shape of durable-but-not-forever row.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    enabled: bool = False
-    max_adjudications_per_tick: int = Field(default=10, ge=1)
-    max_room_facts: int = Field(default=8, ge=1)
-    max_sender_facts: int = Field(default=4, ge=1)
-    retention_days: int = Field(default=180, ge=1)
-    # The OPERATING caps on the tier's model-authored strings (25 §9.1). Both
-    # columns were uncapped, which is the note-body defect on a JOIN KEY:
-    # `fact_candidate_triple_key` is `(workspace, subject_id, predicate,
-    # object)` and the adjudicator maps a verdict back to its candidate by that
-    # triple, so an unbounded subject is an unbounded index entry on the one
-    # column every read path uses.
-    #
-    # 200 for a term because the promotion veto already refuses anything over
-    # 64 as "a sentence, not a thing" — 200 leaves room for a descriptive
-    # object while keeping the index key small, and anything approaching it is
-    # a claim the extractor should have split.
-    #
-    # These are ENFORCED AT EVERY WRITE, not merely validated here: 30 §5's
-    # correction is that a scheme which only refuses a config above its ceiling
-    # leaves oversized rows satisfying the CHECK while defeating the prompt
-    # budget the cap exists to protect.
-    # 21 §10's operator-owned veto list: the extra object strings THIS room
-    # decides are not things, one per line, blank lines and `#` comments
-    # ignored. Its CONTENTS are configuration; its existence, ownership and
-    # versioning are the design's decision.
-    #
-    # **NO PATH configured vetoes nothing extra** — the rules in code are the
-    # floor and this only narrows what promotes. **A path that is not there
-    # REFUSES TO START**: those are different operator situations, and reading
-    # the second as the first meant a mount that failed to attach silently
-    # re-admitted everything the room had ruled out. This comment previously
-    # merged them as "an absent file vetoes nothing extra", which was the
-    # sentence the code was written from.
-    #
-    # `""` is NO PATH. Pydantic coerces an empty string to `PosixPath(".")`,
-    # which is neither `None` nor a file — so with the refusal above, an
-    # operator uncommenting `config.toml`'s own documented `veto_file = ""`
-    # got a boot failure naming a path they never wrote. The empty string is a
-    # pydantic artifact rather than an operator intent, and it is normalised
-    # HERE, where that is knowable, rather than at the reader.
-    # 31 §3.4's window: how far back a message may reach when deciding what
-    # Nora "just rendered". Twenty-four hours because a correction arrives
-    # either in the same sitting or after somebody looked something up
-    # overnight, and because it is the horizon over which a claim she rendered
-    # is still a thing a member could be reacting to. The ledger is pruned at
-    # TWICE this, so a row is still readable for one window after it stops
-    # being eligible — which is what lets the prune be a background sweep
-    # rather than a precise deletion.
-    #
-    # Reversal condition: the age distribution of the quote-replies that
-    # resolve, which is readable from the ledger itself.
-    recognition_window_hours: int = Field(default=24, ge=1)
-    veto_file: Path | None = None
-
-    @field_validator("veto_file", mode="before")
-    @classmethod
-    def _an_empty_path_is_no_path(cls, value: object) -> object:
-        """`veto_file = ""` means «no veto list», not «the current
-        directory»."""
-        if isinstance(value, str) and not value.strip():
-            return None
-        return value
-
-    # 31 §5's own key, and it exists because the classifier runs on the REPLY
-    # PATH — awaited in `_run_turn` before context assembly, holding the
-    # conversation's slot, ahead of every word she says.
-    #
-    # Without it the classifier was built with `[language] timeout_seconds`,
-    # which is **120** because it bounds a DREAMER call in a background tick
-    # where a slow model costs a tick and nothing else. Inherited onto this
-    # path it is two minutes of silence in a live room before she answers.
-    # `[standing]`, the other stage that holds this slot, bounds itself at 20
-    # and made the total a startup gate; this walked past that gate entirely.
-    #
-    # 8 seconds because the call is one short classification over at most
-    # `max_targets` one-line claims — not research, not a fold — and because
-    # the fallback is not silence: a timeout is `unavailable`, RULE-F still
-    # runs, and the correction is caught on the deterministic channel or lost.
-    # Losing a correction costs the status quo; two minutes of dead air costs
-    # the turn.
-    dispute_classify_timeout_seconds: float = Field(default=8.0, gt=0)
-    # Pass 4 and the retrieval verb's endpoint. `23` §9 settles the runtime as
-    # bge-m3 on the Ollama service already running on this host, reached
-    # through a PORT with a fake — not a direct HTTP call from the tier — so
-    # that a service which is down reports `unavailable` rather than raising.
-    #
-    # Empty `embedding_url` is a real deployment and not a broken one: the
-    # tier runs on the lexical channel alone, which loses cross-lingual and
-    # paraphrased recall in a way that is measured
-    # (`SqlEmbeddingStore.lexical`) and counted
-    # (`nora_knowledge_channel_total{channel="dense",status="not_configured"}`).
-    embedding_url: str = ""
-    embedding_model: str = "bge-m3"
-    embedding_timeout_seconds: float = Field(default=30.0, gt=0)
-    # Two numbers because they bound different things: the first is one
-    # TICK's cost, the second the blast radius of a single failed call. A
-    # sweep of 200 in batches of 32 that dies on the third batch has written
-    # 64 correct rows and left 136 stale, which is the intended outcome.
-    #
-    # The sweep runs INSIDE the adjudication tick and outside the runtime's
-    # per-run timeout, so `max_embed_rows_per_sweep / embed_batch_size`
-    # sequential calls at `embedding_timeout_seconds` each is the worst case
-    # it can hold that tick — measured by `nora_fact_embed_sweep_seconds`.
-    max_embed_rows_per_sweep: int = Field(default=200, ge=1)
-    embed_batch_size: int = Field(default=32, ge=1)
-    max_term_chars: int = Field(default=DEFAULT_MAX_TERM_CHARS, ge=1)
-    max_predicate_chars: int = Field(default=DEFAULT_MAX_PREDICATE_CHARS, ge=1)
-
-    @model_validator(mode="after")
-    def _caps_stay_under_the_database_ceilings(self) -> FactsConfig:
-        """`StandingConfig`'s validator, one tier over and for the same reason:
-        a ceiling is DDL and cannot be raised from config, so a value above it
-        would be refused by Postgres at write time — which is a crash in a
-        background tick nobody is watching rather than a message at startup."""
-        for name, value, ceiling, check in (
-            ("max_term_chars", self.max_term_chars,
-             FACT_TERM_CEILING_CHARS, "fact_term_fits_the_ceiling_check"),
-            ("max_predicate_chars", self.max_predicate_chars,
-             FACT_PREDICATE_CEILING_CHARS,
-             "fact_predicate_fits_the_ceiling_check"),
-        ):
-            if value > ceiling:
-                raise ValueError(
-                    f"[facts] {name} = {value} is above the database ceiling "
-                    f"of {ceiling} ({check}). The ceiling is DDL and cannot be "
-                    f"raised from config; every write above it would be "
-                    f"refused by Postgres."
-                )
-        return self
-
-
 class StandingConfig(BaseModel):
     """The debrief stage's gate and its four numbers
     (`design/dreamer-agent-loop/26-standing`).
@@ -2337,11 +1983,34 @@ class DreamerConfig(BaseModel):
     by `Config._resolve_paths` — NOT by a validator here, because a defaulted
     sub-model is constructed once at class-definition time with no validation
     context to resolve against.
+
+    **THE CLOCK'S OWN FIVE NUMBERS** — `tick_seconds`, `safety_lag`,
+    `quiet_seconds`, `max_age_seconds`, `batch_limit` — moved here when the
+    language tier was deleted. They were `[language]`'s, which was always
+    wrong on its own terms: they bound `nora.app.runtime.dream_loop`, which
+    ticks EVERY scheduled adaptor, and a tier flag owning the runtime's clock
+    is what made `[dreamer] enabled = true` inert for five days in August.
+    Same defaults, same units, same meanings — only the section changed:
+
+    - `tick_seconds` — how often the loop wakes.
+    - `safety_lag` — unread messages above which a scope fires regardless of
+      how quiet or how stale it is.
+    - `quiet_seconds` — how long a scope with SOME lag must be silent before
+      it fires (never interrupt a live conversation to read it).
+    - `max_age_seconds` — how old an adaptor's watermark row may get before it
+      fires at zero lag. This is the one that fires on a quiet room.
+    - `batch_limit` — the most messages one cycle reads. A per-adaptor
+      `AdaptorSchedule` entry overrides it; this is the shared default.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     dir: Path = Path("nora/dreamer")
+    tick_seconds: float = Field(default=300.0, gt=0)
+    safety_lag: int = Field(default=300, ge=1)
+    quiet_seconds: float = Field(default=1800.0, ge=0)
+    max_age_seconds: float = Field(default=86_400.0, gt=0)
+    batch_limit: int = Field(default=400, ge=1)
     reload: Literal["mtime", "startup"] = "mtime"
     strict: bool = True
     enabled: bool = False
@@ -2649,15 +2318,6 @@ class Config(BaseModel):
     # be created, whether or not anything is firing them.
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     reminders: RemindersConfig = RemindersConfig()
-    # Optional and defaulted — see `LanguageConfig`. Ships INERT
-    # (`enabled = false`); off, `dream_loop` is never spawned and
-    # composition wires `language=None` into `TranscriptInjection`, the
-    # "not yet wired" state Task 9 shipped it in.
-    language: LanguageConfig = LanguageConfig()
-    # Optional and defaulted — see `FactsConfig`. Ships INERT
-    # (`enabled = false`); nothing writes a fact yet, so this is a flag and
-    # three bounds for a future adaptor, not a running subsystem.
-    facts: FactsConfig = FactsConfig()
     # Optional and defaulted — see `NotesConfig`. Ships INERT
     # (`enabled = false`); off, composition wires `notes=None` into
     # `TranscriptInjection` and the `<notes>` block never renders. On, the
@@ -2722,7 +2382,7 @@ class Config(BaseModel):
         return self
 
     def dreamer_model(self) -> str:
-        """`[dreamer].model`, falling back to `[language].model` when empty.
+        """`[dreamer].model`, falling back to `[llm].model` when empty.
 
         Lives on `Config` and not on `DreamerConfig` because the fallback
         source is a SIBLING section a sub-model cannot see — the one place that
@@ -2730,13 +2390,15 @@ class Config(BaseModel):
         fallback is folded in HERE and nowhere else, so exactly one place knows
         it exists and no caller can reach past it to the raw field.
 
-        Empty is the shipped value and it is not a gap: it reproduces today's
-        tier, which is what makes `[dreamer]` growing a runtime a no-op until
-        plan gate D2 measures a model and fills this in. An explicit value wins,
-        or the fallback would pin the new knob open and the split would be a
-        no-op the other way.
+        The fallback USED to be `[language].model`, which was the room-language
+        consolidator's model — the Dreamer's first adaptor was that
+        consolidator, so inheriting it reproduced the running tier exactly.
+        That section is gone with the language tier, and `[llm].model` is the
+        only remaining process-wide default; an explicit `[dreamer].model` (the
+        deployed shape) wins over it, so this is the value a deployment that
+        never set one falls back to rather than a value anything relies on.
         """
-        return self.dreamer.model or self.language.model
+        return self.dreamer.model or self.llm.model
 
     @model_validator(mode="after")
     def _lead_clears_the_tick(self) -> Config:
@@ -2795,84 +2457,6 @@ class Config(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _render_cap_stays_below_the_store_limit(self) -> Config:
-        """`[language].max_rendered_lexemes` must stay strictly below
-        `nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT` (15) — the
-        SAME "was a comment in three places and a rule in none" shape
-        `_lead_clears_the_tick` above already fixed for `[reminders]`/
-        `[heartbeat]`.
-
-        `SqlLanguageStore.room_language` applies its `LIMIT` with NO filter on
-        whether an entry has a quotable example, and
-        `nora.language.render.render_room_language` then DROPS exampleless
-        entries and cannot reach further down the ranked list to backfill — it
-        was only ever handed `room_language_store_limit` rows. A render cap at
-        or above the store limit leaves the renderer no room to drop even one
-        exampleless entry before under-filling the block, and nothing in
-        `LanguageConfig` on its own stops an operator from setting it there:
-        `max_rendered_lexemes` is just `Field(ge=1)`, with no upper bound.
-        Refuses rather than warns for the same reason `_lead_clears_the_tick`
-        does — the failure is silent (a smaller-than-expected block, not an
-        error) and only visible by reading a rendered turn by hand.
-
-        The store limit itself is a MODULE CONSTANT, not a second
-        `[language]` field (`LanguageConfig`'s own docstring) — imported here,
-        deferred inside the validator rather than at module scope, the same
-        shape `LLMConfig._budget_names_and_values_are_real` uses for
-        `nora.agent.tools.NATIVE_TOOLS`: `nora.config` is imported by
-        everything, so a module-scope import of an `nora.engagement` symbol
-        would pay that package's whole import cost on every `Config`
-        construction rather than only when this validator actually runs.
-        Safe from a cycle by the SAME contract that protects the `NATIVE_TOOLS`
-        case: `nora.engagement` may not import `nora.config` at all
-        (import-linter's "only app and __main__ read config"), so this edge
-        has no return path.
-        """
-        from nora.engagement.context import DEFAULT_ROOM_LANGUAGE_STORE_LIMIT
-
-        if self.language.max_rendered_lexemes >= DEFAULT_ROOM_LANGUAGE_STORE_LIMIT:
-            raise ValueError(
-                f"[language] max_rendered_lexemes = "
-                f"{self.language.max_rendered_lexemes} must be strictly less "
-                f"than the room-language STORE limit "
-                f"({DEFAULT_ROOM_LANGUAGE_STORE_LIMIT}, "
-                "nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT): "
-                "the renderer drops exampleless entries and cannot reach "
-                "further down the ranked list than the store limit fetched, "
-                "so a render cap at or above it silently under-fills the "
-                "block."
-            )
-        return self
-
-    @model_validator(mode="after")
-    def _exchange_render_cap_stays_below_the_store_limit(self) -> Config:
-        """`[language].max_rendered_exchanges` must stay strictly below
-        `nora.engagement.context.DEFAULT_ROOM_EXCHANGE_STORE_LIMIT` — the
-        exact same relation `_render_cap_stays_below_the_store_limit` above
-        enforces for lexemes, applied to Plan 2's own render/store pair for
-        the identical reason: `SqlExchangeStore.room_exchange` filters only
-        on `recognition_score`, and `render_room_exchange` drops any entry
-        with no quotable example without being able to backfill past the
-        store limit it was handed.
-        """
-        from nora.engagement.context import DEFAULT_ROOM_EXCHANGE_STORE_LIMIT
-
-        if self.language.max_rendered_exchanges >= DEFAULT_ROOM_EXCHANGE_STORE_LIMIT:
-            raise ValueError(
-                f"[language] max_rendered_exchanges = "
-                f"{self.language.max_rendered_exchanges} must be strictly "
-                f"less than the room-exchange STORE limit "
-                f"({DEFAULT_ROOM_EXCHANGE_STORE_LIMIT}, "
-                "nora.engagement.context.DEFAULT_ROOM_EXCHANGE_STORE_LIMIT): "
-                "the renderer drops exampleless entries and cannot reach "
-                "further down the ranked list than the store limit fetched, "
-                "so a render cap at or above it silently under-fills the "
-                "block."
-            )
-        return self
-
-
-    @model_validator(mode="after")
     def _the_standing_slot_hold_fits_its_budget(self) -> Config:
         """The debrief HOLDS the conversation's slot, so the number that
         matters is the SUM of every bound on that hold — not any one of them.
@@ -2921,24 +2505,6 @@ class Config(BaseModel):
             # wrong on the page, which is the argument this validator exists
             # to enforce.
             self.standing.timeout_seconds
-            # Recognition holds the SAME slot — `EngagementPipeline._run_turn`
-            # awaits `_recognise` before context assembly — so its model call
-            # belongs in this sum for the same reason `[standing]`'s does. It
-            # was absent, and the classifier inherited `[language]`'s 120s
-            # Dreamer ceiling, which is how a background timeout ended up
-            # ahead of a live reply (review finding, 2026-08-28).
-            #
-            # UNGATED on `[facts] enabled`, matching the argument this
-            # validator already makes for `[standing]`: the moment a tier is
-            # switched on is the worst time to discover the budget meant
-            # something else.
-            #
-            # The store awaits on the recognition path — the ledger read and
-            # up to `max_targets` marks — are NOT in this sum, because nothing
-            # bounds them and a number invented for them would be the fourth
-            # wrong arity this validator has already been through. That is a
-            # gap and it is written down as one.
-            + self.facts.dispute_classify_timeout_seconds
             # SIX. The stage holds six bounded store awaits:
             # `store_verdict.latest` (the trigger's read), `store.read` (the
             # prior), `record_store.since_including_nora` (the watermark batch,
@@ -2955,8 +2521,6 @@ class Config(BaseModel):
                 f"[standing] would hold a conversation's slot for up to "
                 f"{hold:g}s — [standing] timeout_seconds "
                 f"({self.standing.timeout_seconds:g})"
-                f" + [facts] dispute_classify_timeout_seconds "
-                f"({self.facts.dispute_classify_timeout_seconds:g})"
                 f" + {STANDING_STORE_CALLS_PER_FOLD} x store_timeout_seconds "
                 f"({self.standing.store_timeout_seconds:g}) — which is over "
                 f"[standing] max_slot_hold_seconds "
