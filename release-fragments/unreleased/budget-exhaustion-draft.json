@@ -1,0 +1,13 @@
+{
+  "type": "change",
+  "summary": "When a long research turn runs out of budget, Nora now answers from what she already found instead of sending an apology.",
+  "details": [
+    "A turn cut off by one of the loop's caps used to deliver a canned line — on turns that had usually already read everything they needed. One measured Discord turn read seven pages across four searches and three fetches, hit the token ceiling on its seventh model call, and sent the apology anyway.",
+    "She now makes one more completion over the context she already gathered, with tools switched off, and says what she found. Delivery, the reply guards, the audit row and her own memory of what she said all follow the ordinary path.",
+    "The apology remains for a turn that genuinely has nothing to say — a cap that bound on the first call, or a drafting attempt that failed — so a cut-off turn is still never silent."
+  ],
+  "limitations": [
+    "A cut-off turn now costs one extra model call and takes longer, on a turn that was already slow. The drafting call has its own 45-second bound so it cannot hold a conversation for minutes.",
+    "The draft is bounded to a single cycle and cannot call tools, so it answers from what was already read and never goes looking for more."
+  ]
+}

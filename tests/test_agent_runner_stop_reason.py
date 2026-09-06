@@ -185,7 +185,14 @@ async def test_a_turn_cap_stops_the_loop_before_the_token_cap_does():
         tokens_per_call=10, limits={"turns": 1, "output_tokens": 12_000, "total_tokens": 64_000},
     )
     assert stop_reason == "limit_turns"
-    assert model.calls == 1
+    # 1 -> 2 (#110, 2026-09-07). The LOOP still makes exactly one call — the
+    # cap binds at the top of cycle two — and the second is the
+    # budget-exhaustion draft, which fires on `limit_turns` for the same reason
+    # it fires on `limit_total_tokens`: both mean "cut off mid-work", and the
+    # group is owed an answer either way. This assertion is left counting calls
+    # rather than relaxed, because the cost of that draft is a real thing to
+    # keep pinned; the drafting tests below own the behaviour itself.
+    assert model.calls == 2
 
 
 # ── DEC-93: what `final_text` reads, against the REAL SDK shape ──────────────
@@ -281,3 +288,143 @@ def test_a_guard_cancelled_model_call_is_not_treated_as_her_words():
         metrics=Metrics(),
     )
     assert guard.cancelled_model_call is False
+
+
+# ── #110: the budget-exhaustion draft ────────────────────────────────────────
+#
+# Same discipline as the R-23 tests above: the SDK decides, the double only
+# behaves like a provider. The property under test is that a turn cut off
+# mid-work makes ONE more tool-less call over the context it already had, and
+# that everything about that call is bounded and fail-closed.
+
+
+class _ConfigRecordingModel(_StubModel):
+    """`_StubModel` that owns a real `params` dict, so the `tool_choice` flip
+    is observable rather than assumed.
+
+    The base class answers `get_config() -> {}` and swallows `update_config`,
+    which would let a draft that never actually disabled tools pass silently —
+    the exact thing this subclass exists to prevent. `params_at_call` records
+    what was in force for EACH stream, because "off during the draft" and
+    "off afterwards" are different claims and only the first one matters for
+    the answer the group reads.
+    """
+
+    def __init__(self, *, tokens_per_call: int, tool_use_calls: int = 1,
+                 fail_on_call: int | None = None) -> None:
+        super().__init__(tokens_per_call=tokens_per_call, tool_use_calls=tool_use_calls)
+        self._config: dict[str, Any] = {"params": {"tool_choice": "required"}}
+        self.params_at_call: list[dict] = []
+        self._fail_on_call = fail_on_call
+
+    def get_config(self) -> Any:
+        return self._config
+
+    def update_config(self, **model_config: Any) -> None:
+        self._config.update(model_config)
+
+    async def stream(self, *args: Any, **kwargs: Any) -> AsyncIterable[Any]:
+        self.params_at_call.append(dict(self._config.get("params") or {}))
+        if self._fail_on_call is not None and self.calls + 1 == self._fail_on_call:
+            self.calls += 1
+            raise RuntimeError("provider fell over during the draft")
+        async for event in super().stream(*args, **kwargs):
+            yield event
+
+
+async def _run_recording(
+    *, tokens_per_call: int, limits: dict, tool_use_calls: int = 1,
+    fail_on_call: int | None = None, draft_timeout_seconds: float = 45.0,
+) -> tuple[str | None, str, _ConfigRecordingModel]:
+    model = _ConfigRecordingModel(
+        tokens_per_call=tokens_per_call, tool_use_calls=tool_use_calls,
+        fail_on_call=fail_on_call,
+    )
+    runner = LiveAgentRunner(
+        models=FixedModelSource(model), retry=RETRY,
+        draft_timeout_seconds=draft_timeout_seconds,
+    )
+    stop_reason, final_text, _trace = await runner.invoke(
+        doctrine=_doctrine(), tools=[_tool()], pre_fill=[],
+        guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+                         metrics=Metrics()),
+        tag_message="<tag_message/>", limits=limits, ctx=_ctx(), trace_attributes={},
+    )
+    return stop_reason, final_text, model
+
+
+_CUT_OFF = {"turns": 8, "output_tokens": 12_000, "total_tokens": 4_000}
+_ROOMY = {"turns": 8, "output_tokens": 12_000, "total_tokens": 64_000}
+
+
+async def test_an_exhausted_loop_drafts_an_answer_from_what_it_already_had():
+    """THE issue (#110). A turn cut off by a cap used to hand the pipeline an
+    empty `final_text`, leaving the canned apology as the only thing to
+    deliver — on a turn that had usually already read everything it needed
+    (trace 844eb6d1: seven pages, then 「sorry」).
+
+    One extra call, and the words come back. `model.calls == 2` is the whole
+    claim: the loop spent one, the draft spent exactly one more.
+    """
+    stop_reason, final_text, model = await _run_recording(
+        tokens_per_call=5_000, limits=_CUT_OFF,
+    )
+    assert stop_reason == "limit_total_tokens"
+    assert final_text == "ok"
+    assert model.calls == 2
+
+
+async def test_the_draft_runs_with_tools_off_and_puts_the_pin_back():
+    """`tool_choice="required"` (DEC-21) is what makes her reach for
+    `send_reply` instead of answering in prose. During the draft prose is
+    exactly what is wanted, and leaving the pin on would force another tool
+    call — the one thing there is no budget for.
+
+    Both directions asserted: OFF for the drafting stream, RESTORED after. The
+    second matters less (the agent is discarded) but a flip that never
+    reverses is the kind of thing that becomes load-bearing elsewhere later.
+    """
+    _stop, _text, model = await _run_recording(tokens_per_call=5_000, limits=_CUT_OFF)
+    assert model.params_at_call[0]["tool_choice"] == "required"   # the loop
+    assert model.params_at_call[1]["tool_choice"] == "none"       # the draft
+    assert model.get_config()["params"]["tool_choice"] == "required"
+
+
+async def test_a_turn_that_finished_normally_never_drafts():
+    """The control, and the cost guard. A healthy turn must not pay for a
+    second call — if this ever goes to 2, every tag in the room got more
+    expensive for a feature that only applies to cut-off turns."""
+    # `tool_use_calls=0` so the LOOP itself is one call — it answers in prose
+    # on the first stream. With the default of 1 the loop legitimately spends
+    # two (tool, then answer) and a `calls == 2` here would pass whether or not
+    # a draft happened, which is a test that asserts nothing.
+    stop_reason, _text, model = await _run_recording(
+        tokens_per_call=5_000, limits=_ROOMY, tool_use_calls=0,
+    )
+    assert stop_reason == "end_turn"
+    assert model.calls == 1
+
+
+async def test_a_cut_off_turn_that_already_wrote_prose_costs_no_extra_call():
+    """DEC-93's case, which needs no model at all: the cut-off completion
+    already carried text, so there is nothing to draft. `tool_use_calls=0`
+    makes the very first stream answer in prose, and the cap then binds on the
+    NEXT cycle with those words already in hand."""
+    _stop, final_text, model = await _run_recording(
+        tokens_per_call=5_000, limits=_CUT_OFF, tool_use_calls=0,
+    )
+    assert final_text == "ok"
+    assert model.calls == 1
+
+
+async def test_a_draft_that_fails_leaves_the_turn_with_nothing_to_say():
+    """FAIL-CLOSED. The drafting call is an improvement on the fallback, never
+    a replacement for having one: when it raises, `final_text` comes back empty
+    and the pipeline delivers the canned line exactly as it did before #110.
+    A turn that has already failed once must not fail louder."""
+    stop_reason, final_text, model = await _run_recording(
+        tokens_per_call=5_000, limits=_CUT_OFF, fail_on_call=2,
+    )
+    assert stop_reason == "limit_total_tokens"
+    assert final_text == ""
+    assert model.calls == 2          # it was attempted, and it was survived

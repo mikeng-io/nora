@@ -27,6 +27,7 @@ tripping on its own, which is the property that makes it a measurement rather
 than a mock.
 """
 
+from nora.engagement.pipeline import _EXHAUSTED_FALLBACK
 from nora.testing import ScriptedTurn, group_event
 
 # Comfortably past `[llm.limits] total_tokens` (1,024,000 since 2026-09-06; this
@@ -171,3 +172,89 @@ async def test_the_cap_that_binds_is_the_one_that_gets_the_blame(harness_factory
     assert h.metrics.get(
         "nora_loop_exhausted_fallbacks_total", reason="limit_total_tokens") == 0
     assert h.metrics.get("nora_llm_stop_reason_total", reason="limit_turns") == 1
+
+
+# ── #110: her own words beat the canned line ─────────────────────────────────
+
+
+def _spent_the_budget_but_drafted_an_answer():
+    """A cut-off turn whose runner came back WITH words.
+
+    In production those words are `LiveAgentRunner`'s drafting call over the
+    context the loop had already gathered (`factory.draft_from_exhausted_loop`,
+    tested against the real SDK in `tests/test_agent_runner_stop_reason.py`).
+    Here the script supplies them, because what this file owns is what the
+    PIPELINE does with them.
+    """
+    return [
+        ScriptedTurn(
+            tool_calls=[("now", {})], total_tokens=_OVER_BUDGET,
+            final_text="Monza, lap 31 of 53. Verstappen leads.",
+        ),
+        ScriptedTurn(tool_calls=[("send_reply", {"text": "never reached"})],
+                     final_text="never reached"),
+    ]
+
+
+async def test_a_cut_off_turn_says_what_it_found_instead_of_apologising(harness_factory):
+    """#110, the operator's own framing: "it still should be able to use its
+    current information to draft the reply, instead of replying 'Sorry, I
+    cannot handle this'. This is exactly how it shouldn't be, not like a
+    friend, just like a bot."
+
+    The room reads the ANSWER. The canned apology must not appear at all — not
+    appended, not instead — and the drafted delivery is counted on its own
+    series rather than as a fallback.
+    """
+    h = await harness_factory(script=_spent_the_budget_but_drafted_an_answer())
+    await h.handler.on_event(group_event(body="nora.000 ?"))
+    await h.drain()
+
+    assert h.sink.texts == ["Monza, lap 31 of 53. Verstappen leads."]
+    assert _EXHAUSTED_FALLBACK not in h.sink.texts
+    assert h.metrics.get(
+        "nora_budget_drafts_delivered_total", reason="limit_total_tokens") == 1
+    # The fallback series must stay FLAT — the two are read against each other,
+    # and a turn counted on both would make that reading meaningless.
+    assert h.metrics.get(
+        "nora_loop_exhausted_fallbacks_total", reason="limit_total_tokens") == 0
+    # Unchanged and unconditional: the operator must still see that the cap
+    # bound, whatever got delivered.
+    assert h.metrics.get(
+        "nora_llm_stop_reason_total", reason="limit_total_tokens") == 1
+    assert h.metrics.get("nora_silent_failures_total", reason="no_send_call") == 0
+
+
+async def test_the_canned_line_survives_for_a_turn_with_genuinely_nothing(harness_factory):
+    """The fallback-of-the-fallback, and the reason #110 could not just delete
+    `_EXHAUSTED_FALLBACK`. A cap that binds with no words anywhere — the
+    drafting call timed out, raised, or returned nothing — still owes the room
+    something, because R-23's never-silent guarantee is what this whole branch
+    exists for. Improving the line must not cost the guarantee."""
+    h = await harness_factory(script=_spent_the_budget_without_replying())
+    await h.handler.on_event(group_event(body="nora.000 ?"))
+    await h.drain()
+
+    assert h.sink.texts == [_EXHAUSTED_FALLBACK]
+    assert h.metrics.get(
+        "nora_loop_exhausted_fallbacks_total", reason="limit_total_tokens") == 1
+    assert h.metrics.get("nora_budget_drafts_delivered_total") == 0
+
+
+async def test_a_drafted_answer_never_leaks_why_the_turn_was_cut_off(harness_factory):
+    """The same screen the canned line already passes, applied to the new path.
+
+    A draft is MODEL-authored text delivered on a failure path, which is
+    exactly where "sorry, I ran out of tokens" would appear if the drafting
+    prompt ever mentioned budgets. It deliberately does not
+    (`factory._DRAFT_INSTRUCTION`), and this is the assertion that keeps it
+    that way — naming the cause in a metric must never put it in the room.
+    """
+    h = await harness_factory(script=_spent_the_budget_but_drafted_an_answer())
+    await h.handler.on_event(group_event(body="nora.000 ?"))
+    await h.drain()
+
+    assert len(h.sink.texts) == 1
+    line = h.sink.texts[0].lower()
+    for diagnostic in ("limit", "token", "budget", "cut off", "sorry"):
+        assert diagnostic not in line

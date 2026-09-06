@@ -318,7 +318,17 @@ async def test_the_same_turn_with_nothing_terminal_runs_to_the_cap():
     declaration is today's real one (`send_reply`), which `now` is not.
     """
     model = await _drive(terminal=ToolRegistry().terminal_tools())
-    assert model.calls == 4
+    # 4 -> 5 (#110, 2026-09-07). The LOOP still runs to exactly four — `turns`
+    # is 4 and nothing terminal ever stops it, which is the property this
+    # control exists to prove. The fifth call is the budget-exhaustion draft:
+    # a turn that ends `limit_turns` with nothing said is precisely the case
+    # #110 added, so this turn now gets one tool-less completion over what it
+    # gathered before the pipeline decides what the room reads.
+    #
+    # Kept as a call count rather than relaxed to `>= 4`: the number IS the
+    # assertion here, and it is also the cheapest place the extra cost of that
+    # draft would show up if it ever started firing on turns it should not.
+    assert model.calls == 5
 
 
 # ---- DEC-42: the turn ends at the CAP, not at the first terminal call ------

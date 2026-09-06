@@ -421,6 +421,18 @@ class FakeAgentRunner:
                 output_tokens=output_tokens, limits=limits,
             )
             if stop is not None:
-                return stop, "", trace
+                # `final_text` on a budget stop, not "" (#110). The REAL runner
+                # returns words here now: either prose the cut-off completion
+                # left behind, or the draft `LiveAgentRunner` makes over the
+                # context already gathered. A fake that always answered ""
+                # could not express the case the pipeline branches on, which
+                # is exactly the "fake answers every request the same way"
+                # shape the conventions forbid — reverting the pipeline branch
+                # would not turn anything red.
+                #
+                # So a ScriptedTurn that trips a cap WITH `final_text` is a
+                # runner that drafted; one without is a draft that came back
+                # empty. Both are real production states.
+                return stop, turn.final_text or "", trace
         final = (self.turns[-1].final_text or "") if self.turns else ""
         return "end_turn", final, trace
