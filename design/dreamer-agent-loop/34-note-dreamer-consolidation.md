@@ -285,7 +285,7 @@ already enforce the label sets (`_VOCABULARIES`, `note_curator.py:300`).
 - **`note-candidates` stays separate.** It faces the transcript, proposes
   creates, and is tool-free (33 §4). Folding create-proposals into the
   curator would make the curator both face the world and face the notebook —
-  the fact tier's Phase A/B cost split, proven in `fact_adaptor.py`'s
+  the fact tier's *(deprecated 2026-09-07, code deleted — issue #115)* Phase A/B cost split, proven in `fact_adaptor.py`'s
   module docstring: *"a research loop per message is unbounded cost on a
   background clock nobody is watching."*
 - **The proactive adapter stays separate** (33 §8). Merging the revisitor

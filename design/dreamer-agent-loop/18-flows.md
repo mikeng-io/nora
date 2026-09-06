@@ -9,6 +9,11 @@ edges:
   - {dst: 01-live-state, rel: motivated_by, provenance: asserted}
 ---
 
+> **PARTLY DEPRECATED 2026-09-07 — the knowledge tier (the "fact tier") and the language tier have both been deprecated and their code deleted.** Every claim below about either tier is retained as a record of the reasoning; **none of it describes code that exists.** The note tier, Standing, the relevance gate and the Dreamer runtime itself are unaffected; **recognition** ([31](31-recognition.md)) went with the two tiers whose rows it marked.
+> Their tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
+> The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
+
+
 # Four Flows — How Each Tier Actually Runs
 
 The rest of the bundle argues about seams. This node runs each tier top to
@@ -31,7 +36,7 @@ The nine steps map one-to-one onto the seams:
 
 ---
 
-## Flow A — Language tier
+## Flow A — Language tier **(DEPRECATED 2026-09-07, deleted)**
 
 *What this room's words mean.* One scope per room. **The only tier producing
 rows in production, and both are wrong.*
@@ -98,7 +103,7 @@ cycles ever.
 
 ---
 
-## Flow B — Fact tier
+## Flow B — Fact tier **(DEPRECATED 2026-09-07, deleted)**
 
 *What is true about the world.* Two passes, different keys, deliberately split
 on cost.

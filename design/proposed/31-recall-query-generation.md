@@ -1,5 +1,9 @@
 # 31 — Recall query generation & personalization
 
+> **PARTLY INVALIDATED 2026-09-07 — the knowledge tier (the "fact tier") has been deprecated and its code deleted (issue #115).** `search_knowledge`, `get_knowledge` and the `<facts>` prefill block are gone. Every part of this draft that treats the knowledge tier as a storage layer the decomposition may route to — in particular "Major 2 — RESOLVED" below — no longer holds; the surviving storage layers are Honcho memory (`about`/`ask_memory`) and notes (`note_search`).
+> The evidence that decided it is in `design/dreamer-agent-loop/20-knowledge-tier.md` §0. The database tables are not dropped by that change.
+
+
 **Status:** Draft for review (operator session 2026-09-03)
 **Branch:** feat/recall-query-generation
 **Triggering incident:** 2026-09-03 12:19 HKT — Nora recommended Raft as a co-op
@@ -172,7 +176,7 @@ well-chosen deep `ask_memory` per key person, plus `about` breadth, plus the
 fact/note layers — orchestrated by the skill's decomposition, not by a new
 Honcho verb.
 
-### Major 2 — RESOLVED (operator 2026-09-03): knowledge/notes are first-class storage layers in the decomposition
+### Major 2 — ~~RESOLVED (operator 2026-09-03): knowledge/notes are first-class storage layers in the decomposition~~ **(VOID 2026-09-07 — the knowledge tier is deprecated and deleted; only notes and Honcho remain. Issue #115.)**
 
 Commits d7852572/9644d0e0 shipped `<facts>` prefill (prefill.py:521) +
 `search_knowledge` (budget 2, model-supplied query) + `get_knowledge` (budget

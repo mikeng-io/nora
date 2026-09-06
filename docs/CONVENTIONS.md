@@ -318,7 +318,9 @@ never happens», not «this is not wired».
 
 Two on master today — `nora_fact_candidates_total`
 (`nora/obs/metric_specs.py:963`) and `nora_fact_entity_unresolved_total`
-(:987). The second is named twenty lines away in the note tier's own block as
+(:987). *(Both went with the knowledge tier when it was deprecated and deleted on
+2026-09-07, issue #115 — the instance stands as the war-story, and the rule it
+earned is unchanged.)* The second is named twenty lines away in the note tier's own block as
 «the exact defect this block was written to close» (:1236) — the argument for
 shipping three note counters instead of the ten that tier's spec names — while
 it sits unwired itself. `nora_store_busy_total` (:121) scans the same way and
@@ -348,7 +350,9 @@ mypy scope (issue #61) and **a static-only guard in an unchecked package is a
 claim rather than a check** (`443bbca` F3).
 
 Where mypy does reach, the derivation alone is enough: `nora/domain/facts.py:
-52-56` builds five frozensets with `get_args` off five `Literal`s. Where it
+52-56` builds five frozensets with `get_args` off five `Literal`s *(that file was
+deleted with the knowledge tier on 2026-09-07, issue #115; the pattern is still
+the rule, and `nora/language/note_curator.py` still carries it)*. Where it
 does not, the vocabulary is a frozenset the code increments AGAINST and a value
 outside it raises — a label typo forks a NEW series rather than erroring, and
 the old one silently goes flat (`nora/language/note_curator.py`,

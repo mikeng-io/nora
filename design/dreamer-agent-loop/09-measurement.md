@@ -35,7 +35,7 @@ it is describing.
 | **Trigger** ([06](06-trigger.md)) | fired / did-not-fire / was-skipped, per adaptor per tick, **surviving a restart**. Today a skip and a backoff leave no first-party record at all, and the counters are in-process |
 | **Loop** ([07](07-loop.md)) | how many turns it took, why it stopped, and whether anything was kept when it was cut off |
 | **State** ([08](08-state.md)) | whether a granted tool was ever *called*, and whether calling it changed the answer. A tool nobody reaches for is a cost with no benefit and must not be invisible |
-| **Self-correction** ([12](12-self-correction.md)) | whether a later run ever superseded an earlier one — the thing the language tier structurally cannot do and nobody would currently notice |
+| **Self-correction** ([12](12-self-correction.md)) | whether a later run ever superseded an earlier one — the thing the language tier *(deprecated 2026-09-07, code deleted — issue #115)* structurally cannot do and nobody would currently notice |
 
 The three that bind hardest are the first two, because they are the ones whose
 absence already cost weeks: the cap that actually binds, and the difference
@@ -130,7 +130,7 @@ Stated against the batch that broke it — the room's own messages, the ones in
 - **advances its watermark** (the present failure has never once done so);
 - produces **few, grounded** items rather than one per message — the batch is
   mostly chatter and the correct answer is a small number;
-- and for the language tier specifically, does not gloss a proper noun as a
+- and for the language tier *(deprecated 2026-09-07, code deleted — issue #115)* specifically, does not gloss a proper noun as a
   literal reading of its words when a link in the same batch says otherwise.
 
 The last is the motivating failure, and it is the only one of the five that

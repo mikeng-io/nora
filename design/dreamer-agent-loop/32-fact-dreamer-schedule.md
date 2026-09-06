@@ -13,6 +13,11 @@ edges:
   - {dst: 16-open-items, rel: closes, provenance: asserted}
 ---
 
+> **DEPRECATED 2026-09-07 — the knowledge tier (the "fact tier") has been deprecated and its code deleted.**
+> This document is retained as a record of the reasoning, not as a description of the system. **Nothing here describes code that exists.**
+> The database tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
+> The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
+
 # Fact Dreamer — Per-Adaptor Schedule, Full-Surface Review, and Bounded Context
 
 ## 1. The problem, in the operator's words

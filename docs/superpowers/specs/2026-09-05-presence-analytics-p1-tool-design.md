@@ -328,7 +328,7 @@ bump is needed for this tool.
 ### 7.4 Dreamer — explicitly NOT granted
 
 `read_only=True` makes `where_been` *eligible* for the Dreamer's
-`WORKSPACE_SAFE_TOOLS` (as `get_knowledge`/`search_memory_workspace` are
+`WORKSPACE_SAFE_TOOLS` (as `get_knowledge` *(deprecated 2026-09-07, deleted — issue #115)*/`search_memory_workspace` are
 today), but eligibility is not a grant. A background process that can fold
 derived presence into her standing model — or worse, quote it unprompted
 into a room — is the P3 consumer's question. It stays ungranted; granting it

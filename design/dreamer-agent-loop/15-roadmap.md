@@ -9,6 +9,11 @@ edges:
   - {dst: 16-open-items, rel: relates_to, provenance: asserted}
 ---
 
+> **PARTLY DEPRECATED 2026-09-07 — the knowledge tier (the "fact tier") and the language tier have both been deprecated and their code deleted.** Every claim below about either tier is retained as a record of the reasoning; **none of it describes code that exists.** The note tier, Standing, the relevance gate and the Dreamer runtime itself are unaffected; **recognition** ([31](31-recognition.md)) went with the two tiers whose rows it marked.
+> Their tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
+> The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
+
+
 # Roadmap — Every Tier, One Picture
 
 ## 0. Why this node exists
@@ -48,11 +53,11 @@ So the tier flags now mean three different things, and they must be kept apart:
 
 | state | meaning | who is in it |
 |---|---|---|
-| **merged and running** | executing, producing rows | the language/exchange consolidators only |
-| **merged but inert behind a flag** | constructed only under a flag that is off | both fact adaptors, the whole Dreamer writer path, the runtime |
-| **merged and wired but produces nothing** | the path is exercised every turn; the store is empty | `<facts>`, `<notes>`, `<room_exchange>`, `<room_portrait>` |
+| **merged and running** | executing, producing rows | ~~the language/exchange consolidators only~~ **(DEPRECATED 2026-09-07, deleted — nothing is in this state)** |
+| **merged but inert behind a flag** | constructed only under a flag that is off | ~~both fact adaptors~~ **(DEPRECATED 2026-09-07, deleted)**, the whole Dreamer writer path, the runtime |
+| **merged and wired but produces nothing** | the path is exercised every turn; the store is empty | ~~`<facts>`~~ **(DEPRECATED 2026-09-07, deleted)**, `<notes>`, ~~`<room_exchange>`, `<room_portrait>`~~ **(DEPRECATED 2026-09-07, deleted)** |
 
-## 2. Fact tier
+## 2. Fact tier **(DEPRECATED 2026-09-07, deleted)**
 
 **Built and live.** Domain types with the warrant axis, both stores, both
 adaptors, the `<facts>` block and its reader, migrations `0025`/`0027`, the
@@ -118,7 +123,7 @@ corpus:
 - **2** — the revisitor. **Spec-blocked** (see the table above), then
   deploy-blocked behind the flag.
 
-## 4. Language tier — the only one actually producing, and it cannot correct itself
+## 4. Language tier **(DEPRECATED 2026-09-07, deleted)** — the only one actually producing, and it cannot correct itself
 
 Not a "workstream" in the sense the other four are: nobody is building it, and
 it has no phase plan. It is here because it is **the only tier producing rows in

@@ -12,6 +12,12 @@ derives_from:
   - docs/superpowers/specs/2026-08-04-nora-architecture-design.md
 ---
 
+> **DEPRECATED 2026-09-07 — the language tier this document designs has been deprecated and its code deleted**, as part of the same decision that deprecated the knowledge tier.
+> This document is retained as a record of the reasoning, not as a description of the system. **Nothing here describes code that exists.**
+> The language tier never ran in production — `[language] enabled = false` throughout its life. Its tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
+> The evidence that decided it is in `design/dreamer-agent-loop/20-knowledge-tier.md` §0. See issue #115.
+
+
 # The Dreamer: room language and exchange patterns
 
 ## 0. What this document is
