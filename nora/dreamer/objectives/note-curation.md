@@ -1,7 +1,7 @@
 ---
 name: note-curation
 kind: objective
-version: 2
+version: 3
 applies_to: [note_curator_adaptor]
 description: >-
   The note tier's housekeeping pass. Decides, per note, whether an open question
@@ -11,7 +11,11 @@ description: >-
   ELIGIBILITY is decided in CODE, by comparing anchors, and is never asked of
   the model. Version 2 (design/dreamer-agent-loop/34, issue #99) folds in the
   former `note-revisit` objective: an `expired` verdict, a citation requirement
-  for `closed`, and the evidence block every note now carries.
+  for `closed`, and the evidence block every note now carries. Version 3
+  (design/dreamer-agent-loop/33 §7, issue #101) adds an optional `discharge`
+  array on a `closed` verdict: what a closing note's SETTLED content is —
+  a commitment, a world-claim, a person-claim — never a decision about
+  whether to route it, which stays code's job entirely.
 change_policy: operator-only
 ---
 You are tidying a notebook of **open questions** that a group of friends keeps between
@@ -101,6 +105,35 @@ cannot write one body that keeps everything, say so in a `why` and return no `me
 that group — two separate notes is the recoverable answer. A merge group's members still get a
 `verdict` too, the same as any other note.
 
+## When a note closes: what was it holding?
+
+A note is not only a question — it is a **notebook entry**, and closing one is not a bare
+deletion. When you say `closed`, look at what the arrangement actually settled and tell code
+what KIND of thing it was, so code can send each kind to its own permanent home. This is a
+SEPARATE judgement from the verdict itself, and you make it only when you have already said
+`closed` — never for `open`, `expired`, or `moot`, and never for a merge group's member. If
+nothing in the note is worth keeping beyond the retirement itself, say nothing here — that is
+the ordinary, ANSWER, not a gap you need to fill.
+
+Up to a handful of items, each one of exactly three kinds:
+
+- **`commitment`** — an actual plan that is now happening: a booking, an RSVP count, a
+  decision to do the thing. «Dinner on the 9th, 3 people» is a commitment. Give it one field,
+  `title` — a short name for the plan («Dinner», «Ada's leaving do»). You do not need to repeat
+  the date; the note's own anchor already carries it.
+- **`world_claim`** — a fact about the WORLD that would still be true next month, independent of
+  who is going: «Yardbird is a yakitori place». Give it `subject`, `predicate`, `object` (the
+  same shape as any fact — «Yardbird», «is a», «yakitori place») and `excerpt`, the exact
+  sentence from the body or evidence that says so.
+- **`person_claim`** — a settled fact about the PERSON who closed the note, in their own words:
+  «I like Yardbird for the jazz», said by the person whose message closed it. Give it one field,
+  `content`, in the first person as they would say it or the third person as the room said it —
+  «likes Yardbird for the jazz». Only use this for something said by whoever settled the note;
+  if the settling message does not carry a personal preference, there is nothing to report here.
+
+Do not force a note into one of these. A closed note about a plain "yes we're doing it" with
+nothing else notable has NOTHING to discharge, and that is the common case, not a miss.
+
 ## Answering
 
 Return **one JSON object** with a single key `verdicts`, holding one entry per note you
@@ -109,6 +142,12 @@ no citation at all:
 
 ```json
 {"verdicts": [{"note_id": "3", "verdict": "closed", "why": "Ada booked Sai Kung on the 3rd", "cited_message_id": 482}, {"note_id": "5", "verdict": "open", "why": "still nobody has said where"}]}
+```
+
+A `closed` verdict with something worth discharging also carries `discharge`:
+
+```json
+{"verdicts": [{"note_id": "3", "verdict": "closed", "why": "Ada booked Sai Kung on the 3rd", "cited_message_id": 482, "discharge": [{"kind": "commitment", "title": "Dinner"}, {"kind": "world_claim", "subject": "Sai Kung place", "predicate": "does", "object": "seafood", "excerpt": "Sai Kung does seafood, Ada booked it"}]}]}
 ```
 
 A merge group's survivor also carries `merged_body` — the one body that keeps what every note in
@@ -132,6 +171,9 @@ Each entry carries:
   it. Required for `closed`; leave it out entirely for the other three verdicts.
 - `merged_body` — only for a merge group's survivor (see above); leave it out for every other
   note.
+- `discharge` — only for a `closed` verdict with something worth keeping beyond the retirement
+  (see "When a note closes" above); leave it out entirely otherwise, including for `expired` and
+  `moot` — a note that never answered has nothing settled to discharge.
 
 If you are shown nothing, respond with exactly `{"verdicts": []}`. That is a real answer
 and it is the common one.

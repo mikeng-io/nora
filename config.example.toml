@@ -1038,6 +1038,27 @@ curator_enabled = false
 # directly.
 candidates_enabled = false
 
+# The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
+# schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH gate, on its
+# own rather than riding curator_enabled: that pass merges and retires NOTES,
+# this one WRITES to three other tiers entirely (an Event, a fact with a
+# warrant, a Honcho conclusion about a named person) the moment a note it was
+# already retiring turns out to hold a settled commitment, world-claim or
+# person-claim. An operator who accepted "this pass merges and retires notes"
+# has not thereby accepted "this pass also creates calendar events and writes
+# permanent memories about people".
+#
+# ON, discharge runs in the SAME curator tick that decides a note has closed
+# — never a separate adaptor — and only for a GROUNDED `closed` verdict that
+# actually retires; an `expired`/`moot` note answered nothing, so there is
+# nothing settled to route. Each classified item is written through the
+# OWNING tier's own existing API (never a new write path): a commitment
+# through the Gathering service, a world-claim through the fact store with a
+# `source` warrant citing the note, a person-claim through Honcho's
+# conclusion lane. "Nothing to discharge" is the ordinary, common answer and
+# is not an error.
+discharge_enabled = false
+
 [standing]
 # The debrief stage's gate (design/dreamer-agent-loop/26-standing.md). ON, a
 # SECOND model reads each finished turn — success, silence, veto and timeout

@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "The note tier's discharge pipeline: closing a note routes its settled content (a commitment, a world-claim, a person-claim) to the tier that owns it, instead of the row simply retiring. Ships disabled.",
+  "details": [
+    "design/dreamer-agent-loop/33-note-dreamer-schedule.md §7, 19-between-tiers.md §1, issue #101. Rides the existing curator tick (nora.language.note_curator.NoteCuratorAdaptor) rather than a new adaptor: the SAME model call that decides a note has `closed` may also return an optional `discharge` array (note-curation objective, version 3), classifying the note's settled content into up to a handful of typed items. Code disposes: each recognized item is written through the OWNING tier's own existing API — a commitment through GatheringService.create_event, a world-claim through SqlFactStore.propose with a source warrant citing the note (`source_url=\"note:<id>\"`), a person-claim through Honcho's MemoryStore.conclude. No new write path was added to any of the three tiers.",
+    "Discharge runs only for a GROUNDED `closed` verdict that actually retires — `expired`/`moot` mean the room's moment passed unanswered, so there is nothing settled to route, by construction, and a merge-group member is never retired via supersede at all. It runs strictly AFTER the note's own retirement has landed, and a downstream write failing never holds up or reopens that retirement.",
+    "Every discharge item's real-world grounding (an Event's requester, Honcho's observed person) is the closing citation's own message sender (TranscriptRow.person_id) — never a model-typed name — because no name-to-person resolution reachable from this tier exists yet. This narrows person-claims to self-reports (the person who closed the note, about themselves) until such a resolver lands.",
+    "Wired under its own flag, `[notes] discharge_enabled` (default false), deliberately not riding `curator_enabled`: that pass merges and retires notes, this one additionally writes to three tiers outside the note store entirely, which is a materially larger capability an operator turning on note retirement did not thereby accept."
+  ],
+  "limitations": [
+    "A commitment's Event is created with `when=None` — the note's own anchor date is not carried onto the Event, because setting `when` would trigger the Gathering service's reminder linking, which needs a real delivery platform this workspace-scoped background pass has no honest way to supply. The retired note itself is suppressed, not deleted, so the date stays reachable by direct read.",
+    "A world-claim is always written with `warrant_kind=\"source\"` — the fact store's only writer hard-codes that warrant; there is no `stated`-warrant write path anywhere in this codebase yet, though design 33 §7 names both as valid for a world-claim.",
+    "Ships with `discharge_enabled = false`; no deployed config.toml changes behavior until an operator explicitly turns it on."
+  ]
+}
