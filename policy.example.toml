@@ -73,14 +73,14 @@ tools    = []                # MCP servers this room may use, e.g. ["pulse"].
                              # The one thing it never relaxes: if Nora cannot READ the
                              # roster, she still refuses. Trust overrules what a roster
                              # says, never the absence of one.
-# participation = true         # (default false) opt THIS room into the participation
-                             # occasion (design/dreamer-agent-loop/35): Nora may speak
-                             # here UNCALLED, judged once per quiet-closed window, with
-                             # silence as the healthy default. Being allowed to answer
-                             # when tagged has never implied being allowed to speak
-                             # unprompted — the two are separate grants, and this one
-                             # additionally requires `[participation] enabled = true`
-                             # in config.toml (shipped off).
+# relevance_gate = true        # (default false) opt THIS room into the Relevance Gate
+                             # (design/dreamer-agent-loop/36): an untagged message here
+                             # may be judged, once per quiet-closed window, on whether it
+                             # deserves Nora's attention. Being allowed to answer when
+                             # tagged has never implied being allowed to speak unprompted
+                             # — the two are separate grants, and this one additionally
+                             # requires `[relevance_gate] enabled = true` in config.toml
+                             # (shipped off, and shipped in shadow mode even when on).
 
 # Discord: the guild and the channel, flattened into one id. The GUILD IS NOT
 # allowlistable on its own — being invited to a server grants technical reach,

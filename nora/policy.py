@@ -81,13 +81,13 @@ class Conversation:
     # in the destination independently: the workspace bounds WHICH rooms may
     # ever be paired, and the persons list still decides who may use the pair.
     workspace: str = "nora"
-    # UNPROMPTED-SPEECH TRUST (design/dreamer-agent-loop/35 §8). Default False:
-    # being allowed to ANSWER this room when tagged has never implied being
-    # allowed to speak in it uncalled. `participation = true` is the operator
-    # saying "Nora may join THIS room's conversation on her own judgement" —
-    # and it still does nothing while `[participation] enabled = false` in
-    # config.toml (the shipped default).
-    participation: bool = False
+    # UNPROMPTED-SPEECH TRUST (design/dreamer-agent-loop/36 §8, formerly /35).
+    # Default False: being allowed to ANSWER this room when tagged has never
+    # implied being allowed to speak in it uncalled. `relevance_gate = true` is
+    # the operator saying "the Relevance Gate may consider THIS room's untagged
+    # traffic" — and it still does nothing while `[relevance_gate] enabled =
+    # false` in config.toml (the shipped default).
+    relevance_gate: bool = False
 
 
 @dataclass(frozen=True)
@@ -146,15 +146,15 @@ class _PermissivePolicy(Policy):
         return Conversation(
             platform=platform, ids=frozenset({conversation_id}), persons=None,
             primary_id=conversation_id,
-            # Opted IN to participation (design/dreamer-agent-loop/35 Phase 2):
+            # Opted IN to the Relevance Gate (design/dreamer-agent-loop/36):
             # the offline/eval harnesses this policy exists for must be able to
-            # drive the participation occasion — an untagged message reaching
-            # `ParticipationPolicy` here marks `EngageDecision.participation`
+            # drive the gate — an untagged message reaching
+            # `RelevanceGatePolicy` here marks `EngageDecision.relevance_gate`
             # exactly as an opted-in production room's would. Inert everywhere
             # else: the verdict only matters when a harness has ALSO wired a
-            # `ParticipationPolicy` into its engage chain, which nothing does
+            # `RelevanceGatePolicy` into its engage chain, which nothing does
             # by default.
-            participation=True,
+            relevance_gate=True,
         )
 
     def is_allowed(self, *, platform: str, conversation_id: str, person_id: str | None) -> bool:
@@ -180,10 +180,11 @@ class _ConversationEntry(BaseModel):
     # See `Conversation.workspace` (DEC-105): the social unit this room belongs
     # to. `send_to` may only relay BETWEEN rooms that share it.
     workspace: str = "nora"
-    # See `Conversation.participation` (design/dreamer-agent-loop/35): opts THIS
-    # room into unprompted participation turns. Default False — the right to
-    # speak uncalled is granted per room, never inherited from being answerable.
-    participation: bool = False
+    # See `Conversation.relevance_gate` (design/dreamer-agent-loop/36): opts
+    # THIS room into the Relevance Gate's consideration of its untagged
+    # traffic. Default False — the right to speak uncalled is granted per
+    # room, never inherited from being answerable.
+    relevance_gate: bool = False
 
     @field_validator("persons")
     @classmethod
@@ -242,7 +243,7 @@ def load_policy(path: Path) -> Policy:
             platform=entry.platform, ids=ids, persons=persons, label=entry.label,
             tools=frozenset(entry.tools), location=entry.location,
             primary_id=entry.id, workspace=entry.workspace,
-            participation=entry.participation,
+            relevance_gate=entry.relevance_gate,
         )
         conversations.append(convo)
         for cid in ids:
