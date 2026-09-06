@@ -115,16 +115,12 @@ SEPARATE judgement from the verdict itself, and you make it only when you have a
 nothing in the note is worth keeping beyond the retirement itself, say nothing here — that is
 the ordinary, ANSWER, not a gap you need to fill.
 
-Up to a handful of items, each one of exactly three kinds:
+Up to a handful of items, each one of exactly two kinds:
 
 - **`commitment`** — an actual plan that is now happening: a booking, an RSVP count, a
   decision to do the thing. «Dinner on the 9th, 3 people» is a commitment. Give it one field,
   `title` — a short name for the plan («Dinner», «Ada's leaving do»). You do not need to repeat
   the date; the note's own anchor already carries it.
-- **`world_claim`** — a fact about the WORLD that would still be true next month, independent of
-  who is going: «Yardbird is a yakitori place». Give it `subject`, `predicate`, `object` (the
-  same shape as any fact — «Yardbird», «is a», «yakitori place») and `excerpt`, the exact
-  sentence from the body or evidence that says so.
 - **`person_claim`** — a settled fact about the PERSON who closed the note, in their own words:
   «I like Yardbird for the jazz», said by the person whose message closed it. Give it one field,
   `content`, in the first person as they would say it or the third person as the room said it —
@@ -133,6 +129,9 @@ Up to a handful of items, each one of exactly three kinds:
 
 Do not force a note into one of these. A closed note about a plain "yes we're doing it" with
 nothing else notable has NOTHING to discharge, and that is the common case, not a miss.
+
+A settled fact about the WORLD — «Yardbird is a yakitori place» — is NOT one of these kinds.
+There is nowhere for it to go, so leave it out; an item of any other kind is dropped.
 
 ## Answering
 
@@ -147,7 +146,7 @@ no citation at all:
 A `closed` verdict with something worth discharging also carries `discharge`:
 
 ```json
-{"verdicts": [{"note_id": "3", "verdict": "closed", "why": "Ada booked Sai Kung on the 3rd", "cited_message_id": 482, "discharge": [{"kind": "commitment", "title": "Dinner"}, {"kind": "world_claim", "subject": "Sai Kung place", "predicate": "does", "object": "seafood", "excerpt": "Sai Kung does seafood, Ada booked it"}]}]}
+{"verdicts": [{"note_id": "3", "verdict": "closed", "why": "Ada booked Sai Kung on the 3rd", "cited_message_id": 482, "discharge": [{"kind": "commitment", "title": "Dinner"}, {"kind": "person_claim", "content": "likes Sai Kung for the seafood"}]}]}
 ```
 
 A merge group's survivor also carries `merged_body` — the one body that keeps what every note in

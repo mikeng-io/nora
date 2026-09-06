@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import pytest
 
-from nora.domain.facts import FactVerdict
 from nora.domain.gatherings import AmbiguousOpenGatheringsError
 from nora.domain.models import DeliveryStatus
 from nora.domain.notes import (
@@ -151,7 +150,7 @@ def _row(row_id: int, body: str, *, ts: int = NOW + 1000,
 def _curator(
     store, metrics=None, today=TODAY, *, record=None, now_ms=NOW,
     max_revisits_per_tick=10, evidence_messages_per_note=40,
-    discharge_enabled=False, facts=None, events=None, conclusions=None,
+    discharge_enabled=False, events=None, conclusions=None,
     ai_peer="nora",
 ):
     return NoteCuratorAdaptor(
@@ -160,7 +159,7 @@ def _curator(
         max_revisits_per_tick=max_revisits_per_tick,
         evidence_messages_per_note=evidence_messages_per_note,
         metrics=metrics or Metrics(), clock=lambda: now_ms,
-        discharge_enabled=discharge_enabled, facts=facts, events=events,
+        discharge_enabled=discharge_enabled, events=events,
         conclusions=conclusions, ai_peer=ai_peer,
     )
 
@@ -2236,34 +2235,16 @@ def _h_for(curator, key, note) -> str:
 # ---------------------------------------------------------------------------
 # Discharge (design/dreamer-agent-loop/33-note-dreamer-schedule.md §7,
 # 19-between-tiers.md §1, issue #101) — a closed note's settled content,
-# routed to the owning tier's OWN existing write path. The three fakes below
+# routed to the owning tier's OWN existing write path. The two fakes below
 # behave like their real collaborators' actual shapes rather than answering
-# every call one way: `_FakeFactSink` isinstance-checks its payload exactly
-# as `SqlFactStore.propose` does, `_FakeEventSink` can raise the one domain
-# refusal `GatheringService.create_event` itself can raise, and
-# `_FakeConclusionSink` can return `False` — `MemoryStore.conclude`'s real
-# failure shape is a bare `False`, never an exception.
+# every call one way: `_FakeEventSink` can raise the one domain refusal
+# `GatheringService.create_event` itself can raise, and `_FakeConclusionSink`
+# can return `False` — `MemoryStore.conclude`'s real failure shape is a bare
+# `False`, never an exception.
+#
+# There was a THIRD, `_FakeFactSink`, standing in for the knowledge tier's
+# `propose`. That tier is deleted and the `_WorldClaim` route with it.
 # ---------------------------------------------------------------------------
-
-
-class _FakeFactSink:
-    def __init__(self, *, fail: bool = False):
-        self.proposals: list[tuple[str, Proposal]] = []
-        self._fail = fail
-
-    async def propose(self, *, key, proposals, now_ms):
-        if self._fail:
-            raise RuntimeError("fact store unavailable")
-        ids = []
-        for p in proposals:
-            if not isinstance(p.payload, FactVerdict):
-                raise TypeError(
-                    f"_FakeFactSink.propose only accepts a FactVerdict "
-                    f"payload, got {type(p.payload).__name__}"
-                )
-            self.proposals.append((key, p))
-            ids.append("fact-1")
-        return tuple(ids)
 
 
 class _FakeEventSink:
@@ -2361,44 +2342,6 @@ async def test_discharge_commitment_writes_a_real_event():
         "nora_note_discharge_notes_total", result="items") == 1
 
 
-async def test_discharge_world_claim_writes_a_fact_with_source_warrant():
-    store = InMemoryNoteStore()
-    note = await _seed(store, title="Yardbird", anchor=20260909)
-    metrics = Metrics()
-    record = FakeRecordStore()
-    record.rows.append(_row(1, "Yardbird is a yakitori place"))
-    facts = _FakeFactSink()
-    curator = _curator(
-        store, metrics, record=record, discharge_enabled=True, facts=facts,
-    )
-    await curator.inputs(key=WS, batch=())
-
-    written = await _close_with_discharge(
-        curator, note, discharge_item={
-            "kind": "world_claim", "subject": "Yardbird",
-            "predicate": "is a", "object": "yakitori place",
-            "excerpt": "Yardbird is a yakitori place",
-        },
-    )
-
-    assert written == 1
-    assert len(facts.proposals) == 1
-    key, proposal = facts.proposals[0]
-    assert key == note.workspace
-    verdict = proposal.payload
-    assert isinstance(verdict, FactVerdict)
-    assert (verdict.subject, verdict.predicate, verdict.object) == (
-        "Yardbird", "is a", "yakitori place")
-    assert verdict.status == "supported"
-    assert verdict.source_url == f"note:{note.id}", (
-        "the SOURCE is the note itself, honestly labelled — never a "
-        "fabricated web URL"
-    )
-    assert verdict.source_excerpt == "Yardbird is a yakitori place"
-    assert metrics.get(
-        "nora_note_discharge_total", kind="world_claim", outcome="written") == 1
-
-
 async def test_discharge_person_claim_reaches_the_honcho_integration_point():
     store = InMemoryNoteStore()
     note = await _seed(store, title="Yardbird jazz", anchor=20260909)
@@ -2442,10 +2385,10 @@ async def test_a_note_with_nothing_to_discharge_retires_with_no_writes():
     metrics = Metrics()
     record = FakeRecordStore()
     record.rows.append(_row(1, "Ada booked Sai Kung"))
-    facts, events, conclusions = _FakeFactSink(), _FakeEventSink(), _FakeConclusionSink()
+    events, conclusions = _FakeEventSink(), _FakeConclusionSink()
     curator = _curator(
         store, metrics, record=record, discharge_enabled=True,
-        facts=facts, events=events, conclusions=conclusions,
+        events=events, conclusions=conclusions,
     )
     await curator.inputs(key=WS, batch=())
 
@@ -2453,7 +2396,6 @@ async def test_a_note_with_nothing_to_discharge_retires_with_no_writes():
 
     assert written == 1
     assert await store.standing(workspace=WS) == ()
-    assert facts.proposals == []
     assert events.calls == []
     assert conclusions.calls == []
     assert metrics.get("nora_note_discharge_notes_total", result="empty") == 1
@@ -2484,6 +2426,47 @@ async def test_a_malformed_discharge_item_is_dropped_fail_closed():
     assert metrics.get(
         "nora_note_curator_dropped_total", reason="discharge_malformed") == 1
     assert metrics.get("nora_note_discharge_notes_total", result="empty") == 1
+
+
+async def test_a_world_claim_item_is_dropped_now_that_it_has_nowhere_to_go():
+    """The knowledge tier is deleted, so `_DischargeItem` has TWO shapes and
+    `world_claim` is not one of them. The objective no longer asks for one;
+    this pins what happens if a model invents it anyway — DROPPED and counted
+    as malformed, never routed to a collaborator that does not exist and never
+    silently swallowed into a discharge that reports items.
+
+    Reverting the deletion of the `world_claim` branch in
+    `_parse_discharge_item` turns this red: the item would parse, `_run_
+    discharge` would report `result="items"`, and this note's discharge would
+    claim to have routed something it could not.
+    """
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Yardbird", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "Yardbird is a yakitori place"))
+    events, conclusions = _FakeEventSink(), _FakeConclusionSink()
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True,
+        events=events, conclusions=conclusions,
+    )
+    await curator.inputs(key=WS, batch=())
+
+    written = await _close_with_discharge(
+        curator, note, discharge_item={
+            "kind": "world_claim", "subject": "Yardbird",
+            "predicate": "is a", "object": "yakitori place",
+            "excerpt": "Yardbird is a yakitori place",
+        },
+    )
+
+    assert written == 1, "the note itself still retires cleanly"
+    assert events.calls == []
+    assert conclusions.calls == []
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="discharge_malformed") == 1
+    assert metrics.get("nora_note_discharge_notes_total", result="empty") == 1
+    assert metrics.get("nora_note_discharge_notes_total", result="items") == 0
 
 
 async def test_a_malformed_whole_discharge_field_is_dropped_fail_closed():
