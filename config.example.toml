@@ -1432,7 +1432,25 @@ timeout_seconds = 3600
 # `total_tokens` and `timeout_seconds` are unchanged and still bound it: 15
 # turns at the observed sizes is well inside 120k tokens and 300 seconds.
 turns = 20
-total_tokens = 120000
+# 120000 -> 2000000 (operator, 2026-09-07). MEASURED, and the measurement is
+# the first real run this pass ever had: with the candidate filter opened, the
+# 2026-09-06 17:56Z tick reached the model for `friends` and `ridgeline`, spent
+# the loop on four `web_search` and two `web_fetch` calls, and emitted a
+# ZERO-CHARACTER envelope in both. A fetched page is input-resident and is
+# re-paid on every later call of the loop, so 120k buys the research and
+# nothing left to write the verdict with.
+#
+# 2,000,000 rather than a cautious step, and the reason is the cadence: this
+# adaptor runs ONCE A DAY per workspace. A ceiling sized for a 5-minute tick
+# was sizing the wrong thing — the operator's own framing, and the same
+# argument that took `[llm] total_tokens` to 1,024,000 for a turn a person is
+# actually waiting on. Nobody waits on this one, and it gets one attempt a day
+# to be worth having run.
+#
+# `timeout_seconds = 300` is now the binding constraint, not the tokens, which
+# is the honest place for the bound: a research loop should be stopped by the
+# clock a human would notice, not by a budget it silently exhausts mid-answer.
+total_tokens = 2000000
 output_tokens = 8000
 timeout_seconds = 300
 

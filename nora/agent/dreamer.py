@@ -624,6 +624,7 @@ class DreamerRuntime:
         metrics: Metrics,
         model_name: str,
         schedules: Mapping[str, AdaptorSchedule] | None = None,
+        tool_budget_overrides: Mapping[str, int] | None = None,
     ) -> None:
         self._models = models
         self._instructions = instructions
@@ -637,6 +638,24 @@ class DreamerRuntime:
         # default shared across instances is a trap, and this mapping is only
         # ever READ, so coalescing here costs nothing.
         self._schedules = dict(schedules or {})
+        # `[llm.budgets]`, the per-deployment delta over `NATIVE_TOOLS`.
+        #
+        # **The Dreamer did not see it until 2026-09-07, and the tag path
+        # did.** `ToolRegistry(budget_overrides=cfg.llm.budgets).budgets()`
+        # applies it for a turn; `_tool_budgets` below read `spec.budget`
+        # straight off the table, so one number in `config.toml` meant two
+        # different ceilings depending on which loop was asking — with nothing
+        # naming the difference. Measured live on the first tick after the
+        # knowledge tier's schedule landed: `[llm.budgets] web_fetch = 6` was
+        # set, and `DreamGuard` vetoed the Dreamer at «you already called
+        # web_fetch 2 time(s)», the TABLE value, twelve times in one run that
+        # then produced a 0-char envelope.
+        #
+        # A plain `Mapping[str, int]` through `__init__` rather than a config
+        # read: `nora.agent` may not import `nora.config` (the layer contract),
+        # which is the same reason `max_adjudications_per_tick` arrives as an
+        # int on the adaptors.
+        self._tool_budget_overrides = dict(tool_budget_overrides or {})
 
     def budget_for(self, adaptor_name: str) -> AdaptorBudget:
         return self._budgets.get(adaptor_name, self._default_budget)
@@ -697,7 +716,8 @@ class DreamerRuntime:
             )
             guard = DreamGuard(
                 adaptor=adaptor.name,
-                budgets=_tool_budgets(tools, adaptor),
+                budgets=_tool_budgets(
+                    tools, adaptor, self._tool_budget_overrides),
                 metrics=self._metrics,
                 result_caps=_TOOL_RESULT_CAPS,
             )
@@ -877,7 +897,11 @@ class DreamerRuntime:
         )
 
 
-def _tool_budgets(tools: list[Any], adaptor: DreamAdaptor) -> dict[str, int]:
+def _tool_budgets(
+    tools: list[Any],
+    adaptor: DreamAdaptor,
+    overrides: Mapping[str, int] | None = None,
+) -> dict[str, int]:
     """The per-tool call ceiling `DreamGuard` enforces under R-7.
 
     Read off the BUILT tools rather than off the adaptor's declared names, so a
@@ -885,6 +909,13 @@ def _tool_budgets(tools: list[Any], adaptor: DreamAdaptor) -> dict[str, int]:
     therefore vetoed by default-deny rather than admitted with a ceiling it
     cannot spend. `adaptor` is named only in the log line, which is what makes
     a mismatch findable rather than merely safe.
+
+    `overrides` is `[llm.budgets]`, applied OVER the table exactly as
+    `ToolRegistry.budgets()` applies it for a tag's turn — see
+    `DreamerRuntime.__init__` for why the Dreamer went without it. Applied only
+    to a tool that BUILT: an override naming a tool this adaptor does not hold
+    must not conjure a budget entry, because a name in `budgets` is what turns
+    default-deny into permission.
     """
     from .tools import NATIVE_TOOLS
 
@@ -900,5 +931,5 @@ def _tool_budgets(tools: list[Any], adaptor: DreamAdaptor) -> dict[str, int]:
                 "(adaptor=%s)", name, adaptor.name,
             )
             continue
-        budgets[name] = spec.budget
+        budgets[name] = (overrides or {}).get(name, spec.budget)
     return budgets
