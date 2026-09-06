@@ -1,11 +1,10 @@
-"""The shipped Dreamer instruction store, for tests that need to build an observer.
+"""The shipped Dreamer instruction store, for tests that need a real one.
 
-Not a fake. `LexemeObserver`/`ExchangePatternObserver` take an `objective`
-collaborator that reads a body by name, and the real
-`nora.instructions.dreamer.DreamerInstructions` over the real `nora/dreamer/`
-tree is both cheaper to build than a double and strictly better evidence: a test
-using it exercises the production text, so a broken objective file fails the
-unit suite rather than the next Dreamer tick.
+Not a fake. An adaptor takes an `objective` collaborator that reads a body by
+name, and the real `nora.instructions.dreamer.DreamerInstructions` over the
+real `nora/dreamer/` tree is both cheaper to build than a double and strictly
+better evidence: a test using it exercises the production text, so a broken
+objective file fails the unit suite rather than the next Dreamer tick.
 
 `reload="startup"` because a test does not edit the shipped tree — tests that DO
 need to simulate an operator edit build their own `DreamerInstructions` over
@@ -19,7 +18,6 @@ from nora.obs.metrics import Metrics
 
 ROOT = Path(__file__).resolve().parents[1]
 SHIPPED_DREAMER = ROOT / "nora" / "dreamer"
-PRE_MOVE = ROOT / "tests" / "fixtures" / "dreamer_objectives_pre_move"
 
 
 def shipped_objectives() -> DreamerInstructions:

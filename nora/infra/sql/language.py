@@ -1,129 +1,52 @@
-"""`RoomLanguageReader` plus the Dreamer's write side, over SQLAlchemy Core.
+"""`SqlDreamCursor` — the Dreamer's consolidation cursor over SQLAlchemy Core.
 
-Three tables, three jobs (`b974afe`, `nora/infra/sql/schema.py`):
-`consolidation_watermark` is the cursor — how far each `(consolidator_name,
-scope_id)` has read `messages`; `language_observation` is append-only EVIDENCE,
-one row per extracted usage, natural-keyed `(message_id, canonical_form,
-sense)` so a retried or overlapping cycle cannot double-count; `room_lexeme` is
-the CONSOLIDATED lexicon `room_language` actually reads, keyed `(scope_id,
-canonical_form, sense)` so a word acquiring a second sense gets a second row
-rather than overwriting or merging into the first.
+**What is left here after the language tier was deleted, and why the module
+kept its name.** `language_observation` and `room_lexeme` had exactly one
+consumer, the room-language consolidator, and both went with it. The THIRD
+table this module owns did not: `consolidation_watermark` is the DREAMER's
+cursor — `(consolidator_name, scope_id) -> how far this adaptor has read
+`messages`` — and every scheduled adaptor in `nora.app.runtime.dream_loop`
+reads and advances it, including the note tier's, which has nothing to do with
+language. The class is what `nora.app.runtime._ConsolidationCursor` names
+structurally; the surviving six methods ARE that Protocol.
 
-`rescore` is a full recompute over every surviving observation for one scope,
-not an incremental update — the same shape `SqlRecordStore.prune_all` favours
-over a running counter (`docs/superpowers/plans/2026-08-15-...md`'s own
-argument for `_dream_once`: "Rescore even when nothing was appended: decay is
-time-driven, so a quiet scope must still be able to let a word fade"). A
-running counter cannot fade a word nobody has mentioned since; reading the
-evidence table fresh every time can, because RECENCY is a function of `now_ms`
-alone and every surviving observation is already there to recompute from. The
-grouping — `occurrence_count`, `distinct_speakers` via `COUNT(DISTINCT
-person_id)`, `first_seen_at`/`last_seen_at`, and a CAPPED, most-recent-first
-`examples` array — runs IN SQL, not in Python: `idx_language_observation_scope`
-(`0014_lang_obs_scope_idx.py`) makes the `WHERE scope_id = :s`
-half indexed, and pushing the `GROUP BY`/`ROW_NUMBER` down means this reads
-only the aggregates and the top few examples per lexeme off the wire, not
-every raw observation a popular word has ever produced. `score`/`state_for`
-still run in PYTHON, once per GROUP (never per raw row) — pushing the
-arithmetic itself into SQL would be reimplementing it a second time, which
-`nora.domain.language_scoring` exists to prevent.
+The module and the class keep their `language` names in this pass for the same
+reason `fact_entity` keeps its table name: the rename is a separate change with
+its own blast radius, and doing it inside a deletion would make the deletion
+unreviewable.
 
-Two decisions worth being explicit about, because nothing in the interface
-enforces either and a later reader would otherwise have to reverse-engineer
-them from behaviour:
+The six verbs, and what each is for:
 
-* `conversation_id` AND `observed_at` on `language_observation` are both read
-  from the real `messages` row, joined by `LexemeCandidate.message_id` — never
-  guessed or stamped from this process's own clock. `append_observations`'s
-  fixed signature (`Sequence[LexemeCandidate]`, no batch of `TranscriptRow`)
-  carries neither field directly, but `message_id` IS a real `messages.id`,
-  and this store already queries `MESSAGES` elsewhere (`lag`,
-  `seconds_since_last_message`, `watermark_is_behind_the_record`) — so the
-  INSERT is built as `INSERT ... SELECT ... FROM messages WHERE id =
-  :message_id`, one `UNION ALL` branch per candidate. A candidate whose
-  `message_id` no longer resolves (the row was pruned) contributes NOTHING —
-  the same evidence-grounding rule `LexemeObserver._extract` already applies
-  to a hallucinated `message_id`, extended to survive one more hop. This
-  matters far past tidiness: `observed_at` is the ONLY input to
-  `first_seen_at`/`last_seen_at`, which drive `scoring.score`'s recency term
-  and the `live`/`fading`/`stale` decision — i.e. whether a lexeme renders at
-  all. Stamping the process clock instead would have made the FIRST dream
-  cycle on any real room (`watermark_for` returns `0` for an unseen pair)
-  consolidate months of history in one batch with every lexeme's
-  `last_seen_at` set to "now" — rendering everything `live` with a recency
-  that never happened, unable to fade for 21 days — and the identical failure
-  on any catch-up after downtime.
-* `context` is stamped from the source message's own `body` — the actual
-  utterance — never from `LexemeCandidate.surface_form` ("what the model
-  actually saw on the wire", `LexemeCandidate`'s own docstring). This was
-  gotten backwards once: an earlier revision of this file stamped
-  `surface_form` here on the theory that a second join would be needed to
-  reach `body` and this store had "no present reason to make" one. That
-  reasoning was wrong on its own terms — this SELECT already joins
-  `messages` for `observed_at`/`conversation_id` (the bullet above), so
-  `body` is one more column off the SAME row, not a second join — and it
-  broke the one property the rendered block's safety argument depends on:
-  `nora/language/render.py`'s own docstring calls the quote under the gloss
-  "the only thing that makes a wrong gloss visible to a reader", which is
-  only true if that quote is independent of the model. `surface_form` is
-  model-authored (the model chooses what substring of the message it echoes
-  back as the "form it saw"); stamping it as `context` renders a line whose
-  gloss AND "quote" both trace back to the same model call, restating the
-  headword under itself and falsifying nothing. `sa.func.coalesce(...,  "")`
-  guards the NOT NULL `context` column against a media-only row with no
-  `body` — the prompt (`nora.language.observer._build_prompt`) shows each row
-  to the model as `[{id}] {speaker}: {row.body or ''}`, so a bodyless row is
-  shown (as an empty body) and can be named by it; the empty `context` that
-  results from a candidate naming one is what the render-time guard in
-  `nora.language.render` now excludes, so this column's constraint must survive
-  the candidate anyway rather than failing the whole batch's INSERT.
+- `watermark_for` / `advance_watermark` — read and UPSERT the cursor. An
+  unknown `(name, scope)` pair reads `0`, which is what lets
+  `nora.app.runtime.seed_watermarks` tell «never seen» from «read nothing».
+- `lag` / `seconds_since_last_message` / `watermark_age_seconds` — the three
+  fire conditions `_dream_adaptor_once` evaluates.
+- `watermark_is_behind_the_record` — the fail-closed tell: a watermark below
+  the oldest surviving row means messages were deleted before they were ever
+  read, which is R-27's `unavailable` and never `nothing_found`.
 
-`score`/`state_for` live in `nora.domain.language_scoring`, not
-`nora.language.scoring` where Task 5 first put them (`0a940c8`) — `nora.infra`
-cannot import `nora.language` at all (the layers contract; verified with `uv
-run lint-imports`, which reports `nora.infra is not allowed to import
-nora.language`), the same reason `LexemeCandidate` lives in `nora.domain`
-rather than in either package that needs it. The old `nora/language/scoring.py`
-is deleted outright rather than kept as a re-export shim: nothing in this repo
-ever imported it (only `tests/unit/test_language_scoring.py`, itself moved to
-import `nora.domain.language_scoring` directly), so a shim would have bought a
-second import path for zero consumers.
+Every read carries `is_nora = 0` in its predicate, because the watermark only
+ever advances over HUMAN rows (`RecordStore.since` excludes `is_nora`) — and
+that predicate is what lets these queries use the partial
+`idx_messages_dream_lag` instead of scanning a conversation's whole history
+every tick.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
-from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.facts import normalise_name
-from nora.domain.language_scoring import score, state_for
-from nora.domain.models import LexemeCandidate, LexemeExample, RoomLanguage, RoomLexeme
-from nora.infra.sql.schema import (
-    CONSOLIDATION_WATERMARK,
-    LANGUAGE_OBSERVATION,
-    MESSAGES,
-    ROOM_LEXEME,
-)
+from nora.infra.sql.schema import CONSOLIDATION_WATERMARK, MESSAGES
 
 log = logging.getLogger(__name__)
-
-_RENDERED_STATES = ("live", "fading")
-
-# Task 9's renderer needs ONE example per rendered entry, not the whole
-# occurrence history — a word said 5,000 times must not rewrite a 5,000-element
-# JSONB on every tick and deserialize it in full on every turn's `room_language`
-# read. The plan caps rendered ENTRIES for exactly this cost reason ("this
-# block sits in the UNCACHED tier — so the cap is a cost control, not
-# tidiness"); the same argument applies to examples within one entry.
-_EXAMPLES_PER_LEXEME_CAP = 3
 
 
 def _now_ms() -> int:
@@ -131,10 +54,10 @@ def _now_ms() -> int:
 
 
 class SqlLanguageStore:
-    """Satisfies `nora.domain.ports.RoomLanguageReader`; also the Dreamer's
-    write side and cursor (`RoomConsolidator`'s companion durability, consumed
-    by `nora.language.consolidator.LanguageConsolidator` and `dream_loop`).
-    """
+    """The Dreamer's consolidation cursor — `nora.app.runtime
+    ._ConsolidationCursor`'s six verbs, and nothing else. Every scheduled
+    adaptor reads and advances it, so this store is TIER-NEUTRAL despite the
+    module's inherited name (see the module docstring)."""
 
     def __init__(self, engine: AsyncEngine, *, metrics: Any = None) -> None:
         """`metrics` is INJECTED, never imported — the same discipline
@@ -146,401 +69,6 @@ class SqlLanguageStore:
         correct for every unit test that does not care."""
         self._engine = engine
         self._metrics = metrics
-
-    async def append_observations(
-        self, *, scope_id: str, observations: Sequence[LexemeCandidate]
-    ) -> int:
-        """ONE `INSERT ... SELECT ... ON CONFLICT DO NOTHING`, natural-keyed on
-        `(message_id, canonical_form, sense)` — the same key
-        `language_observation`'s own `UniqueConstraint` declares. A retried or
-        overlapping consolidation cycle re-appending the same candidates
-        therefore inserts nothing the second time; `result.rowcount` on an
-        `ON CONFLICT DO NOTHING` statement is exactly the count of rows that
-        actually landed, which is what a caller needs to know "did this add
-        anything" without a second query.
-
-        The SELECT half — one `UNION ALL` branch per candidate, each joined to
-        `messages` by `WHERE id = :message_id` — is what supplies
-        `conversation_id` and `observed_at` from the REAL message row rather
-        than a guess or this process's own clock (see module docstring). A
-        candidate whose `message_id` no longer resolves contributes no row at
-        all, the same fail-closed drop `LexemeObserver._extract` already
-        applies to a hallucinated `message_id`.
-
-        `not_found` is counted for exactly that case (Task 7 carry-forward,
-        folded into Task 11): a cheap indexed pre-check (`messages.id`'s own
-        PK) against the SAME candidate id set, BEFORE the insert, tells a
-        candidate whose evidence vanished between `RecordStore.since` reading
-        it and this append landing — the message was pruned in that window —
-        apart from a candidate that resolved fine and was merely a REPLAY
-        (skipped by `ON CONFLICT DO NOTHING` on the natural key, which this
-        pre-check does not touch). Without it, "the batch had nothing new"
-        and "the evidence vanished between read and append" were the same
-        unmetered zero.
-        """
-        if not observations:
-            return 0
-        candidate_ids = {obs.message_id for obs in observations}
-        branches = [
-            sa.select(
-                sa.literal(scope_id, type_=sa.Text).label("scope_id"),
-                MESSAGES.c.conversation_id.label("conversation_id"),
-                MESSAGES.c.id.label("message_id"),
-                sa.literal(obs.person_id, type_=sa.Text).label("person_id"),
-                sa.literal(obs.surface_form, type_=sa.Text).label("surface_form"),
-                sa.literal(obs.canonical_form, type_=sa.Text).label("canonical_form"),
-                sa.literal(obs.sense, type_=sa.Text).label("sense"),
-                sa.literal(obs.part_of_speech, type_=sa.Text).label("part_of_speech"),
-                sa.func.coalesce(MESSAGES.c.body, sa.literal("", type_=sa.Text))
-                .label("context"),
-                MESSAGES.c.ts.label("observed_at"),
-                sa.literal(obs.confidence, type_=sa.Float).label("extractor_confidence"),
-                # PROVENANCE, per candidate — the digest the OBSERVER computed
-                # over the instruction text it was configured to send
-                # (`nora.language.observer.LexemeObserver.instruction_sha256`).
-                # It rides the candidate rather than arriving as a separate
-                # argument so this store can never write a row whose stamp
-                # came from somewhere other than the object that produced it.
-                sa.literal(obs.instruction_sha256, type_=sa.Text)
-                .label("instruction_sha256"),
-                # The other half of the same provenance, from the same
-                # candidate for the same reason — the model the observer read
-                # off the client that actually made the call
-                # (`LexemeObserver.model`). Two fields, one source object, so
-                # a row can never name an instruction and a model that were
-                # never run together.
-                sa.literal(obs.model, type_=sa.Text).label("model"),
-            ).where(MESSAGES.c.id == obs.message_id)
-            for obs in observations
-        ]
-        combined = sa.union_all(*branches) if len(branches) > 1 else branches[0]
-        stmt = (
-            pg.insert(LANGUAGE_OBSERVATION)
-            .from_select(
-                [
-                    "scope_id", "conversation_id", "message_id", "person_id",
-                    "surface_form", "canonical_form", "sense", "part_of_speech",
-                    "context", "observed_at", "extractor_confidence",
-                    "instruction_sha256", "model",
-                ],
-                combined,
-            )
-            .on_conflict_do_nothing(
-                index_elements=[
-                    LANGUAGE_OBSERVATION.c.message_id,
-                    LANGUAGE_OBSERVATION.c.canonical_form,
-                    LANGUAGE_OBSERVATION.c.sense,
-                ]
-            )
-        )
-        async with self._engine.begin() as conn:
-            resolvable = set(
-                (
-                    await conn.execute(
-                        sa.select(MESSAGES.c.id).where(MESSAGES.c.id.in_(candidate_ids))
-                    )
-                ).scalars().all()
-            )
-            result = await conn.execute(stmt)
-        unresolved = candidate_ids - resolvable
-        if unresolved and self._metrics is not None:
-            self._metrics.inc(
-                "nora_language_candidates_dropped_total",
-                float(len(unresolved)),
-                reason="not_found",
-            )
-        return int(result.rowcount or 0)
-
-    async def rescore(self, *, scope_id: str, now_ms: int) -> None:
-        """Full recompute over every surviving observation for `scope_id`,
-        grouped by `(canonical_form, sense)` — see module docstring for why
-        this is a recompute, not an incremental update, and for why the
-        grouping itself runs in SQL rather than by fetching every raw row.
-
-        `distinct_speakers` is `COUNT(DISTINCT person_id)`, which already
-        excludes NULL. An unmapped sender (`person_id IS NULL`,
-        `nora.infra.sql.audit.py:210`'s own case) still counts toward
-        `occurrence_count` — the word was genuinely said — but never toward
-        `distinct_speakers`: nobody can name who that speaker WAS, so counting
-        them as one more distinct person would be a claim with no identity
-        behind it. The rendered "N people" stays a real count of known people.
-
-        `instruction_sha256` and `model` are INHERITED, not computed, and they
-        are inherited from the SAME row: this method never
-        reaches a model, so the only honest stamp for a consolidated row is
-        the one carried by the evidence that most recently produced it — the
-        `rn = 1` row of the same window `examples` already ranks, i.e. the
-        observation whose `observed_at` IS this row's `last_seen_at`. A group
-        spanning an instruction edit therefore reports the instruction
-        currently keeping the gloss alive, which is the one to interrogate
-        first; the whole mixture stays queryable in `language_observation`,
-        where a per-row history belongs. A group whose newest evidence
-        predates the column inherits NULL — «nobody recorded it», never a
-        guess.
-
-        Both fields come off the ONE `latest` row rather than two lookups,
-        which is what makes the pair honest: an instruction taken from the
-        newest row and a model taken from, say, the most common row would
-        together describe a run that never happened. They are also the reason
-        a consolidated row can carry NULL for both while its group holds
-        stamped evidence — the newest observation is the one that speaks, and
-        if it predates the columns it says nothing.
-
-        `examples` is capped at `_EXAMPLES_PER_LEXEME_CAP`, most-recent-first:
-        a `ROW_NUMBER() OVER (PARTITION BY canonical_form, sense ORDER BY
-        observed_at DESC)` window ranks each group's own rows, filtered to
-        `rn <= cap` before `jsonb_agg` builds the array — `aggregate_order_by`
-        makes the ordering explicit rather than relying on incidental row
-        arrival order, which `jsonb_agg` does not guarantee on its own.
-        """
-        LO = LANGUAGE_OBSERVATION  # noqa: N806 — local alias, three CTEs read it
-        ranked = (
-            sa.select(
-                LO.c.canonical_form,
-                LO.c.sense,
-                LO.c.message_id,
-                LO.c.person_id,
-                LO.c.context,
-                LO.c.observed_at,
-                LO.c.instruction_sha256,
-                LO.c.model,
-                sa.func.row_number()
-                .over(
-                    partition_by=(LO.c.canonical_form, LO.c.sense),
-                    order_by=LO.c.observed_at.desc(),
-                )
-                .label("rn"),
-            )
-            .where(LO.c.scope_id == scope_id)
-            .cte("ranked")
-        )
-        aggregated = (
-            sa.select(
-                LO.c.canonical_form,
-                LO.c.sense,
-                sa.func.count().label("occurrence_count"),
-                sa.func.count(sa.distinct(LO.c.person_id)).label("distinct_speakers"),
-                sa.func.min(LO.c.observed_at).label("first_seen_at"),
-                sa.func.max(LO.c.observed_at).label("last_seen_at"),
-            )
-            .where(LO.c.scope_id == scope_id)
-            .group_by(LO.c.canonical_form, LO.c.sense)
-            .cte("aggregated")
-        )
-        # The newest observation per group — `rn = 1` of the SAME window
-        # `examples_cte` filters, so the inherited stamp and `last_seen_at`
-        # can never name different rows.
-        latest = (
-            sa.select(
-                ranked.c.canonical_form, ranked.c.sense, ranked.c.instruction_sha256,
-                ranked.c.model,
-            )
-            .where(ranked.c.rn == 1)
-            .cte("latest")
-        )
-        example_obj = sa.func.jsonb_build_object(
-            "message_id", ranked.c.message_id,
-            "person_id", ranked.c.person_id,
-            "text", ranked.c.context,
-        )
-        examples_cte = (
-            sa.select(
-                ranked.c.canonical_form,
-                ranked.c.sense,
-                sa.func.jsonb_agg(
-                    aggregate_order_by(example_obj, ranked.c.observed_at.desc())
-                ).label("examples"),
-            )
-            .where(ranked.c.rn <= _EXAMPLES_PER_LEXEME_CAP)
-            .group_by(ranked.c.canonical_form, ranked.c.sense)
-            .cte("examples")
-        )
-        select_stmt = sa.select(
-            aggregated.c.canonical_form,
-            aggregated.c.sense,
-            aggregated.c.occurrence_count,
-            aggregated.c.distinct_speakers,
-            aggregated.c.first_seen_at,
-            aggregated.c.last_seen_at,
-            examples_cte.c.examples,
-            latest.c.instruction_sha256,
-            latest.c.model,
-        ).select_from(
-            aggregated.join(
-                examples_cte,
-                sa.and_(
-                    aggregated.c.canonical_form == examples_cte.c.canonical_form,
-                    aggregated.c.sense == examples_cte.c.sense,
-                ),
-            ).join(
-                latest,
-                sa.and_(
-                    aggregated.c.canonical_form == latest.c.canonical_form,
-                    aggregated.c.sense == latest.c.sense,
-                ),
-            )
-        )
-
-        async with self._engine.begin() as conn:
-            rows = (await conn.execute(select_stmt)).all()
-            if not rows:
-                return
-
-            upsert_rows = []
-            for r in rows:
-                recognition_score = score(
-                    occurrences=r.occurrence_count,
-                    distinct_speakers=r.distinct_speakers,
-                    last_seen_ms=r.last_seen_at,
-                    now_ms=now_ms,
-                )
-                state = state_for(
-                    score=recognition_score, last_seen_ms=r.last_seen_at, now_ms=now_ms
-                )
-                upsert_rows.append({
-                    "scope_id": scope_id,
-                    "canonical_form": r.canonical_form,
-                    "sense": r.sense,
-                    "first_seen_at": r.first_seen_at,
-                    "last_seen_at": r.last_seen_at,
-                    "occurrence_count": r.occurrence_count,
-                    "distinct_speakers": r.distinct_speakers,
-                    "recognition_score": recognition_score,
-                    "state": state,
-                    "examples": r.examples,
-                    "instruction_sha256": r.instruction_sha256,
-                    "model": r.model,
-                })
-
-            upsert_stmt = pg.insert(ROOM_LEXEME).values(upsert_rows)
-            upsert_stmt = upsert_stmt.on_conflict_do_update(
-                index_elements=[
-                    ROOM_LEXEME.c.scope_id,
-                    ROOM_LEXEME.c.canonical_form,
-                    ROOM_LEXEME.c.sense,
-                ],
-                set_={
-                    "first_seen_at": upsert_stmt.excluded.first_seen_at,
-                    "last_seen_at": upsert_stmt.excluded.last_seen_at,
-                    "occurrence_count": upsert_stmt.excluded.occurrence_count,
-                    "distinct_speakers": upsert_stmt.excluded.distinct_speakers,
-                    "recognition_score": upsert_stmt.excluded.recognition_score,
-                    "state": upsert_stmt.excluded.state,
-                    "examples": upsert_stmt.excluded.examples,
-                    "instruction_sha256": upsert_stmt.excluded.instruction_sha256,
-                    "model": upsert_stmt.excluded.model,
-                },
-            )
-            await conn.execute(upsert_stmt)
-
-    async def mark_disputed(
-        self, *, scope_id: str, surface: str, person_id: str | None,
-        reason: str | None, tag_id: str, now_ms: int,
-    ) -> int:
-        """The lexeme half of the correction loop's fan-out (31 §6). Returns
-        rows marked.
-
-        **Every SENSE of the form, not one row.** `room_lexeme`'s key includes
-        `sense`, deliberately — a word acquiring a second meaning gets a second
-        row rather than overwriting the first — so a member saying "no, big
-        walk is a video game" is disputing the FORM, and marking one sense
-        would leave its sibling standing and unmarked. That sibling is the one
-        that made two contradictory glosses coexist in the first place.
-
-        **Matched on the normalised form**, `nora.domain.facts.normalise_name`,
-        the same one the fact tier and recognition use — a `LIKE` or a `lower()`
-        here would be a second definition of identity and the two would drift
-        on the first CJK case.
-
-        Already-disputed rows are left alone: the first asserter is the one
-        that holds, matching the fact tier, and a second dispute is recorded on
-        the candidate it proposes.
-        """
-        async with self._engine.begin() as conn:
-            rows = (await conn.execute(
-                sa.select(ROOM_LEXEME.c.canonical_form, ROOM_LEXEME.c.sense)
-                .where(
-                    ROOM_LEXEME.c.scope_id == scope_id,
-                    ROOM_LEXEME.c.disputed_at.is_(None),
-                )
-            )).all()
-            target = normalise_name(surface)
-            keys = [
-                (form, sense) for form, sense in rows
-                if normalise_name(form) == target
-            ]
-            if not keys:
-                return 0
-            marked = 0
-            for form, sense in keys:
-                marked += (await conn.execute(
-                    sa.update(ROOM_LEXEME)
-                    .where(
-                        ROOM_LEXEME.c.scope_id == scope_id,
-                        ROOM_LEXEME.c.canonical_form == form,
-                        ROOM_LEXEME.c.sense == sense,
-                        ROOM_LEXEME.c.disputed_at.is_(None),
-                    )
-                    .values(
-                        disputed_at=now_ms, disputed_by=person_id,
-                        disputed_reason=reason, disputed_tag_id=tag_id,
-                    )
-                )).rowcount
-        return marked
-
-    async def room_language(self, *, scope_id: str, limit: int) -> RoomLanguage:
-        """Satisfies `RoomLanguageReader.room_language`: NEVER raises. `except
-        Exception` is deliberately broad — not `except ConnectionError` the
-        way `_FakeRoomConsolidator._read_lexemes` narrows it in
-        `tests/contract/test_room_consolidator_contract.py`, which is correct
-        there only because that fake can raise nothing else by construction.
-        A real database raises timeouts, pool exhaustion, serialization
-        failures, `InterfaceError`, and driver errors that are not
-        `ConnectionError` — and this read runs inside `TranscriptInjection`'s
-        `asyncio.gather` beside four other reads, where one uncaught
-        exception cancels every sibling and silences the whole turn. Degrade
-        to an empty `RoomLanguage` and log; never let this be the reason she
-        says nothing.
-        """
-        try:
-            stmt = (
-                sa.select(ROOM_LEXEME)
-                .where(
-                    ROOM_LEXEME.c.scope_id == scope_id,
-                    ROOM_LEXEME.c.state.in_(_RENDERED_STATES),
-                )
-                .order_by(ROOM_LEXEME.c.recognition_score.desc())
-                .limit(limit)
-            )
-            async with self._engine.connect() as conn:
-                rows = (await conn.execute(stmt)).all()
-            lexemes = tuple(
-                RoomLexeme(
-                    canonical_form=r.canonical_form,
-                    sense=r.sense,
-                    occurrence_count=r.occurrence_count,
-                    distinct_speakers=r.distinct_speakers,
-                    first_seen_ms=r.first_seen_at,
-                    last_seen_ms=r.last_seen_at,
-                    state=r.state,
-                    disputed_at=r.disputed_at,
-                    disputed_by=r.disputed_by,
-                    disputed_reason=r.disputed_reason,
-                    examples=tuple(
-                        LexemeExample(
-                            message_id=e["message_id"],
-                            person_id=e.get("person_id"),
-                            text=e["text"],
-                        )
-                        for e in r.examples
-                    ),
-                )
-                for r in rows
-            )
-            return RoomLanguage(scope_id=scope_id, lexemes=lexemes, generated_ms=_now_ms())
-        except Exception:
-            log.exception("room_language unavailable for scope %s", scope_id)
-            return RoomLanguage(scope_id=scope_id)
 
     async def watermark_for(self, *, consolidator_name: str, scope_id: str) -> int:
         stmt = sa.select(CONSOLIDATION_WATERMARK.c.last_message_id).where(

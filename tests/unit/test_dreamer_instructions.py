@@ -13,7 +13,6 @@ import pytest
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.obs.metrics import Metrics
-from tests.objectives import PRE_MOVE
 from tests.objectives import SHIPPED_DREAMER as SHIPPED
 
 DOCTRINE_FM = """\
@@ -325,38 +324,20 @@ def test_there_is_exactly_one_shipped_dreamer_doctrine_and_it_is_operator_only()
     assert doc.body.strip()
 
 
-# --- 7.1 step (a): the lift is verbatim -----------------------------------
+# --- every shipped objective is accounted for ------------------------------
 #
-# The re-partition (step b) is Tasks 3.2/3.4 - Dreamer-general text into the
-# doctrine, return-shape prose into the adaptor's output-schema field, the
-# remainder into the objective - and it DELETES the fixtures below as its own
-# visible act. Until then, ANY edit to these bodies is a substrate bug,
-# including an improving one: a change that both moves and improves the text
-# cannot be told apart from a loader that mangled it.
-
-
-@pytest.mark.parametrize("objective", [
-    "room-language", "room-language-verification", "room-exchange",
-])
-def test_the_objective_file_is_the_pre_move_constant_byte_for_byte(objective):
-    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
-    before = (PRE_MOVE / f"{objective}.txt").read_text(encoding="utf-8")
-    assert store.objective_body(objective) == before
-
-
-# Objectives AUTHORED here rather than lifted from an inline constant. They
-# have no pre-move fixture because there was no pre-move text: nothing in
-# `nora/language/` ever held them, so byte-identity against a prior constant is
-# not a property they can have.
+# Three objectives were LIFTED verbatim out of inline constants in
+# `nora/language/`, and this file used to pin each one byte-for-byte against a
+# pre-move fixture so a loader that mangled the text could not pass. All three
+# were the language tier's and went with it, along with their fixtures — so
+# there is no lift left to pin, and the remaining check is the other direction:
+# nothing ships that nobody declared.
 #
-# The list is explicit rather than derived, and that is the whole guard. The
-# risk this test exists for is a LIFTED objective quietly losing its fixture —
-# which would drop it out of the parametrised byte-identity test above with
-# nothing to notice — and a set difference alone cannot tell that apart from an
-# honest new file. Naming each one here makes adding a natively-authored
-# objective a one-line, deliberate act, and leaves the lifted three pinned.
+# The list is explicit rather than derived, and that is the whole guard. A set
+# difference alone cannot tell an accidental file apart from an honest new one;
+# naming each objective here makes adding one a deliberate act.
 NATIVELY_AUTHORED = {
-    "fact-candidates", "fact-adjudication", "standing-debrief",
+    "standing-debrief",
     # Phase 2 of issue #78 split the debrief's judge into its own objective.
     # Same directory for the same reason as `standing-debrief` below: a
     # TAG-PATH stage's hot-reloading instruction text, read through
@@ -372,27 +353,15 @@ NATIVELY_AUTHORED = {
     # `note-curation`: a new adaptor has no prior prompt to have moved and no
     # fixture that could pin one.
     "note-candidates",
-    # Pass 6, entity-resolution adjudication. NATIVE even though its reasoning
+    # The note tier's pass 6, entity-resolution adjudication (issue #100).
+    # NATIVE even though its reasoning
     # and its four worked examples are adapted from graphiti-core's
     # `dedupe_nodes.py` (Apache-2.0 — see THIRD_PARTY_NOTICES.md): this set is
-    # about whether a pre-move FIXTURE exists to pin byte-identity against, and
-    # a prompt re-authored in this repo's format has no more of one than a
+    # about whether a prior prompt exists to pin byte-identity against, and a
+    # prompt re-authored in this repo's format has no more of one than a
     # prompt written from scratch. The upstream shape did not survive contact
     # anyway — its list variant echoes UUIDs, which `dream_screen` drops.
-    "fact-entity-resolution",
-    # The note tier's own pass 6 twin (issue #100). Same reasoning as
-    # `fact-entity-resolution` immediately above — a prompt re-authored from
-    # the identical worked examples has no more of a pre-move fixture than
-    # one written from scratch — and same reasoning as `note-curation` below
-    # it in this list: a new adaptor, no prior prompt to have moved.
     "note-entity-resolution",
-    # Step 3 of the correction loop. Like `standing-debrief`, this is read by a
-    # TAG-PATH stage rather than by a Dreamer adaptor — it lives here because
-    # this is where the bind-mounted, hot-reloading instruction text lives, and
-    # the recogniser reads it through `objective_body` and never
-    # `for_objective`, so it never gets the Dreamer's research-framed doctrine
-    # prepended to a task with no research in it.
-    "fact-dispute",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why
@@ -406,37 +375,24 @@ NATIVELY_AUTHORED = {
 # of the token runaway that made the debrief a plain completion.
 
 
-def test_every_lifted_objective_still_ships():
-    """A pre-move fixture with no objective beside it means a lifted body was
-    dropped, and the parametrised byte-identity test above would go quiet
-    rather than red — it only checks the objectives that ARE there."""
-    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
-    lifted = {p.stem for p in PRE_MOVE.glob("*.txt")}
-    assert lifted <= set(store.objective_names())
+def test_every_shipped_objective_is_declared_native():
+    """An objective appearing with no entry in `NATIVELY_AUTHORED` is a file
+    nobody meant to ship, or one somebody added without deciding it belonged
+    on the bind mount. Both are worth a red test.
 
-
-def test_every_shipped_objective_is_either_lifted_or_declared_native():
-    """The other direction: a fourth objective appearing with no fixture and no
-    entry in `NATIVELY_AUTHORED` is either a lift that lost its fixture or a
-    file nobody meant to ship. Both are worth a red test."""
+    The positive control is the assertion under it: an empty
+    `objective_names()` would satisfy the difference vacuously, and an empty
+    Dreamer directory is exactly the failure this cannot be allowed to miss."""
     store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
-    lifted = {p.stem for p in PRE_MOVE.glob("*.txt")}
-    unaccounted = set(store.objective_names()) - lifted - NATIVELY_AUTHORED
+    shipped = set(store.objective_names())
+    unaccounted = shipped - NATIVELY_AUTHORED
     assert unaccounted == set(), (
-        "objective(s) with neither a pre-move fixture nor a NATIVELY_AUTHORED "
-        f"entry: {', '.join(sorted(unaccounted))}"
+        "objective(s) with no NATIVELY_AUTHORED entry: "
+        f"{', '.join(sorted(unaccounted))}"
+    )
+    assert shipped == NATIVELY_AUTHORED, (
+        "an objective was declared here and is not on disk — a stale entry "
+        "makes the check above pass over a file that no longer ships"
     )
 
 
-def test_the_verification_objective_is_still_a_format_template():
-    """The escaping decision, pinned. The body stores the `str.format` TEMPLATE
-    - placeholders live, JSON braces doubled - and `_build_verification_prompt`
-    does the substitution. Storing the post-format text instead would break
-    `.format` at the first candidate, in the background, on live traffic."""
-    store = DreamerInstructions(SHIPPED, reload="startup", strict=True, metrics=Metrics())
-    body = store.objective_body("room-language-verification")
-    assert "{surface_form}" in body and "{sense}" in body and "{results}" in body
-    assert '{{"known_entity"' in body
-    rendered = body.format(surface_form="big walk", sense="a stroll", results="(none)")
-    assert '{"known_entity"' in rendered
-    assert "{surface_form}" not in rendered
