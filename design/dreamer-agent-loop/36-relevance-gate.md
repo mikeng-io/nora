@@ -112,22 +112,62 @@ NEVER sees Nora's doctrine.
   a combo's upstreams agree about request features.
 - `reasoning_effort`: none. temperature low — this is a measurement
   instrument, not a voice.
-- `max_tokens`: **to be MEASURED, not assumed** (§8 decision 7). Rev 1 wrote
-  2000 by analogy. The obligation is a real measurement of the gate call's
-  prompt + completion size before the number is fixed, recorded in this
-  section the way `[llm] max_tokens` records its own.
+- `max_tokens`: **512, and it is MEASURED** (§8 decision 7). Rev 1 wrote 2000
+  by analogy; the number below is a real call.
+
+  **Measurement, 2026-09-06.** The real gate prompt, rendered by
+  `render_context` over the newest **40 rows of the busiest live room** plus a
+  standing line, sent through OmniRoute with `response_format=json_object`,
+  `max_tokens=512`, `temperature=0`:
+
+  | | |
+  |---|---|
+  | prompt_tokens | **1,063** |
+  | completion_tokens | **251** |
+  | total_tokens | **1,314** |
+  | finish_reason | `stop` |
+  | body | `{"verdict": "no_go", "relevance_score": 0.0}` — parsed clean |
+
+  **The completion number is the load-bearing one, and it is not what it
+  looks like.** The visible answer is 44 characters — call it 15 tokens. The
+  provider billed 251. The other ~236 are the model thinking before it
+  answers, and they are invisible in the body, which is exactly how a
+  `max_tokens` sized off the JSON would have shipped: 64 would look
+  generous against a 44-character answer and would truncate every call. 512
+  is ~2x the measured completion, and the truncation it guards is fail-closed
+  (§2.2), so the failure mode of guessing low is a gate that silently stops
+  admitting anything.
+
+  **Caveat, stated because it is a proxy and this repo does not let those
+  pass silently.** The call was made against `opencode-zen/deepseek-v4-flash`,
+  not the `nora-ambient-gate` combo — that combo did not exist yet when this
+  was measured (verified against `/v1/models`: `nora`, `nora-dreamer`,
+  `nora-image`, `nora-judge`, `nora-video`, and no `nora-ambient-gate`). Same
+  model family, so `prompt_tokens` carries over exactly; `completion_tokens`
+  depends on the combo's members' reasoning behaviour and **must be re-read
+  once the combo exists**. If a member reasons harder than 512 tokens, this
+  number rises — and the tell will be
+  `nora_relevance_gate_errors_total{kind="truncated"}`, not a bad verdict.
 - JSON mode (`response_format`) where the combo's upstreams support it; else
   strict prompt + parse, fail-closed on parse error.
 
 ### 2.4 What the gate is being bought
 
-The comparison that justifies it, from the shipped numbers: one participation
-turn's ceiling is `[llm.limits] total_tokens = 256000` over 20 turns, and the
-`[llm]` prefill comment records ~29k spent "before anybody has said anything".
-A gate at ~1-2k is roughly **one fifteenth to one twentieth of a turn's floor**,
-and it is paid on every closed window instead of the turn being paid on every
-closed window. Confirm the ratio with §8.7's measurement rather than this
-estimate.
+The comparison that justifies it, now that both halves are measured. A
+participation turn's FLOOR is the ~29k the `[llm]` prefill comment records as
+spent "before anybody has said anything"; its ceiling is `[llm.limits]
+total_tokens`, which master raised to 1M on 2026-09-06. The gate's measured
+cost is **1,314 tokens**.
+
+So the gate is roughly **one twenty-second of a turn's floor**, and three
+orders of magnitude under its ceiling. Every window that comes back `no_go`
+is 29k+ not spent; the gate pays for itself the first time it declines one.
+
+The number that decides whether this was worth building is therefore not the
+gate's cost at all — it is the **admission rate**, `go / (go + no_go)` off
+`nora_relevance_gate_total`. That is what the shadow soak measures, and it is
+why the `no_go` verdicts stay counted even though they are never delivered
+(§4).
 
 ## 3. Trigger
 
@@ -266,9 +306,10 @@ call you») would otherwise instruct this turn to be permanently silent.
 6. **Shadow delivers GO only** (2026-09-06): `no_go` is never posted to the
    review channel. It is still COUNTED, so the admission rate is observable
    without the content.
-7. **Token size is MEASURED, not assumed** (2026-09-06): the gate's
-   `max_tokens` and its real prompt+completion cost are measured before the
-   numbers are fixed in §2.3.
+7. **Token size is MEASURED, not assumed** (2026-09-06): DONE — 1,063 prompt
+   + 251 completion = 1,314 total on a real 40-row window, `max_tokens = 512`.
+   See §2.3, including the one number that is still a proxy and the metric
+   that will say so.
 8. **Model: the `nora-ambient-gate` combo** (2026-09-06), operator-created, a
    config key in config.toml. The existing `nora` and `nora-judge` lanes are
    untouched.
@@ -326,7 +367,10 @@ nowhere by any committed config.
 
 1. Gate built, shadow-only, `enabled = false` everywhere; full suite green,
    ruff/mypy/lint-imports clean.
-2. Token cost measured (§8.7) and the numbers written back into §2.3.
+2. **DONE** — token cost measured and written into §2.3 (1,314 total). One
+   number stays a proxy until `nora-ambient-gate` exists: re-read
+   `completion_tokens` against the real combo, and watch
+   `nora_relevance_gate_errors_total{kind="truncated"}` for the tell.
 3. Shadow soak: `enabled = true`, `shadow = true`, rooms opted in. Miles reads
    the GO stream and the no_go rate counter.
 4. The flip, on Miles's authorization only: `shadow = false`. Live sends become
