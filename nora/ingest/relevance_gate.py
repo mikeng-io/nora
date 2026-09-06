@@ -59,7 +59,7 @@ from nora.domain.models import TranscriptRow
 from nora.domain.ports import RecordStore, StandingStore
 from nora.domain.provenance import instruction_sha256
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import annotate, span
+from nora.obs.tracing import TRACE_KIND, annotate, span
 
 log = logging.getLogger("nora.ingest.relevance_gate")
 
@@ -232,8 +232,21 @@ class RelevanceGate:
         trigger is a gate that stops the whole ambient path on one bad call.
         """
         with span(
-            "ingest.relevance_gate",
+            "relevance_gate",
             **{
+                # This is a ROOT: the trigger is driven from the runtime loop,
+                # not from under a turn, so nothing above it opens a span.
+                # `TRACE_KIND` must be set AT START or `build_sampler` decides
+                # without it and the trace is dropped — issue #111 is the same
+                # rule going wrong one path over, and the gate is the path
+                # where a dropped trace hurts most: nobody is waiting on it,
+                # so an unmeasured gate failure has no human to notice it.
+                #
+                # `generation` and not `plumbing` even though a fail-closed
+                # verdict may never reach the model — a gate refused before
+                # the call is still a gate decision worth seeing, DEC-141's
+                # point about a tag refused at admission, one path over.
+                TRACE_KIND: "generation",
                 "langfuse.observation.type": "generation",
                 "langfuse.observation.model.name": self._client.model,
                 "gen_ai.operation.name": "chat",

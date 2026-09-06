@@ -407,10 +407,19 @@ async def test_the_participation_trigger_is_wired_to_the_real_fire_path(cfg):
     way to see it from out here, exactly as with the heartbeat above.
     """
     assert (await _participation_trigger_of(cfg)) is None, (
-        "off by default: no trigger unless [participation] enabled = true"
+        "off by default: no trigger unless [relevance_gate] enabled = true"
+    )
+    assert (await _participation_trigger_of(
+        override_config(cfg, {"participation.enabled": True})
+    )) is None, (
+        "[participation] enabled alone builds NOTHING (design 36): the trigger "
+        "is the gate's, and a turn with no gate in front of it is the cost "
+        "design 36 exists to stop paying"
     )
 
-    on = override_config(cfg, {"participation.enabled": True})
+    on = override_config(cfg, {
+        "participation.enabled": True, "relevance_gate.enabled": True,
+    })
     deps = await build_dependencies(on)
     try:
         trigger = deps.participation_trigger

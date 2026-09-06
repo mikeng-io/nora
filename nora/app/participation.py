@@ -39,6 +39,7 @@ from collections.abc import Awaitable, Callable
 
 from nora.domain.models import NormalizedMessage
 from nora.engagement.slots import ConversationSlots
+from nora.ingest.relevance_gate import RelevanceGate
 
 from .fire import SENT, participation_occasion
 
@@ -68,10 +69,23 @@ class ParticipationTrigger:
         slots: ConversationSlots,
         settle_seconds: float,
         cooldown_seconds: float,
+        gate: RelevanceGate | None = None,
+        gate_shadow: Callable[..., Awaitable[None]] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._speak = speak
         self._slots = slots
+        # The Relevance Gate (design/dreamer-agent-loop/36). `None` is the
+        # pre-gate shape kept alive for the tests that drive the turn
+        # directly: with no gate every closed window runs a turn, which is
+        # exactly design 35's behaviour and exactly what the gate exists to
+        # stop paying for. Production always wires one.
+        self._gate = gate
+        # `FirePath.post_gate_verdict` when `[relevance_gate] shadow = true`.
+        # Its presence IS shadow mode: set, a GO is REVIEWED and no turn runs;
+        # unset, a GO runs the turn. One switch, so there is no state in which
+        # the room hears something the reviewer did not.
+        self._gate_shadow = gate_shadow
         self._settle_seconds = settle_seconds
         self._cooldown_seconds = cooldown_seconds
         self._clock = clock
@@ -121,6 +135,25 @@ class ParticipationTrigger:
                 )
                 continue
             try:
+                admitted, score = await self._admitted(platform, conversation_id)
+                if not admitted:
+                    # NO-GO, or the gate failed closed. Nothing runs, nothing
+                    # is posted, nothing is counted here — the gate counted
+                    # its own verdict, and a second count at the trigger would
+                    # be the same fact in two series.
+                    continue
+                if self._gate_shadow is not None:
+                    # SHADOW: the verdict is REVIEWED and Nora is never
+                    # involved — no turn, no agent, no cooldown spent,
+                    # whatever the score. The slot was still taken above, on
+                    # purpose: shadow has to model live, and a shadow that
+                    # skipped the slot check would show the operator a GO rate
+                    # higher than the live path could ever produce.
+                    await self._gate_shadow(
+                        platform=platform, conversation_id=conversation_id,
+                        score=score if score is not None else 0.0,
+                    )
+                    continue
                 send_permitted = (
                     now - self._last_send_at.get(key, 0.0) >= self._cooldown_seconds
                 )
@@ -128,6 +161,7 @@ class ParticipationTrigger:
                     participation_occasion(
                         platform=platform, conversation_id=conversation_id,
                         conversation_type=self._conversation_type.get(key, "group"),
+                        relevance_score=score,
                     ),
                     send_permitted=send_permitted,
                 )
@@ -139,6 +173,33 @@ class ParticipationTrigger:
             finally:
                 self._slots.release_and_dispatch(key)
         return len(due)
+
+    async def _admitted(
+        self, platform: str, conversation_id: str,
+    ) -> tuple[bool, float | None]:
+        """`(admitted, score)`.
+
+        Two values and not a nullable score, because "admitted with no score"
+        is a real state and collapsing it into `0.0` would put
+        «this room scored zero» in front of her — the opposite of what
+        happened. The score is reference only (design 36 decision 5), so a
+        missing one must render as nothing, never as a low one.
+
+        The `False` case covers NO-GO and every fail-closed reason together,
+        which is the ONE place they are allowed to be the same: the trigger's
+        job is "run a turn or not" and both answers are "not". They are kept
+        apart where it matters, on the two counters the gate itself moves.
+
+        No gate wired admits unconditionally with no score — the pre-gate
+        behaviour. A trigger that refused without a gate would make an
+        optional component mandatory by silently turning the path off.
+        """
+        if self._gate is None:
+            return True, None
+        verdict = await self._gate.decide(
+            platform=platform, conversation_id=conversation_id,
+        )
+        return verdict.admits, (verdict.score if verdict.admits else None)
 
     def sweep(self, older_than: float) -> int:
         """Drop rooms idle longer than `older_than` and return how many.

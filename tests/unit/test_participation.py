@@ -234,3 +234,154 @@ async def test_sweep_drops_stale_rooms_and_keeps_live_ones() -> None:
     clock.now += 100
     assert trigger.sweep(older_than=80) == 1
     assert len(trigger) == 0
+
+
+# --- the Relevance Gate in front of the turn (design 36) -------------------
+
+
+class _Gate:
+    """Scripted `RelevanceGate`. Records what it was asked about."""
+
+    def __init__(self, admits: bool, score: float = 0.8) -> None:
+        self._admits, self._score = admits, score
+        self.asked: list[tuple[str, str]] = []
+
+    async def decide(self, *, platform: str, conversation_id: str):
+        self.asked.append((platform, conversation_id))
+        return _Verdict(self._admits, self._score)
+
+
+class _Verdict:
+    def __init__(self, admits: bool, score: float) -> None:
+        self.admits, self.score = admits, score
+        self.verdict = "go" if admits else "no_go"
+
+
+class _ShadowPost:
+    def __init__(self) -> None:
+        self.posts: list[dict] = []
+
+    async def __call__(self, *, platform: str, conversation_id: str, score: float):
+        self.posts.append(
+            {"platform": platform, "conversation_id": conversation_id, "score": score},
+        )
+
+
+def _gated(speak, clock, gate, shadow=None) -> ParticipationTrigger:
+    return ParticipationTrigger(
+        speak=speak,
+        slots=ConversationSlots(maxlen=1, spawn=lambda coro: None),
+        settle_seconds=SETTLE, cooldown_seconds=COOLDOWN, clock=clock,
+        gate=gate, gate_shadow=shadow,
+    )
+
+
+async def test_a_no_go_verdict_runs_no_turn_at_all():
+    """The whole point of design 36: the expensive turn is not paid for on a
+    window the cheap call already declined."""
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=False)
+    trigger = _gated(speak, clock, gate)
+    trigger.note_message(_msg())
+    clock.now += SETTLE
+
+    assert await trigger.close_due_windows() == 1
+    assert gate.asked == [("signal", "g1")], "the window WAS judged"
+    assert speak.calls == [], "and no turn ran"
+
+
+async def test_a_go_verdict_runs_the_turn_and_carries_the_score():
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=True, score=0.73)
+    trigger = _gated(speak, clock, gate)
+    trigger.note_message(_msg())
+    clock.now += SETTLE
+
+    await trigger.close_due_windows()
+    assert len(speak.calls) == 1
+    occasion, _permitted = speak.calls[0]
+    header = occasion.header(None, None)
+    assert "0.73" in header, "the gate's score reached the turn"
+    assert "stay silent anyway if you hold nothing" in header, (
+        "and it reached her as a reference, not as an instruction to speak"
+    )
+
+
+async def test_the_score_is_absent_from_the_header_when_no_gate_is_wired():
+    """`gate=None` admits unconditionally — the pre-gate behaviour the eval
+    harness needs — and must NOT render a fabricated 0.00, which would put
+    «this room scored zero» in front of her."""
+    speak, clock = _Speak(), _Clock()
+    trigger = _trigger(speak, clock)
+    trigger.note_message(_msg())
+    clock.now += SETTLE
+
+    await trigger.close_due_windows()
+    occasion, _ = speak.calls[0]
+    assert "relevance check upstream" not in occasion.header(None, None)
+
+
+async def test_shadow_mode_posts_the_go_and_never_runs_a_turn():
+    """Design 36 decision 6 + §4: shadow means Nora is NEVER involved."""
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=True, score=0.91)
+    shadow = _ShadowPost()
+    trigger = _gated(speak, clock, gate, shadow=shadow)
+    trigger.note_message(_msg())
+    clock.now += SETTLE
+
+    await trigger.close_due_windows()
+    assert speak.calls == [], "shadow ran a turn — the room could have heard it"
+    assert shadow.posts == [
+        {"platform": "signal", "conversation_id": "g1", "score": 0.91},
+    ]
+
+
+async def test_shadow_mode_never_posts_a_no_go():
+    """Decision 6: only GO reaches the review channel. The no_go rate stays
+    observable on the gate's own counter, not on the channel."""
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=False)
+    shadow = _ShadowPost()
+    trigger = _gated(speak, clock, gate, shadow=shadow)
+    trigger.note_message(_msg())
+    clock.now += SETTLE
+
+    await trigger.close_due_windows()
+    assert shadow.posts == [] and speak.calls == []
+
+
+async def test_shadow_mode_never_spends_the_send_cooldown():
+    """A reviewed GO left the room untouched, so the next window must still
+    be reviewable. Spending the cooldown on a post nobody heard would make
+    the shadow sample sparser than the live path it is predicting."""
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=True)
+    shadow = _ShadowPost()
+    trigger = _gated(speak, clock, gate, shadow=shadow)
+    for _ in range(3):
+        # A tick BEFORE the message, so each new window opens strictly after
+        # the previous one closed — `close_due_windows` requires
+        # `last_message_at > last_window_end`, and noting at exactly the
+        # previous close would reuse a window that is already spent.
+        clock.now += 1
+        trigger.note_message(_msg())
+        clock.now += SETTLE
+        await trigger.close_due_windows()
+    assert len(shadow.posts) == 3
+
+
+async def test_a_window_the_slot_skips_is_never_even_judged():
+    """§10.2's try_acquire-and-skip happens BEFORE the gate call: a tag is
+    already answering, so there is nothing to spend a model call on — and
+    shadow keeps the same order so the reviewed GO rate matches live."""
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=True)
+    slots = ConversationSlots(maxlen=1, spawn=lambda coro: None)
+    trigger = ParticipationTrigger(
+        speak=speak, slots=slots, settle_seconds=SETTLE,
+        cooldown_seconds=COOLDOWN, clock=clock, gate=gate,
+    )
+    trigger.note_message(_msg())
+    clock.now += SETTLE
+    assert slots.try_acquire(("signal", "g1")), "the tag takes the slot first"
+    try:
+        await trigger.close_due_windows()
+    finally:
+        with contextlib.suppress(Exception):
+            slots.release_and_dispatch(("signal", "g1"))
+    assert gate.asked == [] and speak.calls == []

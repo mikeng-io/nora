@@ -248,6 +248,16 @@ def build_offline_pipeline(
                 if cfg.participation.enabled and cfg.participation.shadow else None
             ),
             shadow_platform=cfg.participation.shadow_platform,
+            # The gate's review channel, mirrored from the composition root's
+            # gating for the same parity reason as the mirror above. The eval
+            # suites leave `[relevance_gate] shadow` off, so it is inert
+            # there — an eval that reviewed instead of speaking would measure
+            # the review surface, not the turn.
+            gate_shadow_channel=(
+                cfg.relevance_gate.shadow_channel
+                if cfg.relevance_gate.enabled and cfg.relevance_gate.shadow else None
+            ),
+            gate_shadow_platform=cfg.relevance_gate.shadow_platform,
         )
         participation_trigger = ParticipationTrigger(
             speak=fire_path.speak,
@@ -256,6 +266,11 @@ def build_offline_pipeline(
             slots=slots,
             settle_seconds=cfg.participation.settle_seconds,
             cooldown_seconds=cfg.participation.cooldown_minutes * 60,
+            # NO gate, deliberately. `gate=None` admits every closed window,
+            # which is what an eval of the TURN needs: a suite that had to
+            # get past a live gate call first would be measuring the gate's
+            # verdict and the turn's behaviour in one number, and a flaky
+            # gate would read as a flaky turn. The gate has its own cases.
             clock=participation_clock or time.monotonic,
         )
     dispatcher = Dispatcher(

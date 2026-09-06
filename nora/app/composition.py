@@ -102,6 +102,8 @@ from nora.ingest.policy import (
     TriggerTextPolicy,
     VoiceNotePolicy,
 )
+from nora.ingest.relevance_gate import Completion as GateCompletion
+from nora.ingest.relevance_gate import RelevanceGate
 from nora.ingest.stages import standing_event
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
@@ -179,6 +181,68 @@ def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
             f"start rather than failing on the first call that uses it"
         )
     return cast(ReasoningEffort, value)
+
+
+class _RelevanceGateModelClient:
+    """Satisfies `nora.ingest.relevance_gate.ModelClient`
+    (design/dreamer-agent-loop/36 §2.3).
+
+    A sibling of `_DebriefModelClient` and not a reuse of it, for two reasons
+    that are both about the gate being a MEASUREMENT and not a stage:
+
+    * It passes `max_tokens` and `temperature`, which that class does not.
+      The gate's ceiling is small on purpose — a gate with room to write
+      paragraphs has room to start drafting the reply it must never draft —
+      and its temperature is near zero because an instrument that answers
+      differently on the same input is not one.
+    * Its model is its OWN combo (`nora-ambient-gate`), never the tag lane's.
+
+    Everything else is that class's, for its stated reasons:
+    `response_format={"type": "json_object"}` because prompt-only JSON
+    enforcement was proven insufficient in this repo once already, and an
+    explicit `asyncio.wait_for` because the bare `AsyncOpenAI` default is 600s
+    x retries — and this call runs while the conversation's slot is HELD, so
+    an unbounded one is not a slow background job, it is a room that stops
+    answering.
+
+    `reasoning_effort` is NOT passed. The gate is one classification with a
+    fixed output shape; buying thinking tokens for it would spend on the one
+    call whose whole purpose is to be cheaper than the turn behind it.
+    """
+
+    def __init__(
+        self, *, client: AsyncOpenAI, model: str, max_tokens: int,
+        temperature: float, timeout_seconds: float,
+    ) -> None:
+        self._client = client
+        self._model = model
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+        self._timeout_seconds = timeout_seconds
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    async def complete(self, *, prompt: str) -> GateCompletion:
+        response = await asyncio.wait_for(
+            self._client.chat.completions.create(
+                model=self._model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                max_tokens=self._max_tokens,
+                temperature=self._temperature,
+            ),
+            timeout=self._timeout_seconds,
+        )
+        choice = response.choices[0]
+        return GateCompletion(
+            content=(choice.message.content or "").strip(),
+            # `or ""` and not a `"stop"` default: a provider that omits the
+            # field has told us nothing, and inventing `"stop"` would assert
+            # the call completed. `_DebriefModelClient`'s argument, unchanged.
+            finish_reason=choice.finish_reason or "",
+        )
 
 
 class _DebriefModelClient:
@@ -873,7 +937,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `EngageDecision.relevance_gate`, which the dispatcher NOTES with the
     # quiescence trigger instead of admitting it. With the flag off, no
     # room's untagged traffic is even considered.
-    if cfg.participation.enabled:
+    if cfg.relevance_gate.enabled:
         engage_policies.append(RelevanceGatePolicy(allowlist))
     policy = CompositePolicy(tuple(engage_policies))
     assembler = build_assembler(
@@ -1920,6 +1984,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 if cfg.participation.enabled and cfg.participation.shadow else None
             ),
             shadow_platform=cfg.participation.shadow_platform,
+            # The Relevance Gate's OWN review channel (design 36 §4), wired
+            # only when the gate is on AND in shadow. Separate from the
+            # mirror above because the two report different things: that one
+            # carries what she WOULD HAVE SAID, this one carries what the
+            # gate ADMITTED with no turn behind it at all.
+            gate_shadow_channel=(
+                cfg.relevance_gate.shadow_channel
+                if cfg.relevance_gate.enabled and cfg.relevance_gate.shadow else None
+            ),
+            gate_shadow_platform=cfg.relevance_gate.shadow_platform,
         )
     if lost_jobs and fire_path is not None:
         # Spawned, never awaited — a boot must not wait on a model call, and
@@ -2030,20 +2104,53 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `nora/__main__.py` from `deps.participation_trigger`, like every other
     # background clock — this section only builds the trigger itself.
     participation_trigger: ParticipationTrigger | None = None
-    if cfg.participation.enabled and fire_path is not None:
+    if cfg.relevance_gate.enabled and fire_path is not None:
+        # The gate is built HERE and not beside the other model clients,
+        # because it is the only one whose absence would change behaviour
+        # silently: a trigger with `gate=None` admits every closed window,
+        # which is design 35's cost restored without design 35's name on it.
+        # Constructed in the same branch that constructs the trigger, so the
+        # two cannot come apart.
+        gate = RelevanceGate(
+            client=_RelevanceGateModelClient(
+                client=client,
+                model=cfg.relevance_gate.model,
+                max_tokens=cfg.relevance_gate.max_tokens,
+                temperature=cfg.relevance_gate.temperature,
+                timeout_seconds=cfg.relevance_gate.timeout_seconds,
+            ),
+            records=audit,
+            metrics=metrics,
+            # The SAME standing store the fire path reads (`None` while
+            # `[standing] enabled = false`), so the gate and the turn behind
+            # it see one room and not two.
+            standing=standing_store if cfg.standing.enabled else None,
+            transcript_limit=cfg.relevance_gate.transcript_rows,
+        )
         participation_trigger = ParticipationTrigger(
             speak=fire_path.speak,
             slots=slots,
+            # Still `[participation]`'s (design 36 §9): the quiescence window
+            # belongs to the TRIGGER, which is shared, and the gate is what
+            # runs when a window closes — not what defines one.
             settle_seconds=cfg.participation.settle_seconds,
             cooldown_seconds=cfg.participation.cooldown_minutes * 60,
+            gate=gate,
+            # Shadow is DECIDED here, once: passing the poster IS shadow mode.
+            # A boolean flag plus a poster would admit a fourth state (shadow
+            # on, nowhere to post) that silently behaves like live.
+            gate_shadow=(
+                fire_path.post_gate_verdict if cfg.relevance_gate.shadow else None
+            ),
         )
-    elif cfg.participation.enabled:
+    elif cfg.relevance_gate.enabled:
         # Reachable only if the fire-path gate above stopped including
         # `cfg.participation.enabled` — loud rather than inert, because a
         # trigger-less participation flag would otherwise look healthy.
         log.error(
-            "participation.enabled = true but no fire path was built — no "
-            "participation turn can ever run. Check the FirePath gate."
+            "relevance_gate.enabled = true but no fire path was built — no "
+            "window can ever be judged and no turn can ever run. Check the "
+            "FirePath gate."
         )
     dispatcher = Dispatcher(
         ingest=ingest, engagement=engagement, background=background,

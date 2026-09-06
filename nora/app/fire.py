@@ -161,6 +161,14 @@ SILENT = "silent"
 # on the live path below; the mirror has its own Deliverer and never touches
 # it).
 SHADOW_AUDIENCE = "participation-shadow"
+# The Relevance Gate's review surface (design/dreamer-agent-loop/36 §4). A
+# SECOND shadow audience and not a reuse of the one above, because the two
+# mirror different things and an operator reading a dashboard must be able to
+# tell them apart: `participation-shadow` carries what she WOULD HAVE SAID
+# (a turn ran), `relevance-gate-shadow` carries what the gate ADMITTED (no
+# turn ran at all). Collapsing them would make "the gate let 40 windows
+# through" and "she drafted 40 replies" the same number.
+GATE_SHADOW_AUDIENCE = "relevance-gate-shadow"
 
 # How a recurrence reads in the fire header. English prose, like the rest of the
 # header: the header is the SITUATION she is told about, and `doctrine` decides
@@ -388,6 +396,7 @@ def _lost_job_header(tagger: PersonRef | None, now: datetime) -> str:
 
 def participation_occasion(
     *, platform: str, conversation_id: str, conversation_type: str = "group",
+    relevance_score: float | None = None,
 ) -> Event:
     """A room that has gone quiet, as the occasion it is
     (design/dreamer-agent-loop/35).
@@ -415,12 +424,12 @@ def participation_occasion(
         conversation_type=conversation_type,
         person_id=None,
         body="",
-        header=lambda tagger, now: _participation_header(),
+        header=lambda tagger, now: _participation_header(relevance_score),
         kind="participation",
     )
 
 
-def _participation_header() -> str:
+def _participation_header(relevance_score: float | None = None) -> str:
     """The situation paragraph for a participation turn.
 
     Same opening shape as the other fire headers — nobody called her, and
@@ -439,6 +448,33 @@ def _participation_header() -> str:
         "and whatever standing and notes came with it. If speaking "
         "would add something the room can use, say it — once, briefly. If "
         "not, stay silent: silence is a complete answer here, not a failure."
+        + _gate_note(relevance_score)
+    )
+
+
+def _gate_note(relevance_score: float | None) -> str:
+    """The Relevance Gate's score, as a sentence she may ignore
+    (design/dreamer-agent-loop/36 decision 5).
+
+    Rendered as what it IS — a cheap upstream guess made without her notes,
+    facts or memory — and not as an instruction, because the moment it reads
+    as one the second layer stops being a second judgement. The gate decided
+    the room is ASKING; only this turn can decide whether she HOLDS anything,
+    and the sentence has to leave that decision where it is.
+
+    `None` renders nothing at all rather than "no score": an absent score is
+    the shape every turn had before the gate existed, and a header that
+    announces the absence would make the gate's own plumbing part of what she
+    reads about the room.
+    """
+    if relevance_score is None:
+        return ""
+    return (
+        f"\nA relevance check upstream scored this room {relevance_score:.2f} "
+        "before you saw it. It read only the transcript and your standing — "
+        "not your notes, facts or memory — so it is a guess about whether the "
+        "room is asking, never a judgement that you have an answer. Weigh it "
+        "as such, and stay silent anyway if you hold nothing."
     )
 
 
@@ -493,6 +529,8 @@ class FirePath:
         participation_runner: AgentRunner | None = None,
         shadow_channel: str | None = None,
         shadow_platform: str = "discord",
+        gate_shadow_channel: str | None = None,
+        gate_shadow_platform: str = "discord",
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -627,6 +665,12 @@ class FirePath:
         # always cleared the room opt-in first.
         self._shadow_channel = shadow_channel
         self._shadow_platform = shadow_platform
+        # The gate's own review channel (design 36 §4), separate config from
+        # the participation mirror above: one deployment may want gate
+        # verdicts without turn drafts, and while shadow is on there ARE no
+        # turn drafts to mirror.
+        self._gate_shadow_channel = gate_shadow_channel
+        self._gate_shadow_platform = gate_shadow_platform
 
     async def build_context(self, occasion: Event) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
@@ -1504,6 +1548,123 @@ class FirePath:
                 "nora_errors_total", stage="participation_shadow",
                 platform=occasion.platform,
             )
+
+    async def post_gate_verdict(
+        self, *, platform: str, conversation_id: str, score: float,
+    ) -> None:
+        """Post ONE Relevance Gate GO verdict to the review channel
+        (design/dreamer-agent-loop/36 §4). No turn ran and none will — in
+        shadow mode Nora is never involved, whatever the score.
+
+        **Why this lives in fire.py and is not its own module.** R-1b pins
+        `deliver.build`'s callers to two MODULES (`pipeline.py`, `fire.py`);
+        a gate module calling it would be a third and the rule goes red.
+        DEC-155 already settled that a second call site INSIDE this module is
+        fine — "two caller modules" never implied "two send call sites" — so
+        the gate's review post is a sibling of `_mirror`, here, by the same
+        argument.
+
+        **And it is a sibling rather than a parameter on `_mirror`.** That
+        one's signature takes `ctx`, `doctrine` and the TURN'S OUTCOME
+        (`verdict`, `texts`, `held`, `stop_reason`); it exists to report what
+        she would have said. This runs when no turn happened at all, so every
+        one of those arguments would be a placeholder — and a function whose
+        arguments are mostly placeholders has two jobs.
+
+        `no_go` NEVER reaches here (decision 6): only GO is delivered. The
+        no_go rate stays observable on
+        `nora_relevance_gate_total{verdict="no_go"}`, which is what keeps an
+        undelivered verdict from being an unmeasured one.
+
+        Fail-soft and counted, `_mirror`'s posture for `_mirror`'s reason:
+        review traffic must never break the path it reviews — here that means
+        a failed post must not stop the NEXT window being judged.
+        """
+        if self._gate_shadow_channel is None:
+            return
+        tag_id = uuid.uuid4().hex
+        try:
+            adapter = self._adapters.get(self._gate_shadow_platform)
+            if adapter is None:
+                raise KeyError(
+                    f"no platform adapter is wired for the relevance-gate "
+                    f"shadow platform {self._gate_shadow_platform!r} — "
+                    f"wired: {sorted(self._adapters)}"
+                )
+            identity = await adapter.resolve_identity()
+            handle = deliver.build(
+                store=self._records, adapter=adapter,
+                target=ConversationTarget(
+                    platform=self._gate_shadow_platform,
+                    conversation_id=self._gate_shadow_channel,
+                    conversation_type="group",
+                ),
+                doctrine=self._doctrine_store.get(applies_to=PARTICIPATION_AUDIENCE),
+                canary=self._canary, tag_id=tag_id,
+                nora_sender_id=identity.primary,
+                conversation_id=self._gate_shadow_channel,
+                budgets=self._registry.budgets(),
+                terminal=self._registry.terminal_tools(), metrics=self._metrics,
+                audience=GATE_SHADOW_AUDIENCE,
+                composer=None,
+                cacheable_tools=self._registry.cacheable_tools(),
+                tool_call_log_store=self._tool_call_log_store,
+                send_permitted=True,
+            )
+            await handle.deliverer.deliver(
+                await self._gate_verdict_text(
+                    platform=platform, conversation_id=conversation_id, score=score,
+                ),
+                source="shadow",
+            )
+        except Exception:
+            log.exception(
+                "relevance gate shadow post failed (%s/%s)", platform, conversation_id,
+            )
+            self._metrics.inc(
+                "nora_errors_total", stage="relevance_gate_shadow", platform=platform,
+            )
+
+    async def _gate_verdict_text(
+        self, *, platform: str, conversation_id: str, score: float,
+    ) -> str:
+        """The review post: which room, what was said last, the verdict, the
+        score — the four fields the operator asked for.
+
+        The room's own words go on the review channel because that is the
+        entire point of the surface: a verdict with no message beside it
+        cannot be judged right or wrong. It reaches the channel through the
+        SAME `Deliverer` and the SAME guards as any send (R-2/R-4/R-6/R-18,
+        audit-first), which is what makes this a review surface rather than a
+        second egress.
+
+        A transcript read that fails does NOT stop the post — the verdict and
+        the room are the load-bearing half, and a post saying «go, 0.8, could
+        not read the room» is more use to a reviewer than no post at all.
+        """
+        label = ""
+        if self._policy is not None:
+            convo = self._policy.conversation(platform, conversation_id)
+            label = (convo.label if convo is not None else "") or ""
+        room = f"{label} ({platform}/{conversation_id})" if label else (
+            f"{platform}/{conversation_id}"
+        )
+        last = "(transcript unavailable)"
+        try:
+            raw = await self._records.recent(conversation_id=conversation_id, limit=1)
+        except Exception:
+            log.exception("relevance gate shadow transcript read failed")
+        else:
+            named = self._persons.name_transcript(tuple(raw), platform=platform)
+            for row in named:
+                body = (row.body or "").strip()
+                if body:
+                    who = row.sender_name or row.sender_id
+                    last = f"{who}: {body}"
+                    break
+            else:
+                last = "(no message)"
+        return f"{room} — {last} — go — {score:.2f}"
 
     async def _feed(
         self, sent_texts: Sequence[str], conversation_id: str, platform: str,
