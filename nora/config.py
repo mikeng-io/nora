@@ -1983,6 +1983,29 @@ class NotesConfig(BaseModel):
     #: does on the next restart. Turning it on is a deliberate later change.
     candidates_enabled: bool = False
 
+    #: The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
+    #: schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH switch on
+    #: the same two-risks argument, and deliberately its own rather than riding
+    #: `curator_enabled`. That precedent cuts both ways: `[notes] enabled`'s
+    #: sibling entity-resolution pass rides `curator_enabled` because it
+    #: "carries none of those risks — it never touches a note's content, never
+    #: creates a note, and never merges one" (see this file's own note beside
+    #: `NoteEntityResolutionAdaptor`'s wiring). Discharge is the opposite case:
+    #: it WRITES to three tiers outside this one entirely — an Event, a fact
+    #: with a warrant, a Honcho conclusion about a named person — the moment a
+    #: note the curator was already going to retire turns out to classify as a
+    #: commitment, a world-claim or a person-claim. An operator who accepted
+    #: "this pass merges and retires notes" did not thereby accept "this pass
+    #: also creates calendar events and writes permanent memories about
+    #: people"; that is a materially different, materially larger capability
+    #: and it gets its own flag, the same reasoning `candidates_enabled` states
+    #: for writing new notes.
+    #:
+    #: Default **False**, unconditionally, for the same reason as
+    #: `candidates_enabled`: landing this code must not change what any
+    #: deployed `config.toml` does on the next restart.
+    discharge_enabled: bool = False
+
     #: MERGE GROUPS per tick, not notes. The curator's cost is bodies read, and
     #: a group is the unit it reads — typically two notes, occasionally more.
     #:

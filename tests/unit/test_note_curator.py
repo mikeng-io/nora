@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import pytest
 
+from nora.domain.facts import FactVerdict
+from nora.domain.gatherings import AmbiguousOpenGatheringsError
 from nora.domain.models import DeliveryStatus
 from nora.domain.notes import (
     BODY_MAX_CHARS,
@@ -144,6 +146,8 @@ def _row(row_id: int, body: str, *, ts: int = NOW + 1000,
 def _curator(
     store, metrics=None, today=TODAY, *, record=None, now_ms=NOW,
     max_revisits_per_tick=10, evidence_messages_per_note=40,
+    discharge_enabled=False, facts=None, events=None, conclusions=None,
+    ai_peer="nora",
 ):
     return NoteCuratorAdaptor(
         notes=store, record=record if record is not None else FakeRecordStore(),
@@ -151,6 +155,8 @@ def _curator(
         max_revisits_per_tick=max_revisits_per_tick,
         evidence_messages_per_note=evidence_messages_per_note,
         metrics=metrics or Metrics(), clock=lambda: now_ms,
+        discharge_enabled=discharge_enabled, facts=facts, events=events,
+        conclusions=conclusions, ai_peer=ai_peer,
     )
 
 
@@ -2132,3 +2138,397 @@ async def test_a_sibling_workspace_cannot_wipe_what_this_one_asked():
 def _h_for(curator, key, note) -> str:
     shown = curator._shown[key]
     return next(h for h, nid in shown.by_handle.items() if nid == note.id)
+
+
+# ---------------------------------------------------------------------------
+# Discharge (design/dreamer-agent-loop/33-note-dreamer-schedule.md §7,
+# 19-between-tiers.md §1, issue #101) — a closed note's settled content,
+# routed to the owning tier's OWN existing write path. The three fakes below
+# behave like their real collaborators' actual shapes rather than answering
+# every call one way: `_FakeFactSink` isinstance-checks its payload exactly
+# as `SqlFactStore.propose` does, `_FakeEventSink` can raise the one domain
+# refusal `GatheringService.create_event` itself can raise, and
+# `_FakeConclusionSink` can return `False` — `MemoryStore.conclude`'s real
+# failure shape is a bare `False`, never an exception.
+# ---------------------------------------------------------------------------
+
+
+class _FakeFactSink:
+    def __init__(self, *, fail: bool = False):
+        self.proposals: list[tuple[str, Proposal]] = []
+        self._fail = fail
+
+    async def propose(self, *, key, proposals, now_ms):
+        if self._fail:
+            raise RuntimeError("fact store unavailable")
+        ids = []
+        for p in proposals:
+            if not isinstance(p.payload, FactVerdict):
+                raise TypeError(
+                    f"_FakeFactSink.propose only accepts a FactVerdict "
+                    f"payload, got {type(p.payload).__name__}"
+                )
+            self.proposals.append((key, p))
+            ids.append("fact-1")
+        return tuple(ids)
+
+
+class _FakeEventSink:
+    def __init__(self, *, ambiguous: bool = False, fail: bool = False):
+        self.calls: list[dict] = []
+        self._ambiguous = ambiguous
+        self._fail = fail
+
+    async def create_event(
+        self, *, conversation_id, requester_person_id, title, when=None,
+        venue_text=None, person_names=None, platform,
+    ):
+        if self._ambiguous:
+            raise AmbiguousOpenGatheringsError(conversation_id, ())
+        if self._fail:
+            raise RuntimeError("event service unavailable")
+        self.calls.append({
+            "conversation_id": conversation_id,
+            "requester_person_id": requester_person_id, "title": title,
+            "when": when, "venue_text": venue_text,
+            "person_names": person_names, "platform": platform,
+        })
+        return object()
+
+
+class _FakeConclusionSink:
+    def __init__(self, *, ok: bool = True, fail: bool = False):
+        self.calls: list[dict] = []
+        self._ok = ok
+        self._fail = fail
+
+    async def conclude(self, *, peer_id, content, target, workspace_id=None):
+        if self._fail:
+            raise RuntimeError("honcho unavailable")
+        self.calls.append({
+            "peer_id": peer_id, "content": content, "target": target,
+            "workspace_id": workspace_id,
+        })
+        return self._ok
+
+
+async def _close_with_discharge(
+    curator, note, *, discharge_item=None, cited_message_id=1,
+):
+    """One `closed` verdict, with an optional `discharge` array of exactly
+    one item — the shared shape every test below drives `accept`/`commit`
+    through."""
+    item = {
+        "note_id": _h(curator, note), "verdict": "closed", "why": "settled",
+        "cited_message_id": cited_message_id,
+    }
+    if discharge_item is not None:
+        item["discharge"] = [discharge_item]
+    kept = await curator.accept(key=WS, items=(item,))
+    return await curator.commit(
+        key=WS, proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ), now_ms=NOW + 1,
+    )
+
+
+async def test_discharge_commitment_writes_a_real_event():
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "Ada booked Sai Kung"))
+    events = _FakeEventSink()
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True, events=events,
+    )
+    await curator.inputs(key=WS, batch=())
+
+    written = await _close_with_discharge(
+        curator, note, discharge_item={"kind": "commitment", "title": "Dinner"},
+    )
+
+    assert written == 1
+    assert await store.standing(workspace=WS) == (), "the note itself still retires"
+    assert len(events.calls) == 1
+    call = events.calls[0]
+    assert call["conversation_id"] == "conv-1"
+    assert call["requester_person_id"] == "miles", (
+        "the requester is the CLOSING CITATION's sender, never invented"
+    )
+    assert call["title"] == "Dinner"
+    assert call["when"] is None, (
+        "no conversation->platform lookup exists for this tier; see "
+        "_discharge_commitment's own docstring"
+    )
+    assert metrics.get(
+        "nora_note_discharge_total", kind="commitment", outcome="written") == 1
+    assert metrics.get(
+        "nora_note_discharge_notes_total", result="items") == 1
+
+
+async def test_discharge_world_claim_writes_a_fact_with_source_warrant():
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Yardbird", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "Yardbird is a yakitori place"))
+    facts = _FakeFactSink()
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True, facts=facts,
+    )
+    await curator.inputs(key=WS, batch=())
+
+    written = await _close_with_discharge(
+        curator, note, discharge_item={
+            "kind": "world_claim", "subject": "Yardbird",
+            "predicate": "is a", "object": "yakitori place",
+            "excerpt": "Yardbird is a yakitori place",
+        },
+    )
+
+    assert written == 1
+    assert len(facts.proposals) == 1
+    key, proposal = facts.proposals[0]
+    assert key == note.workspace
+    verdict = proposal.payload
+    assert isinstance(verdict, FactVerdict)
+    assert (verdict.subject, verdict.predicate, verdict.object) == (
+        "Yardbird", "is a", "yakitori place")
+    assert verdict.status == "supported"
+    assert verdict.source_url == f"note:{note.id}", (
+        "the SOURCE is the note itself, honestly labelled — never a "
+        "fabricated web URL"
+    )
+    assert verdict.source_excerpt == "Yardbird is a yakitori place"
+    assert metrics.get(
+        "nora_note_discharge_total", kind="world_claim", outcome="written") == 1
+
+
+async def test_discharge_person_claim_reaches_the_honcho_integration_point():
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Yardbird jazz", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "Miles likes Yardbird for the jazz"))
+    conclusions = _FakeConclusionSink()
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True,
+        conclusions=conclusions, ai_peer="nora",
+    )
+    await curator.inputs(key=WS, batch=())
+
+    written = await _close_with_discharge(
+        curator, note, discharge_item={
+            "kind": "person_claim",
+            "content": "Miles likes Yardbird for the jazz",
+        },
+    )
+
+    assert written == 1
+    assert len(conclusions.calls) == 1
+    call = conclusions.calls[0]
+    assert call["peer_id"] == "nora"
+    assert call["target"] == "miles", (
+        "the OBSERVED person is the closing citation's sender — a "
+        "self-report, per the module docstring's grounding section"
+    )
+    assert call["content"] == "Miles likes Yardbird for the jazz"
+    assert call["workspace_id"] == note.workspace
+    assert metrics.get(
+        "nora_note_discharge_total", kind="person_claim", outcome="written") == 1
+
+
+async def test_a_note_with_nothing_to_discharge_retires_with_no_writes():
+    """R-27: a discharge that finds nothing to route is a valid outcome, not
+    a wiring failure — the note still retires and NOTHING downstream is
+    touched."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "Ada booked Sai Kung"))
+    facts, events, conclusions = _FakeFactSink(), _FakeEventSink(), _FakeConclusionSink()
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True,
+        facts=facts, events=events, conclusions=conclusions,
+    )
+    await curator.inputs(key=WS, batch=())
+
+    written = await _close_with_discharge(curator, note, discharge_item=None)
+
+    assert written == 1
+    assert await store.standing(workspace=WS) == ()
+    assert facts.proposals == []
+    assert events.calls == []
+    assert conclusions.calls == []
+    assert metrics.get("nora_note_discharge_notes_total", result="empty") == 1
+    assert metrics.get("nora_note_discharge_notes_total", result="items") == 0
+
+
+async def test_a_malformed_discharge_item_is_dropped_fail_closed():
+    """A `commitment` item missing its only field does not fit the shape —
+    dropped and counted, never guessed at, and it does not cost the note its
+    ordinary retirement or poison the other (nonexistent, here) items."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "Ada booked Sai Kung"))
+    events = _FakeEventSink()
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True, events=events,
+    )
+    await curator.inputs(key=WS, batch=())
+
+    written = await _close_with_discharge(
+        curator, note, discharge_item={"kind": "commitment"},  # no title
+    )
+
+    assert written == 1, "the note itself still retires cleanly"
+    assert events.calls == []
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="discharge_malformed") == 1
+    assert metrics.get("nora_note_discharge_notes_total", result="empty") == 1
+
+
+async def test_a_malformed_whole_discharge_field_is_dropped_fail_closed():
+    """`discharge` present but not a list at all — the whole field does not
+    fit, counted ONCE, and the note still retires."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "Ada booked Sai Kung"))
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True,
+        events=_FakeEventSink(),
+    )
+    await curator.inputs(key=WS, batch=())
+    item = {
+        "note_id": _h(curator, note), "verdict": "closed", "why": "settled",
+        "cited_message_id": 1, "discharge": "not-a-list",
+    }
+
+    kept = await curator.accept(key=WS, items=(item,))
+    written = await curator.commit(
+        key=WS, proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ), now_ms=NOW + 1,
+    )
+
+    assert written == 1
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="discharge_malformed") == 1
+
+
+async def test_discharge_off_never_parses_or_writes_anything():
+    """`discharge_enabled=False` (the shipped default) — a model returning a
+    `discharge` field is simply not read, and nothing downstream is ever
+    called, even though the collaborators ARE wired (composition's own
+    "pass them unconditionally" choice)."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "Ada booked Sai Kung"))
+    events = _FakeEventSink()
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=False, events=events,
+    )
+    await curator.inputs(key=WS, batch=())
+
+    written = await _close_with_discharge(
+        curator, note, discharge_item={"kind": "commitment", "title": "Dinner"},
+    )
+
+    assert written == 1
+    assert events.calls == []
+    assert metrics.get("nora_note_discharge_notes_total", result="items") == 0
+    assert metrics.get("nora_note_discharge_notes_total", result="empty") == 0
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="discharge_malformed") == 0
+
+
+async def test_discharge_with_no_resolvable_person_is_refused_not_guessed():
+    """The closing citation's sender maps to nobody — `person_id=None` — so a
+    commitment cannot be attributed to anyone. Refused, not guessed."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    unmapped = _row(1, "Ada booked Sai Kung")
+    unmapped["person_id"] = None
+    record.rows.append(unmapped)
+    events = _FakeEventSink()
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True, events=events,
+    )
+    await curator.inputs(key=WS, batch=())
+
+    written = await _close_with_discharge(
+        curator, note, discharge_item={"kind": "commitment", "title": "Dinner"},
+    )
+
+    assert written == 1, "the note still retires"
+    assert events.calls == []
+    assert metrics.get(
+        "nora_note_discharge_total", kind="commitment", outcome="refused") == 1
+
+
+async def test_discharge_with_no_sink_wired_is_unavailable():
+    """`discharge_enabled=True` but the flag's own collaborator is `None` — a
+    genuine wiring gap, R-27's `unavailable`, never silently dropped as if
+    nothing was found."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "Ada booked Sai Kung"))
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True, events=None,
+    )
+    await curator.inputs(key=WS, batch=())
+
+    written = await _close_with_discharge(
+        curator, note, discharge_item={"kind": "commitment", "title": "Dinner"},
+    )
+
+    assert written == 1
+    assert metrics.get(
+        "nora_note_discharge_total", kind="commitment", outcome="unavailable") == 1
+
+
+async def test_discharge_never_runs_for_an_expired_verdict():
+    """`expired`/`moot` mean nothing answered the question — there is no
+    settled content, by construction, so discharge is never even attempted
+    (not `empty`: no sample at all under `nora_note_discharge_notes_total`)."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=PASSED_ANCHOR)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "still nothing", ts=_after(PASSED_ANCHOR)))
+    events = _FakeEventSink()
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True, events=events,
+        now_ms=_after(PASSED_ANCHOR),
+    )
+    await curator.inputs(key=WS, batch=())
+
+    kept = await curator.accept(key=WS, items=(
+        {"note_id": _h(curator, note), "verdict": "expired",
+         "why": "nobody ever picked a place",
+         "discharge": [{"kind": "commitment", "title": "Dinner"}]},
+    ))
+    written = await curator.commit(
+        key=WS, proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ), now_ms=NOW + 1,
+    )
+
+    assert written == 1
+    assert events.calls == []
+    assert metrics.get("nora_note_discharge_notes_total") == 0

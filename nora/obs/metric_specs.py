@@ -1749,8 +1749,46 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "has not gone by, or has none at all — the clock decides that, not "
         "the model), anchor_not_covered (the anchor HAS passed but the "
         "evidence window does not span it — the room fell silent before the "
-        "anchor, or is busier than the window).",
+        "anchor, or is busier than the window), or discharge_malformed (a "
+        "closed verdict's discharge field, or one entry in it, did not fit "
+        "the three warrant shapes issue #101's discharge step accepts).",
         ("reason",),
+    ),
+    # Discharge (design/dreamer-agent-loop/33-note-dreamer-schedule.md §7,
+    # 19-between-tiers.md §1, issue #101) — what a CLOSED note's settled
+    # content becomes on its way out of the notebook, riding the curator's
+    # own tick rather than a new adaptor. Two series for two different
+    # questions: whether discharge ran at all for a note (below), and what
+    # happened to each item it classified (this one).
+    _CounterSpec(
+        "nora_note_discharge_total",
+        "One classified discharge item's write, by kind (commitment -> the "
+        "Gathering/Event service, world_claim -> the fact store with a "
+        "source warrant citing the note, person_claim -> Honcho's "
+        "conclusion lane) and outcome: written (ok), refused (a code-level "
+        "decision — malformed, or the closing citation's sender maps to no "
+        "resolvable person to attach it to — never a guess), unavailable "
+        "(discharge_enabled is true but the owning tier's collaborator is "
+        "missing, or its write raised). Emitted by nora.language."
+        "note_curator.NoteCuratorAdaptor's discharge step, which runs only "
+        "for a GROUNDED closed verdict that actually retired — an "
+        "expired/moot note answered nothing, so it never reaches this "
+        "metric at all.",
+        ("kind", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_note_discharge_notes_total",
+        "Whether a closed, retired note had anything to discharge, by "
+        "result: items (its classification named at least one commitment, "
+        "world-claim or person-claim — regardless of whether each one then "
+        "wrote or was refused) or empty (the ordinary, common answer — most "
+        "closed notes settle one question with nothing else worth routing, "
+        "and that is R-27's nothing_found, not a wiring gap). Absence of a "
+        "sample for a note is different from result=\"empty\" for it: the "
+        "former means discharge never ran (discharge_enabled is false, or "
+        "the verdict was expired/moot/ungrounded), the latter means it ran "
+        "and found nothing.",
+        ("result",),
     ),
     _CounterSpec(
         "nora_note_update_refused_total",

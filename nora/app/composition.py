@@ -2647,6 +2647,24 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     max_revisits_per_tick=cfg.notes.max_revisits_per_tick,
                     evidence_messages_per_note=cfg.notes.revisit_evidence_messages,
                     metrics=metrics,
+                    # The discharge pipeline (design/dreamer-agent-loop/33 §7,
+                    # issue #101), on its OWN gate — see `NotesConfig.
+                    # discharge_enabled`'s docstring for why it does not ride
+                    # `curator_enabled`. The three collaborators are the
+                    # SAME instances every other write path in this file
+                    # already uses (`fact_store`/`events`/`memory`, built
+                    # above) — discharge never gets its own fact store, event
+                    # service or Honcho client. Passed unconditionally
+                    # (harmless while the flag is off: `commit` never calls
+                    # them), so a later flip of the flag alone — no restart
+                    # needed beyond the config's own load-once rule — has
+                    # real collaborators waiting rather than `None`s that
+                    # would report every discharge as `unavailable`.
+                    discharge_enabled=cfg.notes.discharge_enabled,
+                    facts=fact_store,
+                    events=events,
+                    conclusions=memory,
+                    ai_peer=cfg.memory.ai_peer,
                 ),
             )
             # The note tier's judgement half of entity resolution (issue
