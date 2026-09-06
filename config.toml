@@ -236,7 +236,20 @@ turns = 20
 # multi-tool chain; ollamacloud is subscription, so the raise costs nothing
 # until the loop actually spends it. `turns = 20` stays the reachable
 # round-trip ceiling.
-total_tokens = 256000
+# 256000 → 512000 (operator, 2026-09-06): measured, not argued. Langfuse trace
+# 844eb6d1e7ba6104cc2c6f1db0b8d156 (2026-09-06 13:17Z, Discord) is a research
+# turn — four `web_search` + three `web_fetch` — whose seven calls each re-pay
+# a context that grows with every fetched page: 32,791 / 35,444 / 37,629 /
+# 40,535 / 40,612 / 43,516 / 45,599 input tokens, cumulative 276,126. It
+# stopped on `limit_total_tokens` at call SEVEN, mid-chain, with the reply
+# already truncated. The web pair is the new heavy chain the way the
+# reference-image turn was in August, and 512k restores the same ~2x headroom
+# over a measured worst case that every prior raise was sized on. `turns = 20`
+# stays the reachable round-trip ceiling (20 × ~45.6k worst-case-per-call is
+# still above this, so `turns` binds first only on a LIGHT chain — R-24's
+# reachability holds because the per-call cost of a light turn is ~6k, not
+# ~46k).
+total_tokens = 512000
 # The loop's OUTPUT budget across every call of the turn, deliberately not
 # `llm.max_tokens` (which is one call's ceiling). It was literally that number
 # until 2026-08-06, so the whole loop could emit what one call could — and
