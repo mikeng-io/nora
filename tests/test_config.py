@@ -235,7 +235,7 @@ def test_config_uses_the_target_shape(toml_path):
     # identity_file replaces persons_file
     assert cfg.identity_file.name == "identity.toml"
     # values dropped from the deleted test_loads_the_example_config, restored here
-    assert cfg.llm.limits.total_tokens == 512000
+    assert cfg.llm.limits.total_tokens == 1024000
     assert cfg.llm.limits.output_tokens == 12000
     assert cfg.doctrine.strict is True
     assert cfg.doctrine.reload == "mtime"

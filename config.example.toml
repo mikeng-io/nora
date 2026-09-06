@@ -218,18 +218,23 @@ timeout_seconds = 240
 # a silently-ignored line is an operator certain they raised a cap that never
 # moved.
 #
-# [llm.budgets]
-# send_reply = 6
+[llm.budgets]
+# web_fetch 2 -> 6, matching the deployment (config.toml). Not site-specific:
+# the table's 2 was measured false on the research shape (Langfuse 844eb6d1
+# refused the third fetch mid-chain), so this is the current known-good value
+# and a template disagreeing with it misleads every future investigation --
+# the same argument `total_tokens` carries below.
+web_fetch = 6
 
 [llm.limits]
 turns = 20
-# Raised 256000 -> 512000 to match the deployment (config.toml). These two
+# Raised 512000 -> 1024000 to match the deployment (config.toml). These two
 # files MUST agree on the budget — `tests/test_turn_budget.py::
 # test_both_config_files_declare_the_same_budget` exists because "a budget fix
 # applied to one and not the other" is a state master has been in before. It is
 # not site-specific: it is the current known-good ceiling, and a template
 # disagreeing with it misleads every future investigation.
-total_tokens = 512000
+total_tokens = 1024000
 # The loop's OUTPUT budget across every call of the turn, deliberately not
 # `llm.max_tokens` (which is one call's ceiling). It was literally that number
 # until 2026-08-06, so the whole loop could emit what one call could — and

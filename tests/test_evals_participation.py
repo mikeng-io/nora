@@ -57,6 +57,24 @@ _FACT_SEED = {
 }
 
 
+
+@pytest.fixture(autouse=True)
+def _omniroute_key(monkeypatch):
+    """`load_eval_config` loads the REAL config, and that load is fail-closed on
+    the LLM key — the same refusal that protects production
+    (`nora/config.py`: "refusing to start").
+
+    Every other test that loads the real config sets a placeholder for it
+    (`tests/test_production_seed.py`, `tests/test_config.py`); the tests in this
+    file did not, so they passed only on a machine that happened to export the
+    real key and were RED in any fresh worktree. That is a test asserting the
+    developer's shell, not the code.
+
+    Nothing here reaches a provider — the model is scripted — so a placeholder
+    is the honest value.
+    """
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+
 def _flatten(prefill: list[dict]) -> str:
     return "\n".join(
         block["text"] for message in prefill for block in message["content"]

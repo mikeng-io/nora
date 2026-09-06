@@ -215,7 +215,7 @@ async def test_limits_passed_through(harness_factory):
     h = await harness_factory(script=_reply_script())
     await h.handler.on_event(group_event(body="nora.000 ?"))
     await h.drain()
-    assert h.last_limits == {"turns": 20, "output_tokens": 12000, "total_tokens": 512000}
+    assert h.last_limits == {"turns": 20, "output_tokens": 12000, "total_tokens": 1024000}
     # These three reach the SDK as one dict; `tests/test_turn_budget.py` owns
     # whether the NUMBERS are survivable (R-24), which is a property of the
     # config files rather than of this wiring.

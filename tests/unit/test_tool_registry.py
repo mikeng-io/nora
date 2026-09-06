@@ -72,6 +72,10 @@ def test_the_registry_exposes_every_declared_tool():
         "calculate", "transit", "route",
         "place_info", "saved_places",
         "where_is",
+        # DEC-156: the coordinate -> street-address fetch surface. `where_is`
+        # stopped carrying an address in 13c530aa, so this is the ONLY tool that
+        # resolves one, and R-57 screens routes against what it disclosed.
+        "reverse_geocode",
         # DEC-155: the derived-presence history tool (where someone HAS BEEN).
         "where_been",
         "media_fetch",
@@ -143,22 +147,31 @@ def test_budgets_match_todays_table():
         # One message names two routes often enough (「68X 定 K73 快啲」) and
         # three almost never.
         "transit": 4,
-        # Sized like transit: two place lookups plus a route, paid and external,
-        # so a turn may reach for it twice but not more (DEC-46).
-        "route": 4,
+        # 4 -> 8 (operator instruction, 13c530aa 2026-09-06): multi-spot
+        # questions stopped fitting the old tight cap once naming a place took
+        # the extra where_is -> reverse_geocode round trip.
+        "route": 8,
         # Sized like route: one Places lookup per call, a turn may ask after two
         # spots.
         "place_info": 4,
         # 1 like group_members: a fixed per-room list, same answer if called twice.
         "saved_places": 1,
-        # One message can ask after two people; each call is one local table
-        # read, so like `calculate` this is sized by the question (DEC-59).
-        "where_is": 2,
+        # 2 -> 8 (operator instruction, 13c530aa 2026-09-06). Sized by the
+        # QUESTION now, not the cost: naming a spot takes where_is ->
+        # reverse_geocode, so a two-person answer is four calls before anyone
+        # asks a follow-up. NOTE the cost this walked away from — each call can
+        # still block on the DEC-67 live refresh (~8-10s), so 8 is ~80s of
+        # where_is alone against a 120s wall-clock. It is the operator's call;
+        # `[llm.budgets]` is the lever if a turn ever times out here.
+        "where_is": 8,
         # 4 (DEC-155, the where_been spec §4.4), sized like `transit`/
         # `place_info`: the calls are cheap local SELECTs — no network, no
         # live-refresh block — so the currency is the model round trip, and
         # one question can legitimately walk day -> places in a turn.
-        "where_been": 4,
+        "where_been": 8,
+        # 2, like `where_is` before the raise: one turn can ask after two
+        # coordinates, each a cached Google reverse-geocode.
+        "reverse_geocode": 2,
         # The plugin-provided activation tool (DEC-50, activating DEC-48). It is
         # in `budgets()` ONLY so R-7 admits the `AgentSkills` activation call;
         # the registry does not BUILD it (see the tests below). Sized 2 since
@@ -392,6 +405,7 @@ def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
     expected = {
         "weather": "confirmed", "transit": "confirmed", "route": "confirmed",
         "place_info": "confirmed", "where_is": "confirmed",
+        "reverse_geocode": "confirmed",
         "saved_places": "remembered", "web_search": "web", "web_fetch": "web",
         "social_fetch": "web",
     }
@@ -593,6 +607,8 @@ ACT_VERBS = frozenset({
 # default safe.
 READ_ONLY = frozenset({
     "now", "calculate", "transit", "route", "where_is", "place_info",
+    # DEC-156: a pure coordinate -> address lookup, no writes anywhere.
+    "reverse_geocode",
     # DEC-155: `where_been` reads the derived substrate — a read everywhere
     # (SELECT-only store reads, no writes), Dreamer-ELIGIBLE but NOT granted
     # (spec §7.4): a read verb that forgets the flag turns the classification

@@ -210,8 +210,24 @@ timeout_seconds = 240
 # a silently-ignored line is an operator certain they raised a cap that never
 # moved.
 #
-# [llm.budgets]
-# send_reply = 6
+[llm.budgets]
+# web_fetch 2 → 6 (operator, 2026-09-06). The table's 2 was argued as "there is
+# rarely a reason to open more than one or two links in a turn" — measured
+# false on the research shape: Langfuse trace 844eb6d1 spent its whole budget
+# on four `web_search` + three `web_fetch` and was REFUSED at the third fetch
+# («You already called web_fetch 2 time(s)»), mid-chain, on a question that
+# genuinely needed the pages. 2ef7c517 hit the same refusal in the same room
+# minutes earlier.
+#
+# Here rather than in the table (DEC-10/DEC-32): this is a per-deployment
+# delta over `nora/agent/tools.py`, which is what this section exists for —
+# "moving a number should not need a code change and a rebuild". The table
+# keeps its argued default for a fresh install.
+#
+# Paired with the `total_tokens` raise below and NOT a substitute for it: six
+# fetches cost more context, not less, and the two numbers have to move
+# together or the fetch budget just relocates where the turn dies.
+web_fetch = 6
 
 [llm.limits]
 # 8 → 20 (operator, 2026-08-07): with more tools live (where_is, media_fetch,
@@ -249,7 +265,14 @@ turns = 20
 # still above this, so `turns` binds first only on a LIGHT chain — R-24's
 # reachability holds because the per-call cost of a light turn is ~6k, not
 # ~46k).
-total_tokens = 512000
+# 512000 → 1024000 (operator, 2026-09-06, same session as the raise above).
+# The 512k figure was sized on ONE measured turn; the doubling is the operator
+# choosing headroom over another round of this. `turns = 20` is still the
+# reachable round-trip ceiling and is still what an operator can reason about
+# — R-24's requirement is `total_tokens >= turns * worst-case-per-call`, and
+# raising this only ever makes that MORE true. The lower bound, not this
+# number, is the one that can be wrong.
+total_tokens = 1024000
 # The loop's OUTPUT budget across every call of the turn, deliberately not
 # `llm.max_tokens` (which is one call's ceiling). It was literally that number
 # until 2026-08-06, so the whole loop could emit what one call could — and
