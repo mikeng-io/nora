@@ -909,7 +909,12 @@ async def test_the_curator_is_additive_to_the_fact_tiers_adaptors(cfg):
     note-curator merge (design/dreamer-agent-loop/34, issue #99) folded
     `NoteRevisitor` into `NoteCuratorAdaptor`: there is one gate now
     (`curator_enabled`, already covered by `test_the_curator_needs_three_gates_
-    not_two`/`test_all_three_gates_on_builds_the_curator` above), not two."""
+    not_two`/`test_all_three_gates_on_builds_the_curator` above), not two.
+
+    `note-entity-resolution` (issue #100) rides the SAME `curator_enabled`
+    gate, appended after `note-curation` — see
+    `NoteEntityResolutionAdaptor`'s own module docstring for why it has no
+    flag of its own."""
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True, "facts.enabled": True, "notes.enabled": True,
         "notes.curator_enabled": True,
@@ -917,7 +922,7 @@ async def test_the_curator_is_additive_to_the_fact_tiers_adaptors(cfg):
 
     assert [a.name for a in deps.dream_adaptors] == [
         "fact-candidates", "fact-adjudication", "fact-entity-resolution",
-        "note-curation",
+        "note-curation", "note-entity-resolution",
     ]
 
 

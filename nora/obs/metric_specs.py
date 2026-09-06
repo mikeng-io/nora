@@ -1760,6 +1760,35 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(the compare-and-set lost; the note moved under the call).",
         ("reason",),
     ),
+    # The note tier's judgement half of entity resolution (issue #100),
+    # `NoteEntityResolutionAdaptor` — the identical three-series shape
+    # `nora_fact_resolutions_total`/`nora_fact_resolution_offered_total`/
+    # `nora_fact_aliases_attached_total` already carry for the fact tier's own
+    # pass 6, over the SAME `fact_entity` table, split rather than shared so
+    # "how often does the NOTE tier's judgement pass fire" stays answerable on
+    # its own.
+    _CounterSpec(
+        "nora_note_entity_resolutions_total",
+        "The note tier's entity-resolution verdicts by outcome: merged (an "
+        "anchor-entity string joined an existing entity as an alias), split "
+        "(no match, or the model was unsure — the expected answer), "
+        "unknown_handle (it named something this run never rendered), "
+        "malformed.",
+        ("status",),
+    ),
+    _CounterSpec(
+        "nora_note_entity_resolution_offered_total",
+        "Unresolved anchor-entity strings put in front of the model. The "
+        "positive control for the series above: every one of them is "
+        "compatible with a pass that was never asked anything.",
+    ),
+    _CounterSpec(
+        "nora_note_entity_aliases_attached_total",
+        "Anchor-entity strings recorded as another spelling of an existing "
+        "entity. This pass's ONLY write — it never merges two entity rows, "
+        "because a split is provisional and a merge has already absorbed "
+        "both sets of edges.",
+    ),
     # DECLARED LATE, and the gap was not inert. `engagement/context.py` has
     # incremented this name since the peer-card blindness was found on
     # 2026-08-15, but it was never added here — so `Metrics.inc` fell through

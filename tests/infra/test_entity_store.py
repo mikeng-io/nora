@@ -520,6 +520,90 @@ async def _pending_candidate(engine, *, subject: str, predicate: str,
         )
 
 
+async def _note(engine, *, anchor_entity_ids, workspace: str = WS,
+                 retired: bool = False) -> None:
+    """The one column the note tier's own queue reads —
+    `anchor_entity_ids` — inserted directly rather than through
+    `SqlNoteStore`, which this file deliberately does not import (kept
+    isolated to `SqlEntityStore`, like `_fact`/`_pending_candidate` above).
+    `head_revision_id` names no real `note_revision` row; there is no FK to
+    violate (the module docstring on `nora.infra.sql.notes` states why), and
+    `unresolved_note_anchor_names` never reads that column."""
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.text(
+                "insert into note (id, workspace, title, description, "
+                "uncertainty, closing_condition, anchor_entity_ids, "
+                "established_in, created_at, head_revision_id, retired_at) "
+                "values (gen_random_uuid(), :ws, 't', 'd', 'u', 'c', :ids, "
+                "'conv-1', :now, gen_random_uuid(), :retired)"
+            ),
+            {"ws": workspace, "ids": list(anchor_entity_ids), "now": NOW,
+             "retired": NOW if retired else None},
+        )
+
+
+# ---------------------------------------------------------------------------
+# the note tier's judgement queue (issue #100)
+# ---------------------------------------------------------------------------
+
+
+async def test_unresolved_note_anchor_names_finds_names_no_entity_covers(store):
+    _store, engine, _metrics = store
+    await _note(engine, anchor_entity_ids=("Grant Carver",))
+
+    assert await _store.unresolved_note_anchor_names(
+        workspace=WS, limit=10,
+    ) == ("Grant Carver",)
+
+
+async def test_unresolved_note_anchor_names_excludes_what_already_resolves(store):
+    """A name that resolves NOW is not a near-miss — it is an exact match the
+    deterministic pass will pick up the next time the note is touched, and
+    offering it to the model would ask a question that already has a free
+    answer."""
+    entities, engine, _metrics = store
+    await _note(engine, anchor_entity_ids=("Grant Carver", "Nobody Knows"))
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.text(
+                "insert into fact_entity (id, workspace, canonical_name, "
+                "aliases, created_at) values (gen_random_uuid(), :ws, "
+                "'Grant Carver', '{}'::text[], :now)"
+            ),
+            {"ws": WS, "now": NOW},
+        )
+
+    assert await entities.unresolved_note_anchor_names(
+        workspace=WS, limit=10,
+    ) == ("Nobody Knows",)
+
+
+async def test_unresolved_note_anchor_names_excludes_retired_notes(store):
+    """A retired note's anchor is no longer an occasion anybody can act on."""
+    _store, engine, _metrics = store
+    await _note(engine, anchor_entity_ids=("Grant Carver",), retired=True)
+
+    assert await _store.unresolved_note_anchor_names(workspace=WS, limit=10) == ()
+
+
+async def test_unresolved_note_anchor_names_deduplicates_and_orders(store):
+    _store, engine, _metrics = store
+    await _note(engine, anchor_entity_ids=("delta", "alpha"))
+    await _note(engine, anchor_entity_ids=("alpha", "charlie", "bravo"))
+
+    assert await _store.unresolved_note_anchor_names(workspace=WS, limit=3) == (
+        "alpha", "bravo", "charlie",
+    )
+
+
+async def test_unresolved_note_anchor_names_never_reaches_another_workspace(store):
+    _store, engine, _metrics = store
+    await _note(engine, anchor_entity_ids=("only-in-ws-b",), workspace="ws-b")
+
+    assert await _store.unresolved_note_anchor_names(workspace=WS, limit=10) == ()
+
+
 async def test_unresolved_names_are_ordered_rather_than_whatever_the_plan_gave(
     store,
 ):

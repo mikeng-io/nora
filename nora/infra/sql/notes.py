@@ -80,23 +80,40 @@ a claim, not a plan:
   hold with or without the index; the index is a performance affordance, and
   nothing here reads a null result as evidence of absence because of it.
 
-**Entity resolution is out of scope for this store**, matching `SqlFactStore`.
-`anchor_entity_ids` is written verbatim to `note.anchor_entity_ids`, the column
-`note_has_an_anchor_check` reads; the `note_entity` join table — whose
-`entity_id` is FK'd to `fact_entity.id` — is NOT populated here, because writing
-it would require every anchor entity to already be a resolved canonical entity,
-and resolving `big walk` / `Big Walk` / 大步行 to one id is a candidate-selection
-concern this class does not perform. When the curator gains entity resolution it
-writes `note_entity` itself, from ids it has actually resolved.
+**Entity resolution's DETERMINISTIC half now runs here (issue #100), mirroring
+`SqlFactStore._resolve_subjects`'s shape rather than its verb.** `anchor_
+entity_ids` is still written verbatim to `note.anchor_entity_ids` — that column
+answers "what did the writer type" and stays free text on purpose. Separately,
+every distinct string in it is resolved against `fact_entity`'s canonical
+names and aliases — EXACT match after normalisation, via `SqlEntityStore.
+resolve`, never `resolve_or_create`: this tier only ever LINKS a name to an
+entity that already exists (the fact tier is what creates one), and never
+mints one of its own. A match writes a `note_entity` row, in the SAME
+transaction as the note/revision it belongs to; no match leaves the string
+unresolved — a candidate for
+`nora.language.note_entity_adaptor.NoteEntityResolutionAdaptor`'s judgement
+pass, or simply unresolved, which is the existing fail-closed default and not a
+regression. `entities` is optional and injected (`SqlEntityStore | None`,
+`None` by default) for the same reason `SqlFactStore.__init__` states: a
+contract-suite fixture built from a bare `AsyncEngine` still works, and pays
+for it by leaving every note's entities unresolved.
 
-**`merge_groups` reads that empty table anyway, and that is the point.** Merge
-eligibility is `(anchor_date, resolved entity set)`, and the resolved half comes
-from `note_entity` — never from `anchor_entity_ids`, which is the model's own
-free text. So merge is inert until the join table has a writer, and
-`nora_note_curator_groups_refused_total` is the number that says what building
-one would unlock. Keying on the raw column instead would make merge fire, and
-fire wrongly in both directions: three spellings of one wedding are three keys,
-while two unrelated notes that both say 「wedding」 are one.
+Both writers resolve: `create` (the tag path's `note_create`) and `propose`'s
+`NoteCreationProposal` branch (the debrief and the create-candidate gate,
+issue #98). `propose`'s `NoteRevisionProposal` branch does not — a revision
+never changes `anchor_entity_ids` (there is no column for it to write), and
+`NoteRevisionProposal.entity_ids` is not resolved here; it is unused by this
+store today, exactly as it arrived.
+
+**`merge_groups` reads `note_entity`, and now something is actually writing
+it.** Merge eligibility is `(anchor_date, resolved entity set)`, and the
+resolved half comes from `note_entity` — never from `anchor_entity_ids`, which
+is the model's own free text. Before this, `note_entity` had no writer anywhere
+and every group was refused; `nora_note_curator_groups_refused_total` is the
+number that says how much of that refusal is left. Keying on the raw column
+instead would make merge fire, and fire wrongly in both directions: three
+spellings of one wedding are three keys, while two unrelated notes that both
+say 「wedding」 are one.
 """
 
 from __future__ import annotations
@@ -127,6 +144,7 @@ from nora.domain.notes import (
     tag_path_progressed_since_wake,
 )
 from nora.domain.ports import Proposal
+from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.schema import (
     NOTE,
     NOTE_CANDIDATE,
@@ -182,17 +200,88 @@ def _is_uuid(value: str) -> bool:
 
 
 class SqlNoteStore:
-    """`__init__(self, engine: AsyncEngine)` — and nothing else. No config, no
-    clock, no metrics. `now_ms` arrives on `create`/`append_revision`/
+    """`__init__(self, engine: AsyncEngine)` and nothing else BY DEFAULT. No
+    config, no clock, no metrics. `now_ms` arrives on `create`/`append_revision`/
     `record_miss`, not on this constructor, so a contract-suite fixture in
     another session can build this class from a bare `AsyncEngine` alone and
     never has to guess what else it needs. `SqlFactStore`'s docstring states the
     same affordance for the same reason, and the two stores' fixtures are
     deliberately interchangeable in shape.
+
+    **`entities` is the one addition (issue #100), and it is optional for the
+    same reason `SqlFactStore.entities` is**: a contract-suite fixture still
+    builds this from a bare engine, and what that costs is that such a fixture
+    writes notes whose anchor entities never resolve — the fail-closed default
+    this tier already shipped with, not a new one. When it IS supplied, every
+    `create`/`propose` resolves `anchor_entity_ids` against it and writes
+    `note_entity` in the same transaction as the note it belongs to; see
+    `_resolve_names`.
     """
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(
+        self, engine: AsyncEngine, *, entities: SqlEntityStore | None = None,
+    ) -> None:
         self._engine = engine
+        self._entities = entities
+
+    async def _resolve_names(
+        self, *, workspace: str, names: Sequence[str],
+    ) -> dict[str, str]:
+        """The deterministic half of entity resolution (21 §5, issue #100):
+        normalise, exact-match against `fact_entity`'s canonical name and
+        aliases. Returns the subset of `names` that resolved, mapped to the
+        entity id each one names.
+
+        **`resolve`, never `resolve_or_create`.** The fact tier's sink creates
+        an entity because a fact's subject IS one end of the edge being
+        written (§4: entity creation is a side effect of writing an edge, and
+        the FACT is the edge). A note's anchor entity is not an edge the note
+        tier is asserting — it is a reference to something the fact tier
+        already asserts exists. Minting one here would make writing a note
+        able to grow the shared substrate from free text nothing has
+        adjudicated, which is exactly the "unadjudicated noise must not mint
+        nodes" rule one layer over.
+
+        A blank `self._entities` (no collaborator injected) or a blank/
+        whitespace-only name resolves to nothing, cheaply, before any lookup —
+        the fail-closed default this whole tier already had.
+        """
+        if self._entities is None:
+            return {}
+        resolved: dict[str, str] = {}
+        for name in dict.fromkeys(names):
+            if not name or not name.strip():
+                continue
+            entity_id = await self._entities.resolve(workspace=workspace, name=name)
+            if entity_id is not None:
+                resolved[name] = entity_id
+        return resolved
+
+    @staticmethod
+    async def _attach_note_entities(
+        conn: AsyncConnection, pairs: Sequence[tuple[str, str]],
+    ) -> int:
+        """Write `(note_id, entity_id)` rows into `note_entity`, on the
+        CALLER's connection so it lands in the same transaction as the note or
+        revision that resolved them (21 §4's atomicity argument, one join
+        table over: a `note_entity` row naming a note the transaction rolled
+        back would be exactly the dangling edge that argument forbids).
+
+        `ON CONFLICT DO NOTHING` on the table's own composite primary key
+        (`note_id`, `entity_id`) — a name resolving to an entity the note is
+        already linked to (a revision re-asserting the same anchor, or two
+        proposals in one batch naming the same pair) is not a second link,
+        it is the same one seen twice.
+        """
+        rows = list(dict.fromkeys(pairs))
+        if not rows:
+            return 0
+        result = await conn.execute(
+            pg_insert(NOTE_ENTITY)
+            .values([{"note_id": n, "entity_id": e} for n, e in rows])
+            .on_conflict_do_nothing()
+        )
+        return result.rowcount
 
     async def create(
         self,
@@ -240,8 +329,19 @@ class SqlNoteStore:
             written_at=now_ms, established_by=established_by,
             instruction_sha256=instruction_sha256, model=model,
         )
+        # RESOLVED BEFORE THE TRANSACTION OPENS: `_resolve_names` reads
+        # `fact_entity` on its own connection, and the fact-tier sink's own
+        # doctrine is that a resolution decided against a name is a READ, not
+        # part of the write it feeds — the write half is what needs the
+        # transaction, not the lookup that decides its arguments.
+        resolved = await self._resolve_names(
+            workspace=workspace, names=anchor_entity_ids,
+        )
         async with self._engine.begin() as conn:
             await self._create_on_conn(conn, note=note, revision=revision)
+            await self._attach_note_entities(
+                conn, [(note_id, eid) for eid in dict.fromkeys(resolved.values())],
+            )
         return note
 
     @staticmethod
@@ -1105,6 +1205,20 @@ class SqlNoteStore:
                 )
             typed.append((p, payload))
 
+        # RESOLVED BEFORE THE TRANSACTION OPENS, for the WHOLE BATCH — the
+        # same ordering `create` uses and for the same reason (issue #100): a
+        # lookup against `fact_entity` is a READ, not part of the write it
+        # feeds. Indexed by position in `typed` rather than by note id, since
+        # a creation's note id does not exist until `_new_note` mints it
+        # inside the transaction below.
+        resolved_by_index: list[dict[str, str]] = [
+            await self._resolve_names(
+                workspace=key, names=payload.anchor_entity_ids,
+            )
+            if isinstance(payload, NoteCreationProposal) else {}
+            for _p, payload in typed
+        ]
+
         ids: list[str] = []
         # The head each note reached WITHIN this batch, so a second proposal
         # against the same note CASes against what the first one wrote rather
@@ -1115,13 +1229,20 @@ class SqlNoteStore:
         # written — see the check below.
         declared: dict[str, str] = {}
         async with self._engine.begin() as conn:
-            for p, payload in typed:
+            for i, (p, payload) in enumerate(typed):
                 if isinstance(payload, NoteCreationProposal):
                     note, first = self._new_note(
                         workspace=key, payload=payload, proposal=p,
                         now_ms=now_ms,
                     )
                     await self._create_on_conn(conn, note=note, revision=first)
+                    await self._attach_note_entities(
+                        conn,
+                        [
+                            (note.id, eid) for eid in
+                            dict.fromkeys(resolved_by_index[i].values())
+                        ],
+                    )
                     heads[note.id] = first.id
                     ids.append(note.id)
                     continue

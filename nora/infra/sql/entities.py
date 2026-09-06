@@ -3,6 +3,17 @@
 `fact_entity` shipped with an alias mechanism, a foreign key from the note tier,
 and **no writer and no reader anywhere in `nora/`**. This is both.
 
+**The note tier is a SECOND, narrower consumer of this same registry** (issue
+#100). `SqlNoteStore` reads `resolve` on every note write — never
+`resolve_or_create`: this tier only ever links a name to an entity that
+already exists, and never mints one, so `note_entity`'s FK grows only where a
+name happened to line up with something the FACT tier already asserted.
+`unresolved_note_anchor_names` below is `unresolved_names`'s note-tier twin,
+feeding the same `similar_entities` / `attach_alias` verbs pass 6 already
+uses — the near-miss judgement pass is one adaptor
+(`nora.language.note_entity_adaptor.NoteEntityResolutionAdaptor`) mirroring
+`FactEntityResolutionAdaptor`'s shape, reading and writing this same table.
+
 **Two verbs, and the split is `21-substrate-contract.md` §5's.**
 
 - `resolve_or_create` is the DETERMINISTIC half: normalise, look up
@@ -50,7 +61,7 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.facts import PROMOTION_MAX_OBJECT_CHARS, FactEntity, normalise_name
-from nora.infra.sql.schema import FACT, FACT_ENTITY
+from nora.infra.sql.schema import FACT, FACT_ENTITY, NOTE
 
 log = logging.getLogger(__name__)
 
@@ -431,6 +442,57 @@ class SqlEntityStore:
             n = normalise_name(subject)
             if n and n not in resolved and n not in out:
                 out[n] = subject
+        return tuple(out.values())[:limit]
+
+    # -- the note tier's judgement queue (issue #100) ------------------------
+
+    async def unresolved_note_anchor_names(
+        self, *, workspace: str, limit: int,
+    ) -> tuple[str, ...]:
+        """The note tier's own near-miss queue: anchor-entity strings off
+        STANDING notes in this workspace that resolve to no entity today.
+
+        `unresolved_names` immediately above is the fact tier's version of
+        this same question, read from `fact_candidate`; this tier has no
+        candidate queue for it to read, so the raw strings come from
+        `note.anchor_entity_ids` instead — exactly what the deterministic half
+        (`SqlNoteStore`'s own resolution, run inline on every create/propose)
+        could not settle at write time. A name that resolves NOW but did not
+        when the note was written (the entity arrived later, from either
+        tier) is correctly excluded here too: it is not a near-miss, it is an
+        exact match the deterministic pass will pick up the next time this
+        note is touched, and offering it to the model would ask a question
+        that already has a free answer.
+
+        Same shape as `unresolved_names` in every other respect: deduplicated
+        on the NORMALISED form (one name written three ways is one question),
+        ordered by the SURFACE rather than left to dict/set iteration order
+        (an unordered `[:limit]` would starve whichever name a given tick's
+        hash order happens to place last), retired notes excluded (their
+        anchors are no longer occasions anybody can act on).
+        """
+        if limit <= 0:
+            return ()
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(NOTE.c.anchor_entity_ids).where(
+                    NOTE.c.workspace == workspace, NOTE.c.retired_at.is_(None),
+                )
+            )).all()
+            known = (await conn.execute(
+                sa.select(FACT_ENTITY.c.canonical_name, FACT_ENTITY.c.aliases)
+                .where(FACT_ENTITY.c.workspace == workspace)
+            )).all()
+        resolved = {normalise_name(c) for c, _a in known}
+        for _c, aliases in known:
+            resolved |= {normalise_name(a) for a in aliases}
+
+        surfaces = sorted({s for (arr,) in rows for s in (arr or ())})
+        out: dict[str, str] = {}
+        for surface in surfaces:
+            n = normalise_name(surface)
+            if n and n not in resolved and n not in out:
+                out[n] = surface
         return tuple(out.values())[:limit]
 
     async def similar_entities(

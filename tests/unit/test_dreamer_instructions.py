@@ -380,6 +380,12 @@ NATIVELY_AUTHORED = {
     # prompt written from scratch. The upstream shape did not survive contact
     # anyway — its list variant echoes UUIDs, which `dream_screen` drops.
     "fact-entity-resolution",
+    # The note tier's own pass 6 twin (issue #100). Same reasoning as
+    # `fact-entity-resolution` immediately above — a prompt re-authored from
+    # the identical worked examples has no more of a pre-move fixture than
+    # one written from scratch — and same reasoning as `note-curation` below
+    # it in this list: a new adaptor, no prior prompt to have moved.
+    "note-entity-resolution",
     # Step 3 of the correction loop. Like `standing-debrief`, this is read by a
     # TAG-PATH stage rather than by a Dreamer adaptor — it lives here because
     # this is where the bind-mounted, hot-reloading instruction text lives, and
