@@ -270,6 +270,44 @@ shadow = false
 # shadow_channel = "1234567890123456789"   # required when shadow = true
 # shadow_platform = "discord"              # the mirror's platform
 
+[relevance_gate]
+# The Relevance Gate (design/dreamer-agent-loop/36): ONE cheap structured model
+# call, on every quiescence-closed window, deciding whether the burst is worth a
+# participation turn AT ALL. No tools, no doctrine, no agent loop — it reads the
+# transcript window and the room's standing, and answers
+# {"verdict": "go"|"no_go", "relevance_score": 0.0-1.0}. An unparseable or
+# failed call is a NO-GO (fail-closed) and is counted separately, because
+# "the room was quiet" and "the gate is down" must never read the same.
+#
+# OFF by default. Even ON it considers nothing until a room is ALSO opted in
+# with `relevance_gate = true` on its [[conversations]] entry in policy.toml,
+# and it REFUSES TO START unless [participation] enabled = true — the gate
+# decides whether a turn runs, so with the turn off every GO reaches nothing.
+enabled = false
+# Its OWN OmniRoute combo, not the `nora` lane: the gate wants JSON mode and no
+# reasoning, the tag lane wants neither. ADR 0006 is why they stay apart — a
+# combo fans out per request and its upstreams have been caught disagreeing
+# about request features, which on a fail-closed gate reads as a quiet room
+# rather than as an outage.
+model = "nora-ambient-gate"
+# A ceiling on a verdict JSON, not a budget for prose. Deliberately small: a
+# gate with room to write paragraphs has room to start drafting the reply it
+# must never draft. MEASURE before changing (design 36 §2.3).
+max_tokens = 512
+temperature = 0.0
+timeout_seconds = 20.0
+# The gate's ONLY inputs are this many transcript rows plus the room's
+# standing. Nothing else may be added here without changing what the gate is.
+transcript_rows = 40
+# SHADOW is the shipped posture: the gate runs on every closed window and only
+# the `go` verdicts are posted to shadow_channel for review. Nora is NEVER
+# involved while this is true — no turn, no agent, whatever the score. The
+# `no_go` verdicts are not delivered anywhere; they are visible only as
+# nora_relevance_gate_total{verdict="no_go"}. The flip is `shadow = false`.
+shadow = true
+# shadow_channel = "1234567890123456789"   # required when enabled AND shadow
+# shadow_platform = "discord"
+
 [engagement]
 policy = "trigger_text"
 

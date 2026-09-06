@@ -399,6 +399,79 @@ class ParticipationConfig(BaseModel):
         return self
 
 
+class RelevanceGateConfig(BaseModel):
+    """The Relevance Gate (design/dreamer-agent-loop/36): ONE cheap structured
+    call that decides whether a quiescence-closed window is worth a
+    participation turn at all.
+
+    Ships INERT (`enabled = false`), and even ON it considers nothing until the
+    operator ALSO opts a room in with `relevance_gate = true` on that room's
+    `[[conversations]]` entry in policy.toml — the trust distinction "allowed
+    to answer when tagged" vs "allowed to be spoken to unprompted" is drawn in
+    the policy file, where every other trust distinction lives.
+
+    `model` is its OWN OmniRoute combo (`nora-ambient-gate`), not the `nora`
+    lane. The gate needs JSON mode and no reasoning; the tag lane needs neither
+    and is tuned for the opposite. ADR 0006 is the standing measurement behind
+    keeping them apart — a combo fans out per request and its upstreams have
+    already been caught disagreeing about whether a request feature is
+    supported, which on a fail-closed gate would read as a quiet room rather
+    than as an outage.
+
+    `max_tokens` is small ON PURPOSE. It is a ceiling on a verdict JSON, not a
+    budget for prose; a gate that can emit paragraphs has been given room to
+    start drafting the reply it must never draft.
+
+    `shadow` is the review surface and the shipped default when enabled: the
+    gate runs on every closed window, and **only the `go` verdicts** are
+    posted to `shadow_channel` (design 36 decision 6). Nora is NEVER involved
+    while shadow is on — no turn, no agent, whatever the score. The `no_go`
+    verdicts are not delivered anywhere and are visible only as
+    `nora_relevance_gate_total{verdict="no_go"}`, which is what keeps an
+    undelivered verdict from being an unmeasured one.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    model: str = "nora-ambient-gate"
+    # MEASURED, not assumed (design 36 decision 7 / §2.3). The number here is
+    # the measurement's ceiling, not a guess carried over from another lane.
+    max_tokens: int = Field(default=512, gt=0)
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    timeout_seconds: float = Field(default=20.0, gt=0)
+    # How many transcript rows the gate is shown. Its ONLY inputs are this
+    # window and the room's standing; nothing else may be added here without
+    # changing what the gate is (design 36 §2).
+    transcript_rows: int = Field(default=40, gt=0)
+    shadow: bool = True
+    # The review channel: a channel id on `shadow_platform`. Required when
+    # `shadow = true` — a review surface with nowhere to post would fail soft
+    # on every GO, which is a config error, not a runtime condition.
+    shadow_channel: str = ""
+    shadow_platform: str = "discord"
+
+    @model_validator(mode="after")
+    def _shadow_needs_a_channel(self) -> RelevanceGateConfig:
+        """Gated on `enabled` as well as `shadow`, unlike
+        `ParticipationConfig`'s otherwise identical check.
+
+        `shadow` DEFAULTS true here — shadow is the shipped posture, so that a
+        deployment which turns the gate on without thinking about review gets
+        review rather than live admission. That default makes the unconfigured
+        instance `shadow=true, shadow_channel=""`, which the participation
+        version of this check would refuse at import time. The relation being
+        enforced is "a running review surface needs somewhere to post", and a
+        disabled gate is not running.
+        """
+        if self.enabled and self.shadow and not self.shadow_channel:
+            raise ValueError(
+                "[relevance_gate] shadow = true requires shadow_channel — the "
+                "review channel id on shadow_platform"
+            )
+        return self
+
+
 class StoreConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -2359,6 +2432,10 @@ class Config(BaseModel):
     # ever evaluated. On, it STILL engages nowhere until a room is opted in via
     # `participation = true` in policy.toml.
     participation: ParticipationConfig = ParticipationConfig()
+    # The Relevance Gate (design/dreamer-agent-loop/36) — the admission call in
+    # FRONT of the participation turn. Ships INERT; see the cross-section
+    # validator below for why it cannot be enabled on its own.
+    relevance_gate: RelevanceGateConfig = RelevanceGateConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
     # Optional and defaulted — see `DreamerConfig`. A config.toml with no
@@ -2401,6 +2478,40 @@ class Config(BaseModel):
         never set one falls back to rather than a value anything relies on.
         """
         return self.dreamer.model or self.llm.model
+
+    @model_validator(mode="after")
+    def _the_gate_needs_something_behind_it(self) -> Config:
+        """`[relevance_gate] enabled` requires `[participation] enabled`.
+
+        This exists because the FIRST draft of design 36 shipped exactly the
+        bug it forbids. It said a GO hands the message to "normal ambient
+        ingestion" — true of the identity, and fatal in practice: ambient
+        traffic constructs no agent, so a GO would have reached nothing and
+        the gate would have been perfectly correct and completely inert. The
+        gate decides whether a turn happens; if no turn CAN happen, the whole
+        ambient path is a model call whose answer is discarded.
+
+        A cross-section relation, so it cannot live on either sub-model —
+        `_lead_clears_the_tick`'s reason, and the same lesson behind it: the
+        relation was a comment in three places and nothing enforced it. A
+        refusal at startup is the only version of this that is not a silent
+        behaviour change, because the failure mode here is INVISIBLE — every
+        window would be judged, every GO counted, and the room would never
+        hear anything, which reads exactly like a gate correctly declining.
+
+        **This holds unless** a narrower engage path is built for ambient
+        speech (design 36 decision 3's reversal condition), at which point the
+        thing behind the gate is that path and this validator names it
+        instead.
+        """
+        if self.relevance_gate.enabled and not self.participation.enabled:
+            raise ValueError(
+                "[relevance_gate] enabled = true requires [participation] "
+                "enabled = true — the gate decides whether a participation "
+                "turn runs, so with the turn off every GO reaches nothing and "
+                "the gate is inert while looking healthy"
+            )
+        return self
 
     @model_validator(mode="after")
     def _lead_clears_the_tick(self) -> Config:

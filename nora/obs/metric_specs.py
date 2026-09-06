@@ -1577,6 +1577,40 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "ratio is how often the occasion finds grounded value.",
         ("platform",),
     ),
+    # The Relevance Gate (design/dreamer-agent-loop/36). TWO series, and the
+    # split is the point: this one moves only when the gate actually decided,
+    # the one below only when it could not. Both outcomes are a `no_go` at the
+    # trigger, and folding them together would make «the room was quiet» and
+    # «the gate is down» the same reading — R-23's bug, which this repo has
+    # already paid for once.
+    #
+    # NEVER counted in any tag, heartbeat or participation series: the gate
+    # decides whether a turn happens and is not itself a turn, so a gate
+    # verdict landing in `nora_engagement_outcomes_total` or
+    # `nora_participation_silence_total` would corrupt the very measurement
+    # the flip decision reads.
+    _CounterSpec(
+        "nora_relevance_gate_total",
+        "Relevance Gate verdicts the MODEL returned, by verdict and platform "
+        "(design/dreamer-agent-loop/36). A fail-closed no_go is NOT here — it "
+        "is on nora_relevance_gate_errors_total — so go/(go+no_go) here is a "
+        "true admission rate and not a rate diluted by outages. In shadow "
+        "mode only the go verdicts are delivered anywhere; this series is the "
+        "only place the no_go rate is observable at all, which is what keeps "
+        "an undelivered verdict from being an unmeasured one.",
+        ("verdict", "platform"),
+    ),
+    _CounterSpec(
+        "nora_relevance_gate_errors_total",
+        "Gate calls that produced no usable verdict and therefore FAILED "
+        "CLOSED to no_go, by kind and platform. The vocabulary is "
+        "`nora.ingest.relevance_gate.GATE_ERROR_KINDS` and is deliberately "
+        "not restated here — a hand-copied vocabulary is what drifts. A "
+        "SUSTAINED count here is the gate being down while looking exactly "
+        "like a quiet room, which is the one failure this series exists to "
+        "make visible.",
+        ("kind", "platform"),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
