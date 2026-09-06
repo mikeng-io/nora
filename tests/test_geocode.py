@@ -159,3 +159,71 @@ async def test_no_store_behaves_exactly_as_before(google):
     assert await geo.address_for(lat=22.4445, lng=114.0289) == (
         "元朗形點 / Yoho Mall, Yuen Long"
     )
+
+
+# ---- Plus Code screening (live finding 2026-09-06) --------------------------
+
+
+def test_a_plus_code_embedded_after_cjk_is_rejected():
+    """The live failure: Google's zh result embeds the Plus Code directly
+    after CJK (香港新界元朗FQQQ+QQ) — a word-boundary regex does not fire
+    there, so the screen uses a boundary-free pattern."""
+    payload = {
+        "status": "OK",
+        "results": [
+            {"formatted_address": "香港新界元朗FQQQ+QQ",
+             "types": ["premise", "street_address"]},
+            {"formatted_address": "香港新界元朗南生圍路", "types": ["route"]},
+        ],
+    }
+    assert geocode._first_address(payload) == "香港新界元朗南生圍路"
+
+
+def test_a_leading_plus_code_is_rejected():
+    payload = {
+        "status": "OK",
+        "results": [
+            {"formatted_address": "FQQQ+QQ, Yuen Long, New Territories, Hong Kong",
+             "types": ["premise", "street_address"]},
+            {"formatted_address": "Nam Sang Chi Rd, Yuen Long, New Territories, Hong Kong",
+             "types": ["route"]},
+        ],
+    }
+    expected = (
+        "Nam Sang Chi Rd, Yuen Long, New Territories, Hong Kong"
+    )
+    assert geocode._first_address(payload) == expected
+
+
+def test_a_pure_plus_code_typed_result_is_rejected():
+    payload = {
+        "status": "OK",
+        "results": [
+            {"formatted_address": "7QQQ+QQ 香港大屿山", "types": ["plus_code"]},
+            {"formatted_address": "香港石仔埗街", "types": ["route"]},
+        ],
+    }
+    assert geocode._first_address(payload) == "香港石仔埗街"
+
+
+def test_all_plus_code_results_answer_none_never_a_grid_reference():
+    """Open sea: every result is a Plus Code. None — the caller renders
+    not_found — never a grid reference dressed as an address."""
+    payload = {
+        "status": "OK",
+        "results": [
+            {"formatted_address": "7QQQQQQQ+QQ", "types": ["plus_code"]},
+        ],
+    }
+    assert geocode._first_address(payload) is None
+
+
+def test_real_addresses_are_never_rejected_by_the_plus_code_screen():
+    payload = {
+        "status": "OK",
+        "results": [
+            {"formatted_address": "香港新界天水圍天瑞路77號",
+             "types": ["establishment", "point_of_interest"]},
+        ],
+    }
+    assert geocode._first_address(payload) == "香港新界天水圍天瑞路77號"
