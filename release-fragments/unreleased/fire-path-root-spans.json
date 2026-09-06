@@ -1,0 +1,5 @@
+{
+  "type": "none",
+  "reason": "Observability only — every unprompted turn (a reminder firing, a gathering notice, a compute result, a relay, a version announcement) now produces one named trace carrying its own outcome, where previously only participation turns did and the rest produced rootless, unnamed traces. Nothing a person in a room can see changes; it is the operator's ability to tell a reminder that failed from one that never happened.",
+  "summary": "Internal: fire-path turns other than participation now produce a rooted, named trace."
+}

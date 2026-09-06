@@ -1689,3 +1689,110 @@ def _recurring_row(unit, *, interval: int):
         state=ReminderState.PENDING, fired_at=None, outcome=None,
         series=Series(id=series_id, anchor_at=now, occurrence=0, rule=rule),
     )
+
+
+# ---- #111: every occasion gets a root span --------------------------------
+
+
+@pytest.fixture
+def fire_spans():
+    """Captured spans from the REAL fire path.
+
+    Deliberately not the pattern in `tests/test_span_skeleton.py`, whose own
+    docstring says why: a test that opens its own spans proves the helper
+    nests and nothing else, and it "stayed green for the whole of issue #64,
+    while the engagement pipeline had no root span at all". The same blindness
+    is what #111 is: `speak` had a root for `participation` only, and no test
+    anywhere drove another occasion and looked.
+    """
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    previous = trace.get_tracer_provider()
+    trace._TRACER_PROVIDER = provider
+    try:
+        yield exporter
+    finally:
+        trace._TRACER_PROVIDER = previous
+
+
+async def test_a_reminder_turn_produces_one_named_root_span(
+    persons: Persons, doctrine_store, metrics: Metrics, fire_spans,
+) -> None:
+    """#111. A reminder firing produced a trace with NO ROOT: sibling spans, no
+    name, none of the `nora.*` attributes — which is not one trace with gaps,
+    it is N traces.
+
+    Measured cost: trace 1f0df2ee (2026-09-06 13:10Z) is the F1 reminder
+    firing. It ran 119.5s against `[heartbeat] timeout_seconds = 120` and
+    resolved `failed_timeout`; the room got nothing. That outcome was in
+    Postgres and NOWHERE in the trace, because there was no span to annotate it
+    onto — the only reason it was diagnosable was a manual database read.
+
+    An unprompted path is where this matters most: nobody is waiting on it, so
+    a silent failure has no human to notice it.
+    """
+    adapter = _FireAdapter()
+    fire = _fire_path(
+        persons=persons, doctrine_store=doctrine_store, metrics=metrics,
+        runner=FakeAgentRunner([ScriptedTurn(
+            tool_calls=[("send_reply", {"text": "收到"})], final_text="收到",
+        )]),
+        adapters={"discord": adapter},
+    )
+
+    outcome = await fire.speak(reminder_occasion(
+        [_reminder(platform="discord", conversation_id="111/222")]
+    ))
+
+    finished = fire_spans.get_finished_spans()
+    roots = [s for s in finished if s.parent is None]
+    assert len(roots) == 1, (
+        f"one root per entry point; got {[s.name for s in roots]}"
+    )
+    root = roots[0]
+    assert root.name == "reminder"
+    # The OUTCOME, which is the whole point: `sent` vs `failed_timeout` must be
+    # readable in the trace, not only in the reminder row.
+    assert root.attributes["nora.outcome"] == outcome
+    assert root.attributes["nora.occasion"] == "reminder"
+    assert root.attributes["nora.platform"] == "discord"
+    assert root.attributes["nora.conversation_id"] == "111/222"
+    # `generation`, because the sampler selects on it and this turn contains a
+    # real model call. A root that declared otherwise would never reach
+    # Langfuse at all.
+    assert root.attributes["nora.trace_kind"] == "generation"
+
+
+async def test_a_failed_fire_turn_still_says_so_on_its_root(
+    persons: Persons, doctrine_store, metrics: Metrics, fire_spans,
+) -> None:
+    """The case the issue was opened about, and the positive control for the
+    test above: a turn that FAILS must still be legible.
+
+    Asserting only the happy path would leave the exact scenario that motivated
+    #111 — a fire turn that delivered nothing — untested. An unroutable
+    platform is the cheapest way to drive `_turn`'s outer guard to
+    `failed_error` without a clock.
+    """
+    fire = _fire_path(
+        persons=persons, doctrine_store=doctrine_store, metrics=metrics,
+        runner=FakeAgentRunner([ScriptedTurn(final_text="never reached")]),
+        adapters={"signal": _FireAdapter()},
+    )
+
+    outcome = await fire.speak(reminder_occasion(
+        [_reminder(platform="discord", conversation_id="111/222")]
+    ))
+
+    assert outcome == fire_module.FAILED_ERROR
+    [root] = [s for s in fire_spans.get_finished_spans() if s.parent is None]
+    assert root.name == "reminder"
+    assert root.attributes["nora.outcome"] == fire_module.FAILED_ERROR

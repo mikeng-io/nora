@@ -1003,30 +1003,51 @@ class FirePath:
         if occasion.kind == "participation" and self._shadow_channel is not None:
             send_permitted = False
         try:
-            if occasion.kind == "participation":
-                # The participation turn's ROOT span (design/dreamer-agent-loop/35
-                # §9, Miles 2026-09-05: "include langfuse and jaeger — otherwise
-                # how can I analyse with observability"). `generation` kind: a
-                # model call can happen under it, and the trace is what the
-                # collector exists for — a participation turn that ends SILENT
-                # is still a determination worth seeing, exactly like a tag
-                # refused at admission (DEC-141's point). The outcome is
-                # annotated on the way out so Langfuse/Jaeger show
-                # SENT/SILENT/FAILED_* per determination.
-                with span(
-                    "participation",
-                    **{TRACE_KIND: "generation",
-                       "nora.platform": occasion.platform,
-                       "nora.conversation_id": occasion.conversation_id,
-                       "nora.occasion": occasion.kind,
-                       "nora.shadow": self._shadow_channel is not None},
-                ):
-                    outcome = await self._turn(
-                        occasion, ctx, send_permitted=send_permitted,
-                    )
-                    annotate(**{"nora.outcome": outcome})
-                    return outcome
-            return await self._turn(occasion, ctx, send_permitted=send_permitted)
+            # THE ROOT SPAN, for EVERY occasion (#111). It existed for
+            # `participation` alone (design/dreamer-agent-loop/35 §9, Miles
+            # 2026-09-05: "include langfuse and jaeger — otherwise how can I
+            # analyse with observability"), and every other kind — reminder,
+            # gathering, compute, relay, lost_job, version — took the bare
+            # `_turn` path and produced a trace with NO ROOT: sibling spans, no
+            # name, none of the `nora.*` attributes. That is not one trace with
+            # gaps, it is N traces, and the instrument catalogue's first rule is
+            # one root per entry point.
+            #
+            # WHAT IT COST, measured: trace 1f0df2ee (2026-09-06 13:10Z) is the
+            # F1 reminder firing. It ran 119.5s against `[heartbeat]
+            # timeout_seconds = 120` and resolved `failed_timeout` — the room
+            # got nothing. That outcome is in Postgres and NOWHERE in the trace,
+            # because there was no span to annotate it onto. The only reason it
+            # was diagnosable at all was a manual database read.
+            #
+            # An unprompted path is where this matters MOST: nobody is waiting
+            # on it, so a silent failure has no human to notice it.
+            #
+            # `generation` kind on every occasion, not just participation: each
+            # of them contains a real model call, which is what the Langfuse
+            # sampler selects on. `nora.outcome` is annotated on the way out so
+            # the §8.1 string an occasion answers with — `sent`,
+            # `failed_timeout`, `failed_policy`, `failed_error`, `SILENT` — is
+            # readable in the trace rather than only in the row.
+            with span(
+                occasion.kind,
+                **{TRACE_KIND: "generation",
+                   "nora.platform": occasion.platform,
+                   "nora.conversation_id": occasion.conversation_id,
+                   "nora.occasion": occasion.kind,
+                   # Meaningful only for participation, and False elsewhere
+                   # rather than absent: an attribute that appears on some roots
+                   # and not others cannot be filtered on.
+                   "nora.shadow": (
+                       occasion.kind == "participation"
+                       and self._shadow_channel is not None
+                   )},
+            ):
+                outcome = await self._turn(
+                    occasion, ctx, send_permitted=send_permitted,
+                )
+                annotate(**{"nora.outcome": outcome})
+                return outcome
         finally:
             clear_tag_id()
 
