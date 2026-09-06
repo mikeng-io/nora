@@ -173,6 +173,13 @@ _MAY_DIFFER = {
     # ON in this deployment (design/discord-music/08-autoplay.md, operator's
     # own instruction) -- OFF in the template like every other opt-in above.
     "music.autoplay_enabled",
+    # `search.provider` is a live operator decision (2026-09-06: switched to
+    # Exa after a live probe of both verbs), and unlike its neighbours above it
+    # is a CHOICE rather than an opt-in — neither value is the inert one. The
+    # template stays on "tavily" because that is the backend whose relevance
+    # floor is measured (DEC-157 (4)): a fresh operator copying the file gets
+    # the more filtered of the two, and picks the other deliberately.
+    "search.provider",
     # Per-deployment policy/cost knobs.
     "doctrine.canary",            # deliberately CHANGE-ME in the template
     "presence.retention_days",    # disk and privacy, the operator's call

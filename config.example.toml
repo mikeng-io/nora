@@ -718,6 +718,11 @@ api_key_env = "EXA_API_KEY"      # NAMES the env var; the key never lives here (
 # The three deep* types run multi-step research with synthesis and routinely
 # outrun timeout_seconds, which is sized for one round trip on the reply path.
 # Raise it deliberately before choosing one, or every call is `unavailable`.
+#
+# Exa honours the maxCharacters the adapter sends, so a page can arrive ALREADY
+# cut server-side. The adapter reads that ceiling back when it reports
+# `truncated`, because reporting only its OWN clamp hands the model a cut page
+# as a complete one (live probe, 2026-09-06).
 
 [social]
 # social_fetch (DEC-151) — READ-ONLY X/Instagram reads via the host-side

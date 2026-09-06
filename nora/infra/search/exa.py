@@ -150,6 +150,7 @@ class ExaSearchProvider:
             if not body_text:
                 continue
             clamped, truncated = clamp_chars(body_text, self._content_max_chars)
+            truncated = truncated or self._exa_cut(text, self._content_max_chars)
             # Title + text are page-controlled → the whole body is wrapped
             # `untrusted` with the source URL as provenance. The URL rides PLAIN
             # beside it so the model can cite it in the reply.
@@ -209,6 +210,7 @@ class ExaSearchProvider:
         if not text:
             return {"status": "nothing_found"}
         clamped, truncated = clamp_chars(text, self._extract_max_chars)
+        truncated = truncated or self._exa_cut(text, self._extract_max_chars)
         # Page-controlled → wrapped `untrusted` with the source URL as
         # provenance, the same discipline as a search snippet (R-13). The key is
         # `text`, NOT `content` — Strands passes a dict carrying both `status`
@@ -249,3 +251,29 @@ class ExaSearchProvider:
     def _request_chars(max_chars: int) -> int:
         """Nora's clamp, floored into Exa's accepted `maxCharacters` range."""
         return max(1, min(max_chars, _EXA_MAX_CHARACTERS))
+
+    @classmethod
+    def _exa_cut(cls, text: str, max_chars: int) -> bool:
+        """Did EXA truncate this, server-side, before we ever saw it?
+
+        Found by live probe 2026-09-06, and it is a defect this adapter creates
+        for itself: pushing `maxCharacters` to Exa means the page can arrive
+        already cut, and `clamp_chars` then finds nothing to clamp and reports
+        `truncated: False` — telling the model it holds the WHOLE page when it
+        holds the first 3000 characters of one. (HKO's front page came back at
+        exactly 3000 of a longer document.) Tavily cannot have this bug: it
+        returns the full `raw_content` and all the clamping is local.
+
+        Reporting `truncated` for what OUR clamp did is measuring the wrong
+        property — the model does not care which side of the wire the cut
+        happened on, only whether it is reading a whole page. So the ceiling we
+        SENT is read back: text at that length was cut, or was exactly that
+        long and is indistinguishable from cut.
+
+        Fails toward over-reporting: a page that happens to be exactly
+        `maxCharacters` long is called truncated when it was complete. That
+        direction is deliberate — «there may be more» costs the model a
+        possible extra fetch, while «this is all of it» about a cut page is a
+        confident wrong answer, which is the state R-27 exists to prevent.
+        """
+        return len(text) >= cls._request_chars(max_chars)

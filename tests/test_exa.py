@@ -44,6 +44,14 @@ class _Exa:
             return web.Response(text="<html>gateway</html>", content_type="text/html")
         return None
 
+    def last_search_cap(self) -> int | None:
+        if not self.requests:
+            return None
+        contents = self.requests[-1].get("contents") or {}
+        text = contents.get("text") or {}
+        cap = text.get("maxCharacters")
+        return int(cap) if isinstance(cap, int) else None
+
     async def search(self, request: web.Request) -> web.Response:
         self.requests.append(await request.json())
         if (failed := self._failure()) is not None:
@@ -55,8 +63,10 @@ class _Exa:
             "results": [
                 {"title": "HKO", "url": "https://hko.gov.hk/x",
                  "id": "https://hko.gov.hk/x", "text": "Very hot, 34C in Yuen Long."},
-                {"title": "OpenRice", "url": "https://openrice.com/y",
-                 "id": "https://openrice.com/y", "text": "x" * 5000},  # long → clamp probe
+                    {"title": "OpenRice", "url": "https://openrice.com/y",
+                 "id": "https://openrice.com/y",
+                 # Already cut to the requested ceiling, like the real host.
+                 "text": ("x" * 8000)[:((self.last_search_cap()) or 5000)]},
             ],
             "resolvedSearchType": "neural",
             "costDollars": {"total": 0.007},
@@ -84,9 +94,13 @@ class _Exa:
             return web.json_response({"requestId": "r2", "answer": "unexpected shape"})
         body = self.contents_requests[-1]
         url = (body.get("urls") or ["https://hko.gov.hk/x"])[0]
+        # Behave like the real host: Exa honours `maxCharacters` and returns a
+        # page ALREADY CUT to it. A fake that ignored the field would hide the
+        # truncation-under-reporting bug the live probe found (2026-09-06).
+        cap = (body.get("text") or {}).get("maxCharacters") or 5000
         return web.json_response({
             "requestId": "r2",
-            "results": [{"id": url, "url": url, "title": "HKO", "text": "y" * 5000}],
+            "results": [{"id": url, "url": url, "title": "HKO", "text": ("y" * 8000)[:cap]}],
             "statuses": [{"id": url, "status": "success", "source": "crawled"}],
         })
 
@@ -315,3 +329,34 @@ async def test_the_search_type_is_sent_and_defaults_to_auto(exa):
     provider._search_type = "fast"
     await provider.search(query="q")
     assert fake.requests[1]["type"] == "fast"
+
+
+async def test_a_page_exa_already_cut_is_reported_as_truncated(exa):
+    """The live-probe defect (2026-09-06), and it is this adapter's own making:
+    pushing `maxCharacters` to Exa means the page arrives ALREADY cut, the local
+    clamp then finds nothing to clamp, and `truncated: False` tells the model it
+    holds a whole page when it holds the first N characters of one.
+
+    HKO's front page came back at exactly 3000 of a longer document and was
+    reported complete. Both verbs must read Exa's own cut back."""
+    fake, provider = exa
+    out = await provider.fetch(url="https://hko.gov.hk/x")
+    assert out["status"] == "ok"
+    # The fake cut to exactly the requested ceiling, so the LOCAL clamp does
+    # not fire — only reading the sent ceiling back catches this.
+    assert fake.contents_requests[0]["text"]["maxCharacters"] == 3000
+    assert out["truncated"] is True
+
+    searched = await provider.search(query="q")
+    long_result = searched["results"][1]
+    assert long_result["truncated"] is True
+
+
+async def test_a_genuinely_short_page_is_not_reported_as_truncated(exa):
+    """The positive control the test above needs: `truncated` must not become
+    a constant. A page well under the ceiling is complete, and saying otherwise
+    would cost a pointless second fetch on every short page."""
+    _fake, provider = exa
+    out = await provider.search(query="q")
+    short = next(r for r in out["results"] if "hko.gov.hk" in r["url"])
+    assert short["truncated"] is False
