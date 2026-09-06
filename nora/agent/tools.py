@@ -104,6 +104,7 @@ from ..domain.ports import (
     Recollection,
 )
 from ..domain.reminders import (
+    UNIT_SECONDS,
     Recurrence,
     RecurrenceRule,
     Reminder,
@@ -112,6 +113,7 @@ from ..domain.reminders import (
     ReminderStore,
     Series,
     UnknownRecurrenceZoneError,
+    occurrence_at,
     remaining_occurrences,
 )
 from ..domain.tool_call_log import ToolCallLogStore
@@ -1386,6 +1388,11 @@ def _parse_when(raw: str) -> datetime | None:
 # check, so rounding up admits a legitimate first occurrence at the far edge of
 # a period; rounding down would refuse a 29 Feb yearly reminder set on 1 March.
 _PERIOD_DAYS = {
+    # Sub-day units are 0 days — their first occurrence is always inside the
+    # horizon, so they never need the one-period headroom the calendar units
+    # get below.
+    Recurrence.MINUTELY: 0,
+    Recurrence.HOURLY: 0,
     Recurrence.DAILY: 1,
     Recurrence.WEEKLY: 7,
     Recurrence.MONTHLY: 31,
@@ -1432,8 +1439,40 @@ def _parse_until(raw: str) -> datetime | None:
     return datetime.combine(day, time.max).replace(tzinfo=_HKT)
 
 
+def _occurrences_through(
+    *, every: Recurrence, step: int, tz: str, due_at: datetime,
+    ends_at: datetime, cap: int,
+) -> int:
+    """How many occurrences of this rule land at or before `ends_at`, capped.
+
+    Always >= 1: `_parse_repeat` has already refused an `until` earlier than
+    `due_at`, so the first occurrence is inside the bound by construction.
+
+    Walks rather than divides because a CALENDAR rule has no fixed period —
+    a month is not a number of seconds — and the walk is bounded by `cap`
+    (60), so the cost is trivial and the same code answers for both kinds.
+    A provisional rule is built with `count=cap` purely so `occurrence_at`
+    has one to read; only the returned NUMBER escapes.
+    """
+    # Built INSIDE the caller's `try`, never here: an unresolvable
+    # `[reminders].timezone` is a deployment fault that `_parse_repeat` answers
+    # as `unavailable`, and a probe constructed outside that guard turned the
+    # same fault into an exception out of a tool — a silent turn (R-5) — for
+    # the `until` path only. Adding an argument must not change which failure
+    # mode a broken deployment produces.
+    probe = RecurrenceRule(
+        every=every, tz=tz, count=cap, until=ends_at, interval=step,
+    )
+    fits = 0
+    for index in range(cap):
+        if occurrence_at(anchor=due_at, rule=probe, index=index) > ends_at:
+            break
+        fits += 1
+    return max(1, fits)
+
+
 def _parse_repeat(
-    *, repeat: object, times: object, until: object,
+    *, repeat: object, every_n: object, times: object, until: object,
     due_at: datetime, caps: ReminderCaps,
 ) -> RecurrenceRule | _RepeatRefusal | None:
     """The model's three recurrence arguments as one rule — or None, or a refusal.
@@ -1460,18 +1499,52 @@ def _parse_repeat(
     except ValueError:
         return _RepeatRefusal(
             "bad_repeat",
-            f"I can't repeat something {word!r}. I do daily, weekly, monthly or "
-            "yearly — say which of those is closest, or set separate reminders.",
+            f"I can't repeat something {word!r}. I do minutely, hourly, daily, "
+            "weekly, monthly or yearly, and `every_n` multiplies any of them — "
+            "say which is closest.",
         )
     if every is Recurrence.NONE:
-        if times is not None or until is not None:
+        if every_n is not None or times is not None or until is not None:
             return _RepeatRefusal(
                 "bad_bound",
                 "You gave me how long to keep repeating but not what to repeat. "
-                "Set `repeat` to daily/weekly/monthly/yearly, or drop the limit "
-                "if it really is a one-off.",
+                "Set `repeat` to minutely/hourly/daily/weekly/monthly/yearly, or "
+                "drop the limit if it really is a one-off.",
             )
         return None
+
+    step = 1
+    if every_n is not None:
+        try:
+            step = int(str(every_n).strip())
+        except (TypeError, ValueError):
+            return _RepeatRefusal(
+                "bad_repeat",
+                "I couldn't read how many units apart. Give a plain number — "
+                "`repeat=\"minutely\", every_n=10` is every ten minutes.",
+            )
+        if step < 1:
+            return _RepeatRefusal(
+                "bad_repeat",
+                "Every less-than-one is not a gap. Say how far apart they meant.",
+            )
+
+    # THE OPERATING FLOOR (#109). Sub-day recurrence makes 「每分鐘」 sayable for
+    # the first time, and a room runs ONE turn at a time — a series faster than
+    # it can serve does not arrive sooner, it queues and starves real tags.
+    # REFUSED here rather than clamped: a bound nobody was told about is the
+    # failure this whole issue is about, and 「最快五分鐘一次」 is a sentence she
+    # can say.
+    unit_seconds = UNIT_SECONDS.get(every)
+    if unit_seconds is not None and unit_seconds * step < caps.min_interval_seconds:
+        floor_minutes = caps.min_interval_seconds // 60
+        return _RepeatRefusal(
+            "too_often",
+            f"I can't repeat faster than every {floor_minutes} minutes — I only "
+            f"wake up to check periodically, so anything quicker would just "
+            f"arrive late and in clumps. Offer them every {floor_minutes} "
+            "minutes, or a one-off nearer the time.",
+        )
 
     ends_at: datetime | None = None
     if until is not None:
@@ -1489,29 +1562,24 @@ def _parse_repeat(
                 "which date they meant — one of the two is wrong.",
             )
 
-    count = caps.max_occurrences_per_series
-    if times is not None:
-        try:
-            # `str(...)` first, because the MODEL writes this: a JSON tool call
-            # can land it as `14`, `"14"` or `14.0`, and `int(14.0)` silently
-            # truncates while `int("14.7")` raises. One route in, one refusal.
-            asked = int(str(times).strip())
-        except (TypeError, ValueError):
-            return _RepeatRefusal(
-                "bad_bound",
-                "I couldn't read how many times. Give me a plain number, or an "
-                "end date instead.",
-            )
-        if asked < 1:
-            return _RepeatRefusal(
-                "bad_bound",
-                "Fewer than one time is not a reminder. Say how many they meant, "
-                "or set it as a one-off.",
-            )
-        count = min(asked, caps.max_occurrences_per_series)
+    # EVERYTHING that can raise on a bad rule lives inside ONE try, and that is
+    # the fix for a real hole (#109 review): `_occurrences_through` builds a
+    # probe `RecurrenceRule`, and when it sat outside this guard an
+    # unresolvable `[reminders].timezone` escaped as an exception out of the
+    # tool — a silent turn (R-5) — but ONLY on the `until` path. The same
+    # deployment fault answered `unavailable` without `until` and crashed with
+    # it. Adding an argument must not change which failure mode a broken
+    # deployment produces.
     try:
+        count = _resolve_count(
+            every=every, step=step, times=times, ends_at=ends_at,
+            due_at=due_at, caps=caps,
+        )
+        if isinstance(count, _RepeatRefusal):
+            return count
         return RecurrenceRule(
             every=every, tz=caps.timezone, count=count, until=ends_at,
+            interval=step,
         )
     except UnknownRecurrenceZoneError:
         # A DEPLOYMENT fault, not a model one: `caps.timezone` comes from
@@ -1524,6 +1592,58 @@ def _parse_repeat(
             "properly. Say so plainly rather than promising.",
             outcome="unavailable",
         )
+    except (ValueError, OverflowError):
+        # An `every_n` past `MAX_INTERVAL`, or one whose occurrences leave the
+        # representable calendar entirely (`yearly x 10000` is year 12026;
+        # `minutely x 10**12` overflows `timedelta`). Before #109 neither was
+        # reachable — `yearly x 1` at count 60 tops out in 2085 — and the
+        # multiplier is a number the MODEL writes, so this is an ordinary
+        # refusal it can fix rather than a deployment fault.
+        return _RepeatRefusal(
+            "bad_repeat",
+            "That is too far apart for me to keep track of. Say a smaller gap — "
+            "every few minutes, hours, days, weeks, months or years.",
+        )
+
+
+def _resolve_count(
+    *, every: Recurrence, step: int, times: object, ends_at: datetime | None,
+    due_at: datetime, caps: ReminderCaps,
+) -> int | _RepeatRefusal:
+    """How many occurrences the series may hold — the TIGHTER of every bound.
+
+    `until` is applied to the NUMBER, not only at fire time. It always narrowed
+    the series when it fired; what it did not do was reach `rule.count`, so
+    `repeat_left` — documented as "the bound she has to SAY" — was computed
+    from `times` (or the cap) alone. That is how a run bounded 「直到 23:00」
+    announced fifty-nine more firings when it had none.
+    """
+    count = caps.max_occurrences_per_series
+    if ends_at is not None:
+        count = _occurrences_through(
+            every=every, step=step, tz=caps.timezone, due_at=due_at,
+            ends_at=ends_at, cap=caps.max_occurrences_per_series,
+        )
+    if times is None:
+        return count
+    try:
+        # `str(...)` first, because the MODEL writes this: a JSON tool call can
+        # land it as `14`, `"14"` or `14.0`, and `int(14.0)` silently truncates
+        # while `int("14.7")` raises. One route in, one refusal.
+        asked = int(str(times).strip())
+    except (TypeError, ValueError):
+        return _RepeatRefusal(
+            "bad_bound",
+            "I couldn't read how many times. Give me a plain number, or an "
+            "end date instead.",
+        )
+    if asked < 1:
+        return _RepeatRefusal(
+            "bad_bound",
+            "Fewer than one time is not a reminder. Say how many they meant, "
+            "or set it as a one-off.",
+        )
+    return min(asked, count)
 
 
 # A row whose `requester_person_id` no longer resolves. NOT the raw person_id:
@@ -5850,10 +5970,11 @@ when somebody asks what song is on.
 
     async def remind(
         when: str, text: str, repeat: str = "none",
+        every_n: int | None = None,
         times: int | None = None, until: str | None = None,
     ) -> dict:
         """Hold something for later and say it back into this conversation when the
-        time comes — once, or every day / week / month / year.
+        time comes — once, or on a repeat as fine as every few minutes.
 
         Call this when somebody asks you to remember a thing for them — 「等陣提我洗衫」,
         「七點提我出門」. `text` is THEIR OWN WORDS, not a script for you to read out:
@@ -5871,13 +5992,25 @@ when somebody asks what song is on.
         「前一個禮拜講一次」 is `when` = the date minus seven days and no repeat at all.
         Do not ask them to restate it as a time — you have the target date, so count.
 
-        `repeat` is `none` (the default), `daily`, `weekly`, `monthly` or `yearly`.
+        `repeat` is `none` (the default), `minutely`, `hourly`, `daily`, `weekly`,
+        `monthly` or `yearly`, and `every_n` multiplies it. 「每 10 分鐘」 is
+        `repeat="minutely", every_n=10`; 「隔個禮拜」 is `repeat="weekly",
+        every_n=2`. ONE call sets the whole series — never set twelve separate
+        reminders to fake a repeat.
+
+        THERE IS A FLOOR: I wake up to check periodically, so I cannot repeat
+        faster than every few minutes. Ask for quicker and I refuse and tell you
+        the fastest I do — offer them that instead, do not pretend.
+
         A repeating reminder ALWAYS ends: give `times` (how many times in total,
         counting the first) or `until` (the last date it may go off), and if you give
         neither it runs for a limit I choose and I will tell you what it is. Say the
         limit back to them — 「每日提到10月11號為止」 — because they cannot see it and
-        it is the part a person is most surprised by later. A repeating reminder keeps
-        its LOCAL time of day, so 「每朝八點」 stays 08:00 all year.
+        it is the part a person is most surprised by later.
+
+        A DAILY-or-longer reminder keeps its LOCAL time of day, so 「每朝八點」 stays
+        08:00 all year. A minutely/hourly one keeps its GAP instead — every 10
+        minutes is always 10 minutes, even across a clock change.
 
         Outcomes: `ok` with the id (and, when it repeats, how many are left);
         `refused` with a note saying what to fix (a time already gone, too soon, too
@@ -5888,7 +6021,10 @@ when somebody asks what song is on.
         Args:
             when: the FIRST moment it should go off, ISO-8601 with an offset.
             text: what they asked for, in their words.
-            repeat: none | daily | weekly | monthly | yearly. Default none.
+            repeat: none | minutely | hourly | daily | weekly | monthly | yearly.
+                Default none.
+            every_n: repeat every N of those units — 10 with `minutely` is every
+                ten minutes. Default 1. Repeats only.
             times: how many times in total, including the first. Repeats only.
             until: the last date/moment it may go off, ISO-8601. Repeats only.
         """
@@ -5953,7 +6089,8 @@ when somebody asks what song is on.
         # The recurrence, BEFORE the horizon check, because the rule is what
         # says how far out the first occurrence may legitimately be.
         rule = _parse_repeat(
-            repeat=repeat, times=times, until=until, due_at=due_at, caps=caps,
+            repeat=repeat, every_n=every_n, times=times, until=until,
+            due_at=due_at, caps=caps,
         )
         if isinstance(rule, _RepeatRefusal):
             _record_created(metrics, rule.status)
@@ -6038,6 +6175,13 @@ when somebody asks what song is on.
         # nobody was told about is the part a person is most surprised by later.
         if rule is not None:
             result["repeat"] = rule.every.value
+            # The MULTIPLIER, not just the unit (#109). Without it the F1
+            # series answers `{"repeat": "minutely"}` and the only sentence she
+            # can build is 「每分鐘」 for a ten-minute cadence — wrong by 10x, on
+            # the exact surface this issue is about. Same argument as
+            # `repeat_until` and `repeat_left`: a fact she must SAY has to
+            # reach her.
+            result["every_n"] = rule.interval
             result["repeat_left"] = rule.count - 1
             result["repeat_until"] = (
                 None if rule.until is None else rule.until.astimezone(_HKT).isoformat()
@@ -6107,6 +6251,7 @@ when somebody asks what song is on.
                         else r.series.rule.every.value
                     ),
                     **({} if r.series is None else {
+                        "every_n": r.series.rule.interval,
                         "repeat_left": remaining_occurrences(r.series),
                         "repeat_until": (
                             None if r.series.rule.until is None

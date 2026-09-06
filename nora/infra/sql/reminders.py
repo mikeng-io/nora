@@ -95,6 +95,7 @@ def _row_to_series(r: Row[Any]) -> Series | None:
             tz=r.recurrence_tz,
             count=r.recurrence_count,
             until=r.recurrence_until,
+            interval=r.recurrence_interval,
         ),
     )
 
@@ -154,6 +155,10 @@ def _insert_values(row: Reminder) -> dict[str, Any]:
         ),
         "recurrence_tz": None if series is None else series.rule.tz,
         "recurrence_count": None if series is None else series.rule.count,
+        # 1 rather than None on a one-shot: the column is NOT NULL (it is
+        # meaningful on every row, unlike the nullable recurrence fields around
+        # it) and 1 is the identity for a step that never repeats.
+        "recurrence_interval": 1 if series is None else series.rule.interval,
         "recurrence_until": None if series is None else series.rule.until,
         "series_id": None if series is None else series.id,
         "series_anchor_at": None if series is None else series.anchor_at,

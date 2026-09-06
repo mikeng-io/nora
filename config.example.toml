@@ -831,6 +831,15 @@ max_occurrences_per_series = 60   # a recurring reminder is a chain with ONE
                            # max_pending_per_requester; this is what bounds the
                            # series itself. Every series is bounded — there is
                            # no «forever».
+min_interval_seconds = 300 # the FASTEST a series may repeat (#109). Sub-day
+                           # recurrence makes 「每分鐘」 expressible, and a room
+                           # runs ONE turn at a time — schedule faster than it
+                           # can serve and reminders do not arrive sooner, they
+                           # queue and starve real tags. 300 caps one series at
+                           # 12 firings/hour. The floor under THIS is
+                           # structural: 60 is heartbeat.tick_seconds, below
+                           # which the tick cannot deliver at all, and config
+                           # may not go under it.
 timezone = "Asia/Hong_Kong"   # the wall clock a recurrence KEEPS. An IANA zone
                            # name, never an offset: «08:00 every day» must stay
                            # 08:00 local across a DST boundary, and +08:00

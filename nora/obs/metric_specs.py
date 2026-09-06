@@ -682,9 +682,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Reminder creation attempts, by status: created; the caps' refusals "
         "(too_soon / too_far / too_many); the turn-provenance refusal "
         "(fire_turn); the input refusals (unmapped / unparseable / past); the "
-        "recurrence refusals (bad_repeat, a repeat interval that is not one of "
-        "the five; bad_bound, a times/until that cannot be honoured or was "
-        "given with no repeat at all); and unavailable, which means no "
+        "recurrence refusals (bad_repeat, a repeat unit or every_n I do not "
+        "accept; bad_bound, a times/until that cannot be honoured or was "
+        "given with no repeat at all; too_often, a sub-day repeat faster than "
+        "[reminders].min_interval_seconds — #109's floor, where a sustained "
+        "rate means people want it finer than a room running one turn at a "
+        "time can actually serve); and unavailable, which means no "
         "reminders store is wired, the write failed, or [reminders].timezone "
         "does not resolve.",
         ("status",),

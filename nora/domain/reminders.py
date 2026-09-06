@@ -105,10 +105,52 @@ class Recurrence(StrEnum):
     """
 
     NONE = "none"
+    # SUB-DAY (#109, 2026-09-07). These two are DURATIONS, not calendar steps —
+    # see `occurrence_at`, where they take a different branch on purpose.
+    MINUTELY = "minutely"
+    HOURLY = "hourly"
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
     YEARLY = "yearly"
+
+
+# The two units whose step is a fixed elapsed duration rather than a walk on the
+# local calendar. The distinction is the whole reason they are named separately
+# from `DAILY` and up: 「每朝八點」 must stay 08:00 across a DST shift, while
+# "every 10 minutes" must stay 600 seconds across one. Applying wall-clock
+# arithmetic to an hourly rule makes it skip an hour every spring and repeat one
+# every autumn, silently.
+UNIT_SECONDS: dict[Recurrence, int] = {
+    Recurrence.MINUTELY: 60,
+    Recurrence.HOURLY: 3600,
+}
+
+# Derived, never hand-listed beside the table above: two collections that must
+# agree is one that can drift, and this one was declared and read by nothing
+# for its first day of life (#109 review). One definition, one source.
+DURATION_UNITS: frozenset[Recurrence] = frozenset(UNIT_SECONDS)
+
+# THE STRUCTURAL FLOOR. `[heartbeat] tick_seconds` is how often she wakes, so a
+# series faster than the tick cannot be delivered at all — rows would simply
+# pile up and fire late in bursts. This is a property of the machine, not a
+# policy, and it refuses regardless of what config says. The OPERATING floor is
+# higher and lives in config (`[reminders] min_interval_seconds`, 300s by the
+# operator's decision 2026-09-07); this is the wall underneath it.
+MIN_PERIOD_SECONDS = 60
+
+# THE CEILING on `interval`, and it is about arithmetic rather than taste.
+# `occurrence_at` steps from the anchor, so a large enough multiplier walks off
+# the end of what Python can represent: `yearly x 10000` raises
+# `ValueError: year 12026 is out of range` and `minutely x 10**12` raises
+# `OverflowError` out of `timedelta`. Before #109 neither was reachable —
+# `yearly x 1` at count 60 tops out in 2085 — and `interval` is what makes them
+# reachable, from a number the MODEL writes.
+#
+# 1000 is far past any real ask (a thousand years, a thousand weeks, a thousand
+# minutes is 17 hours) and far short of both overflows. The point is that a
+# bound exists at the type, not that this is the only defensible number.
+MAX_INTERVAL = 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +175,15 @@ class RecurrenceRule:
     tz: str
     count: int
     until: datetime | None = None
+    # EVERY N UNITS (#109). 1 is every unit, which is what every rule written
+    # before 2026-09-07 meant, so the default keeps those byte-identical. It is
+    # what makes "every 10 minutes" expressible at all — MINUTELY alone can only
+    # say "every minute", and the F1 case that prompted this issue needed ten.
+    #
+    # It multiplies the CALENDAR units too: `every=WEEKLY, interval=2` is a
+    # fortnight. That falls out of the same arithmetic and costs nothing to
+    # allow, so refusing it would be an arbitrary hole rather than a decision.
+    interval: int = 1
 
     def __post_init__(self) -> None:
         if self.every is Recurrence.NONE:
@@ -142,6 +193,24 @@ class RecurrenceRule:
             )
         if self.count < 1:
             raise ValueError(f"count must be >= 1; got {self.count}")
+        if not 1 <= self.interval <= MAX_INTERVAL:
+            raise ValueError(
+                f"interval must be between 1 and {MAX_INTERVAL}; "
+                f"got {self.interval}"
+            )
+        # The structural floor, enforced on the TYPE so no caller can route
+        # around it — the tool, a future API, a migration backfill. A rule
+        # faster than the heartbeat tick is undeliverable by construction, and
+        # the honest place to say so is where the rule is built rather than
+        # where it is fired (which is a background loop nobody is watching).
+        period = self.period_seconds
+        if period is not None and period < MIN_PERIOD_SECONDS:
+            raise ValueError(
+                f"a recurrence may not repeat faster than every "
+                f"{MIN_PERIOD_SECONDS}s (the heartbeat tick); "
+                f"{self.every.value} x {self.interval} is {period}s"
+            )
+
         try:
             ZoneInfo(self.tz)
         except (ZoneInfoNotFoundError, ValueError) as exc:
@@ -153,6 +222,20 @@ class RecurrenceRule:
             raise NaiveDatetimeError(
                 f"until must be timezone-aware; got naive {self.until!r}."
             )
+
+    @property
+    def period_seconds(self) -> int | None:
+        """The fixed elapsed step, or None for a CALENDAR rule that has none.
+
+        None is not "unknown" — it is the correct answer for daily and up. A
+        day is not 86,400 seconds across a DST boundary and a month is not any
+        number of them, which is exactly why those units walk the local
+        calendar instead. Callers that need a floor or a rate check must
+        therefore handle None as "coarser than any sub-day rule", never as
+        zero.
+        """
+        unit = UNIT_SECONDS.get(self.every)
+        return None if unit is None else unit * self.interval
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +308,18 @@ class ReminderCaps:
     # rather than in the tool: `nora.agent` may not import `nora.config`, and
     # this is the only domain value the tool layer already receives.
     timezone: str = "Asia/Hong_Kong"
+    # THE OPERATING FLOOR on how often a series may repeat (#109, operator
+    # 2026-09-07: "if it is by the minute, the minimum recurring item is every
+    # five minutes"). Distinct from `MIN_PERIOD_SECONDS`, which is the
+    # STRUCTURAL wall at the heartbeat tick and refuses regardless of config;
+    # this is the number people actually hit and the one an operator moves.
+    #
+    # It is what makes an every-minute ask fail at the tool contract with
+    # something she can SAY, rather than be silently clamped to the first sixty
+    # firings — refusing at the boundary beats truncating inside it. At 300s one
+    # series is capped at 12 firings/hour, which is roughly what a room can
+    # serve given one turn at a time.
+    min_interval_seconds: int = 300
 
 @dataclass(frozen=True, slots=True)
 class Reminder:
@@ -340,16 +435,34 @@ def occurrence_at(*, anchor: datetime, rule: RecurrenceRule, index: int) -> date
     * a time that exists twice (the autumn-back overlap) resolves to the FIRST
       of the two, so it fires once, earlier, never twice.
     """
+    # THE SUB-DAY FORK (#109). A duration rule is NOT a calendar step and must
+    # not take the wall-clock branch below. "Every 10 minutes" means 600
+    # elapsed seconds — always, including across a DST transition. Routed
+    # through the wall clock instead it would inherit the two resolutions the
+    # docstring describes, and both are WRONG here: an hourly series would fire
+    # 03:30 instead of 02:30 on spring-forward (an hour late, when the point is
+    # that it is never more than an hour) and would collapse the autumn
+    # overlap's two 01:30s into one (an hour SKIPPED, silently, in a series
+    # whose whole promise is regularity).
+    #
+    # So this branch is plain UTC arithmetic and touches no zone at all —
+    # `rule.tz` is still carried on the rule, because a duration series is
+    # still SHOWN to a person in their own zone and `list_reminders` renders
+    # it there; it just plays no part in computing the instant.
+    period = rule.period_seconds
+    if period is not None:
+        return anchor + timedelta(seconds=period * index)
     zone = ZoneInfo(rule.tz)
     local = anchor.astimezone(zone)
+    step = rule.interval * index
     if rule.every is Recurrence.DAILY:
-        target = local.date() + timedelta(days=index)
+        target = local.date() + timedelta(days=step)
     elif rule.every is Recurrence.WEEKLY:
-        target = local.date() + timedelta(weeks=index)
+        target = local.date() + timedelta(weeks=step)
     elif rule.every is Recurrence.MONTHLY:
-        target = _add_months(local.date(), index)
+        target = _add_months(local.date(), step)
     elif rule.every is Recurrence.YEARLY:
-        target = _add_months(local.date(), 12 * index)
+        target = _add_months(local.date(), 12 * step)
     else:  # pragma: no cover - RecurrenceRule refuses NONE at construction
         raise ValueError(f"unsupported recurrence {rule.every!r}")
     return datetime.combine(target, local.time()).replace(tzinfo=zone).astimezone(UTC)
@@ -365,16 +478,23 @@ def _floor_index(*, anchor: datetime, rule: RecurrenceRule, now: datetime) -> in
     would silently drop occurrences from the series' own count — so every branch
     floors, and the caller walks forward from it.
     """
+    # Duration rules floor by division, which is exact rather than approximate
+    # — the step never varies, so there is nothing for the caller's walk to
+    # correct. `max(0, ...)` because `now` before the anchor is a real state
+    # (a series created with lead time) and a negative index is not.
+    period = rule.period_seconds
+    if period is not None:
+        return max(0, int((now - anchor).total_seconds()) // period)
     zone = ZoneInfo(rule.tz)
     a = anchor.astimezone(zone)
     n = now.astimezone(zone)
     if rule.every is Recurrence.DAILY:
-        return (n.date() - a.date()).days
+        return (n.date() - a.date()).days // rule.interval
     if rule.every is Recurrence.WEEKLY:
-        return (n.date() - a.date()).days // 7
+        return ((n.date() - a.date()).days // 7) // rule.interval
     if rule.every is Recurrence.MONTHLY:
-        return (n.year - a.year) * 12 + (n.month - a.month)
-    return n.year - a.year
+        return ((n.year - a.year) * 12 + (n.month - a.month)) // rule.interval
+    return (n.year - a.year) // rule.interval
 
 
 # How far `plan_successor` will walk past `_floor_index`'s estimate. The floor

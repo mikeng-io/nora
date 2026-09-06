@@ -17,6 +17,7 @@ reminder set on the 31st into one that fires on the 28th forever.
 
 from __future__ import annotations
 
+import itertools
 import uuid
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -24,6 +25,10 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from nora.domain.reminders import (
+    DURATION_UNITS,
+    MAX_INTERVAL,
+    MIN_PERIOD_SECONDS,
+    UNIT_SECONDS,
     NaiveDatetimeError,
     Recurrence,
     RecurrenceRule,
@@ -380,3 +385,258 @@ def test_remaining_occurrences_counts_what_follows_this_row():
     assert remaining_occurrences(
         _reminder(anchor=anchor, rule=rule, occurrence=13).series
     ) == 0
+
+
+# ── #109: sub-day recurrence ────────────────────────────────────────────────
+
+
+def test_the_f1_series_is_one_call_and_eleven_more_firings():
+    """THE case (#109). 2026-09-06, Discord: a lap update every 10 minutes
+    during the Monza race. It was not representable — `Recurrence` had no
+    sub-day unit — so she wrote one `daily` row with `until` two hours out,
+    which produces exactly ONE firing and then ends.
+
+    One call, one series, every occurrence where it was asked for.
+    """
+    hk = ZoneInfo("Asia/Hong_Kong")
+    anchor = datetime(2026, 9, 6, 21, 10, tzinfo=hk).astimezone(UTC)
+    rule = RecurrenceRule(
+        every=Recurrence.MINUTELY, tz="Asia/Hong_Kong", count=12, interval=10,
+        until=datetime(2026, 9, 6, 23, 0, tzinfo=hk).astimezone(UTC),
+    )
+    fired = [
+        occurrence_at(anchor=anchor, rule=rule, index=i).astimezone(hk).strftime("%H:%M")
+        for i in range(rule.count)
+    ]
+    assert fired == [
+        "21:10", "21:20", "21:30", "21:40", "21:50", "22:00",
+        "22:10", "22:20", "22:30", "22:40", "22:50", "23:00",
+    ]
+
+
+def test_a_sub_day_series_keeps_its_gap_across_a_dst_boundary():
+    """The fork that makes `minutely`/`hourly` a different branch from `daily`
+    and up, and the reason one `interval` field over one code path would have
+    been wrong.
+
+    A calendar rule keeps its LOCAL WALL CLOCK — 「每朝八點」 is 08:00 on both
+    sides of a shift, which is the whole argument in `occurrence_at`'s
+    docstring. A duration rule must keep its ELAPSED GAP instead: "every hour"
+    means 3,600 seconds, and routed through the wall clock it would inherit
+    that branch's two resolutions, both wrong here — spring-forward would fire
+    an hour LATE, and the autumn overlap would collapse two occurrences into
+    one, silently dropping an hour from a series whose entire promise is
+    regularity.
+
+    America/New_York springs forward 2026-03-08 02:00, so 01:30 -> 03:30 is a
+    real 3,600 seconds even though the labels skip an hour.
+    """
+    ny = ZoneInfo("America/New_York")
+    anchor = datetime(2026, 3, 8, 0, 30, tzinfo=ny).astimezone(UTC)
+    rule = RecurrenceRule(
+        every=Recurrence.HOURLY, tz="America/New_York", count=5,
+    )
+    moments = [occurrence_at(anchor=anchor, rule=rule, index=i) for i in range(5)]
+    assert [m.astimezone(ny).strftime("%H:%M") for m in moments] == [
+        "00:30", "01:30", "03:30", "04:30", "05:30",
+    ]
+    gaps = {int((b - a).total_seconds()) for a, b in itertools.pairwise(moments)}
+    assert gaps == {3600}, "a duration rule must not vary its step"
+
+
+def test_an_interval_multiplies_a_calendar_unit_too():
+    """`weekly x 2` is a fortnight, and it stays on the local wall clock. The
+    interval falls out of the same arithmetic for every unit, so refusing it
+    above `hourly` would have been an arbitrary hole rather than a decision."""
+    hk = ZoneInfo("Asia/Hong_Kong")
+    anchor = datetime(2026, 9, 6, 8, 0, tzinfo=hk).astimezone(UTC)
+    rule = RecurrenceRule(
+        every=Recurrence.WEEKLY, tz="Asia/Hong_Kong", count=3, interval=2,
+    )
+    dates = [
+        occurrence_at(anchor=anchor, rule=rule, index=i).astimezone(hk).date().isoformat()
+        for i in range(3)
+    ]
+    assert dates == ["2026-09-06", "2026-09-20", "2026-10-04"]
+
+
+def test_the_finest_expressible_recurrence_sits_exactly_on_the_structural_floor():
+    """`MIN_PERIOD_SECONDS` cannot fire today, and this is what keeps that
+    honest rather than leaving an unreachable check in the file.
+
+    The finest rule the enum can express is `minutely x 1` = 60s, which is
+    exactly the floor, so nothing currently trips it. That is a property worth
+    pinning in BOTH directions: it says there is no gap between the finest unit
+    and the heartbeat tick, and it means the day somebody adds a finer unit
+    (`secondly`, or an interval below 1) the floor starts refusing immediately
+    instead of being discovered later as decoration.
+    """
+    finest = RecurrenceRule(
+        every=Recurrence.MINUTELY, tz="Asia/Hong_Kong", count=2, interval=1,
+    )
+    assert finest.period_seconds == MIN_PERIOD_SECONDS
+
+
+def test_a_calendar_rule_has_no_period_and_says_so():
+    """None, never a number. A day is not 86,400 seconds across a DST boundary
+    and a month is not any fixed count of them — which is exactly why those
+    units walk the calendar. A caller that read None as 0 would compute a floor
+    of zero and admit anything."""
+    for unit in (Recurrence.DAILY, Recurrence.WEEKLY,
+                 Recurrence.MONTHLY, Recurrence.YEARLY):
+        rule = RecurrenceRule(every=unit, tz="Asia/Hong_Kong", count=2)
+        assert rule.period_seconds is None, unit
+
+
+def test_catch_up_on_a_sub_day_series_skips_rather_than_replays():
+    """A minutely series that outran the machine must not dump its backlog into
+    the room when it catches up. `plan_successor` takes the first occurrence
+    strictly AFTER now, so the ones slept through are consumed — a burst of
+    ten "lap 12 of 53" messages about moments that have passed is worse than
+    the silence it repairs."""
+    hk = ZoneInfo("Asia/Hong_Kong")
+    anchor = datetime(2026, 9, 6, 21, 10, tzinfo=hk).astimezone(UTC)
+    rule = RecurrenceRule(
+        every=Recurrence.MINUTELY, tz="Asia/Hong_Kong", count=12, interval=10,
+    )
+    row = _reminder(anchor=anchor, rule=rule)
+    # Half an hour late: occurrences 1, 2 and 3 were all missed.
+    now = datetime(2026, 9, 6, 21, 45, tzinfo=hk).astimezone(UTC)
+    nxt = plan_successor(row, now=now)
+    assert nxt is not None
+    assert nxt.series is not None
+    assert nxt.series.occurrence == 4
+    assert nxt.due_at.astimezone(hk).strftime("%H:%M") == "21:50"
+
+
+def test_a_long_outage_resumes_a_sub_day_series_instead_of_ending_it():
+    """`_floor_index`'s DURATION branch, and the only test that enters it.
+
+    `plan_successor` walks forward from the floor for at most
+    `_MAX_CATCHUP_WALK` (8) steps. A test that is only a few periods late never
+    leaves the walk, so it exercises the walk and not the floor — replacing the
+    whole duration branch with `return 0` left the previous catch-up test green
+    (#109 review).
+
+    Past ~8 periods the walk exhausts, `plan_successor` falls to its `else` and
+    returns None, and the series STOPS with nothing said anywhere. For a
+    ten-minute race series that is the 「promised eleven updates, delivered
+    zero」 failure again, arriving 90 minutes into an outage.
+
+    Two hours late on a ten-minute series is twelve periods — comfortably past
+    the walk budget, so the floor must do the arithmetic.
+    """
+    hk = ZoneInfo(HK)
+    anchor = datetime(2026, 9, 6, 21, 10, tzinfo=hk).astimezone(UTC)
+    rule = RecurrenceRule(
+        every=Recurrence.MINUTELY, tz=HK, count=40, interval=10,
+    )
+    row = _reminder(anchor=anchor, rule=rule)
+
+    nxt = plan_successor(
+        row, now=datetime(2026, 9, 6, 23, 10, tzinfo=hk).astimezone(UTC),
+    )
+
+    assert nxt is not None, "a long outage must resume the series, not end it"
+    assert nxt.series is not None
+    assert nxt.series.occurrence == 13
+    assert nxt.due_at.astimezone(hk).strftime("%H:%M") == "23:20"
+
+
+def test_a_long_outage_on_an_interval_calendar_series_does_not_overshoot():
+    """The `// rule.interval` in `_floor_index`'s calendar branches.
+
+    Dropping it from all four left every test green (#109 review). An
+    every-3-days series ten days behind then floored at index 10 instead of 3
+    and silently consumed six occurrences the requester had asked for —
+    `rule.count` spends them either way, so the series would end six firings
+    early with nothing raised.
+    """
+    hk = ZoneInfo(HK)
+    anchor = datetime(2026, 1, 5, 9, 0, tzinfo=hk).astimezone(UTC)
+    rule = RecurrenceRule(every=Recurrence.DAILY, tz=HK, count=20, interval=3)
+    row = _reminder(anchor=anchor, rule=rule)
+
+    nxt = plan_successor(
+        row, now=datetime(2026, 1, 15, 9, 0, tzinfo=hk).astimezone(UTC),
+    )
+
+    assert nxt is not None
+    assert nxt.series is not None
+    # 5, 8, 11, 14 are past; 17 Jan is the first still ahead — index 4, not 10.
+    assert nxt.series.occurrence == 4
+    assert nxt.due_at.astimezone(hk).date().isoformat() == "2026-01-17"
+
+
+def test_an_until_bound_ends_a_sub_day_series_at_the_right_occurrence():
+    """`plan_successor` and `until` on a SUB-DAY rule — the literal F1 shape,
+    and the two halves were never tested together.
+
+    One test set `until` and then only called `occurrence_at`; the other called
+    `plan_successor` with no `until` at all (#109 review). "The series ends
+    early because of `until`" is exactly what went wrong in the incident.
+    """
+    hk = ZoneInfo(HK)
+    anchor = datetime(2026, 9, 6, 21, 10, tzinfo=hk).astimezone(UTC)
+    rule = RecurrenceRule(
+        every=Recurrence.MINUTELY, tz=HK, count=40, interval=10,
+        until=datetime(2026, 9, 6, 21, 40, tzinfo=hk).astimezone(UTC),
+    )
+    row = _reminder(anchor=anchor, rule=rule)
+
+    at_2120 = plan_successor(
+        row, now=datetime(2026, 9, 6, 21, 20, tzinfo=hk).astimezone(UTC),
+    )
+    assert at_2120 is not None
+    assert at_2120.due_at.astimezone(hk).strftime("%H:%M") == "21:30"
+
+    # 21:40 is the bound and IS a firing (until is inclusive); nothing follows.
+    last = _reminder(anchor=anchor, rule=rule, occurrence=3)
+    assert last.due_at.astimezone(hk).strftime("%H:%M") == "21:40"
+    assert plan_successor(
+        last, now=datetime(2026, 9, 6, 21, 40, tzinfo=hk).astimezone(UTC),
+    ) is None
+
+
+def test_an_interval_below_one_is_refused_by_the_type():
+    """`interval=0` makes `occurrence_at` return the same instant forever, and
+    the structural floor cannot catch it on a CALENDAR rule — those have no
+    `period_seconds` for it to compare. Deleting this check left every test
+    green (#109 review), so the type carries it."""
+    for bad in (0, -1):
+        with pytest.raises(ValueError, match="interval"):
+            RecurrenceRule(every=Recurrence.DAILY, tz=HK, count=5, interval=bad)
+
+
+def test_an_interval_past_the_ceiling_is_refused_rather_than_overflowing():
+    """`MAX_INTERVAL`. `occurrence_at` steps from the anchor, so a large enough
+    multiplier walks off the representable calendar — `yearly x 10000` raises
+    `ValueError: year 12026 is out of range` and `minutely x 10**12` overflows
+    `timedelta`. Unreachable before #109; `interval` is a number the MODEL
+    writes."""
+    with pytest.raises(ValueError, match="interval"):
+        RecurrenceRule(
+            every=Recurrence.YEARLY, tz=HK, count=2, interval=MAX_INTERVAL + 1,
+        )
+
+
+def test_every_per_unit_table_covers_every_recurrence():
+    """Three hand-maintained per-unit tables now exist, each subscripted BARE
+    somewhere, and one of them already fell out of sync in production: `_EVERY`
+    was left at five entries when #109 added two units, so every sub-day
+    reminder raised KeyError in its own fire header after claiming the row.
+
+    A table missing a member is a runtime crash on a background path nobody is
+    watching, which is the worst place to find one. This is the gate that makes
+    adding a unit fail here instead.
+    """
+    from nora.agent.tools import _PERIOD_DAYS
+    from nora.app.fire import _EVERY
+
+    repeating = set(Recurrence) - {Recurrence.NONE}
+    assert set(_EVERY) == repeating, "nora.app.fire._EVERY"
+    assert set(_PERIOD_DAYS) == repeating, "nora.agent.tools._PERIOD_DAYS"
+    # UNIT_SECONDS is deliberately PARTIAL — a calendar unit has no fixed
+    # period — so it is checked as a subset with the sub-day units required.
+    assert set(UNIT_SECONDS) == DURATION_UNITS
+    assert repeating > DURATION_UNITS
