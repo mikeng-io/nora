@@ -29,8 +29,11 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.postgres import PostgresContainer
 
 from nora.agent.registry import ToolRegistry
+from nora.config import Config
+from nora.config import load as load_config
 from nora.doctrine.loader import DoctrineStore
 from nora.obs.metrics import Metrics
+from tests.builders import copy_example_config
 
 # MUST track `docker-compose.yml`'s `db` image, and
 # `test_the_test_container_tracks_the_deployment` is what pins the two
@@ -85,6 +88,32 @@ def build_test_doctrine_store() -> DoctrineStore:
 @pytest.fixture
 def doctrine_store() -> DoctrineStore:
     return build_test_doctrine_store()
+
+
+@pytest.fixture
+def example_config_path(tmp_path: Path) -> Path:
+    """R-B: a test's config file is a copy of `config.example.toml` in
+    `tmp_path`. Take THIS when the test edits the TOML before loading it
+    (`tests/test_config.py`'s probes, the tomllib-and-rewrite fixtures); take
+    `example_config` when it only needs the loaded `Config`. The template is
+    the contract `nora/config.py` is written against, so a test that loads it
+    tests the code — a test that loaded the deployment's `config.toml` would
+    test the operator's choices, and go red when they changed
+    (`tests/test_evals_gate.py`'s own history). Only a test whose SUBJECT is
+    the deployment reads the real file; those are pinned in
+    `tests/architecture/test_config_comes_from_the_template.py`."""
+    return copy_example_config(tmp_path)
+
+
+@pytest.fixture
+def example_config(example_config_path: Path, monkeypatch) -> Config:
+    """`example_config_path`, loaded through the production loader. The load
+    is fail-closed on the LLM key exactly as the daemon's startup is
+    (`nora/config.py`: «refusing to start»), so a placeholder is set here —
+    nothing loading the template reaches a provider. A test asserting the
+    refusal itself takes `example_config_path` and clears the variable."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    return load_config(example_config_path)
 
 
 @pytest.fixture

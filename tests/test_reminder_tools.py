@@ -36,9 +36,14 @@ from nora.domain.ports import JobResult, JobStatus
 from nora.domain.reminders import Recurrence, Reminder, ReminderCaps, ReminderState
 from nora.domain.tool_call_log import ToolCallLogEntry
 from nora.obs.metrics import Metrics
-from nora.testing import FakeComputeBackend, FakeComputeJobStore, FakeToolCallLogStore
+from nora.testing import (
+    FakeComputeBackend,
+    FakeComputeJobStore,
+    FakeMemoryStore,
+    FakeToolCallLogStore,
+)
 from nora.testing.reminders import FakeReminderStore
-from tests.fakes import FakeHoncho, SinkSender
+from tests.fakes import SinkSender
 
 CONVERSATION = "conv-1"
 TARGET = ConversationTarget("signal", CONVERSATION, "group")
@@ -117,7 +122,7 @@ def _tools(
     specs = registry.specs(
         store=_FakeStore(), conversation_id=conversation_id, conversation_type="group",
         persons=persons if persons is not None else _FakePersons(MILES, TYLER),
-        honcho=FakeHoncho(), deliverer=SinkSender(),
+        honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=_room(tagger=tagger),
         fire_turn=fire_turn, location_trusted=location_trusted,
     )

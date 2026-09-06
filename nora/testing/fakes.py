@@ -16,7 +16,7 @@ from nora.domain.compute import (
     ensure_utc_job,
     normalise_compute_job,
 )
-from nora.domain.media import MediaBlob, MediaBytes, MediaRef, media_json
+from nora.domain.media import MediaBlob, MediaBytes, MediaObject, MediaRef, media_json
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -257,11 +257,13 @@ class FakeRecordStore:
 
 class FakeMemoryStore:
     """In-memory `MemoryStore`, keyword-only to match the port and
-    `nora.infra.honcho.client.HonchoClient` exactly (unlike `tests/fakes.py`'s
-    older `FakeHoncho`, which predates this file and takes `peer_id`/`text`
-    positionally — a drift mypy never catches because `nora.testing` sits
-    outside its strict scope). `fail=True` simulates the service being down,
-    the same "log and return a benign value" contract `HonchoClient` documents.
+    `nora.infra.honcho.client.HonchoClient` exactly, and bound to the client by
+    `tests/contract/test_memory_store_contract.py`. It is the suite's ONLY
+    memory fake: `tests/fakes.py::FakeHoncho`, an older copy that predated this
+    file and was never under the contract suite, was folded into it on
+    2026-09-07 (R-C, issue #113) once the two were behaviourally identical.
+    `fail=True` simulates the service being down, the same "log and return a
+    benign value" contract `HonchoClient` documents.
     """
 
     def __init__(
@@ -330,8 +332,7 @@ class FakeMemoryStore:
         workspace_id: str | None = None,
     ) -> bool:
         """Mirrors `HonchoClient.conclude` — the conclusion WRITE lane behind
-        the `remember` tool, keyword-only exactly like the port (unlike
-        `tests/fakes.py`'s older `FakeHoncho`, which predates this file).
+        the `remember` tool, keyword-only exactly like the port.
 
         `fail=True` is the down store: False, nothing lands, no raised error —
         the exact never-load-bearing shape the client shows the reply path. A
@@ -715,6 +716,10 @@ class FakeMediaDescriptionStore:
         self.resolved: list[tuple[str, str]] = []
         self.described: list[str] = []
         self.remembered: list[tuple[str, str, str]] = []
+        # The `model` each `remember` carried, in call order. `media_fetch` must
+        # thread the REAL configured describer name into the durable row rather
+        # than hardcode one, and only a store that records it can prove that.
+        self.remembered_models: list[str] = []
 
     async def resolve(self, *, platform: str, token: str) -> MediaBlob | None:
         self.resolved.append((platform, token))
@@ -739,10 +744,106 @@ class FakeMediaDescriptionStore:
         description: str, model: str,
     ) -> None:
         self.remembered.append((platform, token, blob.sha256))
+        self.remembered_models.append(model)
         if self.unavailable:
             return
         self.index[(platform, token)] = blob
         self.descriptions[blob.sha256] = description
+
+
+class FakeMediaObjectStore:
+    """In-memory `MediaObjectStore`, bound to `SqlMediaObjectStore` by
+    `tests/contract/test_media_object_store_contract.py`.
+
+    Mirrors the SQL store's OBSERVABLE semantics rather than a convenient
+    subset, because two inline copies of this fake had already drifted apart
+    (R-C, issue #113): one substring-matched `description`/`prompt`/`title`,
+    the other returned every row for any query. Here, as in Postgres:
+
+    - `save` is first-source-wins (`on_conflict_do_nothing` on `sha256`) and
+      answers True whether or not the row was new; every call is recorded in
+      `saved` so a write path can assert WHAT it wrote.
+    - `search` ANDs each whitespace-separated word as a case-insensitive
+      substring of `description` OR of the provenance rendered as JSON text
+      (the `provenance::text` cast — keys included, which is what production
+      matches against). Empty query → newest `limit` rows. `sources` filters.
+    - `by_prefix` matches `sha256` by prefix over the WHOLE index and returns
+      every hit up to `limit`, newest first — the caller decides what a
+      collision means.
+    - `fail=True` is the database being unreachable: `save` answers False and
+      every read answers empty, exactly as the SQL store's `except Exception`
+      arms do. The tools above it must read that as `unavailable`.
+    """
+
+    def __init__(self, objs: Sequence[MediaObject] = (), *, fail: bool = False) -> None:
+        self.objs: dict[str, MediaObject] = {}
+        self.saved: list[MediaObject] = []
+        self.fail = fail
+        for obj in objs:
+            self.objs.setdefault(obj.sha256, obj)
+
+    def _newest_first(self, rows: Sequence[MediaObject]) -> list[MediaObject]:
+        return sorted(rows, key=lambda o: o.created_at_ms, reverse=True)
+
+    async def save(self, *, obj: MediaObject) -> bool:
+        if self.fail:
+            return False
+        self.saved.append(obj)
+        self.objs.setdefault(obj.sha256, obj)
+        return True
+
+    async def search(
+        self, *, query: str, limit: int = 20, sources: tuple[str, ...] = (),
+    ) -> tuple[MediaObject, ...]:
+        if self.fail:
+            return ()
+        words = [w.casefold() for w in query.split() if w]
+        pool = self._newest_first(list(self.objs.values()))
+        if sources:
+            pool = [o for o in pool if o.source in sources]
+        if words:
+            def matches(o: MediaObject) -> bool:
+                haystacks = (o.description.casefold(), json.dumps(o.provenance or {}).casefold())
+                return all(any(w in h for h in haystacks) for w in words)
+            pool = [o for o in pool if matches(o)]
+        return tuple(pool[:limit])
+
+    async def get(self, *, sha256: str) -> MediaObject | None:
+        if self.fail:
+            return None
+        return self.objs.get(sha256)
+
+    async def by_prefix(self, *, handle: str, limit: int = 100) -> tuple[MediaObject, ...]:
+        if self.fail:
+            return ()
+        hits = [o for o in self.objs.values() if o.sha256.startswith(handle)]
+        return tuple(self._newest_first(hits)[:limit])
+
+
+class FakeReverseGeocoder:
+    """In-memory `ReverseGeocoder`, bound to the Google and HK-gov backends by
+    `tests/contract/test_geocoder_contract.py`.
+
+    One address for every coordinate, and every call recorded in `calls` —
+    the assertion that matters most in the tools above this port is HOW MANY
+    times it was reached (a screened coordinate must reach nothing, an
+    on-demand lookup exactly once), so a fake that did not record would make
+    those assertions vacuous. `address=None` is an honest miss; `fail=True` is
+    the backend down, which the port says is ALSO None and never a raise —
+    the fake keeps them as two switches because a test wants to reach each on
+    purpose, the way the contract suite's `break_it()` does.
+    """
+
+    def __init__(self, address: str | None = "Yoho Mall", *, fail: bool = False) -> None:
+        self.address = address
+        self.fail = fail
+        self.calls: list[tuple[float, float]] = []
+
+    async def address_for(self, *, lat: float, lng: float) -> str | None:
+        self.calls.append((lat, lng))
+        if self.fail:
+            return None
+        return self.address
 
 
 class FakeGeocodeCacheStore:

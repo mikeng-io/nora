@@ -330,3 +330,15 @@ earned. They are the `measure` verb pointed at our own instruments.
   the last test", not "no schema from the last test".
 - A new behavioural rule gets an entry in `design/09-decision-index.md` and a
   named test in `tests/test_acceptance_rules.py::RULE_TESTS`.
+- **A test directory names what makes the test TRUE, not what it is about**
+  (`tests/README.md`): `unit/` no I/O, `contract/` one suite N implementations,
+  `integration/` the wired pipeline, `architecture/` properties of the source.
+  The `tests/` root is legacy and takes no NEW files.
+- **A test gets its config from the template** — the `example_config_path` /
+  `example_config` fixtures — never a path to the repo's `config.toml`. Only a
+  test whose SUBJECT is the deployment reads the real file, pinned in
+  `tests/architecture/test_config_comes_from_the_template.py`.
+- **A fake standing in for a port lives in `nora/testing/`** and is
+  parametrized into that port's contract suite. Inline classes are local
+  scaffolding only; `tests/architecture/test_port_fakes_live_in_nora_testing.py`
+  is the gate and its `_ALLOWED` list only shrinks. Issue #113 for all three.

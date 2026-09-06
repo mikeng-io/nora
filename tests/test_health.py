@@ -5,8 +5,8 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.health import LLMState, build_health_app
 from nora.obs.metrics import Metrics
-from nora.testing import FakeRecordStore
-from tests.fakes import FakeHoncho, SinkSender
+from nora.testing import FakeMemoryStore, FakeRecordStore
+from tests.fakes import SinkSender
 
 
 class _BrokenStore(FakeRecordStore):
@@ -28,7 +28,7 @@ async def client(aiohttp_client, store):
 
     metrics = Metrics()
     app = build_health_app(
-        adapter=SinkSender(), store=store, honcho=FakeHoncho(),
+        adapter=SinkSender(), store=store, honcho=FakeMemoryStore(),
         doctrine_store=DoctrineStore(
             __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
         metrics=metrics, started_at=0.0, llm_state=LLMState(),
@@ -64,7 +64,7 @@ async def test_health_returns_503_when_the_store_is_unreachable(aiohttp_client):
 
     metrics = Metrics()
     app = build_health_app(adapter=SinkSender(), store=_BrokenStore(),
-                           honcho=FakeHoncho(), metrics=metrics,
+                           honcho=FakeMemoryStore(), metrics=metrics,
                            doctrine_store=DoctrineStore(Path("nora/doctrine"), canary="C",
                                                        metrics=metrics),
                            started_at=0.0, llm_state=LLMState())
@@ -96,7 +96,7 @@ async def test_health_reports_the_last_omniroute_success(aiohttp_client, store):
     state.last_success_at = 1700.0
     metrics = Metrics()
     app = build_health_app(adapter=SinkSender(), store=store,
-                           honcho=FakeHoncho(), metrics=metrics,
+                           honcho=FakeMemoryStore(), metrics=metrics,
                            doctrine_store=DoctrineStore(Path("nora/doctrine"), canary="C",
                                                        metrics=metrics),
                            started_at=0.0, llm_state=state)
@@ -175,7 +175,7 @@ async def test_health_reports_every_enabled_platform(aiohttp_client, store):
     signal = SinkSender()
     app = build_health_app(
         adapter=signal, adapters={"signal": signal, "discord": _DeafAdapter()},
-        store=store, honcho=FakeHoncho(),
+        store=store, honcho=FakeMemoryStore(),
         doctrine_store=DoctrineStore(
             __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
         metrics=metrics, started_at=0.0, llm_state=LLMState(),

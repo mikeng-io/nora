@@ -30,6 +30,13 @@ dependencies = [
     "yt-dlp>=2026.8.19",
     "boto3>=1.43.62",
     "pgvector>=0.5.0",
+    # SQLAlchemy's async engine needs greenlet, but sqlalchemy's own marker
+    # only pulls it in on win32/AMD64/x86_64/ppc64le/aarch64 -- NOT macOS arm64,
+    # so on an Apple Silicon laptop every SQL-touching test errored with "the
+    # greenlet library is required" (found 2026-09-07 running the suite there).
+    # The container is Linux and never saw it; declared so the suite runs where
+    # the operator edits.
+    "greenlet>=3.5.4",
 ]
 
 [project.optional-dependencies]

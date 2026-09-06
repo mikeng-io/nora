@@ -12,7 +12,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from nora.infra.honcho import HonchoClient
-from tests.fakes import FakeHoncho
+from nora.testing import FakeMemoryStore
 
 
 @pytest.fixture
@@ -114,19 +114,19 @@ async def test_health_reports_unreachable_without_raising():
 
 
 async def test_fake_honcho_records_feeds():
-    fake = FakeHoncho()
+    fake = FakeMemoryStore()
     await fake.feed(peer_id="miles", text="hello", conversation_id="c1")
     assert fake.fed == [("miles", "hello", "c1")]
 
 
 async def test_fake_honcho_serves_configured_cards():
-    fake = FakeHoncho(cards={"miles": ["likes espresso"]})
+    fake = FakeMemoryStore(cards={"miles": ["likes espresso"]})
     assert await fake.peer_card(peer_id="miles") == ["likes espresso"]
     assert await fake.peer_card(peer_id="nobody") == []
 
 
 async def test_fake_honcho_can_simulate_being_down():
-    fake = FakeHoncho(fail=True)
+    fake = FakeMemoryStore(fail=True)
     assert await fake.feed(peer_id="miles", text="x", conversation_id="c1") is False
     assert await fake.peer_card(peer_id="miles") == []
 

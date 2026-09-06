@@ -35,9 +35,9 @@ from nora.infra.transit import TransitClient
 from nora.obs.logging import bind_tag_id, clear_tag_id, setup_logging
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeRosterSource
+from nora.testing import FakeMemoryStore, FakeRosterSource
 from tests.builders import make_logging_config
-from tests.fakes import FakeHoncho, SinkSender
+from tests.fakes import SinkSender
 from tests.test_doctrine_loader import write
 
 GROUP = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
@@ -138,7 +138,7 @@ def wiring(tmp_path, restore_logging):
     )
     tools = build_tools(
         store=_Store(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=FakeHoncho(conclusions={"miles_novak": ["Miles is from Ridgeline"]},
+        persons=persons, honcho=FakeMemoryStore(conclusions={"miles_novak": ["Miles is from Ridgeline"]},
                                            cards={"miles_novak": ["likes espresso"]}),
         deliverer=deliverer, metrics=metrics, room=room, question="邊個係阿豹",
         transit_source=_UNREACHABLE_TRANSIT, context_window=40,

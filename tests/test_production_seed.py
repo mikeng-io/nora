@@ -34,26 +34,16 @@ from evals.journeys import JOURNEYS
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _load_cfg():
-    from nora.app.eval_support import load_eval_config
-
-    return load_eval_config((REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml"))
-
-
 # --- effort override --------------------------------------------------------
 
 
-def test_build_live_runner_effort_override_does_not_mutate_config(monkeypatch):
+def test_build_live_runner_effort_override_does_not_mutate_config(example_config):
     """`effort=` must be a per-run override on a COPY — the shipped config value
     (which the operator changed to `low` while the ADR still says `none`) is
     what a plain gate run must keep using."""
     from nora.app.eval_support import build_live_runner
 
-    # The config loader refuses to load without the LLM key env (the daemon's
-    # fail-closed default); a dummy key satisfies it — runner construction
-    # makes no network call. Same pattern as tests/test_evals_gate.py.
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    cfg = _load_cfg()
+    cfg = example_config
     shipped = cfg.llm.reasoning_effort
 
     runner = build_live_runner(cfg, effort="high")
@@ -69,14 +59,13 @@ def test_build_live_runner_effort_override_does_not_mutate_config(monkeypatch):
     assert default_runner._models._spec.reasoning_effort == shipped
 
 
-def test_build_live_runner_skills_dir_normalises_str_to_path(monkeypatch):
+def test_build_live_runner_skills_dir_normalises_str_to_path(example_config):
     """The runner's `skills_dir` slot is `Path | None`; the eval entry point
     may hand it a str (`cfg.doctrine.dir.parent / "skills"` is a Path already,
     but the CLI/API surface accepts str)."""
     from nora.app.eval_support import build_live_runner
 
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    cfg = _load_cfg()
+    cfg = example_config
 
     runner = build_live_runner(cfg, skills_dir="nora/doctrine")
     assert runner._skills_dir == Path("nora/doctrine")
@@ -117,13 +106,12 @@ async def test_run_case_seed_lands_in_fake_stores_even_when_scripted(monkeypatch
     assert traj.tool_calls == []
 
 
-def test_build_production_seed_raises_without_deployment_env(monkeypatch):
+def test_build_production_seed_raises_without_deployment_env(example_config):
     """`--seed-production` without DATABASE_URL must FAIL LOUDLY, not silently
     run with an empty snapshot that measures nothing."""
     from nora.app.eval_support import build_production_seed
 
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")  # config load is fail-closed
-    cfg = _load_cfg()
+    cfg = example_config
     # Ensure the env var is absent in this process regardless of any shell leak.
     old = os.environ.pop(cfg.store.database_url_env, None)
     try:

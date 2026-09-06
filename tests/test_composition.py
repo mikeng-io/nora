@@ -29,14 +29,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
-def cfg(tmp_path, monkeypatch, pg_url):
+def cfg(tmp_path, monkeypatch, pg_url, example_config_path):
     # `pg_url` (tests/conftest.py) creates a fresh Postgres database and exports
     # DATABASE_URL, which build_dependencies() reads (store.database_url_env) to
     # run migrations and wire the store — a throwaway database, never production.
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    import shutil
-    dst = tmp_path / "config.toml"
-    shutil.copy(ROOT / "config.example.toml", dst)
+    dst = example_config_path
     # config.example.toml's identity_file ("identity.toml") resolves relative to
     # the config file's own directory (nora/config.py's path-resolution context);
     # build_dependencies() calls load_persons() against it, so it must exist.

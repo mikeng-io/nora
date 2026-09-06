@@ -1,6 +1,15 @@
 """The `ReverseGeocoder` contract — one behavioural suite BOTH backends pass
-(Google, HK-gov). CLAUDE.md: a port never gains a second implementation — test
-fakes included — without a shared contract suite both pass.
+(Google, HK-gov), plus `nora.testing.FakeReverseGeocoder` on the PORT-level
+half. CLAUDE.md: a port never gains a second implementation — test fakes
+included — without a shared contract suite both pass.
+
+Two fixtures, on purpose. `adapter` (the two real backends) drives the shared
+`CachingBilingualGeocoder` discipline — the «中文 / English» join and the ~11 m
+memo — which is base-class behaviour a fake has no business re-implementing.
+`geocoder` (backends AND the fake) drives what the PORT promises: a coordinate
+answers a string, a failure answers None and never raises. Before 2026-09-07
+three test files each carried their own one-method geocoder fake (R-C, issue
+#113); this is where the shared one is held to the same shape as production.
 
 The shared discipline (the bilingual «中文 / English» join, the ~11 m memo cache,
 and never-raise fail-soft) lives ONCE in `CachingBilingualGeocoder`; this drives
@@ -17,9 +26,11 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
+from nora.domain.ports import ReverseGeocoder
 from nora.infra import geocode
 from nora.infra.geocode import GoogleGeocoder
 from nora.infra.geocode_hkgov import HKGovGeocoder
+from nora.testing import FakeReverseGeocoder
 
 
 class _GoogleAdapter:
@@ -78,12 +89,52 @@ class _HKGovAdapter:
         self._ok = False
 
 
+class _FakeAdapter:
+    """`FakeReverseGeocoder`, in the same harness shape as the two backends so
+    the port-level tests below read identically across all three."""
+
+    async def start(self, monkeypatch) -> None:
+        self.geocoder = FakeReverseGeocoder("元朗形點 / Yoho Mall")
+
+    async def stop(self) -> None:
+        return None
+
+    def break_it(self) -> None:
+        self.geocoder.fail = True
+
+
+_BACKENDS = {"google": _GoogleAdapter, "hkgov": _HKGovAdapter}
+
+
 @pytest.fixture(params=["google", "hkgov"])
 async def adapter(request, monkeypatch):
-    a = _GoogleAdapter() if request.param == "google" else _HKGovAdapter()
+    """The two REAL backends — for the base-class behaviours (join, memo)."""
+    a = _BACKENDS[request.param]()
     await a.start(monkeypatch)
     yield a
     await a.stop()
+
+
+@pytest.fixture(params=["google", "hkgov", "fake"])
+async def geocoder(request, monkeypatch):
+    """Every implementation of the PORT, the shared fake included."""
+    a = {**_BACKENDS, "fake": _FakeAdapter}[request.param]()
+    await a.start(monkeypatch)
+    yield a
+    await a.stop()
+
+
+def test_every_implementation_satisfies_the_port() -> None:
+    for impl in (GoogleGeocoder(api_key="k"), HKGovGeocoder(service_url="http://x", token="t"),  # noqa: S106
+                 FakeReverseGeocoder()):
+        assert isinstance(impl, ReverseGeocoder), type(impl).__name__
+
+
+async def test_a_coordinate_answers_a_place_name(geocoder):
+    """The port's positive half, for every implementation: a string, reached
+    keyword-only exactly as the collector calls it."""
+    out = await geocoder.geocoder.address_for(lat=22.4445, lng=114.0289)
+    assert isinstance(out, str) and out
 
 
 async def test_a_coordinate_resolves_to_both_languages_joined(adapter):
@@ -101,9 +152,10 @@ async def test_a_stationary_coordinate_is_fetched_once_then_cached(adapter):
     assert len(adapter.requests) == 2
 
 
-async def test_a_failure_is_none_and_never_raises(adapter):
+async def test_a_failure_is_none_and_never_raises(geocoder):
     """Fail-soft by contract: each backend's own failure shape (Google's non-OK
-    status, HK-gov's error object — both in a 200) becomes None, never an
-    exception in the collector loop and never a partial address."""
-    adapter.break_it()
-    assert await adapter.geocoder.address_for(lat=22.44, lng=114.02) is None
+    status, HK-gov's error object — both in a 200; the fake's `fail` switch)
+    becomes None, never an exception in the collector loop and never a partial
+    address."""
+    geocoder.break_it()
+    assert await geocoder.geocoder.address_for(lat=22.44, lng=114.02) is None

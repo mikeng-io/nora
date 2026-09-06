@@ -21,8 +21,8 @@ from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOLS
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
-from nora.testing import FakeRosterSource
-from tests.fakes import FakeHoncho, SinkSender
+from nora.testing import FakeMemoryStore, FakeRosterSource
+from tests.fakes import SinkSender
 
 MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
 GROUP = "signal:group-1"
@@ -50,14 +50,14 @@ def _room(*, tagger: PersonRef | None = MILES, conversation_id: str = GROUP) -> 
 
 
 def _tools(
-    *, honcho: FakeHoncho | None = None, tagger: PersonRef | None = MILES,
+    *, honcho: FakeMemoryStore | None = None, tagger: PersonRef | None = MILES,
     metrics: Metrics | None = None, conversation_id: str = GROUP,
 ) -> dict:
     registry = ToolRegistry()
     specs = registry.specs(
         store=_NullStore(), conversation_id=conversation_id,
         conversation_type="group",
-        persons=_FakePersons(MILES), honcho=honcho or FakeHoncho(),
+        persons=_FakePersons(MILES), honcho=honcho or FakeMemoryStore(),
         deliverer=SinkSender(), metrics=metrics or Metrics(),
         room=_room(tagger=tagger, conversation_id=conversation_id),
     )
@@ -79,7 +79,7 @@ async def test_remember_ok_lands_the_pair_and_reads_back():
     """`ok` ONLY when the write actually landed: the (observer, observed,
     content) tuple is recorded under the TAGGER's peer id — a write under a
     guessed peer would be a memory about nobody `about` can never find."""
-    honcho = FakeHoncho()
+    honcho = FakeMemoryStore()
     tools = _tools(honcho=honcho)
     result = await tools["remember"](content="屋企有兩隻貓")
     assert result == {"status": "ok", "person": MILES.name}
@@ -117,7 +117,7 @@ async def test_remember_unavailable_when_the_store_is_down():
     """A down memory store is `unavailable` — never a silent ok, and never a
     fallback to the note tier (a failed conclusion is a failure; writing it
     somewhere else would teach tomorrow's `about` to lie by omission)."""
-    honcho = FakeHoncho(fail=True)
+    honcho = FakeMemoryStore(fail=True)
     tools = _tools(honcho=honcho)
     result = await tools["remember"](content="屋企有兩隻貓")
     assert result["status"] == "unavailable"
@@ -128,7 +128,7 @@ async def test_remember_keeps_the_fact_text_verbatim():
     """The content is the settled fact in the speaker's words, not a summary —
     a paraphrase is already one step away from what they said (same rule as
     `note_create` accepting body verbatim)."""
-    honcho = FakeHoncho()
+    honcho = FakeMemoryStore()
     tools = _tools(honcho=honcho)
     await tools["remember"](content="  我下個月返新工  ")
     assert honcho.writes[0][2] == "我下個月返新工"  # stripped, not wrapped

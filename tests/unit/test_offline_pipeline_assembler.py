@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from nora.app.eval_support import TOOL_NAMES, load_eval_config
+from nora.app.eval_support import TOOL_NAMES
 from nora.app.offline import build_offline_pipeline
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.facts import Fact, FactAsserter
@@ -60,23 +60,26 @@ def _flatten(prefill: list[dict]) -> str:
 
 @pytest.fixture(autouse=True)
 def _omniroute_key(monkeypatch):
-    """`load_eval_config` loads the REAL config, and that load is fail-closed on
-    the LLM key — the same refusal that protects production
-    (`nora/config.py`: "refusing to start").
+    """Loading a config is fail-closed on the LLM key — the same refusal that
+    protects production (`nora/config.py`: "refusing to start").
 
-    Every other test that loads the real config sets a placeholder for it
-    (`tests/test_production_seed.py`, `tests/test_config.py`); the tests in this
-    file did not, so they passed only on a machine that happened to export the
-    real key and were RED in any fresh worktree. That is a test asserting the
-    developer's shell, not the code.
+    This file once loaded the deployment's `config.toml` through
+    `load_eval_config` without setting a placeholder, so it passed only on a
+    machine that happened to export the real key and was RED in any fresh
+    worktree — a test asserting the developer's shell, not the code. It now
+    takes the `example_config` fixture (R-B, issue #113), which sets the
+    placeholder itself; this autouse fixture covers the tests that build the
+    pipeline without it.
 
     Nothing here reaches a provider — the model is scripted — so a placeholder
     is the honest value.
     """
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
 
-async def test_seeded_notes_facts_standing_render_in_the_assembled_prompt(tmp_path):
-    cfg = load_eval_config((REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml"))
+async def test_seeded_notes_facts_standing_render_in_the_assembled_prompt(
+    tmp_path, example_config,
+):
+    cfg = example_config
     identity_path = tmp_path / "identity.toml"
     identity_path.write_text(_IDENTITY_TOML)
     persons = load_persons(identity_path)

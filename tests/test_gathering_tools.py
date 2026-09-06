@@ -13,10 +13,10 @@ from nora.app.gatherings import GatheringService
 from nora.domain.models import PersonRef
 from nora.domain.reminders import ReminderCaps
 from nora.obs.metrics import Metrics
-from nora.testing import FakeRosterSource
+from nora.testing import FakeMemoryStore, FakeRosterSource
 from nora.testing.gatherings import FakeGatheringStore
 from nora.testing.reminders import FakeReminderStore
-from tests.fakes import FakeHoncho, SinkSender
+from tests.fakes import SinkSender
 
 MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
 GROUP = "signal:group-1"
@@ -118,7 +118,7 @@ def _tools(
         conversation_id=conversation_id,
         conversation_type="group",
         persons=_FakePersons(MILES),
-        honcho=FakeHoncho(),
+        honcho=FakeMemoryStore(),
         deliverer=SinkSender(),
         metrics=metrics or Metrics(),
         room=_room(tagger=tagger, conversation_id=conversation_id),

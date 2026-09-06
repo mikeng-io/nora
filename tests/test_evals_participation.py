@@ -19,7 +19,7 @@ import pytest
 
 from evals.evaluators import ParticipationVerdict
 from evals.harness import Case, Trajectory, run_case
-from nora.app.eval_support import TOOL_NAMES, load_eval_config, seed_from_dict
+from nora.app.eval_support import TOOL_NAMES, seed_from_dict
 from nora.app.offline import build_offline_pipeline
 from nora.doctrine.loader import DoctrineStore
 from nora.obs.metrics import Metrics
@@ -35,6 +35,7 @@ from nora.testing import (
     ScriptedTurn,
     group_event,
 )
+from tests.builders import load_example_config
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"
@@ -243,8 +244,7 @@ async def _drive_participation(tmp_path: Path, seed: dict | None,
     """Build the offline pipeline with the participation occasion wired the way
     `run_case` wires it, drive one untagged message through, settle the window,
     and return (adapter, metrics, participation-runner calls)."""
-    cfg = load_eval_config((REPO_ROOT / "config.toml",
-                            REPO_ROOT / "config.example.toml"))
+    cfg = load_example_config(tmp_path)
     metrics = Metrics()
     doctrine_store = DoctrineStore(
         DOCTRINE_DIR, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,

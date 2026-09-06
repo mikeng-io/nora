@@ -7,12 +7,11 @@ from nora.app.gatherings import GatheringService
 from nora.domain.models import PersonRef
 from nora.domain.reminders import ReminderCaps
 from nora.persons import Persons
-from nora.testing import FakeRecordStore
+from nora.testing import FakeMemoryStore, FakeRecordStore
 from nora.testing.gatherings import FakeGatheringStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
-from tests.fakes import FakeHoncho
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
 CIRCLE = Circle(circle_id="c1", person_ids=frozenset({"miles"}), people=(MILES,))
@@ -95,7 +94,7 @@ def _app(*, presence: object | None, mobility: FakeAnalyticsStore) -> web.Applic
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeHoncho(),
+        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"miles": MILES}, index={}),
         ai_peer="nora",

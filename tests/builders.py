@@ -73,16 +73,24 @@ def make_tracing_config(**kw: Any) -> TracingConfig:
     })
 
 
-def load_example_config(tmp_path: Path) -> Config:
-    """Copy the committed example config into `tmp_path` and load it.
+def copy_example_config(tmp_path: Path) -> Path:
+    """Copy the committed template into `tmp_path` and return the copy's path.
 
-    The single place that knows the config file's NAME and FORMAT for the
-    integration harness — `tests/test_config.py`, `tests/test_main.py`, and
-    `tests/test_env_template.py` also name config.example.toml directly, each
-    for its own narrower purpose (schema tests, startup tests, template
-    contract tests); this is the one the integration harness (and anything
-    built on top of it) goes through.
+    R-B (issue #113, `docs/CONVENTIONS.md` «Test structure»): this is the ONE
+    place in the suite that knows the template's name. A test reaches it
+    through the `example_config_path` / `example_config` fixtures in
+    `tests/conftest.py` — never by spelling `config.example.toml` itself — and
+    `tests/architecture/test_config_comes_from_the_template.py` is the gate.
+    The only tests that read the REAL `config.toml` are the ones whose subject
+    is the deployment (the F11 drift gate, the R-24 budgets), pinned there.
     """
     cfg_path = tmp_path / "config.toml"
     shutil.copy(REPO_ROOT / "config.example.toml", cfg_path)
-    return _load_config(cfg_path)
+    return cfg_path
+
+
+def load_example_config(tmp_path: Path) -> Config:
+    """`copy_example_config`, loaded. For helpers that cannot take a fixture
+    (the integration harness, a module-level driver); a test function takes
+    the `example_config` fixture instead."""
+    return _load_config(copy_example_config(tmp_path))

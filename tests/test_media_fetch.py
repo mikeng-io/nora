@@ -34,8 +34,8 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.vision import StickerInterpreter, VisionCache, VisionResult
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeMediaDescriptionStore
-from tests.fakes import FakeHoncho, SinkSender
+from nora.testing import FakeMediaDescriptionStore, FakeMemoryStore
+from tests.fakes import SinkSender
 from tests.test_doctrine_loader import write
 
 TARGET = ConversationTarget("signal", "g1", "group")
@@ -119,7 +119,7 @@ async def wiring(tmp_path, pg_url):
         )
         tools = build_tools(
             store=store, conversation_id="g1", conversation_type="group",
-            persons=persons, honcho=FakeHoncho(), deliverer=deliverer, metrics=metrics,
+            persons=persons, honcho=FakeMemoryStore(), deliverer=deliverer, metrics=metrics,
             room=room, transit_source=None,
             vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
             describe_models=describe_models,
@@ -350,32 +350,12 @@ async def test_a_durable_hit_still_runs_the_identifier_screen_on_serve(wiring):
     assert wiring["vision"].calls == 0
 
 
-class _RecordingDescriptionStore:
-    """A minimal `MediaDescriptionStore` stand-in that records the `model`
-    argument `remember` was called with. `FakeMediaDescriptionStore` doesn't
-    log it (nothing needed it before), so this exists to prove `media_fetch`
-    threads the REAL configured model name through rather than hardcoding
-    one or dropping it."""
-
-    def __init__(self) -> None:
-        self.remembered_models: list[str] = []
-
-    async def resolve(self, *, platform: str, token: str):
-        return None
-
-    async def describe(self, *, sha256: str):
-        return None
-
-    async def remember(self, *, platform, token, blob, description, model) -> None:
-        self.remembered_models.append(model)
-
-
 async def test_media_fetch_threads_the_real_model_name_not_a_hardcoded_one(wiring):
     """`aput`'s `model` must be whatever the registry's vision client is
     actually configured with — hardcoding it would silently mislabel every
     future model change in the durable `media_descriptions` row."""
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
-    descriptions = _RecordingDescriptionStore()
+    descriptions = FakeMediaDescriptionStore()
     cache = VisionCache(store=descriptions)
 
     tool = wiring["build"](vision_cache=cache,
