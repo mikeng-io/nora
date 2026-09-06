@@ -1124,6 +1124,74 @@ async def test_the_curator_is_scheduled_as_a_true_cron_daily(cfg):
 
     schedule = deps.dream_schedules["note-curation"]
     assert schedule.min_interval_seconds == 86400, "daily (design 33 §5)"
+    # The slot change gave every watermark-free daily adaptor a time of day.
+    # An unset offset is 00:00 UTC = 08:00 Asia/Hong_Kong, eight hours behind
+    # the local day boundary the test below argues is the one that matters.
+    # 16:00 UTC is HK midnight — pinned so it stays a choice, not a default.
+    assert schedule.phase_offset_seconds == 16 * 3600, "HK midnight, not 08:00"
+
+
+async def test_every_watermark_free_adaptor_that_is_wired_has_a_schedule(cfg):
+    """**The control that would have caught the bug this branch fixes.**
+
+    A watermark-free adaptor with no `dream_schedules` entry inherits the bare
+    5-minute tick. `fact-adjudication` and `fact-entity-resolution` did, for
+    eleven days, while `config.toml` claimed otherwise — and it was invisible
+    because both return `nothing_found` in ~0.4s on an empty queue, which is
+    what a healthy quiet tier looks like.
+
+    Asserting the two names is what the branch originally did and is not
+    enough: the next adaptor added would repeat it. This asserts the PROPERTY
+    over whatever is actually wired, so a new watermark-free adaptor either
+    gets a deliberate schedule or fails here.
+
+    A watermark-BEARING adaptor is exempt: it has a cursor to age, and no
+    entry means the shared `[language]` lag/quiet/age shape, which is a real
+    schedule rather than every-tick.
+    """
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "facts.enabled": True,
+        "notes.enabled": True,
+        "notes.curator_enabled": True,
+    }))
+
+    unscheduled = sorted(
+        a.name for a in deps.dream_adaptors
+        if not a.uses_watermark and a.name not in deps.dream_schedules
+    )
+    assert not unscheduled, (
+        "watermark-free adaptor(s) with no AdaptorSchedule — each one runs on "
+        f"the bare 5-minute tick: {unscheduled}"
+    )
+
+
+async def test_the_knowledge_tiers_three_passes_run_daily_at_distinct_phases(cfg):
+    """The ordering, which is the offsets and nothing else. `dream_loop`
+    dispatches adaptors CONCURRENTLY (design 33 §6 M6), so equal intervals
+    alone would leave the three coinciding every day and a claim extracted in
+    the morning would wait until tomorrow to be adjudicated.
+
+    `fact-candidates` is watermark-BEARING and has no slot to place — it fires
+    on `lag > 0` AND a 24h-old watermark — so only the two watermark-free
+    passes carry an offset, and they must not share one.
+    """
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "facts.enabled": True,
+    }))
+
+    adjudication = deps.dream_schedules["fact-adjudication"]
+    resolution = deps.dream_schedules["fact-entity-resolution"]
+
+    assert adjudication.min_interval_seconds == 86400
+    assert resolution.min_interval_seconds == 86400
+    assert adjudication.phase_offset_seconds == 6 * 3600
+    assert resolution.phase_offset_seconds == 7 * 3600
+    assert (
+        adjudication.phase_offset_seconds != resolution.phase_offset_seconds
+    ), "same offset collapses the two passes back onto one tick"
+    assert deps.dream_schedules["fact-candidates"].min_interval_seconds == 86400
 
 
 async def test_the_curator_reads_the_day_from_the_operators_timezone(cfg):

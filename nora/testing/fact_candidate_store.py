@@ -250,11 +250,21 @@ class InMemoryFactCandidateStore:
     async def pending(
         self, *, workspace: str, limit: int,
     ) -> tuple[FactCandidate, ...]:
-        """§5's filter, same drops and same order as
+        """§5's filter, same drop and same order as
         `SqlFactCandidateStore.pending` — including the deliberately
         unimplemented fourth rank (zero-tool-call candidates), which has no
         column here either. Raises nothing today because nothing here can
-        fail; it makes no never-raises promise, matching the port."""
+        fail; it makes no never-raises promise, matching the port.
+
+        **The one-off-unresolvable test moved from the filter to the sort on
+        2026-09-06**, mirroring the real store: as a drop it matched every
+        pending row in production and the tier could never write its first
+        fact. Keeping it here as a drop would be the fake being STRICTER than
+        the real store, which is the same class of divergence as the more
+        permissive one `InMemoryTurnVerdictStore` warns about — a contract
+        suite would go green against a double that still refuses what
+        Postgres now returns.
+        """
         if limit <= 0:
             return ()
         survivors = [
@@ -262,7 +272,6 @@ class InMemoryFactCandidateStore:
             if c.workspace == workspace
             and c.status == "pending"
             and not self._backed_by_a_live_fact(c)
-            and not (c.occurrence_count <= 1 and not self._subject_resolves(c))
         ]
         # The FOURTH key is not decoration. `list.sort` is stable, so this
         # double was deterministic while production was not — it returned
@@ -273,6 +282,14 @@ class InMemoryFactCandidateStore:
         survivors.sort(
             key=lambda c: (
                 0 if self._contradicts_a_live_fact(c) else 1,
+                1 if (c.occurrence_count <= 1
+                      and not self._subject_resolves(c)) else 0,
+                # `NULLS FIRST` as a sort key: never-attempted (None) sorts
+                # ahead of every real timestamp, then oldest attempt first.
+                # Mirrors `sa.nullsfirst(last_adjudicated_at.asc())` — the
+                # tail rotation, without which a candidate the model never
+                # mentions is re-selected every day forever.
+                (c.last_adjudicated_at is not None, c.last_adjudicated_at or 0),
                 -c.occurrence_count,
                 -c.last_seen_at,
                 c.id,

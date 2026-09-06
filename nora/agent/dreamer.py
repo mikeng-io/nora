@@ -155,21 +155,35 @@ class AdaptorSchedule:
     `min_interval_seconds` is the floor between runs, read two ways. A
     watermark-BEARING adaptor fires when there is unread backlog (`lag > 0`)
     AND the watermark row's `updated_at` is at least this old. A
-    watermark-FREE adaptor has no cursor to age, so it fires on elapsed time
-    alone — `now - last_fired >= min_interval_seconds`, no backlog required
-    (design/dreamer-agent-loop/33 §5 N1a), which is what lets a time-driven
-    cron fire in a silent room. `batch_limit` replaces the shared cap
+    watermark-FREE adaptor has no cursor to age, so it fires on its SLOT
+    alone — `floor((now - phase_offset) / min_interval_seconds)`, no backlog
+    required (design/dreamer-agent-loop/33 §5 N1a), which is what lets a
+    time-driven cron fire in a silent room. `batch_limit` replaces the shared cap
     for that adaptor's `record.since` read. `max_items` overrides the
     runtime's envelope cap (`MAX_ITEMS`) for that adaptor — a daily
     1000-message batch can legitimately yield more than 64 candidate claims,
     and the runtime DROPS past the cap while the watermark still advances, so
     the excess would be lost with no error and no re-run. `None` keeps the
     shared default.
+
+    `phase_offset_seconds` shifts a watermark-free adaptor's slot boundary,
+    and it exists because separating PERIODS is not separating PHASES. The
+    fact tier's three adaptors have a real data dependency — candidates write
+    the queue, adjudication drains it, entity resolution reads what
+    adjudication wrote — while `dream_loop` dispatches adaptors as CONCURRENT
+    tasks with no ordering (design/dreamer-agent-loop/33 §6 M6 states this and
+    declines to solve it for the note tier, which has no such dependency).
+    Give all three the same daily interval and they coincide every day; give
+    them the same interval at different offsets and a claim written in the
+    morning is adjudicated the same afternoon rather than tomorrow. Ignored
+    for a watermark-BEARING adaptor, whose fire time is set by its watermark's
+    `updated_at` and has no slot to shift.
     """
 
     min_interval_seconds: float
     batch_limit: int
     max_items: int | None = None
+    phase_offset_seconds: float = 0.0
 
 
 @dataclass(frozen=True)

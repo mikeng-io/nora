@@ -798,16 +798,57 @@ async def test_pending_keeps_a_candidate_whose_backing_fact_was_superseded(world
     assert [c.id for c in rows] == [ids[0]]
 
 
-async def test_pending_drops_an_unresolvable_subject_seen_once(world):
-    """§5's second drop: one-off noise. Seen once AND naming a subject no
-    `fact_entity` in the workspace knows."""
+async def test_pending_returns_an_unresolvable_subject_seen_once(world):
+    """§5's second rule, which was a DROP until 2026-09-06 and is now a RANK.
+
+    Seen once AND naming a subject no `fact_entity` knows is the weakest
+    candidate there is — but as a drop it matched EVERY pending row the tier
+    ever held (53/53 and 7/7, measured live), because an entity can only be
+    minted from a standing fact and a standing fact can only come from a
+    candidate that got past here. Nothing could enter, and the tier wrote one
+    fact in eleven days.
+
+    It must come back. Where it RANKS is the next test's job.
+    """
     store = world.store
-    await store.propose(
+    ids = await store.propose(
         key=WS, proposals=(_candidate(subject="who-even", object="v1"),),
         now_ms=NOW,
     )
 
-    assert await store.pending(workspace=WS, limit=10) == ()
+    rows = await store.pending(workspace=WS, limit=10)
+
+    assert [c.id for c in rows] == [ids[0]]
+
+
+async def test_pending_ranks_an_unresolvable_one_off_behind_a_resolvable_claim(
+    world,
+):
+    """The judgement §5 actually argued, kept as an ordering. A one-off claim
+    about a subject nothing else mentions IS the weakest candidate and is
+    adjudicated last; `max_adjudications_per_tick` is what bounds the cost,
+    which is what a cap is for and what a WHERE clause that can match every
+    row is not.
+
+    Falsification: delete the `sa.case` rank from `SqlFactCandidateStore.
+    pending`'s `order_by` (and its mirror in the double) and the two ids come
+    back in insertion or arbitrary order — this is the only test that pins
+    which of the two the tick's budget reaches first.
+    """
+    store = world.store
+    await world.seed_entity(canonical_name="known-thing")
+    weak = await store.propose(
+        key=WS, proposals=(_candidate(subject="who-even", object="v1"),),
+        now_ms=NOW,
+    )
+    strong = await store.propose(
+        key=WS, proposals=(_candidate(subject="known-thing", object="v2"),),
+        now_ms=NOW,
+    )
+
+    rows = await store.pending(workspace=WS, limit=10)
+
+    assert [c.id for c in rows] == [strong[0], weak[0]]
 
 
 async def test_pending_keeps_an_unresolvable_subject_seen_twice(world):

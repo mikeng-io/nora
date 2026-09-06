@@ -445,7 +445,17 @@ strict = true
 # transcript, workspace-supplied key path, read-only knowledge tools, and
 # asserted_by/asserted_at attribution. `[facts]` is enabled alongside, so the
 # knowledge tier's three adaptors (extraction, adjudication, entity
-# resolution) run on the daily schedule. `[language]` stays false.
+# resolution) run. `[language]` stays false.
+#
+# CORRECTED 2026-09-06: this comment said all three ran "on the daily
+# schedule", and only `fact-candidates` did. The other two are
+# `uses_watermark = False` with no schedule entry, which meant the bare
+# 5-minute tick — measured at 21 runs in 24 minutes across three workspaces.
+# All three are daily now, at different PHASES so the queue one writes is
+# drained the same day rather than the next (see `composition.py`'s
+# `dream_schedules`). Recorded rather than quietly edited because a comment
+# that misdescribes the deployed behaviour is how the wrong cadence went
+# eleven days without being questioned.
 enabled = true
 # The same model Nora runs. OPERATOR DECISION (2026-08-21), NOT a measurement
 # — and the distinction is stated because the earlier version of this comment

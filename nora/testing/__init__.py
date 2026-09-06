@@ -93,6 +93,7 @@ AgentRunner`, a stage-level `Protocol`, not one of `nora/domain/ports.py`'s
 ports — also exempt; see their docstrings.
 """
 
+from nora.testing.dream_schedule import InMemoryDreamScheduleClock
 from nora.testing.eval_backends import (
     BACKED_TOOLS,
     EVAL_CIRCLE_ID,
@@ -174,6 +175,7 @@ __all__ = [
     "FakeRosterSource",
     "FakeToolCallLogStore",
     "FakeTranscriber",
+    "InMemoryDreamScheduleClock",
     "InMemoryFactCandidateStore",
     "InMemoryFactStore",
     "InMemoryNoteStore",
