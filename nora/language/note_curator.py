@@ -587,16 +587,23 @@ class _Evidence:
     anchor_covered: bool
 
 
-#: The default for a note `_ground` must judge but `inputs` never gathered
-#: evidence for — every merge-group member whose merge is not offered/accepted
-#: this tick (see `_merged_away_ids`). Empty `message_ids` sends it straight
-#: into `_ground`'s existing `no_evidence` refusal, the same fail-closed
-#: outcome a real evidence read finding nothing produces — this is a stand-in
-#: for "never looked", not a new code path.
-_NO_EVIDENCE = _Evidence(
-    message_ids=frozenset(), has_anchor=False, anchor_passed=False,
-    anchor_covered=False,
-)
+def _no_evidence() -> _Evidence:
+    """The default for a note `_ground` must judge but `inputs` never gathered
+    evidence for — every merge-group member whose merge is not offered/accepted
+    this tick (see `_merged_away_ids`). Empty `message_ids` sends it straight
+    into `_ground`'s existing `no_evidence` refusal, the same fail-closed
+    outcome a real evidence read finding nothing produces — this is a stand-in
+    for "never looked", not a new code path.
+
+    A function, not a module-level constant: DEC-13 bans a module-level
+    instance of a locally-defined class (`test_no_module_level_mutable_
+    singletons.py`), and `_Evidence` is frozen but still local. A fresh
+    instance per call costs nothing measurable against one dict lookup.
+    """
+    return _Evidence(
+        message_ids=frozenset(), has_anchor=False, anchor_passed=False,
+        anchor_covered=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -1168,7 +1175,7 @@ class NoteCuratorAdaptor:
         if verdict == "open" or note_id in merged_away:
             return _Verdict(note_id=note_id, verdict=verdict, why=why, grounded=True)
 
-        evidence = shown.evidence.get(note_id, _NO_EVIDENCE)
+        evidence = shown.evidence.get(note_id, _no_evidence())
         if not evidence.message_ids:
             self._inc("nora_note_curator_dropped_total", reason="no_evidence")
             return _Verdict(note_id=note_id, verdict=verdict, why=why, grounded=False)
