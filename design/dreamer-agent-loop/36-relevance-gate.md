@@ -70,28 +70,55 @@ RELEVANCE GATE — ONE structured model call
 
 ## 2. The gate call
 
-### 2.1 Prompt
+### 2.1 Prompt — it is a doctrine file, not a constant
 
-```
-You are a relevance gate for a group-chat assistant. Decide whether THIS
-message deserves the assistant's attention.
+The gate's whole instruction is **`nora/doctrine/participation.md`**, read
+from the `DoctrineStore` at `applies_to: [relevance_gate]` — an audience no
+other file declares. `build_prompt` puts that text first, then the room's two
+untrusted blocks, then the JSON contract, which stays in CODE because the
+parser depends on it.
 
-Context (nothing else is available to you):
-- transcript: the last N messages in the room
-- standing: the assistant's own position in this conversation
+**Why a file and not a constant.** The doctrine directory is bind-mounted and
+hot-reloads on mtime, so the operator can tune the gate against live shadow
+verdicts without a rebuild — which is the difference between a soak that is a
+loop and a soak that is a queue. It is pinned in
+`tests/test_doctrine_version_parity.py` like every other authored file, so a
+silent edit to what the gate is told is impossible.
 
-Rules:
-- GO only if the message is a question the assistant can answer, a fact it
-  can correct, a commitment it made that is being followed up, or something
-  that specifically needs it.
-- NO-GO for: status updates, acknowledgements, small talk that needs no
-  answer, private exchanges, inside jokes, commands for other services, and
-  anything the assistant cannot add grounded value to.
-- Do not suggest what the assistant would say. You only decide relevance.
+**A new `kind: instrument`.** The other three kinds describe NORA, and every
+rule scoped by kind assumes a reader with judgement, memory and tools. This
+file describes a MEASUREMENT with none of those, and has to name its own
+output values (`no_go`) — which the tool-name gate rejects for `identity` and
+`conduct` files, correctly, for them.
 
-Respond with JSON only:
-{"verdict": "go" | "no_go", "relevance_score": 0.0}
-```
+**Isolation runs both ways and is tested both ways**
+(`tests/test_doctrine_audiences.py`): her doctrine never reaches the gate —
+the superseded design injected all of it, and the trace that killed that
+design showed the determination opening a weather tool — and this file never
+reaches her, because a document about when she is worth listening to is not
+doctrine.
+
+**The criteria are her capability surface, not a distillation of her
+character.** Doctrine is a portrait: positions that generate behaviour,
+deliberately not lists, because she has to handle anything. An instrument
+needs a CLOSED SET. So the file enumerates the five things she can actually
+supply — a world fact she can look up, where someone is or has been,
+something the room settled and forgot, a commitment she made, a reminder or
+gathering she holds — and everything else is `no_go`.
+
+**That list is grounded in the live rooms** (measured 2026-09-07). Across
+2,100 human messages in three rooms, 257 real questions were put to the room
+and **15 went unanswered**. Fourteen of the fifteen were the members asking
+each other about themselves — 今晚有咩部署, 你哋尋晚 big walk, 有冇人電話就完約
+— which she cannot know, and `constraints.md` says why: *"you know the people
+in this conversation, nobody else"*. One was 深水埗而家幾多度.
+
+Two things follow, and they are the reason this section exists. A gate
+admitting on *"there is a hanging question"* would be **wrong 14 times out of
+15** — which is what the first prompt would have done. And the expected
+admission rate is **roughly one a week in the busiest room**: if the shadow
+soak shows materially more than that, the gate is wrong, and that is a number
+to check BEFORE the flip rather than a feeling about it afterwards.
 
 ### 2.1b R-13 applies here, and the first implementation dropped it
 
@@ -347,12 +374,24 @@ retained unchanged. It is four mechanisms, not one:
 `voice.md`, `conduct.md`, `constraints.md`. Exactly one parameter differs:
 `tool_choice`.
 
-`participation-conduct.md` (`applies_to: [participation]`) is one extra page
-that exists only for this occasion — it does not replace a persona, it adds
-the rule the tag path cannot state: *"You were not called… You have the right
-not to reply… Silence is a complete answer here, and a success."* It is needed
-because `silence.md`'s tag-path text («you never reply to a message that didn't
-call you») would otherwise instruct this turn to be permanently silent.
+`participation-conduct.md` was DELETED (2026-09-07). Nothing had ever read
+it — the path is off and every participation metric has zero samples. Three of
+its four rules were already stated in `silence.md` and `constraints.md`. Its
+one unique rule, *"do not open tools to answer a question nobody asked"*, was
+a workaround for the superseded design where the TURN was the determination
+and a tool call meant she was researching whether to bother. With the gate
+deciding admission that rule is actively wrong: the gate admits BECAUSE the
+room asked for the weather, so she must be allowed to fetch it. Deleting it
+also resolved a contradiction — `conduct.md` telling her to check every fact
+she does not hold, at the same authority rung as that file telling her not to.
+
+**A consequence worth reading:** it was the only file that differed between
+the tag and participation doctrine assemblies, which are now byte-identical.
+The occasion distinction no longer lives in doctrine at all — it lives in
+`_participation_header`, the situation paragraph she reads first.
+`test_the_participation_turn_reads_the_may_speak_doctrine` asserts the
+EQUALITY with that reason written out, so a later participation-only file
+makes it fail and somebody has to come back and re-read it.
 
 ## 8. Decisions (locked by Miles)
 
@@ -367,9 +406,15 @@ call you») would otherwise instruct this turn to be permanently silent.
    original sender, and let her still choose silence. That is precisely the
    participation occasion. **This holds unless** a narrower engage path is
    built for ambient speech, at which point GO admits to that instead.
-4. **Sender identity is load-bearing** (2026-09-06): platform,
-   conversation_id, sender_id, person_id all preserved, or the peer-card
-   inject resolves the wrong person.
+4. **RETRACTED 2026-09-07.** This said GO preserves `sender_id`/`person_id`
+   "so the peer-card inject resolves the right person". `participation_occasion`
+   passes `person_id=None` and a participation turn has never injected a peer
+   card — the decision was re-affirmed over machinery that structurally has
+   none, which is the doc bent to fit the code. The operator's ruling: what the
+   TURN is given is not the gate's scope. `conversation_id` and `platform` are
+   of course preserved (the turn happens in that room); nothing else is
+   claimed. **This holds unless** somebody deliberately builds the carrier,
+   which is its own change with its own decision.
 5. **Score is reference only, never enforcement** (2026-09-06): it rides into
    the turn as context and shows in the shadow post. The verdict is the only
    gate.
@@ -401,11 +446,14 @@ under-scoped it in one direction and over-scoped it in another. Corrected:
 - R-1 clause 2 and its named test — the gate IS "the participation occasion's
   gating" the rule already names.
 - R-1b — two caller modules, still two (§4.1 is what keeps that true).
-- R-14's `constraints.md` revision, the participation doctrine audience across
-  six files, `participation-conduct.md`.
+- R-14's `constraints.md` revision and the participation doctrine audience.
+  (`participation-conduct.md` itself is GONE — see §7. The audience survives on
+  the five remaining files, and now resolves to the same assembly as `tag`.)
 - DEC-155, the participation metrics family, the slot/cooldown policy.
 
 **What is added**:
+- `nora/doctrine/participation.md`, the gate's instruction, on its own
+  audience and its own `kind: instrument` (§2.1).
 - `[relevance_gate]` config block: `enabled` (false), `model`
   (`nora-gate`), `shadow` (true), `shadow_channel`, `shadow_platform`,
   `max_tokens` (measured). `settle_seconds` and `cooldown_minutes` stay in
