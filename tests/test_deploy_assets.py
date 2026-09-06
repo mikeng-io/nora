@@ -117,3 +117,33 @@ def test_the_baseline_revision_is_on_disk_where_alembic_looks():
 
 def test_the_dockerfile_copies_alembic_ini():
     assert "alembic.ini" in (ROOT / "Dockerfile").read_text()
+
+
+def test_compose_passes_every_search_backend_key_into_the_container():
+    """DEC-157 claims flipping `[search] provider` is a CONFIG change and not a
+    compose change. That is only true if BOTH backends' keys are passed.
+
+    This is a gate earned the hard way, 2026-09-06: the Exa switch was one step
+    from deploying with `EXA_API_KEY` present in `.env`, named correctly by
+    `[search.exa] api_key_env`, and never passed through compose. Compose does
+    not inherit host `.env` values into a service, so the container would have
+    seen nothing — Nora logs «search enabled on provider exa but EXA_API_KEY is
+    unset» once at startup and then answers `unavailable` to every `web_search`
+    and `web_fetch`, forever, with a green test suite and a healthy container.
+
+    The failure is invisible in exactly the way R-27 exists to make impossible:
+    honest at the tool boundary («I couldn't check»), and silent everywhere a
+    human would look.
+    """
+    compose = (ROOT / "docker-compose.yml").read_text()
+    nora_service = compose[compose.index("\n  nora:"):]
+    from nora.config import ExaBackendConfig, TavilyBackendConfig
+
+    for backend in (TavilyBackendConfig(), ExaBackendConfig()):
+        var = backend.api_key_env
+        assert f"- {var}=${{{var}:-}}" in nora_service, (
+            f"{var} is named by a [search.*] api_key_env but is not passed into "
+            f"the nora service in docker-compose.yml. The key being in .env is "
+            f"not enough — compose does not inherit host .env into a service, so "
+            f"selecting that backend would answer `unavailable` on every call."
+        )

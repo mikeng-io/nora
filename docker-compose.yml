@@ -218,8 +218,15 @@ services:
       #   instead, so there's one bearer value for the whole mint/register
       #   path, not two names for what has to be the same shared secret).
       - NORA_DROP_TOKEN=${NORA_DROP_TOKEN:-}
-      #   TAVILY_API_KEY        — the `web_search` tool (Tavily, DEC-73)
+      #   TAVILY_API_KEY / EXA_API_KEY — the `web_search`/`web_fetch` tools.
+      #   BOTH are passed and only the one named by `[search.<provider>]
+      #   api_key_env` is ever read (DEC-157), so flipping `[search] provider`
+      #   is a config change and not a compose change. Compose does NOT inherit
+      #   host .env values into a service, so a key absent here is invisible to
+      #   Nora however present it is in .env — she logs "search enabled on
+      #   provider X but Y is unset" and answers `unavailable` forever.
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - EXA_API_KEY=${EXA_API_KEY:-}
       #   GIPHY_API_KEY         — described reaction GIF search and download.
       #   Unset means GIF tools are unavailable; it must be explicitly passed
       #   because Compose does not inherit host .env values into a service.
