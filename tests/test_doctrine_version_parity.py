@@ -50,7 +50,7 @@ PINNED: dict[str, tuple[int, str]] = {
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     "participation": (
-        1, "PLACEHOLDER",
+        2, "c011b18328580246a6170166e23e4b06ff80d03dda1f30ca9095d268fd3f0a80",
     ),
     "constraints": (6, "1a814c41a079067b2143ee1b4417a9b9a85ca8922f3082120f3c29494fd3dc43"),
 }
