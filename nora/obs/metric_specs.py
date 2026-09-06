@@ -74,8 +74,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_silent_failures_total",
         "Failures kept silent from the group, by reason and by which path was "
         "speaking (audience=\"tag\" | \"heartbeat\" | \"participation\" | "
-        "\"participation-shadow\" — the §10.6 mirror, whose failures are "
-        "operator-review traffic, never room speech).",
+        "\"participation-shadow\" — the §10.6 mirror — | "
+        "\"relevance-gate-shadow\" — the Relevance Gate's review post, which "
+        "has no turn behind it at all. Both shadow audiences are "
+        "operator-review traffic, never room speech, and a refusal under "
+        "either means the reviewer is missing a determination they are "
+        "tuning the flip on: read them against "
+        "nora_errors_total{stage=\"participation_shadow\"} and "
+        "{stage=\"relevance_gate_shadow\"}, which now move on a guard "
+        "REFUSAL as well as on an exception).",
         # `audience` is the ONE label the heartbeat adds to an existing series
         # (design spec §6.2, §13), and it is added rather than the fire path
         # getting its own silent-failure series, because isolation-by-omission

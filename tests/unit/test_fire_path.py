@@ -295,6 +295,8 @@ def _fire_path(
     participation_runner=None,
     shadow_channel: str | None = None,
     shadow_platform: str = "discord",
+    gate_shadow_channel: str | None = None,
+    gate_shadow_platform: str = "discord",
     timeout_seconds: float = 5.0,
     event_registry: dict | None = None,
     standing=None,
@@ -318,6 +320,8 @@ def _fire_path(
         limits=LIMITS, timeout_seconds=timeout_seconds, clock=lambda: T0,
         participation_runner=participation_runner,
         shadow_channel=shadow_channel, shadow_platform=shadow_platform,
+        gate_shadow_channel=gate_shadow_channel,
+        gate_shadow_platform=gate_shadow_platform,
         **extra,
     )
 
@@ -1700,3 +1704,140 @@ async def test_a_failed_fire_turn_still_says_so_on_its_root(
     [root] = [s for s in fire_spans.get_finished_spans() if s.parent is None]
     assert root.name == "reminder"
     assert root.attributes["nora.outcome"] == fire_module.FAILED_ERROR
+# ---------------------------------------------------------------------------
+# The Relevance Gate's review post (design/dreamer-agent-loop/36 §4)
+# ---------------------------------------------------------------------------
+
+
+def _gate_path(
+    *, doctrine_store, persons: Persons, metrics: Metrics,
+    room: _FireAdapter, shadow: _FireAdapter | None,
+    records: FakeRecordStore | None = None,
+    channel: str | None = "review-1",
+) -> FirePath:
+    adapters: dict[str, _FireAdapter] = {"signal": room}
+    if shadow is not None:
+        adapters["discord"] = shadow
+    return _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapters=adapters, runner=FakeAgentRunner([]), records=records,
+        gate_shadow_channel=channel,
+    )
+
+
+async def test_the_gate_review_post_goes_to_the_review_channel_not_the_room(
+    persons: Persons, doctrine_store, metrics: Metrics,
+    record_store: FakeRecordStore,
+) -> None:
+    """The property shadow mode exists for, and it had NO test: Nora is never
+    involved and the ROOM HEARS NOTHING.
+
+    Retargeting `post_gate_verdict` from the shadow channel to the source
+    room passed the entire suite before this existed — so "shadow cannot
+    cause a room-visible send" was an unpinned claim on the one path where
+    being wrong means speaking uninvited into somebody's group.
+    """
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    await record_store.append(message=_inbound("conv-1", "邊度有好嘢食"))
+    path = _gate_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow, records=record_store,
+    )
+
+    await path.post_gate_verdict(
+        platform="signal", conversation_id="conv-1", score=0.81,
+    )
+
+    assert room.texts == [], "the room heard the gate — shadow is not shadow"
+    assert len(shadow.sent) == 1
+    target, post = shadow.sent[0]
+    assert (target.platform, target.conversation_id) == ("discord", "review-1")
+    assert "signal/conv-1" in post          # which room
+    assert "邊度有好嘢食" in post             # what was said
+    assert "go" in post                     # the verdict
+    assert "0.81" in post                   # the score
+
+
+async def test_an_absent_score_renders_a_dash_and_never_a_fabricated_zero(
+    persons: Persons, doctrine_store, metrics: Metrics,
+    record_store: FakeRecordStore,
+) -> None:
+    """The operator tunes the threshold on that column. `0.00` where the model
+    gave no number reads as a weak admission that never happened."""
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    await record_store.append(message=_inbound("conv-1", "hi"))
+    path = _gate_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow, records=record_store,
+    )
+
+    await path.post_gate_verdict(
+        platform="signal", conversation_id="conv-1", score=None,
+    )
+
+    _target, post = shadow.sent[0]
+    assert post.endswith("— go — —")
+    assert "0.00" not in post
+
+
+async def test_a_guard_refused_review_post_is_counted_not_silently_dropped(
+    persons: Persons, doctrine_store, metrics: Metrics,
+    record_store: FakeRecordStore,
+) -> None:
+    """`Deliverer.deliver` RETURNS False on an R-18 refusal; it does not raise.
+
+    So the `except Exception` around the post never sees one, and before this
+    test the refusal vanished while `nora_relevance_gate_total{verdict="go"}`
+    had already counted the GO — the operator tunes the flip on a review
+    stream with invisible holes in it. A message quoting a phone number is
+    enough to open one.
+    """
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    await record_store.append(message=_inbound("conv-1", "call me on +85298765432"))
+    path = _gate_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow, records=record_store,
+    )
+
+    await path.post_gate_verdict(
+        platform="signal", conversation_id="conv-1", score=0.9,
+    )
+
+    assert shadow.sent == [], "R-18 should have refused this post"
+    assert metrics.get(
+        "nora_errors_total", stage="relevance_gate_shadow", platform="signal",
+    ) == 1
+
+
+async def test_no_review_channel_wired_posts_nothing_and_raises_nothing(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """Shadow off. The poster is simply not wired in that case, but the
+    method must stay inert rather than fault the trigger's loop."""
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    path = _gate_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow, channel=None,
+    )
+    await path.post_gate_verdict(
+        platform="signal", conversation_id="conv-1", score=0.5,
+    )
+    assert shadow.sent == [] and room.texts == []
+
+
+async def test_a_missing_review_adapter_fails_soft_and_is_counted(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """Review traffic must never break the path it reviews — here that means
+    a failed post must not stop the NEXT window being judged."""
+    room = _FireAdapter()
+    path = _gate_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=None,
+    )
+    await path.post_gate_verdict(
+        platform="signal", conversation_id="conv-1", score=0.5,
+    )
+    assert metrics.get(
+        "nora_errors_total", stage="relevance_gate_shadow", platform="signal",
+    ) == 1

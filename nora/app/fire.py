@@ -1530,7 +1530,7 @@ class FirePath:
                 # all, so holding the mirror too would hide exactly that case.
                 send_permitted=True,
             )
-            await handle.deliverer.deliver(
+            mirrored = await handle.deliverer.deliver(
                 _mirror_text(
                     occasion, ctx, verdict=verdict, texts=texts, held=held,
                     stop_reason=stop_reason,
@@ -1542,6 +1542,19 @@ class FirePath:
                 ),
                 source="shadow",
             )
+            if not mirrored:
+                # Pre-existing hole, same shape as the gate mirror's below and
+                # fixed in the same commit: a guard REFUSAL returns False
+                # rather than raising, so this stage counted zero errors while
+                # dropping determinations the operator was waiting to review.
+                log.error(
+                    "participation shadow mirror REFUSED by a guard (tag=%s)",
+                    ctx.tag_id,
+                )
+                self._metrics.inc(
+                    "nora_errors_total", stage="participation_shadow",
+                    platform=occasion.platform,
+                )
         except Exception:
             log.exception("participation shadow mirror failed (tag=%s)", ctx.tag_id)
             self._metrics.inc(
@@ -1550,7 +1563,7 @@ class FirePath:
             )
 
     async def post_gate_verdict(
-        self, *, platform: str, conversation_id: str, score: float,
+        self, *, platform: str, conversation_id: str, score: float | None,
     ) -> None:
         """Post ONE Relevance Gate GO verdict to the review channel
         (design/dreamer-agent-loop/36 §4). No turn ran and none will — in
@@ -1611,12 +1624,30 @@ class FirePath:
                 tool_call_log_store=self._tool_call_log_store,
                 send_permitted=True,
             )
-            await handle.deliverer.deliver(
+            posted = await handle.deliverer.deliver(
                 await self._gate_verdict_text(
                     platform=platform, conversation_id=conversation_id, score=score,
                 ),
                 source="shadow",
             )
+            if not posted:
+                # `Deliverer.deliver` RETURNS False on an R-2/R-4/R-6/R-18
+                # refusal; it does not raise, so the `except` below never sees
+                # one. Unchecked, a review post refused by the egress screen —
+                # say, because the quoted message contains a phone number —
+                # vanished while `nora_relevance_gate_total{verdict="go"}` had
+                # already counted it. The operator then tunes the flip on a
+                # GO stream with invisible holes in it, which is the one
+                # reading shadow mode exists to provide.
+                log.error(
+                    "relevance gate shadow post REFUSED by a guard (%s/%s) — "
+                    "the review channel is missing this GO",
+                    platform, conversation_id,
+                )
+                self._metrics.inc(
+                    "nora_errors_total", stage="relevance_gate_shadow",
+                    platform=platform,
+                )
         except Exception:
             log.exception(
                 "relevance gate shadow post failed (%s/%s)", platform, conversation_id,
@@ -1626,7 +1657,7 @@ class FirePath:
             )
 
     async def _gate_verdict_text(
-        self, *, platform: str, conversation_id: str, score: float,
+        self, *, platform: str, conversation_id: str, score: float | None,
     ) -> str:
         """The review post: which room, what was said last, the verdict, the
         score — the four fields the operator asked for.
@@ -1651,20 +1682,36 @@ class FirePath:
         )
         last = "(transcript unavailable)"
         try:
-            raw = await self._records.recent(conversation_id=conversation_id, limit=1)
+            # A few rows, not one: `recent` takes the newest `limit` but
+            # returns them oldest-first, and the newest row can have an empty
+            # body (an attachment, a reaction). Scanning back from the newest
+            # finds the last thing anyone actually SAID, which is what a
+            # reviewer needs beside the verdict.
+            raw = await self._records.recent(conversation_id=conversation_id, limit=5)
         except Exception:
             log.exception("relevance gate shadow transcript read failed")
         else:
             named = self._persons.name_transcript(tuple(raw), platform=platform)
-            for row in named:
+            for row in reversed(named):
                 body = (row.body or "").strip()
                 if body:
-                    who = row.sender_name or row.sender_id
+                    # `person_name or sender_name or "unknown"` — the canonical
+                    # order (DEC-80, `prefill._label`). This line read
+                    # `sender_name or sender_id`, which threw away the
+                    # projection computed one line above AND put a raw ACI or
+                    # E.164 into a delivered message: R-18 then refused the
+                    # whole post at the Deliverer, so unmapped senders' GO
+                    # verdicts silently never reached the review channel.
+                    who = row.person_name or row.sender_name or "unknown"
                     last = f"{who}: {body}"
                     break
             else:
                 last = "(no message)"
-        return f"{room} — {last} — go — {score:.2f}"
+        # An ABSENT score renders as "—", never as 0.00: the operator tunes
+        # the threshold on this column, and a fabricated zero reads as a weak
+        # admission where the model simply gave no number.
+        shown = f"{score:.2f}" if score is not None else "—"
+        return f"{room} — {last} — go — {shown}"
 
     async def _feed(
         self, sent_texts: Sequence[str], conversation_id: str, platform: str,

@@ -385,3 +385,75 @@ async def test_a_window_the_slot_skips_is_never_even_judged():
         with contextlib.suppress(Exception):
             slots.release_and_dispatch(("signal", "g1"))
     assert gate.asked == [] and speak.calls == []
+
+
+async def test_the_slot_is_held_across_the_gate_call_not_just_before_it():
+    """The duration, not the ordering — and the ordering test above passes
+    either way.
+
+    This is the property that makes the gate's own timeout argument mean
+    anything: `_RelevanceGateModelClient`'s docstring justifies its
+    `asyncio.wait_for` with "this call runs while the conversation's slot is
+    HELD, so an unbounded one is not a slow background job, it is a room that
+    stops answering". If the slot were released around the model call, a tag
+    could take it mid-gate and the gate would then run a turn on a
+    conversation that has already moved on — exactly the re-answer R-30
+    exists to prevent.
+    """
+    slots = ConversationSlots(maxlen=1, spawn=lambda coro: None)
+    seen: list[bool] = []
+
+    class _WatchingGate(_Gate):
+        async def decide(self, *, platform: str, conversation_id: str):
+            seen.append(slots.held((platform, conversation_id)))
+            return await super().decide(
+                platform=platform, conversation_id=conversation_id,
+            )
+
+    speak, clock = _Speak(), _Clock()
+    trigger = ParticipationTrigger(
+        speak=speak, slots=slots, settle_seconds=SETTLE,
+        cooldown_seconds=COOLDOWN, clock=clock, gate=_WatchingGate(admits=True),
+    )
+    trigger.note_message(_msg())
+    clock.now += SETTLE
+    await trigger.close_due_windows()
+
+    assert seen == [True], "the slot was not held while the gate was deciding"
+    assert not slots.held(("signal", "g1")), "and it must be released after"
+
+
+async def test_a_declined_window_is_closed_and_never_re_judged():
+    """A no_go must burn the watermark. Re-opening the window would make one
+    quiet burst cost a gate call every tick until somebody spoke again — and
+    the send cooldown, which only the SEND path spends, would not cap it."""
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=False)
+    trigger = _gated(speak, clock, gate)
+    trigger.note_message(_msg())
+    clock.now += SETTLE
+
+    assert await trigger.close_due_windows() == 1
+    assert await trigger.close_due_windows() == 0
+    assert len(gate.asked) == 1
+
+
+async def test_a_declined_window_does_not_spend_the_send_cooldown():
+    """Nothing reached the room, so the next GO must still be allowed to
+    speak. Spending the cooldown on a window nobody heard would silently
+    halve the live path's voice."""
+    speak, clock = _Speak(), _Clock()
+    gate = _Gate(admits=False)
+    trigger = _gated(speak, clock, gate)
+    trigger.note_message(_msg())
+    clock.now += SETTLE
+    await trigger.close_due_windows()
+
+    gate._admits = True
+    clock.now += 1
+    trigger.note_message(_msg())
+    clock.now += SETTLE
+    await trigger.close_due_windows()
+
+    assert len(speak.calls) == 1
+    _occasion, permitted = speak.calls[0]
+    assert permitted is True, "the declined window burned the cooldown"

@@ -151,7 +151,7 @@ class ParticipationTrigger:
                     # higher than the live path could ever produce.
                     await self._gate_shadow(
                         platform=platform, conversation_id=conversation_id,
-                        score=score if score is not None else 0.0,
+                        score=score,
                     )
                     continue
                 send_permitted = (

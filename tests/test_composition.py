@@ -417,8 +417,14 @@ async def test_the_participation_trigger_is_wired_to_the_real_fire_path(cfg):
         "design 36 exists to stop paying"
     )
 
+    # `shadow_channel` is set because the shipped default is `shadow = true`
+    # and `_shadow_needs_a_channel` refuses that combination without one.
+    # `override_config` uses `model_copy`, which does NOT re-run validators,
+    # so a test can silently assert against a config that would refuse to
+    # start — this one deliberately does not.
     on = override_config(cfg, {
         "participation.enabled": True, "relevance_gate.enabled": True,
+        "relevance_gate.shadow_channel": "999",
     })
     deps = await build_dependencies(on)
     try:
@@ -429,6 +435,40 @@ async def test_the_participation_trigger_is_wired_to_the_real_fire_path(cfg):
         runner = fire._participation_runner
         assert runner is not None
         assert runner._models._spec.tool_choice == tool_choice.AFTER_SPEAKING
+
+        # The gate itself, and the shadow poster. Without these two the pin
+        # above still passes while the composition root builds the WORST
+        # state this branch can produce: no admission call at all, shadow
+        # off, and every quiescence-closed window running a live turn
+        # straight into the room. Setting `gate=None`/`gate_shadow=None` in
+        # composition.py left all 65 tests in this file green.
+        assert trigger._gate is not None, (
+            "no gate wired: every closed window would run a full turn"
+        )
+        assert trigger._gate._client.model == on.relevance_gate.model
+        assert trigger._gate._persons is not None, (
+            "no Persons: every speaker label falls back to the platform "
+            "profile name (DEC-80's two-name-space bug)"
+        )
+        assert trigger._gate_shadow is not None, (
+            "shadow ships ON: without the poster a GO speaks into the room"
+        )
+        assert trigger._gate_shadow.__self__ is fire
+        assert fire._gate_shadow_channel == on.relevance_gate.shadow_channel
+    finally:
+        await deps.background.cancel_all()
+
+
+async def test_the_gate_is_not_wired_when_the_gate_is_off(cfg):
+    """`[participation] enabled` alone must build no gate AND no trigger —
+    and the composition root says so loudly rather than sitting inert, which
+    is the converse of `_the_gate_needs_something_behind_it` and cannot live
+    in that validator (a turn with no gate is a legal config that simply does
+    nothing)."""
+    on = override_config(cfg, {"participation.enabled": True})
+    deps = await build_dependencies(on)
+    try:
+        assert deps.participation_trigger is None
     finally:
         await deps.background.cancel_all()
 

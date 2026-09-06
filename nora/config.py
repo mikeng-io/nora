@@ -435,14 +435,17 @@ class RelevanceGateConfig(BaseModel):
 
     enabled: bool = False
     model: str = "nora-gate"
-    # DECLARED, never inherited from the provider's default — and this one was
-    # measured going wrong. The first version of this class passed no
-    # reasoning_effort at all, and the gate's own measurement caught it: a
-    # 44-character verdict billed 251 completion tokens, ~236 of them the
-    # model thinking on a call whose entire purpose is to be cheaper than the
-    # turn behind it. `_DebriefModelClient` had already written the lesson
-    # down ("the fold ran at whatever the route happened to do"); this is the
-    # same omission one lane over.
+    # DECLARED, never inherited from the route's default — the same rule
+    # `_DebriefModelClient` carries, written after the Standing fold spent a
+    # deployment running "at whatever the route happened to do".
+    #
+    # It PINS behaviour; it does not currently save tokens, and an earlier
+    # version of this comment claimed otherwise off a measurement of a
+    # DIFFERENT model. Measured both ways on `nora-gate` (n=4): with the flag
+    # and without it the combo returned identical numbers (1,042 / 133 /
+    # 1,175), so its members already reason none today. That is exactly why
+    # the declaration is worth having — "today" is a property of the combo's
+    # membership, which an operator can change without touching this file.
     #
     # `none` is the shipped value because the gate is a classifier with a
     # fixed two-value output. Narrowed to the provider's closed set at

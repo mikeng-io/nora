@@ -206,12 +206,16 @@ class _RelevanceGateModelClient:
     answering.
 
     `reasoning_effort` IS passed, and the first version of this class did not
-    pass it — which the gate's own measurement then caught: a 44-character
-    verdict billed 251 completion tokens because the route reasoned by
-    default. `_DebriefModelClient` above carries the identical note for the
-    identical omission. Shipped `none`: the gate is one classification with a
-    fixed two-value output, and thinking tokens on it are spent on the one
-    call whose whole purpose is to be cheaper than the turn behind it.
+    pass it at all — `_DebriefModelClient` above carries the identical note
+    for the identical omission, and the argument is the same: a setting left
+    to the route is a setting nobody chose.
+
+    It PINS rather than saves. Measured both ways on `nora-gate` (n=4): with
+    the flag and without it the combo returned identical numbers, so its
+    members already reason none today — and "today" is a property of the
+    combo's membership, which an operator can change without touching this
+    class. Shipped `none` because the gate is one classification with a fixed
+    two-value output.
     """
 
     def __init__(
@@ -2132,6 +2136,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             ),
             records=audit,
             metrics=metrics,
+            # DEC-80's projection, the SAME `Persons` the fire path and the
+            # tag path use. Without it `person_name` is None on every row and
+            # the gate labels speakers by their self-set platform profile
+            # name — the two-name-space bug, on the one call that reads every
+            # opted-in room.
+            persons=persons,
             # The SAME standing store the fire path reads (`None` while
             # `[standing] enabled = false`), so the gate and the turn behind
             # it see one room and not two.
@@ -2153,6 +2163,23 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             gate_shadow=(
                 fire_path.post_gate_verdict if cfg.relevance_gate.shadow else None
             ),
+        )
+    elif cfg.participation.enabled:
+        # The CONVERSE of `_the_gate_needs_something_behind_it` (nora/config.py),
+        # and it cannot live there: that validator refuses a gate with no turn
+        # behind it, which is a config error. This is a turn with no gate in
+        # FRONT of it, which is a legal config that simply does nothing — the
+        # room policy and the trigger both moved onto `[relevance_gate]
+        # enabled` in design 36, so participation alone now notes no message,
+        # closes no window and runs no turn. Loud rather than inert: design
+        # 35's own marker still says the occasion is "live and running", so an
+        # operator reading it would have no other way to learn this.
+        log.error(
+            "participation.enabled = true but relevance_gate.enabled = false — "
+            "NOTHING will happen: since design/dreamer-agent-loop/36 the "
+            "quiescence trigger and the room policy are the gate's, so with the "
+            "gate off no window is ever noted, judged or turned into a turn. "
+            "Set [relevance_gate] enabled = true (it ships in shadow mode)."
         )
     elif cfg.relevance_gate.enabled:
         # Reachable only if the fire-path gate above stopped including

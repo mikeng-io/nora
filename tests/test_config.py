@@ -1010,6 +1010,66 @@ def test_shadow_mode_requires_a_channel(toml_path):
         load(toml_path)
 
 
+def test_the_relevance_gate_ships_inert(toml_path):
+    """design/dreamer-agent-loop/36: OFF, and in review mode when on."""
+    cfg = load(toml_path)
+    assert cfg.relevance_gate.enabled is False
+    assert cfg.relevance_gate.model == "nora-gate"
+    assert cfg.relevance_gate.reasoning_effort == "none"
+    assert cfg.relevance_gate.max_tokens == 512
+    assert cfg.relevance_gate.transcript_rows == 40
+    # Shadow is the shipped POSTURE, unlike [participation]'s: a deployment
+    # that turns the gate on without thinking about review gets review, not
+    # live admission.
+    assert cfg.relevance_gate.shadow is True
+    assert cfg.relevance_gate.shadow_channel == ""
+
+
+def test_the_gate_shadow_requires_a_channel_once_the_gate_is_on(toml_path):
+    """A review surface with nowhere to post would fail soft on every GO —
+    the silent-instrumentation shape R-5 forbids. Gated on `enabled` as well
+    as `shadow`, unlike [participation]'s otherwise identical check, because
+    `shadow` DEFAULTS true here and the unconfigured instance would otherwise
+    refuse at import time."""
+    text = toml_path.read_text()
+    start = text.index("\n[relevance_gate]")
+    end = text.index("\n[engagement]")
+    toml_path.write_text(
+        text[:start]
+        + "\n[relevance_gate]\nenabled = true\nshadow = true\n"
+        + text[end:]
+    )
+    with pytest.raises(Exception, match="shadow_channel"):
+        load(toml_path)
+
+
+def test_the_gate_refuses_to_start_with_no_turn_behind_it(toml_path):
+    """The cross-section refusal, and the reason it must be a refusal rather
+    than a log: the failure it prevents is INVISIBLE. With the gate on and
+    `[participation] enabled = false`, every window is judged and every GO is
+    counted while the room hears nothing — which reads exactly like a gate
+    correctly declining. Design 36's first draft shipped this bug in prose."""
+    text = toml_path.read_text()
+    start = text.index("\n[relevance_gate]")
+    end = text.index("\n[engagement]")
+    toml_path.write_text(
+        text[:start]
+        + '\n[relevance_gate]\nenabled = true\nshadow = false\n'
+        + text[end:]
+    )
+    with pytest.raises(Exception, match="participation"):
+        load(toml_path)
+
+
+def test_an_unknown_reasoning_effort_refuses_to_start():
+    """Narrowed at composition, so a typo cannot reach the provider and come
+    back a 400 on the first window that closes."""
+    from nora.app.composition import _reasoning_effort
+    assert _reasoning_effort("none", source="x") == "none"
+    with pytest.raises(Exception, match="reasoning effort"):
+        _reasoning_effort("nope", source="[relevance_gate] reasoning_effort")
+
+
 def test_a_standing_cap_above_the_database_ceiling_refuses_to_start(toml_path):
     """**The startup refusal, not a runtime one.** `max_chars` is a knob and
     `standing_body_fits_the_ceiling_check` is DDL that cannot be one, so a

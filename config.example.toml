@@ -290,11 +290,11 @@ enabled = false
 # about request features, which on a fail-closed gate reads as a quiet room
 # rather than as an outage.
 model = "nora-gate"
-# DECLARED, not left to the route's default — and this one was MEASURED going
-# wrong: with nothing passed, a 44-character verdict billed 251 completion
-# tokens because the provider reasoned anyway. The gate is a two-value
-# classifier; thinking tokens here are spent on the one call whose whole
-# purpose is to be cheaper than the turn behind it.
+# DECLARED, not left to the route's default. It PINS behaviour rather than
+# saving tokens: measured both ways on nora-gate (n=4), with the flag and
+# without it the combo returned identical numbers, so its members already
+# reason none today — and "today" is a property of the combo's membership,
+# which you can change without touching this file.
 reasoning_effort = "none"
 # A ceiling on a verdict JSON, not a budget for prose. Deliberately small: a
 # gate with room to write paragraphs has room to start drafting the reply it
