@@ -20,6 +20,7 @@ from nora.app.runtime import (
     BackgroundTasks,
     SupervisedAdapter,
     _backoff_elapsed,
+    _slot,
     debounce_sweep_loop,
     dream_loop,
     prune_loop,
@@ -32,6 +33,7 @@ from nora.language.consolidator import LanguageConsolidator
 from nora.language.observer import LexemeObserver
 from nora.obs.metrics import Metrics
 from nora.tag import Debounce
+from nora.testing import InMemoryDreamScheduleClock
 from tests.objectives import shipped_objectives
 
 # The `objective` collaborator, wired the way production wires it: the REAL
@@ -1243,6 +1245,7 @@ async def test_a_scheduled_watermark_free_adaptor_fires_once_then_holds_for_the_
         runtime=runner,
         schedules={"curator": AdaptorSchedule(
             min_interval_seconds=1e9, batch_limit=10)},
+        schedule_clock=InMemoryDreamScheduleClock(),
     ), ticks=0.08)
 
     assert [c for c in runner.calls if c[0] == "curator"] == [("curator", "g1", 0)]
@@ -1263,6 +1266,7 @@ async def test_a_scheduled_watermark_free_adaptor_fires_again_after_the_interval
         runtime=runner,
         schedules={"curator": AdaptorSchedule(
             min_interval_seconds=0.03, batch_limit=10)},
+        schedule_clock=InMemoryDreamScheduleClock(),
     ), ticks=0.12)
 
     calls = [c for c in runner.calls if c[0] == "curator"]
@@ -1325,10 +1329,10 @@ async def test_a_scheduled_watermark_bearing_adaptor_still_needs_backlog_and_age
 
 
 async def test_a_scheduled_watermark_free_adaptor_tracks_last_fired_per_key():
-    """`last_fired_at` is keyed `f"{adaptor.name}:{key}"` (33 §5 N1a) — one
-    workspace's curator firing must never hold back or advance another's.
-    Both scopes fire on the first tick (nothing has fired yet for either
-    key), and neither refires inside the interval."""
+    """The clock is keyed `(adaptor.name, key)` (33 §5 N1a) — one workspace's
+    curator firing must never hold back or advance another's. Both scopes fire
+    on the first tick (nothing has fired yet for either key), and neither
+    refires inside the interval."""
     language = _KeyedLanguage()
     runner = _RecordingRunner()
 
@@ -1340,11 +1344,194 @@ async def test_a_scheduled_watermark_free_adaptor_tracks_last_fired_per_key():
         runtime=runner,
         schedules={"curator": AdaptorSchedule(
             min_interval_seconds=1e9, batch_limit=10)},
+        schedule_clock=InMemoryDreamScheduleClock(),
     ), ticks=0.08)
 
     calls = [c for c in runner.calls if c[0] == "curator"]
     assert calls.count(("curator", "g1", 0)) == 1
     assert calls.count(("curator", "g2", 0)) == 1
+
+
+async def test_a_scheduled_adaptor_does_not_refire_after_a_restart():
+    """**The defect this clock exists for.** The schedule used to live in a
+    `time.monotonic()` dict inside `dream_loop`'s frame, so a restart began
+    with an empty clock and the next tick always fired. `nora` is
+    force-recreated several times on an ordinary day, which made a daily
+    adaptor a per-deploy one — and `nora_dream_run_total` cannot tell the two
+    apart, so nothing would have caught it.
+
+    Two SEPARATE `dream_loop` calls are the restart: each builds its own
+    frame, and only the clock crosses between them.
+
+    Falsification: move the clock back into the loop's frame (or give each
+    call its own `InMemoryDreamScheduleClock`) and the count becomes 2.
+    """
+    clock = InMemoryDreamScheduleClock()
+    runner = _RecordingRunner()
+    schedules = {"curator": AdaptorSchedule(
+        min_interval_seconds=1e9, batch_limit=10)}
+
+    for _ in range(2):
+        await _tick(dream_loop(
+            _FakeRecord({}), _KeyedLanguage(), [], Metrics(),
+            scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+            quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+            adaptors=[_StubAdaptor("curator", uses_watermark=False)],
+            runtime=runner, schedules=schedules, schedule_clock=clock,
+        ), ticks=0.04)
+
+    assert [c for c in runner.calls if c[0] == "curator"].count(
+        ("curator", "g1", 0)) == 1
+
+
+async def test_an_unavailable_run_does_not_burn_the_slot():
+    """**R-27 applied to the schedule itself: an ERROR is never a PASS.**
+
+    `DreamerRuntime.run` absorbs a 429 that outlived the retry policy, a
+    timeout, or a killed loop and returns `unavailable` NORMALLY. An earlier
+    version of this branch stamped the clock BEFORE the run, so any of those
+    burned the whole day with no retry — and the backoff could not compensate,
+    because a schedule hold returns `None`, `None` is not `unavailable`, and
+    `dream_loop` clears `failures` on it. It also wrote `last_fired_at` for a
+    run that did nothing, into the one table an operator reads to ask whether
+    the clock is alive.
+
+    So the slot stays open on `unavailable` and the next tick retries inside
+    the same day.
+
+    Falsification: move `record_fire` back above `runtime.run`, or drop the
+    `status != "unavailable"` guard — the clock stamps and the retry stops.
+    """
+    clock = InMemoryDreamScheduleClock()
+    runner = _RecordingRunner(unavailable_for="curator")
+
+    await _tick(dream_loop(
+        _FakeRecord({}), _KeyedLanguage(), [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("curator", uses_watermark=False)],
+        runtime=runner,
+        schedules={"curator": AdaptorSchedule(
+            min_interval_seconds=1e9, batch_limit=10)},
+        schedule_clock=clock,
+    ), ticks=0.05)
+
+    # POSITIVE CONTROL first: `is None` below is also true of a loop that
+    # never dispatched the adaptor at all, which is a different bug wearing
+    # the same assertion.
+    assert [c for c in runner.calls if c[0] == "curator"] == [("curator", "g1", 0)]
+    assert await clock.last_fired(adaptor_name="curator", key="g1") is None, (
+        "an unavailable run must leave the slot unclaimed"
+    )
+    # NOT asserting a retry within these ticks: `unavailable` also feeds
+    # `dream_loop`'s exponential backoff, which is exactly what should pace
+    # the retry. The property here is that the SCHEDULE is not what blocks it
+    # — the slot is still open when the backoff lets go.
+
+
+async def test_a_successful_run_does_claim_the_slot():
+    """The positive control for the test above. `== None` is also true of a
+    clock nothing ever wrote to, so the retry assertion alone cannot tell
+    "held open on failure" from "the stamp is broken for everything"."""
+    clock = InMemoryDreamScheduleClock()
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({}), _KeyedLanguage(), [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("curator", uses_watermark=False)],
+        runtime=runner,
+        schedules={"curator": AdaptorSchedule(
+            min_interval_seconds=1e9, batch_limit=10)},
+        schedule_clock=clock,
+    ), ticks=0.05)
+
+    assert await clock.last_fired(adaptor_name="curator", key="g1") is not None
+    assert len([c for c in runner.calls if c[0] == "curator"]) == 1
+
+
+async def test_a_schedule_hold_is_counted():
+    """A hold must be visible. The defect this mechanism fixes survived eleven
+    days because `nora_dream_run_total` counts runs and not their reason — a
+    schedule that never fires and a tier with nothing to do are the same
+    series. `nora_dream_skipped_total{reason="schedule"}` is the difference."""
+    metrics = Metrics()
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({}), _KeyedLanguage(), [], metrics,
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("curator", uses_watermark=False)],
+        runtime=runner,
+        schedules={"curator": AdaptorSchedule(
+            min_interval_seconds=1e9, batch_limit=10)},
+        schedule_clock=InMemoryDreamScheduleClock(),
+    ), ticks=0.06)
+
+    assert metrics.get("nora_dream_skipped_total", reason="schedule") > 0
+
+
+async def test_two_adaptors_sharing_an_interval_can_hold_different_phases():
+    """The fact tier's ordering. `fact-adjudication` and
+    `fact-entity-resolution` share a daily interval over the SAME workspace;
+    what separates them is the phase, and the slot is what carries it.
+
+    Same instant, same interval, offsets an hour apart — the two must land in
+    slots that are independent, so one firing never consumes the other's.
+    """
+    sched_a = AdaptorSchedule(
+        min_interval_seconds=86400, batch_limit=10, phase_offset_seconds=6 * 3600)
+    sched_b = AdaptorSchedule(
+        min_interval_seconds=86400, batch_limit=10, phase_offset_seconds=7 * 3600)
+
+    # 2026-09-06 06:30 UTC — past A's 06:00 boundary, before B's 07:00 one.
+    at = 1_788_675_000_000
+    assert _slot(at, sched_a) != _slot(at - 3600_000, sched_a)
+    assert _slot(at, sched_b) == _slot(at - 3600_000, sched_b)
+
+
+async def test_a_never_fired_pair_is_not_read_as_epoch_zero():
+    """`None` from the clock means «never fired» and must fire. A clock
+    substituting 0 would also fire here, which is why the contract suite
+    carries the distinction — this test pins only that absence fires at all."""
+    clock = InMemoryDreamScheduleClock()
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({}), _KeyedLanguage(), [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("curator", uses_watermark=False)],
+        runtime=runner,
+        schedules={"curator": AdaptorSchedule(
+            min_interval_seconds=1e9, batch_limit=10)},
+        schedule_clock=clock,
+    ), ticks=0.04)
+
+    assert ("curator", "g1", 0) in runner.calls
+    assert await clock.last_fired(adaptor_name="curator", key="g1") is not None
+
+
+async def test_a_watermark_free_adaptor_with_no_clock_still_runs_every_tick():
+    """The by-omission default, unchanged. A deployment that supplies
+    schedules but no clock must not silently stop running its adaptors —
+    the pre-schedule behaviour is the safe direction to fall back to."""
+    runner = _RecordingRunner()
+
+    await _tick(dream_loop(
+        _FakeRecord({}), _KeyedLanguage(), [], Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("curator", uses_watermark=False)],
+        runtime=runner,
+        schedules={"curator": AdaptorSchedule(
+            min_interval_seconds=1e9, batch_limit=10)},
+    ), ticks=0.05)
+
+    assert [c for c in runner.calls if c[0] == "curator"].count(
+        ("curator", "g1", 0)) > 1
 
 
 async def test_the_watermark_is_held_when_the_run_reports_unavailable():

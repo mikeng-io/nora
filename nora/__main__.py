@@ -224,6 +224,12 @@ class App:
                 # the fact-candidate extractor's daily interval/1000-row batch
                 # live here, not in `[language]`'s shared numbers.
                 schedules=deps.dream_schedules,
+                # Where a watermark-free scheduled adaptor's last fire is
+                # kept. In Postgres rather than in `dream_loop`'s frame
+                # because the frame is rebuilt on every restart and Nora is
+                # force-recreated several times on an ordinary day, which
+                # turned a daily schedule into a per-deploy one.
+                schedule_clock=deps.dream_schedule_clock,
             ))
         elif self.cfg.dreamer.enabled:
             # **This branch changed meaning on 2026-08-27 and was rewritten

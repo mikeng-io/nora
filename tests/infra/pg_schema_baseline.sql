@@ -53,12 +53,14 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
 ADD CONSTRAINT artifacts_slug_key UNIQUE (slug);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
+ADD CONSTRAINT dream_schedule_state_pkey PRIMARY KEY (adaptor_name, scope_id);
 ADD CONSTRAINT embedding_pkey PRIMARY KEY (kind, row_key);
 ADD CONSTRAINT event_rsvps_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id);
 ADD CONSTRAINT event_rsvps_pkey PRIMARY KEY (event_id, person_id);
@@ -121,6 +123,7 @@ ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.compute_jobs
 ALTER TABLE ONLY public.consolidation_watermark
+ALTER TABLE ONLY public.dream_schedule_state
 ALTER TABLE ONLY public.embedding
 ALTER TABLE ONLY public.event_rsvps
 ALTER TABLE ONLY public.event_rsvps
@@ -306,6 +309,7 @@ CREATE TABLE public.analytics_watermark (
 CREATE TABLE public.artifacts (
 CREATE TABLE public.compute_jobs (
 CREATE TABLE public.consolidation_watermark (
+CREATE TABLE public.dream_schedule_state (
 CREATE TABLE public.embedding (
 CREATE TABLE public.event_rsvps (
 CREATE TABLE public.events (
@@ -394,6 +398,7 @@ START WITH 1
 accuracy_m double precision,
 act text NOT NULL,
 act text NOT NULL,
+adaptor_name text NOT NULL,
 added_at timestamp with time zone NOT NULL,
 added_by_person_id text NOT NULL,
 address text
@@ -566,6 +571,7 @@ kind text NOT NULL,
 label text,
 last_adjudicated_at bigint,
 last_cluster_id integer DEFAULT 0 NOT NULL,
+last_fired_at bigint NOT NULL,
 last_fix_id integer DEFAULT 0 NOT NULL,
 last_folded_row_id bigint,
 last_message_id integer DEFAULT 0 NOT NULL,
@@ -703,6 +709,7 @@ scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
 scope_id text NOT NULL,
+scope_id text NOT NULL,
 sender_id text NOT NULL,
 sender_name text,
 sense text NOT NULL,
@@ -771,6 +778,7 @@ ts bigint NOT NULL,
 uncertainty text NOT NULL,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
 updated_at bigint NOT NULL,
+updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone NOT NULL,

@@ -827,6 +827,37 @@ CONSOLIDATION_WATERMARK = sa.Table(
               server_default=sa.text("now()")),
 )
 
+# A WATERMARK-FREE scheduled adaptor's own clock, and it is in Postgres for
+# one measured reason: the dict it replaces was `time.monotonic()` in
+# `dream_loop`'s frame, so it reset on every restart and the first tick after
+# one always fired. Nora is force-recreated several times on an ordinary day
+# (a bind-mounted `config.toml` that git rewrote gets a new inode, so only
+# `--force-recreate` picks it up), which turned "daily" into "once per
+# deploy" — invisible from outside, because a restarted clock and a
+# correctly-elapsed one produce the identical metric.
+#
+# NOT `consolidation_watermark`, and the difference is the point. That table
+# carries a `last_message_id` and `watermark_is_behind_the_record` reads it as
+# evidence-loss when it falls under the record's oldest row. An adaptor with
+# no message cursor squatting there would either write a fake 0 — which that
+# check reports as `nora_dream_evidence_lost_total` forever — or need the
+# check taught about a row shape it was not built for. A second table with its
+# own invariant is cheaper than one table with two.
+#
+# `last_fired_at` is epoch MILLISECONDS on the WALL clock, not `monotonic()`
+# and not a `DateTime`: the fire condition is a daily SLOT (see
+# `AdaptorSchedule.phase_offset_seconds`), which is arithmetic over an absolute
+# instant, and every other bigint timestamp this schema carries is epoch-ms.
+DREAM_SCHEDULE_STATE = sa.Table(
+    "dream_schedule_state",
+    METADATA,
+    sa.Column("adaptor_name", sa.Text, primary_key=True),
+    sa.Column("scope_id", sa.Text, primary_key=True),
+    sa.Column("last_fired_at", sa.BigInteger, nullable=False),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.text("now()")),
+)
+
 # Append-only EVIDENCE. This table, not `messages`, is what the lexicon is
 # answerable to — and it is why `message_id` is a SOFT reference with no foreign
 # key: evidence must outlive the message it came from. `store.prune_enabled` is

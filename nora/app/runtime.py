@@ -328,6 +328,67 @@ class _DreamOutcome(Protocol):
     def status(self) -> str: ...
 
 
+class _ScheduleClock(Protocol):
+    """Where a watermark-free scheduled adaptor's last fire is remembered —
+    `nora.infra.sql.dream_schedule.SqlDreamScheduleClock`, seen from the loop.
+
+    A narrow local shape rather than a `nora.domain.ports` Protocol, the same
+    reason `_SinceReadable` and `_ConsolidationCursor` beside it are: the loop
+    needs two verbs and must not be able to reach a third.
+
+    **`last_fired` returning `None` is part of the contract, not an edge
+    case.** A never-fired pair must not be reported as one that fired at epoch
+    0: both fire exactly once on the next tick, so a store that substituted 0
+    would pass every test while making a brand-new adaptor's first run look
+    like a fifty-six-year-old one to anybody reading the row.
+    """
+
+    async def last_fired(
+        self, *, adaptor_name: str, key: str
+    ) -> int | None: ...
+
+    async def record_fire(
+        self, *, adaptor_name: str, key: str, at_ms: int
+    ) -> None: ...
+
+
+def _now_ms() -> int:
+    """Wall clock, epoch milliseconds — the unit every bigint timestamp in
+    this schema carries, and the one `_slot` needs (see
+    `_dream_adaptor_once` for why `monotonic()` cannot serve here)."""
+    return int(time.time() * 1000)
+
+
+def _slot(at_ms: int, sched: AdaptorSchedule) -> int:
+    """Which scheduling slot an instant falls in.
+
+    `floor((t - offset) / interval)`. Two instants in the same slot are the
+    same scheduled occasion, so a schedule fires at most once per slot — which
+    is what makes "daily at 06:00 UTC" expressible and what lets two adaptors
+    sharing an interval be given different PHASES.
+
+    **Arithmetic in MILLISECONDS, not seconds.** Flooring the instant to whole
+    seconds first would round every sub-second interval to zero, and the
+    suite's schedule tests run at 0.03s so a real clock can exercise a real
+    interval in a tenth of a second. A production schedule is measured in
+    hours and cannot tell the difference; the tests can, and an implementation
+    that only works at production magnitudes is one nothing fast can cover.
+
+    Integer floor division, and Python's floors toward negative infinity for
+    negative operands, which is the behaviour wanted: an offset larger than the
+    instant (a schedule configured with a phase later in the day than the epoch
+    instant under test) must still land in a well-defined slot rather than
+    truncating toward zero and colliding with its neighbour.
+    """
+    interval_ms = int(sched.min_interval_seconds * 1000)
+    if interval_ms <= 0:
+        # A non-positive interval means "no floor" — every instant is its own
+        # slot. Returning the instant itself makes that true by construction
+        # rather than by a division that would raise.
+        return at_ms
+    return (at_ms - int(sched.phase_offset_seconds * 1000)) // interval_ms
+
+
 class _AdaptorRunner(Protocol):
     """`nora.agent.dreamer.DreamerRuntime`, seen from the clock: run one
     adaptor for one key and say what happened.
@@ -494,7 +555,8 @@ async def _dream_adaptor_once(
     key: str, safety_lag: int, quiet_seconds: float, max_age_seconds: float,
     batch_limit: int,
     schedules: Mapping[str, AdaptorSchedule] | None = None,
-    last_fired_at: dict[str, float] | None = None,
+    clock: _ScheduleClock | None = None,
+    now_ms: int | None = None,
 ) -> str | None:
     """One adaptor, one key, one cycle — `_dream_once`'s shape generalised off
     the hardcoded `"language"` cursor and off `RoomConsolidator`.
@@ -505,12 +567,37 @@ async def _dream_adaptor_once(
     participant with none of those, and the fact adaptor is the second — its
     input is the candidate table, not a raw-message proxy for it. The ONE
     exception is a watermark-free adaptor with an `AdaptorSchedule` entry: it
-    fires on elapsed time — `now - last_fired >= min_interval_seconds`, with
-    no backlog requirement, because there is no watermark to age and no lag
-    to read (design/dreamer-agent-loop/33 §5 N1a). `last_fired_at` is that
-    clock, the same per-(adaptor, key) shape as `failures`/`last_failure_at`
-    in `dream_loop`; a caller that cannot supply one gets every-tick, the
-    pre-schedule behaviour.
+    fires on a daily SLOT rather than on backlog, because there is no
+    watermark to age and no lag to read (design/dreamer-agent-loop/33 §5 N1a).
+
+    **The slot, and why it is not elapsed time.** The first version of this
+    branch fired when `now - last_fired >= min_interval_seconds` against a
+    `time.monotonic()` dict in `dream_loop`'s frame. Two defects, both
+    measured on 2026-09-06 and both invisible in `nora_dream_run_total`:
+
+    - **The clock reset on every restart.** The dict was function-local, so a
+      recreate began with no recorded fire and the next tick always fired.
+      `nora` was force-recreated twice inside two hours that day — the routine
+      cost of a bind-mounted `config.toml` whose inode git had replaced — so
+      "daily" was really "once per deploy". `_ScheduleClock` moves it to
+      `dream_schedule_state`, where it survives the process.
+    - **Elapsed time cannot express a phase offset.** The fact tier's three
+      adaptors have a real data dependency (candidates write, adjudication
+      reads them, entity resolution reads what adjudication wrote), and
+      `dream_loop` dispatches adaptors as CONCURRENT tasks with no ordering
+      (33 §6 M6 says so explicitly). Separating their PERIODS does nothing;
+      separating their PHASES does. A slot — `floor((t - offset) / interval)`
+      — makes "daily at 06:00 UTC" expressible, and a schedule fires when the
+      current slot is one nobody has fired in yet.
+
+    Wall clock, therefore, not `monotonic()`: a slot is arithmetic over an
+    absolute instant. The cost is that a backwards clock jump can re-fire once;
+    that is a real trade and it is the right side, because the alternative is
+    the reset-every-deploy behaviour above, which happens daily rather than
+    never.
+
+    A caller supplying no `clock` gets every-tick, the pre-schedule behaviour —
+    the same by-omission default `AdaptorSchedule` itself documents.
 
     **Returns the run's STATUS, or `None` when the fire conditions did not
     fire.** The caller needs it: `DreamerRuntime.run` absorbs every failure
@@ -523,18 +610,66 @@ async def _dream_adaptor_once(
     """
     sched = (schedules or {}).get(adaptor.name)
     if not adaptor.uses_watermark:
-        if sched is None or last_fired_at is None:
+        if sched is None:
             return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
-        # A watermark-free adaptor on its own clock fires on ELAPSED TIME,
-        # never on backlog: there is no cursor to age, and requiring `lag > 0`
-        # would make a silent room's schedule never fire at all. The first
-        # tick fires (no recorded fire), then the interval holds.
-        unit = f"{adaptor.name}:{key}"
-        now = time.monotonic()
-        if now - last_fired_at.get(unit, float("-inf")) < sched.min_interval_seconds:
+        if clock is None:
+            # LOUD, like the runtime-less branch in `dream_loop` and for the
+            # same reason: a wiring mistake whose only symptom is silence.
+            # "No entry in the mapping means every tick" is the safe default
+            # for an adaptor nobody scheduled; falling back to it for one that
+            # WAS scheduled is not. `fact-adjudication` on every tick is a
+            # 20-turn research loop every 5 minutes per workspace — 288 a day
+            # — against a background clock nobody is watching.
+            log.error(
+                "dream adaptor %s has a schedule but no clock to read; it "
+                "will run EVERY TICK instead of on its schedule", adaptor.name,
+            )
+            return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
+        # A watermark-free adaptor on its own clock fires on its SLOT, never on
+        # backlog: there is no cursor to age, and requiring `lag > 0` would
+        # make a silent room's schedule never fire at all — which is precisely
+        # what a time-driven pass (the note curator retires on anchor dates
+        # that pass whether or not anyone speaks) must not do.
+        now = _now_ms() if now_ms is None else now_ms
+        fired_at = await clock.last_fired(adaptor_name=adaptor.name, key=key)
+        # An ABSENT row fires; an epoch-0 row does not get invented for it.
+        # `last_fired` returns None for a pair that has never run, and the
+        # first slot it sees is by definition one it has not fired in.
+        if fired_at is not None and _slot(now, sched) == _slot(fired_at, sched):
+            # COUNTED, not silently returned. The defect this whole mechanism
+            # exists to fix went eleven days unquestioned because
+            # `nora_dream_run_total` counts runs and not their reason, so a
+            # schedule that never fires and a tier with nothing to do are the
+            # same series. A hold is the reading that separates them.
+            metrics.inc("nora_dream_skipped_total", reason="schedule")
             return None
-        last_fired_at[unit] = now
-        return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
+        status = (await runtime.run(adaptor=adaptor, key=key, batch=())).status
+        # Stamped AFTER the run, and NEVER on `unavailable`.
+        #
+        # An earlier version stamped first, on the theory that a long run would
+        # otherwise let the next tick start a second concurrent copy. That
+        # theory is false: `dream_loop` already holds a per-`(adaptor, key)`
+        # `running` set, checked before dispatch and released in a `finally`,
+        # so the second copy cannot happen in-process — and across a restart
+        # the old process is gone, where re-running is the behaviour wanted
+        # rather than the one to suppress.
+        #
+        # What pre-stamping did cost was real. `unavailable` is what
+        # `DreamerRuntime.run` returns for a 429 that outlived the retry
+        # policy, a timeout, or a killed loop; claiming the slot before the run
+        # burned the whole day on it, with no retry, because a schedule hold
+        # returns `None` and `None` is not `unavailable` — so `dream_loop`'s
+        # exponential backoff cleared on the very next tick and could never
+        # reach its second step for a scheduled adaptor. It also wrote
+        # `last_fired_at` and `updated_at` for a run that did nothing, which is
+        # R-27's forbidden substitution landing in the one table an operator
+        # reads to ask whether this clock is alive.
+        #
+        # Leaving `unavailable` unstamped keeps the slot open, so the next tick
+        # retries inside the same day and the backoff governs the pace.
+        if status != "unavailable":
+            await clock.record_fire(adaptor_name=adaptor.name, key=key, at_ms=now)
+        return status
 
     watermark = await language.watermark_for(
         consolidator_name=adaptor.name, scope_id=key)
@@ -617,6 +752,7 @@ async def dream_loop(
     runtime: _AdaptorRunner | None = None,
     workspaces: Callable[[], Sequence[str]] = lambda: (),
     schedules: Mapping[str, AdaptorSchedule] | None = None,
+    schedule_clock: _ScheduleClock | None = None,
 ) -> None:
     """The Dreamer's clock. A sibling of `prune_loop`, with two differences
     that are not stylistic.
@@ -718,10 +854,14 @@ async def dream_loop(
     # function-local to this one `dream_loop` call, exactly like `failures`
     # and `running` beside it.
     last_failure_at: dict[str, float] = {}
-    # A scheduled watermark-free adaptor's own clock (see `_dream_adaptor_once`):
-    # per-(adaptor, key) last-fire monotonic timestamps, function-local to this
-    # one `dream_loop` call, exactly like `failures` and `last_failure_at`.
-    last_fired_at: dict[str, float] = {}
+    # A scheduled watermark-free adaptor's own clock is DELIBERATELY NOT a
+    # dict beside these three. `failures`/`running`/`last_failure_at` are
+    # backoff and concurrency state whose correct value after a restart IS
+    # empty — a fresh process has no in-flight run and no accrued backoff. A
+    # SCHEDULE is the opposite: its correct value after a restart is whatever
+    # it was before, and keeping it here made "daily" mean "once per deploy"
+    # (see `_dream_adaptor_once`). It lives in `dream_schedule_state`, reached
+    # through `schedule_clock`.
     tasks: set[asyncio.Task[None]] = set()
 
     def _keys_for(adaptor: DreamAdaptor) -> Sequence[str]:
@@ -765,7 +905,7 @@ async def dream_loop(
                 language=language, metrics=metrics, key=key,
                 safety_lag=safety_lag, quiet_seconds=quiet_seconds,
                 max_age_seconds=max_age_seconds, batch_limit=batch_limit,
-                schedules=schedules, last_fired_at=last_fired_at,
+                schedules=schedules, clock=schedule_clock,
             )
             if status == "unavailable":
                 # **A FAILURE, even though nothing raised.**
