@@ -2725,6 +2725,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 **dream_schedules,
                 "note-curation": AdaptorSchedule(
                     min_interval_seconds=86400,
+                    # EXPLICIT, because the slot change gave this adaptor a
+                    # time of day it did not have and nobody chose. Under the
+                    # old elapsed-time clock it fired 24h after whenever the
+                    # process last started; under slots an unset offset means
+                    # 00:00 UTC, which is 08:00 Asia/Hong_Kong — eight hours
+                    # BEHIND the local day boundary this tier's own
+                    # `test_the_curator_reads_the_day_from_the_operators_
+                    # timezone` argues is the one that matters for retiring a
+                    # past anchor. 16:00 UTC is midnight in HK, so the sweep
+                    # runs just as the day it is retiring against rolls over.
+                    # A default would have been an accident; this is a choice,
+                    # and it belongs to the note tier's owner to revise.
+                    phase_offset_seconds=16 * 3600,
                     # Inert for this adaptor: `batch_limit` sizes a
                     # watermark-bearing adaptor's `record.since` read, and the
                     # curator is watermark-free — `_dream_adaptor_once` never
@@ -2733,6 +2746,27 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     # rather than an unrelated magic number, so a reader
                     # checking this value against the adaptor's actual
                     # per-tick ceiling finds one that means something.
+                    batch_limit=cfg.notes.max_expired_per_tick,
+                ),
+                # The THIRD adaptor found running on the bare 5-minute tick
+                # (the fact tier's two were the first two). Watermark-free and
+                # workspace-keyed with no schedule entry, so it inherited it.
+                #
+                # It has been cheap only by accident: `unresolved_note_anchor_
+                # names` offers a name to the model only when
+                # `similar_entities` finds a near-miss among EXISTING entity
+                # rows, and the entity table has been empty for exactly the
+                # bootstrap reason this branch's first commit fixes. Opening
+                # the adjudication filter is what starts filling it — so
+                # without this entry, this branch would have CAUSED a model
+                # call every five minutes per workspace, arriving weeks later
+                # as somebody else's mystery.
+                #
+                # 08:00 UTC: after `fact-entity-resolution` at 07:00, since a
+                # note anchor resolves against names that pass has minted.
+                "note-entity-resolution": AdaptorSchedule(
+                    min_interval_seconds=86400,
+                    phase_offset_seconds=8 * 3600,
                     batch_limit=cfg.notes.max_expired_per_tick,
                 ),
             }

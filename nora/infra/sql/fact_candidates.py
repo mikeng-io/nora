@@ -713,6 +713,21 @@ class SqlFactCandidateStore:
                     (sa.and_(c.c.occurrence_count <= 1, ~subject_resolves), 1),
                     else_=0,
                 ),
+                # THE TAIL MUST ROTATE, and before this branch nothing made
+                # it. A candidate the model simply did not mention is never
+                # retired — `_retire_candidates` only settles triples that
+                # came back — so it stays `pending` with `attempts = 0` and is
+                # re-selected tomorrow. Ordering on `last_seen_at DESC` alone
+                # meant newly extracted candidates displaced it at the head
+                # every day, so the tail starved for as long as extraction
+                # kept writing. That was invisible while the filter above
+                # dropped everything; opening it is what makes it reachable.
+                #
+                # `NULLS FIRST` is the load-bearing half: `last_adjudicated_at`
+                # is NULL for a candidate never yet attempted, and those must
+                # go first or a queue that has been picked over once would
+                # rank its untried rows behind its retried ones.
+                sa.nullsfirst(c.c.last_adjudicated_at.asc()),
                 c.c.occurrence_count.desc(),
                 c.c.last_seen_at.desc(),
                 # TIE-BREAK, and this is the ordering that spends the

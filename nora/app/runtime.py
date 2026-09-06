@@ -610,7 +610,20 @@ async def _dream_adaptor_once(
     """
     sched = (schedules or {}).get(adaptor.name)
     if not adaptor.uses_watermark:
-        if sched is None or clock is None:
+        if sched is None:
+            return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
+        if clock is None:
+            # LOUD, like the runtime-less branch in `dream_loop` and for the
+            # same reason: a wiring mistake whose only symptom is silence.
+            # "No entry in the mapping means every tick" is the safe default
+            # for an adaptor nobody scheduled; falling back to it for one that
+            # WAS scheduled is not. `fact-adjudication` on every tick is a
+            # 20-turn research loop every 5 minutes per workspace — 288 a day
+            # — against a background clock nobody is watching.
+            log.error(
+                "dream adaptor %s has a schedule but no clock to read; it "
+                "will run EVERY TICK instead of on its schedule", adaptor.name,
+            )
             return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
         # A watermark-free adaptor on its own clock fires on its SLOT, never on
         # backlog: there is no cursor to age, and requiring `lag > 0` would
@@ -623,17 +636,40 @@ async def _dream_adaptor_once(
         # `last_fired` returns None for a pair that has never run, and the
         # first slot it sees is by definition one it has not fired in.
         if fired_at is not None and _slot(now, sched) == _slot(fired_at, sched):
+            # COUNTED, not silently returned. The defect this whole mechanism
+            # exists to fix went eleven days unquestioned because
+            # `nora_dream_run_total` counts runs and not their reason, so a
+            # schedule that never fires and a tier with nothing to do are the
+            # same series. A hold is the reading that separates them.
+            metrics.inc("nora_dream_skipped_total", reason="schedule")
             return None
-        # Stamped BEFORE the run, not after. `runtime.run` absorbs its own
-        # failures and can take the adaptor's full `timeout_seconds` (an hour,
-        # for fact-candidates), so a post-run stamp would leave the slot
-        # unclaimed for the whole run and let the next tick start a second
-        # concurrent copy of an adaptor that is still working. Claiming the
-        # slot first costs at most one skipped day on a crash, which is the
-        # cheaper failure — and `dream_loop`'s `running` set is a per-process
-        # guard only, blind across a restart.
-        await clock.record_fire(adaptor_name=adaptor.name, key=key, at_ms=now)
-        return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
+        status = (await runtime.run(adaptor=adaptor, key=key, batch=())).status
+        # Stamped AFTER the run, and NEVER on `unavailable`.
+        #
+        # An earlier version stamped first, on the theory that a long run would
+        # otherwise let the next tick start a second concurrent copy. That
+        # theory is false: `dream_loop` already holds a per-`(adaptor, key)`
+        # `running` set, checked before dispatch and released in a `finally`,
+        # so the second copy cannot happen in-process — and across a restart
+        # the old process is gone, where re-running is the behaviour wanted
+        # rather than the one to suppress.
+        #
+        # What pre-stamping did cost was real. `unavailable` is what
+        # `DreamerRuntime.run` returns for a 429 that outlived the retry
+        # policy, a timeout, or a killed loop; claiming the slot before the run
+        # burned the whole day on it, with no retry, because a schedule hold
+        # returns `None` and `None` is not `unavailable` — so `dream_loop`'s
+        # exponential backoff cleared on the very next tick and could never
+        # reach its second step for a scheduled adaptor. It also wrote
+        # `last_fired_at` and `updated_at` for a run that did nothing, which is
+        # R-27's forbidden substitution landing in the one table an operator
+        # reads to ask whether this clock is alive.
+        #
+        # Leaving `unavailable` unstamped keeps the slot open, so the next tick
+        # retries inside the same day and the backoff governs the pace.
+        if status != "unavailable":
+            await clock.record_fire(adaptor_name=adaptor.name, key=key, at_ms=now)
+        return status
 
     watermark = await language.watermark_for(
         consolidator_name=adaptor.name, scope_id=key)

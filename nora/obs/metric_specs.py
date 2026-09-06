@@ -976,7 +976,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "reason=\"in_flight_adaptor\": the previous cycle for this "
         "(adaptor, key) had not — kept apart because one adaptor wedged and "
         "one scope wedged are different diagnoses on the one series that "
-        "answers «is the Dreamer stuck?».",
+        "answers «is the Dreamer stuck?». reason=\"schedule\": this "
+        "(adaptor, key) already fired in the current slot of its own "
+        "AdaptorSchedule — the ORDINARY outcome for a daily adaptor on a "
+        "5-minute tick, and the only series that distinguishes a schedule "
+        "holding correctly from one that has stopped firing at all.",
         ("reason",),
     ),
     # `SqlLanguageStore.watermark_is_behind_the_record`'s tell, read by

@@ -284,6 +284,12 @@ class InMemoryFactCandidateStore:
                 0 if self._contradicts_a_live_fact(c) else 1,
                 1 if (c.occurrence_count <= 1
                       and not self._subject_resolves(c)) else 0,
+                # `NULLS FIRST` as a sort key: never-attempted (None) sorts
+                # ahead of every real timestamp, then oldest attempt first.
+                # Mirrors `sa.nullsfirst(last_adjudicated_at.asc())` — the
+                # tail rotation, without which a candidate the model never
+                # mentions is re-selected every day forever.
+                (c.last_adjudicated_at is not None, c.last_adjudicated_at or 0),
                 -c.occurrence_count,
                 -c.last_seen_at,
                 c.id,
