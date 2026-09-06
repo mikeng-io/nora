@@ -2,7 +2,7 @@
   "type": "feature",
   "summary": "The Relevance Gate: one cheap structured model call decides whether an untagged burst is worth a participation turn at all, instead of running the whole turn to find out. Ships disabled, and in review-only mode when enabled.",
   "details": [
-    "design/dreamer-agent-loop/36. When a quiescence window closes in an opted-in room, ONE call on its own `nora-ambient-gate` model reads the transcript window and the room's standing — no tools, no doctrine, no agent loop — and answers {verdict, relevance_score}. NO-GO drops the window; GO runs the existing participation turn, which keeps its right to stay silent.",
+    "design/dreamer-agent-loop/36. When a quiescence window closes in an opted-in room, ONE call on its own `nora-gate` model reads the transcript window and the room's standing — no tools, no doctrine, no agent loop — and answers {verdict, relevance_score}. NO-GO drops the window; GO runs the existing participation turn, which keeps its right to stay silent.",
     "This replaces the determination shape only. The participation occasion, its doctrine audience, its slot and cooldown policy, its metrics and its eval suite are unchanged and are what the gate now stands in front of: the gate answers 'is the room asking anyone?', the turn still answers 'do I hold anything true to add?'.",
     "Fail-closed, with the two outcomes kept apart: a transport error, timeout, truncated answer, unparseable body or unknown verdict all resolve to NO-GO, counted on `nora_relevance_gate_errors_total{kind}` and never on `nora_relevance_gate_total{verdict}` — so 'the room was quiet' and 'the gate is down' can never read as the same number.",
     "Shadow mode is the shipped posture when enabled: the gate runs on every closed window and only the GO verdicts are posted to a review channel, through the same Deliverer and guards as any send under `audience=\"relevance-gate-shadow\"`. Nora is never involved while shadow is on — no turn, no agent, whatever the score. R-1b is untouched: the review post is a second `deliver.build` call site inside fire.py, not a third caller module.",
@@ -12,6 +12,6 @@
   "limitations": [
     "Inert as shipped: `[relevance_gate] enabled = false`, and even enabled it considers nothing until a room is individually opted in with `relevance_gate = true` in policy.toml.",
     "`no_go` verdicts are never delivered to the review channel by design; their rate is visible only on `nora_relevance_gate_total{verdict=\"no_go\"}`, so a miss (a message that deserved an answer and was declined) is countable but not readable.",
-    "The gate's `max_tokens` ships at a conservative 512 pending a real measurement of its prompt and completion size."
+    "Measured cost is ~1,175 tokens per closed window (346 fixed + ~17 per transcript row); `max_tokens = 512` is ~4x the worst completion observed."
   ]
 }

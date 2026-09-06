@@ -410,8 +410,8 @@ class RelevanceGateConfig(BaseModel):
     to answer when tagged" vs "allowed to be spoken to unprompted" is drawn in
     the policy file, where every other trust distinction lives.
 
-    `model` is its OWN OmniRoute combo (`nora-ambient-gate`), not the `nora`
-    lane. The gate needs JSON mode and no reasoning; the tag lane needs neither
+    `model` is its OWN OmniRoute combo (`nora-gate`), not the `nora` lane.
+    The gate needs JSON mode and no reasoning; the tag lane needs neither
     and is tuned for the opposite. ADR 0006 is the standing measurement behind
     keeping them apart — a combo fans out per request and its upstreams have
     already been caught disagreeing about whether a request feature is
@@ -434,7 +434,21 @@ class RelevanceGateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
-    model: str = "nora-ambient-gate"
+    model: str = "nora-gate"
+    # DECLARED, never inherited from the provider's default — and this one was
+    # measured going wrong. The first version of this class passed no
+    # reasoning_effort at all, and the gate's own measurement caught it: a
+    # 44-character verdict billed 251 completion tokens, ~236 of them the
+    # model thinking on a call whose entire purpose is to be cheaper than the
+    # turn behind it. `_DebriefModelClient` had already written the lesson
+    # down ("the fold ran at whatever the route happened to do"); this is the
+    # same omission one lane over.
+    #
+    # `none` is the shipped value because the gate is a classifier with a
+    # fixed two-value output. Narrowed to the provider's closed set at
+    # composition (`_reasoning_effort`), so a typo refuses to start rather
+    # than 400-ing on the first window that closes.
+    reasoning_effort: str = "none"
     # MEASURED, not assumed (design 36 decision 7 / §2.3). The number here is
     # the measurement's ceiling, not a guess carried over from another lane.
     max_tokens: int = Field(default=512, gt=0)

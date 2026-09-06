@@ -33,7 +33,7 @@ class _Client:
 
     @property
     def model(self) -> str:
-        return "nora-ambient-gate"
+        return "nora-gate"
 
     async def complete(self, *, prompt: str) -> Completion:
         self.prompts.append(prompt)

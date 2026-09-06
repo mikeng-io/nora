@@ -1,7 +1,7 @@
 ---
 type: proposal
 title: "The Relevance Gate — Lightweight Ambient Admission in Front of the Participation Turn"
-description: "How an untagged message earns Nora's attention: one structured model call (the nora-ambient-gate combo, reasoning none, no tools, no doctrine, no agent loop) reading transcript + standing and returning verdict + relevance score. NO-GO drops. GO admits the message to the EXISTING participation occasion — the turn keeps its right to silence, which is the whole point of a second layer. Shadow mode delivers GO verdicts only to a review channel and never involves Nora. Rev 2 corrects Rev 1's central error: participation is not retired, it is what the gate stands in front of."
+description: "How an untagged message earns Nora's attention: one structured model call (the nora-gate combo, reasoning none, no tools, no doctrine, no agent loop) reading transcript + standing and returning verdict + relevance score. NO-GO drops. GO admits the message to the EXISTING participation occasion — the turn keeps its right to silence, which is the whole point of a second layer. Shadow mode delivers GO verdicts only to a review channel and never involves Nora. Rev 2 corrects Rev 1's central error: participation is not retired, it is what the gate stands in front of."
 tags: [nora, relevance-gate, ambient, admission, lightweight, shadow, participation]
 timestamp: '2026-09-06'
 edges:
@@ -53,7 +53,7 @@ quiescence window closes (settle_seconds of quiet — per-room watermark)
 RELEVANCE GATE — ONE structured model call
   ├─ system prompt: short, purpose-built (a few lines, NOT Nora's doctrine)
   ├─ input: transcript window + standing. THE ONLY TWO THINGS.
-  ├─ model: the `nora-ambient-gate` combo, reasoning none, no tools, no loop
+  ├─ model: the `nora-gate` combo, reasoning none, no tools, no loop
   ├─ output: JSON — {"verdict": "go"|"no_go", "relevance_score": 0.0-1.0}
   │    unparseable → no_go, counted (fail-closed)
   │
@@ -105,49 +105,54 @@ NEVER sees Nora's doctrine.
 
 ### 2.3 Model + limits
 
-- Model: the **`nora-ambient-gate`** OmniRoute combo, named in
+- Model: the **`nora-gate`** OmniRoute combo, named in
   `[relevance_gate] model` in config.toml. A dedicated combo, not `nora` —
   the gate's requirements (JSON mode, reasoning none) differ from the tag
   lane's, and ADR 0006's measurement is the standing warning about assuming
   a combo's upstreams agree about request features.
 - `reasoning_effort`: none. temperature low — this is a measurement
   instrument, not a voice.
-- `max_tokens`: **512, and it is MEASURED** (§8 decision 7). Rev 1 wrote 2000
-  by analogy; the number below is a real call.
+- `max_tokens`: **512, and it is MEASURED** (§8 decision 7) against the real
+  `nora-gate` combo.
 
-  **Measurement, 2026-09-06.** The real gate prompt, rendered by
-  `render_context` over the newest **40 rows of the busiest live room** plus a
-  standing line, sent through OmniRoute with `response_format=json_object`,
-  `max_tokens=512`, `temperature=0`:
+  **Measurement, 2026-09-06.** The real prompt from `render_context` over the
+  newest **40 rows of the busiest live room** plus a standing line, through
+  OmniRoute at `response_format=json_object`, `temperature=0`,
+  `reasoning_effort="none"`, `max_tokens=512`:
 
-  | | |
-  |---|---|
-  | prompt_tokens | **1,063** |
-  | completion_tokens | **251** |
-  | total_tokens | **1,314** |
-  | finish_reason | `stop` |
-  | body | `{"verdict": "no_go", "relevance_score": 0.0}` — parsed clean |
+  | | prompt | completion | total |
+  |---|---|---|---|
+  | scaffold only, 0 rows | 346 | 20 | 366 |
+  | 40 real rows + standing | 1,042 | 133 | **1,175** |
 
-  **The completion number is the load-bearing one, and it is not what it
-  looks like.** The visible answer is 44 characters — call it 15 tokens. The
-  provider billed 251. The other ~236 are the model thinking before it
-  answers, and they are invisible in the body, which is exactly how a
-  `max_tokens` sized off the JSON would have shipped: 64 would look
-  generous against a 44-character answer and would truncate every call. 512
-  is ~2x the measured completion, and the truncation it guards is fail-closed
-  (§2.2), so the failure mode of guessing low is a gate that silently stops
-  admitting anything.
+  So the cost decomposes as **346 fixed + ~17 tokens per transcript row**, and
+  a full 40-row window lands at **~1.2k total**. The verdict parsed clean and
+  nothing truncated.
 
-  **Caveat, stated because it is a proxy and this repo does not let those
-  pass silently.** The call was made against `opencode-zen/deepseek-v4-flash`,
-  not the `nora-ambient-gate` combo — that combo did not exist yet when this
-  was measured (verified against `/v1/models`: `nora`, `nora-dreamer`,
-  `nora-image`, `nora-judge`, `nora-video`, and no `nora-ambient-gate`). Same
-  model family, so `prompt_tokens` carries over exactly; `completion_tokens`
-  depends on the combo's members' reasoning behaviour and **must be re-read
-  once the combo exists**. If a member reasons harder than 512 tokens, this
-  number rises — and the tell will be
-  `nora_relevance_gate_errors_total{kind="truncated"}`, not a bad verdict.
+  **It is deterministic per prompt, and the first reading suggested otherwise.**
+  Two prompts differing by a four-token standing line returned 20 and 133
+  completion tokens, which read as a combo fanning out across upstreams that
+  disagree — ADR 0006's failure, arriving exactly where this design warned it
+  would. It is not: **n=10 on one prompt and n=3 on the other were byte-identical
+  in both cost and verdict.** The spread is the model emitting more or fewer
+  tokens for different input, not the route choosing different members. Cost
+  here is predictable; the ADR 0006 concern stands as a reason to keep the lane
+  separate, not as an observed defect in it.
+
+  **512 is ~4x the worst completion observed.** The margin is deliberate and
+  asymmetric: truncation is fail-closed (§2.2), so sizing low ships a gate that
+  silently stops admitting anything, while sizing high costs nothing on a call
+  that stops at 133.
+
+- `reasoning_effort`: **`none`, DECLARED — and the declaration buys pinning,
+  not tokens.** With the flag and without it the combo returned identical
+  numbers (1,042 / 133 / 1,175, n=4), so `nora-gate`'s members already reason
+  none today. It is passed anyway for `_DebriefModelClient`'s stated reason:
+  a setting left to the route is a setting nobody chose, and the fold spent a
+  deployment running "at whatever the route happened to do". The first version
+  of the gate's client omitted it and the measurement caught the omission
+  before it mattered.
+
 - JSON mode (`response_format`) where the combo's upstreams support it; else
   strict prompt + parse, fail-closed on parse error.
 
@@ -306,13 +311,17 @@ call you») would otherwise instruct this turn to be permanently silent.
 6. **Shadow delivers GO only** (2026-09-06): `no_go` is never posted to the
    review channel. It is still COUNTED, so the admission rate is observable
    without the content.
-7. **Token size is MEASURED, not assumed** (2026-09-06): DONE — 1,063 prompt
-   + 251 completion = 1,314 total on a real 40-row window, `max_tokens = 512`.
-   See §2.3, including the one number that is still a proxy and the metric
-   that will say so.
-8. **Model: the `nora-ambient-gate` combo** (2026-09-06), operator-created, a
-   config key in config.toml. The existing `nora` and `nora-judge` lanes are
-   untouched.
+7. **Token size is MEASURED, not assumed** (2026-09-06): DONE against the real
+   combo — 1,042 prompt + 133 completion = **1,175 total** on a 40-row window,
+   decomposing as 346 fixed + ~17/row. `max_tokens = 512`, ~4x the worst
+   completion seen. See §2.3.
+8. **Model: the `nora-gate` combo** (2026-09-06), operator-created, a config
+   key in config.toml, with `reasoning_effort = "none"` DECLARED beside it.
+   Named for its consumer like every other lane (`nora-judge`,
+   `nora-dreamer`); not `nora-participation`, which would name the one lane
+   the participation turn does not use, and not `nora-ambient`, which would
+   re-import the glossary collision design 35 §2 renamed away from. The
+   existing `nora` and `nora-judge` lanes are untouched.
 9. **Settle window: 10 seconds** (2026-09-06), unchanged.
 10. **Participation is NOT retired** (2026-09-06, correcting Rev 1). The
     occasion, its doctrine audience, its runner, its slot and cooldown policy,
@@ -333,7 +342,7 @@ under-scoped it in one direction and over-scoped it in another. Corrected:
 
 **What is added**:
 - `[relevance_gate]` config block: `enabled` (false), `model`
-  (`nora-ambient-gate`), `shadow` (true), `shadow_channel`, `shadow_platform`,
+  (`nora-gate`), `shadow` (true), `shadow_channel`, `shadow_platform`,
   `max_tokens` (measured). `settle_seconds` and `cooldown_minutes` stay in
   `[participation]` — they belong to the trigger and the turn.
 - `relevance_gate = true` per-room in policy.toml; `EngageDecision.relevance_gate`.
@@ -367,10 +376,10 @@ nowhere by any committed config.
 
 1. Gate built, shadow-only, `enabled = false` everywhere; full suite green,
    ruff/mypy/lint-imports clean.
-2. **DONE** — token cost measured and written into §2.3 (1,314 total). One
-   number stays a proxy until `nora-ambient-gate` exists: re-read
-   `completion_tokens` against the real combo, and watch
-   `nora_relevance_gate_errors_total{kind="truncated"}` for the tell.
+2. **DONE** — token cost measured against the real `nora-gate` combo and
+   written into §2.3 (1,175 total, 346 + ~17/row). No proxy left in the
+   number. `nora_relevance_gate_errors_total{kind="truncated"}` stays the tell
+   if a future combo member reasons past 512.
 3. Shadow soak: `enabled = true`, `shadow = true`, rooms opted in. Miles reads
    the GO stream and the no_go rate counter.
 4. The flip, on Miles's authorization only: `shadow = false`. Live sends become

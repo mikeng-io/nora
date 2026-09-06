@@ -195,7 +195,7 @@ class _RelevanceGateModelClient:
       paragraphs has room to start drafting the reply it must never draft —
       and its temperature is near zero because an instrument that answers
       differently on the same input is not one.
-    * Its model is its OWN combo (`nora-ambient-gate`), never the tag lane's.
+    * Its model is its OWN combo (`nora-gate`), never the tag lane's.
 
     Everything else is that class's, for its stated reasons:
     `response_format={"type": "json_object"}` because prompt-only JSON
@@ -205,20 +205,26 @@ class _RelevanceGateModelClient:
     an unbounded one is not a slow background job, it is a room that stops
     answering.
 
-    `reasoning_effort` is NOT passed. The gate is one classification with a
-    fixed output shape; buying thinking tokens for it would spend on the one
+    `reasoning_effort` IS passed, and the first version of this class did not
+    pass it — which the gate's own measurement then caught: a 44-character
+    verdict billed 251 completion tokens because the route reasoned by
+    default. `_DebriefModelClient` above carries the identical note for the
+    identical omission. Shipped `none`: the gate is one classification with a
+    fixed two-value output, and thinking tokens on it are spent on the one
     call whose whole purpose is to be cheaper than the turn behind it.
     """
 
     def __init__(
         self, *, client: AsyncOpenAI, model: str, max_tokens: int,
         temperature: float, timeout_seconds: float,
+        reasoning_effort: ReasoningEffort,
     ) -> None:
         self._client = client
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
         self._timeout_seconds = timeout_seconds
+        self._reasoning_effort = reasoning_effort
 
     @property
     def model(self) -> str:
@@ -232,6 +238,7 @@ class _RelevanceGateModelClient:
                 response_format={"type": "json_object"},
                 max_tokens=self._max_tokens,
                 temperature=self._temperature,
+                reasoning_effort=self._reasoning_effort,
             ),
             timeout=self._timeout_seconds,
         )
@@ -2118,6 +2125,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 max_tokens=cfg.relevance_gate.max_tokens,
                 temperature=cfg.relevance_gate.temperature,
                 timeout_seconds=cfg.relevance_gate.timeout_seconds,
+                reasoning_effort=_reasoning_effort(
+                    cfg.relevance_gate.reasoning_effort,
+                    source="[relevance_gate] reasoning_effort",
+                ),
             ),
             records=audit,
             metrics=metrics,
