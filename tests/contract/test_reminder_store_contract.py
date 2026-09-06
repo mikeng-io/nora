@@ -360,6 +360,7 @@ def _daily(**kw) -> Reminder:
     rule = RecurrenceRule(
         every=kw.pop("every", Recurrence.DAILY), tz="Asia/Hong_Kong",
         count=kw.pop("count", 3), until=kw.pop("until", None),
+        interval=kw.pop("interval", 1),
     )
     occurrence = kw.pop("occurrence", 0)
     anchor = kw.pop("anchor_at", T0 + timedelta(minutes=40))
@@ -397,9 +398,38 @@ async def test_a_recurring_row_round_trips_every_field_of_its_series(store):
     assert got.series.rule.tz == "Asia/Hong_Kong"
     assert got.series.rule.count == 5
     assert got.series.rule.until == ends
+    assert got.series.rule.interval == 1
     # The port's UTC rule reaches the two new datetimes as well.
     assert got.series.anchor_at.utcoffset() == timedelta(0)
     assert got.series.rule.until.utcoffset() == timedelta(0)
+
+
+async def test_a_sub_day_series_round_trips_its_unit_and_its_interval(store):
+    """#109's two new persisted facts, through BOTH stores.
+
+    The fake holds domain objects, so it round-trips anything by construction;
+    the SQL store serialises through two hand-written mappings
+    (`_row_to_series` and `_insert_values`) and a widened CHECK constraint.
+    Hard-coding `recurrence_interval` to 1 on write, or dropping it from the
+    read, left every other test green (#109 review) — a series would come back
+    firing every minute instead of every ten, which is the exact defect this
+    feature exists to close.
+
+    `minutely` also proves the constraint widening by INSERT rather than by the
+    dumped text in the schema baseline: against the old
+    `ck_reminders_recurrence_kind` this row is rejected by Postgres.
+    """
+    r = _daily(every=Recurrence.MINUTELY, count=7, interval=10)
+    await store.create(r)
+
+    got = await store.get(r.id)
+    assert got is not None
+    assert got.series is not None
+    assert got.series.rule.every is Recurrence.MINUTELY
+    assert got.series.rule.interval == 10
+    # Read back as the STEP it will actually fire at, not merely as a stored
+    # integer: this is what `plan_successor` computes from.
+    assert got.series.rule.period_seconds == 600
 
 
 async def test_a_one_shot_row_carries_no_series(store):

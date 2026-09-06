@@ -427,6 +427,11 @@ RULE_TESTS = {
     # (Numbered at gate-cleanup time: the change landed 2026-09-01
     # mislabelled "R-67", colliding with the prewarm rule above.)
     "R-88": "test_advance_seeds_autoplay_from_last_played_when_nothing_playing",
+    # R-89 (DEC-159, #109): a series may not repeat faster than
+    # `[reminders] min_interval_seconds`, and the tool REFUSES rather than
+    # clamping — a silently shortened series is the same broken promise the
+    # issue was opened about.
+    "R-89": "test_an_every_minute_ask_is_refused_with_something_she_can_say",
     # R-69 names the FIRST of four tests (the naming convention this dict
     # follows), and it is the one whose failure is unrecoverable: an exception
     # raised inside a `finally` skips the rest of that `finally`, and the

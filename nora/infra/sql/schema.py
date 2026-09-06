@@ -520,6 +520,16 @@ REMINDERS = sa.Table(
     # clock across DST, which an offset cannot express (`RecurrenceRule.tz`).
     sa.Column("recurrence_tz", sa.Text, nullable=True),
     sa.Column("recurrence_count", sa.Integer, nullable=True),
+    # EVERY N UNITS (#109). Server default 1 so the migration adds it to live
+    # rows without a backfill: every rule written before 2026-09-07 meant
+    # "every unit", which is exactly 1. NOT NULL for the same reason
+    # `occurrence` is — a null here would make the step uncomputable, and the
+    # all-or-nothing CHECK below cannot help with a column that is legitimately
+    # present on a `none` row too.
+    sa.Column(
+        "recurrence_interval", sa.Integer, nullable=False,
+        server_default=sa.text("1"),
+    ),
     sa.Column("recurrence_until", sa.DateTime(timezone=True), nullable=True),
     # The join key across a series' occurrences, and the namespace their ids are
     # derived from (`uuid5(series_id, occurrence)`).
@@ -544,7 +554,7 @@ REMINDERS = sa.Table(
         name="ck_reminders_state",
     ),
     sa.CheckConstraint(
-        "recurrence IN ('none','daily','weekly','monthly','yearly')",
+        "recurrence IN ('none','minutely','hourly','daily','weekly','monthly','yearly')",
         name="ck_reminders_recurrence_kind",
     ),
     # ALL-OR-NOTHING, and the database's copy of `Series | None`. The domain
@@ -563,6 +573,10 @@ REMINDERS = sa.Table(
         "AND series_anchor_at IS NOT NULL AND occurrence >= 0 "
         "AND occurrence < recurrence_count)",
         name="ck_reminders_recurrence",
+    ),
+    sa.CheckConstraint(
+        "recurrence_interval >= 1",
+        name="ck_reminders_recurrence_interval",
     ),
 )
 

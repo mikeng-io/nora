@@ -1384,6 +1384,17 @@ class RemindersConfig(BaseModel):
     # bounded: `RecurrenceRule.count` is required, so «forever» is not a state
     # the domain can represent, and this is the ceiling a request is clamped to.
     max_occurrences_per_series: int = Field(default=60, ge=1)
+    # HOW OFTEN a series may repeat, at the fastest (#109, operator 2026-09-07:
+    # "if it is by the minute, the minimum recurring item is every five
+    # minutes"). Sub-day recurrence makes 「每分鐘」 expressible for the first
+    # time, and a room can only run ONE turn at a time — schedule faster than it
+    # can serve and reminders do not arrive faster, they queue and starve
+    # interactive tags.
+    #
+    # `ge=60` is the STRUCTURAL wall, not a taste: `[heartbeat] tick_seconds` is
+    # how often she wakes, so below it the tick cannot deliver at all. Config
+    # may raise this floor and may not lower it past the machine.
+    min_interval_seconds: int = Field(default=300, ge=60)
     # An IANA zone NAME, never an offset: a recurrence keeps a LOCAL wall clock
     # («08:00, whatever the offset does that week»), which «+08:00» cannot
     # express. Validated at series construction — an unknown zone raises
@@ -2752,6 +2763,34 @@ class Config(BaseModel):
                 f"{self.heartbeat.tick_seconds}: a reminder set with the minimum "
                 "lead would come due inside the tick that is already running, and "
                 "would be answered later than she promised."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _repeat_floor_clears_the_tick(self) -> Config:
+        """`[reminders] min_interval_seconds` must be >= `[heartbeat]
+        tick_seconds`, for the same reason `min_lead_seconds` must clear it.
+
+        The floor's whole justification — in `config.py`, in
+        `ReminderCaps.min_interval_seconds` and in
+        `nora.domain.reminders.MIN_PERIOD_SECONDS` — is that the tick is how
+        often she wakes, so a series faster than it cannot be delivered at all.
+        That was written as prose against a `tick_seconds` an operator can
+        change: 900 with a 300-second floor validates fine today and makes
+        every five-minute series undeliverable at rate, which is exactly the
+        failure the floor claims to prevent (#109 review).
+
+        `>=` rather than `>` because a series landing exactly on the tick is
+        deliverable — unlike a minimum LEAD, which must clear the tick already
+        running.
+        """
+        if self.reminders.min_interval_seconds < self.heartbeat.tick_seconds:
+            raise ValueError(
+                f"[reminders] min_interval_seconds = "
+                f"{self.reminders.min_interval_seconds} must be at least "
+                f"[heartbeat] tick_seconds = {self.heartbeat.tick_seconds}: a "
+                "series may not repeat faster than she wakes up to check, or "
+                "occurrences pile up and fire late in clumps."
             )
         return self
 

@@ -25,6 +25,7 @@ WHAT EACH GROUP OF TESTS IS FOR
 
 from __future__ import annotations
 
+import itertools
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -33,7 +34,13 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.ports import JobResult, JobStatus
-from nora.domain.reminders import Recurrence, Reminder, ReminderCaps, ReminderState
+from nora.domain.reminders import (
+    Recurrence,
+    Reminder,
+    ReminderCaps,
+    ReminderState,
+    occurrence_at,
+)
 from nora.domain.tool_call_log import ToolCallLogEntry
 from nora.obs.metrics import Metrics
 from nora.testing import (
@@ -161,7 +168,8 @@ def test_no_reminder_tool_asks_the_model_where_to_put_it():
     # WHEN and HOW OFTEN, never about WHERE — the destination is still the
     # closure's conversation and nothing else.
     assert set(inspect.signature(tools["remind"]).parameters) == {
-        "when", "text", "repeat", "times", "until",
+        # `every_n` (#109) joins them: HOW OFTEN, still never WHERE.
+        "when", "text", "repeat", "every_n", "times", "until",
     }
     assert set(inspect.signature(tools["list_reminders"]).parameters) == set()
     assert set(inspect.signature(tools["cancel_reminder"]).parameters) == {"reminder_id"}
@@ -820,7 +828,19 @@ async def test_list_reminders_shows_a_repeat_as_a_repeat():
     assert result["status"] == "ok"
     [row] = result["reminders"]
     assert row["repeat"] == "daily"
-    assert row["repeat_left"] == 13
+    # 13 -> 12 (#109, 2026-09-07), and the OLD number was the bug.
+    #
+    # `times=14` with `until = T0 + 13 days` asks for fourteen but permits
+    # thirteen: the first fires at T0+2h and the fourteenth would land at
+    # T0+13d+2h, two hours past the bound, so `plan_successor` returns None and
+    # it never happens. `count` came from `times` alone, so `repeat_left` said
+    # 13 — a number she is instructed to SAY, describing a firing the series
+    # could not produce.
+    #
+    # The same arithmetic, unbounded, is what told the room 「仲有 59 次」 for the
+    # F1 series that had exactly one. `count` is now the tighter of the two
+    # bounds, so what she says and what will happen are the same number.
+    assert row["repeat_left"] == 12
     assert row["repeat_until"] is not None
 
 
@@ -1135,3 +1155,172 @@ async def test_recall_lookups_truncates_once_the_char_budget_is_spent():
     kept_markers = [e["tool_result"]["marker"] for e in result["entries"]]
     assert kept_markers == sorted(kept_markers, reverse=True)
     assert kept_markers[0] == 4
+
+
+# ---- #109: sub-day recurrence, the floor, and the number she says -----------
+
+
+async def test_the_f1_ask_is_one_call_not_twelve():
+    """THE case. 「每 10 分鐘報一次, 直到 23:00」 was unrepresentable, so she wrote
+    one `daily` row bounded two hours out — which fires once. Her own reasoning
+    in that turn had the right workaround (twelve separate reminders) and
+    abandoned it; twelve calls would also have eaten twelve of the twenty a
+    requester may hold, since a SERIES costs one and a one-off costs one each.
+
+    One call, and `repeat_left` is the number that will actually happen.
+    """
+    store = FakeReminderStore()
+    tools = _tools(reminders=store)
+
+    out = await tools["remind"](
+        when=SOON, text="F1 lap update", repeat="minutely", every_n=10,
+        until=(datetime.fromisoformat(SOON) + timedelta(hours=1)).isoformat(),
+    )
+
+    assert out["status"] == "ok"
+    assert out["repeat"] == "minutely"
+    assert out["every_n"] == 10
+    # 13:00 -> 14:00 inclusive at ten-minute steps is seven firings, so six
+    # follow the first. Asserted as a NUMBER rather than "> 0" because the
+    # whole defect was a number that did not match reality.
+    assert out["repeat_left"] == 6
+
+    # THE STORED RULE, and the firings it will actually produce.
+    #
+    # Asserting the RESULT DICT alone is what made the first version of this
+    # test worthless (#109 review): `_occurrences_through` receives `step`
+    # separately, so `repeat_left` comes out as 6 even when the rule that will
+    # fire has lost its multiplier entirely. Dropping `interval=step` from the
+    # `RecurrenceRule` construction left every assertion above satisfied by a
+    # series that finishes in six MINUTES instead of an hour — the F1 defect,
+    # reproduced inside the test named after it.
+    #
+    # So the times are read off the persisted row. `repeat_left` is what she
+    # SAYS; this is what will HAPPEN, and the whole issue is about those two
+    # being the same thing.
+    [row] = await store.pending_for(CONVERSATION)
+    assert row.series is not None
+    assert row.series.rule.interval == 10
+    fires = [
+        occurrence_at(anchor=row.series.anchor_at, rule=row.series.rule, index=i)
+        for i in range(row.series.rule.count)
+    ]
+    gaps = {int((b - a).total_seconds()) for a, b in itertools.pairwise(fires)}
+    assert gaps == {600}, "a ten-minute series must fire ten minutes apart"
+    assert len(fires) == 7
+
+
+async def test_an_every_minute_ask_is_refused_with_something_she_can_say():
+    """The operator's floor (「if it is by the minute, the minimum recurring
+    item is every five minutes」), and it refuses at the CONTRACT rather than
+    clamping inside it.
+
+    Clamping would be the F1 failure in a new costume: a series silently
+    shorter than the one she just promised. A refusal she can voice —
+    「最快五分鐘一次」 — lets her offer the thing the machine can actually do.
+    The store is asserted untouched, because a refusal that still wrote a row
+    would pass a status-only check.
+    """
+    store = FakeReminderStore()
+    tools = _tools(reminders=store)
+
+    out = await tools["remind"](
+        when=SOON, text="起身", repeat="minutely", times=30,
+    )
+
+    assert out["status"] == "refused"
+    assert "5 minutes" in out["note"]
+    assert store._rows == {}
+
+
+async def test_an_hourly_repeat_is_above_the_floor_and_allowed():
+    """The positive control for the refusal above. Same code path, one unit
+    coarser: without this, `too_often` firing on everything would look
+    identical to the floor working."""
+    store = FakeReminderStore()
+    tools = _tools(reminders=store)
+
+    out = await tools["remind"](
+        when=SOON, text="食藥", repeat="hourly", times=6,
+    )
+
+    assert out["status"] == "ok"
+    assert out["repeat"] == "hourly"
+    assert len(store._rows) == 1
+
+
+async def test_the_count_she_says_never_outlives_the_end_date():
+    """`repeat_left` is documented as "the bound she has to SAY", and it used to
+    be computed from `times` alone — so a series the end date cuts short still
+    announced the full number. 「每日提到聽日為止」 with `times=14` promised
+    fourteen and could deliver two."""
+    store = FakeReminderStore()
+    tools = _tools(reminders=store)
+
+    out = await tools["remind"](
+        when=SOON, text="食藥", repeat="daily", times=14,
+        until=(datetime.fromisoformat(SOON) + timedelta(days=2)).isoformat(),
+    )
+
+    assert out["status"] == "ok"
+    assert out["repeat_left"] == 2      # three firings fit, not fourteen
+
+
+async def test_a_bare_date_until_counts_the_whole_last_day():
+    """The derived count against the OTHER `until` form, and the branch where
+    an off-by-one would actually live (#109 review).
+
+    `_parse_until` reads a bare date as the END of that day — 「提到10月11號為止」
+    names a day, not midnight at the start of it — so a series bounded by one
+    gets the firings ON that day too. Every other derived-count test passes an
+    `until` WITH a time, which takes the other branch entirely.
+    """
+    store = FakeReminderStore()
+    tools = _tools(reminders=store)
+
+    out = await tools["remind"](
+        when=SOON, text="食藥", repeat="daily",
+        until=(datetime.fromisoformat(SOON) + timedelta(days=2)).date().isoformat(),
+    )
+
+    assert out["status"] == "ok"
+    # 8th (the first), 9th, 10th — the 10th counts, which is the whole point of
+    # end-of-day. Read as 00:00 this would be 2, and the reminder nearest the
+    # thing it is about would be the one that went missing.
+    assert out["repeat_left"] == 2
+
+
+async def test_a_nonsense_every_n_is_refused_rather_than_silently_becoming_one():
+    """`every_n` is written by the MODEL, so a bad one is an ordinary event.
+    Both refusals were unbound: making them silently fall back to 1 left every
+    test green (#109 review), and 1 is the worst possible default — 「每 10 分鐘」
+    would become every minute, ten times too often, in the room.
+    """
+    store = FakeReminderStore()
+    tools = _tools(reminders=store, metrics=(m := Metrics()))
+
+    unreadable = await tools["remind"](
+        when=SOON, text="x", repeat="minutely", every_n="ten",
+    )
+    assert unreadable["status"] == "refused"
+
+    zero = await tools["remind"](
+        when=SOON, text="x", repeat="minutely", every_n=0,
+    )
+    assert zero["status"] == "refused"
+
+    assert store._rows == {}
+    assert m.get("nora_reminders_created_total", status="bad_repeat") == 2
+
+
+async def test_the_repeat_floor_refusal_is_counted():
+    """Every other refusal in this file asserts its counter; `too_often` is the
+    new one and had none (#109 review). A refusal nobody can see the rate of is
+    how you find out too late that the floor is set wrong for what people
+    actually ask for."""
+    store = FakeReminderStore()
+    tools = _tools(reminders=store, metrics=(m := Metrics()))
+
+    await tools["remind"](when=SOON, text="起身", repeat="minutely", times=30)
+
+    assert m.get("nora_reminders_created_total", status="too_often") == 1

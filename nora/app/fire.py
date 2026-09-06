@@ -170,6 +170,16 @@ SHADOW_AUDIENCE = "participation-shadow"
 # header: the header is the SITUATION she is told about, and `doctrine` decides
 # what language she answers in — the two have never been the same choice.
 _EVERY = {
+    # EVERY member of `Recurrence` except NONE, and it must stay that way:
+    # `_repeat_clause` subscripts this bare. When #109 added the two sub-day
+    # units and this table was not extended, a `minutely` reminder raised
+    # KeyError inside `_fire_header` — AFTER `claim` had minted the successor
+    # and BEFORE the model was called. Every occurrence claimed a row, said
+    # nothing, and armed the next one: the exact «promise of eleven updates,
+    # zero delivered» failure #109 exists to fix, reproduced by the fix.
+    # `tests/unit/test_fire_path.py` covers the shape now.
+    Recurrence.MINUTELY: "minute",
+    Recurrence.HOURLY: "hour",
     Recurrence.DAILY: "day",
     Recurrence.WEEKLY: "week",
     Recurrence.MONTHLY: "month",
@@ -1750,4 +1760,11 @@ def _repeat_clause(row: Reminder) -> str:
         return ""
     left = remaining_occurrences(series)
     more = "last one" if left == 0 else f"{left} more after this"
-    return f" (every {_EVERY[series.rule.every]}, {more})"
+    # The INTERVAL, not just the unit (#109). Reading only `rule.every` renders
+    # a fortnightly arrangement as «every week» and a ten-minute one as «every
+    # minute» — wrong by the whole multiplier, in the one paragraph whose
+    # stated job is stopping her from misdescribing a standing arrangement.
+    step = series.rule.interval
+    unit = _EVERY[series.rule.every]
+    cadence = unit if step == 1 else f"{step} {unit}s"
+    return f" (every {cadence}, {more})"

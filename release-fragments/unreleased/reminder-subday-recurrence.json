@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Reminders can repeat every few minutes or hours, not just daily — one request sets the whole series.",
+  "details": [
+    "Recurrence was daily, weekly, monthly or yearly only. Asked for a lap update every 10 minutes during a race, Nora had no way to say it: she wrote one daily reminder bounded to that evening, which fires exactly once, and the room got nothing.",
+    "`minutely` and `hourly` join the existing units, and any unit can now repeat every N — every 10 minutes, every 2 weeks. It is still ONE request: she never sets a dozen separate reminders to fake a repeat.",
+    "A minutely or hourly reminder keeps its GAP (10 minutes is always 10 minutes, including across a clock change), while daily and longer keep their LOCAL TIME OF DAY as before.",
+    "How many times a repeat will actually happen is now worked out from the end date as well as the count, so the number she tells you is the number you get."
+  ],
+  "limitations": [
+    "There is a floor: a reminder cannot repeat faster than every five minutes. She refuses and says the fastest she can do, rather than quietly setting something slower than asked.",
+    "A series that repeats faster than a turn takes will skip occurrences rather than deliver a backlog of stale ones."
+  ]
+}
