@@ -42,7 +42,7 @@ from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.tag_traces import SqlTagTraceStore
-from nora.ingest.policy import ParticipationPolicy
+from nora.ingest.policy import RelevanceGatePolicy
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
@@ -336,7 +336,7 @@ async def build_handler(
 
     `participation_script`, when given, wires the participation occasion the way
     the composition root does (design/dreamer-agent-loop/35): the rooms named in
-    `participation_rooms` get `participation = true` in policy.toml, a REAL
+    `participation_rooms` get `relevance_gate = true` in policy.toml, a REAL
     `FirePath` is built with the scripted model as its `participation_runner`,
     and a `ParticipationTrigger` over the engagement pipeline's own slots is
     handed to the dispatcher — so an untagged message in an opted-in room is
@@ -369,7 +369,7 @@ async def build_handler(
             + (
                 # The participation occasion's room opt-in (35 §7): only present
                 # when the scenario wired a participation runner at all.
-                "participation = true\n"
+                "relevance_gate = true\n"
                 if participation_script is not None and cid in participation_rooms
                 else ""
             )
@@ -494,7 +494,7 @@ async def build_handler(
         tool_registry=tool_registry,
         tag_trace_store=tag_trace_store,
         extra_engage_policies=(
-            (ParticipationPolicy(load_policy(policy_path)),)
+            (RelevanceGatePolicy(load_policy(policy_path)),)
             if participation_script is not None else ()
         ),
         participation_runner=participation_runner,

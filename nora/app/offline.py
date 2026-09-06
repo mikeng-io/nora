@@ -37,7 +37,7 @@ from nora.engagement.context import StandingNotesReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.pipeline import IngestPipeline
-from nora.ingest.policy import CompositePolicy, ParticipationPolicy, TriggerTextPolicy
+from nora.ingest.policy import CompositePolicy, RelevanceGatePolicy, TriggerTextPolicy
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import permissive_policy
@@ -104,19 +104,19 @@ def build_offline_pipeline(
     # `extra_engage_policies` is the participation occasion's test seam
     # (design/dreamer-agent-loop/35): an integration harness exercising the
     # occasion wraps the trigger-text policy in a `CompositePolicy` carrying a
-    # real `ParticipationPolicy`, so an untagged message in an opted-in room
-    # reaches the dispatcher with `EngageDecision.participation` set exactly
+    # real `RelevanceGatePolicy`, so an untagged message in an opted-in room
+    # reaches the dispatcher with `EngageDecision.relevance_gate` set exactly
     # as production's wiring does it.
     policy: Any = TriggerTextPolicy(cfg.engagement.trigger.text)
     # `participation_opt_in` is the eval half of the room gate: a real
-    # `ParticipationPolicy` over THIS harness's `permissive_policy()` (whose
+    # `RelevanceGatePolicy` over THIS harness's `permissive_policy()` (whose
     # rooms are all opted in), so an untagged message is marked
-    # `EngageDecision.participation` exactly as production's opted-in rooms
+    # `EngageDecision.relevance_gate` exactly as production's opted-in rooms
     # do. `evals/` may not import `nora.ingest.policy` itself — the boundary
     # this module exists for.
     if participation_opt_in:
         extra_engage_policies = (
-            *extra_engage_policies, ParticipationPolicy(permissive_policy()),
+            *extra_engage_policies, RelevanceGatePolicy(permissive_policy()),
         )
     if extra_engage_policies:
         policy = CompositePolicy((policy, *extra_engage_policies))

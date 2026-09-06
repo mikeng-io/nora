@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import EngageDecision, EngagePolicy
-from nora.ingest.policy import CompositePolicy, ParticipationPolicy, TriggerTextPolicy
+from nora.ingest.policy import CompositePolicy, RelevanceGatePolicy, TriggerTextPolicy
 from nora.policy import Conversation, Policy
 
 
@@ -63,36 +63,36 @@ async def test_it_returns_an_engage_decision():
     assert isinstance(await policy.should_engage(message=_msg("hi")), EngageDecision)
 
 
-def _allowlist(*, participation: bool) -> Policy:
+def _allowlist(*, relevance_gate: bool) -> Policy:
     convo = Conversation(
         platform="signal", ids=frozenset({"g1"}), persons=None,
-        primary_id="g1", participation=participation,
+        primary_id="g1", relevance_gate=relevance_gate,
     )
     return Policy(
         conversations=(convo,), _by_id={("signal", "g1"): convo},
     )
 
 
-async def test_participation_policy_marks_an_opted_in_room_without_engaging():
-    """design/dreamer-agent-loop/35: the verdict is a CANDIDATE marker, never
+async def test_relevance_gate_policy_marks_an_opted_in_room_without_engaging():
+    """design/dreamer-agent-loop/36: the verdict is a CANDIDATE marker, never
     an admission — `engage` stays False so nothing downstream can read it as a
     tag."""
-    policy = ParticipationPolicy(_allowlist(participation=True))
+    policy = RelevanceGatePolicy(_allowlist(relevance_gate=True))
     decision = await policy.should_engage(message=_msg("just chatting"))
     assert decision.engage is False
-    assert decision.participation is True
-    assert decision.reason == "participation_room"
+    assert decision.relevance_gate is True
+    assert decision.reason == "relevance_gate_room"
 
 
-async def test_participation_policy_passes_a_room_that_is_not_opted_in():
-    policy = ParticipationPolicy(_allowlist(participation=False))
+async def test_relevance_gate_policy_passes_a_room_that_is_not_opted_in():
+    policy = RelevanceGatePolicy(_allowlist(relevance_gate=False))
     decision = await policy.should_engage(message=_msg("just chatting"))
-    assert decision.participation is False
+    assert decision.relevance_gate is False
     assert decision.engage is False
 
 
-async def test_participation_policy_passes_an_unlisted_room():
-    policy = ParticipationPolicy(_allowlist(participation=True))
+async def test_relevance_gate_policy_passes_an_unlisted_room():
+    policy = RelevanceGatePolicy(_allowlist(relevance_gate=True))
     decision = await policy.should_engage(
         message=_msg("hi").__class__(
             platform="signal", conversation_id="elsewhere",
@@ -100,20 +100,20 @@ async def test_participation_policy_passes_an_unlisted_room():
             timestamp=1, body="hi", raw={},
         )
     )
-    assert decision.participation is False
+    assert decision.relevance_gate is False
 
 
-async def test_the_composite_passes_a_participation_verdict_through():
-    """First match wins for participation too: a later `no_trigger` must not
+async def test_the_composite_passes_a_relevance_gate_verdict_through():
+    """First match wins for the gate verdict too: a later `no_trigger` must not
     overwrite the candidate marker, and a real tag still wins over both."""
     composite = CompositePolicy((
         TriggerTextPolicy("nora.000"),
-        ParticipationPolicy(_allowlist(participation=True)),
+        RelevanceGatePolicy(_allowlist(relevance_gate=True)),
     ))
     tagged = await composite.should_engage(message=_msg("nora.000 hi"))
-    assert tagged.engage is True and tagged.participation is False
+    assert tagged.engage is True and tagged.relevance_gate is False
     candidate = await composite.should_engage(message=_msg("just chatting"))
-    assert candidate.engage is False and candidate.participation is True
+    assert candidate.engage is False and candidate.relevance_gate is True
     plain = CompositePolicy((TriggerTextPolicy("nora.000"),))
     skipped = await plain.should_engage(message=_msg("just chatting"))
-    assert skipped.engage is False and skipped.participation is False
+    assert skipped.engage is False and skipped.relevance_gate is False

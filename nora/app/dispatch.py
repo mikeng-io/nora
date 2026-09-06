@@ -69,12 +69,14 @@ class Dispatcher:
         if result.message is None or result.decision is None:
             return
         if not result.decision.engage:
-            # The participation verdict (EngageDecision.participation): an
-            # untagged message in an opted-in room is NOT admitted — no R-9
-            # debounce semantics, no EngagementRequest, no agent now. It is
-            # only NOTED with the quiescence trigger; whether a window closes
-            # and a determination runs at all is the trigger's own cadence.
-            if result.decision.participation and self._participation is not None:
+            # The room verdict (EngageDecision.relevance_gate,
+            # design/dreamer-agent-loop/36): an untagged message in an opted-in
+            # room is NOT admitted — no R-9 debounce semantics, no
+            # EngagementRequest, no agent now, and no gate call yet. It is only
+            # NOTED with the quiescence trigger; whether a window closes, whether
+            # the Relevance Gate then says GO, and whether a turn runs at all are
+            # the trigger's own cadence and the gate's own verdict.
+            if result.decision.relevance_gate and self._participation is not None:
                 self._participation.note_message(result.message)
             return
         request = EngagementRequest(

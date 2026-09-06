@@ -1,7 +1,7 @@
-"""`Dispatcher`'s participation branch (design/dreamer-agent-loop/35 §3.5).
+"""`Dispatcher`'s room-verdict branch (design/dreamer-agent-loop/36 §1).
 
 An untagged message in an opted-in room arrives with
-`EngageDecision(engage=False, participation=True)`. It is NOT a tag admission:
+`EngageDecision(engage=False, relevance_gate=True)`. It is NOT a tag admission:
 the dispatcher only NOTES it with the quiescence trigger — no R-9 debounce, no
 `EngagementRequest`, no spawned turn. These fakes are the narrow seam the
 class declares (`ingest.run`, `engagement.run`, `background.spawn`,
@@ -64,10 +64,10 @@ def _dispatcher(decision: EngageDecision, *, trigger=None):
     return dispatcher, engagement, background
 
 
-async def test_a_participation_verdict_is_noted_not_admitted() -> None:
+async def test_a_relevance_gate_verdict_is_noted_not_admitted() -> None:
     trigger = _Trigger()
     dispatcher, engagement, background = _dispatcher(
-        EngageDecision(engage=False, reason="participation_room", participation=True),
+        EngageDecision(engage=False, reason="relevance_gate_room", relevance_gate=True),
         trigger=trigger,
     )
 
@@ -78,12 +78,12 @@ async def test_a_participation_verdict_is_noted_not_admitted() -> None:
     assert background.spawned == []
 
 
-async def test_a_participation_verdict_without_a_trigger_is_a_no_op() -> None:
-    """The `[participation] enabled = false` shape: the verdict can only exist
+async def test_a_relevance_gate_verdict_without_a_trigger_is_a_no_op() -> None:
+    """The `[relevance_gate] enabled = false` shape: the verdict can only exist
     when the policy surface is on, but the dispatcher stays safe if it ever
     sees one with no trigger wired."""
     dispatcher, engagement, background = _dispatcher(
-        EngageDecision(engage=False, reason="participation_room", participation=True),
+        EngageDecision(engage=False, reason="relevance_gate_room", relevance_gate=True),
     )
 
     await dispatcher.on_message(_msg())
@@ -94,7 +94,7 @@ async def test_a_participation_verdict_without_a_trigger_is_a_no_op() -> None:
 
 async def test_an_ordinary_ambient_message_is_never_noted() -> None:
     """The revised R-1 clause 2, from the dispatcher's side: only the
-    participation VERDICT reaches the trigger — the rest of the room's traffic
+    room VERDICT reaches the trigger — the rest of the room's traffic
     is recorded by ingest and goes no further."""
     trigger = _Trigger()
     dispatcher, _, background = _dispatcher(
@@ -108,7 +108,7 @@ async def test_an_ordinary_ambient_message_is_never_noted() -> None:
 
 
 async def test_a_tag_still_spawns_the_engagement_turn() -> None:
-    """The control: the participation branch must not disturb the one path
+    """The control: the room-verdict branch must not disturb the one path
     that existed before it."""
     trigger = _Trigger()
     dispatcher, engagement, background = _dispatcher(

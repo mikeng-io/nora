@@ -118,22 +118,27 @@ class VoiceNotePolicy:
         return EngageDecision(engage=False, reason="no_trigger")
 
 
-class ParticipationPolicy:
-    """The participation occasion's gate (design/dreamer-agent-loop/35 §3.5).
+class RelevanceGatePolicy:
+    """The Relevance Gate's ROOM gate (design/dreamer-agent-loop/36 §1).
 
     Never engages: an untagged message in a room the operator opted in
-    (`participation = true` on its `[[conversations]]` entry) comes back
-    `participation=True, engage=False` — a CANDIDATE for the quiescence
-    trigger, not an admission. The dispatcher feeds it to
-    `ParticipationTrigger`, which owns the window, the slot policy and the
-    send cooldown; nothing about the tag path changes for this message.
+    (`relevance_gate = true` on its `[[conversations]]` entry) comes back
+    `relevance_gate=True, engage=False` — a CANDIDATE for the quiescence
+    window, not an admission and not a verdict. The dispatcher notes it with
+    `ParticipationTrigger`, which owns the window; when the window closes the
+    Relevance Gate decides whether the burst is worth a turn at all, and only
+    a GO reaches `FirePath.speak`. Nothing about the tag path changes here.
 
-    Wired LAST in the composite and only when `[participation] enabled` — so
-    a real tag keeps its own reason, and a deployment with participation off
-    has exactly the gate it always had. The room lookup is against
-    policy.toml's allowlist (`Policy.conversation`), not config, because
-    "may answer when tagged" vs "may speak uncalled" is a trust distinction
-    and trust lives in the policy file.
+    This class answers "is this ROOM allowed to be considered", never "is
+    this MESSAGE worth answering" — that second question is the gate's, one
+    model call later, and it is the whole reason the two are separate.
+
+    Wired LAST in the composite and only when `[relevance_gate] enabled` — so
+    a real tag keeps its own reason, and a deployment with the gate off has
+    exactly the gate it always had. The room lookup is against policy.toml's
+    allowlist (`Policy.conversation`), not config, because "may answer when
+    tagged" vs "may speak uncalled" is a trust distinction and trust lives in
+    the policy file.
     """
 
     def __init__(self, allowlist: Policy) -> None:
@@ -141,9 +146,9 @@ class ParticipationPolicy:
 
     async def should_engage(self, *, message: NormalizedMessage) -> EngageDecision:
         convo = self._allowlist.conversation(message.platform, message.conversation_id)
-        if convo is not None and convo.participation:
+        if convo is not None and convo.relevance_gate:
             return EngageDecision(
-                engage=False, reason="participation_room", participation=True,
+                engage=False, reason="relevance_gate_room", relevance_gate=True,
             )
         return EngageDecision(engage=False, reason="no_trigger")
 
@@ -155,7 +160,7 @@ class CompositePolicy:
     deterministic policies first, short-circuiting, so a later failing or
     slower policy can never stop an explicit tag from working.
 
-    A `participation` verdict short-circuits the same way an engage verdict
+    A `relevance_gate` verdict short-circuits the same way an engage verdict
     does — it is a claim about the message a later policy must not overwrite
     with `no_trigger` — but it is still `engage=False`: nothing downstream may
     read it as an admission to the tag path.
@@ -167,6 +172,6 @@ class CompositePolicy:
     async def should_engage(self, *, message: NormalizedMessage) -> EngageDecision:
         for policy in self._policies:
             decision = await policy.should_engage(message=message)
-            if decision.engage or decision.participation:
+            if decision.engage or decision.relevance_gate:
                 return decision
         return EngageDecision(engage=False, reason="no_trigger")

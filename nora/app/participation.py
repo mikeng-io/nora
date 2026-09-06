@@ -4,8 +4,8 @@ occasion (design/dreamer-agent-loop/35 §3.5).
 WHAT THIS MODULE IS
 -------------------
 The ONLY place an untagged message becomes a candidate for the agent. The
-dispatcher feeds it messages that `ParticipationPolicy` marked
-`participation=True` (an untagged message in an opted-in room); everything
+dispatcher feeds it messages that `RelevanceGatePolicy` marked
+`relevance_gate=True` (an untagged message in an opted-in room); everything
 else in the room's traffic never reaches it. It answers one question: has
 this room gone quiet for `settle_seconds` since its last message, past the
 last window already evaluated? When so, it runs exactly ONE participation

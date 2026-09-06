@@ -18,7 +18,7 @@ async def test_ambient_reaches_the_agent_only_through_participation_gating(harne
     room may now reach the agent, once per quiescence-closed window, through
     `FirePath.speak`. Everything else about the clause is untouched, and this
     test keeps the original pin byte-for-byte: ordinary ambient traffic, in
-    rooms with no participation opt-in, constructs ZERO agents and sends
+    rooms with no relevance_gate opt-in, constructs ZERO agents and sends
     nothing. The exception's own gating is pinned beside it, below and in
     `tests/integration/test_silent_failures.py`'s participation rows.
     """
@@ -31,7 +31,7 @@ async def test_ambient_reaches_the_agent_only_through_participation_gating(harne
 
 async def test_an_opted_in_rooms_closed_window_is_the_only_ambient_exception(harness_factory):
     """The revised clause's exception, pinned end to end: an untagged message
-    in a room the operator opted in (`participation = true` in policy.toml)
+    in a room the operator opted in (`relevance_gate = true` in policy.toml)
     does NOT construct an agent when it arrives — it is only NOTED. The one
     evaluation runs when the quiescence window closes, through the fire path,
     exactly once per window; this determination declined the floor, so the

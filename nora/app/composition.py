@@ -97,7 +97,7 @@ from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
     CompositePolicy,
     MentionPolicy,
-    ParticipationPolicy,
+    RelevanceGatePolicy,
     ReplyToNoraPolicy,
     TriggerTextPolicy,
     VoiceNotePolicy,
@@ -870,11 +870,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # The participation occasion's room gate (design/dreamer-agent-loop/35
     # §7): LAST, and only when the occasion is enabled at all. It never
     # engages — it marks an untagged message in an opted-in room with
-    # `EngageDecision.participation`, which the dispatcher NOTES with the
+    # `EngageDecision.relevance_gate`, which the dispatcher NOTES with the
     # quiescence trigger instead of admitting it. With the flag off, no
     # room's untagged traffic is even considered.
     if cfg.participation.enabled:
-        engage_policies.append(ParticipationPolicy(allowlist))
+        engage_policies.append(RelevanceGatePolicy(allowlist))
     policy = CompositePolicy(tuple(engage_policies))
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,

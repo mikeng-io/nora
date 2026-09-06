@@ -323,7 +323,7 @@ async def run_case(
     turns = script or []
     tool_calls = [name for turn in turns for name, _ in turn.tool_calls]
     # A participation case (design §9): the incoming message is UNTAGGED, noted
-    # by the real `ParticipationPolicy`/`ParticipationTrigger`, and exactly one
+    # by the real `RelevanceGatePolicy`/`ParticipationTrigger`, and exactly one
     # determination runs through the real `FirePath.speak` once the harness
     # clock settles the window. The verdict is read off `Trajectory.sent`.
     participation = case.expect is not None

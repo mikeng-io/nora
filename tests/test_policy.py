@@ -206,27 +206,29 @@ def test_location_flag_defaults_false_and_parses_true(policy, tmp_path):
     assert trusted.conversation("signal", GROUP).location is True
 
 
-def test_participation_flag_defaults_false_and_parses_true(policy, tmp_path):
-    """design/dreamer-agent-loop/35 §8: `participation` opts a room into
-    unprompted turns. It DEFAULTS False (the fixture rooms set none) — being
-    answerable when tagged has never implied being allowed to speak uncalled —
-    and a room with `participation = true` carries it through to
-    `Conversation.participation`. `[participation] enabled` in config.toml is
-    the second, independent gate."""
-    assert policy.conversation("signal", GROUP).participation is False
+def test_relevance_gate_flag_defaults_false_and_parses_true(policy, tmp_path):
+    """design/dreamer-agent-loop/36 §9: `relevance_gate` opts a room into the
+    Relevance Gate's consideration of its untagged traffic. It DEFAULTS False
+    (the fixture rooms set none) — being answerable when tagged has never
+    implied being allowed to speak uncalled — and a room with
+    `relevance_gate = true` carries it through to
+    `Conversation.relevance_gate`. `[relevance_gate] enabled` in config.toml
+    is the second, independent gate."""
+    assert policy.conversation("signal", GROUP).relevance_gate is False
     body = (
         'default = "deny"\n[[conversations]]\nplatform="signal"\n'
-        f'id="{GROUP}"\npersons=["miles"]\nparticipation=true\n'
+        f'id="{GROUP}"\npersons=["miles"]\nrelevance_gate=true\n'
     )
     opted_in = load_policy(_write(tmp_path, body))
-    assert opted_in.conversation("signal", GROUP).participation is True
+    assert opted_in.conversation("signal", GROUP).relevance_gate is True
 
 
-def test_permissive_policy_opts_every_room_into_participation():
-    """The eval/testing double (design/dreamer-agent-loop/35 §9 gap 1): a
-    harness that wires `ParticipationPolicy(permissive_policy())` must have the
-    room gate OPEN so an untagged message can reach the participation occasion.
+def test_permissive_policy_opts_every_room_into_the_relevance_gate():
+    """The eval/testing double (design/dreamer-agent-loop/36 §9): a
+    harness that wires `RelevanceGatePolicy(permissive_policy())` must have the
+    room gate OPEN so an untagged message can reach the gate and, on GO,
+    the participation occasion.
     Inert in production — nothing ships `permissive_policy` into a live
-    `ParticipationPolicy`; and even in a harness it does nothing unless one is
+    `RelevanceGatePolicy`; and even in a harness it does nothing unless one is
     wired."""
-    assert permissive_policy().conversation("signal", "g1").participation is True
+    assert permissive_policy().conversation("signal", "g1").relevance_gate is True
