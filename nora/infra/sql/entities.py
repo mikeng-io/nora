@@ -51,174 +51,33 @@ a relation.
 from __future__ import annotations
 
 import logging
-import re
-from collections import Counter
-from dataclasses import dataclass
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.facts import PROMOTION_MAX_OBJECT_CHARS, FactEntity, normalise_name
-from nora.infra.sql.schema import FACT, FACT_ENTITY, NOTE
+from nora.domain.facts import FactEntity, normalise_name
+from nora.infra.sql.schema import FACT_ENTITY, NOTE
 
 log = logging.getLogger(__name__)
 
 #: 25 §4.1's measured floor for the trigram channel, against this database.
 TRIGRAM_THRESHOLD = 0.3
 
-# ---------------------------------------------------------------------------
-# The literal veto (21 §6.1). RULES, not a list — a date is a shape, and an
-# enumeration of dates would be a list nobody can finish. The operator-owned
-# FILE (21 §10) carries the extra strings this room decides are not things; it
-# is additive to these and never replaces them.
-# ---------------------------------------------------------------------------
-
-_URL = re.compile(r"^\w+://|^www\.", re.IGNORECASE)
-# A leading negation: "not a thing", "no black tower", 「唔係…」, 「冇…」.
-_NEGATION = re.compile(
-    r"^(no|not|never|none)\b"
-    r"|^(\u5187|\u5514\u4fc2|\u6c92\u6709|\u6ca1\u6709|\u4e0d\u662f)"
-)
-# ---------------------------------------------------------------------------
-# The QUANTITY vocabulary, and the rule is WHOLE-STRING, not leading-token.
-#
-# The first version vetoed on the first token alone, and a review reproduced
-# what that costs in this room: `Sun Hung Kai`, `Seven Sisters`, `Ten Thousand
-# Buddhas Monastery`, `1881 Heritage`, `one piece` and `May Chan` were all
-# refused entity-hood — a weekday, a spelled numeral or a month name happening
-# to START a real name. The docstring priced that as "a missing edge
-# (recoverable)"; for `Sun Hung Kai` in a Hong Kong room it is a permanent hole
-# exactly where the graph would be most useful.
-#
-# So a string is a quantity when EVERY whitespace-separated token is one.
-# `three hours` and `9 August` are; `Seven Sisters` is not, because `sisters` is
-# not. **Tokenising on whitespace ONLY, never on punctuation**, is what keeps
-# `7-Eleven` a single unknown token rather than the two numerals it splits into.
-_SPELLED = frozenset({
-    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
-    "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
-    "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "thirty",
-    "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred",
-    "thousand", "million", "billion",
-})
-_UNITS = frozenset({
-    "second", "seconds", "minute", "minutes", "mins", "hour", "hours", "hrs",
-    "day", "days", "week", "weeks", "month", "months", "year", "years", "yrs",
-    "am", "pm", "dollar", "dollars", "hkd", "usd", "cent", "cents",
-    "percent", "%", "kg", "km", "cm", "mm", "lb", "lbs",
-})
-_CALENDAR = frozenset({
-    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
-    "sunday", "mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri",
-    "sat", "sun", "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december",
-    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct",
-    "nov", "dec",
-})
-_QUANTITY_WORDS = _SPELLED | _UNITS | _CALENDAR
-_NUMERIC_TOKEN = re.compile(r"^[\-+]?[$£€¥]?\d+([.,:/]\d+)*(st|nd|rd|th|%)?$")
-
-# The same rule for CJK, which the first version did not have AT ALL — so every
-# case §6.1 names was admitted the moment the room wrote it in the language it
-# actually uses: 三個月, 五蚊, 十分鐘, 兩年. CJK has no whitespace, so the test
-# is over CHARACTERS: drawn entirely from numerals and units, starting with a
-# numeral.
-#
-# Narrow deliberately. 七姊妹 (Seven Sisters), 十萬個為什麼 and 大浪灣 each carry
-# a character outside the two sets and are admitted, which is the direction to
-# fail in.
-_CJK_NUMERALS = frozenset("〇零一二三四五六七八九十百千萬万億兩两半")
-_CJK_UNITS = frozenset("個个月年日時时分鐘钟秒週周星期蚊元塊块毫仙點点號号")
-
-_DATEISH = re.compile(r"^\d{1,4}[-/.]\d{1,2}([-/.]\d{1,4})?$|^\d{1,2}:\d{2}")
-
-
-def _is_quantity(s: str) -> bool:
-    """True when the WHOLE string is a quantity, date, price or duration."""
-    if _DATEISH.match(s):
-        return True
-    tokens = [t for t in normalise_name(s).split(" ") if t]
-    if tokens and all(
-        t in _QUANTITY_WORDS or _NUMERIC_TOKEN.match(t) for t in tokens
-    ):
-        return True
-    packed = "".join(s.split())
-    return bool(
-        packed
-        and packed[0] in _CJK_NUMERALS
-        and all(c in _CJK_NUMERALS or c in _CJK_UNITS for c in packed)
-    )
-
-
-def vetoed(surface: str, *, extra: frozenset[str] = frozenset()) -> bool:
-    """True when this object string must never become an entity.
-
-    §6.1's list, as rules: a date, a quantity, a price, a duration, a
-    time-of-day (spelled-out numerals included), a leading negation, a URL, or
-    anything over `PROMOTION_MAX_OBJECT_CHARS` — "a string longer than this is
-    a sentence, not a thing".
-
-    **The quantity rule is WHOLE-STRING, and that correction is the whole
-    reason `_is_quantity` exists.** Vetoing on the first token alone refused
-    `Sun Hung Kai`, `Seven Sisters`, `Ten Thousand Buddhas Monastery`, `1881
-    Heritage`, `one piece` and `May Chan` — a weekday, a spelled numeral or a
-    month name happening to start a real name. And it had no CJK arm at all,
-    so every case §6.1 names was admitted the moment the room wrote it in
-    Cantonese: 三個月, 五蚊, 十分鐘.
-
-    **A veto is not a refusal to store.** The literal stays exactly as written;
-    it simply never gains an id. Nothing is lost by vetoing wrongly except a
-    traversal, and §5's default-to-split says that is the survivable direction.
-    """
-    s = surface.strip()
-    if not s or len(s) > PROMOTION_MAX_OBJECT_CHARS:
-        return True
-    if normalise_name(s) in extra:
-        return True
-    if _URL.search(s) or _NEGATION.match(s.casefold()):
-        return True
-    return _is_quantity(s)
-
-
-@dataclass(frozen=True)
-class PromotionResult:
-    """What one promotion pass did, so `09-measurement.md`'s rule holds: a
-    change whose effect cannot be read back is not done."""
-
-    entities_created: int
-    entities_updated: int
-    rows_resolved: int
-    vetoed: int
-    below_degree: int
-
 
 class SqlEntityStore:
-    """`SqlEntityStore(engine)` — a bare `AsyncEngine`, the same affordance
-    `SqlFactStore` states for itself. `metrics` is optional and injected, never
-    imported (`nora.infra` sits below `nora.obs`)."""
+    """`SqlEntityStore(engine)` — a bare `AsyncEngine`, and nothing else.
 
-    def __init__(
-        self, engine: AsyncEngine, *,
-        veto_extra: frozenset[str] = frozenset(),
-        metrics: Any = None,
-    ) -> None:
-        """`veto_extra` is 21 §10's operator-owned list — the extra strings
-        THIS room decides are not things, versioned and hashed like an
-        objective. Normalised here so the file can be written in whatever case
-        its author uses.
+    It took an optional injected `metrics` until the knowledge tier was
+    deleted; both series it emitted (`nora_fact_entities_created_total`,
+    `nora_fact_entity_unresolved`) were promotion's and pass 6's, and both
+    went with them. A metrics collaborator with no recording site is the
+    "declared metric with no call site" defect wearing a constructor
+    argument, so it is gone rather than kept for a future caller."""
 
-        It was a `promote` parameter that nothing ever passed, which is "a
-        declared metric with no call site" wearing a different hat: the rule
-        existed, the plumbing did not, and no reading would have shown the
-        difference.
-        """
+    def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
-        self._veto_extra = frozenset(
-            normalise_name(v) for v in veto_extra if v.strip()
-        )
-        self._metrics = metrics
 
     # -- the deterministic half ---------------------------------------------
 
@@ -384,66 +243,6 @@ class SqlEntityStore:
         entity_id, inserted = (await conn.execute(stmt)).one()
         return str(entity_id), bool(inserted)
 
-    # -- pass 6's candidate query --------------------------------------------
-
-    async def unresolved_names(
-        self, *, workspace: str, limit: int,
-    ) -> tuple[str, ...]:
-        """Subjects of PENDING candidates that resolve to no entity — the names
-        the deterministic pass could not settle, which is exactly what pass 6
-        adjudicates (21 §5).
-
-        Pending only, and subjects only. A settled candidate's name is somebody
-        else's problem, and the object axis is promotion's (§6.1): an object
-        earns an entity by degree, never by being recognised.
-
-        Deduplicated on the NORMALISED form, so the same name written three
-        ways is one thing to adjudicate rather than three — the model should
-        never be asked the same question twice in one prompt, and a prompt that
-        did would read as three separate near-misses.
-
-        **ORDERED, and this had no ordering clause at all** — which is worse
-        than the ties elsewhere in this tier, not better: `SELECT DISTINCT`
-        returns rows in whatever order the hash aggregate produces, and that
-        shifts with statistics and with parallelism. So `[:limit]` over it
-        chose pass 6's per-tick entity-resolution budget arbitrarily, which
-        names got adjudicated varied run to run, and a name past the limit
-        could be starved indefinitely. It has no `ORDER BY` to append to,
-        which is why a grep for one could not find it.
-
-        Ordered by the SURFACE, which is a total order over the deduped key
-        and also settles which spelling represents a group. It is deliberately
-        NOT a ranking: whether a more-recurrent unresolved name deserves the
-        budget ahead of a rarer one is a real question, and answering it here
-        would be inventing a priority the design has not decided. Determinism
-        first; a ranking is a separate decision with its own evidence.
-        """
-        if limit <= 0:
-            return ()
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(
-                sa.text(
-                    "select distinct c.subject_id from fact_candidate c "
-                    "where c.workspace = :ws and c.status = 'pending' "
-                    "order by c.subject_id"
-                ),
-                {"ws": workspace},
-            )).all()
-            known = (await conn.execute(
-                sa.select(FACT_ENTITY.c.canonical_name, FACT_ENTITY.c.aliases)
-                .where(FACT_ENTITY.c.workspace == workspace)
-            )).all()
-        resolved = {normalise_name(c) for c, _a in known}
-        for _c, aliases in known:
-            resolved |= {normalise_name(a) for a in aliases}
-
-        out: dict[str, str] = {}
-        for (subject,) in rows:
-            n = normalise_name(subject)
-            if n and n not in resolved and n not in out:
-                out[n] = subject
-        return tuple(out.values())[:limit]
-
     # -- the note tier's judgement queue (issue #100) ------------------------
 
     async def unresolved_note_anchor_names(
@@ -577,150 +376,3 @@ class SqlEntityStore:
                 {"a": [alias], "i": entity_id},
             )
         return True
-
-    # -- pass 3 --------------------------------------------------------------
-
-    async def promote(
-        self, *, workspace: str, now_ms: int,
-    ) -> PromotionResult:
-        """Pass 3: promote object literals that have earned entity-hood, and
-        point their rows at the entity WITHOUT touching the words.
-
-        The rule is §6.1's, and degree is the whole criterion:
-
-        > promoted **iff** it survives the literal veto AND its normalised form
-        > appears in at least one other edge position in that workspace — as
-        > some standing fact's `subject_id`, or another standing fact's
-        > `object_literal`.
-
-        **A node of degree one is a string with extra steps** — there is
-        nothing to traverse to. `made_by "House House"` stays a literal while
-        it is the only House House claim, and both rows promote the moment a
-        second one arrives. Traversal becomes possible exactly when it becomes
-        meaningful.
-
-        **Standing facts only, never candidates**: unadjudicated noise must not
-        mint nodes.
-
-        **Idempotent, and one transaction.** Re-running converges — a row
-        already carrying its `object_entity_id` is left alone, alias
-        accumulation is a union, and `resolve_or_create` returns the existing
-        row. A concurrent re-run therefore cannot double-write. It is also
-        deliberately NOT inside the adjudication transaction (30 §4:
-        "promotion and embedding are downstream and idempotent, never inside
-        it").
-
-        The canonical name is the **most frequent surface form**, with ties
-        broken on the lowest normalised spelling so a plan change cannot change
-        which spelling wins. Every distinct surface form becomes an alias,
-        which is how `big walk` and `Big Walk` stop being two rows that cannot
-        see each other.
-        """
-        created = updated = resolved = vetoed_count = 0
-        async with self._engine.begin() as conn:
-            rows = (await conn.execute(
-                sa.select(FACT.c.id, FACT.c.subject_id, FACT.c.object_literal,
-                          FACT.c.object_entity_id)
-                .where(FACT.c.workspace == workspace,
-                       FACT.c.superseded_at.is_(None))
-            )).all()
-
-            # Every normalised form in EITHER edge position, with how often
-            # each surface spelling was used. Subjects count toward degree
-            # (§6.1's "as some standing fact's subject_id") but are not
-            # themselves promoted here: only the OBJECT column has a pointer to
-            # write to today.
-            # Degree is counted over DISTINCT FACTS, not over endpoints. The
-            # first version added one per endpoint, so a single row whose
-            # subject and object normalise alike — `big walk is_called Big
-            # Walk`, which is precisely the shape this table exists for —
-            # reached degree 2 FROM ITSELF and minted an entity whose only edge
-            # is a self-loop. §6.1's own justification is that "a node of
-            # degree one is a string with extra steps: there is nothing to
-            # traverse to", and a self-loop is exactly that.
-            seen_in: dict[str, set[str]] = {}
-            surfaces: dict[str, Counter[str]] = {}
-            for fid, subject, obj, _eid in rows:
-                for surface in (subject, obj):
-                    n = normalise_name(surface)
-                    if not n:
-                        continue
-                    seen_in.setdefault(n, set()).add(fid)
-                    surfaces.setdefault(n, Counter())[surface] += 1
-            degree = {n: len(fids) for n, fids in seen_in.items()}
-
-            promotable: dict[str, list[str]] = {}
-            below = 0
-            for fid, _subject, obj, eid in rows:
-                if eid is not None:
-                    continue                       # already resolved
-                if vetoed(obj, extra=self._veto_extra):
-                    vetoed_count += 1
-                    continue
-                n = normalise_name(obj)
-                if degree.get(n, 0) < 2:
-                    below += 1
-                    continue
-                promotable.setdefault(n, []).append(fid)
-
-            for n, fact_ids in promotable.items():
-                spellings = surfaces[n]
-                canonical = min(
-                    spellings, key=lambda s: (-spellings[s], normalise_name(s), s),
-                )
-                entity_id, was_created = await self.resolve_or_create(
-                    conn, workspace=workspace, canonical_name=canonical,
-                    aliases=tuple(spellings), now_ms=now_ms,
-                )
-                created += int(was_created)
-                updated += int(not was_created)
-                # TWO guards, and they are not the same guard. The Python
-                # filter above (`eid is not None`) is the ordinary path: it
-                # keeps an already-resolved row out of the work entirely, and
-                # is what makes `rows_resolved` mean "rows this pass changed".
-                # This predicate is the CONCURRENCY guard — two passes that
-                # both read the row as unresolved before either writes, which
-                # 30 §4 requires to converge. Postgres blocks the second
-                # UPDATE on the first's row lock and re-evaluates it.
-                #
-                # **No test drives that race**, and the honest reason is that
-                # it cannot be driven deterministically through `promote`: the
-                # two transactions serialise at their connection acquisition,
-                # so a `gather` of two calls runs them in sequence and the
-                # Python filter catches the second. A test asserting otherwise
-                # passed with this predicate deleted, which is worse than no
-                # test — it is written down here instead.
-                result = await conn.execute(
-                    sa.update(FACT)
-                    .where(FACT.c.id.in_(fact_ids),
-                           FACT.c.object_entity_id.is_(None))
-                    .values(object_entity_id=entity_id)
-                )
-                resolved += result.rowcount
-
-        # Counters for the EVENTS, gauges for the CENSUS. `created` and
-        # `resolved` are things this pass did; `vetoed` and `below` are
-        # recomputed from the whole standing table every pass, so adding them
-        # to a counter would measure ticks times rows. Set unconditionally,
-        # including at zero: 0 means the pass ran and found none, ABSENT means
-        # it has never run for this workspace, and that is the distinction that
-        # says whether promotion is wired at all.
-        self._inc("nora_fact_entities_created_total", created)
-        self._inc("nora_fact_objects_resolved_total", resolved)
-        self._set("nora_fact_objects_vetoed", vetoed_count, workspace=workspace)
-        self._set("nora_fact_objects_below_degree", below, workspace=workspace)
-        return PromotionResult(
-            entities_created=created, entities_updated=updated,
-            rows_resolved=resolved, vetoed=vetoed_count, below_degree=below,
-        )
-
-    def _set(self, name: str, value: int, **labels: object) -> None:
-        if self._metrics is not None:
-            self._metrics.gauge(name, float(value), **labels)
-
-    def _inc(self, name: str, value: int) -> None:
-        # Zero is not counted: a counter incremented by 0 is indistinguishable
-        # from one never touched, and prometheus renders both as the series
-        # existing. The pass having RUN is `nora_dream_run_total`'s job.
-        if self._metrics is not None and value:
-            self._metrics.inc(name, float(value))
