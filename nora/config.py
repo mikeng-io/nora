@@ -1689,10 +1689,9 @@ class NotesConfig(BaseModel):
     #: The curator, separately from the tier. `[notes] enabled` decides whether
     #: the INDEX is injected and the four tools reachable; this decides whether
     #: the background pass runs. Two switches because they are two risks: the
-    #: tag path only reads, and the curator MERGES AND RETIRES — the one thing
-    #: in this tier that removes something from her index. An operator turning
-    #: notes on should not thereby have signed up for a pass that reorganises
-    #: them.
+    #: tag path only reads, and the curator RETIRES — the one thing in this
+    #: tier that removes something from her index. An operator turning notes
+    #: on should not thereby have signed up for a pass that reorganises them.
     #:
     #: Also off because the curator is the tier's only writer that acts across
     #: notes, and 27 §2 makes that the Dreamer's alone precisely because it is
@@ -1719,17 +1718,17 @@ class NotesConfig(BaseModel):
     #: The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
     #: schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH switch on
     #: the same two-risks argument, and deliberately its own rather than riding
-    #: `curator_enabled`. That precedent cuts both ways: `[notes] enabled`'s
-    #: sibling entity-resolution pass rides `curator_enabled` because it
-    #: "carries none of those risks — it never touches a note's content, never
-    #: creates a note, and never merges one" (see this file's own note beside
-    #: `NoteEntityResolutionAdaptor`'s wiring). Discharge is the opposite case:
-    #: it WRITES to two tiers outside this one entirely — an Event, and a
+    #: `curator_enabled`. That precedent cuts both ways: the note tier's
+    #: entity-resolution pass (deleted 2026-09-08) rode `curator_enabled`
+    #: because it "carried none of those risks — it never touched a note's
+    #: content, never created a note, and never merged one". Discharge is the
+    #: opposite case: it WRITES to two tiers outside this one entirely — an
+    #: Event, and a
     #: Honcho conclusion about a named person — the moment a note the curator
     #: was already going to retire turns out to classify as a commitment or a
     #: person-claim. (A third kind, a world-claim, went to the knowledge tier
     #: until that tier was deleted on 2026-09-07.) An operator who accepted
-    #: "this pass merges and retires notes" did not thereby accept "this pass
+    #: "this pass retires notes" did not thereby accept "this pass
     #: also creates calendar events and writes permanent memories about
     #: people"; that is a materially different, materially larger capability
     #: and it gets its own flag, the same reasoning `candidates_enabled` states
@@ -1739,16 +1738,6 @@ class NotesConfig(BaseModel):
     #: `candidates_enabled`: landing this code must not change what any
     #: deployed `config.toml` does on the next restart.
     discharge_enabled: bool = False
-
-    #: MERGE GROUPS per tick, not notes. The curator's cost is bodies read, and
-    #: a group is the unit it reads — typically two notes, occasionally more.
-    #:
-    #: Small on purpose. A collided anchor is rare (it needs two notes about the
-    #: same date AND the same people), so a tick that finds three groups is
-    #: already unusual, and the cap is a bound on a surprise rather than a
-    #: throughput knob. `nora_note_curator_bodies_read` is what says whether it
-    #: binds.
-    max_groups_per_tick: int = Field(default=3, ge=1, le=50)
 
     #: EXPIRED notes per tick. Larger than the group cap because expiry is the
     #: common case and each costs one body: after a quiet month, every note

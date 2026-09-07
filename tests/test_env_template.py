@@ -112,11 +112,9 @@ _MAY_DIFFER = {
     # default.
     #
     # notes.curator_enabled is the same shape (operator, 2026-08-28). What it
-    # does on THIS deployment is retire; merge is refused for every group
-    # because `note_entity` has no writer (R-75), so turning it on is a
+    # does is retire (merge was removed 2026-09-08), so turning it on is a
     # decision about retirement alone. A fresh deployment must not inherit
-    # that — it has no notes and no operator who has read what the refusal
-    # counter means.
+    # that — it has no notes and no operator who has decided it.
     "image_gen.enabled",
     # Env-var NAMES are the operator's choice of what to call a secret.
     "media.encryption_key_env",

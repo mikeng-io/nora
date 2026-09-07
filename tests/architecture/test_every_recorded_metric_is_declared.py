@@ -44,9 +44,10 @@ rebuilt one level up inside the instrument.
 
 So `_forwarding_wrappers` derives them per file: a method whose FIRST non-self
 parameter is passed as the FIRST positional argument to a `Metrics` recording
-method. That definition is what discriminates — it finds all five real wrappers
-(measured 2026-09-07: `note_candidates._inc`, `note_curator._gauge`/`_inc`,
-`note_entity_adaptor._inc`, `presence/collector._count`) and correctly REFUSES
+method. That definition is what discriminates — it finds all four real wrappers
+(measured 2026-09-08: `note_candidates._inc`, `note_curator._gauge`/`_inc`,
+`presence/collector._count`; `note_entity_adaptor._inc` was the fifth until
+that adaptor was deleted) and correctly REFUSES
 `nora/agent/relay.py::_count`, whose first parameter is an R-27 status
 (`ok`/`nothing_found`/`unavailable`) forwarded as a LABEL while the metric name
 is a module constant.
@@ -143,8 +144,11 @@ _METRICS_METHODS = frozenset({"inc", "gauge", "observe", "gauge_function"})
 # same "just under, never a round number far below" rule the paragraph above
 # argues for. Re-checked by degrading `_forwarding_wrappers` to return
 # nothing: 209/104, red on both.
-_MIN_NAME_READS = 255
-_MIN_DISTINCT_NAMES = 118
+#
+# LOWERED AGAIN 2026-09-08 with the note tier's entity-resolution chain and
+# the curator's merge half: 247 reads over 118 names, floors just under.
+_MIN_NAME_READS = 245
+_MIN_DISTINCT_NAMES = 117
 
 # Recording sites whose name argument cannot be read statically, pinned by
 # (path, enclosing function, method, argument source text). Every row is either
@@ -159,7 +163,6 @@ _UNRESOLVABLE: frozenset[tuple[str, str, str, str]] = frozenset(
         ("nora/language/note_candidates.py", "_inc", "inc", "name"),
         ("nora/language/note_curator.py", "_gauge", "gauge", "name"),
         ("nora/language/note_curator.py", "_inc", "inc", "name"),
-        ("nora/language/note_entity_adaptor.py", "_inc", "inc", "name"),
         ("nora/obs/metrics.py", "inc", "inc", "value"),
         ("nora/obs/metrics.py", "observe", "observe", "value"),
         ("nora/presence/collector.py", "_count", "inc", "name"),

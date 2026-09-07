@@ -870,18 +870,15 @@ async def test_the_curators_adaptors_are_appended_not_assigned(cfg):
     (`curator_enabled`, already covered by `test_the_curator_needs_three_gates_
     not_two`/`test_all_three_gates_on_builds_the_curator` above), not two.
 
-    `note-entity-resolution` (issue #100) rides the SAME `curator_enabled`
-    gate, appended after `note-curation` — see
-    `NoteEntityResolutionAdaptor`'s own module docstring for why it has no
-    flag of its own."""
+    `note-entity-resolution` (issue #100) rode the SAME `curator_enabled`
+    gate, appended after `note-curation`, until the entity chain was removed
+    on 2026-09-08."""
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True, "notes.enabled": True,
         "notes.curator_enabled": True,
     }))
 
-    assert [a.name for a in deps.dream_adaptors] == [
-        "note-curation", "note-entity-resolution",
-    ]
+    assert [a.name for a in deps.dream_adaptors] == ["note-curation"]
 
 
 async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg):

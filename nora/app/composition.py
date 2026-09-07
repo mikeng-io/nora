@@ -75,7 +75,6 @@ from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
-from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
@@ -108,7 +107,6 @@ from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
-from nora.language.note_entity_adaptor import NoteEntityResolutionAdaptor
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
@@ -682,28 +680,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     language_store: SqlLanguageStore | None = (
         SqlLanguageStore(engine, metrics=metrics) if cfg.dreamer.enabled else None
     )
-    # ONE entity store for the process. `fact_entity` is a TIER-NEUTRAL name
-    # registry — an entity ("Big Walk") is a shared name, not any one tier's
-    # property — and `note_entity.entity_id` is a foreign key into it, so it
-    # outlived the knowledge tier that first built it. Built UNCONDITIONALLY
-    # rather than under a tier flag for exactly that reason: it is one small
-    # store over an engine that already exists, and gating it on a tier would
-    # be a tier deciding whether a shared registry exists. The table and the
-    # module keep their `fact_` names in this pass; renaming either is a
-    # separate change with its own migration.
-    fact_entities = SqlEntityStore(engine)
     # The note tier's store (2026-08-21 note-tier design), REUSING `engine`
     # like every store above, and gated on its OWN flag. Off,
     # `TranscriptInjection` gets `notes=None` and `_notes` answers `()`
     # without a query — the dormant state the tier shipped in. No `metrics=`:
-    # `SqlNoteStore.__init__` takes an engine and an optional `entities`
-    # collaborator and nothing else on purpose (its own docstring), and the
-    # one read on the critical path is counted by `_notes` instead.
-    #
-    # `entities=fact_entities` (issue #100) is the deterministic half of the
-    # note tier's own entity resolution, over the shared registry above.
+    # `SqlNoteStore.__init__` takes an engine and nothing else on purpose (its
+    # own docstring), and the one read on the critical path is counted by
+    # `_notes` instead. It took an `entities=` registry collaborator from
+    # issue #100 until 2026-09-08, when the note tier's entity-resolution
+    # chain was removed (issue #115's follow-up): nothing minted an entity
+    # once the knowledge tier was gone, so the chain could only ever link an
+    # anchor name to the eight stale rows that tier left behind.
     note_store: SqlNoteStore | None = (
-        SqlNoteStore(engine, entities=fact_entities) if cfg.notes.enabled else None
+        SqlNoteStore(engine) if cfg.notes.enabled else None
     )
 
     # Resolved here, not inside AdapterRegistry — the same convention every
@@ -2066,9 +2055,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # The note tier's curator, on its OWN gate and behind the tier's.
         # `[notes] enabled` decides whether the index is injected and the four
         # tools reachable; `curator_enabled` decides whether a background pass
-        # MERGES AND RETIRES. Two switches for two risks: the tag path only
-        # reads, and this is the one thing in the tier that removes something
-        # from her index.
+        # RETIRES. Two switches for two risks: the tag path only reads, and
+        # this is the one thing in the tier that removes something from her
+        # index. (It merged too, until 2026-09-08 — merge eligibility needed a
+        # resolved entity set that nothing could populate once the knowledge
+        # tier was gone, so the verb was inert by construction and went with
+        # the entity-resolution chain.)
         #
         # This is ALSO where `note-revisit` used to be wired, before the
         # note-curator merge (design/dreamer-agent-loop/34, issue #99): the
@@ -2118,7 +2110,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
 
             # A TRUE CRON, not a data-gated one (design/dreamer-agent-loop/33
             # §5, issue #102): `NoteCuratorAdaptor.uses_watermark = False` and
-            # its retirement/merge sweep must fire on the CALENDAR even when
+            # its retirement sweep must fire on the CALENDAR even when
             # the room is silent — a note's anchor date passes whether or not
             # anybody is talking. `AdaptorSchedule` only gates a watermark-free
             # adaptor's clock once `_dream_adaptor_once` checks the schedule
@@ -2159,29 +2151,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     # per-tick ceiling finds one that means something.
                     batch_limit=cfg.notes.max_expired_per_tick,
                 ),
-                # The THIRD adaptor found running on the bare 5-minute tick
-                # (the fact tier's two were the first two). Watermark-free and
-                # workspace-keyed with no schedule entry, so it inherited it.
-                #
-                # It has been cheap only by accident: `unresolved_note_anchor_
-                # names` offers a name to the model only when
-                # `similar_entities` finds a near-miss among EXISTING entity
-                # rows, and the entity table has been empty for exactly the
-                # bootstrap reason this branch's first commit fixes. Opening
-                # the adjudication filter is what starts filling it — so
-                # without this entry, this branch would have CAUSED a model
-                # call every five minutes per workspace, arriving weeks later
-                # as somebody else's mystery.
-                #
-                # 08:00 UTC: a slot of its own, well clear of `note-curation`
-                # at 16:00. It used to follow the knowledge tier's entity
-                # pass at 07:00; that pass is gone (issue #115), and the only
-                # thing minting names for it now is the note sink itself.
-                "note-entity-resolution": AdaptorSchedule(
-                    min_interval_seconds=86400,
-                    phase_offset_seconds=8 * 3600,
-                    batch_limit=cfg.notes.max_expired_per_tick,
-                ),
             }
             dream_adaptors = (
                 *dream_adaptors,
@@ -2189,7 +2158,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     notes=note_store,
                     record=audit,
                     today=_today_hk,
-                    max_groups_per_tick=cfg.notes.max_groups_per_tick,
                     max_expired_per_tick=cfg.notes.max_expired_per_tick,
                     max_revisits_per_tick=cfg.notes.max_revisits_per_tick,
                     evidence_messages_per_note=cfg.notes.revisit_evidence_messages,
@@ -2215,31 +2183,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     events=events,
                     conclusions=memory,
                     ai_peer=cfg.memory.ai_peer,
-                ),
-            )
-            # The note tier's judgement half of entity resolution (issue
-            # #100), riding `curator_enabled` rather than a fourth flag of
-            # its own. The note tier already has three gates for three
-            # DIFFERENT risks an operator turning on `[notes]` did not
-            # thereby sign up for: the tag path only reads, this pass's own
-            # sibling above merges and retires, the create path (below)
-            # writes new notes. Attaching an alias to the shared entity
-            # registry carries none of those risks — it never touches a
-            # note's content, never creates a note, and never merges an
-            # entity row, so by itself it would not earn a gate. What makes
-            # `curator_enabled` the right one anyway is that this pass has no
-            # OTHER consumer: `note_entity` is read only by
-            # `group_on_anchor_key`, which only the curator calls. An
-            # operator who has not turned the curator on has nothing that
-            # would ever read what this pass writes — the exact "declared
-            # with no call site" shape CLAUDE.md warns against, one layer up
-            # from a metric. The entity registry it reads and writes is built
-            # unconditionally (see `fact_entities` above), so there is no
-            # second condition left to check.
-            dream_adaptors = (
-                *dream_adaptors,
-                NoteEntityResolutionAdaptor(
-                    entities=fact_entities, metrics=metrics,
                 ),
             )
         # The note tier's CREATE PATH (design/dreamer-agent-loop/33 §4, issue

@@ -16,6 +16,8 @@ edges:
 > Their tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
 > The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
 
+> **FURTHER DEPRECATED IN PART 2026-09-08 — the note tier's entity-resolution pass and the curator's merge half are deleted.** §5's schedule has two note adaptors, not three (`note-entity-resolution` is gone), and the `fact-adjudication → entity-resolution` dependency in §6 names two passes that no longer exist. The create path (§4) still stands; its gate now compares the anchor DATE alone.
+
 
 # The Note Dreamer — Notebook Positioning, a Create Path, and Per-Adaptor Schedule
 

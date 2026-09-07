@@ -80,40 +80,17 @@ a claim, not a plan:
   hold with or without the index; the index is a performance affordance, and
   nothing here reads a null result as evidence of absence because of it.
 
-**Entity resolution's DETERMINISTIC half now runs here (issue #100), mirroring
-`SqlFactStore._resolve_subjects`'s shape rather than its verb.** `anchor_
-entity_ids` is still written verbatim to `note.anchor_entity_ids` — that column
-answers "what did the writer type" and stays free text on purpose. Separately,
-every distinct string in it is resolved against `fact_entity`'s canonical
-names and aliases — EXACT match after normalisation, via `SqlEntityStore.
-resolve`, never `resolve_or_create`: this tier only ever LINKS a name to an
-entity that already exists (the fact tier is what creates one), and never
-mints one of its own. A match writes a `note_entity` row, in the SAME
-transaction as the note/revision it belongs to; no match leaves the string
-unresolved — a candidate for
-`nora.language.note_entity_adaptor.NoteEntityResolutionAdaptor`'s judgement
-pass, or simply unresolved, which is the existing fail-closed default and not a
-regression. `entities` is optional and injected (`SqlEntityStore | None`,
-`None` by default) for the same reason `SqlFactStore.__init__` states: a
-contract-suite fixture built from a bare `AsyncEngine` still works, and pays
-for it by leaving every note's entities unresolved.
-
-Both writers resolve: `create` (the tag path's `note_create`) and `propose`'s
-`NoteCreationProposal` branch (the debrief and the create-candidate gate,
-issue #98). `propose`'s `NoteRevisionProposal` branch does not — a revision
-never changes `anchor_entity_ids` (there is no column for it to write), and
-`NoteRevisionProposal.entity_ids` is not resolved here; it is unused by this
-store today, exactly as it arrived.
-
-**`merge_groups` reads `note_entity`, and now something is actually writing
-it.** Merge eligibility is `(anchor_date, resolved entity set)`, and the
-resolved half comes from `note_entity` — never from `anchor_entity_ids`, which
-is the model's own free text. Before this, `note_entity` had no writer anywhere
-and every group was refused; `nora_note_curator_groups_refused_total` is the
-number that says how much of that refusal is left. Keying on the raw column
-instead would make merge fire, and fire wrongly in both directions: three
-spellings of one wedding are three keys, while two unrelated notes that both
-say 「wedding」 are one.
+**Entity resolution and merge are gone from this store (2026-09-08).** From
+issue #100 until then, `create`/`propose` resolved `anchor_entity_ids`
+against the shared `fact_entity` registry and wrote `note_entity` rows, and
+`merge_groups`/`merge` were the curator's cross-note read and write over the
+resolved anchor. Once the knowledge tier was deleted (issue #115) nothing
+minted an entity: the registry held eight stale rows and no writer, so
+resolution could link a note to nothing new and merge — which refused any
+group whose resolved entity set was empty — was inert by construction. The
+chain was removed rather than left wired-and-inert. `note.anchor_entity_ids`
+stays as the writer's own free text; `note_entity` and `fact_entity` stay as
+tables with no reader, per the deletion rule that drops schema separately.
 """
 
 from __future__ import annotations
@@ -140,15 +117,12 @@ from nora.domain.notes import (
     NoteSupersedeReason,
     StaleNoteHeadError,
     WakeOutcome,
-    group_on_anchor_key,
     tag_path_progressed_since_wake,
 )
 from nora.domain.ports import Proposal
-from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.schema import (
     NOTE,
     NOTE_CANDIDATE,
-    NOTE_ENTITY,
     NOTE_REVISION,
 )
 
@@ -208,80 +182,10 @@ class SqlNoteStore:
     same affordance for the same reason, and the two stores' fixtures are
     deliberately interchangeable in shape.
 
-    **`entities` is the one addition (issue #100), and it is optional for the
-    same reason `SqlFactStore.entities` is**: a contract-suite fixture still
-    builds this from a bare engine, and what that costs is that such a fixture
-    writes notes whose anchor entities never resolve — the fail-closed default
-    this tier already shipped with, not a new one. When it IS supplied, every
-    `create`/`propose` resolves `anchor_entity_ids` against it and writes
-    `note_entity` in the same transaction as the note it belongs to; see
-    `_resolve_names`.
     """
 
-    def __init__(
-        self, engine: AsyncEngine, *, entities: SqlEntityStore | None = None,
-    ) -> None:
+    def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
-        self._entities = entities
-
-    async def _resolve_names(
-        self, *, workspace: str, names: Sequence[str],
-    ) -> dict[str, str]:
-        """The deterministic half of entity resolution (21 §5, issue #100):
-        normalise, exact-match against `fact_entity`'s canonical name and
-        aliases. Returns the subset of `names` that resolved, mapped to the
-        entity id each one names.
-
-        **`resolve`, never `resolve_or_create`.** The fact tier's sink creates
-        an entity because a fact's subject IS one end of the edge being
-        written (§4: entity creation is a side effect of writing an edge, and
-        the FACT is the edge). A note's anchor entity is not an edge the note
-        tier is asserting — it is a reference to something the fact tier
-        already asserts exists. Minting one here would make writing a note
-        able to grow the shared substrate from free text nothing has
-        adjudicated, which is exactly the "unadjudicated noise must not mint
-        nodes" rule one layer over.
-
-        A blank `self._entities` (no collaborator injected) or a blank/
-        whitespace-only name resolves to nothing, cheaply, before any lookup —
-        the fail-closed default this whole tier already had.
-        """
-        if self._entities is None:
-            return {}
-        resolved: dict[str, str] = {}
-        for name in dict.fromkeys(names):
-            if not name or not name.strip():
-                continue
-            entity_id = await self._entities.resolve(workspace=workspace, name=name)
-            if entity_id is not None:
-                resolved[name] = entity_id
-        return resolved
-
-    @staticmethod
-    async def _attach_note_entities(
-        conn: AsyncConnection, pairs: Sequence[tuple[str, str]],
-    ) -> int:
-        """Write `(note_id, entity_id)` rows into `note_entity`, on the
-        CALLER's connection so it lands in the same transaction as the note or
-        revision that resolved them (21 §4's atomicity argument, one join
-        table over: a `note_entity` row naming a note the transaction rolled
-        back would be exactly the dangling edge that argument forbids).
-
-        `ON CONFLICT DO NOTHING` on the table's own composite primary key
-        (`note_id`, `entity_id`) — a name resolving to an entity the note is
-        already linked to (a revision re-asserting the same anchor, or two
-        proposals in one batch naming the same pair) is not a second link,
-        it is the same one seen twice.
-        """
-        rows = list(dict.fromkeys(pairs))
-        if not rows:
-            return 0
-        result = await conn.execute(
-            pg_insert(NOTE_ENTITY)
-            .values([{"note_id": n, "entity_id": e} for n, e in rows])
-            .on_conflict_do_nothing()
-        )
-        return result.rowcount
 
     async def create(
         self,
@@ -329,19 +233,8 @@ class SqlNoteStore:
             written_at=now_ms, established_by=established_by,
             instruction_sha256=instruction_sha256, model=model,
         )
-        # RESOLVED BEFORE THE TRANSACTION OPENS: `_resolve_names` reads
-        # `fact_entity` on its own connection, and the fact-tier sink's own
-        # doctrine is that a resolution decided against a name is a READ, not
-        # part of the write it feeds — the write half is what needs the
-        # transaction, not the lookup that decides its arguments.
-        resolved = await self._resolve_names(
-            workspace=workspace, names=anchor_entity_ids,
-        )
         async with self._engine.begin() as conn:
             await self._create_on_conn(conn, note=note, revision=revision)
-            await self._attach_note_entities(
-                conn, [(note_id, eid) for eid in dict.fromkeys(resolved.values())],
-            )
         return note
 
     @staticmethod
@@ -627,7 +520,7 @@ class SqlNoteStore:
         and its write, the tag path may have revised the note, and that
         revision is not an obstacle to record — it is the PROGRESS the reset
         exists to detect. So this reads the head inside the transaction and
-        branches on it. `merge` and `propose` take a parent because they WRITE
+        branches on it. `propose` takes a parent because it WRITES
         content and must not overwrite; this writes only bookkeeping about a
         head it just read.
 
@@ -650,8 +543,8 @@ class SqlNoteStore:
         loops forever with it missing".
 
         **Not on `DreamSink`.** That port has two verbs and deliberately no
-        third; this is a store method the revisitor calls directly, the same
-        placement `merge` took and for the same reason.
+        third; this is a store method the curator calls directly — a tier's
+        own bookkeeping verb belongs on its store, not on the port.
         """
         if not _is_uuid(note_id):
             return None
@@ -677,7 +570,7 @@ class SqlNoteStore:
 
             # THE SPAN, NOT THE HEAD. This joined `note_revision` on the head
             # and asked who wrote THAT — so a room revision followed by a
-            # background one (a merge, a debrief append) read as no progress
+            # background one (a debrief append) read as no progress
             # and left the watermark behind, forever. See
             # `tag_path_progressed_since_wake`.
             #
@@ -719,271 +612,12 @@ class SqlNoteStore:
             )
         return WakeOutcome(strikes=strikes, reset=progressed)
 
-    # ---- merge: the one cross-note write, in one transaction ---------------
-
-    async def merge(
-        self,
-        *,
-        workspace: str,
-        survivor: str,
-        survivor_parent: str,
-        merged_body: str,
-        retire: Sequence[str],
-        established_by: str,
-        instruction_sha256: str | None,
-        model: str | None,
-        now_ms: int,
-    ) -> int:
-        """Append `merged_body` to `survivor` AND retire `retire`, atomically.
-        Returns notes retired.
-
-        **THIS VERB EXISTS BECAUSE OF A REVIEW FINDING, and the finding was
-        that my own justification did not hold.** `propose` was made atomic on
-        the argument that «a merge appends the merged body to the survivor,
-        then retires the originals, and a half-applied merge is the one outcome
-        worse than not running». True — and `supersede` is a SEPARATE verb
-        opening its own transaction, so the named scenario stayed fully
-        reachable: survivor carrying merged text beside a duplicate nobody
-        retired, caller told nothing happened.
-
-        **The alternative was to keep two transactions and argue it is safe**,
-        and that argument can actually be made: `merge_groups` reads LIVE rows
-        rather than a watermark, so an unretired duplicate is
-        still a duplicate next tick and the pass would retry. The ordering is
-        also deliberately fail-safe — appending first means a crash duplicates
-        content, where retiring first would LOSE it.
-
-        **It was rejected because it is reasoning a future reader has to
-        reconstruct.** Both halves are true today and both are properties of
-        code somewhere else: the selection read staying derived rather than
-        cursored, and the order of two calls in a caller this store does not
-        own. A transaction is checkable by looking at one function. The
-        retry argument also has a real cost even when it works — re-merging a
-        survivor that already holds the content grows the body every tick, and
-        §5.2 has no upper bound on body size.
-
-        **Not on `DreamSink`.** That port has two verbs and deliberately no
-        third; this is a store method the note curator's `commit` calls
-        directly, which is where a tier's own write SEQUENCE belongs
-        (`DreamAdaptor.commit`'s docstring: the runtime cannot know a tier's
-        verb order, so the adaptor drives its sink).
-
-        The CAS on the survivor is unchanged and unweakened: if the tag path
-        revised it while the curator was thinking, the whole merge is refused
-        and nothing is retired.
-        """
-        # THE CAS DECIDES FIRST, and the ORDER of these two refusals is a
-        # contract property rather than a style choice.
-        #
-        # This built the `NoteRevision` up here, before any of it — so an
-        # over-cap merged body raised `ValueError` out of the constructor even
-        # when the survivor had already moved, while the in-memory double
-        # checked the head first and raised `StaleNoteHeadError`. One input,
-        # two exception types, and `NoteCuratorAdaptor.commit` branches on
-        # exactly that into `merge_refused` («NOT an error, the group is still
-        # a group») and `merge_failed` («a fault»). The two stores disagreed
-        # about which of two OPPOSITE readings an operator was shown.
-        if not _is_uuid(survivor) or not _is_uuid(survivor_parent):
-            raise StaleNoteHeadError(
-                f"survivor {survivor!r} is not a note id this store could look "
-                f"up — read it again",
-                observed_head=None,
-            )
-        # DE-DUPLICATED: `rowcount` from `WHERE id IN (...)` counts each row
-        # once, so a caller passing the same id twice gets 1 from Postgres
-        # and would have got 2 from a double counting its list. That count
-        # is `commit`'s return and becomes `nora_dream_written_total`.
-        targets = list(dict.fromkeys(
-            n for n in retire if _is_uuid(n) and n != survivor
-        ))
-        async with self._engine.begin() as conn:
-            # The head is read and LOCKED before the revision is constructed,
-            # so a lost CAS is reported as a lost CAS whatever else is wrong
-            # with the body. `_append_on_conn` re-asserts it in its UPDATE; the
-            # row is locked for the rest of this transaction, so that assertion
-            # cannot now fail — it is the insert's own guard, kept because the
-            # method is shared with `propose`.
-            observed = (await conn.execute(
-                sa.select(NOTE.c.head_revision_id).where(
-                    NOTE.c.id == survivor, NOTE.c.workspace == workspace,
-                ).with_for_update()
-            )).scalar_one_or_none()
-            if observed != survivor_parent:
-                raise StaleNoteHeadError(
-                    f"note {survivor} changed under you: this merge was "
-                    f"written against {survivor_parent}, the head is "
-                    f"{observed} — read it again"
-                    if observed is not None
-                    else f"note {survivor} is not in workspace {workspace!r} "
-                         f"— read it again",
-                    observed_head=observed,
-                )
-            revision = NoteRevision(
-                id=str(uuid4()), note_id=survivor, body=merged_body,
-                parent_revision_id=survivor_parent, written_at=now_ms,
-                established_by=established_by,
-                instruction_sha256=instruction_sha256, model=model,
-            )
-            # The append FIRST, so a lost CAS refuses before anything is
-            # retired. Inside one transaction the order cannot matter for
-            # atomicity — it matters for which failure the caller sees, and «I
-            # could not revise the survivor» is the honest one.
-            await self._append_on_conn(
-                conn, workspace=workspace, revision=revision,
-            )
-            if not targets:
-                return 0
-            result = await conn.execute(
-                sa.update(NOTE)
-                .where(
-                    NOTE.c.id.in_(targets),
-                    NOTE.c.workspace == workspace,
-                    NOTE.c.retired_at.is_(None),
-                )
-                .values(
-                    retired_at=now_ms, replaced_by=survivor,
-                    retire_reason=NoteSupersedeReason.MERGED,
-                )
-            )
-            return int(result.rowcount)
-
     # ---- the curator's selection reads (§9.2) ------------------------------
     #
-    # Both cost ZERO TOKENS. That is the payoff of anchoring merge on
-    # `(anchor_date, entity_set)` rather than on topical similarity (§7.1):
-    # candidate detection is a KEY COMPARISON, not a judgement, so **the model
-    # is never asked whether two notes should merge.** It is asked only what a
-    # body SAYS, which is the one thing a key comparison cannot read.
-    #
-    # "SQL-only" until 2026-08-28, and the grouping now happens in
-    # `nora.domain.notes.group_on_anchor_key` — see `merge_groups` for why
-    # leaving SQL made it STRICTER rather than weaker. The property that
-    # mattered was never that it ran in the database; it was that it runs in
-    # CODE and not in a prompt.
-
-    async def merge_groups(
-        self, *, workspace: str, limit: int,
-    ) -> tuple[
-        tuple[tuple[tuple[Note, str], ...], ...],
-        tuple[tuple[Note, ...], ...],
-    ]:
-        """Standing notes that share an anchor, grouped, most-collided first,
-        **each with its head body**.
-
-        **The bodies are the whole point and this returned notes alone until
-        2026-08-28.** The curator's merge asks the model to write one body that
-        keeps everything every note in the group knew — and it was being shown
-        titles, uncertainties and closing conditions, never the content. A
-        merged body synthesised from two titles, written over a survivor that
-        had accumulated real detail, is content loss produced BY the merge
-        verb: «Ada can't do Fridays; Sai Kung ruled out» would survive only
-        inside a retired row's revision history, with nothing in the index
-        knowing it had existed.
-
-        `anchored_before` beside this one already returned `(Note, body)`. The
-        divergence was invisible because the renderer dropped bodies for groups
-        too, so the two halves agreed — the same shape as a docstring and a
-        test agreeing with each other and not with the requirement.
-
-        **The anchor is `(anchor_date, anchor_entity_ids)` and both halves
-        matter.** Two weddings on different dates are two notes; two notes
-        about the same date and the same people are one occasion written twice.
-        Topical similarity would merge the first pair — same vocabulary, same
-        shape, same kind of uncertainty — and that merge is unrecoverable in
-        the direction that matters, because two notes wrongly merged have
-        already lost which revision belonged to which occasion.
-
-        Notes with NO date anchor are excluded even when their entity sets
-        match. An entity-only anchor is not an occasion — «Grant» is not a
-        thing that happens once — and `note_entity` is empty in production
-        anyway, so an entity-only group today would be a group of notes
-        anchored to `{}`, which is every dateless note in the workspace.
-
-        **The entity half comes from `note_entity`, not from
-        `note.anchor_entity_ids`.** That column holds whatever free text the
-        model handed `note_create`, unresolved and unvalidated, and a key built
-        from it is wrong in both directions at once — see
-        `group_on_anchor_key`. The join is a third query rather than a widened
-        first one because it is needed only for the grouping pass and only for
-        notes that have an anchor date.
-
-        `limit` bounds GROUPS, not notes: the caller's budget is bodies read
-        per tick, and a group is the unit it reads.
-        """
-        if limit <= 0:
-            return ((), ())
-        # GROUPED IN PYTHON ON `Note.anchor_key`, not in SQL on the raw column.
-        #
-        # `GROUP BY anchor_entity_ids` is order- AND duplicate-sensitive in
-        # Postgres: `{ada,ben}` and `{ben,ada}` are different groups, so two
-        # notes about the same occasion are missed for an artifact of the order
-        # somebody happened to list the people. `anchor_key` exists precisely to
-        # say that — «entities are sorted and de-duplicated so the key is a
-        # property of WHICH entities rather than of the order» — and until
-        # 2026-08-28 it had ZERO call sites while both implementations
-        # reimplemented the comparison on the raw array. A property with no
-        # caller is a claim, not a rule.
-        #
-        # The cost is reading the workspace's standing notes rather than pushing
-        # the grouping down. That is bounded by the same thing `standing`
-        # already is — the index is uncapped by design (§5.1) — and correctness
-        # on the key is worth more than a GROUP BY here.
-        # TWO QUERIES, and the split is the budget. Grouping needs the ANCHOR
-        # of every standing note; only the notes in a surviving group need
-        # their BODY. Fetching bodies for the grouping pass would read the
-        # whole workspace's prose every tick to answer a question about dates
-        # and entity sets — and `nora_note_curator_bodies_read` would report
-        # the handful it showed the model while the store had read all of them.
-        # The gauge is the tick's budget instrument; a query that makes it lie
-        # is worse than an extra round trip.
-        anchors_stmt = (
-            sa.select(NOTE)
-            .where(
-                NOTE.c.workspace == workspace,
-                NOTE.c.retired_at.is_(None),
-                NOTE.c.anchor_date.is_not(None),
-            )
-            .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
-        )
-        async with self._engine.connect() as conn:
-            anchors = (await conn.execute(anchors_stmt)).all()
-            # THE RESOLVED ENTITIES, read from the registry rather than from
-            # the model's own words. `note_entity` has no writer anywhere in
-            # the system yet, so this map is empty in production and every
-            # group is refused — which is 27 §2's decision («populating
-            # note_entity is the curator's real precondition, not its flag»)
-            # showing up as behaviour instead of as prose.
-            resolved: dict[str, list[str]] = {}
-            if anchors:
-                ent_rows = (await conn.execute(
-                    sa.select(NOTE_ENTITY.c.note_id, NOTE_ENTITY.c.entity_id)
-                    .where(NOTE_ENTITY.c.note_id.in_([r.id for r in anchors]))
-                )).all()
-                for er in ent_rows:
-                    resolved.setdefault(er.note_id, []).append(er.entity_id)
-            # `""` as a placeholder body: `group_on_anchor_key` reads only the
-            # anchor, and the bodies are filled in below for the groups that
-            # survive. Typed as the same pair so one grouping function serves
-            # both callers rather than gaining a bodiless variant.
-            eligible, refused = group_on_anchor_key(
-                [(_row_to_note(r), "") for r in anchors],
-                resolved_entities=resolved,
-                limit=limit,
-            )
-            wanted = [n.id for g in eligible for n, _ in g]
-            bodies: dict[str, str] = {}
-            if wanted:
-                rows = (await conn.execute(
-                    self._head_join().where(NOTE.c.id.in_(wanted))
-                )).all()
-                bodies = {r.id: r.body for r in rows}
-        return (
-            tuple(
-                tuple((n, bodies.get(n.id, "")) for n, _ in g)
-                for g in eligible
-            ),
-            refused,
-        )
+    # Both cost ZERO TOKENS: which notes are expired and which are due are
+    # KEY COMPARISONS against the clock, not judgements, so the model is only
+    # ever asked what a selected body SAYS. `merge_groups` sat here too until
+    # 2026-09-08 — see the module docstring for why it went.
 
     async def anchored_before(
         self, *, workspace: str, day: int, limit: int,
@@ -1038,8 +672,7 @@ class SqlNoteStore:
         every note whose anchor is behind `day`, unconditionally — restating
         that condition here would make this read redundant with it rather
         than complementary, for no gain: the caller unions the two results
-        and de-duplicates by note id exactly as it already excludes a
-        merge-group member from the expired render. This read's OWN
+        and de-duplicates by note id. This read's OWN
         contribution is the notes `anchored_before` cannot see at all — a
         dateless note (no anchor to pass) and an anchored note whose anchor
         has not yet arrived but whose early-close check has (34 §5.3's lead
@@ -1155,13 +788,15 @@ class SqlNoteStore:
         spec** — the second instance of that shape in one day.
 
         The requirement is real and is why the fix went this way rather than
-        the docstring being softened: the curator's merge is «append the merged
-        body to the survivor, then retire the originals». If the append commits
-        and the retirement does not, the notebook holds a survivor carrying
-        merged text beside a duplicate nobody retired, and the caller was told
-        nothing happened. **A partially applied cross-note edit is the one
-        outcome worse than not running**, because it is invisible: no error, no
-        count, and an index that looks ordinary.
+        the docstring being softened: a batch is one tick's decision, and a
+        tick whose first half committed while its second half raised leaves
+        the notebook holding a state no single reading produced, with the
+        caller told nothing happened. **A partially applied batch is the one
+        outcome worse than not running**, because it is invisible: no error,
+        no count, and an index that looks ordinary. (The example this
+        paragraph used to cite — the curator's merge, «append the merged
+        body, then retire the originals» — was removed on 2026-09-08; the
+        requirement predates it and outlives it.)
 
         **Type checks run BEFORE the first write**, for the same reason. A bad
         payload at index 1 used to land after index 0 had committed, which is
@@ -1205,20 +840,6 @@ class SqlNoteStore:
                 )
             typed.append((p, payload))
 
-        # RESOLVED BEFORE THE TRANSACTION OPENS, for the WHOLE BATCH — the
-        # same ordering `create` uses and for the same reason (issue #100): a
-        # lookup against `fact_entity` is a READ, not part of the write it
-        # feeds. Indexed by position in `typed` rather than by note id, since
-        # a creation's note id does not exist until `_new_note` mints it
-        # inside the transaction below.
-        resolved_by_index: list[dict[str, str]] = [
-            await self._resolve_names(
-                workspace=key, names=payload.anchor_entity_ids,
-            )
-            if isinstance(payload, NoteCreationProposal) else {}
-            for _p, payload in typed
-        ]
-
         ids: list[str] = []
         # The head each note reached WITHIN this batch, so a second proposal
         # against the same note CASes against what the first one wrote rather
@@ -1229,20 +850,13 @@ class SqlNoteStore:
         # written — see the check below.
         declared: dict[str, str] = {}
         async with self._engine.begin() as conn:
-            for i, (p, payload) in enumerate(typed):
+            for p, payload in typed:
                 if isinstance(payload, NoteCreationProposal):
                     note, first = self._new_note(
                         workspace=key, payload=payload, proposal=p,
                         now_ms=now_ms,
                     )
                     await self._create_on_conn(conn, note=note, revision=first)
-                    await self._attach_note_entities(
-                        conn,
-                        [
-                            (note.id, eid) for eid in
-                            dict.fromkeys(resolved_by_index[i].values())
-                        ],
-                    )
                     heads[note.id] = first.id
                     ids.append(note.id)
                     continue
@@ -1334,9 +948,9 @@ class SqlNoteStore:
 
         `because` is stored in `retire_reason` and is validated against
         `NoteSupersedeReason.ALL`. A free-text reason would make the retirement
-        vocabulary unqueryable — «how many notes did the curator merge this
-        week» is the reading that justifies the curator existing, and it cannot
-        be answered against prose.
+        vocabulary unqueryable — «how many notes did the curator retire this
+        week, and why» is the reading that justifies the curator existing, and
+        it cannot be answered against prose.
 
         A `target` that names no standing note in this workspace reports **0
         rather than raising**, including a malformed id: a background pass that
@@ -1365,7 +979,8 @@ class SqlNoteStore:
             raise ValueError(
                 f"SqlNoteStore.supersede got because={because!r}; the note "
                 f"tier's retirement vocabulary is {NoteSupersedeReason.ALL} — "
-                f"free text would make 'how many were merged' unanswerable"
+                f"free text would make 'how many were retired, and why' "
+                f"unanswerable"
             )
         if replaced_by is not None and not _is_uuid(replaced_by):
             raise ValueError(
@@ -1470,9 +1085,8 @@ class SqlNoteStore:
         re-observation of the same occasion refreshes the staged proposal
         rather than duplicating it. `anchor_entity_ids` is sorted and
         de-duplicated HERE, not trusted from the caller, because it is half of
-        that key and an unsorted array would let two spellings of one
-        occasion collide under two different keys — the defect
-        `nora.domain.notes.anchor_key` exists to close one layer up.
+        that key and an unsorted array would let one occasion, listed in two
+        orders, stage under two different keys.
 
         **The upsert is guarded by `WHERE status = 'pending'`, and that guard
         is the whole point.** A candidate the gate has already decided —

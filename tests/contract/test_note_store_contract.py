@@ -37,7 +37,6 @@ for one by accident would make several tests pass for the wrong reason.
 
 from __future__ import annotations
 
-import textwrap
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
@@ -46,7 +45,6 @@ from uuid import uuid4
 import psycopg
 import pytest
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nora.domain.notes import (
     Note,
@@ -59,14 +57,11 @@ from nora.domain.notes import (
 )
 from nora.domain.ports import Proposal
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.schema import (
-    FACT_ENTITY,
     NOTE,
     NOTE_CANDIDATE,
-    NOTE_ENTITY,
     NOTE_REVISION,
 )
 from nora.testing import InMemoryNoteStore
@@ -126,13 +121,6 @@ class _Harness:
     store: _NoteStore
     retire: Callable[[str, int], Awaitable[None]]
     read_candidate: Callable[[str, str], Awaitable[_Candidate | None]]
-    #: Populate `note_entity` for a note — the RESOLVED entity ids that are the
-    #: merge key's second half. A third per-implementation adapter, on rule (1)
-    #: above: `note_entity` has no writer anywhere in production, so a store
-    #: verb for it would be surface invented for a test. The sql arm inserts a
-    #: real `fact_entity` row per name because the join table's `entity_id` is
-    #: a live foreign key; the memory arm writes its dict.
-    resolve: Callable[[str, str, tuple[str, ...]], Awaitable[None]]
     #: One `kind='create'` row by id, or `None` — needed only because
     #: `set_create_candidate_status` returns a bare row count, and the
     #: property that matters (did the guard actually block a second
@@ -206,19 +194,13 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
                 last_seen_at=row.last_seen_at,
             )
 
-        async def _resolve_mem(
-            workspace: str, note_id: str, names: tuple[str, ...],
-        ) -> None:
-            memory.entities[note_id] = tuple(f"e-{n}" for n in names)
-
         async def _read_create_candidate_mem(
             candidate_id: str,
         ) -> NoteCreateCandidate | None:
             return memory.create_candidates.get(candidate_id)
 
         yield _Harness(
-            memory, _retire_mem, _candidate_mem, _resolve_mem,
-            _read_create_candidate_mem,
+            memory, _retire_mem, _candidate_mem, _read_create_candidate_mem,
         )
         return
 
@@ -251,35 +233,6 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
             last_seen_at=row.last_seen_at,
         )
 
-    async def _resolve_sql(
-        workspace: str, note_id: str, names: tuple[str, ...],
-    ) -> None:
-        async with engine.begin() as conn:
-            for name in names:
-                entity_id = (await conn.execute(
-                    pg_insert(FACT_ENTITY)
-                    .values(
-                        id=str(uuid4()), workspace=workspace,
-                        canonical_name=name, created_at=NOW,
-                    )
-                    .on_conflict_do_nothing(
-                        constraint="fact_entity_workspace_name_key",
-                    )
-                    .returning(FACT_ENTITY.c.id)
-                )).scalar_one_or_none()
-                if entity_id is None:
-                    entity_id = (await conn.execute(
-                        sa.select(FACT_ENTITY.c.id).where(
-                            FACT_ENTITY.c.workspace == workspace,
-                            FACT_ENTITY.c.canonical_name == name,
-                        )
-                    )).scalar_one()
-                await conn.execute(
-                    pg_insert(NOTE_ENTITY)
-                    .values(note_id=note_id, entity_id=entity_id)
-                    .on_conflict_do_nothing()
-                )
-
     async def _read_create_candidate_sql(
         candidate_id: str,
     ) -> NoteCreateCandidate | None:
@@ -305,7 +258,7 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
 
     try:
         yield _Harness(
-            SqlNoteStore(engine), _retire_sql, _candidate_sql, _resolve_sql,
+            SqlNoteStore(engine), _retire_sql, _candidate_sql,
             _read_create_candidate_sql,
         )
     finally:
@@ -1060,7 +1013,7 @@ async def test_supersede_records_the_successor_and_the_reason(
 
     affected = await notes.store.supersede(
         key=WS, target=duplicate.id, replaced_by=survivor.id,
-        because=NoteSupersedeReason.MERGED, source=None, now_ms=NOW + 9,
+        because=NoteSupersedeReason.RETIRED_CLOSED, source=None, now_ms=NOW + 9,
     )
 
     assert affected == 1
@@ -1074,7 +1027,7 @@ async def test_supersede_records_the_successor_and_the_reason(
     # not under contract.
     retired = await notes.store.read(workspace=WS, note_id=duplicate.id)
     assert retired is not None
-    assert retired[0].retire_reason == NoteSupersedeReason.MERGED
+    assert retired[0].retire_reason == NoteSupersedeReason.RETIRED_CLOSED
     assert retired[0].replaced_by == survivor.id
 
 
@@ -1404,11 +1357,11 @@ async def test_a_creation_naming_an_existing_occasion_is_not_silently_merged(
 async def test_a_creation_with_no_anchor_is_refused_at_the_type(
     notes: _Harness,
 ) -> None:
-    """`anchor_entity_ids` needs a populated entity registry and `note_entity`
-    is empty, so in practice a debrief note anchors on a DATE. A type accepting
-    only entity anchors would be a shape that cannot be satisfied in
-    production; a type accepting NEITHER would push the refusal into `Note`'s
-    constructor, inside a background tick, as a raise rather than a refusal."""
+    """`anchor_entity_ids` is free text nothing resolves, so in practice a
+    debrief note anchors on a DATE. A type accepting only entity anchors would
+    be a shape the clock can never retire; a type accepting NEITHER would push
+    the refusal into `Note`'s constructor, inside a background tick, as a
+    raise rather than a refusal."""
     with pytest.raises(ValueError):
         NoteCreationProposal(
             title="t", description="d", uncertainty="u",
@@ -1417,88 +1370,6 @@ async def test_a_creation_with_no_anchor_is_refused_at_the_type(
 
 
 # --- the curator's selection reads (§9.2), SQL-only and token-free ----------
-
-
-async def test_merge_groups_finds_notes_sharing_an_anchor(
-    notes: _Harness,
-) -> None:
-    """§7.1: merge is keyed on the ANCHOR, never on topical similarity, so two
-    weddings stay two notes. This read is what makes that structural — the
-    model is never asked whether two notes belong together, because SQL
-    already decided and it decided on the date and the people."""
-    a = await _make(notes.store, title="Grant wedding", anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-    b = await _make(notes.store, title="Grant's wedding", anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-    c = await _make(notes.store, title="Ada wedding", anchor_date=20270301,
-                          anchor_entity_ids=("ada",))
-    # RESOLVED, which is what eligibility reads. The strings above are what the
-    # writer typed and are not the key.
-    await notes.resolve(WS, a.id, ("grant",))
-    await notes.resolve(WS, b.id, ("grant",))
-    await notes.resolve(WS, c.id, ("ada",))
-
-    groups, _refused = await notes.store.merge_groups(workspace=WS, limit=10)
-
-    assert len(groups) == 1, "only the two sharing an anchor collide"
-    assert {n.id for n, _ in groups[0]} == {a.id, b.id}
-    assert [body for _, body in groups[0]] == [
-        "Two venues on the shortlist. Nobody has called either.",
-    ] * 2, "the BODIES come back — the model must not merge what it cannot see"
-
-
-async def test_two_weddings_on_different_days_are_never_one_group(
-    notes: _Harness,
-) -> None:
-    """The negative half, and the reason the rule exists. These two are as
-    topically alike as two notes can be — same words, same shape, same kind of
-    uncertainty — and merging them would lose which revision belonged to which
-    occasion, permanently and silently."""
-    a = await _make(notes.store, title="Wedding venue", anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-    b = await _make(notes.store, title="Wedding venue", anchor_date=20270301,
-                          anchor_entity_ids=("ada",))
-    await notes.resolve(WS, a.id, ("grant",))
-    await notes.resolve(WS, b.id, ("ada",))
-
-    assert await notes.store.merge_groups(workspace=WS, limit=10) == ((), ())
-
-
-async def test_dateless_notes_never_collide_with_each_other(
-    notes: _Harness,
-) -> None:
-    """An entity-only anchor is not an OCCASION — «Grant» is not a thing that
-    happens once. And `note_entity` is empty in production, so a dateless group
-    would be every dateless note in the workspace anchored to `{}`."""
-    await _make(
-        notes.store, title="Someone's flat", anchor_date=None,
-        anchor_entity_ids=("person-1",),
-    )
-    await _make(
-        notes.store, title="Someone's car", anchor_date=None,
-        anchor_entity_ids=("person-1",),
-    )
-
-    assert await notes.store.merge_groups(workspace=WS, limit=10) == ((), ())
-
-
-async def test_a_retired_note_never_joins_a_merge_group(
-    notes: _Harness,
-) -> None:
-    survivor = await _make(notes.store, anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-    duplicate = await _make(notes.store, anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-    await notes.resolve(WS, survivor.id, ("grant",))
-    await notes.resolve(WS, duplicate.id, ("grant",))
-    await notes.store.supersede(
-        key=WS, target=duplicate.id, replaced_by=survivor.id,
-        because=NoteSupersedeReason.MERGED, source=None, now_ms=NOW + 1,
-    )
-
-    assert await notes.store.merge_groups(workspace=WS, limit=10) == ((), ()), (
-        "a merge that already happened must not be found again next tick"
-    )
 
 
 async def test_anchored_before_selects_expired_notes_with_their_bodies(
@@ -1657,353 +1528,6 @@ async def test_a_second_proposal_may_not_redeclare_a_different_parent(
     assert found[1].body not in {"first", "second"}, (
         "the refusal is decided before anything is written"
     )
-
-
-# --- merge: the one cross-note write, and it is atomic ---------------------
-
-
-async def test_merge_appends_to_the_survivor_and_retires_the_rest(
-    notes: _Harness,
-) -> None:
-    survivor = await _make(notes.store, title="Grant wedding", anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-    dup = await _make(notes.store, title="Grant's wedding", anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-
-    retired = await notes.store.merge(
-        workspace=WS, survivor=survivor.id,
-        survivor_parent=survivor.head_revision_id,
-        merged_body="Both shortlists, and the disagreement about the date.",
-        retire=(dup.id,), established_by="run-curator-1",
-        instruction_sha256="a" * 64, model="curator-model", now_ms=NOW + 9,
-    )
-
-    assert retired == 1
-    assert [n.id for n in await notes.store.standing(workspace=WS)] == [survivor.id]
-    head = await notes.store.read(workspace=WS, note_id=survivor.id)
-    assert head is not None
-    assert head[1].body == "Both shortlists, and the disagreement about the date."
-    gone = await notes.store.read(workspace=WS, note_id=dup.id)
-    assert gone is not None
-    assert gone[0].replaced_by == survivor.id
-    assert gone[0].retire_reason == NoteSupersedeReason.MERGED
-
-
-async def test_a_merge_that_loses_the_cas_retires_nothing(
-    notes: _Harness,
-) -> None:
-    """**The finding this verb exists for.** `propose` was made atomic on the
-    argument that a merge must not proceed on the half that landed — and
-    `supersede` opened its own transaction, so the named scenario stayed fully
-    reachable. If the tag path revised the survivor while the curator was
-    thinking, the whole merge is refused and the duplicate stays standing."""
-    survivor = await _make(notes.store, title="Grant wedding", anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-    dup = await _make(notes.store, title="Grant's wedding", anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-    # The tag path gets there first.
-    await notes.store.append_revision(
-        workspace=WS, note_id=survivor.id, body="Miles says the 12th now.",
-        parent_revision_id=survivor.head_revision_id,
-        established_by="tag:miles", now_ms=NOW + 1,
-    )
-
-    with pytest.raises(StaleNoteHeadError):
-        await notes.store.merge(
-            workspace=WS, survivor=survivor.id,
-            survivor_parent=survivor.head_revision_id,
-            merged_body="a merge written against a body that moved",
-            retire=(dup.id,), established_by="run-curator-1",
-            instruction_sha256="a" * 64, model="curator-model", now_ms=NOW + 9,
-        )
-
-    standing = {n.id for n in await notes.store.standing(workspace=WS)}
-    assert dup.id in standing, "a refused merge retires nothing"
-    head = await notes.store.read(workspace=WS, note_id=survivor.id)
-    assert head is not None
-    assert head[1].body == "Miles says the 12th now.", (
-        "the tag path's revision stands; the curator's is not applied over it"
-    )
-
-
-async def test_a_lost_cas_beats_a_bad_body_in_both_implementations(
-    notes: _Harness,
-) -> None:
-    """**One input, two exception types, two OPPOSITE operator readings.**
-
-    `SqlNoteStore.merge` constructed the `NoteRevision` before checking the
-    head, so an over-cap body raised `ValueError` even when the survivor had
-    already moved; the double checked the CAS first and raised
-    `StaleNoteHeadError`. `NoteCuratorAdaptor.commit` branches on exactly that,
-    into `merge_refused` — whose help text says NOT an error, the group is
-    still a group next tick — and `merge_failed`, which says a fault. Which of
-    those an operator saw depended on which store was running.
-
-    The CAS is the outer truth: if the survivor moved, this merge was written
-    against a body that no longer exists and nothing about its body matters.
-    """
-    survivor = await _make(notes.store, title="Grant wedding",
-                           anchor_date=20261011,
-                           anchor_entity_ids=("grant",))
-    dup = await _make(notes.store, title="Grant's wedding",
-                      anchor_date=20261011, anchor_entity_ids=("grant",))
-    await notes.store.append_revision(
-        workspace=WS, note_id=survivor.id, body="Miles says the 12th now.",
-        parent_revision_id=survivor.head_revision_id,
-        established_by="tag:miles", now_ms=NOW + 1,
-    )
-
-    with pytest.raises(StaleNoteHeadError):
-        await notes.store.merge(
-            workspace=WS, survivor=survivor.id,
-            survivor_parent=survivor.head_revision_id,
-            merged_body="x" * 9000,   # over the domain cap, and irrelevant
-            retire=(dup.id,), established_by="run-curator-1",
-            instruction_sha256="a" * 64, model="curator-model", now_ms=NOW + 9,
-        )
-
-    standing = {n.id for n in await notes.store.standing(workspace=WS)}
-    assert dup.id in standing, "a refused merge retires nothing"
-    head = await notes.store.read(workspace=WS, note_id=survivor.id)
-    assert head is not None
-    assert head[1].body == "Miles says the 12th now."
-
-
-async def test_an_over_cap_body_on_a_current_head_is_still_a_domain_error(
-    notes: _Harness,
-) -> None:
-    """The positive control for the ordering above: making the CAS decide first
-    must not make the body check unreachable. With the head where the caller
-    thinks it is, an over-cap body is a `ValueError` on both stores."""
-    survivor = await _make(notes.store, title="Grant wedding",
-                           anchor_date=20261011,
-                           anchor_entity_ids=("grant",))
-    dup = await _make(notes.store, title="Grant's wedding",
-                      anchor_date=20261011, anchor_entity_ids=("grant",))
-
-    with pytest.raises(ValueError) as exc:
-        await notes.store.merge(
-            workspace=WS, survivor=survivor.id,
-            survivor_parent=survivor.head_revision_id,
-            merged_body="x" * 9000,
-            retire=(dup.id,), established_by="run-curator-1",
-            instruction_sha256="a" * 64, model="curator-model", now_ms=NOW + 9,
-        )
-    assert not isinstance(exc.value, StaleNoteHeadError)
-    assert dup.id in {n.id for n in await notes.store.standing(workspace=WS)}
-
-
-async def test_merge_never_retires_the_survivor_itself(notes: _Harness) -> None:
-    """A model naming the survivor among the duplicates would otherwise retire
-    the note it just wrote into, leaving a workspace whose merged content is
-    only reachable through a retired row."""
-    survivor = await _make(notes.store, anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-    dup = await _make(notes.store, anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-
-    retired = await notes.store.merge(
-        workspace=WS, survivor=survivor.id,
-        survivor_parent=survivor.head_revision_id, merged_body="everything",
-        retire=(survivor.id, dup.id), established_by="run-curator-1",
-        instruction_sha256="a" * 64, model="m", now_ms=NOW + 9,
-    )
-
-    assert retired == 1
-    assert [n.id for n in await notes.store.standing(workspace=WS)] == [survivor.id]
-
-
-async def test_merge_cannot_retire_another_workspaces_note(
-    notes: _Harness,
-) -> None:
-    survivor = await _make(notes.store, anchor_date=20261011,
-                            anchor_entity_ids=("grant",))
-    theirs = await _make(
-        notes.store, workspace="another-workspace", anchor_date=20261011,
-    )
-
-    retired = await notes.store.merge(
-        workspace=WS, survivor=survivor.id,
-        survivor_parent=survivor.head_revision_id, merged_body="everything",
-        retire=(theirs.id,), established_by="run-curator-1",
-        instruction_sha256="a" * 64, model="m", now_ms=NOW + 9,
-    )
-
-    assert retired == 0
-    still = await notes.store.read(
-        workspace="another-workspace", note_id=theirs.id,
-    )
-    assert still is not None and still[0].retired_at is None
-
-
-# --- the REFUSED half of merge_groups, which had no coverage at all --------
-#
-# It is only counted, never rendered, which is precisely why the two
-# implementations were free to disagree about it — `SqlNoteStore` grouped over
-# a placeholder-body pass and returned `''` where the double returned the real
-# text. Harmless, and therefore the kind that survives. Both now return NOTES
-# with no body at all, so the disagreement is unrepresentable rather than fixed.
-
-
-async def test_a_date_only_collision_comes_back_in_the_refused_half(
-    notes: _Harness,
-) -> None:
-    """The refusal is the reading that says what entity resolution would
-    unlock. A store that silently dropped these would make "merge does nothing"
-    indistinguishable from "there is nothing to merge"."""
-    a = await _make(
-        notes.store, title="Dinner, 9 Sept", anchor_date=20260909,
-        anchor_entity_ids=(),
-    )
-    b = await _make(
-        notes.store, title="Ada's flight to Tokyo", anchor_date=20260909,
-        anchor_entity_ids=(),
-    )
-
-    eligible, refused = await notes.store.merge_groups(workspace=WS, limit=10)
-
-    assert eligible == (), "a date is not an occasion"
-    assert len(refused) == 1
-    assert {n.id for n in refused[0]} == {a.id, b.id}
-
-
-async def test_the_refused_half_carries_no_bodies_in_either_implementation(
-    notes: _Harness,
-) -> None:
-    """Both return `Note` objects, not `(Note, body)` pairs. Asserted through
-    the SHAPE rather than by comparing two body strings, because comparing
-    strings is what let the divergence stand: `''` and the real text are both
-    strings and neither side was wrong on its own terms."""
-    await _make(notes.store, title="A", anchor_date=20260909,
-                anchor_entity_ids=())
-    await _make(notes.store, title="B", anchor_date=20260909,
-                anchor_entity_ids=())
-
-    _eligible, refused = await notes.store.merge_groups(workspace=WS, limit=10)
-
-    assert refused, "positive control: there IS a refused group to inspect"
-    for group in refused:
-        for entry in group:
-            assert isinstance(entry, Note), (
-                f"refused entries are Notes, got {type(entry).__name__} — a "
-                f"body here is a value with no consumer, which is where two "
-                f"implementations quietly disagree"
-            )
-
-
-async def test_an_eligible_group_still_carries_its_bodies(
-    notes: _Harness,
-) -> None:
-    """The positive control for the asymmetry. Stripping bodies from the
-    REFUSED half must not strip them from the eligible one — the merge is asked
-    to preserve content it must therefore be shown."""
-    a = await _make(
-        notes.store, title="Grant wedding", anchor_date=20261011,
-        anchor_entity_ids=("grant",), body="Ada can't do Fridays.")
-    b = await _make(
-        notes.store, title="Grant's wedding", anchor_date=20261011,
-        anchor_entity_ids=("grant",), body="Ben found Sheung Wan.")
-    await notes.resolve(WS, a.id, ("grant",))
-    await notes.resolve(WS, b.id, ("grant",))
-
-    eligible, _refused = await notes.store.merge_groups(workspace=WS, limit=10)
-
-    assert len(eligible) == 1
-    bodies = {body for _, body in eligible[0]}
-    assert bodies == {"Ada can't do Fridays.", "Ben found Sheung Wan."}
-
-
-async def test_identical_model_written_entities_do_not_make_a_group(
-    notes: _Harness,
-) -> None:
-    """**The finding, at the store.** `note_create(anchor_entities=["wedding"])`
-    is a live tool call and `note.anchor_entity_ids` stores that string
-    verbatim, unresolved and unvalidated. A merge key built from it is wrong in
-    both directions at once:
-
-    - 「Grant 婚禮」/「Gabe's wedding」/「婚禮」 are three keys and one
-      occasion, so the collision §7.1 exists for still cannot fire;
-    - and these two — an anniversary and somebody else's wedding, both anchored
-      「wedding」 on the same day — ARE one key and two occasions, so they
-      merge. That is the two-weddings failure, entered THROUGH the guard.
-
-    Eligibility therefore joins `note_entity`. Nothing writes that table, so
-    this is also what makes merge inert in production today — recorded as a
-    behaviour rather than left as prose in a design node."""
-    a = await _make(
-        notes.store, title="Our anniversary", anchor_date=20260909,
-        anchor_entity_ids=("wedding",))
-    b = await _make(
-        notes.store, title="Priya's wedding", anchor_date=20260909,
-        anchor_entity_ids=("wedding",))
-
-    eligible, refused = await notes.store.merge_groups(workspace=WS, limit=10)
-
-    assert eligible == (), "the model's own words are not an entity anchor"
-    assert len(refused) == 1 and {n.id for n in refused[0]} == {a.id, b.id}, (
-        "and the refusal is REPORTED, so 'merge does nothing' is an answer "
-        "rather than a silence"
-    )
-
-
-async def test_a_group_becomes_eligible_when_note_entity_resolves(
-    notes: _Harness,
-) -> None:
-    """The positive control for the refusal, and the reversal condition as a
-    test: the day `note_entity` gains a writer, this is what changes. Same two
-    notes, same strings, one join table populated."""
-    a = await _make(
-        notes.store, title="Grant wedding", anchor_date=20260909,
-        anchor_entity_ids=("wedding",))
-    b = await _make(
-        notes.store, title="Grant's wedding", anchor_date=20260909,
-        anchor_entity_ids=("wedding",))
-    assert await notes.store.merge_groups(workspace=WS, limit=10) != (
-        ((), ())
-    ), "positive control: they do collide on the date"
-
-    await notes.resolve(WS, a.id, ("grant",))
-    await notes.resolve(WS, b.id, ("grant",))
-
-    eligible, refused = await notes.store.merge_groups(workspace=WS, limit=10)
-
-    assert refused == ()
-    assert len(eligible) == 1
-    assert {n.id for n, _ in eligible[0]} == {a.id, b.id}
-
-
-async def test_a_note_resolving_to_a_different_entity_is_a_different_occasion(
-    notes: _Harness,
-) -> None:
-    """The other half: resolution is not a rubber stamp that makes every
-    same-day pair eligible. Two notes on one day resolving to two different
-    people are two occasions, and neither is a group."""
-    a = await _make(
-        notes.store, title="Grant wedding", anchor_date=20260909,
-        anchor_entity_ids=("wedding",))
-    b = await _make(
-        notes.store, title="Ada's flight", anchor_date=20260909,
-        anchor_entity_ids=("wedding",))
-    await notes.resolve(WS, a.id, ("grant",))
-    await notes.resolve(WS, b.id, ("ada",))
-
-    assert await notes.store.merge_groups(workspace=WS, limit=10) == ((), ())
-
-
-async def test_the_refused_half_is_not_capped_by_limit(
-    notes: _Harness,
-) -> None:
-    """`limit` bounds what the tick will READ, and a refused group is never
-    read — so capping it would under-report the very number that argues for
-    populating `note_entity`."""
-    for day in (20260901, 20260902, 20260903):
-        for title in ("A", "B"):
-            await _make(notes.store, title=f"{title}{day}", anchor_date=day,
-                        anchor_entity_ids=())
-
-    _eligible, refused = await notes.store.merge_groups(workspace=WS, limit=1)
-
-    assert len(refused) == 3, "all three refusals are reported, not one"
 
 
 # --- the wake pass (§9.6) — the writer these three columns never had -------
@@ -2340,470 +1864,3 @@ async def test_the_database_accepts_a_body_between_the_two_numbers(
         assert stored == 16000, "and it is stored whole, not truncated"
     finally:
         await engine.dispose()
-
-
-async def _resolve_on_engine(engine, workspace: str, note_id: str,
-                            names: tuple[str, ...]) -> None:
-    """`note_entity` rows for a note, for the two tests that own their engine
-    rather than going through `_Harness`.
-
-    Merge eligibility reads the RESOLVED entity ids, so a note with no rows
-    here is refused as `no_entity_anchor` — which is the whole system's state
-    today, since nothing writes this table in production.
-    """
-    async with engine.begin() as conn:
-        for name in names:
-            entity_id = str(uuid4())
-            await conn.execute(
-                pg_insert(FACT_ENTITY).values(
-                    id=entity_id, workspace=workspace, canonical_name=name,
-                    created_at=NOW,
-                ).on_conflict_do_nothing(
-                    constraint="fact_entity_workspace_name_key",
-                )
-            )
-            entity_id = (await conn.execute(
-                sa.select(FACT_ENTITY.c.id).where(
-                    FACT_ENTITY.c.workspace == workspace,
-                    FACT_ENTITY.c.canonical_name == name,
-                )
-            )).scalar_one()
-            await conn.execute(
-                pg_insert(NOTE_ENTITY)
-                .values(note_id=note_id, entity_id=entity_id)
-                .on_conflict_do_nothing()
-            )
-
-
-# --- the curator, driven END TO END against a real database ----------------
-
-
-async def test_a_merge_runs_end_to_end_against_real_postgres(_notes_db) -> None:
-    """**The whole pass, on the real store: model answer in, rows read back.**
-
-    Every other curator test uses the in-memory double. That double was minting
-    `note-1` until today, which the Dreamer's screen passes and production's
-    uuid4 does not — and eighteen tests were green over a curator that could
-    not write a single row. So this one drives `SqlNoteStore` itself, through
-    the real `dream_screen` in the runtime's order, and asserts against what is
-    actually in the table afterwards.
-
-    Not `store.merge` asserted to have been called. The survivor's body, read
-    back."""
-    from nora.agent.dream_screen import screen
-    from nora.domain.ports import Proposal
-    from nora.language.note_curator import NoteCuratorAdaptor
-    from nora.obs.metrics import Metrics
-    from nora.testing.fakes import FakeRecordStore
-
-    engine = create_sql_engine(_notes_db)
-    try:
-        store = SqlNoteStore(engine)
-        ws = "e2e-merge"
-        survivor = await store.create(
-            workspace=ws, title="Grant wedding", description="one line",
-            uncertainty="which venue", closing_condition="somebody books",
-            established_in="conv-1", body="Ada can't do Fridays.",
-            established_by="tag:miles", now_ms=NOW, anchor_date=20261011,
-            anchor_entity_ids=("grant",),
-        )
-        # DISTINCT created_at, and this is not tidiness — the first version of
-        # this test gave both notes NOW and failed in the suite while passing
-        # alone. The survivor is the group's (created_at, id)-first note, so on
-        # a tie the tiebreak is a uuid4 and WHICH note survives is random per
-        # run. Real notes are created at different instants; a test that ties
-        # them is asserting against a coin flip.
-        dup = await store.create(
-            workspace=ws, title="Grant's wedding", description="one line",
-            uncertainty="which venue", closing_condition="somebody books",
-            established_in="conv-1", body="Ben found Sheung Wan.",
-            established_by="tag:miles", now_ms=NOW + 1, anchor_date=20261011,
-            anchor_entity_ids=("grant",),
-        )
-        metrics = Metrics()
-        # `record` is unused by this test — no due/expired note is in play,
-        # only the merge path — but the merged constructor requires one
-        # (design 34, issue #99).
-        curator = NoteCuratorAdaptor(
-            notes=store, record=FakeRecordStore(), today=lambda: 20260101,
-            max_groups_per_tick=3, max_expired_per_tick=10, metrics=metrics,
-        )
-
-        # NOTHING IS ELIGIBLE UNTIL `note_entity` RESOLVES, and this half of
-        # the test is the one that matters in production: the strings above are
-        # already identical and already stored, and they do not make a group.
-        assert await curator.inputs(key=ws, batch=()) == "", (
-            "identical model-written entity strings are not an occasion"
-        )
-        assert metrics.get(
-            "nora_note_curator_groups_refused_total",
-            reason="no_entity_anchor") == 1
-
-        await _resolve_on_engine(engine, ws, survivor.id, ("grant",))
-        await _resolve_on_engine(engine, ws, dup.id, ("grant",))
-
-        rendered = await curator.inputs(key=ws, batch=())
-        assert "Ada can't do Fridays." in rendered, "the bodies are shown"
-        assert survivor.id not in rendered, "and no note id is"
-
-        handle = next(
-            h for h, nid in curator._shown[ws].by_handle.items()
-            if nid == survivor.id
-        )
-        # THE RUNTIME'S ORDER: screen, then accept what survived.
-        kept, rejected = screen(
-            adaptor="note-curation",
-            items=[{
-                "note_id": handle,
-                "merged_body": "Ada can't do Fridays. Ben found Sheung Wan.",
-            }],
-            metrics=metrics,
-        )
-        assert not rejected, f"the real screen rejected the item: {rejected}"
-
-        payloads = await curator.accept(key=ws, items=kept)
-        written = await curator.commit(
-            key=ws,
-            proposals=tuple(
-                Proposal(payload=p, instruction_sha256="a" * 64,
-                         model="curator-model", established_by="run-e2e")
-                for p in payloads
-            ),
-            now_ms=NOW + 5,
-        )
-
-        assert written == 1
-        standing = await store.standing(workspace=ws)
-        assert [n.id for n in standing] == [survivor.id]
-        head = await store.read(workspace=ws, note_id=survivor.id)
-        assert head is not None
-        assert head[1].body == "Ada can't do Fridays. Ben found Sheung Wan.", (
-            "both bodies survived into the merged one"
-        )
-        assert head[1].model == "curator-model", "and provenance reached the row"
-        gone = await store.note_by_id(workspace=ws, note_id=dup.id)
-        assert gone is not None
-        assert gone.replaced_by == survivor.id
-        assert gone.retire_reason == NoteSupersedeReason.MERGED
-    finally:
-        await engine.dispose()
-
-
-async def test_a_merge_that_fails_mid_batch_leaves_the_database_untouched(
-    _notes_db,
-) -> None:
-    """**Rollback shown by BREAKING it, not by asserting an exception type.**
-
-    `merge` appends to the survivor and retires the duplicates in ONE
-    transaction. The failure this exists for is a duplicate that vanishes
-    between the append and the retirement — so this deletes one mid-flight,
-    from a SEPARATE connection, after the append has run inside the open
-    transaction.
-
-    Then it reads the survivor's body back. An assertion that `merge` raised
-    would pass against a store that appended and then raised, which is exactly
-    the half-applied state the transaction exists to prevent."""
-    engine = create_sql_engine(_notes_db)
-    try:
-        store = SqlNoteStore(engine)
-        ws = "e2e-rollback"
-        survivor = await store.create(
-            workspace=ws, title="A", description="d", uncertainty="u",
-            closing_condition="c", established_in="conv-1",
-            body="ORIGINAL BODY", established_by="tag:miles", now_ms=NOW,
-            anchor_date=20261011, anchor_entity_ids=("x",),
-        )
-
-        # THE BREAK HAS TO BE ONE THE DATABASE REFUSES, and finding one took
-        # two attempts worth recording. `head_revision_id` has NO foreign key,
-        # so pointing it at a nonexistent revision raises nothing — the first
-        # probe was inert and reported "DID NOT RAISE", which is the honest
-        # failure a silent probe would not have given.
-        #
-        # The body ceiling from `0038` is a real one: 32001 characters, which
-        # the domain would refuse at 8000 but which reaches Postgres here
-        # because this writes at the table directly — the same bypass the
-        # ceiling exists for.
-        #
-        # Two writes, one transaction, second one refused. That is `merge`'s
-        # shape: `_append_on_conn` then the retirement UPDATE, both on a
-        # connection the verb owns.
-        with pytest.raises(sa.exc.IntegrityError):
-            async with engine.begin() as conn:
-                await conn.execute(sa.insert(NOTE_REVISION).values(
-                    id=str(uuid4()), note_id=survivor.id,
-                    body="a body that must not survive",
-                    parent_revision_id=survivor.head_revision_id,
-                    written_at=NOW + 1, established_by="run-1",
-                ))
-                await conn.execute(
-                    sa.update(NOTE)
-                    .where(NOTE.c.id == survivor.id)
-                    .values(head_revision_id=sa.select(NOTE_REVISION.c.id)
-                            .where(NOTE_REVISION.c.note_id == survivor.id)
-                            .order_by(NOTE_REVISION.c.written_at.desc())
-                            .limit(1).scalar_subquery())
-                )
-                # Refused by `note_revision_body_fits_the_ceiling_check`.
-                await conn.execute(sa.insert(NOTE_REVISION).values(
-                    id=str(uuid4()), note_id=survivor.id, body="x" * 32001,
-                    parent_revision_id=None, written_at=NOW + 2,
-                    established_by="run-1",
-                ))
-
-        head = await store.read(workspace=ws, note_id=survivor.id)
-        assert head is not None
-        assert head[1].body == "ORIGINAL BODY", (
-            "the append inside the failed transaction was rolled back"
-        )
-        # POSITIVE CONTROL: the same sequence WITHOUT the break must land, or
-        # the assertion above passes against a store that writes nothing.
-        landed = await store.append_revision(
-            workspace=ws, note_id=survivor.id, body="A REAL REVISION",
-            parent_revision_id=survivor.head_revision_id,
-            established_by="tag:miles", now_ms=NOW + 2,
-        )
-        again = await store.read(workspace=ws, note_id=survivor.id)
-        assert again is not None
-        assert again[1].body == "A REAL REVISION"
-        assert landed.id
-    finally:
-        await engine.dispose()
-
-
-def test_merge_opens_exactly_one_transaction():
-    """**A structural assertion, and the reason it earns its place is that the
-    behavioural one is impossible.**
-
-    `merge` appends to the survivor and retires the duplicates. To catch a
-    split into two transactions behaviourally, the RETIREMENT would have to
-    fail while the append succeeded — and it cannot be made to: the survivor
-    exists by then (the append just wrote to it), `replaced_by`'s FK is
-    satisfied for the same reason, and `because` is hardcoded to a legal
-    value. Every failure `merge` can actually suffer happens in the append,
-    BEFORE the retirement, which proves nothing about whether they share a
-    transaction.
-
-    Measured rather than assumed: splitting the retirement into its own
-    `engine.begin()` leaves all sixteen merge tests green.
-
-    So this reads the AST. It is weaker than driving the code and it is stated
-    as such — but an unfalsifiable property with no test at all is weaker
-    still, and this one reddens on exactly the mutation the behavioural tests
-    miss. The property it guards is the one finding 4 was decided on: a merge
-    that appended the merged body and then failed to retire the originals
-    leaves a survivor carrying merged text beside a duplicate nobody retired,
-    with the caller told nothing happened.
-    """
-    import ast
-    import inspect
-
-    src = inspect.getsource(SqlNoteStore.merge)
-    tree = ast.parse(textwrap.dedent(src))
-    begins = [
-        node for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "begin"
-    ]
-
-    assert len(begins) == 1, (
-        f"`merge` opens {len(begins)} transactions; it must open exactly one, "
-        f"or the append can commit while the retirement does not"
-    )
-
-
-# --- the deterministic half of entity resolution (issue #100) --------------
-#
-# `note_entity` had no writer anywhere in production before this: every merge
-# group was refused because the resolved half of the anchor key was always
-# empty, regardless of what `anchor_entity_ids` said. The tests above this
-# section prove `merge_groups` reads `note_entity` correctly once it holds
-# rows; these prove `create`/`propose` are what puts rows there now, through
-# a REAL `entities` collaborator rather than the harness's `resolve` shortcut
-# (which exists so the merge-group tests do not have to depend on this half
-# ever landing).
-
-
-class _FakeResolver:
-    """The one verb `InMemoryNoteStore.resolver` needs — `(workspace, name)
-    -> entity id or None` — over a plain dict a test seeds directly. Standing
-    in for `SqlEntityStore.resolve` the way `_NoteEntityResolver` in
-    `nora.testing.note_store` describes: structural, not imported, because
-    `nora.testing` may not import `nora.infra`."""
-
-    def __init__(self, known: dict[tuple[str, str], str]) -> None:
-        self._known = known
-
-    async def resolve(self, *, workspace: str, name: str) -> str | None:
-        return self._known.get((workspace, name))
-
-
-@dataclass(frozen=True)
-class _ResolverHarness:
-    store: _NoteStore
-    #: Seed a resolvable name: after this call, resolving `name` in
-    #: `workspace` returns `entity_id`. The sql arm inserts a real
-    #: `fact_entity` row (`entity_id` becomes its canonical name, since
-    #: `SqlEntityStore.resolve` matches on canonical name or alias rather
-    #: than on the row's own `id`); the memory arm just populates the dict.
-    seed: Callable[[str, str, str], Awaitable[None]]
-    #: The RESOLVED entity ids `note_entity` holds for one note, or `()` —
-    #: the same per-implementation read `notes.resolve`'s sql arm above
-    #: constructs inline, pulled out here because these tests read it
-    #: rather than only writing it.
-    resolved: Callable[[str], Awaitable[tuple[str, ...]]]
-
-
-@pytest.fixture(params=["memory", "sql"])
-async def notes_with_resolver(request: Any) -> AsyncIterator[_ResolverHarness]:
-    if request.param == "memory":
-        known: dict[tuple[str, str], str] = {}
-        memory = InMemoryNoteStore(resolver=_FakeResolver(known))
-
-        async def _seed_mem(workspace: str, name: str, entity_id: str) -> None:
-            known[(workspace, name)] = entity_id
-
-        async def _resolved_mem(note_id: str) -> tuple[str, ...]:
-            return memory.entities.get(note_id, ())
-
-        yield _ResolverHarness(memory, _seed_mem, _resolved_mem)
-        return
-
-    engine = create_sql_engine(request.getfixturevalue("_notes_db"))
-    entities = SqlEntityStore(engine)
-    store = SqlNoteStore(engine, entities=entities)
-
-    async def _seed_sql(workspace: str, name: str, entity_id: str) -> None:
-        # `resolve` matches on canonical name or alias, never on the row's
-        # own `id` — so seeding a SECOND name against an `entity_id` already
-        # in the table (the acceptance test's two-spellings case) attaches an
-        # alias to the existing row rather than inserting a second row that
-        # would collide with the first on the primary key.
-        async with engine.begin() as conn:
-            existing = (await conn.execute(
-                sa.select(FACT_ENTITY.c.id).where(FACT_ENTITY.c.id == entity_id)
-            )).scalar_one_or_none()
-            if existing is None:
-                await conn.execute(pg_insert(FACT_ENTITY).values(
-                    id=entity_id, workspace=workspace, canonical_name=name,
-                    aliases=[], created_at=NOW,
-                ))
-            else:
-                await conn.execute(
-                    sa.update(FACT_ENTITY)
-                    .where(FACT_ENTITY.c.id == entity_id)
-                    .values(aliases=FACT_ENTITY.c.aliases.op("||")([name]))
-                )
-
-    async def _resolved_sql(note_id: str) -> tuple[str, ...]:
-        async with engine.connect() as conn:
-            rows = (await conn.execute(
-                sa.select(NOTE_ENTITY.c.entity_id)
-                .where(NOTE_ENTITY.c.note_id == note_id)
-            )).all()
-        return tuple(r.entity_id for r in rows)
-
-    try:
-        yield _ResolverHarness(store, _seed_sql, _resolved_sql)
-    finally:
-        async with engine.begin() as conn:
-            await conn.execute(sa.text(
-                "truncate note, note_revision, note_entity, note_candidate, "
-                "fact_entity cascade"
-            ))
-        await engine.dispose()
-
-
-async def test_create_resolves_an_anchor_name_that_matches_fact_entity(
-    notes_with_resolver: _ResolverHarness,
-) -> None:
-    """The writer this issue adds: `create` resolves each anchor-entity
-    string against the shared registry and writes `note_entity`, in the same
-    call rather than as a separate step nothing ever performs."""
-    await notes_with_resolver.seed(WS, "Grant Carver", "0191f2c4-0000-7000-8000-0000000000aa")
-
-    note = await _make(
-        notes_with_resolver.store, anchor_date=20261011,
-        anchor_entity_ids=("Grant Carver",),
-    )
-
-    assert await notes_with_resolver.resolved(note.id) == (
-        "0191f2c4-0000-7000-8000-0000000000aa",
-    )
-
-
-async def test_create_leaves_an_unmatched_anchor_name_unresolved(
-    notes_with_resolver: _ResolverHarness,
-) -> None:
-    """The existing fail-closed default, unchanged: a name the registry does
-    not recognise stays a string with no entity, never a guess."""
-    note = await _make(
-        notes_with_resolver.store, anchor_date=20261011,
-        anchor_entity_ids=("Nobody Has Heard Of This",),
-    )
-
-    assert await notes_with_resolver.resolved(note.id) == ()
-
-
-async def test_propose_creation_resolves_its_anchor_names_too(
-    notes_with_resolver: _ResolverHarness,
-) -> None:
-    """The debrief/create-candidate path (`propose`'s `NoteCreationProposal`
-    branch) gets the identical treatment `create` does — the tag path is not
-    the only writer this issue's gap affected."""
-    await notes_with_resolver.seed(WS, "Ada", "0191f2c4-0000-7000-8000-0000000000bb")
-    payload = NoteCreationProposal(
-        title="t", description="d", uncertainty="u", closing_condition="c",
-        established_in="conv-1", body="b", anchor_date=20261011,
-        anchor_entity_ids=("Ada",),
-    )
-
-    ids = await notes_with_resolver.store.propose(
-        key=WS,
-        proposals=(
-            Proposal(
-                payload=payload, instruction_sha256="e" * 64, model="run-model",
-                established_by="run-1",
-            ),
-        ),
-        now_ms=NOW,
-    )
-
-    assert await notes_with_resolver.resolved(ids[0]) == (
-        "0191f2c4-0000-7000-8000-0000000000bb",
-    )
-
-
-async def test_two_notes_resolving_to_one_entity_become_a_merge_group(
-    notes_with_resolver: _ResolverHarness,
-) -> None:
-    """**The acceptance test for issue #100.** Two notes, two different
-    spellings of the same occasion, the SAME anchor date: before this issue
-    `merge_groups` would refuse this pair every time — `note_entity` had no
-    writer, so the resolved half of the anchor key was always empty. Now
-    `create` resolves both spellings to the one entity through the SAME
-    collaborator, and the curator's own read finds them collided — proving
-    merge is no longer inert end to end, through the real write path rather
-    than through the harness's `resolve` shortcut the tests above the file's
-    curator-selection section use."""
-    entity_id = "0191f2c4-0000-7000-8000-0000000000cc"
-    await notes_with_resolver.seed(WS, "Grant's wedding", entity_id)
-    await notes_with_resolver.seed(WS, "Grant 婚禮", entity_id)
-
-    a = await _make(
-        notes_with_resolver.store, title="Grant's wedding",
-        anchor_date=20261011, anchor_entity_ids=("Grant's wedding",),
-    )
-    b = await _make(
-        notes_with_resolver.store, title="婚禮 詳情",
-        anchor_date=20261011, anchor_entity_ids=("Grant 婚禮",),
-    )
-
-    groups, refused = await notes_with_resolver.store.merge_groups(
-        workspace=WS, limit=10,
-    )
-
-    assert refused == (), "a resolved pair must not also read as refused"
-    assert len(groups) == 1, "the two spellings resolve to one occasion"
-    assert {n.id for n, _ in groups[0]} == {a.id, b.id}

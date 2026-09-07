@@ -7,9 +7,9 @@ satisfiable. Another joins by adding one `IMPLEMENTATIONS` entry.
 
 **It is back to one, and that is a KNOWN GAP rather than the shipped state.**
 The knowledge tier's three adaptors were the real entries here and went with
-that tier; the note tier's three (`NoteCandidateAdaptor`,
-`NoteCuratorAdaptor`, `NoteEntityResolutionAdaptor`) have never been in this
-map. A contract suite exercising only its own fake measures the SHAPE and no
+that tier; the note tier's two (`NoteCandidateAdaptor`,
+`NoteCuratorAdaptor`) have never been in this map. A contract suite
+exercising only its own fake measures the SHAPE and no
 production behaviour — CLAUDE.md's "if reverting the code under test doesn't
 turn the test red, the test is decorative" — so the note adaptors joining is
 the next thing this file needs, and it is written here rather than left for a
@@ -187,15 +187,17 @@ class _Impl:
     make_malformed_item: Callable[[], Mapping[str, object]]
     written: Callable[[object, object], int]
     #: `None` when this adaptor's `commit` reaches no sink at all. Not a skip
-    #: and not a shrug: `FactEntityResolutionAdaptor.commit` calls
-    #: `attach_alias` once per resolution and has no `DreamSink` to hand an
-    #: empty batch to, so «the empty commit reaches the sink» is a property it
-    #: cannot have rather than one it fails. The field says which, so a new
-    #: adaptor has to answer the question rather than inherit an answer.
+    #: and not a shrug: the deleted entity-resolution adaptors called
+    #: `attach_alias` once per resolution and had no `DreamSink` to hand an
+    #: empty batch to, so «the empty commit reaches the sink» was a property
+    #: they could not have rather than one they failed. The field says which,
+    #: so a new adaptor has to answer the question rather than inherit an
+    #: answer.
     empty_commits: Callable[[object, object], int] | None = None
     #: Run after `build` and before any contract test. `accept` on an adaptor
     #: whose parse is HANDLE-BASED is meaningless without the render that
-    #: assigned the handles — see `_prepare_fact_entity_resolution`.
+    #: assigned the handles (the deleted entity-resolution adaptors were the
+    #: case).
     prepare: Callable[[object], Awaitable[None]] | None = None
 
 
@@ -398,10 +400,10 @@ async def test_committing_nothing_is_a_legal_call_that_reaches_the_sink(
     value, because a return of 0 is exactly what "never called" would also look
     like — which is the confusion the test exists to rule out.
 
-    `impl.empty_commits is None` marks an adaptor with no sink to reach:
-    `FactEntityResolutionAdaptor.commit` calls `attach_alias` per resolution
-    and has no `DreamSink` at all, so the decay argument above does not apply
-    to it. The empty commit must still be LEGAL and still return 0 — that half
+    `impl.empty_commits is None` marks an adaptor with no sink to reach (the
+    deleted entity-resolution adaptors wrote an alias per resolution and had
+    no `DreamSink` at all), so the decay argument above does not apply to
+    it. The empty commit must still be LEGAL and still return 0 — that half
     is asserted for every implementation."""
     before = None if impl.empty_commits is None else impl.empty_commits(
         adaptor, backing)
