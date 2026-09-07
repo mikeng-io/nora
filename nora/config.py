@@ -395,6 +395,24 @@ class ParticipationConfig(BaseModel):
     # so consecutive windows overlap and an intent spread across several
     # messages stays visible in the next one.
     max_window_messages: int = Field(default=10, gt=0)
+    # DECLARED for this occasion, not inherited from `[llm]`. The turn ran at
+    # the tag lane's `low` because nobody had chosen — the same omission
+    # `_DebriefModelClient` and the gate's own client each carry a note about.
+    #
+    # `none`, and the direction is MEASURED, not assumed: `evals/harness.py`
+    # records that `high` reasoning produced THREE TIMES the silent turns of
+    # `none`. Silence is this occasion's healthy default, so more thinking
+    # reads as a virtue here and is not one — the failure this suite actually
+    # shows is a turn that HOLDS the answer and says nothing anyway.
+    #
+    # It is the same setting the Relevance Gate runs at, for a related reason:
+    # both calls open with one decision (speak or not), and a decision with a
+    # fixed shape does not get better for being deliberated.
+    #
+    # `low -> none` is NOT the interval that 3x was measured over (`high` vs
+    # `none`), so the SIZE of the effect here is unmeasured. The direction is
+    # the claim; the magnitude is what the participation suite reports.
+    reasoning_effort: str = "none"
     cooldown_minutes: float = Field(default=10.0, gt=0)
     shadow: bool = False
     # The mirror's destination: a channel id on `shadow_platform`. Required

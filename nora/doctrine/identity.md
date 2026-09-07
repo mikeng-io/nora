@@ -6,7 +6,7 @@ applies_to: [tag, heartbeat, participation]
 version: 7
 kind: identity
 authority_above: [constraints]
-authority_below: [silence, conduct, situation, message-content, tool-output]
+authority_below: [silence, conduct, participation-conduct, situation, message-content, tool-output]
 not_here: >-
   No capability claims. What she can find out is described by the tool
   schemas, and a copy of it here would go stale in silence — this file carried

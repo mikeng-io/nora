@@ -32,6 +32,10 @@ EXPECTED = {
     "conduct": ("conduct", 30, ("tag", "heartbeat", "participation")),
     # NOT hers: the gate's system prompt, isolated on its own audience.
     "participation": ("instrument", 5, ("relevance_gate",)),
+    # HERS, and ambient-only: the one thing an offered floor has that a tag
+    # never does — several things worth answering at once, none addressed to
+    # her. `conduct.md` is occasion-neutral and must not carry it.
+    "participation-conduct": ("conduct", 35, ("participation",)),
     "constraints": ("constraint", 40, ("tag", "heartbeat", "participation")),
 }
 
@@ -101,7 +105,7 @@ def test_the_authority_graph_is_declared_relatively_and_terminates_at_tool_outpu
     """
     sections = {s.name: s for s in _all_sections()}
     assert sections["constraints"].authority_above == ()
-    for name in ("identity", "voice", "conduct"):
+    for name in ("identity", "voice", "conduct", "participation-conduct"):
         assert "constraints" in sections[name].authority_above
         assert "tool-output" in sections[name].authority_below
 
@@ -119,7 +123,12 @@ def test_identity_voice_and_silence_conduct_are_peers_on_purpose():
     have to delete this test to do it.
     """
     sections = {s.name: s for s in _all_sections()}
-    peers = (("identity", "voice"), ("silence", "conduct"))
+    # `participation-conduct` joins the conduct tier: an occasion-specific
+    # conduct file, unranked against its two peers for exactly the reason
+    # `silence` and `conduct` are unranked.
+    peers = (("identity", "voice"), ("silence", "conduct"),
+             ("silence", "participation-conduct"),
+             ("conduct", "participation-conduct"))
     for a, b in peers:
         assert sections[a].kind == sections[b].kind
         assert b not in sections[a].authority_above

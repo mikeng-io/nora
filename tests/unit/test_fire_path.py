@@ -1355,21 +1355,25 @@ async def test_a_participation_turn_without_a_runner_is_a_wiring_fault(
 async def test_the_participation_turn_reads_the_may_speak_doctrine(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """The turn runs on the `applies_to="participation"` assembly, and never on
-    the GATE's instruction — `participation.md` sits on its own audience and
-    describes an instrument, not her.
+    """The turn runs on the `applies_to="participation"` assembly — never the
+    tag one, and never the GATE's instruction.
 
-    **That assembly is now byte-identical to the tag one, and this test says so
-    deliberately.** `participation-conduct.md` was the only file that differed,
-    and deleting it left every remaining file occasion-neutral: `silence.md`
-    carries BOTH halves (`[tag, participation]`) and the model picks the one
-    its situation names. So the occasion distinction no longer lives in
-    doctrine at all — it lives in `_participation_header`, the situation
-    paragraph, which is the sentence she reads first.
+    The two assemblies differ again, and this test previously asserted they
+    were IDENTICAL. That was true and deliberate for one day: deleting the old
+    `participation-conduct.md` left every remaining file occasion-neutral, so
+    the distinction lived only in `_participation_header`. The docstring said a
+    later participation-only file would make the assertion fail and somebody
+    would have to come back and re-read it — which is what happened, and this
+    is that edit.
 
-    Asserting the equality rather than a difference is the honest pin: a later
-    participation-only file makes this test fail, which is exactly when
-    somebody should have to come back and re-read this docstring.
+    What earns the file back is one thing a tag never has: a WINDOW. Several
+    people, several threads, sometimes several things worth answering at once,
+    none of them addressed to her. `conduct.md` is `[tag, heartbeat,
+    participation]` and must not carry a rule that is false on two of the
+    three.
+
+    And `participation.md` — the gate's instruction — must still be absent:
+    it describes an instrument, on an audience no file of hers declares.
     """
     adapter = _FireAdapter()
     calls: list = []
@@ -1386,9 +1390,11 @@ async def test_the_participation_turn_reads_the_may_speak_doctrine(
     doctrine = calls[-1]["doctrine"]
     names = {section.name for section in doctrine.sections}
     assert "silence" in names
+    assert "participation-conduct" in names, "the ambient-only conduct is missing"
     assert "participation" not in names, "the gate's instruction reached her turn"
-    assert doctrine.sha256 == doctrine_store.get(applies_to="tag").sha256, (
-        "a participation-only doctrine file appeared — re-read this docstring"
+    assert doctrine.sha256 != doctrine_store.get(applies_to="tag").sha256, (
+        "the participation assembly is byte-identical to the tag one — the "
+        "occasion-specific file is not reaching it"
     )
 
 

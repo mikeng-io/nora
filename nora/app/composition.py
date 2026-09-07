@@ -1051,7 +1051,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 spec=factory.ModelSpec(
                     model=tier.model, max_tokens=tier.max_tokens,
                     temperature=tier.temperature,
-                    reasoning_effort=tier.reasoning_effort,
+                    # `[participation]`'s own, never the tag lane's — see the
+                    # field's note: silence is this occasion's default, and
+                    # more reasoning measurably produces more of it.
+                    reasoning_effort=str(_reasoning_effort(
+                        cfg.participation.reasoning_effort,
+                        source="[participation] reasoning_effort",
+                    )),
                     tool_choice=tool_choice.AFTER_SPEAKING,
                 ),
             ),

@@ -262,6 +262,13 @@ settle_seconds = 10
 # smaller than [relevance_gate] transcript_rows so consecutive windows overlap
 # and an intent spread over several messages stays visible in the next one.
 max_window_messages = 10
+# The participation turn's OWN reasoning budget, not the tag lane's. `none`,
+# and the direction is measured: `high` reasoning produced THREE TIMES the
+# silent turns of `none` (evals/harness.py). Silence is this occasion's healthy
+# default, so more thinking reads as a virtue here and is not one — the failure
+# actually measured is a turn that HOLDS the answer and stays quiet anyway.
+# Same setting the gate runs at: both calls open with one decision.
+reasoning_effort = "none"
 # SEND cooldown, not an evaluation cooldown (§10.3): at most one participation
 # message per room per this many minutes. Evaluations run regardless; one that
 # concludes "speak" inside the cooldown stays silent (and is logged).

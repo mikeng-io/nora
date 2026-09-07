@@ -52,6 +52,9 @@ PINNED: dict[str, tuple[int, str]] = {
     "participation": (
         3, "896cbf8f45020453fdf42eb4c8c5281f2c49a28d7891f674c423fb34f1fee7e0",
     ),
+    "participation-conduct": (
+        1, "21512fb426ba2ac017b550d52f21d5ee40f58cb4e73e9d309389113db149458b",
+    ),
     "constraints": (6, "1a814c41a079067b2143ee1b4417a9b9a85ca8922f3082120f3c29494fd3dc43"),
 }
 
