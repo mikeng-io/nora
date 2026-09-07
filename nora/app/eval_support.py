@@ -116,6 +116,25 @@ __all__ = [
 ]
 
 
+def eval_base_url(configured: str) -> str:
+    """The LLM base url a live eval should use.
+
+    `[llm] base_url` is CONTAINER-side (`host.docker.internal`), which does not
+    resolve on the host an eval is usually run from — so every live suite here
+    fails with a bare `APIConnectionError` unless it is run inside the
+    container. `NORA_EVAL_BASE_URL` overrides it.
+
+    One function rather than the same `os.environ.get` at four call sites,
+    because the failure it prevents is not a crash: a suite whose model calls
+    all fail still produces verdicts (the gate fails closed, the agent says
+    nothing), and "the room heard nothing" is the EXPECTED answer for most
+    participation cases. The participation suite reported 10/15 correct and
+    "false-speaks: none" with not one call having succeeded. An override that
+    only some suites honour is how that happens twice.
+    """
+    return os.environ.get("NORA_EVAL_BASE_URL") or configured
+
+
 def load_eval_config(candidates: tuple[Path, ...]) -> Config:
     """Try each candidate path in order; raise the last `ConfigError` if none load.
 
@@ -177,7 +196,7 @@ def build_live_runner(
     if effort is not None:
         # `cfg.llm` is a frozen pydantic model — model_copy, not assignment.
         tier = tier.model_copy(update={"reasoning_effort": effort})
-    client = create_client(base_url=tier.base_url, api_key=api_key)
+    client = create_client(base_url=eval_base_url(tier.base_url), api_key=api_key)
     models = factory.ModelSource(
         client=client,
         spec=factory.ModelSpec(
@@ -218,7 +237,7 @@ def build_live_participation_runner(
     tier = cfg.llm
     if effort is not None:
         tier = tier.model_copy(update={"reasoning_effort": effort})
-    client = create_client(base_url=tier.base_url, api_key=api_key)
+    client = create_client(base_url=eval_base_url(tier.base_url), api_key=api_key)
     return LiveAgentRunner(
         models=factory.ModelSource(
             client=client,
@@ -730,13 +749,10 @@ class GateProbe:
 def build_gate_probe(cfg: Config) -> GateProbe:
     """The real `RelevanceGate`, on the real `participation.md`, no turn.
 
-    `[llm] base_url` is CONTAINER-side (`host.docker.internal`), which does not
-    resolve on the host a suite is usually run from. `NORA_EVAL_BASE_URL`
-    overrides it. Every live suite shares that limitation; this one reports the
-    URL it used so a misconfigured run is legible rather than a bare connection
-    error.
+    Reports the base url it used (see `eval_base_url`) so a misconfigured run
+    is legible rather than a bare connection error.
     """
-    base_url = os.environ.get("NORA_EVAL_BASE_URL") or cfg.llm.base_url
+    base_url = eval_base_url(cfg.llm.base_url)
     client = create_client(
         base_url=base_url, api_key=os.environ.get(cfg.llm.api_key_env, "")
     )

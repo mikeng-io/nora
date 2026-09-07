@@ -85,6 +85,7 @@ from nora.app.eval_support import (
     build_production_seed,
     create_client,
     create_model_provider,
+    eval_base_url,
     is_tagged,
     load_eval_config,
 )
@@ -392,7 +393,8 @@ async def _run_adversarial_live(
     # (`evals/` may import `nora.app` and `nora.testing`, nothing else from `nora/`) —
     # not imported from `nora.agent.factory` directly.
     client = create_client(
-        base_url=cfg.llm.base_url, api_key=os.environ.get(cfg.llm.api_key_env, "")
+        base_url=eval_base_url(cfg.llm.base_url),
+        api_key=os.environ.get(cfg.llm.api_key_env, ""),
     )
     try:
         reply_model = create_model_provider(
@@ -638,7 +640,8 @@ async def _run_participation_live(
     """
     cfg = _load_eval_config()
     client = create_client(
-        base_url=cfg.llm.base_url, api_key=os.environ.get(cfg.llm.api_key_env, "")
+        base_url=eval_base_url(cfg.llm.base_url),
+        api_key=os.environ.get(cfg.llm.api_key_env, ""),
     )
     try:
         judge_model = create_model_provider(
