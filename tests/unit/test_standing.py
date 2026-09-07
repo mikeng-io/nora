@@ -115,7 +115,9 @@ def test_the_block_says_it_keeps_nothing():
     able to hold it."""
     tag = render_standing(_standing())
     assert "keeps nothing" in tag
-    assert "note or a fact" in tag
+    # "a note", not "a note or a fact" — the fact tier was deleted 2026-09-07
+    # and the block stopped offering a destination that does not exist.
+    assert "belongs in a note" in tag
 
 
 def test_the_body_is_escaped():

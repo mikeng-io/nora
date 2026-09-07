@@ -219,7 +219,8 @@ def _read_sites(cls, module) -> list:
     reader that is not an adaptor has no `accept` at all — `Recogniser`, whose
     entry point was `recognise`, was the case that established this and went
     with the knowledge tier on 2026-09-07. Naming the entry point would have
-    been a third hand-copied vocabulary, and the breadth still costs nothing. This is safe rather than over-broad because
+    been a third hand-copied vocabulary, and the breadth still costs nothing.
+    This is safe rather than over-broad because
     `_keys_read_by` only matches subscripts on a variable literally named
     `item`, which in these modules is only ever an envelope item.
     """

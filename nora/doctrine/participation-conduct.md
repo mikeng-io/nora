@@ -3,7 +3,7 @@ name: participation-conduct
 description: How Nora weighs the floor when it was offered uncalled — the right not to reply.
 order: 35
 applies_to: [participation]
-version: 1
+version: 2
 kind: conduct
 authority_above: [constraints, identity, voice]
 authority_below: [situation, message-content, tool-output]
