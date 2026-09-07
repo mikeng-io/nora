@@ -1,8 +1,10 @@
 """`NoteEntityResolutionAdaptor` — the note tier's judgement half of entity
-resolution (21 §5, issue #100), mirroring `nora.language.fact_adaptor.
-FactEntityResolutionAdaptor`'s shape on the SAME shared `fact_entity` table.
+resolution (21 §5, issue #100), on the shared `fact_entity` table. It was
+written as a mirror of the knowledge tier's pass 6 (`FactEntityResolutionAdaptor`);
+that tier was deleted on 2026-09-07 (issue #115) and this is now the table's
+only judgement pass. The shape is unchanged.
 
-**Two halves, and the split is identical to the fact tier's.** The
+**Two halves.** The
 deterministic half runs in the sink, on every note create/propose —
 `nora.infra.sql.notes.SqlNoteStore._resolve_names`, exact match after
 normalisation against `fact_entity`'s canonical name and aliases, free, no
@@ -11,10 +13,11 @@ free. What reaches this adaptor is what exact matching could not settle: an
 abbreviation, a spelling variant, a synonym the trigram channel found but
 nothing could prove.
 
-**Why a SEPARATE adaptor rather than reusing `FactEntityResolutionAdaptor`
-directly.** Both read and write the same `fact_entity` table through the same
-`SqlEntityStore`, but they read DIFFERENT unresolved-name queues —
-`unresolved_names` scans `fact_candidate`'s pending subjects; this reads
+**Why this was a SEPARATE adaptor rather than the knowledge tier's reused
+directly** (recorded because the reasoning outlives the sibling). Both read
+and wrote the same `fact_entity` table through the same `SqlEntityStore`, but
+they read DIFFERENT unresolved-name queues — its `unresolved_names` scanned
+`fact_candidate`'s pending subjects; this reads
 `unresolved_note_anchor_names`, which scans standing notes' own
 `anchor_entity_ids`. Folding the two into one class would make "how often
 does the NOTE tier's judgement pass fire" and "how often does the FACT tier's"
@@ -31,8 +34,8 @@ needs provenance nothing here has. So the merge-worthy operation is not
 discouraged, it is ABSENT from this adaptor's surface entirely, the same as
 its fact-tier sibling.
 
-**Workspace-keyed and watermark-free**, like the fact tier's pass 6: its
-input is the entity table and the note tier's own anchor strings, not a
+**Workspace-keyed and watermark-free**: its input is the entity table and
+the note tier's own anchor strings, not a
 message batch.
 
 **Tool-free.** Deciding whether two names mean one thing is a judgement about
@@ -53,11 +56,11 @@ no use for a background pass computing aliases nobody will read — the exact
 "declared with no call site" shape CLAUDE.md warns against, one layer up from
 a metric. Riding `curator_enabled` means the judgement pass runs exactly when
 its output can matter, with no knob whose only legal value is "match whatever
-`curator_enabled` already says". The fact tier's own pass 6 sets the
-precedent the other direction — it has NO separate gate at all and rides the
-tier's single `[facts] enabled` flag, because that tier has no split-risk
-gates to begin with; this note mirrors the PRINCIPLE (ride the flag that
-gates the consumer) rather than the LITERAL flag name, since the note tier's
+`curator_enabled` already says". The knowledge tier's pass 6 set the
+precedent the other direction — it had NO separate gate at all and rode that
+tier's single enabled flag, because that tier had no split-risk gates to
+begin with; this note mirrors the PRINCIPLE (ride the flag that gates the
+consumer) rather than the LITERAL flag name, since the note tier's
 consumer-shaped flag is `curator_enabled`, not `enabled`.
 """
 
@@ -74,15 +77,15 @@ from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
 
-#: Per-tick caps, `FactEntityResolutionAdaptor`'s own defaults: cheap enough
+#: Per-tick caps, inherited from the knowledge tier's pass 6: cheap enough
 #: that a quiet workspace costs nothing and a busy one drains over a few
 #: ticks rather than in one model call.
 DEFAULT_MAX_RESOLUTIONS_PER_TICK = 8
 DEFAULT_MAX_CANDIDATES_PER_NAME = 5
 
 #: Two disjoint alphabets so a NAME handle and an ENTITY handle can never be
-#: confused with each other — `FactEntityResolutionAdaptor`'s own guard, kept
-#: identical here rather than re-derived.
+#: confused with each other. A handle is what the model answers WITH, and a
+#: shared alphabet would let a name's digit be read as an entity's letter.
 _NAME_HANDLES = "123456789"
 _ENTITY_HANDLES = "abcdefghijklmnopqrstuvwxyz"
 
@@ -109,12 +112,11 @@ class _Offered:
 
 
 class _NoteEntityResolver(Protocol):
-    """The three verbs this adaptor needs off `SqlEntityStore`, the same
-    narrowing `fact_adaptor._EntityResolver` states for its own reason: this
-    adaptor never promotes and never creates an entity, so neither verb is in
-    the shape it is handed. `unresolved_note_anchor_names` is the one method
-    that differs from the fact tier's Protocol — same table, different
-    source query (a note's own `anchor_entity_ids`, not `fact_candidate`)."""
+    """The three verbs this adaptor needs off `SqlEntityStore`, narrowed on
+    purpose: this adaptor never promotes and never creates an entity, so
+    neither verb is in the shape it is handed. `unresolved_note_anchor_names`
+    is the note tier's own source query (a note's `anchor_entity_ids`, not a
+    claim queue)."""
 
     async def unresolved_note_anchor_names(
         self, *, workspace: str, limit: int,
@@ -159,8 +161,7 @@ class NoteEntityResolutionAdaptor:
         workspace-keyed and reads the store, not a message window.
 
         **Blank when nothing is unresolved, or when nothing resembles
-        anything** — `FactEntityResolutionAdaptor.inputs`'s own reasoning,
-        unchanged: the runtime skips the model on a blank input, and a name
+        anything**: the runtime skips the model on a blank input, and a name
         with no near-misses is not offered at all, because there is nothing
         for the model to choose between.
         """
@@ -206,9 +207,8 @@ class NoteEntityResolutionAdaptor:
         self, *, key: str, items: Sequence[Mapping[str, object]]
     ) -> Sequence[object]:
         """Typed parse into `NoteEntityResolution`, dropping anything the
-        model was not shown — identical discipline to
-        `FactEntityResolutionAdaptor.accept`, including the "no map for this
-        key" branch it exists to refuse: an unshown handle is a guess with an
+        model was not shown, including the "no map for this key" branch: an
+        unshown handle is a guess with an
         alias attached, and the model may only name something it was shown.
         """
         offered = self._offered.get(key)
@@ -254,8 +254,7 @@ class NoteEntityResolutionAdaptor:
         """Attach each resolved name as an alias. Returns rows changed.
 
         There is no `DreamSink` here — `SqlEntityStore.attach_alias` IS the
-        write, exactly as `FactEntityResolutionAdaptor.commit` has none
-        either, for the identical reason: this pass's only write is an alias
+        write, and there is no sink because this pass's only write is an alias
         on a table it reaches directly through `entities`, not a proposal
         handed to a tier-owned sink.
         """
@@ -286,8 +285,8 @@ def _parse_resolution(
     item: Mapping[str, object],
 ) -> tuple[str, str | None] | None:
     """One envelope item -> `(name_handle, entity_handle_or_None)`, or `None`
-    if it is malformed. Identical rules to `fact_adaptor._parse_resolution`:
-    a missing `entity` key is malformed, an explicit `null` is a decision."""
+    if it is malformed: a missing `entity` key is malformed, an explicit
+    `null` is a decision."""
     name = item.get("name")
     if not isinstance(name, str) or name not in _NAME_HANDLES or len(name) != 1:
         return None

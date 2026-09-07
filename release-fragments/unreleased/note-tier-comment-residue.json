@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Comment and docstring residue: the note tier and Dreamer runtime no longer cite the deleted knowledge-tier adaptors as live precedent.",
+  "reason": "Comments and docstrings only; no behaviour, prompt, or config change. Follow-up to issue #115.",
+  "details": [],
+  "limitations": []
+}

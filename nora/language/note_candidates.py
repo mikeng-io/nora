@@ -6,13 +6,13 @@ loop/33-note-dreamer-schedule.md §4, issue #98).
 cold start added recognition to `conduct.md`, but nothing can write a note
 without first noticing, in one turn, that a whole arrangement is worth
 tracking — and a single turn's context is the wrong grain for that judgement.
-This adaptor is the fact tier's Phase A shape (`nora.language.fact_adaptor.
-FactCandidateAdaptor`), copied onto the note tier: scope-keyed, watermarked,
-TOOL-FREE, reading a room's message batch across however many ticks a
+This adaptor is the "Phase A" shape the deleted knowledge tier's extractor
+introduced (2026-09-07, issue #115) and the only surviving instance of it:
+scope-keyed, watermarked, TOOL-FREE, reading a room's message batch across however many ticks a
 watermark takes to accumulate a week's exchange, and proposing full notes —
 never writing one directly.
 
-**The model proposes; code disposes, same split the fact tier already
+**The model proposes; code disposes, the split every Dreamer adaptor
 enforces.** `accept` turns the model's envelope items into typed, validated
 `_CreateCandidate` values. `commit` does three things, in order, none of
 which the model is asked about:
@@ -42,10 +42,11 @@ per-room watermark is the only way this adaptor sees the whole exchange
 rather than a five-minute slice, and being scope-keyed (not workspace-keyed)
 is what lets `nora.app.runtime._dream_adaptor_once`'s existing
 `AdaptorSchedule` mechanism apply unchanged (design 33 §5, finding N1): the
-mechanism is watermark-bound, and this is the second adaptor after
-`fact-candidates` to be both scope-keyed AND watermarked.
+mechanism is watermark-bound, and this is now the only adaptor that is
+both scope-keyed AND watermarked (the knowledge tier's extractor was the
+first, and is gone).
 
-**Why it reads the note index too.** Unlike fact candidates — new claims,
+**Why it reads the note index too.** Unlike a claim extractor — new claims,
 with dedupe left to adjudication — a note proposal must not duplicate a note
 that already exists in the workspace's standing notebook. `inputs` renders
 `render_notes`' own projection (`nora.language.note_render`, the SAME one the
@@ -137,8 +138,9 @@ from nora.obs.metrics import Metrics
 log = logging.getLogger("nora.notes.candidates")
 
 #: A model-authored `closing_condition`/entity string is capped at parse time,
-#: ahead of the store — `nora.language.fact_adaptor`'s own discipline, applied
-#: here because `note_candidate.closing_condition` carries no length CHECK
+#: ahead of the store — capping model-authored text at PARSE time rather than
+#: trusting a column CHECK, applied here because
+#: `note_candidate.closing_condition` carries no length CHECK
 #: (matching `Note.closing_condition`, which the tag path never injects into a
 #: prompt and therefore never capped either). Generous enough never to reject
 #: a real closing condition; a value this long is the model pasting prose
@@ -151,9 +153,9 @@ MAX_CLOSING_CONDITION_CHARS = 2000
 MAX_ENTITY_CHARS = 200
 MAX_ENTITIES_PER_CANDIDATE = 10
 #: How many rows of one batch `inputs` renders before switching to a summary
-#: line — `nora.language.fact_adaptor.MAX_RENDERED_MESSAGES`'s own reasoning
-#: and, deliberately, its own number: this adaptor's batch is the same shape
-#: (a room's message window) and there is no argument for a different bound.
+#: line. 500 is the number the knowledge tier's extractor used for the same
+#: shape of batch (a room's message window), kept rather than re-derived
+#: because there is no argument for a different bound.
 MAX_RENDERED_MESSAGES = 500
 #: A `YYYYMMDD` calendar day is at least eight digits — `nora.domain.notes`'
 #: own `NoteCreationProposal.__post_init__` bound, restated here because this
@@ -191,8 +193,8 @@ class _NoteStore(DreamSink, Protocol):
 class _CandidateStore(Protocol):
     """`SqlNoteStore`'s create-candidate surface, seen from here — the
     `note_candidate(kind='create')` staging table's own two verbs, structural
-    rather than a declared port for `nora.language.fact_adaptor._FactStore`'s
-    reason: nothing else consumes this shape."""
+    rather than a declared port, for the usual reason a one-consumer shape
+    is not a port: nothing else consumes it."""
 
     async def record_create_candidate(
         self, *, workspace: str, title: str, description: str, body: str,
@@ -222,8 +224,8 @@ class _CreateCandidate:
 
 def _text(value: object, *, limit: int) -> str | None:
     """One model-authored string field, or `None` if it is not one — strict
-    `isinstance(str)`, `nora.language.fact_adaptor._text`'s own discipline:
-    coercion turns `None` into `"None"` and `7` into `"7"`, values that look
+    `isinstance(str)`, never `str(value)`, because coercion turns `None` into
+    `"None"` and `7` into `"7"`, values that look
     real and are the model not answering."""
     if not isinstance(value, str):
         return None
@@ -255,8 +257,7 @@ def _parse_entities(value: object) -> tuple[str, ...] | None:
 
 def _parse_candidate(item: Mapping[str, object]) -> _CreateCandidate | None:
     """One envelope item -> a `_CreateCandidate`, or `None` if malformed —
-    `nora.language.fact_adaptor._parse_claim`'s discipline: no partial parse,
-    the whole item is dropped rather than guessed at."""
+    no partial parse — the whole item is dropped rather than guessed at."""
     title = _text(item.get("title"), limit=TITLE_MAX_CHARS)
     description = _text(item.get("description"), limit=DESCRIPTION_MAX_CHARS)
     body = _text(item.get("body"), limit=BODY_MAX_CHARS)
@@ -268,7 +269,7 @@ def _parse_candidate(item: Mapping[str, object]) -> _CreateCandidate | None:
 
     anchor_date = item.get("anchor_date")
     # `bool` is an `int` in Python — refused rather than coerced, the same
-    # guard `fact_adaptor._parse_claim` applies to `message_ids`.
+    # guard `_parse_candidate` applies to `message_ids` below.
     if (
         isinstance(anchor_date, bool)
         or not isinstance(anchor_date, int)
@@ -301,16 +302,16 @@ def _parse_candidate(item: Mapping[str, object]) -> _CreateCandidate | None:
 
 def _media_placeholder(row: TranscriptRow) -> str:
     """What a bodiless row renders as. Deliberately terse — this adaptor does
-    not need the media TYPE the fact tier's render distinguishes, only that a
-    row without text is still shown (with its id, so `accept`'s message-id
+    not need to distinguish media TYPES, only to show that a row without text
+    is still shown (with its id, so `accept`'s message-id
     membership check sees the same set `inputs` rendered)."""
     return "[media]" if row.media_json else ""
 
 
 def _render_line(row: TranscriptRow, *, room: str) -> str:
     """One attributed transcript line: `<id> [<ts>] <name> (<room>): <body>`
-    — `nora.language.fact_adaptor._render_line`'s own shape, so the model can
-    attribute an arrangement to a person, a moment and a room, which matters
+    — attributed on every line, so the model can attribute an arrangement
+    to a person, a moment and a room, which matters
     more here than for a triple: a note's `established_in` is a routing key
     the tag path reads later (`nora.domain.notes.Note`'s own docstring)."""
     import datetime as _dt
@@ -402,10 +403,10 @@ class NoteCandidateAdaptor:
     uses_watermark = True
     objective = "note-candidates"
     envelope_key = "candidates"
-    #: TOOL-FREE, `FactCandidateAdaptor`'s own cost decision (design 33 §4.1):
-    #: read-only awareness would be permitted for a scope-keyed adaptor, but
-    #: this one's design keeps it tool-free anyway, the fact tier's cost
-    #: split — one cheap call decides what is worth carrying forward, and a
+    #: TOOL-FREE (design 33 §4.1): read-only awareness would be permitted for
+    #: a scope-keyed adaptor, but this one's design keeps it tool-free anyway,
+    #: the cost split every extractor-shaped pass makes — one cheap call
+    #: decides what is worth carrying forward, and a
     #: tool call per candidate is a cost nobody asked for here.
     tools: frozenset[str] = frozenset()
 
@@ -427,8 +428,7 @@ class NoteCandidateAdaptor:
         self._metrics = metrics
         # Per key, written by `inputs` and read by `accept` — the only
         # channel between them (`DreamAdaptor.accept` takes no batch).
-        # `nora.language.fact_adaptor.FactCandidateAdaptor._message_ids`'s own
-        # reasoning: keyed by `key`, not a bare attribute, because
+        # Keyed by `key`, not a bare attribute, because
         # `dream_loop` dispatches each scope as its own task.
         self._message_ids: dict[str, frozenset[int]] = {}
 
@@ -457,8 +457,8 @@ class NoteCandidateAdaptor:
 
         `batch` empty renders `""`: `DreamAdaptor` has no `should_fire` verb,
         the runtime's fire condition is "did `inputs` render anything", and a
-        quiet room must cost nothing (`FactCandidateAdaptor.inputs`'s own
-        argument, restated because it is load-bearing here too).
+        quiet room must cost nothing — the runtime's own docstring on the
+        blank-prompt fire condition, restated because it is load-bearing here.
         """
         self._message_ids[key] = frozenset(row.id for row in batch)
         if not batch:
@@ -487,8 +487,7 @@ class NoteCandidateAdaptor:
         """Typed parse into `_CreateCandidate`, dropping a malformed item
         silently (`DreamAdaptor.accept`'s own contract) and dropping any item
         naming a `message_ids` entry outside this run's batch —
-        `FactCandidateAdaptor.accept`'s own guard, for the identical reason:
-        an invented id is fabricated provenance, worse than a missing entry.
+        because an invented id is fabricated provenance, worse than a missing entry.
         """
         seen = self._message_ids.get(key)
         parsed: list[object] = []
@@ -514,8 +513,7 @@ class NoteCandidateAdaptor:
         """Stage, gate, materialize — see the module docstring for the three
         steps. `key` is a SCOPE and both the candidate table and the note
         store are keyed on the WORKSPACE (DEC-105), so it is translated —
-        `FactCandidateAdaptor.commit`'s own reasoning and its own refusal: an
-        unresolvable scope RAISES rather than guessing, because filing a
+        and an unresolvable scope RAISES rather than guessing, because filing a
         candidate under the scope id would hide it from every workspace-level
         read, and filing it under a guessed workspace lets one social unit's
         proposal enter another's notebook.

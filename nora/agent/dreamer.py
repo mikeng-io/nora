@@ -168,11 +168,13 @@ class AdaptorSchedule:
 
     `phase_offset_seconds` shifts a watermark-free adaptor's slot boundary,
     and it exists because separating PERIODS is not separating PHASES. The
-    fact tier's three adaptors have a real data dependency — candidates write
-    the queue, adjudication drains it, entity resolution reads what
-    adjudication wrote — while `dream_loop` dispatches adaptors as CONCURRENT
-    tasks with no ordering (design/dreamer-agent-loop/33 §6 M6 states this and
-    declines to solve it for the note tier, which has no such dependency).
+    knowledge tier's three adaptors (deleted 2026-09-07, issue #115) had a
+    real data dependency — candidates wrote a queue, adjudication drained it,
+    entity resolution read what adjudication wrote — while `dream_loop`
+    dispatches adaptors as CONCURRENT tasks with no ordering
+    (design/dreamer-agent-loop/33 §6 M6 states this and declines to solve it
+    for the note tier, which has no such dependency). The mechanism stays
+    because the note tier's own slots use it (`note-curation` at 16:00 UTC).
     Give all three the same daily interval and they coincide every day; give
     them the same interval at different offsets and a claim written in the
     morning is adjudicated the same afternoon rather than tomorrow. Ignored
@@ -445,9 +447,10 @@ def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | 
     rather than text parsed out of a reply.
 
     The first is overturned by evidence it did not have: the objective fix
-    LANDED. `fact-adjudication.md` spends its closing paragraph on «your
-    entire reply is one JSON object, the first character you write is `{`»,
-    and the model narrates anyway — measured below. An instruction that has
+    LANDED. The (since deleted) `fact-adjudication.md` spent its closing
+    paragraph on «your entire reply is one JSON object, the first character
+    you write is `{`», and the model narrated anyway — measured below, and
+    the surviving objectives carry the same closing paragraph. An instruction that has
     been given and is not followed is not a fix that is still pending.
 
     The second is not overturned, it is deferred: a terminal tool call is the
@@ -456,8 +459,9 @@ def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | 
     narration keeps costing batches after this, the parser is the wrong layer
     and 07 §57 is where to go.
 
-    Measured 2026-08-28, driving the shipped `fact-adjudication` objective
-    through its whole tool loop:
+    Measured 2026-08-28, driving the then-shipped `fact-adjudication`
+    objective through its whole tool loop (the objective is gone; the
+    measurement is why the parser tolerates narration):
 
       effort=none, empty results  converged turn 6 — «Search returning empty
                                   results consistently. Cannot find any
@@ -498,10 +502,9 @@ def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | 
     # counter green. That is silent and irreversible where the bug it replaced
     # was loud and retryable.
     #
-    # Worse than lossy on `fact-adjudication`, whose objective prints a
-    # POPULATED example: the tier would have written the documentation's own
-    # worked example as a fact about the world, marked supported, carrying a
-    # source_url out of the objective file.
+    # Worse than lossy on an objective that prints a POPULATED example (the
+    # deleted `fact-adjudication` did; `note-candidates` does): the tier would
+    # write the documentation's own worked example as a real row.
     #
     # Last is also what the measurement says: the model narrates, then
     # answers. Nothing pinned first-vs-last before this comment existed —
@@ -641,8 +644,9 @@ class DreamerRuntime:
         # applies it for a turn; `_tool_budgets` below read `spec.budget`
         # straight off the table, so one number in `config.toml` meant two
         # different ceilings depending on which loop was asking — with nothing
-        # naming the difference. Measured live on the first tick after the
-        # knowledge tier's schedule landed: `[llm.budgets] web_fetch = 6` was
+        # naming the difference. Measured live on 2026-09-07, the first tick
+        # after the (since deleted) knowledge tier's schedule landed:
+        # `[llm.budgets] web_fetch = 6` was
         # set, and `DreamGuard` vetoed the Dreamer at «you already called
         # web_fetch 2 time(s)», the TABLE value, twelve times in one run that
         # then produced a 0-char envelope.
