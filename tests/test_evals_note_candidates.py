@@ -34,7 +34,6 @@ from evals.run import SUITES
 from nora.agent import factory
 from nora.app.eval_support import (
     build_note_candidates_runtime,
-    load_eval_config,
     run_note_candidates_case,
 )
 
@@ -193,13 +192,17 @@ def _scripted(monkeypatch, raw: str):
     monkeypatch.setattr(factory, "final_text", lambda _result: raw)
 
 
-def _drive(monkeypatch, case: NoteCandidatesCase, raw: str):
+def _drive(monkeypatch, cfg, case: NoteCandidatesCase, raw: str):
+    """`cfg` is the `example_config` fixture — the template, never the
+    deployment's file (`tests/architecture/test_config_comes_from_the_
+    template.py`). The drive never reaches the network."""
     _scripted(monkeypatch, raw)
-    # `load_config` is fail-closed on the LLM key env (no key, no start); the
-    # drive never reaches the network, so any value satisfies the check.
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "offline-eval")
-    cfg = load_eval_config((ROOT / "config.example.toml",))
-    runtime, label = build_note_candidates_runtime(cfg, client=object())
+    # The template copy lives in `tmp_path`, so its relative `[dreamer] dir`
+    # points at nothing there; the REAL doctrine + objective are what the
+    # instruction hash below must bind to, so they are named explicitly.
+    runtime, label = build_note_candidates_runtime(
+        cfg, client=object(), dreamer_dir=ROOT / "nora" / "dreamer",
+    )
     assert "/" in label
     return asyncio.run(run_note_candidates_case(
         runtime, workspace=case.workspace, scope="eval:t",
@@ -209,14 +212,15 @@ def _drive(monkeypatch, case: NoteCandidatesCase, raw: str):
     ))
 
 
-def test_a_scripted_create_reaches_the_notebook_through_the_real_adaptor(monkeypatch):
+def test_a_scripted_create_reaches_the_notebook_through_the_real_adaptor(monkeypatch,
+    example_config):
     case = _case("create")
     raw = json.dumps({"candidates": [{
         "title": "Dinner 19 Sept", "description": "Dinner on the 19th, venue open.",
         "body": "Ada asked whether the 19th works.", "closing_condition": "a venue is picked",
         "anchor_date": 20260919, "message_ids": [1],
     }]})
-    drive = _drive(monkeypatch, case, raw)
+    drive = _drive(monkeypatch, example_config, case, raw)
     assert drive.status == "ok"
     assert drive.before == ()
     assert len(drive.after) == 1 and drive.after[0][2] == 20260919
@@ -232,16 +236,18 @@ def test_a_scripted_create_reaches_the_notebook_through_the_real_adaptor(monkeyp
     assert len(drive.instruction_sha256) == 64, "bound to the real doctrine+objective"
 
 
-def test_a_scripted_empty_envelope_leaves_the_seeded_notebook_alone(monkeypatch):
+def test_a_scripted_empty_envelope_leaves_the_seeded_notebook_alone(monkeypatch, example_config):
     case = _case("none", notebook=[
         {"title": "Dinner", "description": "d", "anchor_date": 20260919, "body": "b"}])
-    drive = _drive(monkeypatch, case, '{"candidates": []}')
+    drive = _drive(
+        monkeypatch, example_config, case, '{"candidates": []}',
+    )
     assert drive.status == "nothing_found"
     assert drive.before == drive.after and len(drive.after) == 1
     assert drive.staged == ()
 
 
-def test_a_scripted_same_date_candidate_revises_instead_of_creating(monkeypatch):
+def test_a_scripted_same_date_candidate_revises_instead_of_creating(monkeypatch, example_config):
     case = _case("update")
     raw = json.dumps({"candidates": [{
         "title": "Dinner", "description": "Dinner on the 19th, now booked.",
@@ -249,7 +255,7 @@ def test_a_scripted_same_date_candidate_revises_instead_of_creating(monkeypatch)
         "closing_condition": "everyone turns up", "anchor_date": 20260919,
         "message_ids": [1],
     }]})
-    drive = _drive(monkeypatch, case, raw)
+    drive = _drive(monkeypatch, example_config, case, raw)
     assert drive.status == "ok"
     assert len(drive.after) == 1, "no second note on the same date"
     assert drive.before[0][3] != drive.after[0][3], "the head moved"
