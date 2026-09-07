@@ -2161,6 +2161,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # belongs to the TRIGGER, which is shared, and the gate is what
             # runs when a window closes — not what defines one.
             settle_seconds=cfg.participation.settle_seconds,
+            max_window_messages=cfg.participation.max_window_messages,
             cooldown_seconds=cfg.participation.cooldown_minutes * 60,
             gate=gate,
             # Shadow is DECIDED here, once: passing the poster IS shadow mode.

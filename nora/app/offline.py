@@ -265,6 +265,7 @@ def build_offline_pipeline(
             # would be two locks and no serialisation at all.
             slots=slots,
             settle_seconds=cfg.participation.settle_seconds,
+            max_window_messages=cfg.participation.max_window_messages,
             cooldown_seconds=cfg.participation.cooldown_minutes * 60,
             # NO gate, deliberately. `gate=None` admits every closed window,
             # which is what an eval of the TURN needs: a suite that had to

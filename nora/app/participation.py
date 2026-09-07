@@ -69,6 +69,7 @@ class ParticipationTrigger:
         slots: ConversationSlots,
         settle_seconds: float,
         cooldown_seconds: float,
+        max_window_messages: int = 10,
         gate: RelevanceGate | None = None,
         gate_shadow: Callable[..., Awaitable[None]] | None = None,
         clock: Callable[[], float] = time.monotonic,
@@ -88,8 +89,18 @@ class ParticipationTrigger:
         self._gate_shadow = gate_shadow
         self._settle_seconds = settle_seconds
         self._cooldown_seconds = cooldown_seconds
+        # The VOLUME arm of the batch (see `close_due_windows`). Sized against
+        # the live rooms rather than guessed: the busiest carries ~44 human
+        # messages a DAY and the next ~32, so a cap at the gate's 40-row
+        # transcript window would fill about once a day — i.e. it would not
+        # exist. Ten is dense enough to fire inside a real conversation.
+        self._max_window_messages = max_window_messages
         self._clock = clock
         self._last_message_at: dict[Key, float] = {}
+        # Messages seen since this room's last evaluation — the volume arm's
+        # counter. Reset when a window closes, for the same reason
+        # `_last_window_end` exists: a window that has been judged is spent.
+        self._unjudged: dict[Key, int] = {}
         self._last_window_end: dict[Key, float] = {}
         self._last_send_at: dict[Key, float] = {}
         # The occasion factory needs the room's conversation_type; remembered
@@ -103,6 +114,7 @@ class ParticipationTrigger:
         evaluation happens on `close_due_windows`, never per message."""
         key = (message.platform, message.conversation_id)
         self._last_message_at[key] = self._clock()
+        self._unjudged[key] = self._unjudged.get(key, 0) + 1
         self._conversation_type[key] = message.conversation_type
 
     async def close_due_windows(self) -> int:
@@ -110,20 +122,41 @@ class ParticipationTrigger:
         last call; returns how many were evaluated. The runtime loop calls
         this on its tick; tests call it directly with an injected clock.
 
+        A window closes on EITHER arm, whichever comes first — the shape a
+        message queue uses (`WaitTimeSeconds` + `MaxNumberOfMessages`):
+
+        * **quiet** — the room has said nothing for `settle_seconds`;
+        * **volume** — `max_window_messages` have arrived since this room was
+          last judged.
+
+        The volume arm is not an optimisation, it closes a hole. The quiet arm
+        alone reads `now - last_message_at`, and that resets on EVERY message,
+        so a room whose gaps stay under `settle_seconds` never closes a window
+        at all. Measured on the real trigger: 200 messages six seconds apart —
+        twenty minutes of live conversation — produced ZERO evaluations, and
+        the first one only came after the room fell silent, by which time the
+        question had scrolled away. The gate was blind exactly when a room is
+        busiest, which is when a question is most likely to be dropped.
+
         The watermark (`_last_window_end`) is set BEFORE the evaluation, not
         after it: exactly one evaluation per closed window, even if the turn
         faults — a failed evaluation is a missed thought, and re-opening the
         window would make one quiet burst cost a turn every tick until it
-        succeeds.
+        succeeds. `_unjudged` is cleared with it, for the same reason: a
+        window that has been judged is spent, however it closed.
         """
         now = self._clock()
         due = [
             key for key, last in self._last_message_at.items()
-            if now - last >= self._settle_seconds
-            and last > self._last_window_end.get(key, 0.0)
+            if last > self._last_window_end.get(key, 0.0)
+            and (
+                now - last >= self._settle_seconds                    # quiet
+                or self._unjudged.get(key, 0) >= self._max_window_messages
+            )
         ]
         for key in due:
             self._last_window_end[key] = now
+            self._unjudged[key] = 0
             platform, conversation_id = key
             # §10.2: take the slot only if free. A tag holding it skips the
             # window ENTIRELY (the watermark above already closed it) — never
@@ -204,7 +237,7 @@ class ParticipationTrigger:
     def sweep(self, older_than: float) -> int:
         """Drop rooms idle longer than `older_than` and return how many.
 
-        All four dicts are otherwise unbounded — one entry per opted-in room
+        All five dicts are otherwise unbounded — one entry per opted-in room
         ever seen. This is `Debounce.sweep`'s hook, for the same reason; the
         runtime loop calls it, this class never calls it itself.
         """
@@ -216,6 +249,7 @@ class ParticipationTrigger:
         for key in stale:
             del self._last_message_at[key]
             self._last_window_end.pop(key, None)
+            self._unjudged.pop(key, None)
             self._last_send_at.pop(key, None)
             self._conversation_type.pop(key, None)
         return len(stale)

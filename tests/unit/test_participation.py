@@ -457,3 +457,70 @@ async def test_a_declined_window_does_not_spend_the_send_cooldown():
     assert len(speak.calls) == 1
     _occasion, permitted = speak.calls[0]
     assert permitted is True, "the declined window burned the cooldown"
+
+
+async def test_a_hot_room_is_judged_on_volume_not_only_on_quiet():
+    """The quiet arm alone leaves a room that never pauses unjudged.
+
+    `close_due_windows` read `now - last_message_at >= settle_seconds`, and
+    that resets on EVERY message — so a conversation whose gaps stay under
+    `settle_seconds` never closes a window at all. Measured on this trigger
+    before the fix: 200 messages six seconds apart, twenty minutes of live
+    conversation, produced ZERO evaluations; the first came only after the
+    room fell silent, by which point the question had scrolled away. The gate
+    was blind exactly when a room is busiest — which is when a question is
+    most likely to be dropped.
+
+    The two arms are OR, whichever comes first, the shape a message queue
+    uses. The window watermark is a separate guard and not a third condition:
+    without it a quiet room would be re-judged on every tick forever.
+    """
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=False)
+    trigger = ParticipationTrigger(
+        speak=speak, slots=ConversationSlots(maxlen=1, spawn=lambda coro: None),
+        settle_seconds=SETTLE, cooldown_seconds=COOLDOWN, clock=clock, gate=gate,
+        max_window_messages=10,
+    )
+    for _ in range(30):
+        trigger.note_message(_msg())
+        clock.now += 6                       # every gap is under SETTLE
+        await trigger.close_due_windows()
+
+    assert len(gate.asked) == 3, (
+        "a room that never pauses was never judged — the volume arm is the "
+        "only thing that closes a window here"
+    )
+
+
+async def test_the_volume_counter_resets_when_a_window_closes():
+    """A window that has been judged is spent, however it closed — the same
+    reason `_last_window_end` exists. Without the reset the counter stays over
+    the cap and every later tick re-fires."""
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=False)
+    trigger = ParticipationTrigger(
+        speak=speak, slots=ConversationSlots(maxlen=1, spawn=lambda coro: None),
+        settle_seconds=SETTLE, cooldown_seconds=COOLDOWN, clock=clock, gate=gate,
+        max_window_messages=5,
+    )
+    for _ in range(5):
+        trigger.note_message(_msg())
+        clock.now += 1
+    assert await trigger.close_due_windows() == 1
+    # No new messages: the counter is spent, so nothing re-fires.
+    assert await trigger.close_due_windows() == 0
+    assert len(gate.asked) == 1
+
+
+async def test_a_quiet_room_still_closes_on_the_timeout_arm():
+    """The positive control: OR, not a replacement. Three messages far apart
+    never reach the volume cap and must still be judged."""
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=False)
+    trigger = ParticipationTrigger(
+        speak=speak, slots=ConversationSlots(maxlen=1, spawn=lambda coro: None),
+        settle_seconds=SETTLE, cooldown_seconds=COOLDOWN, clock=clock, gate=gate,
+        max_window_messages=10,
+    )
+    trigger.note_message(_msg())
+    clock.now += SETTLE + 1
+    assert await trigger.close_due_windows() == 1
+    assert len(gate.asked) == 1

@@ -254,6 +254,14 @@ enabled = false
 # when the room has been quiet this long. ONE evaluation runs per closed window,
 # with the whole burst in context — never one per message.
 settle_seconds = 10
+# The VOLUME arm: a window ALSO closes once this many messages have arrived
+# since the room was last judged — quiet OR volume, whichever comes first.
+# Without it a room that keeps talking is never judged at all: the quiet arm
+# reads time since the last message, and every message resets it. Sized
+# against the live rooms (busiest ~44 human messages a DAY), and deliberately
+# smaller than [relevance_gate] transcript_rows so consecutive windows overlap
+# and an intent spread over several messages stays visible in the next one.
+max_window_messages = 10
 # SEND cooldown, not an evaluation cooldown (§10.3): at most one participation
 # message per room per this many minutes. Evaluations run regardless; one that
 # concludes "speak" inside the cooldown stays silent (and is logged).

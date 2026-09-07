@@ -381,6 +381,20 @@ class ParticipationConfig(BaseModel):
 
     enabled: bool = False
     settle_seconds: float = Field(default=10.0, gt=0)
+    # The VOLUME arm of the window (design/dreamer-agent-loop/36 §3). The two
+    # arms are OR — quiet OR this many unjudged messages, whichever first —
+    # because the quiet arm alone never closes a window in a room that keeps
+    # talking: it reads time since the LAST message, which every message
+    # resets. Measured: 200 messages six seconds apart produced ZERO
+    # evaluations until the room fell silent.
+    #
+    # Ten, sized against the live rooms rather than guessed: the busiest
+    # carries ~44 human messages a DAY and the next ~32, so a cap at the
+    # gate's 40-row transcript window would fill about once a day — it would
+    # not exist. Deliberately SMALLER than `[relevance_gate] transcript_rows`,
+    # so consecutive windows overlap and an intent spread across several
+    # messages stays visible in the next one.
+    max_window_messages: int = Field(default=10, gt=0)
     cooldown_minutes: float = Field(default=10.0, gt=0)
     shadow: bool = False
     # The mirror's destination: a channel id on `shadow_platform`. Required

@@ -260,3 +260,78 @@
   category: not_hers
   expect: no_go
   transcript: []
+
+# --- frag: an intent spread across several messages -----------------------
+#
+# The operator's own break-down (2026-09-07): one need — "where did we eat the
+# other day" — is not one message. People fire three short lines and the ask
+# only exists once they are put together. No line is a question and the last
+# is a statement.
+#
+# The suite was blind to this: every case above is one-message-one-ask. The
+# quiescence window already batched correctly (fragmented WEATHER admitted
+# fine), so this is not a trigger bug — the instruction was telling the model
+# to judge whether the newest line is shaped like a question.
+
+- name: frag/remembering-a-meal
+  category: whereabouts
+  expect: go
+  sample: 5
+  transcript:
+    - "呢間嘢好似上次食過"
+    - "唔知使咗幾多錢"
+    - "唔記得咗幾時食過"
+
+- name: frag/remembering-a-meal-with-banter-between
+  category: whereabouts
+  expect: go
+  transcript:
+    - "呢間嘢好似上次食過"
+    - "係咩"
+    - "唔知使咗幾多錢"
+    - "haha"
+    - "唔記得咗幾時食過"
+
+- name: frag/same-need-as-one-sentence
+  category: whereabouts
+  expect: go
+  transcript: ["記唔記得我哋之前幾日去咗邊度食嘢？"]
+
+- name: frag/weather-fragmented
+  category: world_fact
+  expect: go
+  transcript: ["好似好凍", "唔知幾多度", "深水埗依家"]
+
+# --- past vs intent: the line the members-only rule was drawing wrong ------
+#
+# "About the members" was the wrong axis. The real one is what is only in
+# their heads versus what she keeps a record of. She holds location history,
+# notes and this room's transcript — so what the group DID is hers, even
+# though it is about them. What they PLAN is not.
+
+- name: past/where-we-ate
+  category: whereabouts
+  expect: go
+  sample: 5
+  transcript: ["我哋上次去咗邊度食？"]
+
+- name: past/what-it-cost
+  category: whereabouts
+  expect: go
+  transcript: ["上次嗰餐使咗幾多錢？"]
+
+- name: past/named-member
+  category: whereabouts
+  expect: go
+  transcript: ["Aaron 上次去咗邊度食？"]
+
+- name: intent/availability
+  category: members_only
+  expect: no_go
+  sample: 5
+  transcript: ["邊個今晚得閒？"]
+
+- name: intent/opinion
+  category: members_only
+  expect: no_go
+  transcript: ["你哋覺得嗰間好唔好食？"]
