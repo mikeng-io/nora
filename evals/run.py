@@ -683,12 +683,16 @@ async def _run_participation_live(
                 spokes: list[bool] = []
                 stop_reasons: list[str | None] = []
                 reasons: list[str] = []
+                silent_failures: Counter[str] = Counter()
+                declined = 0
                 judged_reply: str | None = None
                 for _ in range(case.sample):
                     trajectory = await run_case(case, live=True, effort=effort)
                     verdict = ParticipationVerdict(case.expect).evaluate(trajectory)
                     spokes.append(bool(trajectory.sent))
                     stop_reasons.append(trajectory.stop_reason)
+                    silent_failures.update(trajectory.silent_failures)
+                    declined += trajectory.participation_silence
                     if verdict.reason:
                         reasons.append(verdict.reason)
                     if trajectory.sent and judged_reply is None:
@@ -756,6 +760,11 @@ async def _run_participation_live(
                     "spoke": bool(spoke_count), "passed": passed,
                     "judge": judge_verdict,
                     "samples": case.sample, "spoke_count": spoke_count,
+                    # WHY the room heard nothing, when it heard nothing: a cap
+                    # that bound (`silent_failures`) or a floor she completed
+                    # the loop and declined (`declined`).
+                    "silent_failures": dict(silent_failures),
+                    "declined": declined,
                     # The disambiguating signal (Claude Sonnet audit BLOCKING):
                     # a turn that never invoked the model is an ERROR, not a
                     # correct silence — surfaced so the summary's stop_reason
@@ -774,6 +783,8 @@ async def _run_participation_live(
                 print(f"[{status}] participation/{case.name} — expect={case.expect} "
                       f"spoke={spoke_count}/{case.sample}"
                       + (f" judge={judge_verdict}" if judge_verdict else "")
+                      + (f" silent_failures={dict(silent_failures)}"
+                         if silent_failures else "")
                       + (f": {reasons[0]}" if reasons else ""))
 
         # MEASUREMENT 0 — did the run happen at all, reported BEFORE any
@@ -843,6 +854,24 @@ async def _run_participation_live(
         # visible instead of reading as "zero false-speaks".
         stops = Counter(sr or "unrecorded" for r in results for sr in r["stop_reasons"])
         print("    stop_reason: " + ", ".join(f"{k}x{v}" for k, v in sorted(stops.items())))
+        # A missed speak has two completely different causes and one row. This
+        # separates them: `no_send_call` is prose she wrote and never routed,
+        # nothing at all is a silence she chose.
+        silent = Counter()
+        for r in results:
+            silent.update(r["silent_failures"])
+        print("    silent_failures: "
+              + (", ".join(f"{k}x{v}" for k, v in sorted(silent.items()))
+                 if silent else "none — no cap bound on any run"))
+        # What the silence WAS, as far as anything can see it. A declined floor
+        # is a completed turn, not a malfunction — but production collapses
+        # "nothing needed saying" and "she wrote it as prose and never routed
+        # it" into this one number (`fire.py`), so a high count on a SPEAK case
+        # is the strongest statement this suite can make and still not a cause.
+        declined_total = sum(r["declined"] for r in results)
+        on_speak = sum(r["declined"] for r in results if r["expect"] == "speak")
+        print(f"    declined the floor: {declined_total} runs "
+              f"({on_speak} of them on a case that expected her to speak)")
         # Langfuse export (Miles 2026-09-05: "include langfuse and jaeger —
         # otherwise how can I analyse with observability"). The participation
         # suite is the flip gate; its per-case verdicts belong in the same

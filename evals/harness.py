@@ -119,6 +119,32 @@ class Trajectory:
     # `limit_output_tokens` are completely different failures and were
     # indistinguishable from here.
     stop_reason: str | None = None
+    #: WHY the room heard nothing, read off `nora_silent_failures_total{reason}`.
+    #:
+    #: Same argument as `stop_reason` above, one level in: the suite grades on
+    #: `sent`, so a turn R-8's caps cut off before it could decide anything and
+    #: a turn that decided to say nothing are the same row, and they are
+    #: opposite findings.
+    #:
+    #: READ WHAT THIS CAN SEE. On the PARTICIPATION path it carries budget cuts
+    #: ONLY. `nora/app/fire.py` routes a completed participation turn that never
+    #: called `send_reply` to `nora_participation_silence_total` — the declined
+    #: floor is the healthy default there, deliberately not a failure — so an
+    #: empty dict here means "no cap bound", never "she chose the silence".
+    #: `participation_silence` below is the one that says she reached the
+    #: decision at all.
+    silent_failures: dict[str, int] = field(default_factory=dict)
+    #: Times this turn recorded `nora_participation_silence_total`: the model
+    #: was offered the floor, completed its loop, and declined.
+    #:
+    #: It CANNOT separate "nothing needed saying" from "she wrote the answer as
+    #: prose and never routed it" — production collapses both into this one
+    #: series by construction (`fire.py`, the `participation and stop_reason
+    #: not in BUDGET_STOP_REASONS` branch). That is a finding about the
+    #: occasion, not a gap in the harness, and it is the case for a terminal
+    #: `decline` verb: today a declined floor is counted, but the reason for it
+    #: is not observable anywhere.
+    participation_silence: int = 0
 
 
 @dataclass
@@ -230,6 +256,31 @@ def _stop_reason_from_metrics(metrics: Metrics) -> str | None:
     if not counts:
         return None
     return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+
+def _silent_failures_from_metrics(metrics: Metrics) -> dict[str, int]:
+    """Why the room heard nothing, off `nora_silent_failures_total{reason}`.
+
+    Empty when nothing was recorded. See `Trajectory.silent_failures` for what
+    that empty dict does and does not mean on the participation path.
+    """
+    out: dict[str, int] = {}
+    for (name, labels), value in metrics.snapshot().items():
+        if name == "nora_silent_failures_total" and value:
+            reason = dict(labels).get("reason", "")
+            if reason:
+                out[reason] = out.get(reason, 0) + int(value)
+    return out
+
+
+def _participation_silence_from_metrics(metrics: Metrics) -> int:
+    """Times the model was offered the floor and declined it, off
+    `nora_participation_silence_total`. See `Trajectory.participation_silence`
+    for what this can and cannot distinguish."""
+    return int(sum(
+        value for (name, _labels), value in metrics.snapshot().items()
+        if name == "nora_participation_silence_total"
+    ))
 
 
 def _tool_calls_from_metrics(metrics: Metrics) -> list[str]:
@@ -506,6 +557,8 @@ async def run_case(
         # (`tool_calls` stays live-only: a scripted case carries its tool intent
         # in the script itself.)
         stop_reason = _stop_reason_from_metrics(metrics)
+        silent_failures = _silent_failures_from_metrics(metrics)
+        participation_silence = _participation_silence_from_metrics(metrics)
         if live:
             tool_calls = _tool_calls_from_metrics(metrics)
         return Trajectory(
@@ -515,4 +568,6 @@ async def run_case(
             honcho_feeds=feeds,
             prefill_sufficient=case.prefill_sufficient,
             stop_reason=stop_reason,
+            silent_failures=silent_failures,
+            participation_silence=participation_silence,
         )

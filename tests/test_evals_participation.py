@@ -342,3 +342,52 @@ async def test_the_seeded_grounding_reaches_the_participation_prompt(tmp_path):
     assert adapter2.texts == []
     assert metrics2.get("nora_participation_silence_total", platform="signal") == 1
     assert metrics2.get("nora_participation_spoke_total") == 0
+
+
+# ── What the harness can see about a silence (2026-09-08) ───────────────────
+
+
+async def test_a_declined_floor_is_recorded_and_is_not_a_silent_failure():
+    """The positive control for `Trajectory.participation_silence`.
+
+    Reading a zero off an instrument that cannot move is not a null result
+    (CLAUDE.md), and the first version of this read the wrong series: it
+    watched `nora_silent_failures_total`, which `nora/app/fire.py` never
+    increments for a completed participation turn — a declined floor is the
+    healthy default there and goes to `nora_participation_silence_total`.
+    """
+    case = Case.from_dict({
+        "name": "declined", "input": "so when is it?",
+        "expect": "silence", "seed": {"transcript": ["so when is it?"]},
+    })
+    trajectory = await run_case(
+        case, script=[ScriptedTurn(final_text="I don't have that")],
+    )
+    assert trajectory.sent == []
+    assert trajectory.participation_silence == 1, "the declined floor must be counted"
+    assert trajectory.silent_failures == {}, "a declined floor is not a malfunction"
+
+
+async def test_prose_she_never_routed_is_indistinguishable_from_having_nothing_to_say():
+    """The finding, pinned so a fix to it shows up as this test going red.
+
+    Production collapses both into `nora_participation_silence_total`, so the
+    suite cannot say WHY she declined — and on 2026-09-08 she declined 13 of 15
+    runs on cases that expected her to speak. This is the argument for a
+    terminal `decline` verb: today the decision is counted, the reason for it
+    is observable nowhere.
+    """
+    case = Case.from_dict({
+        "name": "declined", "input": "so when is it?",
+        "expect": "silence", "seed": {"transcript": ["so when is it?"]},
+    })
+    wrote_prose = await run_case(
+        case, script=[ScriptedTurn(final_text="I don't have that")],
+    )
+    said_nothing = await run_case(case, script=[ScriptedTurn(final_text="")])
+
+    assert (wrote_prose.sent, wrote_prose.participation_silence,
+            wrote_prose.silent_failures, wrote_prose.stop_reason) == (
+        said_nothing.sent, said_nothing.participation_silence,
+        said_nothing.silent_failures, said_nothing.stop_reason,
+    ), "these are different turns; if the harness can now tell them apart, say so here"
