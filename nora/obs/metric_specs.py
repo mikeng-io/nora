@@ -1247,9 +1247,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_note_candidate_gate_total",
         "The note-candidates adaptor's deterministic gate, by outcome: "
         "created (materialized as a brand new note), updated (materialized "
-        "as a revision to a standing note sharing its anchor key — "
-        "unreachable in production today, since the anchor key's entity half "
-        "needs note_entity, which has no writer; issue #100), refused (a "
+        "as a revision to a standing note anchored to the same calendar day "
+        "— the gate compares the DATE alone since 2026-09-08), refused (a "
         "duplicate with nothing new, or a malformed proposal the domain type "
         "itself rejected), or deferred (a transient failure — a raced CAS, a "
         "store exception, a note that moved or retired between the read and "
@@ -1327,7 +1326,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec(
         "nora_note_retirements_total",
-        "Retirements the curator attempted, by reason (because=\"merged\", "
+        "Retirements the curator attempted, by reason (because="
         "\"retired-expired\" or \"retired-closed\" — nora.domain.notes."
         "NoteSupersedeReason's own vocabulary) and by whether they MOVED "
         "anything — emitted by nora.language.note_curator."
@@ -1357,14 +1356,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # further down, describing neither of the things next to it.)
     _CounterSpec(
         "nora_note_curator_total",
-        "Curator actions by what it did: merge, merge_refused, "
-        "merge_failed, retire_failed, retire_stale, closed, moot, expired, "
-        "dateless_stale. **merge_refused "
-        "and retire_stale are NOT "
-        "errors** — the survivor or the note moved under the pass, which is "
-        "the tag path winning a race the CAS exists to arbitrate, and the "
-        "work is re-selected next tick because the selection read is live "
-        "state rather than a cursor. retire_failed IS a fault. expired is the "
+        "Curator actions by what it did: retire_failed, retire_stale, closed, "
+        "moot, expired, dateless_stale. **retire_stale is NOT an error** — "
+        "the note moved under the pass, which is the tag path winning a race "
+        "the head check exists to arbitrate, and the work is re-selected "
+        "next tick because the selection read is live state rather than a "
+        "cursor. retire_failed IS a fault. (merge, merge_refused and "
+        "merge_failed were here until the merge half was removed on "
+        "2026-09-08.) expired is the "
         "note-curator merge's addition (design 34, issue #99) — the former "
         "revisitor's word for the moment passing with nothing answering it, "
         "now grounded the same way moot is. dateless_stale is OBSERVED, not a "
@@ -1375,36 +1374,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "and a test asserts this text names exactly that set.",
         ("action",),
     ),
-    # The measurement that turns "merge does nothing" from a silence into an
-    # answer. An anchor is (date, RESOLVED entity set) and the resolved half is
-    # read from note_entity, which has no writer anywhere — so every group is
-    # refused today and merge is inert (27 §2: populating note_entity is the
-    # curator's real precondition, not its flag). This counts what that costs,
-    # so the reversal condition is a number rather than an estimate.
-    _CounterSpec(
-        "nora_note_curator_groups_refused_total",
-        "Merge groups the curator refused to merge, by reason. Today one: "
-        "no_entity_anchor — the notes collide on a DATE alone and NOTHING "
-        "RESOLVED into note_entity for either of them, so there is no "
-        "occasion, only a day. Not read from note.anchor_entity_ids, which is "
-        "the model's own unresolved free text. A rising count is the case for "
-        "giving note_entity a writer.",
-        ("reason",),
-    ),
     _CounterSpec(
         "nora_note_curator_dropped_total",
         "Model answers the curator refused, by reason: malformed (a field "
         "missing or a verdict outside the four the objective defines), "
-        "unknown_note (a handle this run did not render), body_too_long (a "
-        "merged body over the cap — the objective asked for more than it "
-        "allows, which is fixed in the INSTRUCTION not the model), "
-        "shorter_than_inputs (a merged body shorter than the longest body it "
-        "was meant to keep — a summary, on the one verb that overwrites), "
-        "not_shown_in_group (a merge for a group this run did not select), "
+        "unknown_note (a handle this run did not render), or "
         "conflicting_verdict (two contradictory answers about one note — not a "
-        "tie to break but «I cannot tell», so the note stays standing), or "
-        "conflicting_merged_body (two different bodies for one survivor, same "
-        "rule on the more destructive path). A drop is "
+        "tie to break but «I cannot tell», so the note stays standing). The "
+        "four merged-body refusals (body_too_long, shorter_than_inputs, "
+        "not_shown_in_group, conflicting_merged_body) went with the merge "
+        "half on 2026-09-08. A drop is "
         "never a guess — a retirement is a permanent removal from an index "
         "nobody can see the inside of. Five more reasons folded in by the "
         "note-curator merge (design 34, issue #99), the former revisitor's own "
@@ -1471,35 +1450,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "title resolved to a different note than the one read), or stale_head "
         "(the compare-and-set lost; the note moved under the call).",
         ("reason",),
-    ),
-    # The note tier's judgement half of entity resolution (issue #100),
-    # `NoteEntityResolutionAdaptor` — the identical three-series shape
-    # `nora_fact_resolutions_total`/`nora_fact_resolution_offered_total`/
-    # `nora_fact_aliases_attached_total` already carry for the fact tier's own
-    # pass 6, over the SAME `fact_entity` table, split rather than shared so
-    # "how often does the NOTE tier's judgement pass fire" stays answerable on
-    # its own.
-    _CounterSpec(
-        "nora_note_entity_resolutions_total",
-        "The note tier's entity-resolution verdicts by outcome: merged (an "
-        "anchor-entity string joined an existing entity as an alias), split "
-        "(no match, or the model was unsure — the expected answer), "
-        "unknown_handle (it named something this run never rendered), "
-        "malformed.",
-        ("status",),
-    ),
-    _CounterSpec(
-        "nora_note_entity_resolution_offered_total",
-        "Unresolved anchor-entity strings put in front of the model. The "
-        "positive control for the series above: every one of them is "
-        "compatible with a pass that was never asked anything.",
-    ),
-    _CounterSpec(
-        "nora_note_entity_aliases_attached_total",
-        "Anchor-entity strings recorded as another spelling of an existing "
-        "entity. This pass's ONLY write — it never merges two entity rows, "
-        "because a split is provisional and a merge has already absorbed "
-        "both sets of edges.",
     ),
     # DECLARED LATE, and the gap was not inert. `engagement/context.py` has
     # incremented this name since the peer-card blindness was found on
@@ -1765,13 +1715,13 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     _GaugeSpec(
         "nora_note_curator_bodies_read",
         "Note bodies the curator FETCHED on its last tick for a workspace — "
-        "the notes of every eligible merge group ([notes] max_groups_per_tick "
-        "GROUPS, so several notes each), every expired note it read ([notes] "
-        "max_expired_per_tick, one body each), and every due-by-revisit_at "
-        "note it read ([notes] max_revisits_per_tick, one body each — folded "
-        "in by the note-curator merge, design 34/issue #99). Written on every "
-        "tick including an idle one, where it is 0; absent means the pass did "
-        "not run. A note selected by more than one of the three reads is "
+        "every expired note it read ([notes] max_expired_per_tick, one body "
+        "each) and every due-by-revisit_at note it read ([notes] "
+        "max_revisits_per_tick, one body each — folded in by the note-curator "
+        "merge, design 34/issue #99). The merge-group read and its cap went "
+        "with the merge half on 2026-09-08. Written on every tick including "
+        "an idle one, where it is 0; absent means the pass did not run. A "
+        "note selected by both reads is "
         "fetched once per read that selected it and counted that many times, "
         "because it spends a slot in each cap it occupies. Sitting at a cap "
         "means the pass is reporting 'nothing to do' about notes it never "

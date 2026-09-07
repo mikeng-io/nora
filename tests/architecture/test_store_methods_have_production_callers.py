@@ -42,18 +42,22 @@ like a pile of bugs:
   `defect`               — a live write path creates state that no production
       code can act on or leave. These are the ones that want fixing.
 
-THE COUNTS, so they reconcile with something: FIVE methods are pinned below.
+THE COUNTS, so they reconcile with something: FOUR methods are pinned below.
 TWO more are known to have no production caller and cannot be proven so here —
 `SqlTagTraceStore.recent` and `SqlTurnVerdictStore.read` — because their names
-are shared with other stores (see the ambiguity rule). Seven in total; the five
+are shared with other stores (see the ambiguity rule). Six in total; the four
 are what this file can check.
 
 These counts were SIX and EIGHT until 2026-09-07 and were not re-derived when
 the knowledge and language tiers were deleted — `SqlEntityStore.lookup` left
 the ambiguous set (the method went with the tools that were its only
-consumers) and `SqlRenderedClaimStore` left the module set entirely. A count
-in prose that nothing recomputes is a claim, and this file exists to refuse
-exactly that shape of claim about somebody else's code.
+consumers) and `SqlRenderedClaimStore` left the module set entirely. They
+were FIVE and SEVEN for one day after that: `SqlEntityStore.resolve_or_create`
+was pinned here as a `defect` — «the fact_entity registry now has no writer»
+— and the operator's answer on 2026-09-08 was to remove the registry store
+and the note tier's whole entity-resolution chain, so the pin went with the
+module. A count in prose that nothing recomputes is a claim, and this file
+exists to refuse exactly that shape of claim about somebody else's code.
 
 HOW A CALLER IS RESOLVED, AND WHAT THAT STILL CANNOT SEE
 --------------------------------------------------------
@@ -170,28 +174,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "Its own docstring: «the operator's read, and what the tests assert the "
         "ledger on». No consumer designed.",
     ),
-    ("entities.py", "resolve_or_create"): _Pin(
-        "defect",
-        "**THE `fact_entity` REGISTRY NOW HAS NO WRITER.** This is the "
-        "deterministic MINT half — normalise, look up canonical_name and "
-        "aliases, create what is missing — and its only production caller was "
-        "`SqlFactStore._resolve_subjects`, which minted an entity for the "
-        "subject of every fact written. That store was deleted with the "
-        "knowledge tier (2026-09-07). `SqlNoteStore` reads `resolve` on every "
-        "note write and DELIBERATELY never mints (nora/infra/sql/entities.py's "
-        "own module docstring: «this tier only ever links a name to an entity "
-        "that already exists»), so with nothing minting, every anchor name "
-        "resolves to nothing forever, `note_entity` stays empty, and "
-        "`NoteEntityResolutionAdaptor`'s near-miss queue is every anchor the "
-        "room has ever written with no existing row to merge into. The tier is "
-        "wired end to end and inert — this file's own named pathology. "
-        "OPERATOR DECISION, deliberately not taken inside a deletion: either "
-        "the note tier gains a minting path (`resolve_or_create` on note "
-        "write, or a create arm on the resolution adaptor), or the registry "
-        "and `note_entity` go too. Kept and pinned rather than deleted so the "
-        "choice is visible instead of arriving as an empty table nobody can "
-        "explain.",
-    ),
     ("mobility.py", "trips_for_subject"): _Pin(
         "read_back_affordance",
         "Kept correct for a future caller by explicit decision — its docstring "
@@ -244,7 +226,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 _STORE_MODULES: frozenset[str] = frozenset(
     {
         "announcements.py", "audit.py", "compute_jobs.py",
-        "dream_schedule.py", "entities.py",
+        "dream_schedule.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py", "presence.py",
@@ -257,7 +239,10 @@ _STORE_MODULES: frozenset[str] = frozenset(
 # LOWERED 2026-09-07 with the knowledge and language tiers deletion, which took
 # six store modules out of the package; the walk now finds 104 names, and the
 # floor sits just under that rather than at a round number far below it.
-_MIN_METHOD_NAMES = 100
+# 97 on 2026-09-08, after `entities.py` (the `fact_entity` registry store)
+# went with the note tier's entity-resolution chain and `SqlNoteStore` lost
+# `merge`/`merge_groups`; the floor sits just under, on the same rule.
+_MIN_METHOD_NAMES = 95
 
 
 class _Method(NamedTuple):

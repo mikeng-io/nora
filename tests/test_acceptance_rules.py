@@ -31,14 +31,12 @@ RULE_TESTS = {
     # (ordinary ambient traffic constructs ZERO agents) and its sibling pins
     # the exception's gating.
     "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
-    # R-75: the curator, the note tier's only cross-note writer. Named test
-    # is the date-only refusal, because it is the one property that decides
-    # whether ANY merge happens in production — merge eligibility reads
-    # `note_entity`, which has no writer, so every group is refused today and
-    # the counter is the reversal condition. The other enforcing tests are on
-    # the index row, including the one the branch could not merge without:
-    # a group the model asked to merge is never retired piecemeal.
-    "R-75": "test_a_date_only_collision_is_refused_and_counted",
+    # R-75: the curator, the note tier's only cross-note writer. Its merge
+    # clauses were deprecated on 2026-09-08 with the merge half itself (the
+    # row says which clauses survive); the named test is now the retire
+    # clause that outlives it — a note whose body moved between `inputs` and
+    # `commit` is never retired on the stale reading.
+    "R-75": "test_a_note_that_moved_since_inputs_is_not_retired",
     # R-1b: R-1's FIRST clause, revised. `nora.app.fire.FirePath` made "only the
     # tagging path may cause a send" false — a fire turn is a send not caused by
     # a tag. R-1 keeps its entry rather than losing it (the DEC-40 precedent

@@ -139,6 +139,13 @@ that decided it is `design/dreamer-agent-loop/20-knowledge-tier.md` §0; the iss
 is #115. Nothing under `design/dreamer-agent-loop/` numbered 20, 21, 23, 24, 25,
 28, 31 or 32 describes code that exists.
 
+**Deprecated 2026-09-08 — the note tier's entity-resolution chain and the
+curator's merge half.** With nothing minting entities, `note_entity` could never
+be populated and merge was inert by construction; the registry store, the
+resolution pass and the merge verb are deleted (their tables stay). The
+curator only retires; the create gate in `note_candidates` matches on anchor
+date alone. R-75 in the decision index says which clauses survive.
+
 ## The three config files
 
 Three files, three lifetimes, deliberately not merged (DEC-8's argument):

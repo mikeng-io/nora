@@ -61,7 +61,6 @@ from __future__ import annotations
 import itertools
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Protocol
 
 from nora.domain.notes import (
     CANDIDATE_CREATED,
@@ -75,22 +74,9 @@ from nora.domain.notes import (
     NoteSupersedeReason,
     StaleNoteHeadError,
     WakeOutcome,
-    group_on_anchor_key,
     tag_path_progressed_since_wake,
 )
 from nora.domain.ports import Proposal
-
-
-class _NameResolver(Protocol):
-    """The one verb `SqlNoteStore`'s deterministic resolution needs off
-    `nora.infra.sql.entities.SqlEntityStore` (issue #100) — structural, not
-    imported, for the same layering reason the module docstring states:
-    `nora.testing` may not import `nora.infra`. A double that wants
-    `create`/`propose` to resolve real names supplies anything with this one
-    async method; the contract suite's own fake is exactly this and nothing
-    more."""
-
-    async def resolve(self, *, workspace: str, name: str) -> str | None: ...
 
 
 @dataclass(frozen=True)
@@ -148,45 +134,7 @@ class InMemoryNoteStore:
     #: index, which is fine at this store's scale and keeps one dict from
     #: drifting out of step with the other.
     create_candidates: dict[str, NoteCreateCandidate] = field(default_factory=dict)
-    #: `note_entity`, as a dict: note id -> RESOLVED entity ids. Empty, like
-    #: the real table, until something resolves into it. Two ways that
-    #: happens, matching `SqlNoteStore` exactly: a test writes this map
-    #: directly (as a SQL test inserts the rows), or `resolver` below is
-    #: supplied and `create`/`propose` fill it in themselves off the names
-    #: they were given — see `_resolve_names`. Before issue #100 NOTHING did
-    #: the latter, which was the double agreeing with the production gap
-    #: rather than papering over it; now that `SqlNoteStore` has a writer,
-    #: this double needs one too or the contract suite could not compare them
-    #: on the property that decides whether merge fires at all.
-    entities: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    #: The note tier's deterministic resolver (issue #100), `SqlNoteStore.
-    #: __init__`'s `entities` param under a different name — `entities` was
-    #: already taken on this class by the join-table dict two lines up, and
-    #: renaming THAT would break every existing test poking `store.entities`
-    #: directly. `None` by default: a fixture built with no resolver behaves
-    #: exactly as this store always has, matching `SqlNoteStore(engine)` with
-    #: no `entities=` supplied.
-    resolver: _NameResolver | None = field(default=None, repr=False)
     _ids: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
-
-    async def _resolve_names(
-        self, *, workspace: str, names: Sequence[str],
-    ) -> dict[str, str]:
-        """`SqlNoteStore._resolve_names`'s behaviour: normalise nothing here
-        (the fake resolver owns its own matching), skip blank names cheaply,
-        and resolve to nothing at all when `resolver` is unset — the same
-        fail-closed default the real store falls back to with no `entities`
-        collaborator."""
-        if self.resolver is None:
-            return {}
-        resolved: dict[str, str] = {}
-        for name in dict.fromkeys(names):
-            if not name or not name.strip():
-                continue
-            entity_id = await self.resolver.resolve(workspace=workspace, name=name)
-            if entity_id is not None:
-                resolved[name] = entity_id
-        return resolved
 
     #: **UUID-SHAPED, like the real store's.** This double minted `note-1` and
     #: `rev-2` until 2026-08-28, and that one divergence hid the defect that
@@ -240,13 +188,8 @@ class InMemoryNoteStore:
             written_at=now_ms, established_by=established_by,
             instruction_sha256=instruction_sha256, model=model,
         )
-        resolved = await self._resolve_names(
-            workspace=workspace, names=anchor_entity_ids,
-        )
         self.notes[note_id] = note
         self.revisions[revision_id] = revision
-        if resolved:
-            self.entities[note_id] = tuple(dict.fromkeys(resolved.values()))
         return note
 
     async def standing(self, *, workspace: str) -> tuple[Note, ...]:
@@ -336,62 +279,6 @@ class InMemoryNoteStore:
                 hits.append((note, body))
         return tuple(hits[:limit])
 
-    async def merge(
-        self,
-        *,
-        workspace: str,
-        survivor: str,
-        survivor_parent: str,
-        merged_body: str,
-        retire: Sequence[str],
-        established_by: str,
-        instruction_sha256: str | None,
-        model: str | None,
-        now_ms: int,
-    ) -> int:
-        """`SqlNoteStore.merge`. Resolve-then-apply, like `propose`: the CAS is
-        decided before anything is retired, so a lost CAS leaves the notebook
-        untouched here as well as in Postgres."""
-        note = self.notes.get(survivor)
-        if (
-            note is None
-            or note.workspace != workspace
-            or note.head_revision_id != survivor_parent
-        ):
-            raise StaleNoteHeadError(
-                f"survivor {survivor} changed under you or is not in "
-                f"workspace {workspace!r} — read it again",
-                observed_head=(
-                    note.head_revision_id
-                    if note is not None and note.workspace == workspace
-                    else None
-                ),
-            )
-        revision = NoteRevision(
-            id=self._shaped_id(next(self._ids), "rev"), note_id=survivor, body=merged_body,
-            parent_revision_id=survivor_parent, written_at=now_ms,
-            established_by=established_by,
-            instruction_sha256=instruction_sha256, model=model,
-        )
-        # De-duplicated for the reason `SqlNoteStore.merge` states: Postgres
-        # counts each row once, so a repeated id must not inflate the count
-        # this double returns.
-        targets = list(dict.fromkeys(
-            n for n in retire
-            if n != survivor
-            and (t := self.notes.get(n)) is not None
-            and t.workspace == workspace
-            and t.retired_at is None
-        ))
-        self.revisions[revision.id] = revision
-        self.notes[survivor] = replace(note, head_revision_id=revision.id)
-        for target in targets:
-            self.notes[target] = replace(
-                self.notes[target], retired_at=now_ms, replaced_by=survivor,
-                retire_reason=NoteSupersedeReason.MERGED,
-            )
-        return len(targets)
-
     async def record_wake(
         self, *, workspace: str, note_id: str, next_revisit_at: int,
         now_ms: int,
@@ -431,31 +318,6 @@ class InMemoryNoteStore:
             return WakeOutcome(strikes=0, reset=True)
         self.notes[note_id] = replace(note, strikes=note.strikes + 1)
         return WakeOutcome(strikes=note.strikes + 1, reset=False)
-
-    async def merge_groups(
-        self, *, workspace: str, limit: int,
-    ) -> tuple[
-        tuple[tuple[tuple[Note, str], ...], ...],
-        tuple[tuple[Note, ...], ...],
-    ]:
-        """`SqlNoteStore.merge_groups`. Dateless notes are excluded here too —
-        the exclusion is the CONTRACT, not a SQL convenience, so a double that
-        included them would be more permissive than the store and the suite
-        would compare two different definitions of "same occasion"."""
-        if limit <= 0:
-            return ((), ())
-        # THE SAME FUNCTION the SQL store calls, imported rather than
-        # reimplemented. This is the comparison that decides whether two notes
-        # are merged; a double with its own copy would let the contract suite
-        # compare two definitions of "same occasion" and pass.
-        return group_on_anchor_key(
-            [
-                (n, self.revisions[n.head_revision_id].body)
-                for n in await self.standing(workspace=workspace)
-            ],
-            resolved_entities=self.entities,
-            limit=limit,
-        )
 
     async def anchored_before(
         self, *, workspace: str, day: int, limit: int,
@@ -547,12 +409,6 @@ class InMemoryNoteStore:
         # a silent override, or two proposals parented on one read both land
         # and the second buries the first.
         pending: list[tuple[Note | None, NoteRevision]] = []  # (new note | None, revision)
-        # Resolved entities for a note THIS BATCH creates (issue #100),
-        # keyed by the id minted below — `_attach_note_entities`'s job in
-        # `SqlNoteStore.propose`, applied here in the apply phase alongside
-        # `pending` for the same reason: nothing above this loop may mutate
-        # `self` before every payload has been checked.
-        pending_entities: dict[str, tuple[str, ...]] = {}
         ids: list[str] = []
         heads: dict[str, str] = {}
         declared: dict[str, str] = {}
@@ -580,13 +436,6 @@ class InMemoryNoteStore:
                     established_by=p.established_by,
                     instruction_sha256=p.instruction_sha256, model=p.model,
                 )
-                resolved = await self._resolve_names(
-                    workspace=key, names=payload.anchor_entity_ids,
-                )
-                if resolved:
-                    pending_entities[note_id] = tuple(
-                        dict.fromkeys(resolved.values())
-                    )
                 pending.append((note, revision))
                 heads[note_id] = revision_id
                 ids.append(note_id)
@@ -641,8 +490,6 @@ class InMemoryNoteStore:
         for created, revision in pending:
             if created is not None:
                 self.notes[created.id] = created
-                if created.id in pending_entities:
-                    self.entities[created.id] = pending_entities[created.id]
             else:
                 self.notes[revision.note_id] = replace(
                     self.notes[revision.note_id], head_revision_id=revision.id,

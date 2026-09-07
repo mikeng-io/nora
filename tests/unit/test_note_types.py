@@ -44,7 +44,6 @@ from nora.domain.notes import (
     NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
-    anchor_key,
 )
 
 NOW = 1_755_100_000_000
@@ -114,38 +113,16 @@ def test_entities_alone_are_a_valid_anchor():
 
 def test_both_together_are_a_valid_anchor():
     note = _note(anchor_date=20261114, anchor_entity_ids=("e-grant",))
-    assert anchor_key(note.anchor_date, ("e-grant",)) == (
-        20261114, ("e-grant",),
-    )
+    assert note.anchor_date == 20261114
+    assert note.written_anchor_entities == ("e-grant",)
 
 
-def test_the_anchor_key_is_what_merge_compares():
-    """§7.1: merge eligibility is `(anchor_date, entity_set)` and nothing else —
-    never topical similarity. Two weddings differ in BOTH components, so they
-    are structurally ineligible to merge however alike their prose."""
-    assert anchor_key(20261114, ("e-grant",)) != anchor_key(
-        20261010, ("e-blake",))
-
-
-def test_the_anchor_key_ignores_entity_order():
-    """Two notes anchored on the same people, listed differently, are the same
-    anchor. Without this a merge candidate is missed for a reason that is an
-    artifact of insertion order."""
-    assert anchor_key(20260101, ("e-a", "e-b")) == anchor_key(
-        20260101, ("e-b", "e-a"))
-
-
-def test_a_duplicate_entity_does_not_change_the_anchor():
-    assert anchor_key(20260101, ("e-a",)) == anchor_key(
-        20260101, ("e-a", "e-a"))
-
-
-def test_the_anchor_key_is_not_a_property_of_the_note():
-    """**The key's entity half comes from `note_entity`, not from the column.**
-    `note.anchor_entity_ids` is what the model handed `note_create`, verbatim
-    and unresolved, and a key built from it is wrong in both directions: three
-    spellings of one wedding are three keys, and two unrelated notes that both
-    say 「wedding」 are one.
+def test_the_written_entities_are_readable_but_are_not_a_key():
+    """`note.anchor_entity_ids` is what the model handed `note_create`,
+    verbatim and unresolved, and a key built from it is wrong in both
+    directions: three spellings of one wedding are three keys, and two
+    unrelated notes that both say 「wedding」 are one. The curator's merge
+    key (removed 2026-09-08) never read it and nothing reads it as a key now.
 
     Asserted as an ABSENCE with a positive control, because the defect this
     replaces was a property that read the wrong field — and a property that no
@@ -154,8 +131,8 @@ def test_the_anchor_key_is_not_a_property_of_the_note():
 
     assert not hasattr(note, "anchor_key")
     assert note.written_anchor_entities == ("wedding",), (
-        "positive control: the written words are still readable, just not the "
-        "merge key"
+        "positive control: the written words are still readable, just not a "
+        "key"
     )
 
 
@@ -215,7 +192,7 @@ def test_a_note_may_retire_with_no_successor():
     assert not note.is_standing
 
 
-def test_a_merge_names_the_survivor():
+def test_a_retirement_may_name_a_successor():
     note = _note(retired_at=NOW + 1, replaced_by="01930000-0000-7000-8000-00000000000f")
     assert not note.is_standing
     assert note.replaced_by

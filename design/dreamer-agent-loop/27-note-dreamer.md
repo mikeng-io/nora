@@ -14,6 +14,8 @@ edges:
 > Their tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
 > The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
 
+> **FURTHER DEPRECATED IN PART 2026-09-08 — the curator's MERGE half is deleted.** §2 and §12.2–§12.4 describe merge eligibility over a resolved anchor, `note_entity`, the merged body and the guard around it; none of that is code any more. Once the knowledge tier stopped minting entities the resolved half of the anchor could never be populated and merge was inert by construction, so the verb, the entity-resolution pass (issue #100) and the `fact_entity` registry store went together. The retire half (§11, §12.1, §12.5) is unaffected. `design/09-decision-index.md` R-75 records which clauses survive.
+
 
 # The Note Dreamer
 

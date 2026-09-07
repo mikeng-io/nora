@@ -22,10 +22,9 @@ which the model is asked about:
    what makes a proposal durable across a crash between staging and the gate,
    and what lets `nora_note_candidates_total{trigger="create"}` count arrivals
    independently of the gate's own `nora_note_candidate_gate_total{action}`.
-2. **Gate.** A DETERMINISTIC comparison — `_find_anchor_match`, this tier's
-   own anchor key (`nora.domain.notes.anchor_key`), never `title` (design 33
-   §4, Kimi review finding M10) — decides whether a standing note already
-   covers this occasion.
+2. **Gate.** A DETERMINISTIC comparison — `_find_anchor_match`, on the
+   ANCHOR DATE, never `title` (design 33 §4, Kimi review finding M10) —
+   decides whether a standing note already covers this occasion.
 3. **Materialize or refuse.** No match: the candidate becomes a
    `NoteCreationProposal`, written through `DreamSink.propose` exactly as the
    tag path's future create tool would. A match: the candidate becomes a
@@ -84,27 +83,21 @@ review finding N3): it changes nothing under `tag_path_progressed_since_wake`'s
 existing semantics, while an explicit `revisit_at` makes the first wake an
 ordinary scheduled one.
 
-**Entity resolution is explicitly OUT OF SCOPE for this module — and #100
-landing elsewhere does NOT change that here.** `anchor_entity_ids` is
-accepted from the model as free text, exactly like the tag path's
-`note_create` tool stores it: unresolved, unvalidated, written verbatim to
-the note it creates. The dedupe GATE never reads that free text, because
-`nora.domain.notes.anchor_key`'s entity half is RESOLVED entity ids from
-`note_entity` — and issue #100 (`d10093af`) DID give that table a writer, on
-the note WRITE path (`SqlNoteStore.create`/`propose`). This module's own call
-into the gate is a separate, narrower thing: `_find_anchor_match` is called
-here with `entity_ids=()` and `resolved_entities={}` HARDCODED (this file's
-own call site, not a production-data fact), independent of whatever `note_
-entity` now holds. So `_find_anchor_match` still always sees an empty entity
-half from THIS caller and ALWAYS answers "no match" — every candidate becomes
-a create, never an update — and #100 does not change that; wiring a real
-`resolved_entities` read into this call site is separate, unbuilt work. That
-is the identical `no_entity_anchor` limitation `nora.language.note_curator`'s
-own merge eligibility no longer fully lives with (its OWN call site does read
-resolved entities post-#100) but this one still does: an anchor whose entity
-half is empty is not "the same occasion", it is "unresolved", and guessing
-that two notes on one date are one occasion is the two-weddings failure with
-a different label.
+**`anchor_entity_ids` is free text and the gate never reads it.** It is
+accepted from the model exactly as the tag path's `note_create` tool stores
+it — unresolved, unvalidated, written verbatim to the note it creates — and
+it is half of `note_candidate`'s own dedupe index, so a re-observation of the
+same occasion refreshes one staged row. What it is NOT is a match key: three
+spellings of one wedding are three strings, and two unrelated notes that both
+say 「wedding」 are one, so a key over it is wrong in both directions at once.
+The gate compares the DATE alone. That is deliberately the looser reading —
+two arrangements on one day become one note with an appended body rather
+than two notes — because the alternative (a resolved entity set as the
+second half of the key, issue #100) needed an entity registry that nothing
+mints any more, and was removed with it on 2026-09-08. *The reading that
+would reopen this:* two genuinely different occasions on one date in one
+workspace, updated into each other — at which point the entity half of the
+key is worth a registry of its own.
 """
 
 from __future__ import annotations
@@ -128,7 +121,6 @@ from nora.domain.notes import (
     NoteRevision,
     NoteRevisionProposal,
     StaleNoteHeadError,
-    anchor_key,
     default_revisit_at,
 )
 from nora.domain.ports import DreamSink, Proposal
@@ -330,41 +322,21 @@ def _render_line(row: TranscriptRow, *, room: str) -> str:
 
 
 def _find_anchor_match(
-    *,
-    anchor_date: int,
-    entity_ids: Sequence[str],
-    standing: Sequence[Note],
-    resolved_entities: Mapping[str, Sequence[str]],
+    *, anchor_date: int, standing: Sequence[Note],
 ) -> Note | None:
-    """Whether a standing note already covers this occasion — the same
-    `(anchor_date, RESOLVED entity set)` comparison
-    `nora.domain.notes.group_on_anchor_key` uses for merge eligibility,
-    applied to ONE proposed candidate against the workspace's standing notes
-    rather than to a self-collision within them.
+    """The standing note that already covers this occasion — the OLDEST one
+    anchored to the same calendar day — or `None`.
 
-    **Fails closed on the identical axis, for the identical reason.** An
-    anchor whose entity half is empty answers NO MATCH, never a guessed one:
-    `group_on_anchor_key`'s own `no_entity_anchor` refusal, one candidate at
-    a time instead of one merge group at a time. `entity_ids` and
-    `resolved_entities` are always `()`/`{}` in production — this adaptor
-    does no entity resolution (issue #100) — so this function is, today,
-    ALWAYS inert: every candidate becomes a create. It is written as a real
-    comparison rather than hard-coded to `None` so it can be exercised
-    directly with injected values, the same way `group_on_anchor_key`'s own
-    tests populate `resolved_entities` without a real `note_entity` table.
-
-    `resolved_entities` maps a STANDING note's id to its resolved entity ids
-    — never `Note.anchor_entity_ids`, which is the model's own unresolved
-    free text (see `nora.domain.notes.anchor_key`'s docstring for why a raw
-    string key is wrong in both directions at once).
+    A comparison on the DATE alone, never on `title` (M10: two notes can
+    share a title and have nothing to do with each other) and never on
+    `anchor_entity_ids` (free text; see the module docstring for why a key
+    over it is wrong in both directions and why the resolved alternative was
+    removed). `standing` is oldest-first from either store, so "the oldest"
+    is "the first" — the same survivor rule the curator's merge used, kept so
+    a re-observation lands on one stable note across ticks.
     """
-    key = anchor_key(anchor_date, entity_ids)
-    if not key[1]:
-        return None
     for note in standing:
-        if note.anchor_date is None:
-            continue
-        if anchor_key(note.anchor_date, resolved_entities.get(note.id, ())) == key:
+        if note.anchor_date == anchor_date:
             return note
     return None
 
@@ -566,10 +538,7 @@ class NoteCandidateAdaptor:
         standing = await self._notes.standing(workspace=workspace)
         # Always `()`/`{}` in production — see `_find_anchor_match`'s own
         # docstring for why entity resolution is out of scope here.
-        match = _find_anchor_match(
-            anchor_date=row.anchor_date, entity_ids=(),
-            standing=standing, resolved_entities={},
-        )
+        match = _find_anchor_match(anchor_date=row.anchor_date, standing=standing)
         if match is None:
             return await self._create(
                 workspace=workspace, established_in=established_in, row=row,

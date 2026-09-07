@@ -2,26 +2,25 @@
 with the revisitor per design/dreamer-agent-loop/34-note-dreamer-consolidation
 issue #99).
 
-**The one rule that carries the design: merge is keyed on the ANCHOR, never on
-topical similarity, so two weddings stay two notes.** That is enforced
-structurally rather than by prompting — eligibility is
-`nora.domain.notes.group_on_anchor_key`, a pure function over
-`(anchor_date, RESOLVED entity set)` that BOTH stores call, so **the model is
-never asked whether two notes should merge.** It is asked only what a body
-SAYS, which is the one thing a key comparison cannot read.
+**This pass RETIRES; it no longer merges (2026-09-08).** Merge was keyed on
+the ANCHOR — `(anchor_date, RESOLVED entity set)`, never topical similarity,
+so two weddings stayed two notes — and the resolved half came from
+`note_entity`, populated by resolving `note.anchor_entity_ids` against the
+shared entity registry (issue #100). When the knowledge tier was deleted
+(issue #115) nothing minted an entity any more: the registry held eight stale
+rows and no writer, every anchor name resolved to nothing, and a group whose
+resolved entity set was empty was refused by design (a date alone is not an
+occasion — «Dinner, 9 Sept» beside «Ada's flight to Tokyo»). Merge was
+therefore inert by construction, and the whole chain — the registry store,
+the resolution pass, `merge_groups`/`merge`, this module's merge half — was
+removed rather than left wired-and-inert. Duplicate arrangements are handled
+where a duplicate is first SEEN: `nora.language.note_candidates`' create gate
+matches a proposed note against standing notes by anchor date and updates
+rather than creates. *The reading that would reopen merge here:* a tier that
+mints canonical entities again, at which point a resolved anchor is
+comparable and the two-weddings argument applies as it did.
 
-**The entity half is `note_entity`, never `note.anchor_entity_ids`.** That
-column is whatever the model handed `note_create`, verbatim and unresolved, and
-a key over it is wrong in both directions at once: 「Grant 婚禮」/「Gabe's
-wedding」/「婚禮」 are three keys and one occasion, while two unrelated notes
-that both say 「wedding」 are one key and two occasions. **`note_entity` got a
-writer with issue #100** (`d10093af`) — `SqlNoteStore.create`/`propose` now
-resolve `anchor_entity_ids` against the shared entity registry and write it in
-the same transaction — so merge is REACHABLE whenever entities resolve; a
-group with nothing resolved is still refused and counted
-(`no_entity_anchor`), but that is now a per-candidate outcome, not a
-certainty for every group. The retire half is unaffected and is the half that
-answers «the notebook only grows».
+The retire half is the half that answers «the notebook only grows».
 
 ## What merged in (design 34, issue #99)
 
@@ -54,75 +53,28 @@ never built here either — deferred to the proactive adapter
 (design/dreamer-agent-loop/33 §8), which is a different tier's job. This
 module still only merges and retires; it never speaks.
 
-## Selection: SQL-only, THREE reads, and their union
+## Selection: SQL-only, TWO reads, and their union
 
-`inputs` runs three cheap reads before any model call — `merge_groups`
-(colliding anchors), `anchored_before` (expired anchors), and `due`
-(`revisit_at` due, now-that-it-has-a-writer). A note in more than one of these
-renders exactly once: a merge-group member is never also rendered standalone
-(unchanged from before the merge), and a note selected by BOTH
-`anchored_before` and `due_for_revisit` (an anchor that has passed, with a
-stale `revisit_at` sitting behind it) is deduplicated the same way. **This is
-what keeps the merge from turning into a full-notebook model-call sweep** —
-the model is only ever asked about what the SQL selected, capped by
-`max_groups_per_tick` + `max_expired_per_tick` + `max_revisits_per_tick`.
+`inputs` runs two cheap reads before any model call — `anchored_before`
+(expired anchors) and `due` (`revisit_at` due, now-that-it-has-a-writer). A
+note selected by BOTH (an anchor that has passed, with a stale `revisit_at`
+sitting behind it) renders exactly once, under `expired`. **This is what
+keeps the pass from turning into a full-notebook model-call sweep** — the
+model is only ever asked about what the SQL selected, capped by
+`max_expired_per_tick` + `max_revisits_per_tick`.
 
-**`anchored_before`/`due_for_revisit` notes carry an evidence block**, gathered
-in code from their own `established_in` (a workspace-keyed adaptor has no
-room-scoped TOOL to do this with; §4.2's argument, inherited from the
-revisitor) — the citation/`_covers` grounding applies to them, exactly the set
-that inherits the revisitor's old logic.
+**Every selected note carries an evidence block**, gathered in code from its
+own `established_in` (a workspace-keyed adaptor has no room-scoped TOOL to do
+this with; §4.2's argument, inherited from the revisitor) — the
+citation/`_covers` grounding applies to every note this pass judges. (Until
+2026-09-08 a merge-group member was the one exception, rendered without
+evidence and judged from its body alone; with merge gone there is no note
+this pass asks about without evidence.)
 
-**A note actually offered a merge THIS TICK is exempt**, a judgement call this
-merge records rather than hides: eligibility for merging is entirely
-code-decided (the anchor key), the model is asked only what a body SAYS, and
-that has never needed evidence — a merge's `moot`/`closed` verdict on a
-colliding pair is the pre-merge curator's own behaviour, unchanged. Requiring
-a citation/`_covers` pass for the merge action itself would be a second,
-unrelated strengthening riding on this issue, and would invalidate the whole
-pre-existing merge test suite for no argued benefit.
-
-**This is narrower than "is a candidate-group member" — deliberately, since
-2026-09-06.** The exemption used to key on group MEMBERSHIP alone
-(`note_id not in shown.due_or_anchored`, true of every member of every
-candidate group whether or not that group's merge was ever offered this
-tick). That was harmless only as long as `merge_groups` always returned empty
-— `note_entity` had no writer (see above), so no note was ever actually a
-group member in production. *The reading that would reopen this* was written
-down at the time: "`note_entity` gaining a writer and merge becoming a live
-path, at which point a group member's retirement risk is the same as any
-other note's and the exemption should be re-examined." Issue #100 fired it —
-merge groups are now reachable — and the re-examination found the bug this
-paragraph now describes: a model returning an individual `closed`/`moot`
-verdict for a note that IS in a candidate group, whose merge is NOT actually
-offered/accepted that same tick (declined, or simply not answered with a
-`merged_body`), retired via `supersede` with zero evidence or citation
-grounding — exactly the "silence is not an answer" guarantee this tier
-enforces everywhere else, silently bypassed for this one path.
-
-**The fix**: `_ground`'s exemption and `commit`'s `untouchable` set are now
-both computed from the SAME function, `_merged_away_ids` — every note id
-belonging to a group whose survivor's id is in `offered` (the model named
-that group with a `merged_body` at all this tick; see `_MergeOffered`'s own
-docstring for why the store-level OUTCOME does not narrow this further). A
-group member whose merge was not offered this tick falls into the ordinary
-evidence-grounded path any other note takes — and since `inputs` never
-gathers evidence for a merge-group member (immediately above), that path has
-none to check against, so such a verdict is refused `no_evidence` rather than
-guessed at. That is a real, if narrow, limitation of this fix: a note stuck in
-a group whose merge the model keeps declining cannot retire via an individual
-verdict either, until either the merge actually goes through or the group
-stops colliding — never a wrong retirement, which is the property that
-matters here. *The reading that would reopen THIS:* `inputs` gathering
-evidence for a merge-group member too (the read this paragraph's predecessor
-argued against paying for a genuinely inert path), at which point a declined
-group member could be judged on real evidence instead of always refused for
-having none.
-
-**Scope: merge, retire, and — on retirement — discharge (issue #101).** Merge
-and retire are also the pair that addresses the live problem — `config.toml`
-said it plainly: *"No curator yet… the notebook only grows for now."* Growing
-is what merge and retire stop. Discharge is what stops a CLOSED note's settled
+**Scope: retire, and — on retirement — discharge (issue #101).** Retire is
+what addresses the live problem — `config.toml` said it plainly: *"No curator
+yet… the notebook only grows for now."* Growing is what retire stops.
+Discharge is what stops a CLOSED note's settled
 content going nowhere: design 33 §7 names a note as a staging area and closing
 as a discharge, not a bare retire — see `_run_discharge`'s own docstring for
 the classification/routing shape and the judgement calls it records.
@@ -134,9 +86,7 @@ the classification/routing shape and the judgement calls it records.
 settled content on that path, by construction, so discharge never runs for
 them; that IS this tier's "nothing to discharge" case for those two verdicts,
 and it costs nothing to state because it never reaches a model call or a
-write. A merge-group member is likewise never discharged — merge eligibility
-is code-decided and a merged note is not retired via `supersede` at all (see
-`commit`'s `untouchable` set).
+write.
 
 **Classification rides the SAME model call that decides `closed`, not a new
 adaptor and not a second call.** `nora/dreamer/objectives/note-curation.md`
@@ -159,9 +109,8 @@ workspace-scoped background pass can reach). This is a real narrowing —
 "Miles likes Yardbird for the jazz" only discharges when MILES's own message is
 what closed the note, not when someone else's does — recorded here rather
 than hidden. *The reading that would reopen this:* a name -> person resolver
-reachable from this tier (the same kind of gap `note_entity` has for anchor
-entities), at which point a person-claim could name a THIRD person instead of
-only the citer.
+reachable from this tier, at which point a person-claim could name a THIRD
+person instead of only the citer.
 
 **This module lives in `nora/language/` beside `note_render.py`** for the same
 historical reason the Dreamer's watermark table does: the package predates the
@@ -181,11 +130,9 @@ from nora.domain.bounds import over_fetch
 from nora.domain.gatherings import AmbiguousOpenGatheringsError
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import (
-    BODY_MAX_CHARS,
     MAX_DATELESS_STRIKES,
     Note,
     NoteSupersedeReason,
-    StaleNoteHeadError,
     anchor_bounds_ms,
     default_revisit_at,
 )
@@ -212,11 +159,8 @@ _VERDICTS = frozenset({"closed", "open", "moot", "expired"})
 #: outside `make gate`'s mypy scope (#61) — a `Literal` alone would be checked
 #: by nothing here.
 CURATOR_ACTIONS: frozenset[str] = frozenset({
-    "merge",           # a group was merged into its survivor
-    "merge_refused",   # the survivor moved, or the merge was refused — NOT an
-                       # error: the group is still a group next tick
-    "merge_failed",    # the store refused the merge for a domain reason; the
-                       # tick continues and earlier merges stand
+    # `merge` / `merge_refused` / `merge_failed` were here until 2026-09-08,
+    # when the merge half was removed (module docstring).
     "retire_failed",   # supersede raised; the tick continues
     "retire_stale",    # the note moved between inputs and commit, so the
                        # reading the model judged no longer describes it
@@ -233,17 +177,13 @@ CURATOR_ACTIONS: frozenset[str] = frozenset({
 
 #: Every value `nora_note_curator_dropped_total{reason}` can carry.
 CURATOR_DROPS: frozenset[str] = frozenset({
-    "malformed",                # a field missing, wrong type, verdict outside
-                                # the four, or a body over the cap
+    "malformed",                # a field missing, wrong type, or a verdict
+                                # outside the four
     "unknown_note",             # a handle this run did not render
-    "not_shown_in_group",       # a merge for a group SQL did not select
     "conflicting_verdict",      # two contradictory answers about one note
-    "conflicting_merged_body",  # two different bodies for one survivor
-    "body_too_long",            # a merged body over BODY_MAX_CHARS — the
-                                # objective asked for more than the cap allows
-    "shorter_than_inputs",      # a merged body shorter than the longest body
-                                # it was meant to keep — a summary, on a verb
-                                # whose whole purpose is that nothing is lost
+    # `not_shown_in_group` / `conflicting_merged_body` / `body_too_long` /
+    # `shorter_than_inputs` were the merged-body refusals, gone with the
+    # merge half (2026-09-08).
     # -- the revisitor's grounding refusals, merged in ----------------------
     "no_evidence",              # a closed/expired/moot verdict on a note with
                                 # nothing in its evidence window to judge
@@ -262,9 +202,6 @@ CURATOR_DROPS: frozenset[str] = frozenset({
                                 # warrant shapes — dropped and counted rather
                                 # than guessed at (issue #101)
 })
-
-#: Every value `nora_note_curator_groups_refused_total{reason}` can carry.
-CURATOR_GROUP_REFUSALS: frozenset[str] = frozenset({"no_entity_anchor"})
 
 #: Every `kind` a discharge item can classify as — design 33 §7 / 19 §1's
 #: routing table, minus the note row itself (that half is `commit`'s ordinary
@@ -345,13 +282,6 @@ def _now_ms() -> int:
 class _NoteStore(Protocol):
     async def standing(self, *, workspace: str) -> tuple[Note, ...]: ...
 
-    async def merge_groups(
-        self, *, workspace: str, limit: int,
-    ) -> tuple[
-        tuple[tuple[tuple[Note, str], ...], ...],
-        tuple[tuple[Note, ...], ...],
-    ]: ...
-
     async def anchored_before(
         self, *, workspace: str, day: int, limit: int,
     ) -> tuple[tuple[Note, str], ...]: ...
@@ -363,12 +293,6 @@ class _NoteStore(Protocol):
     async def read(
         self, *, workspace: str, note_id: str,
     ) -> tuple[Note, Any] | None: ...
-
-    async def merge(
-        self, *, workspace: str, survivor: str, survivor_parent: str,
-        merged_body: str, retire: Sequence[str], established_by: str,
-        instruction_sha256: str | None, model: str | None, now_ms: int,
-    ) -> int: ...
 
     async def supersede(
         self, *, key: str, target: str, replaced_by: str | None,
@@ -470,8 +394,8 @@ class _Verdict:
     action on its own; only `commit` reads `grounded`.
 
     Not a domain type: it never leaves this module and it is not written
-    anywhere — the curator's OUTPUT is a merge or a retirement, and this is
-    what the model said on the way there.
+    anywhere — the curator's OUTPUT is a retirement, and this is what the
+    model said on the way there.
     """
 
     note_id: str
@@ -487,51 +411,6 @@ class _Verdict:
     #: section for why those two verdicts have nothing to route by
     #: construction.
     discharge: tuple[_DischargeItem, ...] = ()
-
-
-@dataclass(frozen=True)
-class _MergedBody:
-    """The one body that keeps what every note in a group knew.
-
-    Keyed on the SURVIVOR's id — the group's oldest note — because that is the
-    handle `commit` merges into and the only one the model was given for the
-    group. A separate type from `_Verdict` for the reason the payload shapes
-    are separate one layer down: two things with different required fields
-    should not be one thing with optional ones, or nothing can be refused.
-    """
-
-    note_id: str
-    body: str
-
-
-@dataclass(frozen=True)
-class _MergeOffered:
-    """The model ASKED for this group to be merged. Nothing else.
-
-    **This is the whole of HIGH 1 and it is a claim, not an outcome.** A group
-    the model answered with a merged body is a group it is telling us is ONE
-    occasion written twice — and the objective tells it to return a verdict for
-    every note it was shown, so `moot` on both members of a colliding group
-    whose date has passed is the EXPECTED answer, not an edge.
-
-    When the merge then does not land — an over-cap body, two different
-    bodies, a body naming the wrong member, a lost CAS — `commit` used to fall
-    through to the retirement loop and retire each member on its own verdict,
-    with `replaced_by=None`. Both notes leave the index, neither points at
-    anything, and the content the merge existed to preserve is reachable only
-    by direct database query. That is content loss on the NORMAL path.
-
-    So the claim is carried separately from the body: a `_MergedBody` is
-    produced only when the body survives parsing, and this is produced
-    whenever the group was named at all. `commit` protects the group on THIS,
-    never on what became of the merge.
-
-    `survivor` is the resolved note id of the group's survivor — the same
-    handle-to-id resolution every other payload carries, done once in
-    `accept`.
-    """
-
-    survivor: str
 
 
 @dataclass(frozen=True)
@@ -554,12 +433,12 @@ class _Evidence:
 
 
 def _no_evidence() -> _Evidence:
-    """The default for a note `_ground` must judge but `inputs` never gathered
-    evidence for — every merge-group member whose merge is not offered/accepted
-    this tick (see `_merged_away_ids`). Empty `message_ids` sends it straight
-    into `_ground`'s existing `no_evidence` refusal, the same fail-closed
-    outcome a real evidence read finding nothing produces — this is a stand-in
-    for "never looked", not a new code path.
+    """The default for a note `_ground` must judge but has no evidence entry
+    for. `inputs` gathers evidence for every note it renders, so this is
+    reached only if `_shown` and `evidence` disagree — and the fail-closed
+    answer to that is the same one a real evidence read finding nothing
+    produces: empty `message_ids` sends the verdict straight into `_ground`'s
+    `no_evidence` refusal. A stand-in for "never looked", never a guess.
 
     A function, not a module-level constant: DEC-13 bans a module-level
     instance of a locally-defined class (`test_no_module_level_mutable_
@@ -583,24 +462,12 @@ class _Shown:
     #: a note id and never returns one; it answers about ordinals this run
     #: rendered, and `accept` resolves them here.
     by_handle: Mapping[str, str]
-    #: group handles, survivor first — the same ordering `merge_groups`
-    #: returned, so `commit` can still name the survivor without an id ever
-    #: reaching the model.
-    merge_groups: tuple[tuple[str, ...], ...]
     heads: Mapping[str, str]
-    #: ANY handle in a group -> that group's SURVIVOR handle.
-    group_of: Mapping[str, str]
-    #: survivor handle -> the LONGEST body in that group, in characters.
-    longest_body: Mapping[str, int]
-    #: note id -> its gathered evidence, for every note `inputs` actually
-    #: gathered evidence for (`anchored_before`/`due_for_revisit`). A
-    #: merge-group member has NO entry here regardless of whether its merge is
-    #: offered this tick — `_ground` reads `_NO_EVIDENCE` for the ones it must
-    #: still judge on their own (see `_merged_away_ids`).
+    #: note id -> its gathered evidence, for every note `inputs` rendered
+    #: (`anchored_before`/`due_for_revisit` — the whole shown set).
     evidence: Mapping[str, _Evidence]
-    #: note id -> {message id -> row}, for the SAME evidence-bearing notes
-    #: `evidence` covers (never populated for a merge-group member, which has
-    #: no evidence block at all). This is what lets `commit`'s discharge step
+    #: note id -> {message id -> row}, for the SAME notes `evidence` covers.
+    #: This is what lets `commit`'s discharge step
     #: resolve a grounded `closed` verdict's `cited_message_id` back to the
     #: person who sent it (issue #101) without a second `RecordStore` read —
     #: `_gather_evidence` already fetched these rows once, for `_covers`.
@@ -609,46 +476,17 @@ class _Shown:
     #: here rather than re-read, so a note's own anchor shape at SELECTION time
     #: (not at commit time, when it may have moved) decides its next wake.
     anchor_date: Mapping[str, int | None]
-    #: Notes selected by `anchored_before` or `due_for_revisit` this tick,
-    #: EXCLUDING merge-group members — the set `commit` calls `record_wake` on
-    #: after retirement, for every one of them still standing. Merge-group
-    #: members are never in this set: merge eligibility is code-decided and
-    #: has nothing to do with the wake/strike breaker (§5.4 — "not two
-    #: schedulers", but the two modes still apply to disjoint note sets).
+    #: Notes selected by `anchored_before` or `due_for_revisit` this tick —
+    #: the set `commit` calls `record_wake` on after retirement, for every
+    #: one of them still standing. Since 2026-09-08 this is every note shown
+    #: (it excluded merge-group members before), kept as its own field so
+    #: the wake pass names the set it walks rather than deriving it.
     due_or_anchored: frozenset[str]
-
-
-def _merged_away_ids(
-    shown: _Shown, *, offered: frozenset[str],
-) -> frozenset[str]:
-    """Every note id belonging to a merge group whose SURVIVOR's resolved id
-    is in `offered` — the model named that group with a `merged_body` at all
-    this tick, whether or not the store-level `merge` call actually lands
-    (see `_MergeOffered`'s own docstring: the claim is what protects the
-    group, not the outcome).
-
-    **The one definition, shared by `_ground` and `commit`.** `_ground` uses
-    it to decide whether a note's individual verdict may skip evidence
-    grounding; `commit` uses the identical set, under the name `untouchable`,
-    to decide whether an individual verdict may retire the note at all. Before
-    this was split out, `_ground` answered a DIFFERENT, wider question
-    (`note_id not in shown.due_or_anchored`, true of every member of every
-    CANDIDATE group regardless of whether that group's merge was ever offered)
-    — the correctness bug the module docstring's "Merge-GROUP members" section
-    now documents. One function used by both call sites is what makes it
-    structurally impossible for them to drift apart again.
-    """
-    return frozenset(
-        shown.by_handle[h]
-        for g in shown.merge_groups
-        if shown.by_handle[g[0]] in offered
-        for h in g
-    )
 
 
 class NoteCuratorAdaptor:
     """One `DreamAdaptor`: read a workspace's notebook, decide what has closed
-    and what is the same occasion twice, and write merges and retirements.
+    or expired, and write retirements.
 
     `key_kind = "workspace"` — the notebook is workspace-scoped (§3/DEC-105),
     so both `friends` rooms tick ONE notebook rather than two. That is what
@@ -656,21 +494,18 @@ class NoteCuratorAdaptor:
 
     `uses_watermark = False`, and this is the interesting one. The other
     adaptors read an append-only log through a cursor. This one reads LIVE
-    STATE: which notes collide on an anchor, which anchors have passed, and
-    which notes' `revisit_at` has come due. None of those questions has a
-    "since when" — a duplicate is a duplicate however long it has been one,
-    and **retirement is TIME-driven, not evidence-driven** (§9.1). A watermark
+    STATE: which anchors have passed, and which notes' `revisit_at` has come
+    due. Neither question has a "since when" — **retirement is TIME-driven,
+    not evidence-driven** (§9.1). A watermark
     would make the pass stop noticing an expired note the moment the notebook
     went quiet, which is exactly when expiry matters.
 
     **The pass is self-limiting FOR THE ACTIONS IT TAKES, and not otherwise.**
-    A merge removes its group; a retirement removes its note. But a group the
-    model DECLINES to merge is re-selected every tick, forever, and DOES
-    occupy a `max_groups_per_tick` slot — it is eligible, so it is inside the
-    limit. The same is true of a due note the model leaves `open`: it stays
-    due (its `revisit_at` does not advance without tag-path progress, see
-    `record_wake`) and is re-selected until either progress resets its clock
-    or its strikes exhaust it (dateless) or its anchor passes (anchored).
+    A retirement removes its note. But a due note the model leaves `open`
+    stays due (its `revisit_at` does not advance without tag-path progress,
+    see `record_wake`) and is re-selected until either progress resets its
+    clock or its strikes exhaust it (dateless) or its anchor passes
+    (anchored).
     """
 
     name = "note-curation"
@@ -690,7 +525,6 @@ class NoteCuratorAdaptor:
         notes: _NoteStore,
         record: _TranscriptSource,
         today: Callable[[], int],
-        max_groups_per_tick: int,
         max_expired_per_tick: int,
         max_revisits_per_tick: int = DEFAULT_MAX_REVISITS_PER_TICK,
         evidence_messages_per_note: int = DEFAULT_EVIDENCE_MESSAGES_PER_NOTE,
@@ -717,7 +551,6 @@ class NoteCuratorAdaptor:
         # reads the wall clock cannot be tested for the boundary case that
         # matters (a note anchored to TODAY is not expired).
         self._today = today
-        self._max_groups = max_groups_per_tick
         self._max_expired = max_expired_per_tick
         self._max_revisits = max_revisits_per_tick
         self._evidence_limit = evidence_messages_per_note
@@ -740,9 +573,6 @@ class NoteCuratorAdaptor:
     _VOCABULARIES: ClassVar[dict[str, tuple[str, frozenset[str]]]] = {
         "nora_note_curator_total": ("action", CURATOR_ACTIONS),
         "nora_note_curator_dropped_total": ("reason", CURATOR_DROPS),
-        "nora_note_curator_groups_refused_total": (
-            "reason", CURATOR_GROUP_REFUSALS,
-        ),
         "nora_note_curator_candidates_total": ("evidence", frozenset(EVIDENCE_STATES)),
         "nora_note_retirements_total": ("because", frozenset(NoteSupersedeReason.ALL)),
         "nora_note_discharge_notes_total": ("result", DISCHARGE_NOTE_RESULTS),
@@ -850,8 +680,8 @@ class NoteCuratorAdaptor:
     # -- inputs -----------------------------------------------------------
 
     async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
-        """The colliding groups, the expired notes, and the due-by-`revisit_at`
-        notes, rendered with their evidence.
+        """The expired notes and the due-by-`revisit_at` notes, rendered with
+        their evidence.
 
         `batch` is always empty (`uses_watermark = False`) and is accepted and
         ignored — the port's shape rather than a surprise.
@@ -862,14 +692,6 @@ class NoteCuratorAdaptor:
         renders a polite empty form instead of nothing buys a model call every
         tick per workspace forever.
         """
-        groups, refused = await self._notes.merge_groups(
-            workspace=key, limit=self._max_groups,
-        )
-        for _ in refused:
-            self._inc(
-                "nora_note_curator_groups_refused_total",
-                reason="no_entity_anchor",
-            )
         now_ms = self._clock()
         expired_all = await self._notes.anchored_before(
             workspace=key, day=self._today(), limit=self._max_expired,
@@ -894,20 +716,14 @@ class NoteCuratorAdaptor:
             self._inc("nora_note_curator_deferred_total")
         due_over = due_over[: self._max_revisits]
 
-        # A note in a merge group is not also rendered as expired or due — the
-        # group wins (merging keeps both bodies; retiring one keeps neither).
-        in_a_group = {n.id for g in groups for n, _ in g}
-        expired = tuple(
-            (note, body) for note, body in expired_all
-            if note.id not in in_a_group
-        )
+        expired = tuple(expired_all)
         expired_ids = {n.id for n, _ in expired}
         # A note due by BOTH `anchored_before` and `due_for_revisit` (an
         # anchor that has passed, with a stale `revisit_at` sitting behind it)
-        # renders once, under `expired` — the same de-duplication principle.
+        # renders once, under `expired`.
         due = tuple(
             (note, body) for note, body in due_over
-            if note.id not in in_a_group and note.id not in expired_ids
+            if note.id not in expired_ids
         )
 
         standing_count = len(await self._notes.standing(workspace=key))
@@ -918,7 +734,7 @@ class NoteCuratorAdaptor:
         self._gauge("nora_note_curator_standing", float(standing_count), workspace=key)
         self._gauge(
             "nora_note_curator_bodies_read",
-            float(sum(len(g) for g in groups) + len(expired_all) + len(due_over)),
+            float(len(expired_all) + len(due_over)),
             workspace=key,
         )
 
@@ -929,36 +745,12 @@ class NoteCuratorAdaptor:
         # comment on this survives only in git history now; the handle scheme
         # is unchanged.
         by_handle: dict[str, str] = {}
-        group_handles: list[tuple[str, ...]] = []
-        group_of: dict[str, str] = {}
-        longest_body: dict[str, int] = {}
         evidence_by_note: dict[str, _Evidence] = {}
         evidence_rows_by_note: dict[str, dict[int, TranscriptRow]] = {}
         anchor_date_by_note: dict[str, int | None] = {}
         due_or_anchored: set[str] = set()
         ordinal = itertools.count(1)
         parts: list[str] = []
-
-        for g in groups:
-            handles: list[str] = []
-            member_blocks: list[str] = []
-            for note, body in g:
-                handle = str(next(ordinal))
-                by_handle[handle] = note.id
-                handles.append(handle)
-                # NO EVIDENCE for a merge-group member — deliberately, see the
-                # module docstring's "Merge-GROUP members are deliberately
-                # exempt". `due_or_anchored` does not gain this note's id, so
-                # `_ground` treats any verdict about it as ungrounded-exempt
-                # (accepted as-is, the pre-merge curator's own behaviour).
-                member_blocks.append(_note_block(handle, note, body, None))
-            group_handles.append(tuple(handles))
-            for handle in handles:
-                group_of[handle] = handles[0]
-            longest_body[handles[0]] = max(len(body) for _, body in g)
-            parts.append(f'<merge_group survivor="{handles[0]}">')
-            parts.extend(member_blocks)
-            parts.append("</merge_group>")
 
         for note, body in expired:
             handle = str(next(ordinal))
@@ -982,20 +774,16 @@ class NoteCuratorAdaptor:
 
         self._shown[key] = _Shown(
             by_handle=by_handle,
-            merge_groups=tuple(group_handles),
             heads={
                 n.id: n.head_revision_id
-                for n in [x for g in groups for x, _ in g]
-                + [n for n, _ in expired] + [n for n, _ in due]
+                for n in [n for n, _ in expired] + [n for n, _ in due]
             },
-            group_of=group_of,
-            longest_body=longest_body,
             evidence=evidence_by_note,
             evidence_rows=evidence_rows_by_note,
             anchor_date=anchor_date_by_note,
             due_or_anchored=frozenset(due_or_anchored),
         )
-        if not groups and not expired and not due:
+        if not expired and not due:
             return ""
         return "\n".join(parts)
 
@@ -1004,8 +792,7 @@ class NoteCuratorAdaptor:
     async def accept(
         self, *, key: str, items: Sequence[Mapping[str, object]]
     ) -> Sequence[object]:
-        """Typed parse into `_Verdict`, `_MergedBody` and `_MergeOffered`.
-        Drop, log, count — never guess.
+        """Typed parse into `_Verdict`. Drop, log, count — never guess.
 
         The drop reasons are all counted under
         `nora_note_curator_dropped_total{reason}` and all named in that
@@ -1014,10 +801,6 @@ class NoteCuratorAdaptor:
         - `malformed` — a field missing, of the wrong type, or a `verdict`
           outside the four the objective defines.
         - `unknown_note` — names a note this RUN did not show.
-        - `not_shown_in_group` — a `merged_body` whose handle is not the
-          SURVIVOR of a group this run selected.
-        - `body_too_long` / `shorter_than_inputs` / `conflicting_merged_body`
-          — the merged body itself; see `_merged_bodies`.
         - `no_evidence` / `citation_missing` / `citation_ungrounded` /
           `anchor_not_passed` / `anchor_not_covered` — the grounding checks a
           `closed`/`expired`/`moot` claim must pass; see `_ground`. A claim
@@ -1026,27 +809,10 @@ class NoteCuratorAdaptor:
           `commit` (a model saying both «closed, uncited» and «open» about one
           note has said «I cannot tell which»), but it can never itself cause
           an action.
-
-        **Every merge item still emits `_MergeOffered` for the group**, even a
-        refused one — see `_MergeOffered`'s own docstring.
         """
-        shown = self._shown.get(key) or _Shown({}, (), {}, {}, {}, {}, {}, {}, frozenset())
-        out: list[object] = self._merged_bodies(key=key, items=items)
-        # Every group whose SURVIVOR the model named with a `merged_body` this
-        # tick — `_merged_bodies` has already scanned the whole of `items` by
-        # this point, so this is complete before the per-item loop below reads
-        # it. `merged_away` is `commit`'s own `untouchable`, computed once and
-        # shared (`_merged_away_ids`) rather than derived twice: see the
-        # module docstring's "Merge-GROUP members" section for the bug two
-        # different definitions produced.
-        offered = frozenset(
-            p.survivor for p in out if isinstance(p, _MergeOffered)
-        )
-        merged_away = _merged_away_ids(shown, offered=offered)
+        shown = self._shown.get(key) or _Shown({}, {}, {}, {}, {}, frozenset())
+        out: list[object] = []
         for item in items:
-            if "verdict" not in item:
-                # A merge-only answer is not malformed.
-                continue
             note_id_raw = item.get("note_id")
             verdict = item.get("verdict")
             why_raw = item.get("why", "")
@@ -1069,13 +835,9 @@ class NoteCuratorAdaptor:
                 continue
             grounded_verdict = self._ground(
                 resolved, verdict, why_raw, item, shown=shown,
-                merged_away=merged_away,
             )
             # Discharge classification (issue #101) — only for a verdict that
-            # is ACTUALLY closed and grounded, and only for a note evidence
-            # grounding applies to at all (never a merge-group member, which
-            # has no evidence block and no citation to ground against — see
-            # the module docstring). `self._discharge_enabled` gates this at
+            # is ACTUALLY closed and grounded. `self._discharge_enabled` gates this at
             # PARSE time too, not only at `commit`'s write time: a model that
             # returns a `discharge` field while the flag is off should not
             # even spend a `discharge_malformed` count on it, and it costs
@@ -1096,7 +858,6 @@ class NoteCuratorAdaptor:
     def _ground(
         self, note_id: str, verdict: str, why: str,
         item: Mapping[str, object], *, shown: _Shown,
-        merged_away: frozenset[str],
     ) -> _Verdict:
         """The grounding a `closed`/`expired`/`moot` claim must pass before it
         may ACT — never whether it was MADE (a claim that fails still returns
@@ -1107,25 +868,10 @@ class NoteCuratorAdaptor:
         `open` is always grounded — there is nothing to check, and it is the
         ordinary answer.
 
-        **A note actually offered a merge this tick is EXEMPT entirely**
-        (`note_id in merged_away`, `_merged_away_ids` — see the module
-        docstring's "A note actually offered a merge THIS TICK is exempt").
-        Its verdict is accepted as-is, the pre-merge curator's own behaviour:
-        eligibility for merging is code-decided and the model is asked only
-        what a body SAYS, which has never needed evidence. This is narrower
-        than "is a candidate-group member" — a group member whose merge is
-        NOT offered/accepted this tick falls through to the ordinary check
-        below like any other note.
-
-        For a note `anchored_before`/`due_for_revisit` selected, OR a
-        merge-group member whose merge this tick did not offer, `closed`,
-        `expired` and `moot` all require the note's evidence window to be
-        non-empty (`no_evidence`): a room that has said nothing since the note
-        was written establishes that nobody has spoken, never that a question
-        went answered OR unanswered — and a merge-group member has no
-        evidence window at all (`inputs` never gathers one for a candidate
-        group; see its own docstring), so this refusal is exactly what such a
-        note gets: refused for lack of evidence, never guessed at. Past that:
+        `closed`, `expired` and `moot` all require the note's evidence window
+        to be non-empty (`no_evidence`): a room that has said nothing since
+        the note was written establishes that nobody has spoken, never that a
+        question went answered OR unanswered. Past that:
 
         - `closed` needs a `cited_message_id` that is actually one of the ids
           this run showed for THAT note (`citation_missing` /
@@ -1136,7 +882,7 @@ class NoteCuratorAdaptor:
           SPAN that moment (`anchor_not_covered`, `_covers`'s own rule: the
           room fell silent before the anchor, or is busier than the window).
         """
-        if verdict == "open" or note_id in merged_away:
+        if verdict == "open":
             return _Verdict(note_id=note_id, verdict=verdict, why=why, grounded=True)
 
         evidence = shown.evidence.get(note_id, _no_evidence())
@@ -1224,89 +970,6 @@ class NoteCuratorAdaptor:
             out.append(item)
         return tuple(out)
 
-    def _merged_bodies(
-        self, *, key: str, items: Sequence[Mapping[str, object]]
-    ) -> list[object]:
-        """The merge half of `accept` — unchanged by the note-revisitor merge.
-        See the historical note in git for the "first version had no way to
-        produce one" story; it is preserved verbatim here because merge
-        eligibility and its refusals are entirely code-decided and evidence
-        plays no part in them.
-        """
-        shown = self._shown.get(key) or _Shown({}, (), {}, {}, {}, {}, {}, {}, frozenset())
-        survivors = {g[0] for g in shown.merge_groups}
-        out: list[object] = []
-        bodies: list[_MergedBody] = []
-        offered: set[str] = set()
-        conflicted: set[str] = set()
-
-        def _offer(raw_handle: object) -> None:
-            if not isinstance(raw_handle, str):
-                return
-            survivor_handle = shown.group_of.get(raw_handle)
-            if survivor_handle is None:
-                return
-            offered.add(shown.by_handle[survivor_handle])
-
-        for item in items:
-            if "merged_body" not in item:
-                continue
-            body = item.get("merged_body")
-            note_id = item.get("note_id")
-            _offer(note_id)
-            if isinstance(body, str) and len(body) > BODY_MAX_CHARS:
-                self._inc(
-                    "nora_note_curator_dropped_total", reason="body_too_long")
-                log.warning(
-                    "note curator returned a merged body over the cap; the "
-                    "group is left alone")
-                continue
-            if (
-                not isinstance(note_id, str)
-                or not isinstance(body, str)
-                or not body.strip()
-            ):
-                self._inc(
-                    "nora_note_curator_dropped_total", reason="malformed")
-                log.warning("note curator dropped a malformed merged_body")
-                continue
-            if note_id not in survivors:
-                self._inc(
-                    "nora_note_curator_dropped_total",
-                    reason="not_shown_in_group")
-                log.warning(
-                    "note curator proposed a merge for a group this run did "
-                    "not select; dropped")
-                continue
-            resolved = shown.by_handle[note_id]
-            if len(body) < shown.longest_body.get(note_id, 0):
-                self._inc(
-                    "nora_note_curator_dropped_total",
-                    reason="shorter_than_inputs")
-                log.warning(
-                    "note curator returned a merged body shorter than the "
-                    "longest body it was meant to keep; the group is left "
-                    "alone")
-                continue
-            if resolved in conflicted:
-                continue
-            seen = next((m for m in bodies if m.note_id == resolved), None)
-            if seen is not None:
-                if seen.body != body:
-                    bodies.remove(seen)
-                    conflicted.add(resolved)
-                    self._inc(
-                        "nora_note_curator_dropped_total",
-                        reason="conflicting_merged_body")
-                    log.warning(
-                        "note curator returned two different merged bodies "
-                        "for one survivor; the group is left alone")
-                continue
-            bodies.append(_MergedBody(note_id=resolved, body=body))
-        out.extend(bodies)
-        out.extend(_MergeOffered(survivor=s) for s in sorted(offered))
-        return out
-
     # -- commit -------------------------------------------------------------
 
     async def commit(
@@ -1314,25 +977,20 @@ class NoteCuratorAdaptor:
     ) -> int:
         """The tier's write sequence:
 
-        1. **Merges**, through `SqlNoteStore.merge` — unchanged.
-        2. **Retirements**, for a GROUNDED verdict of `closed`, `expired` or
+        1. **Retirements**, for a GROUNDED verdict of `closed`, `expired` or
            `moot`. `open` and an ungrounded claim both write nothing.
-        3. **Wakes** (NEW with the merge) — for every note `inputs` selected
-           via `anchored_before`/`due_for_revisit` (never a merge-group
-           member) that is STILL STANDING after step 2, `record_wake` is
-           called with a freshly computed `next_revisit_at`. This is what
-           gives `revisit_at`/`strikes` their production writer (§5.3) and
-           what keeps a note that never changes from being due forever with
-           no signal that it is.
+        2. **Wakes** (NEW with the merge) — for every note `inputs` selected
+           that is STILL STANDING after step 1, `record_wake` is called with
+           a freshly computed `next_revisit_at`. This is what gives
+           `revisit_at`/`strikes` their production writer (§5.3) and what
+           keeps a note that never changes from being due forever with no
+           signal that it is.
 
-        Returns rows written — for this pass, notes merged-away plus notes
-        retired.
+        (Step 0 was **merges**, through `SqlNoteStore.merge`, until
+        2026-09-08.)
+
+        Returns rows written — for this pass, notes retired.
         """
-        merged_bodies = {
-            p.payload.note_id: p.payload
-            for p in proposals
-            if isinstance(p.payload, _MergedBody)
-        }
         verdicts: dict[str, _Verdict] = {}
         conflicted: set[str] = set()
         for p in proposals:
@@ -1351,55 +1009,13 @@ class NoteCuratorAdaptor:
                 "note curator returned contradictory verdicts for one note; "
                 "leaving it standing")
 
-        shown = self._shown.get(key) or _Shown({}, (), {}, {}, {}, {}, {}, {}, frozenset())
+        shown = self._shown.get(key) or _Shown({}, {}, {}, {}, {}, frozenset())
         provenance = proposals[0] if proposals else None
         retired = 0
 
-        offered = {
-            p.payload.survivor
-            for p in proposals
-            if isinstance(p.payload, _MergeOffered)
-        }
-
-        for group in shown.merge_groups:
-            survivor = shown.by_handle[group[0]]
-            body = merged_bodies.get(survivor)
-            if body is None:
-                continue
-            try:
-                count = await self._notes.merge(
-                    workspace=key, survivor=survivor,
-                    survivor_parent=shown.heads[survivor],
-                    merged_body=body.body,
-                    retire=[shown.by_handle[h] for h in group[1:]],
-                    established_by=(
-                        provenance.established_by if provenance else "curator"
-                    ),
-                    instruction_sha256=(
-                        provenance.instruction_sha256 if provenance else None
-                    ),
-                    model=provenance.model if provenance else None,
-                    now_ms=now_ms,
-                )
-            except StaleNoteHeadError:
-                log.info("note merge refused; the survivor moved under it")
-                self._inc("nora_note_curator_total", action="merge_refused")
-                continue
-            except ValueError:
-                log.exception("note merge failed; continuing with the tick")
-                self._inc("nora_note_curator_total", action="merge_failed")
-                continue
-            retired += count
-            self._inc("nora_note_curator_total", action="merge")
-
-        untouchable = _merged_away_ids(shown, offered=frozenset(offered))
         retired_this_tick: set[str] = set()
         for note_id, verdict in verdicts.items():
-            if (
-                verdict.verdict == "open"
-                or not verdict.grounded
-                or note_id in untouchable
-            ):
+            if verdict.verdict == "open" or not verdict.grounded:
                 continue
             because = (
                 NoteSupersedeReason.RETIRED_CLOSED
@@ -1458,8 +1074,8 @@ class NoteCuratorAdaptor:
 
         # -- wakes: record_wake's first production caller (§5.3) -------------
         #
-        # Every note `inputs` selected via `anchored_before`/`due_for_revisit`
-        # that is still standing gets its wake recorded, REGARDLESS of what
+        # Every note `inputs` selected that is still standing gets its wake
+        # recorded, REGARDLESS of what
         # verdict it got (or whether it got one at all) — the note was ASKED
         # ABOUT this tick, which is what a wake means. `record_wake` itself
         # decides whether that counts as progress (a tag-path revision since
@@ -1734,14 +1350,14 @@ def _note_block(
     handle: str, note: Note, body: str, evidence_text: str | None,
 ) -> str:
     """One note, rendered whole: title, uncertainty, closing condition, body,
-    anchor (if any) and, for an `anchored_before`/`due_for_revisit` note,
-    evidence. Bodies are rendered whole — the body IS the question, and a
-    truncation would have the model deciding whether an arrangement has
-    closed from a prefix of it.
+    anchor (if any) and evidence. Bodies are rendered whole — the body IS the
+    question, and a truncation would have the model deciding whether an
+    arrangement has closed from a prefix of it.
 
-    `evidence_text=None` renders EXACTLY the pre-merge curator's group-member
-    shape (title/uncertainty/closing condition/body, no evidence line) — the
-    module docstring's "Merge-GROUP members are deliberately exempt".
+    `evidence_text=None` renders no evidence line. Every note this pass shows
+    has one since 2026-09-08 (merge-group members were the exception); the
+    parameter stays optional so the renderer does not lie about a note it
+    was handed nothing for.
     """
     anchor_attr = f' anchor="{note.anchor_date}"' if note.anchor_date is not None else ""
     evidence_line = f"\n  {evidence_text}" if evidence_text is not None else ""

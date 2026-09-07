@@ -1977,10 +1977,12 @@ NOTE_CANDIDATE = sa.Table(
     ),
 )
 
-#: `kind='create'` rows dedupe on the note tier's OWN anchor key —
-#: `(workspace, anchor_date, anchor_entity_ids)`, the same pair
-#: `nora.domain.notes.anchor_key`/`group_on_anchor_key` compare — NEVER on
-#: `title` (design 33 §4, Kimi review finding M10). A PARTIAL unique index
+#: `kind='create'` rows dedupe on the note tier's OWN staging key —
+#: `(workspace, anchor_date, anchor_entity_ids)` — NEVER on `title` (design
+#: 33 §4, Kimi review finding M10). This is the STAGING key, not the create
+#: gate's match key: the gate (`nora.language.note_candidates`) compares the
+#: anchor date alone, while the entity strings here keep two differently
+#: worded sightings of one day as two staged rows. A PARTIAL unique index
 #: rather than a table-wide one because `kind='miss'` rows share this table
 #: and have no anchor at all; scoping to `kind='create'` is what makes the
 #: expression a plain column list rather than a generated/computed one. See
