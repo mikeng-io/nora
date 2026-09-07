@@ -268,6 +268,35 @@ async def run(
                 except Exception:
                     log.exception("media ingest: media_objects save failed")
 
+            # A VOICE NOTE'S WORDS ARE WRITTEN HERE, INLINE, AND NEVER WAIT ON
+            # A MODEL. They were captured synchronously two lines up — STT has
+            # already run and already cost what it costs — so holding them in a
+            # `Subject` until a spawned task got round to writing a TITLE for
+            # them was wrong twice:
+            #
+            #   * with `[media] comprehension = false` the job does not exist,
+            #     so the transcript reached nothing at all: STT ran, its output
+            #     went into a Subject that was never scheduled, and the words
+            #     were discarded. On master they rode in `messages.body` and
+            #     reached the record regardless of any vision wiring.
+            #   * with it on, somebody asking «佢講咩» two seconds later saw a
+            #     bare handle, because the words were queued behind a
+            #     convenience. The release fragment accepts that latency for a
+            #     PHOTO, whose content genuinely has to be read; a voice note's
+            #     content is already in hand.
+            #
+            # The comprehension job adds the title and description over this
+            # same row afterwards and passes the identical `content` through,
+            # so the two writers cannot disagree about the words.
+            if raw and ref.voice_note and media_store is not None:
+                try:
+                    await media_store.comprehend(
+                        sha256=blob.sha256, title="", description="",
+                        content=raw, model="",
+                    )
+                except Exception:
+                    log.exception("media ingest: voice transcript write failed")
+
     labels = tuple(label_for(ref) for ref in message.media)
 
     # THE READ, SCHEDULED — never awaited (issue #116). Custody is finished at

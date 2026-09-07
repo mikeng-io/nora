@@ -50,7 +50,13 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
-from nora.domain.media import CONTENT_LABELS, MediaBlob
+from nora.agent.egress import scan_identifiers
+from nora.domain.media import (
+    CONTENT_LABELS,
+    MediaBlob,
+    MediaObject,
+    sanitize_description,
+)
 from nora.domain.models import PersonRef
 from nora.domain.ports import (
     BlobStore,
@@ -59,7 +65,7 @@ from nora.domain.ports import (
     MediaObjectStore,
     MemoryStore,
 )
-from nora.obs.tracing import TRACE_KIND, span
+from nora.obs.tracing import TRACE_KIND, attached, span
 
 log = logging.getLogger("nora.ingest.comprehension")
 
@@ -161,7 +167,14 @@ class MediaComprehension:
         operator reads instead.
         """
         try:
-            with span(
+            # `attached(None)` DETACHES first, and that is the whole of it:
+            # `asyncio.create_task` copies the caller's contextvars (measured
+            # 2026-08-28, `nora/obs/tracing.py`), so this span was a CHILD of
+            # `ingest.media` — which made the `plumbing` declaration inert
+            # under `ParentBased` and held the ingest trace open for as long as
+            # a chunked video read takes. The same one-liner
+            # `nora/engagement/pipeline.py` already uses for spawned work.
+            with attached(None), span(
                 "comprehend",
                 **{TRACE_KIND: "plumbing",
                    "nora.platform": platform,
@@ -194,7 +207,7 @@ class MediaComprehension:
             return
 
         existing = await self._store.get(sha256=blob.sha256)
-        if existing is not None and existing.comprehended:
+        if existing is not None and self._already_read(existing, label):
             # Already read — the same meme forwarded five times is one read.
             # NOT counted as `ok`: nothing was comprehended on this pass, and
             # counting it would make the ok rate say the describer is working
@@ -241,18 +254,20 @@ class MediaComprehension:
                 )
             return
 
-        model = getattr(self._interpreter, "model", "") or ""
-        # What the last read left worth recording — today, the video chunk
-        # record (issue #117): how long the clip was, how much of it reached a
-        # model, and whether the chunk ceiling is why the rest did not. Read by
-        # DUCK TYPE rather than through the port, because it is one adapter's
-        # fact: widening `MediaDescription` with a video-only field would put a
-        # shape in the domain that only that adapter can fill. An interpreter
-        # without it contributes `{}` and the birth record is untouched.
-        provenance = dict(getattr(self._interpreter, "last_provenance", None) or {})
+        # The model THIS MODALITY used, not the image one. `describe_model` is
+        # the provenance of the text on the row, and recording `glm-5.3-flash`
+        # against a clip that `k3-256k` described is a lie in the one column an
+        # operator reads to find out which describer produced what.
+        # `model_for` exists on the adapter for exactly this and had no caller.
+        model = self._model_for(blob.media_type)
         await self._store.comprehend(
             sha256=blob.sha256, title=result.title, description=result.text,
-            content=content, model=model, provenance=provenance,
+            content=content, model=model,
+            # RETURNED with the result rather than read off the adapter — this
+            # job spawns one task per subject, so a video and a photo on one
+            # message run two `describe` calls concurrently on one shared
+            # interpreter, and stashed state raced.
+            provenance=dict(result.provenance or {}),
         )
         await self._feed(
             platform=platform, conversation_id=conversation_id, person=person,
@@ -294,13 +309,27 @@ class MediaComprehension:
         timestamp: int, blob: MediaBlob, label: str,
         title: str, description: str, content: str,
     ) -> None:
-        """ALL THREE FIELDS to Honcho, under the sender's own peer.
+        """ALL THREE FIELDS to Honcho, under the sender's own peer, SCREENED.
 
         This is the half of issue #116 the story is about. The marker already
         rode into memory in `messages.body`; what it pointed at was empty, so
         every reply around a photo was preserved and unreadable. The
         comprehension follows the marker in, keyed by the SAME handle the
         transcript renders, so a later recall can join the two.
+
+        **The identifier screen runs HERE, and it has to.** Design §5's claim
+        that moving `scan_identifiers` to render time is the stricter position
+        is true of the TRANSCRIPT and false of Honcho: before this change the
+        same text rode in `message.body`, which the custody stage screened
+        before `memory_feed` forwarded it, and the fork has two consumers. Only
+        one of them renders. A voice note carrying a phone number would
+        otherwise be written verbatim and DURABLY into the sender's peer, where
+        it can resurface in a later peer card — a worse surface than the
+        transcript, because nothing re-screens a card at render.
+
+        A hit costs the DETAIL and never the marker, which is the shape the
+        custody stage used on master and the shape the render join uses now:
+        memory still records that a photo arrived, and claims nothing about it.
 
         Mapped senders only (D6), like `memory_feed`: an unmapped sender is
         never fed to the semantic store, and a photo does not change that.
@@ -309,14 +338,20 @@ class MediaComprehension:
         """
         if person is None:
             return
-        parts = [f"[{label} {blob.handle}]"]
-        if title:
-            parts.append(title)
-        if description:
-            parts.append(description)
-        if content:
-            parts.append(content)
-        text = "\n".join(parts)
+        marker = f"[{label} {blob.handle}]"
+        detail = "\n".join(
+            sanitize_description(part) for part in (title, description, content)
+            if part
+        )
+        kind = scan_identifiers(detail) if detail else None
+        if kind is not None:
+            log.warning(
+                "a media comprehension would have carried a %s identifier into "
+                "memory — feeding the marker alone", kind,
+            )
+            self._metrics.inc("nora_egress_blocks_total", kind=kind)
+            detail = ""
+        text = f"{marker}\n{detail}" if detail else marker
         try:
             await self._memory.ensure_peer(peer_id=person.honcho_peer_id)
             ok = await self._memory.feed(
@@ -328,6 +363,31 @@ class MediaComprehension:
             log.exception("comprehension feed failed; memory is never load-bearing")
             ok = False
         self._metrics.inc("honcho_feed_success" if ok else "honcho_feed_failure")
+
+    @staticmethod
+    def _already_read(existing: MediaObject, label: str) -> bool:
+        """Whether this row still needs the pass THIS label would run.
+
+        Not simply `existing.comprehended`. A voice note's `content` is written
+        INLINE by the custody stage — the words are in hand synchronously and
+        must not wait behind a model call nobody needs — so the row is already
+        non-empty when the job reaches it, and the plain predicate would skip
+        the cheap text pass that gives it a title, forever. For a content label
+        the question is whether the TEXT PASS has run; for everything else it
+        is whether anything has.
+        """
+        if label in CONTENT_LABELS:
+            return bool(existing.title or existing.description)
+        return existing.comprehended
+
+    def _model_for(self, media_type: str) -> str:
+        """The describer this modality actually used, if the interpreter can
+        say. A fake, or a future adapter with one model, falls back to `model`
+        — the same value the row carried before."""
+        resolver = getattr(self._interpreter, "model_for", None)
+        if callable(resolver):
+            return str(resolver(media_type) or "")
+        return str(getattr(self._interpreter, "model", "") or "")
 
     def _count(self, platform: str, label: str, status: str, reason: str) -> None:
         self._metrics.inc(

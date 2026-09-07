@@ -901,3 +901,155 @@ async def test_the_schema_advertises_the_question_parameter(wiring):
     schema = wiring["build"]().tool_spec["inputSchema"]["json"]
     assert "question" in schema["properties"]
     assert "required" not in schema
+
+
+# ---- the deliberate look chunks too (issue #117) ----------------------------
+
+
+class _WindowVision:
+    """A describer that answers per window and records the bytes it saw, so
+    "three windows reached a model" is provable rather than asserted."""
+
+    def __init__(self, *, answers: list[str] | None = None) -> None:
+        self.answers = answers
+        self.calls: list[bytes] = []
+
+    async def describe(self, *, data: bytes, media_type: str,
+                       prompt: str = "", model: str = "",
+                       provider: str = "omniroute",
+                       max_bytes: int | None = None) -> VisionResult:
+        self.calls.append(data)
+        if self.answers is None:
+            return VisionResult(
+                available=True, description=f"segment {len(self.calls)}")
+        index = len(self.calls) - 1
+        answer = self.answers[index] if index < len(self.answers) else ""
+        if not answer:
+            return VisionResult(available=False, reason="timeout")
+        return VisionResult(available=True, description=answer)
+
+
+def _ffmpeg(duration: str):
+    """An ffmpeg/ffprobe stand-in for `cut_video`, patched in at the module
+    boundary `media_fetch` calls it through. `cut_video` owns an injectable
+    RUNNER, which is the seam this reaches — no ffmpeg binary is invoked and no
+    real video bytes are needed."""
+    async def run(args, timeout_seconds, data):
+        if args[0] == "ffprobe":
+            return 0, duration.encode(), b""
+        start = args[args.index("-ss") + 1]
+        return 0, f"window@{start}".encode(), b""
+    return run
+
+
+async def test_media_fetch_reads_a_clip_in_windows_and_admits_what_it_missed(
+    wiring, monkeypatch,
+):
+    """**The DELIBERATE look chunks too.** This path used to run
+    `preprocess_media`, whose single view is capped at `VIDEO_MAX_SECONDS` — so
+    the surface Nora reaches for when she CHOOSES to look read the first two
+    minutes of a ten-minute clip and answered as though it had watched the whole
+    thing, with no metric and no caveat. Fixing the ingest path and leaving this
+    one would have left the same silent partial read on the half a human
+    actually asks for.
+
+    Both halves are asserted: every window reaches a model with its own
+    timecode, AND the ceiling that binds is said in the answer."""
+    from nora.infra.vision import preprocess as _pre
+
+    vision = _WindowVision()
+    await _append_image(
+        wiring["store"], conversation_id="g1", sha256=PNG_SHA,
+        media_type="video/mp4",
+    )
+    monkeypatch.setattr(_pre, "_run_video", _ffmpeg("1200.0"))
+    tool = wiring["build"](
+        vision_source=vision,
+        describe_models={"video": "test/video-model"},
+        media_store=FakeMediaObjectStore(),
+    )
+
+    out = await _call(tool, code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    # 20 minutes at the shipped 90s/10-window geometry: ten windows read, and
+    # the ceiling binds on the rest. Master read ONE view of the first two
+    # minutes and said nothing.
+    assert len(vision.calls) == 10, "one call per window, not one view of the lot"
+    assert "[0:00]" in out["description"]
+    assert "[1:30]" in out["description"]
+    assert "[13:30]" in out["description"], "the tenth window, not the third"
+    assert "have not seen the rest" in out["description"]
+
+
+async def test_a_clip_ffmpeg_cannot_cut_still_gets_looked_at(wiring, monkeypatch):
+    """R-5's degrade, kept. `preprocess.py`'s contract is that a failed
+    reduction passes the ORIGINAL bytes through, because a quiet «couldn't
+    optimise» beats a fabricated failure — so refusing every clip ffmpeg
+    dislikes would be a regression against the build before this branch. What
+    must NOT degrade with it is the honesty: coverage is unknown, and the answer
+    says exactly that."""
+    from nora.infra.vision import preprocess as _pre
+
+    async def broken(args, timeout_seconds, data):
+        return 1, b"", b"not a video"
+
+    vision = _WindowVision(answers=["a clip of a dog"])
+    await _append_image(
+        wiring["store"], conversation_id="g1", sha256=PNG_SHA,
+        media_type="video/mp4",
+    )
+    monkeypatch.setattr(_pre, "_run_video", broken)
+    monkeypatch.setattr(_pre, "_run", broken)
+    tool = wiring["build"](
+        vision_source=vision,
+        describe_models={"video": "test/video-model"},
+        media_store=FakeMediaObjectStore(),
+    )
+
+    out = await _call(tool, code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert "a clip of a dog" in out["description"]
+    assert "may not have watched all of it" in out["description"]
+
+
+async def test_a_question_about_a_clip_reads_every_window_too(wiring, monkeypatch):
+    """Layer 2 on a video. The question rides into every window's prompt and the
+    cache is still untouched — a query-conditioned answer is a function of
+    (bytes, question) whatever the modality."""
+    from nora.infra.vision import preprocess as _pre
+
+    vision = _WindowVision()
+    cache = VisionCache()
+    await _append_image(
+        wiring["store"], conversation_id="g1", sha256=PNG_SHA,
+        media_type="video/mp4",
+    )
+    monkeypatch.setattr(_pre, "_run_video", _ffmpeg("180.0"))
+    tool = wiring["build"](
+        vision_source=vision, vision_cache=cache,
+        describe_models={"video": "test/video-model"},
+        media_store=FakeMediaObjectStore(),
+    )
+
+    out = await _call(tool, code=PNG_SHA[:6], question="what colour is the car")
+
+    assert out["status"] == "ok"
+    assert len(vision.calls) == 2
+    assert len(cache) == 0, "a question-conditioned answer is never cached"
+
+
+async def test_a_whitespace_question_is_not_a_question(wiring):
+    """`"   "` is truthy. Left as-is it skipped layer 1 — the stored reading,
+    free and instant — and spent a real vision call answering whitespace, on
+    the one path that also writes nothing back."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
+
+    out = await _call(
+        wiring["build"](media_store=index), code=PNG_SHA[:6], question="   ")
+
+    assert out["status"] == "ok"
+    assert "a red square" in out["description"]
+    assert wiring["vision"].calls == 0, "whitespace costs no model call"

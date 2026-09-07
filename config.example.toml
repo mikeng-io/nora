@@ -402,18 +402,25 @@ vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body
 # out. 40 keeps the configured ceiling above the derived budget so the derived
 # number is the true cap.
 vision_timeout_seconds = 40.0
-# Reading a sticker automatically at INGEST (sticker spec §6) — separate from
-# media_fetch above because the two calls have different budgets and risk.
+# Whether STICKERS are among the media that get read (sticker spec §6, rescoped
+# by issue #116).
 #
-# ON since 2026-08-16, operator's call. The spec §7 probe (2026-08-15, live
-# gateway) cleared the animated-WebP risk this flag was originally gated on;
-# what remained was a latency trade-off. The cost being accepted, measured
-# rather than estimated: a NEW sticker blocks the ingest path 3.9-12.2s while
-# the vision call runs, and when it rides on the tagging message that lands on
-# Nora's reply latency. A repeat is free — 41% of sightings already, rising as
-# the group's sticker set saturates. Watch nora_sticker_describe_seconds and the
-# level= label on nora_sticker_descriptions_total; if the p99 hurts, this line
-# is the off switch and nothing else has to change.
+# ON since 2026-08-16, operator's call: the spec §7 probe cleared the
+# animated-WebP risk the flag was originally gated on, and what remained was a
+# latency trade-off — a new sticker blocked the ingest path 3.9-12.2s while the
+# vision call ran, landing on Nora's reply latency when it rode on the tagging
+# message.
+#
+# THAT LATENCY IS GONE. The sticker read is no longer on the ingest path at
+# all: it is one subject among the others handed to the spawned comprehension
+# pass below, so this flag is now a COST switch (one model call per new
+# sticker) rather than a latency one. Off excludes stickers from the read and
+# NOTHING ELSE — the identity ladder that makes a repeat sighting cost zero
+# platform RPC is custody, is wired whenever `enabled` is on, and is unaffected.
+#
+# What to watch: the level= label on nora_sticker_descriptions_total for the
+# ladder's hit rate (41% of sightings and rising as the group's sticker set
+# saturates), and nora_media_comprehension_seconds{} for what a read costs.
 sticker_descriptions = true
 
 # ONE model read per medium at ingest (issue #116) — image, video, sticker,
@@ -429,11 +436,15 @@ sticker_descriptions = true
 # makes nothing untrue — and an inline one would stall serialized Signal
 # ingest behind every video.
 #
-# false = the pre-#116 deployment exactly: handles in the body, nothing read.
-# Not an error state, and nothing anywhere claims a description it does not
-# have. `sticker_descriptions` above is the sticker sub-gate — off excludes
-# stickers from the read and leaves their identity ladder (custody, and what
-# makes a repeat sighting cost zero platform RPC) alone.
+# false = no model reads any media: handles in the body, nothing described,
+# and nothing anywhere claiming a description it does not have. Not an error
+# state. TWO things still happen with it off, because neither needs a model: a
+# voice note's transcript is written to `media_objects.content` by the custody
+# stage inline (STT has already run, so the words reach the record and the
+# transcript exactly as they did before this change — what they do NOT reach
+# with this off is Honcho, which gets the marker alone), and the sticker
+# identity ladder keeps turning a repeat sighting into zero platform RPC.
+# `sticker_descriptions` above is the sticker sub-gate on the READ only.
 comprehension = true
 # The CHEAP TEXT pass: a voice note's title/description over the SenseVoice
 # transcript that [speech.stt] already produced, and a video's over its

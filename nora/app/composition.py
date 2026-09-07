@@ -1116,8 +1116,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # interpreter and no second `VisionClient`: what it still buys is a repeat
     # sighting costing zero platform RPC, decided at parse time before any
     # bytes move.
+    # Built whenever custody is on, and NOT gated on `sticker_descriptions`:
+    # since issue #116 this ladder is pure custody — it turns a repeat sighting
+    # into zero platform RPC and reads nothing. Gating it on the READ switch
+    # meant `sticker_descriptions = false` also threw away the dedup, so every
+    # repeat sighting paid a platform RPC again, while three artefacts said the
+    # ladder stayed on. `sticker_descriptions` gates the comprehension job's
+    # sticker subjects instead (`stickers_enabled` below), which is the only
+    # thing it now describes.
     sticker_reader = None
-    if cfg.media.sticker_descriptions and blobs is not None:
+    if blobs is not None:
         sticker_reader = StickerReader(
             blobs=blobs,
             descriptions=media_descriptions,
@@ -1593,6 +1601,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),
         describe_providers=_describe_providers(cfg),
+        # `[media.describe.video]`'s chunk geometry (issue #117): the SAME two
+        # numbers the comprehension pass is built with just above, so
+        # `media_fetch`'s deliberate look reads a clip exactly as far as the
+        # automatic read did.
+        video_chunk_seconds=cfg.media.describe.video.chunk_seconds,
+        video_max_chunks=cfg.media.describe.video.chunk_max,
         describe_max_bytes=_describe_max_bytes(cfg),
         blobs=blobs, descriptions=media_descriptions, search=search_client,
         social=social_client,

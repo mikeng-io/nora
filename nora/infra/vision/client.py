@@ -225,10 +225,10 @@ class VisionClient:
         """MiMo's sentence about `data`, or an unavailable result. Never raises.
 
         `prompt` defaults to the transcription prompt `media_fetch` has always
-        used — that call site omits the argument and keeps its exact existing
-        behaviour. `StickerInterpreter` is the other caller, passing
-        `_STICKER_PROMPT` instead: same connection, same budget, a different
-        question.
+        used — a call site that omits the argument keeps its exact existing
+        behaviour. `MediaComprehender` is the other caller, passing one of
+        `COMPREHEND_QUESTIONS` instead: same connection, same budget, a
+        different question, selected by the media LABEL.
 
         `model` is the same shape one level up (2026-08-17 spec): empty keeps
         the configured model, so every existing call site is unchanged, and a
@@ -251,7 +251,7 @@ class VisionClient:
         # modality picks its question without any caller having to know the
         # table. `media_fetch` omitted this argument before the split and still
         # does; for an image it resolves to the identical string, so that path
-        # is unchanged. `StickerInterpreter` passes its own and is untouched.
+        # is unchanged. `MediaComprehender` passes its own and is untouched.
         # ONE parse, shared by the prompt and the payload — `parse_media_type`
         # is the module that owns this (RFC 6838: parameters stripped, case
         # normalised, unregistered top-level types rejected). Two local

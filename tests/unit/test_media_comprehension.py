@@ -14,10 +14,13 @@ assertion.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from nora.domain.media import MediaBlob, MediaObject
 from nora.domain.models import PersonRef
 from nora.ingest.comprehension import MediaComprehension, Subject
 from nora.obs.metrics import Metrics
+from nora.obs.tracing import span
 from nora.testing import (
     FakeBlobStore,
     FakeMediaInterpreter,
@@ -396,3 +399,161 @@ async def test_a_collaborator_that_raises_costs_the_read_and_nothing_else():
     _schedule(job, _subject())
     assert len(spawn.coros) == 1
     spawn.discard()
+
+
+# --- what the screen catches on the way to memory ---------------------------
+
+
+async def test_an_identifier_in_a_comprehension_never_reaches_memory():
+    """**Honcho HAD a screen and this branch nearly took it away.** Before
+    issue #116 the same text rode in `message.body`, which the custody stage ran
+    through `scan_identifiers` before `memory_feed` forwarded it; moving the
+    screen to render time is the stricter position for the TRANSCRIPT and no
+    position at all for memory, which does not render.
+
+    A comprehension written unscreened into a peer is worse than one written
+    into a transcript, because nothing re-screens a peer card at render — a
+    voice note containing a phone number would be durable and resurfacing.
+    A hit costs the DETAIL and keeps the marker, exactly as the render join
+    does: memory still records that media arrived and claims nothing about it.
+    """
+    memory = FakeMemoryStore()
+    metrics = Metrics()
+    interpreter = FakeMediaInterpreter(
+        "a card reading +85212345678", title="a business card")
+    job, spawn = _job(interpreter=interpreter, memory=memory, metrics=metrics)
+
+    _schedule(job, _subject(), person=MILES)
+    await spawn.drain()
+
+    assert len(memory.fed) == 1
+    text = memory.fed[0][1]
+    assert "85212345678" not in text
+    assert "business card" not in text, "the whole detail goes, not just the digits"
+    assert SHA[:6] in text, "the marker stays — media DID arrive"
+    assert metrics.get("nora_egress_blocks_total", kind="phone") == 1
+
+
+async def test_a_clean_comprehension_still_reaches_memory_whole():
+    """The positive control for the screen: it must not be eating everything.
+    All three fields, under the marker."""
+    memory = FakeMemoryStore()
+    interpreter = FakeMediaInterpreter(
+        "a bowl of wonton noodles", title="a plate of noodles", content="生記粥麵")
+    job, spawn = _job(interpreter=interpreter, memory=memory)
+
+    _schedule(job, _subject(), person=MILES)
+    await spawn.drain()
+
+    text = memory.fed[0][1]
+    assert "a plate of noodles" in text
+    assert "a bowl of wonton noodles" in text
+    assert "生記粥麵" in text
+
+
+async def test_a_screened_comprehension_is_still_stored():
+    """The screen is an EGRESS screen. The row keeps what the model read — that
+    is the record, and `media_fetch` applies its own screen on every serve —
+    while the copy that leaves for memory is the one that loses the detail."""
+    store = FakeMediaObjectStore()
+    interpreter = FakeMediaInterpreter("a card reading +85212345678")
+    job, spawn = _job(interpreter=interpreter, store=store)
+
+    _schedule(job, _subject(), person=MILES)
+    await spawn.drain()
+
+    assert len(store.comprehended) == 1
+    assert "85212345678" in store.comprehended[0][2]
+
+
+# --- the model recorded against a row ---------------------------------------
+
+
+async def test_the_row_records_the_describer_this_modality_actually_used():
+    """`describe_model` is the provenance of the text on the row. Recording the
+    IMAGE model against a clip that the video describer read is a lie in the
+    one column an operator reads to find out which describer produced what —
+    and `model_for` existed on the adapter for exactly this with no caller."""
+
+    class _PerModality(FakeMediaInterpreter):
+        model = "glm-image"
+
+        def model_for(self, media_type: str) -> str:
+            return {"video": "k3-256k"}.get(
+                media_type.partition("/")[0], "glm-image")
+
+    store = FakeMediaObjectStore()
+    job, spawn = _job(interpreter=_PerModality(), store=store)
+
+    _schedule(job, _subject(label="video", media_type="video/mp4"))
+    await spawn.drain()
+
+    assert store.comprehended[0][4] == "k3-256k"
+
+
+async def test_a_videos_chunk_record_travels_with_its_result():
+    """Returned, never stashed — see `MediaDescription.provenance`. Asserted at
+    the STORE, which is where a lost or mis-attached record would actually be
+    read back from."""
+
+    class _WithProvenance(FakeMediaInterpreter):
+        async def describe(self, *, data, media_type, label=""):
+            got = await super().describe(
+                data=data, media_type=media_type, label=label)
+            return replace(got, provenance={"video_capped": True})
+
+    store = FakeMediaObjectStore()
+    job, spawn = _job(interpreter=_WithProvenance(), store=store)
+
+    _schedule(job, _subject(label="video", media_type="video/mp4"))
+    await spawn.drain()
+
+    assert store.objs[SHA].provenance == {"video_capped": True}
+
+
+# --- the trace root ---------------------------------------------------------
+
+
+async def test_the_read_opens_its_own_root_rather_than_hanging_off_the_ingest_trace(
+    exported_spans,
+):
+    """`asyncio.create_task` COPIES the caller's contextvars (measured
+    2026-08-28, `nora/obs/tracing.py`), so a span opened inside a spawned job is
+    a CHILD of whatever was current when `schedule` was called — here
+    `ingest.media`. That made the `plumbing` declaration inert (`ParentBased`
+    takes a child's decision from its parent, so declaring `trace_kind` on a
+    non-root does nothing) and held the ingest trace open for as long as a
+    chunked video read takes. `attached(None)` detaches first, the same
+    one-liner `nora/engagement/pipeline.py` already uses for spawned work.
+
+    **What a PASS looks like, stated before reading the result** (CLAUDE.md:
+    never read an instrument without first checking it can measure the thing).
+    The fixture is built with production's own sampler, whose root rule DROPS a
+    root declaring `plumbing` — which is exactly what this span declares. So:
+
+      * detached and declaring plumbing → it is a ROOT → the sampler drops it →
+        it is ABSENT from the export;
+      * attached to `ingest.media` → it is a CHILD → `ParentBased` inherits the
+        parent's sampled decision → it is PRESENT.
+
+    Absence is therefore the pass, and that is only readable because the
+    positive control below fires: `ingest.media` is a root with no `trace_kind`
+    at all, so it IS exported, which proves the exporter was capturing and the
+    job really ran inside the block.
+    """
+    job, spawn = _job()
+
+    with span("ingest.media"):
+        _schedule(job, _subject())
+        await spawn.drain()
+
+    names = [s.name for s in exported_spans.get_finished_spans()]
+    # THE POSITIVE CONTROL — without it, an exporter that captured nothing at
+    # all would pass this test, and so would a job that never ran.
+    assert "ingest.media" in names, "the exporter captured nothing"
+    assert job._inflight == set(), "the read must actually have completed"
+    assert "comprehend" not in names, (
+        "the comprehension span was exported, which means it was a CHILD of "
+        "the ingest span — a plumbing declaration on a non-root does nothing "
+        "under ParentBased, so `attached(None)` is missing"
+    )

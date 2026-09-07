@@ -8,8 +8,8 @@
     "Long videos are read in one-and-a-half-minute chunks in order, instead of only the first two minutes. When a clip is longer than she can read, her description says so."
   ],
   "limitations": [
-    "The read happens in the background, so a photo sent and asked about in the same breath may not be described yet; the marker is there either way and she will say she has not looked rather than guess.",
-    "Videos longer than about fifteen minutes are still read only in part. That is now stated in the description instead of being silent.",
-    "Set [media] comprehension = false to keep the previous behaviour (markers only, nothing read)."
+    "The read happens in the background, so a photo sent and asked about in the same breath may not be described yet; the marker is there either way and she will say she has not looked rather than guess. A voice note is the exception -- its words are recorded as it arrives.",
+    "Videos longer than about fifteen minutes are read only in part, and a part of a clip that will not open is skipped. Both are now stated in the description instead of being silent.",
+    "Set [media] comprehension = false to switch the model reads off. Markers only, nothing described -- except that a voice note still keeps its words in the record and in the transcript, because those are captured without a model. With it off her longer-term memory gets the marker alone."
   ]
 }

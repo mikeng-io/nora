@@ -343,8 +343,8 @@ def sniff_media_type(data: bytes) -> str:
     `resolve_media_type` can only resolve what was DECLARED or guessable from
     a FILENAME, and a Signal sticker has neither, so the type has to come from
     the bytes actually fetched, or the description never reaches the vision
-    model at all — `StickerInterpreter`'s `_INTERPRETABLE` gate (correctly)
-    refuses anything not starting with `image/`, and an unresolved sticker
+    model at all — the comprehension pass (correctly) refuses a media type
+    outside image/video/audio before any model call, and an unresolved sticker
     resolves to `""`.
 
     Deliberately a sniff of a closed, small set of magic numbers observed on

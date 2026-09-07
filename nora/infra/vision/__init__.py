@@ -16,18 +16,26 @@ from .comprehend import (
     COMPREHEND_QUESTIONS,
     MediaComprehender,
     comprehension_provenance,
+    describe_coverage,
     parse_comprehension,
+    read_video_windows,
 )
+from .preprocess import VideoCut, VideoWindow, cut_video
 
 __all__ = [
     "COMPREHEND_QUESTIONS",
     "DESCRIBE_PROMPTS",
     "VISION_LOOP_SHARE",
     "MediaComprehender",
+    "VideoCut",
+    "VideoWindow",
     "VisionCache",
     "VisionClient",
     "VisionResult",
     "comprehension_provenance",
+    "cut_video",
     "derive_vision_timeout",
+    "describe_coverage",
     "parse_comprehension",
+    "read_video_windows",
 ]

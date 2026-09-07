@@ -1862,6 +1862,26 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     # about a describer's own latency. The buckets reach 300s deliberately:
     # a chunked video read (issue #117) is ten model calls, not one, and a
     # histogram whose top bucket is 21s would report every video as +Inf.
+    # The COST of the render join, not its result (CLAUDE.md: "instruments
+    # measure the RESULT; something must measure the COST"). Design 19 §10
+    # names this join as the condition that would reopen the decision — one
+    # sequential `get` per distinct blob in the window, on the critical path of
+    # every tagged turn — and a reopening condition with no way to read it is
+    # not a condition, it is a hope. Buckets are sub-second because anything
+    # above that is already the answer.
+    _HistogramSpec(
+        "nora_media_join_seconds",
+        "Wall-clock cost of joining stored media comprehensions onto one "
+        "transcript window, in the context assembler. Excludes turns with no "
+        "media in the window.",
+        (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2),
+    ),
+    _HistogramSpec(
+        "nora_media_blobs_joined",
+        "Distinct blobs looked up in one render join — the count the latency "
+        "above is a function of.",
+        (1, 2, 3, 5, 8, 13, 21, 40),
+    ),
     _HistogramSpec(
         "nora_media_comprehension_seconds",
         "One media comprehension read's latency — the model call alone for an "

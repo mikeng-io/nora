@@ -624,21 +624,30 @@ class MediaConfig(BaseModel):
     # has to differ per modality.
     describe: DescribersConfig = DescribersConfig()
 
-    # ---- reading a sticker at INGEST (sticker spec §6) -----------------------
+    # ---- whether STICKERS are among what gets read (sticker spec §6) --------
     #
-    # The vision fields above govern `media_fetch`, which Nora CHOOSES to call.
-    # These govern the automatic read that happens to every sticker before the
-    # audit row is written, and they are separate because the two calls have
-    # different budgets and different risk. Ships FALSE: document 26 slice 5's
-    # position, and the animated-WebP question (spec §7) is unresolved until a
-    # probe answers it on the deployed gateway.
+    # Ships FALSE: document 26 slice 5's position, and the animated-WebP
+    # question (spec §7) was unresolved until a probe answered it on the
+    # deployed gateway.
+    #
+    # RESCOPED by issue #116. It used to govern a read that happened before the
+    # audit row was written, on a budget of its own because that call sat on
+    # the ingest path; the read is spawned now and shares the comprehension
+    # pass's wiring, so this is a COST switch rather than a latency one. Off
+    # excludes stickers from the read and NOTHING ELSE — the identity ladder in
+    # `StickerReader` is custody, is wired whenever `enabled` is on, and is
+    # what makes a repeat sighting cost zero platform RPC.
     sticker_descriptions: bool = False
     # ---- the spawned comprehension pass (issue #116) ------------------------
     #
     # ONE model read per medium at ingest, into title/description/content on
     # `media_objects`. `False` is the pre-#116 deployment exactly: handles in
     # the body, nothing read, nothing claimed — which is why the off state is a
-    # degrade rather than an error. `sticker_descriptions` above stays the
+    # degrade rather than an error — with ONE exception now stated rather than
+    # glossed: a voice note's words are written to `media_objects.content` by
+    # the custody stage itself, inline, so they still reach the record and the
+    # transcript with this off. What they do not reach with it off is Honcho,
+    # which gets the marker alone. `sticker_descriptions` above stays the
     # sticker sub-gate: off excludes stickers from the read and leaves the
     # identity ladder (custody, and what makes a repeat sighting free) alone.
     #
@@ -657,24 +666,33 @@ class MediaConfig(BaseModel):
     # on the render, and `media_fetch` serves the rest); this is the render
     # bound. A voice note is exempt: its detail is the words people said.
     comprehension_render_chars: int = 240
-    # NOT a sentence-vs-transcription budget — the §7 probe (2026-08-15, live
-    # MiMo-v2.5) found that reasoning tokens and answer tokens share this one
-    # ceiling, so a small allowance is spent thinking with nothing left to
-    # emit. 128 returned HTTP 200 with empty content on 4/4 calls (surfacing
-    # as `unavailable`, not a timeout); 256 succeeded 2/3; 512 was the lowest
-    # value that succeeded 3/3. 1024 matches `vision_max_tokens` above and
-    # buys margin over that floor rather than pricing it exactly.
+    # DEPRECATED (issue #116) and read by nothing, like the two below. It
+    # sized `StickerInterpreter`'s own `VisionClient`, and that class is gone:
+    # the sticker read is one subject among the others in the spawned
+    # comprehension pass and shares `vision_max_tokens` with every other
+    # modality. The measurement it records is still true of the gateway and is
+    # kept for whoever tunes the shared ceiling — the §7 probe (2026-08-15, live
+    # MiMo-v2.5) found reasoning tokens and answer tokens share ONE budget, so
+    # a small allowance is spent thinking with nothing left to emit: 128
+    # returned HTTP 200 with empty content 4/4, 256 succeeded 2/3, 512 was the
+    # lowest value that succeeded 3/3.
+    #
+    # Declared but unread, for `sticker_description_max_chars`' reason below:
+    # `extra="forbid"` is on every model in this file and the deployment's
+    # `config.toml` is untracked, so deleting the field would turn a live file
+    # that still carries the line into a container that refuses to boot.
     sticker_prompt_max_tokens: int = 1024
-    # DELIBERATELY not derived from `llm.timeout_seconds` the way
-    # `derive_vision_timeout` is. That invariant protects the agent LOOP from a
-    # hung call; this call runs on the ingest path before the loop exists, so
-    # reusing it would borrow a guarantee about the wrong thing. The real
-    # constraint: the custody stage is inline and the listener awaits it, so
-    # this stall delays the next message — and when the sticker rides on the
-    # TAGGING message it is added straight to Nora's reply latency. The §7
-    # probe timed nine successful-or-failed calls at 3.9s-12.2s, with no
-    # correlation to image size or token budget (gateway variance); 20s is
-    # headroom over that observed maximum, not a guess.
+    # DEPRECATED (issue #116) and read by nothing — same story as
+    # `sticker_prompt_max_tokens` above, and the reasoning it carried is now
+    # OBSOLETE rather than merely homeless. It was deliberately not derived
+    # from `llm.timeout_seconds` because the sticker call ran on the ingest
+    # path before the loop existed, so borrowing the loop's guarantee would
+    # have protected the wrong thing; the real constraint was that the stall
+    # delayed the next message, and landed on Nora's reply latency when the
+    # sticker rode on the tagging message. **That stall is gone**: the read is
+    # spawned now. The §7 probe's nine calls at 3.9-12.2s remain the only
+    # measurement of a sticker read's latency and are what
+    # `nora_media_comprehension_seconds`'s buckets were set against.
     sticker_timeout_seconds: float = 20.0
     # DEPRECATED (issue #116) and read by nothing. It bounded a description
     # rendered into the durable BODY, and no description is rendered there any

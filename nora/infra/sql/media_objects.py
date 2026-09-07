@@ -37,7 +37,7 @@ class SqlMediaObjectStore:
         self._engine = engine
 
     async def save(self, *, obj: MediaObject) -> bool:
-        stmt = pg_insert(MEDIA_OBJECTS).values(
+        insert = pg_insert(MEDIA_OBJECTS).values(
             sha256=obj.sha256,
             media_type=obj.media_type,
             size=obj.size,
@@ -48,8 +48,38 @@ class SqlMediaObjectStore:
             describe_model=obj.describe_model,
             provenance=obj.provenance or {},
             created_at_ms=obj.created_at_ms,
-        ).on_conflict_do_nothing(
+        )
+        stmt = insert.on_conflict_do_update(
             index_elements=[MEDIA_OBJECTS.c.sha256],
+            # STILL first-source-wins for a real row — the `where` is what
+            # keeps that true. It repairs exactly one thing: the SHELL
+            # `comprehend` inserts when the spawned read beats the inline
+            # custody write (`media_type=''`, `size=0`, `created_at_ms=0`,
+            # empty provenance). Under a plain `on_conflict_do_nothing` custody
+            # then had nothing to update and the row stayed a shell forever —
+            # no media type for `media_fetch`'s modality gate, no size, no
+            # birth record, and `search`'s `created_at_ms DESC` ordering putting
+            # it last for all time. The comprehension FIELDS are untouched
+            # here: a read that already landed is never rolled back by the
+            # custody write catching up.
+            set_={
+                "media_type": insert.excluded.media_type,
+                "size": insert.excluded.size,
+                "source": insert.excluded.source,
+                # MERGED, not replaced: on the race path the shell already
+                # carries the READ's chunk record, and overwriting it with the
+                # birth record would throw away the "recorded" half of DEC-161
+                # exactly when the read finished first. Birth keys win a
+                # collision; the read's keys survive beside them.
+                "provenance": MEDIA_OBJECTS.c.provenance.op("||")(
+                    insert.excluded.provenance
+                ),
+                "created_at_ms": insert.excluded.created_at_ms,
+            },
+            where=sa.and_(
+                MEDIA_OBJECTS.c.media_type == "",
+                MEDIA_OBJECTS.c.created_at_ms == 0,
+            ),
         )
         try:
             async with self._engine.begin() as conn:

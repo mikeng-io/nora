@@ -280,6 +280,7 @@ class TranscriptInjection:
                 wanted[sha] = sha[:HANDLE_CHARS]
         if not wanted:
             return transcript
+        started = time.perf_counter()
         for row in transcript:
             for label, handle in placeholders_in(row.body or ""):
                 labels[handle] = label
@@ -317,6 +318,16 @@ class TranscriptInjection:
                 self._metrics.inc("nora_egress_blocks_total", kind=kind)
                 continue
             details[handle] = detail
+        # THE COST, measured where it is paid. Design 19 §10 names this join as
+        # what would reopen the decision — one sequential `get` per distinct
+        # blob, on the critical path of every tagged turn — and a reopening
+        # condition nothing can read is a hope rather than a condition. Both
+        # series are observed together and only when the join actually ran, so
+        # a turn with no media in its window never dilutes the latency the
+        # operator is watching.
+        self._metrics.observe(
+            "nora_media_join_seconds", time.perf_counter() - started)
+        self._metrics.observe("nora_media_blobs_joined", len(wanted))
         if not details:
             return transcript
         return tuple(

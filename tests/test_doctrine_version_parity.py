@@ -50,7 +50,7 @@ PINNED: dict[str, tuple[int, str]] = {
     "participation-conduct": (
         2, "c0e3e26d07acad69681357fabbc66820c414fb67d9f95df1e2364364fe954699",
     ),
-    "constraints": (7, "90c326b5c81ba986dde7177f0b7a8de6b611167d553f8f43cf5e8c63e43790d4"),
+    "constraints": (8, "f2b59db09d5892e299f5ddcf0f2d89eb38a6bee71bf03d15c03fa71cbdcdffb7"),
 }
 
 

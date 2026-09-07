@@ -34,6 +34,25 @@ from nora.testing import FakeMediaInterpreter
 _JSON = '{"title": "a cartoon cat", "description": "%s", "content": ""}'
 
 
+class _RecordingStubVisionClient:
+    """The stub above plus the PROMPT it was handed — `label` is the one new
+    argument the widened port gained, and a suite that never exercised it would
+    leave the whole point of the widening unpinned."""
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    async def describe(
+        self, *, data: bytes, media_type: str, prompt: str = "", model: str = "",
+        provider: str = "omniroute", max_bytes: int | None = None,
+    ) -> VisionResult:
+        self.prompts.append(prompt)
+        return VisionResult(available=True, description=_JSON % "a cartoon cat")
+
+    async def complete(self, *, prompt: str, text: str, model: str = "") -> str:
+        return _JSON % "a cartoon cat"
+
+
 class _StubVisionClient:
     """A minimal `VisionClient` stand-in, local to this file on purpose: a
     shared double living in `tests/test_media_fetch.py`
@@ -189,3 +208,53 @@ async def test_summarize_never_raises(make_interpreter):
     assert got.available is False
     assert got.reason in ("timeout", "error", "vision")
     assert got == MediaDescription(available=False, reason=got.reason)
+
+
+async def test_the_label_is_accepted_and_changes_nothing_it_should_not(
+    make_interpreter,
+):
+    """`label` is the one argument the port gained with issue #116, and both
+    implementations must ACCEPT it — a fake that took only `media_type` would
+    make every caller passing a label untestable against production, which is
+    the exact drift this directory exists to prevent.
+
+    What it may not do is change the RESULT SHAPE: the same bytes with a label
+    and without one comprehend the same way. What it selects — which authored
+    question is asked — is a property of the concrete adapter and is pinned in
+    `tests/test_media_fetch.py::test_a_label_picks_the_authored_question`,
+    because the fake has no prompt table to select from and asserting on one
+    here would be asserting on the fake.
+    """
+    interpreter = make_interpreter(available=True, text="a cartoon cat", reason="")
+
+    labelled = await interpreter.describe(
+        data=b"\x89PNG...", media_type="image/png", label="sticker")
+    bare = await interpreter.describe(data=b"\x89PNG...", media_type="image/png")
+
+    assert labelled.available is bare.available is True
+    assert labelled.text == bare.text
+
+
+async def test_a_label_reaches_the_model_as_a_different_authored_question():
+    """The production half of the test above, and the reason `label` exists at
+    all: it SELECTS the authored prompt. A sticker is asked what it depicts and
+    explicitly not what its sender meant by it (DEC-108, whose position
+    survived issue #116 even though the class holding it did not); a photo is
+    asked what it shows.
+
+    Not parametrized over the fake: the fake has no prompt table, and a test
+    that asserted on one would be asserting on the double rather than on the
+    port's contract with the model."""
+    client = _RecordingStubVisionClient()
+    interpreter = MediaComprehender(
+        client=client, describe_models={"image": "mimo"}, text_model="mimo")
+
+    await interpreter.describe(
+        data=b"\x89PNG...", media_type="image/png", label="sticker")
+    await interpreter.describe(data=b"\x89PNG...", media_type="image/png")
+
+    sticker, photo = client.prompts
+    assert sticker != photo
+    assert "chat sticker" in sticker
+    assert "do not interpret the sender's mood or intent" in sticker.lower()
+    assert "chat sticker" not in photo

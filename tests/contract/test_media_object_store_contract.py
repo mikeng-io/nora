@@ -251,6 +251,55 @@ async def test_a_comprehension_that_beats_custody_creates_the_row(store):
     assert got.title == "a dog"
 
 
+async def test_custody_repairs_the_shell_a_winning_read_left_behind(store):
+    """And the row it leaves is a SHELL — `media_type=""`, `size=0`,
+    `created_at_ms=0`, no birth record — because a read knows nothing about
+    where the bytes came from. Under a plain `on_conflict_do_nothing` custody
+    then had nothing to update and the shell was permanent: no media type for
+    `media_fetch`'s modality gate, no size, and `search`'s
+    `created_at_ms DESC` ordering putting it last for all time.
+
+    What custody may NOT do is roll the comprehension back. The read landed
+    first; catching up is not overwriting."""
+    await store.comprehend(
+        sha256=DOG, title="a dog", description="a dog in the park",
+        content="woof", model="glm", provenance={"video_capped": True},
+    )
+
+    assert await store.save(obj=_obj(
+        DOG, source="inbound", prompt="", description="",
+        created_at_ms=1_700_000_000_000,
+    )) is True
+
+    got = await store.get(sha256=DOG)
+    assert got is not None
+    assert got.media_type == "image/png", "the shell was repaired"
+    assert got.size == 4
+    assert got.created_at_ms == 1_700_000_000_000
+    assert got.provenance is not None
+    assert got.provenance["platform"] == "signal", "the birth record landed"
+    assert got.provenance["video_capped"] is True, "and the read's survived"
+    assert (got.title, got.description, got.content) == (
+        "a dog", "a dog in the park", "woof",
+    ), "a read that landed first is never rolled back by custody catching up"
+
+
+async def test_custody_still_does_not_overwrite_a_real_row(store):
+    """The `where` clause's other half, and the property `save` has always had.
+    A second writer — the same photo forwarded into another room — must not
+    move the birth record. Only a SHELL is repairable."""
+    await store.save(obj=_obj(
+        CAT, source="inbound", prompt="", description="", created_at_ms=1_000))
+
+    await store.save(obj=_obj(
+        CAT, source="generated", prompt="a cat on a sofa", created_at_ms=9_000))
+
+    got = await store.get(sha256=CAT)
+    assert got is not None
+    assert got.source == "inbound"
+    assert got.created_at_ms == 1_000
+
+
 async def test_a_comprehension_never_overwrites_the_birth_record(store):
     """DEC-138: provenance belongs to whoever first held the bytes, and a read
     is not a birth. The chunk record a video read leaves (issue #117) MERGES

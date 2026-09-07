@@ -118,7 +118,14 @@ from ..domain.reminders import (
 from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
 from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
-from ..infra.vision.preprocess import download_media, preprocess_media
+from ..infra.vision.comprehend import describe_coverage, read_video_windows
+from ..infra.vision.preprocess import (
+    VIDEO_CHUNK_SECONDS,
+    VIDEO_MAX_CHUNKS,
+    cut_video,
+    download_media,
+    preprocess_media,
+)
 from ..obs.tracing import annotate, span
 from .arithmetic import evaluate as evaluate_expression
 from .egress import scan_reply
@@ -2299,6 +2306,12 @@ def build_tool_specs(
     describe_models: Mapping[str, str] | None = None,
     describe_providers: Mapping[str, str] | None = None,
     describe_max_bytes: Mapping[str, int] | None = None,
+    # `[media.describe.video]`'s chunk geometry (issue #117), threaded in as
+    # VALUES like every other describer knob, so the deliberate read
+    # (`media_fetch`) and the automatic one (the comprehension pass) use the
+    # same ceiling and cannot disagree about how much of a clip was seen.
+    video_chunk_seconds: int = VIDEO_CHUNK_SECONDS,
+    video_max_chunks: int = VIDEO_MAX_CHUNKS,
     search_source=None,
     social_source=None,
     weather_source=None,
@@ -4338,6 +4351,12 @@ Args:
             question: What you want to know about it, when the stored
                 reading does not answer it. Leave empty otherwise.
         """
+        # `"   "` is truthy. Left as-is it skipped layer 1 — the stored
+        # reading, free and instant — and spent a real vision call answering
+        # whitespace, which is both the slower path and the one that writes
+        # nothing back.
+        question = question.strip()
+
         # Gate FIRST — the inert-by-config shape (§5). Custody off (`[media]
         # enabled=false` or no key → no blob store) or no vision client wired
         # (offline/eval compositions) means she genuinely cannot look, which is
@@ -4575,7 +4594,7 @@ Args:
             # blob decrypt step exists for them (custody is untouched — a
             # fetched URL is described on the fly, never written into the
             # conversation's store).
-            data_for_vision = await preprocess_media(data, media_type)
+            data_for_vision = data
         else:
             # Decrypt the blob Nora already holds. `store.get` returns None
             # for an ABSENT blob and RAISES `InvalidTag`/`ValueError` for a
@@ -4595,13 +4614,7 @@ Args:
                             "not say there is no media and do not guess what "
                             "it showed.",
                 }
-            # Preprocess (scale/re-encode via ffmpeg) BEFORE the vision call:
-            # a 4K still or 2K clip carries many times the bytes — and tokens
-            # — of the 1600px/720p view the model can actually use. Custody
-            # is untouched; only the transport view shrinks. On any failure
-            # the ORIGINAL bytes pass through, so the per-modality
-            # `describe_ceiling` below still binds exactly as before.
-            data_for_vision = await preprocess_media(data, media_type)
+            data_for_vision = data
 
         # LAYER 2's PROMPT. `nora/infra/vision/client.py` states that describe
         # prompts are "AUTHORED and never model-supplied", because a prompt
@@ -4619,27 +4632,101 @@ Args:
         prompt = (
             f"{_QUERY_FRAME}\n\n{question}" if question else ""
         )
-        try:
-            result = await vision_source.describe(
-                data=data_for_vision, media_type=media_type, model=describe_model,
-                provider=describe_provider, max_bytes=describe_ceiling,
-                prompt=prompt,
+        async def _ask(payload: bytes):
+            """One describer call on this modality's model, provider and
+            ceiling. Never raises: `VisionClient.describe` turns every failure
+            into an unavailable result itself, and this is the belt for those
+            braces (`test_a_tool_never_raises_into_the_agent_loop`)."""
+            try:
+                return await vision_source.describe(
+                    data=payload, media_type=media_type, model=describe_model,
+                    provider=describe_provider, max_bytes=describe_ceiling,
+                    prompt=prompt,
+                )
+            except Exception:
+                log.exception("media_fetch vision call raised")
+                return None
+
+        coverage = ""
+        if modality == "video":
+            # **THE DELIBERATE LOOK CHUNKS TOO** (issue #117). This path used
+            # to run `preprocess_media`, whose single view is capped at
+            # `VIDEO_MAX_SECONDS` — so the surface Nora reaches for when she
+            # CHOOSES to look read the first two minutes of a ten-minute clip
+            # and answered as though it had watched the whole thing, with no
+            # metric and no caveat. Fixing the ingest path and leaving this one
+            # would have left the same silent partial read on the half a human
+            # actually asks for.
+            #
+            # The same `read_video_windows` the comprehension pass uses, so the
+            # automatic read and the deliberate one cannot disagree about how
+            # much of a clip was seen, and `describe_coverage` is the sentence
+            # that admits whatever was missed.
+            cut = await cut_video(
+                data_for_vision,
+                chunk_seconds=video_chunk_seconds, max_chunks=video_max_chunks,
             )
-        except Exception:
-            # `VisionClient.describe` is documented never to raise (it turns
-            # every failure into an unavailable `VisionResult` itself). This
-            # is the belt for those braces — `test_a_tool_never_raises_into_the_agent_loop`
-            # — landing on `unavailable`, never on an invented description.
-            log.exception("media_fetch vision call raised")
-            result = None
-        if result is None or not getattr(result, "available", False):
-            _record_media(metrics, "unavailable", reason=getattr(result, "reason", "") or "vision")
-            return {
-                "status": "unavailable", "code": sha256[:HANDLE_CHARS],
-                "note": "I couldn't get a look at that media just now. Say so — do "
-                        "not say there is no media and do not describe it anyway.",
-            }
-        description = result.description
+            if not cut.windows:
+                # ffmpeg could not cut this at all. DEGRADE TO THE OLD SHAPE,
+                # not to `unavailable`: `preprocess.py`'s own contract is that
+                # a failed reduction passes the ORIGINAL bytes through, because
+                # a quiet "couldn't optimise" beats a fabricated failure (R-5),
+                # and refusing here would make every clip ffmpeg dislikes
+                # unreadable when the build before this branch described it.
+                # What must NOT degrade with it is the honesty: the coverage is
+                # unknown, and the answer says exactly that.
+                view = await preprocess_media(data_for_vision, media_type)
+                one = await _ask(view)
+                if one is None or not getattr(one, "available", False):
+                    _record_media(
+                        metrics, "unavailable",
+                        reason=getattr(one, "reason", "") or cut.reason or "ffmpeg")
+                    return {
+                        "status": "unavailable", "code": sha256[:HANDLE_CHARS],
+                        "note": "I couldn't get a look at that clip just now. "
+                                "Say so — do not describe it anyway.",
+                    }
+                description = one.description
+                coverage = (
+                    "(I could not tell how long this clip is, so I may not "
+                    "have watched all of it.)"
+                )
+                result = one
+            else:
+                segments, read_windows = await read_video_windows(
+                    cut=cut, media_type=media_type, ask=_ask,
+                )
+                if not read_windows:
+                    _record_media(metrics, "unavailable", reason="vision")
+                    return {
+                        "status": "unavailable", "code": sha256[:HANDLE_CHARS],
+                        "note": "I couldn't get a look at that clip just now. "
+                                "Say so — do not describe it anyway.",
+                    }
+                description = "\n".join(segments)
+                coverage = describe_coverage(cut=cut, read=read_windows)
+                result = None
+        else:
+            # Preprocess (scale/re-encode via ffmpeg) BEFORE the vision call:
+            # a 4K still carries many times the bytes — and tokens — of the
+            # 1600px view the model can actually use. Custody is untouched;
+            # only the transport view shrinks. On any failure the ORIGINAL
+            # bytes pass through, so `describe_ceiling` still binds as before.
+            result = await _ask(await preprocess_media(data_for_vision, media_type))
+            if result is None or not getattr(result, "available", False):
+                _record_media(
+                    metrics, "unavailable",
+                    reason=getattr(result, "reason", "") or "vision")
+                return {
+                    "status": "unavailable", "code": sha256[:HANDLE_CHARS],
+                    "note": "I couldn't get a look at that media just now. Say so — do "
+                            "not say there is no media and do not describe it anyway.",
+                }
+            description = result.description
+        if coverage:
+            # SAID on the way out, exactly as the comprehension pass says it —
+            # a partial read that reads as complete is the whole of #117.
+            description = f"{description}\n{coverage}"
         if question:
             # WRITES NOTHING. See the bypass note above: this answer is a
             # function of (bytes, question) and the cache is keyed on bytes
@@ -7693,6 +7780,12 @@ def build_tools(
     describe_models: Mapping[str, str] | None = None,
     describe_providers: Mapping[str, str] | None = None,
     describe_max_bytes: Mapping[str, int] | None = None,
+    # `[media.describe.video]`'s chunk geometry (issue #117), threaded in as
+    # VALUES like every other describer knob, so the deliberate read
+    # (`media_fetch`) and the automatic one (the comprehension pass) use the
+    # same ceiling and cannot disagree about how much of a clip was seen.
+    video_chunk_seconds: int = VIDEO_CHUNK_SECONDS,
+    video_max_chunks: int = VIDEO_MAX_CHUNKS,
     search_source=None,
     social_source=None,
     weather_source=None,

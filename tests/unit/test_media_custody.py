@@ -728,3 +728,75 @@ async def test_a_failing_attachment_does_not_shift_the_stickers_own_handle():
 
     sticker_handle = hashlib.sha256(sticker_png).hexdigest()[:6]
     assert out.body == f"[image] [sticker {sticker_handle}]"
+
+
+async def test_a_voice_notes_words_are_recorded_even_with_no_comprehension_wired():
+    """`[media] comprehension = false`, and the case the flag's own
+    documentation got wrong. STT runs on the custody path and costs what it
+    costs whether or not a vision job exists, and its output used to reach only
+    a `Subject` that was never scheduled — so the words were captured and then
+    discarded. On master they rode in `messages.body` and reached the record
+    regardless of any vision wiring.
+
+    They are written INLINE now, by this stage, for the same reason they are
+    captured inline: they are conversation content and nothing about them needs
+    a model."""
+    store = FakeMediaObjectStore()
+    ref = MediaRef(platform_id="a1", media_type="audio/aac", voice_note=True)
+
+    out = await media_stage.run(
+        message=_msg(body="[voice note]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"a1": b"aac"})]),
+        blobs=FakeBlobStore(), media_store=store, metrics=Metrics(),
+        transcriber=FakeTranscriber("喂你今日得唔得閒啊"),
+        comprehension=None,          # the flag is off
+    )
+
+    assert out.body.startswith("[voice note ")
+    sha = hashlib.sha256(b"aac").hexdigest()
+    assert [c[3] for c in store.comprehended] == ["喂你今日得唔得閒啊"]
+    assert store.objs[sha].content == "喂你今日得唔得閒啊"
+
+
+async def test_a_voice_note_does_not_wait_on_a_model_for_its_words():
+    """The words are in hand synchronously, so they are stored synchronously.
+    Queuing them behind a spawned title meant somebody asking 「佢講咩」 two
+    seconds later saw a bare handle — the release fragment accepts that latency
+    for a PHOTO, whose content genuinely has to be read.
+
+    The comprehension job is wired here and its work is NOT drained, so
+    anything asserted below happened on the awaited custody path alone."""
+    store = FakeMediaObjectStore()
+    job = _RecordingComprehension()
+    ref = MediaRef(platform_id="a1", media_type="audio/aac", voice_note=True)
+
+    await media_stage.run(
+        message=_msg(body="[voice note]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"a1": b"aac"})]),
+        blobs=FakeBlobStore(), media_store=store, metrics=Metrics(),
+        transcriber=FakeTranscriber("喂你今日得唔得閒啊"),
+        comprehension=job,
+    )
+
+    assert [c[3] for c in store.comprehended] == ["喂你今日得唔得閒啊"]
+    assert job.subjects, "the title pass is still scheduled, just not waited on"
+
+
+async def test_a_failed_transcription_writes_no_content_at_all():
+    """R-27 on the inline write: no transcript, no claim. An empty `content`
+    row would make the join render `[voice note a3f2c1]` either way, but it
+    would also make the comprehension job's already-read gate see a
+    non-comprehended row — which is correct — while asserting in the index that
+    a read happened. Nothing is written."""
+    store = FakeMediaObjectStore()
+    ref = MediaRef(platform_id="a1", media_type="audio/aac", voice_note=True)
+
+    await media_stage.run(
+        message=_msg(body="[voice note]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"a1": b"aac"})]),
+        blobs=FakeBlobStore(), media_store=store, metrics=Metrics(),
+        transcriber=FakeTranscriber(available=False, reason="error"),
+        comprehension=None,
+    )
+
+    assert store.comprehended == []

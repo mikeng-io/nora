@@ -338,15 +338,42 @@ async def test_one_refused_window_shortens_the_read_rather_than_failing_it():
 
     cut = await cut_video(b"video", chunk_seconds=90, max_chunks=10, runner=run)
 
-    assert len(cut.chunks) == 2
+    assert len(cut.windows) == 2
     assert cut.covered_seconds == 180.0
     assert cut.complete is False
+    # And each SURVIVING window keeps its own start: dropping the 1:30 one must
+    # not slide 3:00's content back into its place.
+    assert [w.start_seconds for w in cut.windows] == [0.0, 180.0]
+
+
+async def test_a_read_shortened_by_a_refused_window_says_so_too():
+    """**`note()` keys on `complete`, never on `capped`.** The first cut of it
+    returned `""` whenever the ceiling had not bound, so a read shortened by a
+    refused window went out with a confident description and no caveat while
+    `complete` sat correctly False and nothing acted on it. DEC-161 is «never
+    truncate silently», not «never truncate» — and the test above builds this
+    exact case and stopped one assertion short of the defect."""
+
+    async def run(args, timeout_seconds, data):
+        if args[0] == "ffprobe":
+            return 0, b"360.0", b""
+        if args[args.index("-ss") + 1] != "0.000":
+            return 1, b"", b"broken frame"
+        return 0, b"chunk", b""
+
+    cut = await cut_video(b"video", chunk_seconds=90, max_chunks=10, runner=run)
+
+    assert cut.capped is False, "the ceiling did not bind"
+    assert cut.complete is False
+    note = cut.note()
+    assert note, "a short read must say something"
+    assert "have not seen" in note
 
 
 async def test_an_empty_clip_is_not_a_read_at_all():
     cut = await cut_video(b"", runner=_runner(duration="10.0"))
     assert cut == VideoCut(
-        chunks=(), duration_seconds=None, covered_seconds=0.0, capped=False,
+        windows=(), duration_seconds=None, covered_seconds=0.0, capped=False,
         reason="empty",
     )
 

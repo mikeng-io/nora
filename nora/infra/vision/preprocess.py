@@ -234,6 +234,24 @@ async def probe_duration(
 
 
 @dataclass(frozen=True)
+class VideoWindow:
+    """One transient chunk, WITH the instant it was cut from.
+
+    The start time rides with the bytes rather than being re-derived from a
+    list index, and that is a correctness fix rather than tidiness: a refused
+    window is DROPPED from the run, so `windows[k]` is not the k-th window of
+    the clip once anything has failed. Deriving the timecode from the position
+    labelled everything after a skip with a time it did not come from — a
+    6-minute clip losing its 1:30 window rendered the 3:00 content as `[1:30]`,
+    and Nora would then say «at 1:30 he does X» about something at 3:00.
+    """
+
+    start_seconds: float
+    seconds: float
+    data: bytes
+
+
+@dataclass(frozen=True)
 class VideoCut:
     """What one chunked read of a clip actually covered (issue #117).
 
@@ -247,16 +265,25 @@ class VideoCut:
     unmeasurable duration means the read cannot claim completeness either way,
     and `note()` says exactly that instead of inventing a number.
 
-    `capped` is True only when the CHUNK CEILING bound — the clip really is
-    longer than `covered_seconds` and the rest was never read. That is the flag
-    the caller records in `provenance` and states in the description.
+    `capped` is True only when the CHUNK CEILING bound. **It is not the only
+    way a read comes back short**, and treating it as one is the defect this
+    class was written to prevent, reintroduced inside it: ffmpeg refusing a
+    window drops that window from `windows` and shortens `covered_seconds`
+    while `capped` stays False. `note()` therefore keys on `complete`, not on
+    `capped` — `capped` only chooses which sentence.
     """
 
-    chunks: tuple[bytes, ...]
+    windows: tuple[VideoWindow, ...]
     duration_seconds: float | None
     covered_seconds: float
     capped: bool
     reason: str = ""
+
+    @property
+    def chunks(self) -> tuple[bytes, ...]:
+        """The bytes alone, in order. For a caller that genuinely does not need
+        the timecodes — nothing that RENDERS a segment may use this."""
+        return tuple(w.data for w in self.windows)
 
     @property
     def complete(self) -> bool:
@@ -276,6 +303,13 @@ class VideoCut:
         plain words, no metric names — because this sentence is the whole point
         of the change: it is what stops a partial read being served as a
         complete answer.
+
+        **Keyed on `complete`, never on `capped`.** The first cut of this
+        returned `""` whenever the ceiling had not bound, which meant a read
+        shortened by a refused window — `complete` correctly False, nothing
+        acting on it — went out with a confident description and no caveat.
+        That is the exact shape DEC-161 exists to end, one level in from where
+        it was found.
         """
         if self.complete:
             return ""
@@ -284,12 +318,18 @@ class VideoCut:
                 "(I could not tell how long this clip is, so I may not have "
                 "watched all of it.)"
             )
-        if not self.capped:
-            return ""
+        minutes = round(self.duration_seconds / 60)
+        if self.capped:
+            return (
+                f"(This clip runs about {minutes} minutes and I only watched "
+                f"the first {round(self.covered_seconds / 60)} of them — I have "
+                f"not seen the rest.)"
+            )
+        missing = max(0.0, self.duration_seconds - self.covered_seconds)
         return (
-            f"(This clip runs about {round(self.duration_seconds / 60)} minutes "
-            f"and I only watched the first {round(self.covered_seconds / 60)} "
-            f"of them — I have not seen the rest.)"
+            f"(About {max(1, round(missing / 60))} minutes of this "
+            f"{minutes}-minute clip would not open at all, so there are parts "
+            f"of it I have not seen.)"
         )
 
 
@@ -316,13 +356,21 @@ async def cut_video(
     much of the clip actually reached a model.
     """
     if not data:
-        return VideoCut(chunks=(), duration_seconds=None, covered_seconds=0.0,
+        return VideoCut(windows=(), duration_seconds=None, covered_seconds=0.0,
                         capped=False, reason="empty")
     chunk_seconds = max(1, chunk_seconds)
     max_chunks = max(1, max_chunks)
     run: Runner = runner if runner is not None else _run_video
     timeout = timeout_seconds if timeout_seconds is not None else PREPROCESS_TIMEOUT_SECONDS
-    duration = await probe_duration(data, runner=runner, timeout_seconds=timeout)
+    # ffprobe gets its OWN, shorter budget. Reading a container header is not
+    # a transcode, and letting it borrow the transcode's 30 s meant
+    # `FFPROBE_TIMEOUT_SECONDS` named a value the production path never used.
+    duration = await probe_duration(
+        data, runner=runner,
+        timeout_seconds=(
+            FFPROBE_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+        ),
+    )
 
     if duration is None:
         # UNMEASURABLE, not short. One view — the exact pre-#117 behaviour —
@@ -332,41 +380,46 @@ async def cut_video(
         returncode, out, _err = await run(
             _video_args(start=0.0, seconds=float(chunk_seconds)), timeout, data)
         if returncode != 0 or not out:
-            return VideoCut(chunks=(), duration_seconds=None, covered_seconds=0.0,
+            return VideoCut(windows=(), duration_seconds=None, covered_seconds=0.0,
                             capped=False, reason="ffmpeg")
-        return VideoCut(chunks=(out,), duration_seconds=None,
-                        covered_seconds=float(chunk_seconds), capped=False,
-                        reason="unmeasured")
+        return VideoCut(
+            windows=(VideoWindow(
+                start_seconds=0.0, seconds=float(chunk_seconds), data=out),),
+            duration_seconds=None, covered_seconds=float(chunk_seconds),
+            capped=False, reason="unmeasured",
+        )
 
     wanted = math.ceil(duration / chunk_seconds)
     taken = min(wanted, max_chunks)
-    chunks: list[bytes] = []
+    windows: list[VideoWindow] = []
     covered = 0.0
     for index in range(taken):
-        start = index * chunk_seconds
-        window = min(float(chunk_seconds), duration - start)
-        if window <= 0:
+        start = float(index * chunk_seconds)
+        length = min(float(chunk_seconds), duration - start)
+        if length <= 0:
             break
         returncode, out, _err = await run(
-            _video_args(start=start, seconds=window), timeout, data)
+            _video_args(start=start, seconds=length), timeout, data)
         if returncode != 0 or not out:
             # One refused window is not a refused read. Skipping it keeps the
-            # chunks that DID reach a model and shortens what the caller may
+            # windows that DID reach a model and shortens what the caller may
             # claim to have seen; failing the whole read would throw away
-            # fourteen good minutes over one bad one.
+            # fourteen good minutes over one bad one. The GAP is visible
+            # because each surviving window carries its own start time — a
+            # dropped one does not shift its neighbours' timecodes.
             log.warning("ffmpeg refused video chunk %d (rc=%s)", index, returncode)
             continue
-        chunks.append(out)
-        covered += window
+        windows.append(VideoWindow(start_seconds=start, seconds=length, data=out))
+        covered += length
     return VideoCut(
-        chunks=tuple(chunks),
+        windows=tuple(windows),
         duration_seconds=duration,
         covered_seconds=covered,
-        # The CEILING bound, not "a chunk failed". Those are different facts
-        # and only the first one means «the rest of this clip exists and was
-        # never looked at», which is what the note has to say.
+        # The CEILING bound, and ONLY that. A refused window also shortens the
+        # read, but it is a different fact — `covered_seconds` carries it and
+        # `complete` reads both, which is why `note()` keys on `complete`.
         capped=wanted > max_chunks,
-        reason="" if chunks else "ffmpeg",
+        reason="" if windows else "ffmpeg",
     )
 
 

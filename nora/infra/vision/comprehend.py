@@ -47,17 +47,18 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 from nora.domain.media import parse_media_type
 from nora.domain.ports import MediaDescription
 
-from .client import VisionClient
+from .client import VisionClient, VisionResult
 from .preprocess import (
     VIDEO_CHUNK_SECONDS,
     VIDEO_MAX_CHUNKS,
     VideoCut,
+    VideoWindow,
     cut_video,
     preprocess_media,
 )
@@ -166,6 +167,12 @@ def parse_comprehension(raw: str) -> tuple[str, str, str]:
     return title, description, content
 
 
+# The marker a window nothing could read renders as. A NAMED constant because
+# the caller has to recognise it structurally: searching the rendered content
+# for the phrase miscounts a real description that happens to contain it.
+_UNREAD_MARKER = "(this part could not be read)"
+
+
 def _timecode(seconds: float) -> str:
     minutes, secs = divmod(int(seconds), 60)
     return f"{minutes:d}:{secs:02d}"
@@ -214,16 +221,12 @@ class MediaComprehender:
         # matters is how many windows came back and what the cut said about
         # them, not which argv produced them.
         self._cut: Cut = cut or cut_video
-        # What the LAST completed pass actually covered, for the caller to
-        # record in provenance (issue #117's «say it, don't just do it»). A
-        # return value would have been cleaner; the port's `MediaDescription`
-        # is shared with a fake and with two other call sites, and widening it
-        # with a video-only field would put a shape in the domain that only one
-        # adapter can fill. Read immediately after the awaited call that
-        # produced it, by the one job that owns this instance's turn — the
-        # comprehension job is single-flight per sha256 and awaits each read.
-        self.last_cut: VideoCut | None = None
-        self.last_provenance: dict[str, Any] = {}
+        # NO PER-INSTANCE READ STATE. What a read leaves behind travels on
+        # `MediaDescription.provenance`, because this object is shared and the
+        # comprehension job spawns one task per subject: a message carrying a
+        # video and a photo runs two `describe` calls concurrently here, and a
+        # stashed `last_provenance` had the still resetting it mid chunk-loop.
+        # See `MediaDescription.provenance` for the whole of it.
 
     @property
     def model(self) -> str:
@@ -239,8 +242,6 @@ class MediaComprehender:
         self, *, data: bytes, media_type: str, label: str = "",
     ) -> MediaDescription:
         """Never raises. `available=False` carries no partial triple."""
-        self.last_cut = None
-        self.last_provenance = {}
         top, _subtype = parse_media_type(media_type)
         if top not in ("image", "video", "audio"):
             # Not a modality anything here can decode. `application/json` (a
@@ -292,53 +293,61 @@ class MediaComprehender:
     async def _comprehend_video(
         self, data: bytes, media_type: str, model: str,
     ) -> MediaDescription:
-        """Issue #117: chunks in order, timecoded, then one cheap text pass.
+        """Issue #117: windows in order, timecoded FROM THE WINDOW, then one
+        cheap text pass.
 
-        The synthesis is a TEXT call over the chunk descriptions, not a second
+        The synthesis is a TEXT call over the window descriptions, not a second
         pass through the video — the expensive thing has already happened once
-        per chunk, and asking the video model to watch it all again to write a
+        per window, and asking the video model to watch it all again to write a
         title would double the cost of the read for a few words.
         """
         cut = await self._cut(
             data, chunk_seconds=self._chunk_seconds, max_chunks=self._max_chunks,
         )
-        self.last_cut = cut
-        self.last_provenance = comprehension_provenance(cut)
-        if not cut.chunks:
+        if not cut.windows:
             return MediaDescription(available=False, reason=cut.reason or "ffmpeg")
-        question = COMPREHEND_QUESTIONS["video"]
-        provider = self._providers.get("video", "omniroute")
-        ceiling = self._max_bytes.get("video") or None
-        segments: list[str] = []
-        for index, chunk in enumerate(cut.chunks):
-            start = index * self._chunk_seconds
-            result = await self._client.describe(
+        segments, read = await read_video_windows(
+            cut=cut, media_type=media_type,
+            ask=lambda chunk: self._client.describe(
                 data=chunk, media_type=media_type,
-                prompt=f"{question}\n\nAnswer in plain prose, not JSON.",
-                model=model, provider=provider, max_bytes=ceiling,
-            )
-            if not result.available or not result.description.strip():
-                # One refused window is not a refused read — `cut_video` makes
-                # the same call about ffmpeg. The gap is VISIBLE in the
-                # timecoded run rather than papered over, which is the whole
-                # discipline this pair of issues is about.
-                segments.append(
-                    f"[{_timecode(start)}] (this part could not be read)")
-                continue
-            segments.append(f"[{_timecode(start)}] {result.description.strip()}")
-        content = "\n".join(segments)
-        if not any("could not be read" not in s for s in segments):
+                prompt=(
+                    f"{COMPREHEND_QUESTIONS['video']}\n\n"
+                    "Answer in plain prose, not JSON."
+                ),
+                model=model,
+                provider=self._providers.get("video", "omniroute"),
+                max_bytes=self._max_bytes.get("video") or None,
+            ),
+        )
+        if not read:
+            # Every window failed at the MODEL. Not «the video was empty» — «I
+            # could not look» (R-27). Nothing is stored, so the next sighting
+            # tries again rather than short-circuiting on a row that claims to
+            # have been read.
             return MediaDescription(available=False, reason="vision")
+        content = "\n".join(segments)
         title, description = await self._synthesize(content)
-        note = cut.note()
+        note = describe_coverage(cut=cut, read=read)
         if note:
-            # SAID, not merely recorded. The caller also writes the cap into
-            # provenance; a fact only in provenance is a fact nobody reading
-            # the answer ever sees, and this issue exists because the cut was
-            # invisible at the point where it mattered.
+            # SAID, not merely recorded. The caller also writes the coverage
+            # into provenance; a fact only in provenance is a fact nobody
+            # reading the answer ever sees, and this issue exists because the
+            # cut was invisible at the point where it mattered.
             description = f"{description} {note}".strip()
+        if not (title or description):
+            # NO TITLE, NO DESCRIPTION, and this is not a success. It is the
+            # shipped default's own path: `comprehension_text_model = ""` makes
+            # `_synthesize` answer `("", "")`, and returning `available=True`
+            # here wrote a row with three empty-ish fields, counted it `ok`,
+            # set `comprehended`, made the transcript render a bare
+            # `[video …]` forever and every future sighting short-circuit to
+            # `already_read` — a counter saying the describer works over a
+            # capability that silently does not. `_comprehend_still` has
+            # refused this since it was written; the video path did not.
+            return MediaDescription(available=False, reason="no_text_describer")
         return MediaDescription(
             available=True, title=title, text=description, content=content,
+            provenance=comprehension_provenance(cut=cut, read=read),
         )
 
     async def _synthesize(self, content: str) -> tuple[str, str]:
@@ -380,21 +389,97 @@ class MediaComprehender:
         return MediaDescription(available=True, title=title, text=description)
 
 
-def comprehension_provenance(cut: VideoCut | None) -> dict[str, Any]:
+async def read_video_windows(
+    *,
+    cut: VideoCut,
+    media_type: str,
+    ask: Callable[[bytes], Awaitable[VisionResult]],
+) -> tuple[tuple[str, ...], tuple[VideoWindow, ...]]:
+    """Every window through `ask`, timecoded from the WINDOW's own start.
+
+    Shared by the comprehension pass and by `media_fetch`'s live read, so the
+    deliberate look and the automatic one cannot disagree about how much of a
+    clip was seen — `media_fetch` used to take the same silent 120-second view
+    the ingest path had just stopped taking.
+
+    Returns the rendered segments AND the windows a model actually described.
+    The second is what any claim about coverage has to be computed from: a
+    window ffmpeg produced and the model then refused was never seen, and
+    counting it as covered is the same partial-read-as-complete-answer one
+    level in.
+
+    A refused window becomes a VISIBLE gap rather than a silent omission, and
+    the marker is checked structurally by the caller rather than by searching
+    the rendered text for a phrase — a real description containing the words
+    "could not be read" would otherwise be miscounted as a failure.
+    """
+    segments: list[str] = []
+    read: list[VideoWindow] = []
+    for window in cut.windows:
+        result = await ask(window.data)
+        stamp = _timecode(window.start_seconds)
+        if not result.available or not result.description.strip():
+            segments.append(f"[{stamp}] {_UNREAD_MARKER}")
+            continue
+        segments.append(f"[{stamp}] {result.description.strip()}")
+        read.append(window)
+    return tuple(segments), tuple(read)
+
+
+def describe_coverage(*, cut: VideoCut, read: tuple[VideoWindow, ...]) -> str:
+    """The sentence a partial video read has to carry, or `""` when whole.
+
+    Measured against what a MODEL actually described, not against what ffmpeg
+    produced: `VideoCut.note()` cannot know that ten clean windows came back
+    with nine model refusals, and a read that only says «the ceiling did not
+    bind» is exactly the confident partial answer this pair of issues is about.
+    """
+    seen = sum(w.seconds for w in read)
+    if seen + 1.0 >= cut.covered_seconds:
+        # Nothing was lost at the MODEL; whatever the cut itself has to admit
+        # is the whole of it.
+        return cut.note()
+    if cut.duration_seconds is None:
+        return (
+            "(I could not tell how long this clip is, and some of what I did "
+            "open would not read, so there are parts of it I have not seen.)"
+        )
+    missing = max(0.0, cut.duration_seconds - seen)
+    return (
+        f"(About {max(1, round(missing / 60))} minutes of this "
+        f"{round(cut.duration_seconds / 60)}-minute clip I could not watch, so "
+        f"there are parts of it I have not seen.)"
+    )
+
+
+def comprehension_provenance(
+    *, cut: VideoCut | None, read: tuple[VideoWindow, ...] = (),
+) -> dict[str, Any]:
     """What a chunked video read leaves in `media_objects.provenance`.
 
     `{}` for anything that is not a bounded video read, so an image's
-    provenance gains nothing and the birth record stays what it was. For a
-    video it records the three numbers a later reader needs to know whether to
-    read again: how long the clip is, how much of it reached a model, and
-    whether the chunk ceiling is why the rest did not.
+    provenance gains nothing and the birth record stays what it was.
+
+    `video_covered_seconds` and `video_complete` are computed from `read` — the
+    windows a MODEL described — not from the cut. Ten clean windows with nine
+    model refusals used to record `video_complete: True` and full coverage
+    beside nine gap markers in the content, so an operator reading provenance
+    to decide whether to re-read got a false «whole clip covered». The cut's
+    own numbers are kept beside them (`video_windows_cut`) because the two
+    differing is itself the signal.
     """
     if cut is None:
         return {}
+    seen = sum(w.seconds for w in read)
     return {
         "video_duration_seconds": cut.duration_seconds,
-        "video_covered_seconds": round(cut.covered_seconds, 3),
-        "video_chunks": len(cut.chunks),
+        "video_covered_seconds": round(seen, 3),
+        "video_windows_cut": len(cut.windows),
+        "video_windows_read": len(read),
         "video_capped": cut.capped,
-        "video_complete": cut.complete,
+        "video_complete": (
+            not cut.capped
+            and cut.duration_seconds is not None
+            and seen + 1.0 >= cut.duration_seconds
+        ),
     }

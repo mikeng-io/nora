@@ -787,10 +787,26 @@ class FakeMediaObjectStore:
         return sorted(rows, key=lambda o: o.created_at_ms, reverse=True)
 
     async def save(self, *, obj: MediaObject) -> bool:
+        """First-source-wins, EXCEPT that it repairs a comprehension shell —
+        the row `comprehend` inserts when a spawned read beats the inline
+        custody write (`media_type=""`, `created_at_ms=0`). Mirrors the SQL
+        store's `where` clause exactly: the comprehension FIELDS are never
+        rolled back by custody catching up, and a real row is untouched."""
         if self.fail:
             return False
         self.saved.append(obj)
-        self.objs.setdefault(obj.sha256, obj)
+        row = self.objs.get(obj.sha256)
+        if row is None:
+            self.objs[obj.sha256] = obj
+            return True
+        if row.media_type == "" and row.created_at_ms == 0:
+            merged = dict(row.provenance or {})
+            merged.update(obj.provenance or {})
+            self.objs[obj.sha256] = replace(
+                obj, title=row.title, description=row.description,
+                content=row.content, describe_model=row.describe_model,
+                provenance=merged,
+            )
         return True
 
     async def comprehend(

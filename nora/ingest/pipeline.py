@@ -180,9 +180,12 @@ class IngestPipeline:
         `comprehension` is `[media] comprehension`'s wiring state and the
         SPAWNED read (issue #116): `None` — the inert default, and every
         offline/eval composition — leaves every attachment with a bare handle
-        and nothing read, exactly as before the job existed. Present, each held
-        blob gets one model pass whose three fields land in `media_objects` and
-        in Honcho, off this path.
+        and nothing MODEL-READ. It does NOT silence the voice-note lane: the
+        custody stage writes an STT transcript to `media_objects.content`
+        itself, inline, because those words were captured synchronously and
+        holding them behind a job that may not exist discarded them outright.
+        Present, each held blob additionally gets one model pass whose three
+        fields land in `media_objects` and in Honcho, off this path.
 
         `transcriber` is `[speech.stt]`'s wiring state, the same shape as
         `stickers`: `None` (deployment default) records a voice note with a

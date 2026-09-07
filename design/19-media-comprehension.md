@@ -161,6 +161,15 @@ the screen does not catch is unchanged and stated where it always was
 (`_serve_media`'s docstring): a bare local number passes, which is R-18's
 standing blind spot rather than a solved case.
 
+**Honcho is screened at the FEED, and that is not a contradiction.** The
+paragraph above is true of the transcript and false of memory: before this
+change the same text rode in `message.body`, which the custody stage screened
+before `memory_feed` forwarded it, and the fork has two consumers — only one of
+which renders. A comprehension written unscreened into a peer is worse than one
+written into a transcript, because nothing re-screens a peer card at render. So
+`nora/ingest/comprehension.py::_feed` runs the same screen before it feeds, and
+a hit costs the detail and keeps the marker, exactly as the render join does.
+
 **The join belongs in the assembler, not in the renderer.** `nora/agent/
 prefill.py` is a pure function of the `TagContext` it is handed; giving it a
 store would make one prompt's text depend on a database read taken at render
@@ -183,11 +192,23 @@ with the same property is one entry rather than a second branch.
 
 **Audio.** A voice note's `content` is already in hand: `nora/infra/speech.py`
 (SenseVoice, on the local `stt` service) transcribes it INLINE at ingest, and
-that stays inline. The title and description come from a cheap TEXT pass over
-those words — never a second listen, which would spend a larger call to learn
-what Nora already knows. A failed text pass stores the transcript with no title:
-the words are evidence, the title is a convenience. Non-voice audio
-(`[media.describe.audio] enabled = false`) stays inert.
+that stays inline. **So does the WRITE.** The custody stage puts the transcript
+on the row itself, without waiting for any model — the words were captured
+synchronously, and holding them behind a spawned task meant two things, both
+wrong: with `[media] comprehension = false` the job does not exist and the words
+were discarded outright (STT ran and its output went nowhere), and with it on,
+somebody asking 「佢講咩」 two seconds later saw a bare handle because the words
+were queued behind a title. The comprehension pass adds title and description
+afterwards over the same row, passing the identical `content` through, so the
+two writers cannot disagree about the words; the job's already-read gate asks
+whether the TEXT PASS has run for a content label rather than whether the row is
+non-empty, or the inline write would lock the title out forever.
+
+The title and description come from a cheap TEXT pass — never a second listen,
+which would spend a larger call to learn what Nora already knows. A failed text
+pass leaves the transcript with no title: the words are evidence, the title is a
+convenience. Non-voice audio (`[media.describe.audio] enabled = false`) stays
+inert.
 
 **Video (issue #117).** `VIDEO_MAX_SECONDS = 120` cut every clip before the
 model saw it, with no metric, no log line, and nothing in the answer admitting
@@ -214,13 +235,40 @@ is R-5's shape exactly.
   says so rather than inventing a number.
 * One refused window is a **visible gap** in the timecoded run, not a refused
   read — failing the whole thing over one bad window would throw away fourteen
-  good minutes.
+  good minutes. Two different things can refuse a window and BOTH are said:
+  ffmpeg failing to cut it (the window never exists, `covered_seconds` shrinks,
+  and `VideoCut.note()` says so because it keys on `complete` rather than on
+  `capped`) and the MODEL failing to read one it did cut (the gap marker is
+  rendered in `content`, and `describe_coverage` measures the sentence against
+  the windows a model actually described rather than against what ffmpeg
+  produced).
+* **A window carries its own start time.** `VideoWindow.start_seconds` is what
+  the timecode is rendered from, never the position in the list: a dropped
+  window would otherwise shift every later label, and a 6-minute clip losing
+  its 1:30 window rendered the 3:00 content as `[1:30]` — Nora saying «at 1:30
+  he does X» about something at 3:00.
+* **`media_fetch` reads a clip the same way.** The deliberate look and the
+  automatic one share `read_video_windows`, because the first cut of this fixed
+  the ingest path and left `media_fetch` on the old 120-second single view —
+  the surface she reaches for when she CHOOSES to look was still answering
+  about the first two minutes of a ten-minute clip as though it had seen all of
+  it.
 
 `provenance` MERGES on a comprehension write (`jsonb ||`) rather than being
 replaced: what a READ leaves behind is a fact about the reading, and a generated
 image's prompt/provider/aspect_ratio is a fact about its birth. Both have to
 coexist on one row, and DEC-138's «the birth record is never overwritten» still
-holds for every key the read does not own.
+holds for every key the read does not own. It **travels on the result**
+(`MediaDescription.provenance`) rather than being stashed on the adapter: the
+comprehension job spawns one task per subject, so a message carrying a video and
+a photo runs two `describe` calls concurrently on one shared `MediaComprehender`
+— stashed state had the still's reset racing the video's chunk loop, and
+single-flight is per-sha256, not per-instance.
+
+`video_covered_seconds` and `video_complete` are computed from the windows a
+MODEL described, not from the cut: ten clean windows with nine model refusals
+would otherwise record «whole clip covered» beside nine gap markers in the
+content, which is the same partial-read-as-complete-answer one level in.
 
 ## 7. `media_fetch`, in two layers
 
@@ -260,6 +308,8 @@ including this one.
 | `nora_media_comprehension_seconds` | one read's latency — the model call for a still, the whole chunk run for a video. Cache hits never reach it, so the dedup cannot dilute what it says about a describer. |
 | `nora_sticker_descriptions_total{platform,status,level}` | now the identity ladder's CUSTODY hit rate. `status=ok` means the bytes are held; `level` is identity/content/none. |
 | `nora_errors_total{stage="media_join"}` | the render join could not read the index. The transcript degrades to bare handles, which is what the row actually says. |
+| `nora_media_join_seconds` / `nora_media_blobs_joined` | the join's COST, on the critical path of every tagged turn. §10 names the join as what would reopen this decision, and a reopening condition nothing can read is a hope rather than a condition. Observed only on turns whose window actually had media in it. |
+| `nora_egress_blocks_total{kind}` | an identifier in a comprehension, blocked — at the render join AND at the Honcho feed. |
 
 A cache hit is deliberately **not** counted `ok`: nothing was comprehended on
 that pass, and counting it would make the ok rate say the describer is working
@@ -280,6 +330,12 @@ root would hold that trace open for as long as a video read takes.
 | a voice note keeps its words | `tests/unit/test_engagement_context.py::test_a_voice_note_renders_its_whole_transcript_and_is_never_clipped`, `tests/unit/test_media_comprehension.py::test_a_voice_note_keeps_its_words_even_when_the_summary_fails` |
 | layer 2 writes nothing | `tests/test_media_fetch.py::test_layer_2_writes_nothing_to_either_cache_tier`, with a positive control showing the cache IS written on the no-question path |
 | the video cap is said, not just done | `tests/unit/test_vision_preprocess.py::test_the_cap_binding_is_recorded_and_said`, `tests/unit/test_media_comprehender.py::test_a_capped_video_says_so_in_the_description_and_in_provenance` |
+| a read shortened by a REFUSED window is also said | `tests/unit/test_vision_preprocess.py::test_a_read_shortened_by_a_refused_window_says_so_too`, `tests/unit/test_media_comprehender.py::test_a_model_refusal_shortens_what_the_read_may_claim` |
+| a timecode names the window it came from | `tests/unit/test_media_comprehender.py::test_a_dropped_window_does_not_shift_its_neighbours_timecodes` |
+| the deliberate look chunks too | `tests/test_media_fetch.py::test_media_fetch_reads_a_clip_in_windows_and_admits_what_it_missed` |
+| a comprehension carrying an identifier never reaches Honcho | `tests/unit/test_media_comprehension.py::test_an_identifier_in_a_comprehension_never_reaches_memory` |
+| a voice note's words survive with the read switched off | `tests/unit/test_media_custody.py::test_a_voice_notes_words_are_recorded_even_with_no_comprehension_wired` |
+| the read runs off its own trace root | `tests/unit/test_media_comprehension.py::test_the_read_opens_its_own_root_rather_than_hanging_off_the_ingest_trace` |
 
 **Not verified, and stated rather than glossed.** Nothing here has run against a
 live gateway on this branch: the describers' actual JSON compliance, the real
@@ -294,9 +350,10 @@ call.
 
 * **The render join costs a measurable amount of prefill latency.** It is one
   `get` per distinct blob in the window, bounded by `context_window` rows, taken
-  after the existing `gather`. If a real window makes that visible in
-  `nora_tag_latency_seconds`, the answer is a single batched read on the port,
-  not moving the join back into the body.
+  after the existing `gather`, and `nora_media_join_seconds` /
+  `nora_media_blobs_joined` are what make that readable rather than arguable. If
+  it becomes visible in `nora_tag_latency_seconds`, the answer is a single
+  batched read on the port, not moving the join back into the body.
 * **`comprehension_render_chars` is the wrong number.** 240 is a guess against
   no measurement of what a title+description actually costs on a real window.
 * **A describer that will not answer in JSON at all.** The fail-soft parse

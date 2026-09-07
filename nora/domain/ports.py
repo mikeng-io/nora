@@ -951,6 +951,23 @@ class MediaDescription:
     # existing construction site) stays valid and simply comprehends less.
     title: str = ""
     content: str = ""
+    # What the READ itself left worth recording — for a chunked video (issue
+    # #117): how long the clip was, how much of it actually reached a model,
+    # and whether the ceiling is why the rest did not. The caller merges it
+    # into `media_objects.provenance` beside the birth record.
+    #
+    # **RETURNED, not stashed on the adapter.** The first cut kept it as
+    # `MediaComprehender.last_provenance` on the grounds that a video-only
+    # field in the domain would be a shape only one adapter can fill. That was
+    # wrong twice over: it is not video-only in principle (it is «what this
+    # read did»), and the comprehension job spawns ONE TASK PER SUBJECT, so a
+    # message carrying a video and a photo runs two `describe` calls
+    # concurrently on one adapter — the still's reset raced the video's
+    # chunk loop and the chunk record, the RECORDED half of DEC-161, was lost
+    # or landed on the wrong row. Single-flight is per-sha256, not
+    # per-instance, so it never established the safety the comment claimed.
+    # A value that travels with its result cannot race.
+    provenance: dict[str, object] | None = None
 
 
 @runtime_checkable
