@@ -116,6 +116,7 @@ class _FakeAdapter:
         self, *, target: ConversationTarget, text: str,
         mentions: tuple = (), styles: tuple = (), preview: object | None = None,
         attachments: tuple = (),
+        quote: object | None = None,
     ) -> SendResult:
         self.sent.append((target, text))
         self.sent_mentions.append(tuple(mentions))

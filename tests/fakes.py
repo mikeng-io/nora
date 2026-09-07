@@ -49,6 +49,7 @@ class SinkSender:
         self, target: ConversationTarget, text: str,
         mentions: tuple = (), styles: tuple = (), preview: object | None = None,
         attachments: tuple = (),
+        quote: object | None = None,
     ) -> SendResult:
         """Accepts (and records) the port's decoration parameters.
 

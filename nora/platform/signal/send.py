@@ -84,7 +84,14 @@ import os
 import aiohttp
 
 from ...domain.models import ConversationTarget
-from ...domain.ports import LinkPreview, Mention, OutboundAttachment, SendResult, TextStyle
+from ...domain.ports import (
+    LinkPreview,
+    Mention,
+    OutboundAttachment,
+    OutboundQuote,
+    SendResult,
+    TextStyle,
+)
 from ...domain.utf16 import utf16_len
 
 log = logging.getLogger("nora.signal.send")
@@ -240,6 +247,7 @@ class SignalSender:
         styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
         attachments: tuple[OutboundAttachment, ...] = (),
+        quote: OutboundQuote | None = None,
         request_id: str = "",
     ) -> SendResult:
         if target.conversation_type != "group":
@@ -262,6 +270,16 @@ class SignalSender:
             params["textStyle"] = spans
         if preview is not None:
             params.update(_preview_params(preview))
+        if quote is not None:
+            # `quoteTimestamp` + `quoteAuthor`, and BOTH are required: the
+            # 2026-08-10 live probe of `SendCommand.handleCommand` found the
+            # author check at bytecode offset 464 — a request carrying a
+            # timestamp and no author fails with "Quote author parameter is
+            # missing", which is how that probe read every other key's
+            # validity in the first place. Sending one without the other is a
+            # refused send, not an unthreaded one.
+            params["quoteTimestamp"] = quote.ts
+            params["quoteAuthor"] = quote.author_id
         if attachments:
             params["attachments"] = [
                 f"data:{a.media_type};filename={a.filename};base64,"

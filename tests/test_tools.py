@@ -236,9 +236,17 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
     assert set(
         wiring["tools"]["load_transcript"].tool_spec["inputSchema"]["json"]["properties"]
     ) == {"limit"}
+    # `reply_to` is the one thing DEC-24 permits that looks like what it
+    # forbids. The rule is against a parameter the model must INVENT — a
+    # conversation id it cannot know, a limit nothing downstream honours
+    # better than the window's own size. `reply_to` is the opposite: `#n` is
+    # printed on the transcript line in front of it, the range is closed
+    # (1..N), and an out-of-range value resolves to None and sends unthreaded
+    # rather than reaching some other row. It is `note_handle`'s shape — a
+    # handle the model can READ — not an id it has to produce.
     assert set(
         wiring["tools"]["send_reply"].tool_spec["inputSchema"]["json"]["properties"]
-    ) == {"text"}
+    ) == {"text", "reply_to"}
 
 
 def test_the_send_reply_schema_carries_the_three_reply_defects(wiring):
@@ -292,8 +300,12 @@ def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(w
     turns red before production does.
     """
     for name, supplied, expected in (
+        # `reply_to: None` comes back because it is an OPTIONAL parameter with
+        # a default, so validation fills it in. The property under test is
+        # that the two CONVERSATION keys were dropped, not that the result has
+        # exactly one key.
         ("send_reply", {"conversation_id": "gEVIL", "conversation_type": "group",
-                        "text": "hi"}, {"text": "hi"}),
+                        "text": "hi"}, {"text": "hi", "reply_to": None}),
         ("load_transcript", {"conversation_id": "gEVIL", "limit": 5}, {"limit": 5}),
     ):
         assert wiring["tools"][name]._metadata.validate_input(supplied) == expected

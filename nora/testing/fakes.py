@@ -534,6 +534,7 @@ class FakeAdapter:
         styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
         attachments: tuple[OutboundAttachment, ...] = (),
+        quote: object | None = None,
     ) -> SendResult:
         """Records the send instead of performing it, DECORATION AND ALL.
 

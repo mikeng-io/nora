@@ -59,6 +59,7 @@ class _FakeAdapter:
     async def send(
         self, *, target, text: str, mentions=(), styles=(), preview=None,
         attachments=(),
+        quote: object | None = None,
     ) -> SendResult:
         self.sent.append((target, text))
         return SendResult(ok=True)

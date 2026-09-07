@@ -27,7 +27,7 @@ from ..domain.models import (
     DeliveryStatus,
     NormalizedMessage,
 )
-from ..domain.ports import OutboundAttachment, SendResult, Styled
+from ..domain.ports import OutboundAttachment, OutboundQuote, SendResult, Styled
 from ..obs.metrics import Metrics
 from . import tool_choice
 from .call_ledger import CallLedger
@@ -300,6 +300,7 @@ class Deliverer:
         record_text: str | None = None,
         record_metadata: Mapping[str, Any] | None = None,
         media_blobs: tuple[MediaBlob, ...] = (),
+        quote: OutboundQuote | None = None,
     ) -> bool:
         self._send_calls += 1
         if self.exhausted:                                     # R-2
@@ -495,6 +496,12 @@ class Deliverer:
                 mentions=outbound.mentions, styles=outbound.styles,
                 preview=outbound.preview,
                 attachments=attachments,
+                # Threading rides on the send but is NOT part of what the
+                # guards measured: `outbound` is the screened text, and a
+                # quote points at a row Nora already audited. It carries no
+                # model-supplied string, so there is nothing here for R-6 or
+                # R-18 to scan.
+                quote=quote,
             )
         except Exception:
             log.exception("send raised (tag=%s)", self._tag_id)

@@ -246,6 +246,38 @@ class SendResult:
 
 
 @dataclass(frozen=True)
+class OutboundQuote:
+    """The message an outbound reply is threaded onto — resolved, never
+    model-supplied.
+
+    OUTBOUND, and deliberately not `nora.domain.models.Quote`, which is the
+    inbound shape: that one carries the QUOTING sender's unverified copy of
+    what the parent said and exists so R-20 can refuse to render it. This one
+    is built from a row Nora herself audited, so there is nothing here that a
+    message could have forged.
+
+    Every field is a platform's own handle to that row, because the two
+    platforms address a message differently and neither can be derived from
+    the other:
+
+    * `ts` + `author_id` — Signal's `quoteTimestamp` / `quoteAuthor`. The
+      parent's sent-timestamp is the id there (`dataMessage.quote.id`), which
+      is why `messages.quoted_ts` stores exactly that.
+    * `platform_message_id` — Discord's `message_reference`. `messages` has no
+      column for it; it lives in the row's `raw_json`, and the adapter is the
+      only thing that reads it back out.
+
+    A platform that cannot fill its own field simply sends unthreaded — a
+    reply that lost its thread is still a reply, and R-5's «silence beats a
+    wrong answer» does not reach a decoration.
+    """
+
+    ts: int
+    author_id: str
+    platform_message_id: str | None = None
+
+
+@dataclass(frozen=True)
 class OutboundAttachment:
     """Verified bytes a platform may include with one outbound message."""
 
@@ -635,6 +667,7 @@ class PlatformAdapter(Protocol):
         styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
         attachments: tuple[OutboundAttachment, ...] = (),
+        quote: OutboundQuote | None = None,
     ) -> SendResult: ...
 
     async def react(

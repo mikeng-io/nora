@@ -21,6 +21,7 @@ from ...domain.ports import (
     LinkPreview,
     Mention,
     OutboundAttachment,
+    OutboundQuote,
     PlatformIdentity,
     ReactionResult,
     SendResult,
@@ -83,7 +84,15 @@ class WhatsAppAdapter:
         styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
         attachments: tuple[OutboundAttachment, ...] = (),
+        quote: OutboundQuote | None = None,
     ) -> SendResult:
+        # `quote` is ACCEPTED and dropped: the bridge exposes no reply shape
+        # here yet. Accepted rather than omitted because `PlatformAdapter` is a
+        # structural Protocol — a signature missing the keyword is not a
+        # platform that cannot thread, it is a platform that cannot be an
+        # adapter, and the failure would be a startup type error rather than
+        # an unthreaded message. `OutboundQuote` states the posture this
+        # relies on: a reply that lost its thread is still a reply.
         return await self._sender.send(
             target, text, mentions=mentions, styles=styles, preview=preview,
             attachments=attachments,

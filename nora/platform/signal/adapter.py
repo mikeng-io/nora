@@ -11,6 +11,7 @@ from ...domain.ports import (
     LinkPreview,
     Mention,
     OutboundAttachment,
+    OutboundQuote,
     PlatformIdentity,
     ReactionResult,
     SendResult,
@@ -91,10 +92,11 @@ class SignalAdapter:
         styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
         attachments: tuple[OutboundAttachment, ...] = (),
+        quote: OutboundQuote | None = None,
     ) -> SendResult:
         return await self._sender.send(
             target, text, mentions=mentions, styles=styles, preview=preview,
-            attachments=attachments,
+            attachments=attachments, quote=quote,
         )
 
     async def react(

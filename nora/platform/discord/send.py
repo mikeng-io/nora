@@ -38,7 +38,14 @@ import logging
 import aiohttp
 
 from ...domain.models import ConversationTarget
-from ...domain.ports import LinkPreview, Mention, OutboundAttachment, SendResult, TextStyle
+from ...domain.ports import (
+    LinkPreview,
+    Mention,
+    OutboundAttachment,
+    OutboundQuote,
+    SendResult,
+    TextStyle,
+)
 from .mention_resolve import fetch_named_members, resolve_outbound_mentions
 from .snowflake import timestamp_ms
 
@@ -64,6 +71,7 @@ class DiscordSender:
         styles: tuple[TextStyle, ...] = (),
         preview: LinkPreview | None = None,
         attachments: tuple[OutboundAttachment, ...] = (),
+        quote: OutboundQuote | None = None,
         request_id: str = "",
     ) -> SendResult:
         if target.conversation_type != "group":
@@ -93,10 +101,26 @@ class DiscordSender:
         # them for real. Restricting to exactly the ids this module spliced
         # is what makes a literal "@everyone" in a reply inert instead of a
         # mass ping nobody asked for.
-        message = {
+        message: dict[str, object] = {
             "content": resolved_text,
             "allowed_mentions": {"parse": [], "users": list(allowed_users)},
         }
+        if quote is not None and quote.platform_message_id:
+            # `message_reference` is Discord's reply. `fail_if_not_exists`
+            # FALSE on purpose: the default is true, which turns a reply whose
+            # parent was deleted into a REFUSED send — the whole message lost
+            # for a decoration. False sends it unthreaded instead, which is
+            # this field's own failure posture (`OutboundQuote`: a reply that
+            # lost its thread is still a reply).
+            #
+            # `platform_message_id` is empty for a Signal-shaped quote, and the
+            # guard above is what keeps this key off a payload it cannot fill —
+            # an absent key, never a present and empty one, the same rule the
+            # Signal adapter states for its own decorations.
+            message["message_reference"] = {
+                "message_id": quote.platform_message_id,
+                "fail_if_not_exists": False,
+            }
         try:
             async with aiohttp.ClientSession(timeout=self._timeout) as session:
                 if attachments:

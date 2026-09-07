@@ -100,6 +100,7 @@ from ..domain.ports import (
     MusicToolBridge,
     MusicToolOutcome,
     OutboundAttachment,
+    OutboundQuote,
     Recollection,
 )
 from ..domain.reminders import (
@@ -7358,7 +7359,46 @@ Args:
         )
         return out
 
-    async def send_reply(text: str) -> bool:
+    def _resolve_quote(reply_to: int | None) -> OutboundQuote | None:
+        """`#n` from the rendered transcript -> the row's platform handles.
+
+        A CLOSED SET, which is the whole safety property: only 1..N exist, so
+        an out-of-range or absent value resolves to `None` and the message
+        goes unthreaded — it can never reach for some other row. The model
+        never sees `ts`, `sender_id` or the platform's message id; they stay on
+        this side, which is what keeps a raw identifier off the wire (R-18).
+
+        Positional over `bound_window`, the SAME tuple the prefill rendered
+        (`_transcript_block` numbers it `enumerate(..., 1)`), so the index
+        resolves against what was actually shown rather than a fresh read that
+        may have moved underneath.
+
+        Discord's message id has no column on `messages` and lives in the row's
+        `raw_json`; a row that predates it, or a platform that never had one,
+        simply yields `None` there and the reply goes unthreaded on Discord
+        while still threading on Signal, which needs only `ts` + `sender_id`.
+        """
+        if reply_to is None:
+            return None
+        if not (1 <= reply_to <= len(bound_window)):
+            log.warning(
+                "send_reply(reply_to=%r) is outside the %d rendered lines — "
+                "sending unthreaded", reply_to, len(bound_window),
+            )
+            return None
+        row = bound_window[reply_to - 1]
+        platform_message_id: str | None = None
+        if row.raw_json:
+            try:
+                platform_message_id = str(json.loads(row.raw_json).get("id") or "") or None
+            except (ValueError, TypeError, AttributeError):
+                platform_message_id = None
+        return OutboundQuote(
+            ts=row.ts, author_id=row.sender_id,
+            platform_message_id=platform_message_id,
+        )
+
+    async def send_reply(text: str, reply_to: int | None = None) -> bool:
         """Send a message to the group — the ONLY delivery mechanism for your reply.
         You MUST call this tool exactly once whenever you produce a reply; do not
         return the reply as the assistant's final message instead of calling it
@@ -7408,8 +7448,18 @@ Args:
 
         Args:
             text: One message, in your own voice.
+            reply_to: OPTIONAL. The `#n` of the message you are answering, as
+                it appears in the transcript. Use it when the room has more
+                than one thread open and it would otherwise be unclear which
+                one you picked up. Leave it out when there is only one thing
+                happening — a reply threaded onto the obvious message is
+                clutter. Never guess a number that is not on a line you can
+                see.
         """
-        sent = await deliverer.deliver(_strip_media_markers(text), source="tool")
+        sent = await deliverer.deliver(
+            _strip_media_markers(text), source="tool",
+            quote=_resolve_quote(reply_to),
+        )
         # A LENGTH, never the reply. `Deliverer` already logs the specific
         # reason behind every refusal (R-2 latch, R-4 empty, R-6 leak, R-18
         # egress, audit failure, send failure); this line exists so that the
