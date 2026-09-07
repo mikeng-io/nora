@@ -27,6 +27,7 @@ from nora.ingest.relevance_gate import (
 )
 from nora.obs.metrics import Metrics
 from nora.testing.fakes import FakeRecordStore
+from nora.testing.standing_store import InMemoryStandingStore
 
 
 class _Client:
@@ -118,23 +119,33 @@ class _Records:
         return await self._store.recent(conversation_id=conversation_id, limit=limit)
 
 
-class _StandingStore:
-    def __init__(self, body: str | None = None, fail: bool = False) -> None:
-        self.body = body
-        self.fail = fail
+def _standing(body: str | None = None, fail: bool = False):
+    """The SHARED `InMemoryStandingStore` (R-C, issue #113), not an inline
+    double.
 
-    async def read(self, *, platform: str, conversation_id: str) -> Standing | None:
-        if self.fail:
+    A fake defined in a test module is invisible to that port's contract suite
+    by construction, which is the whole reason the rule exists — and this file
+    has already paid for it once: its hand-rolled `RecordStore` returned rows
+    in whatever order the test handed them, so the ordering test passed against
+    a renderer that read every conversation backwards.
+
+    `fail=True` is the R-27 case the gate must tell apart from "no position":
+    an unreadable store is «I could not check», never «there is none».
+    """
+    store = InMemoryStandingStore()
+    if fail:
+        async def _boom(*, platform: str, conversation_id: str):
             raise RuntimeError("standing down")
-        if self.body is None:
-            return None
-        return Standing(
-            platform=platform, conversation_id=conversation_id,
-            body=self.body, fold_count=1, updated_at=1,
+        store.read = _boom            # type: ignore[method-assign]
+        return store
+    if body is not None:
+        # `_rows` directly: `write` enforces the DB ceiling check and this is a
+        # fixture, not a write under test.
+        store._rows[("discord", "g/1")] = Standing(
+            platform="discord", conversation_id="g/1", body=body,
+            fold_count=1, updated_at=1,
         )
-
-    async def write(self, *, standing: Standing) -> None:  # pragma: no cover
-        raise AssertionError("the gate never writes")
+    return store
 
 
 def _row(
@@ -177,7 +188,7 @@ async def test_the_prompt_is_exactly_the_instruction_plus_the_two_rendered_block
     client = _Client('{"verdict": "go", "relevance_score": 0.7}')
     rows = ["anyone know when re:Invent is?"]
     standing = "They are planning a trip."
-    gate = _gate(client, records=_Records(rows), standing=_StandingStore(standing))
+    gate = _gate(client, records=_Records(rows), standing=_standing(standing))
     await gate.decide(platform="discord", conversation_id="g/1")
 
     expected = build_prompt(
@@ -190,7 +201,7 @@ async def test_the_prompt_holds_exactly_two_untrusted_blocks():
     """The structural half of the same claim: a third injected source would
     have to arrive either inside one of these blocks or as a third one."""
     client = _Client('{"verdict": "no_go", "relevance_score": 0.0}')
-    await _gate(client, standing=_StandingStore("a position")).decide(
+    await _gate(client, standing=_standing("a position")).decide(
         platform="discord", conversation_id="g/1",
     )
     assert client.prompts[0].count('untrusted="true"') == 2
@@ -466,7 +477,7 @@ async def test_a_standing_read_failure_is_counted_and_never_reads_as_no_standing
     none» is `unavailable` wearing `nothing_found`'s face."""
     metrics = Metrics()
     client = _Client('{"verdict": "go", "relevance_score": 0.5}')
-    gate = _gate(client, standing=_StandingStore(fail=True), metrics=metrics)
+    gate = _gate(client, standing=_standing(fail=True), metrics=metrics)
     await gate.decide(platform="discord", conversation_id="g/1")
     assert metrics.get(
         "nora_errors_total", stage="relevance_gate_standing", platform="discord",
