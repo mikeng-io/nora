@@ -174,6 +174,10 @@ class App:
                 deps.audit, deps.language_store,
                 deps.metrics,
                 scopes=deps.language_scopes,
+                # The shared media join (issue #116): every scope-keyed dream
+                # adaptor reads one batch, so joining it once here covers all
+                # of them and none has to hold a media store.
+                media_join=deps.media_join,
                 tick_seconds=self.cfg.dreamer.tick_seconds,
                 safety_lag=self.cfg.dreamer.safety_lag,
                 quiet_seconds=self.cfg.dreamer.quiet_seconds,
@@ -254,7 +258,8 @@ class App:
         deps = self.deps
         await adoption.backfill(
             audit=deps.audit, memory=deps.memory, persons=deps.persons,
-            metrics=deps.metrics, start_delay_seconds=ADOPTION_START_DELAY_SECONDS,
+            metrics=deps.metrics, media_join=deps.media_join,
+            start_delay_seconds=ADOPTION_START_DELAY_SECONDS,
         )
 
     async def _update_last_event_age(self) -> None:

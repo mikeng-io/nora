@@ -800,3 +800,14 @@ async def test_a_failed_transcription_writes_no_content_at_all():
     )
 
     assert store.comprehended == []
+    # POSITIVE CONTROL on the SAME store and the SAME stage call shape: a
+    # stage that wrote nothing at all — or one whose `media_store` was never
+    # reached — would satisfy the assertion above by doing less.
+    await media_stage.run(
+        message=_msg(body="[voice note]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"a1": b"aac"})]),
+        blobs=FakeBlobStore(), media_store=store, metrics=Metrics(),
+        transcriber=FakeTranscriber("喂你今日得唔得閒啊"),
+        comprehension=None,
+    )
+    assert [c[3] for c in store.comprehended] == ["喂你今日得唔得閒啊"]

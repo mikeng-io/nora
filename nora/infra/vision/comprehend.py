@@ -170,7 +170,13 @@ def parse_comprehension(raw: str) -> tuple[str, str, str]:
 # The marker a window nothing could read renders as. A NAMED constant because
 # the caller has to recognise it structurally: searching the rendered content
 # for the phrase miscounts a real description that happens to contain it.
-_UNREAD_MARKER = "(this part could not be read)"
+#
+# NO SQUARE BRACKETS anywhere in a segment, including the timecode.
+# `sanitize_description` strips `[` and `]` — a description may not forge a
+# placeholder — so `[0:00] …` reached the transcript as `0:00 …` and the
+# stored content and the rendered content disagreed about their own shape. A
+# separator that survives the screen is the honest one to write.
+_UNREAD_MARKER = "this part could not be read"
 
 
 def _timecode(seconds: float) -> str:
@@ -234,10 +240,6 @@ class MediaComprehender:
         when nothing more specific applies."""
         return self._models.get("image", "")
 
-    def model_for(self, media_type: str) -> str:
-        top, _ = parse_media_type(media_type)
-        return self._models.get(top, "")
-
     async def describe(
         self, *, data: bytes, media_type: str, label: str = "",
     ) -> MediaDescription:
@@ -288,6 +290,7 @@ class MediaComprehender:
             return MediaDescription(available=False, reason="empty")
         return MediaDescription(
             available=True, title=title, text=description, content=content,
+            model=model,
         )
 
     async def _comprehend_video(
@@ -327,27 +330,37 @@ class MediaComprehender:
             return MediaDescription(available=False, reason="vision")
         content = "\n".join(segments)
         title, description = await self._synthesize(content)
+        provenance = comprehension_provenance(cut=cut, read=read)
         note = describe_coverage(cut=cut, read=read)
         if note:
-            # SAID, not merely recorded. The caller also writes the coverage
-            # into provenance; a fact only in provenance is a fact nobody
-            # reading the answer ever sees, and this issue exists because the
-            # cut was invisible at the point where it mattered.
-            description = f"{description} {note}".strip()
-        if not (title or description):
-            # NO TITLE, NO DESCRIPTION, and this is not a success. It is the
-            # shipped default's own path: `comprehension_text_model = ""` makes
-            # `_synthesize` answer `("", "")`, and returning `available=True`
-            # here wrote a row with three empty-ish fields, counted it `ok`,
-            # set `comprehended`, made the transcript render a bare
-            # `[video …]` forever and every future sighting short-circuit to
-            # `already_read` — a counter saying the describer works over a
-            # capability that silently does not. `_comprehend_still` has
-            # refused this since it was written; the video path did not.
-            return MediaDescription(available=False, reason="no_text_describer")
+            # SAID, not merely recorded — and stored in PROVENANCE rather than
+            # glued onto the description, because a caveat inside the
+            # description is one the transcript's render bound clips off, worst
+            # of all when the description is rich. Every renderer appends it
+            # last, after its own clip. See `MediaObject.caveat`.
+            provenance["media_caveat"] = note
+        # NO GUARD ON AN EMPTY TITLE HERE, deliberately, and this is the
+        # shipped default's own path. `comprehension_text_model = ""` makes
+        # `_synthesize` answer `("", "")` — but the READ still happened: this
+        # `content` is a timecoded run of up to ten video-model calls, which is
+        # the expensive half and exactly what `[media] comprehension_text_model`
+        # documents as surviving without a text pass. Refusing here discarded
+        # all of it and made the next sighting pay again.
+        #
+        # What made the earlier version of that refusal necessary was a
+        # different bug, now fixed at its own level: `media_detail` renders
+        # `content` when there is no headline, so a titleless row reaches the
+        # prompt with its window run instead of rendering bare forever. The
+        # empty-answer case cannot reach this line at all — a read where no
+        # window was described returns `vision` above.
         return MediaDescription(
             available=True, title=title, text=description, content=content,
-            provenance=comprehension_provenance(cut=cut, read=read),
+            provenance=provenance,
+            # The VIDEO model, which is what read the bytes and wrote the
+            # content. The text model only synthesized a headline over its
+            # output; naming that one would credit the cheap pass with the
+            # expensive read.
+            model=model,
         )
 
     async def _synthesize(self, content: str) -> tuple[str, str]:
@@ -386,14 +399,21 @@ class MediaComprehender:
         title, description, _content = parse_comprehension(answer)
         if not (title or description):
             return MediaDescription(available=False, reason="empty")
-        return MediaDescription(available=True, title=title, text=description)
+        # The TEXT model, and this is the case the whole field exists for: a
+        # voice note's title and description are written entirely here, by
+        # `comprehension_text_model`, and a caller deriving the model from the
+        # media type recorded the AUDIO describer — `""` on the shipped config.
+        return MediaDescription(
+            available=True, title=title, text=description,
+            model=self._text_model,
+        )
 
 
 async def read_video_windows(
     *,
     cut: VideoCut,
     media_type: str,
-    ask: Callable[[bytes], Awaitable[VisionResult]],
+    ask: Callable[[bytes], Awaitable[VisionResult | None]],
 ) -> tuple[tuple[str, ...], tuple[VideoWindow, ...]]:
     """Every window through `ask`, timecoded from the WINDOW's own start.
 
@@ -418,10 +438,23 @@ async def read_video_windows(
     for window in cut.windows:
         result = await ask(window.data)
         stamp = _timecode(window.start_seconds)
-        if not result.available or not result.description.strip():
-            segments.append(f"[{stamp}] {_UNREAD_MARKER}")
+        # `result is None` FIRST, and it is not defensive padding. `ask` is a
+        # caller-supplied callable and `media_fetch`'s returns `None` when the
+        # describer raises — its two other branches check for it and this one
+        # did not, so a raising describer on a cuttable clip dereferenced
+        # `None.available` and the AttributeError propagated out of the tool,
+        # past `nora/agent/ports.py`'s `_validated`, into the agent loop. A
+        # tool never raises into the loop (`test_a_tool_never_raises_...`); the
+        # existing pin used a PNG and never entered this branch.
+        #
+        # A window whose describer BLEW UP is exactly a window nothing read, so
+        # it takes the same gap marker as one the model merely refused: the
+        # coverage arithmetic below is computed from `read`, and both belong
+        # outside it.
+        if result is None or not result.available or not result.description.strip():
+            segments.append(f"{stamp} — {_UNREAD_MARKER}")
             continue
-        segments.append(f"[{stamp}] {result.description.strip()}")
+        segments.append(f"{stamp} — {result.description.strip()}")
         read.append(window)
     return tuple(segments), tuple(read)
 

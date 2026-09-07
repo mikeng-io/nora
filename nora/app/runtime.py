@@ -44,6 +44,7 @@ from typing import Any, Protocol
 
 from .. import tag as tag_module
 from ..agent.dreamer import AdaptorSchedule
+from ..domain.media_join import MediaJoin
 from ..domain.models import TranscriptRow
 from ..domain.ports import DreamAdaptor
 from ..obs.metrics import Metrics
@@ -557,6 +558,7 @@ async def _dream_adaptor_once(
     record: _SinceReadable, language: _ConsolidationCursor, metrics: Metrics,
     key: str, safety_lag: int, quiet_seconds: float, max_age_seconds: float,
     batch_limit: int,
+    media_join: MediaJoin | None = None,
     schedules: Mapping[str, AdaptorSchedule] | None = None,
     clock: _ScheduleClock | None = None,
     now_ms: int | None = None,
@@ -711,6 +713,14 @@ async def _dream_adaptor_once(
     batch = await record.since(
         conversation_id=key, after_id=watermark,
         limit=sched.batch_limit if sched is not None else batch_limit)
+    if media_join is not None:
+        # HERE rather than inside each adaptor (issue #116): every scope-keyed
+        # dream adaptor reads this one batch, so joining once covers all of
+        # them and none of them has to hold a media store. `NoteCandidateAdaptor`
+        # renders these rows for a model deciding what the conversation
+        # ARRANGED — a photo it cannot see is exactly the content the issue was
+        # opened about.
+        batch = list(await media_join.enrich(batch))
 
     outcome = await runtime.run(adaptor=adaptor, key=key, batch=batch)
 
@@ -751,6 +761,7 @@ async def dream_loop(
     scopes: Callable[[], Sequence[str]], tick_seconds: float,
     safety_lag: int, quiet_seconds: float, max_age_seconds: float,
     batch_limit: int,
+    media_join: MediaJoin | None = None,
     instructions: _InstructionVersions | None = None,
     adaptors: Sequence[DreamAdaptor] = (),
     runtime: _AdaptorRunner | None = None,
@@ -904,6 +915,7 @@ async def dream_loop(
                 language=language, metrics=metrics, key=key,
                 safety_lag=safety_lag, quiet_seconds=quiet_seconds,
                 max_age_seconds=max_age_seconds, batch_limit=batch_limit,
+                media_join=media_join,
                 schedules=schedules, clock=schedule_clock,
             )
             if status == "unavailable":

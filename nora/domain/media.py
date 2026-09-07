@@ -236,6 +236,25 @@ class MediaObject:
         return self.sha256[:HANDLE_CHARS]
 
     @property
+    def caveat(self) -> str:
+        """The sentence this READ has to carry about what it did NOT see.
+
+        Stored in provenance rather than glued onto `description`, and that is
+        a correctness fix rather than tidiness. Appended to the description it
+        was indistinguishable from it at render time, so the transcript's
+        `comprehension_render_chars` bound clipped it off — and it clipped it
+        precisely when the description was RICH, which is the case where a
+        confident-sounding partial read does the most damage. «This clip runs
+        about 20 minutes and I only watched the first 4» became «(This clip
+        runs a».
+
+        Kept apart, every renderer appends it LAST and after its own clip, so
+        no bound can eat it: the transcript join, `media_fetch`'s stored
+        reading, and the Honcho feed all carry it whole.
+        """
+        return str((self.provenance or {}).get("media_caveat", ""))
+
+    @property
     def comprehended(self) -> bool:
         """Whether anything has actually read these bytes.
 
@@ -455,13 +474,25 @@ def media_detail(
     `render_placeholder` turns back into the bare `[image a3f2c1]` an
     un-comprehended object has always been.
 
+    **`content` is the FALLBACK for any label, not only a voice note's.** A
+    read can legitimately produce content and nothing else — a video read with
+    no `comprehension_text_model` (the shipped default) has a full timecoded
+    window run and no synthesized headline, and a model can answer a still with
+    a transcription and no caption. Without this fallback such a row is
+    `comprehended` (so the job never retries it) and renders BARE forever: the
+    read happened, cost what it cost, and reaches the prompt as nothing. The
+    caller clips it, which is what keeps the fallback from spending a window's
+    worth of tokens on one attachment.
+
     Sanitized by the CALLER, not here: this composes, and the screen
     (`sanitize_description` plus `scan_identifiers`) runs on the composed
-    string at every render, never once at store time.
+    string at every render, never once at store time. The CAVEAT is appended by
+    the caller too, and after the clip — see `MediaObject.caveat`.
     """
     if label in CONTENT_LABELS and content:
         return content
-    return " - ".join(part for part in (title, description) if part)
+    headline = " - ".join(part for part in (title, description) if part)
+    return headline or content
 
 
 # `[<label> <handle>]` for any label this module can produce, with the handle

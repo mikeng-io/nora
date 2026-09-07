@@ -170,6 +170,44 @@ written into a transcript, because nothing re-screens a peer card at render. So
 `nora/ingest/comprehension.py::_feed` runs the same screen before it feeds, and
 a hit costs the detail and keeps the marker, exactly as the render join does.
 
+### Every transcript builder, not just the tag one
+
+**The first cut of this put the join on `TranscriptInjection` and nowhere
+else**, and that was a regression rather than an omission. On master the
+sticker description and the voice-note transcript were baked into
+`messages.body`, so EVERY consumer of a transcript had them. Behind a join one
+consumer performs, five did not:
+
+| builder | what it renders for |
+|---|---|
+| `nora/engagement/context.py` | the tag prompt |
+| `nora/app/fire.py` | reminders, announcements, heartbeat, participation |
+| `nora/engagement/stages/debrief.py` | the tag-path standing fold |
+| `nora/ingest/stages/standing_event.py` | the event-driven fold |
+| `nora/app/runtime.py` | the Dreamer's batch — both scope-keyed adaptors, including the note tier's candidates pass |
+| `nora/language/note_curator.py` | a note's evidence |
+| `nora/app/adoption.py` | lazy adoption's Honcho back-feed |
+
+The note tier is on that list, which is what makes this more than tidiness:
+«ten photos of a meal and the memory holds only the replies» is §0, and the
+note tier is one of the things that builds memory.
+
+`nora.domain.media_join.MediaJoin` is the one implementation. It lives in the
+DOMAIN because `nora/language/` sits two layers below `nora/agent/` in the
+import contract and could never have reached a join beside `scan_identifiers`;
+the screen is INJECTED instead, which puts the class at the bottom of the graph
+where all seven callers can import it. `tests/architecture/
+test_media_join_reaches_every_transcript.py` is the gate — a static read that
+every builder imports it and calls `enrich`, with each builder's own store read
+as the positive control that it is still a builder at all.
+
+**Scoped by `media_json`, never by the body.** A handle is six hex characters
+and a body is sender-supplied, so resolving `[image a3f2c1]` out of prose would
+let a member type another room's handle and have its description rendered here.
+`media_json` is written by custody from bytes Nora held for THAT row.
+`UnattributedRow` gained the column for exactly this — without it, adoption
+could not join safely at all.
+
 **The join belongs in the assembler, not in the renderer.** `nora/agent/
 prefill.py` is a pure function of the `TagContext` it is handed; giving it a
 store would make one prompt's text depend on a database read taken at render
@@ -223,9 +261,25 @@ is R-5's shape exactly.
   provider, no frame extraction of our own (the provider samples frames
   internally), and `-an` stays, so the chunks are silent: audio extraction plus
   STT was proposed and rejected as scope.
-* `content` is the chunk outputs **in order, timecoded**. `title`/`description`
-  are one cheap TEXT pass over them — not a second pass through the video, which
-  would double the cost of the read for a few words.
+* `content` is the chunk outputs **in order, timecoded** — `0:00 — …`, with no
+  square brackets anywhere, because `sanitize_description` strips `[` and `]`
+  (a description may not forge a placeholder) and a stored shape the renderer
+  silently rewrites is two shapes. `title`/`description` are one cheap TEXT
+  pass over them — not a second pass through the video, which would double the
+  cost of the read for a few words. **With no text model configured the read
+  still stands**: `content` is the expensive half, and `media_detail` falls
+  back to it when there is no headline, so a titleless row reaches the prompt
+  with its window run instead of rendering bare while `comprehended` stops the
+  job retrying it.
+* **The caveat is its own field**, in `provenance["media_caveat"]`, not glued
+  onto the description. Appended to it, the transcript's
+  `comprehension_render_chars` bound clipped it off — worst of all when the
+  description was rich, which is exactly when a confident partial read does the
+  most damage. Every renderer appends it LAST, after its own clip. It is also
+  the one thing `media_fetch` does NOT write to the vision cache: the cache is
+  keyed on the sha256, and a caveat is a function of (bytes, chunk geometry),
+  so raising `chunk_max` would otherwise serve a stale «I have not seen the
+  rest» forever.
 * **The fix is not «never truncate» but «never truncate silently».** `chunk_max`
   is a real ceiling (10 × 90 s = 15 minutes read in full, both configurable
   under `[media.describe.video]`), and when it binds, the clip's length, how
@@ -307,9 +361,17 @@ including this one.
 | `nora_media_comprehension_total{platform,label,status,reason}` | R-27's three states. `ok` = a comprehension was written. `nothing_found` = a real, final answer ABOUT the bytes: `unreadable` (a PDF, a lottie) or `already_read` (this sha256 was read before). `unavailable` = every wiring gap and every failure — `no_<top>_describer`, `blob`, `vision`, `timeout`, `empty`, `ffmpeg`, `error`. |
 | `nora_media_comprehension_seconds` | one read's latency — the model call for a still, the whole chunk run for a video. Cache hits never reach it, so the dedup cannot dilute what it says about a describer. |
 | `nora_sticker_descriptions_total{platform,status,level}` | now the identity ladder's CUSTODY hit rate. `status=ok` means the bytes are held; `level` is identity/content/none. |
-| `nora_errors_total{stage="media_join"}` | the render join could not read the index. The transcript degrades to bare handles, which is what the row actually says. |
-| `nora_media_join_seconds` / `nora_media_blobs_joined` | the join's COST, on the critical path of every tagged turn. §10 names the join as what would reopen this decision, and a reopening condition nothing can read is a hope rather than a condition. Observed only on turns whose window actually had media in it. |
+| `nora_media_join_seconds` / `nora_media_blobs_joined` | the join's COST, now on SIX paths rather than one. §10 names the join as what would reopen this decision, and a reopening condition nothing can read is a hope rather than a condition. Observed only when the join actually ran, so a window with no media never dilutes it. |
 | `nora_egress_blocks_total{kind}` | an identifier in a comprehension, blocked — at the render join AND at the Honcho feed. |
+
+**There is no `nora_errors_total{stage="media_join"}`, deliberately.** An
+earlier cut declared one and wrapped the store read to increment it — but
+`MediaObjectStore.get` catches everything and answers `None`, which its
+contract suite pins for both implementations, so that label could never be
+reached: a series genuinely always zero, which CLAUDE.md names as a lie. The
+join still catches (a fake or a future implementation could break the port's
+promise, and this runs on a reply's critical path), and it degrades to the
+bare handles; it does not claim to have measured something it cannot.
 
 A cache hit is deliberately **not** counted `ok`: nothing was comprehended on
 that pass, and counting it would make the ok rate say the describer is working
@@ -329,6 +391,10 @@ root would hold that trace open for as long as a video read takes.
 | custody's row and the read's row are the same row, in either order | `tests/contract/test_media_object_store_contract.py::test_a_comprehension_that_beats_custody_creates_the_row` |
 | a voice note keeps its words | `tests/unit/test_engagement_context.py::test_a_voice_note_renders_its_whole_transcript_and_is_never_clipped`, `tests/unit/test_media_comprehension.py::test_a_voice_note_keeps_its_words_even_when_the_summary_fails` |
 | layer 2 writes nothing | `tests/test_media_fetch.py::test_layer_2_writes_nothing_to_either_cache_tier`, with a positive control showing the cache IS written on the no-question path |
+| every transcript builder joins, not just the tag one | `tests/architecture/test_media_join_reaches_every_transcript.py` |
+| the join screens, clips, and never clips the caveat | `tests/unit/test_media_join.py` |
+| a handle a sender TYPED never resolves | `tests/unit/test_media_join.py::test_a_handle_a_sender_typed_is_never_resolved` |
+| layer 2's authored frame is actually there | `tests/test_media_fetch.py::test_layer_2_wraps_the_question_in_the_authored_frame` (probed: `prompt = question` turns it red) |
 | the video cap is said, not just done | `tests/unit/test_vision_preprocess.py::test_the_cap_binding_is_recorded_and_said`, `tests/unit/test_media_comprehender.py::test_a_capped_video_says_so_in_the_description_and_in_provenance` |
 | a read shortened by a REFUSED window is also said | `tests/unit/test_vision_preprocess.py::test_a_read_shortened_by_a_refused_window_says_so_too`, `tests/unit/test_media_comprehender.py::test_a_model_refusal_shortens_what_the_read_may_claim` |
 | a timecode names the window it came from | `tests/unit/test_media_comprehender.py::test_a_dropped_window_does_not_shift_its_neighbours_timecodes` |

@@ -129,9 +129,14 @@ async def run(
     a join instead of by a bake.
 
     `comprehension` is the SPAWNED read. `None` is the inert-by-config state
-    (`[media] comprehension = false`, or no vision wired) and behaves exactly
-    like the deployment before it existed: handles in the body, nothing read,
-    nothing claimed. `person` rides along only so a comprehension can be fed to
+    (`[media] comprehension = false`, or no vision wired): no MODEL reads any
+    medium, and every attachment keeps its bare handle. It is not «exactly the
+    deployment before this existed», and saying so was wrong in one specific
+    way this module is responsible for — a voice note's transcript is written
+    to `media_objects.content` below regardless, because STT already ran on
+    this awaited path and its words are conversation content that needs no
+    model. What the off state does cost is memory: with no job, nothing feeds
+    those words to Honcho. `person` rides along only so a comprehension can be fed to
     Honcho under the sender's own peer (D6, mapped senders only) — this stage
     never resolves identity and never reads it for anything else.
     """

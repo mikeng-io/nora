@@ -142,6 +142,7 @@ from nora.agent.dream_screen import screen
 from nora.agent.egress import scan_identifiers
 from nora.agent.security import looks_like_coordinate
 from nora.agent.tools import note_handle
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import NoteCreationProposal
 from nora.domain.ports import (
@@ -548,6 +549,13 @@ class Wiring:
     timeout_seconds: float
     store_timeout_seconds: float
     rebuild_after_folds: int
+    # The shared media join (issue #116). The fold renders these rows for a
+    # model, so it needs the same answer to «what did that photo show» that
+    # the reply path gets — on master the description rode in `messages.body`
+    # and every consumer had it. `None` is the inert state and renders the
+    # bare handles the row actually carries. LAST, because a defaulted field
+    # cannot precede the ones above it.
+    media_join: MediaJoin | None = None
 
 
 #: How many notes one fold may raise. The objective asks for at most two and
@@ -889,6 +897,7 @@ async def run(
     store_timeout_seconds: float,
     rebuild_after_folds: int,
     now_ms: int,
+    media_join: MediaJoin | None = None,
     notes_read: frozenset[str] = frozenset(),
     tz: tzinfo | None = None,
 ) -> None:
@@ -962,6 +971,27 @@ async def run(
             )
             outcome = "unavailable"
             return
+        if media_join is not None:
+            # BOUNDED like every other store call the fold makes, and counted
+            # in `STORE_CALLS_PER_FOLD`: this is a real read of
+            # `media_objects` on a slot-held path, and a hold whose declared
+            # ceiling omits one of its awaits is the arithmetic the validator
+            # exists to catch (it caught this one the moment it was written).
+            #
+            # Its failure is NOT the read's failure, though, so it is outside
+            # the `try` above: `enrich` degrades to the unmodified rows, and
+            # folding it into that `except` would report `unavailable` — a fold
+            # that did not happen — when what happened is a fold with thinner
+            # evidence.
+            try:
+                batch = await asyncio.wait_for(
+                    media_join.enrich(batch), timeout=store_timeout_seconds,
+                )
+            except Exception:
+                log.exception(
+                    "debrief: media join failed (tag=%s); folding on the bare "
+                    "handles", trace.tag_id,
+                )
 
         # S2's TRIGGER. Two conditions, and the ORDER of the check is the
         # measurement: when both hold, this is an `ungrounded` re-derivation,

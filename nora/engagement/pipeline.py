@@ -523,6 +523,7 @@ class EngagementPipeline:
                 metrics=self._metrics,
                 display_name=self._display_name,
                 record_store=wiring.record_store,
+                media_join=wiring.media_join,
                 max_chars=wiring.max_chars,
                 fold_batch=wiring.fold_batch,
                 timeout_seconds=wiring.timeout_seconds,

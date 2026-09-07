@@ -5,7 +5,9 @@ import re
 import subprocess
 from pathlib import Path
 
+from nora.agent.egress import scan_identifiers
 from nora.domain.media import MediaBlob, MediaObject, MediaRef
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
     NormalizedMessage,
     PersonRef,
@@ -1003,7 +1005,13 @@ async def test_r90_the_body_carries_the_handle_and_the_render_carries_the_readin
     )])
     assembler = TranscriptInjection(
         audit=audit, memory=FakeMemoryStore(), persons=_R90_PERSONS,
-        context_window=10, metrics=Metrics(), media_objects=media,
+        context_window=10, metrics=Metrics(),
+        # The SHARED join, with the REAL screen — the same object every other
+        # transcript builder is handed (`tests/architecture/
+        # test_media_join_reaches_every_transcript.py` is what makes «every»
+        # true).
+        media_join=MediaJoin(
+            store=media, screen=scan_identifiers, metrics=Metrics()),
     )
 
     ctx = await assembler.assemble(request=EngagementRequest(

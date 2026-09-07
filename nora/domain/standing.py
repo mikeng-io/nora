@@ -76,9 +76,17 @@ DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 #: is where a number two packages must agree on belongs.
 #:
 #: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
-#: `asyncio.wait_for` calls in the stage and asserts they match, so adding a
-#: seventh fails a test instead of silently widening the hold.
-STANDING_STORE_CALLS_PER_FOLD = 6
+#: `asyncio.wait_for` calls in the stage and asserts they match, so adding an
+#: eighth fails a test instead of silently widening the hold.
+#:
+#: 6 -> 7 on 2026-09-08: the media join (issue #116). The fold renders these
+#: rows for a model, so it reads `media_objects` for whatever the
+#: comprehension pass made of each attachment — a real store call on a
+#: slot-held path, bounded by the same `store_timeout_seconds` as its six
+#: siblings. The gate caught it the moment the call was written, which is what
+#: it is for; the number was understated by 2x once before because nobody
+#: updated it by hand.
+STANDING_STORE_CALLS_PER_FOLD = 7
 
 
 @dataclass(frozen=True, slots=True)

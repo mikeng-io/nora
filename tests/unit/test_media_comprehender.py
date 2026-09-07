@@ -95,7 +95,7 @@ async def test_a_videos_content_is_its_chunk_outputs_in_order_timecoded():
     ).describe(data=b"video-bytes", media_type="video/mp4")
 
     assert got.available is True
-    assert got.content == "[0:00] segment 1\n[1:30] segment 2\n[3:00] segment 3"
+    assert got.content == "0:00 — segment 1\n1:30 — segment 2\n3:00 — segment 3"
     assert len(client.calls) == 3, "one describer call per window"
     assert client.calls == [b"chunk@0", b"chunk@90", b"chunk@180"]
 
@@ -116,9 +116,9 @@ async def test_a_dropped_window_does_not_shift_its_neighbours_timecodes():
     ).describe(data=b"video-bytes", media_type="video/mp4")
 
     assert got.content == (
-        "[0:00] segment 1\n[3:00] segment 2\n[4:30] segment 3"
+        "0:00 — segment 1\n3:00 — segment 2\n4:30 — segment 3"
     )
-    assert "[1:30]" not in got.content
+    assert "1:30 —" not in got.content
 
 
 async def test_a_videos_title_and_description_are_a_text_pass_over_the_chunks():
@@ -148,6 +148,7 @@ async def test_a_whole_read_adds_no_caveat():
     assert got.text == "cars going round a track"
     assert got.provenance is not None
     assert got.provenance["video_complete"] is True
+    assert "media_caveat" not in got.provenance
 
 
 async def test_a_capped_video_says_so_in_the_description_and_in_provenance():
@@ -163,11 +164,17 @@ async def test_a_capped_video_says_so_in_the_description_and_in_provenance():
         max_chunks=3,
     ).describe(data=b"video-bytes", media_type="video/mp4")
 
-    assert "have not seen the rest" in got.text
+    assert "have not seen the rest" in got.provenance["media_caveat"]
     assert got.provenance is not None
     assert got.provenance["video_capped"] is True
     assert got.provenance["video_complete"] is False
     assert got.provenance["video_duration_seconds"] == 1200.0
+    # NOT inside the description. It used to be appended there, where the
+    # transcript's `comprehension_render_chars` bound clipped it off — worst of
+    # all when the description was rich, which is the case a confident-sounding
+    # partial read does the most damage in. Kept apart, every renderer appends
+    # it last and after its own clip.
+    assert "have not seen" not in got.text
 
 
 async def test_a_read_shortened_by_a_refused_window_says_so_too():
@@ -185,8 +192,8 @@ async def test_a_read_shortened_by_a_refused_window_says_so_too():
     ).describe(data=b"video-bytes", media_type="video/mp4")
 
     assert got.available is True
-    assert "have not seen" in got.text
     assert got.provenance is not None
+    assert "have not seen" in got.provenance["media_caveat"]
     assert got.provenance["video_capped"] is False, "the ceiling did not bind"
     assert got.provenance["video_complete"] is False
 
@@ -205,8 +212,8 @@ async def test_a_model_refusal_shortens_what_the_read_may_claim():
     ).describe(data=b"video-bytes", media_type="video/mp4")
 
     assert got.available is True
-    assert "could not watch" in got.text
     assert got.provenance is not None
+    assert "could not watch" in got.provenance["media_caveat"]
     assert got.provenance["video_windows_cut"] == 3
     assert got.provenance["video_windows_read"] == 1
     assert got.provenance["video_covered_seconds"] == 90.0
@@ -229,7 +236,7 @@ async def test_a_real_description_containing_the_gap_words_is_not_miscounted():
     assert got.provenance is not None
     assert got.provenance["video_windows_read"] == 2
     assert got.provenance["video_complete"] is True
-    assert got.text == "cars going round a track", "no caveat on a whole read"
+    assert "media_caveat" not in got.provenance, "no caveat on a whole read"
 
 
 async def test_an_unmeasurable_clip_admits_it_does_not_know():
@@ -242,8 +249,8 @@ async def test_an_unmeasurable_clip_admits_it_does_not_know():
         client, cut=_cut(starts=[0.0], duration=None),
     ).describe(data=b"video-bytes", media_type="video/mp4")
 
-    assert "may not have watched all of it" in got.text
     assert got.provenance is not None
+    assert "may not have watched all of it" in got.provenance["media_caveat"]
     assert got.provenance["video_complete"] is False
     assert got.provenance["video_capped"] is False
 
@@ -259,7 +266,7 @@ async def test_a_window_that_could_not_be_read_is_a_visible_gap():
     ).describe(data=b"video-bytes", media_type="video/mp4")
 
     assert got.available is True
-    assert "[1:30] (this part could not be read)" in got.content
+    assert "1:30 — this part could not be read" in got.content
     assert "opening lap" in got.content and "the finish" in got.content
 
 
@@ -292,14 +299,19 @@ async def test_ffmpeg_producing_no_windows_at_all_is_unavailable():
     assert client.calls == []
 
 
-async def test_a_video_with_no_text_model_is_a_wiring_gap_not_a_read():
-    """**The shipped default's own path.** `comprehension_text_model = ""`
-    makes the synthesis answer `("", "")`, and returning `available=True` there
-    wrote a row with an empty title and an empty description, counted it `ok`,
-    set `comprehended`, made the transcript render a bare `[video …]` forever
-    and every future sighting short-circuit to `already_read` — a counter
-    saying the describer works over a capability that silently does not.
-    `_comprehend_still` had refused this since it was written."""
+async def test_a_video_with_no_text_model_keeps_its_window_run():
+    """**The shipped default's own path, and it must not throw the read away.**
+    `comprehension_text_model = ""` makes the synthesis answer `("", "")` — but
+    the expensive half has already happened: `content` is a timecoded run of up
+    to ten video-model calls, and `[media] comprehension_text_model` documents
+    exactly that as what survives without a text pass.
+
+    The earlier version of this refused, discarding all ten calls and making
+    the next sighting pay again. What made that refusal look necessary was a
+    different bug at a different level — a titleless row rendered BARE in the
+    transcript while `comprehended` stopped the job retrying it — and that is
+    fixed where it lives: `media_detail` falls back to `content` when there is
+    no headline (`tests/unit/test_engagement_context.py`)."""
     client = _ChunkingVision()
     comprehender = MediaComprehender(
         client=client, describe_models={"video": "k3"},
@@ -309,16 +321,17 @@ async def test_a_video_with_no_text_model_is_a_wiring_gap_not_a_read():
 
     got = await comprehender.describe(data=b"video-bytes", media_type="video/mp4")
 
-    assert got.available is False
-    assert got.reason == "no_text_describer"
+    assert got.available is True
     assert (got.title, got.text) == ("", "")
+    assert got.content == "0:00 — segment 1\n1:30 — segment 2"
+    assert len(client.calls) == 2, "and the ten calls were not wasted"
 
 
-async def test_a_capped_video_still_answers_when_the_text_model_is_absent():
-    """The positive control for the guard above, and the case that keeps it
-    from being too strict: with no text model but a COVERAGE note to carry, the
-    description is non-empty and the read is real. Refusing it would throw away
-    a timecoded run of a clip somebody sent over a missing headline."""
+async def test_a_capped_video_with_no_text_model_keeps_both_run_and_caveat():
+    """The two halves that survive a missing text model, together: the window
+    run as `content`, and what the read did not see as its own caveat — which
+    is now a separate value precisely so it cannot be lost to an empty
+    description or to a clip."""
     client = _ChunkingVision()
     comprehender = MediaComprehender(
         client=client, describe_models={"video": "k3"},
@@ -330,8 +343,9 @@ async def test_a_capped_video_still_answers_when_the_text_model_is_absent():
 
     assert got.available is True
     assert got.title == ""
-    assert "have not seen the rest" in got.text
-    assert got.content.startswith("[0:00]")
+    assert got.content.startswith("0:00 —")
+    assert got.provenance is not None
+    assert "have not seen the rest" in got.provenance["media_caveat"]
 
 
 async def test_two_concurrent_reads_do_not_share_provenance():

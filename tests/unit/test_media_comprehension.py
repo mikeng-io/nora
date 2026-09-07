@@ -16,11 +16,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from opentelemetry import trace
+
 from nora.domain.media import MediaBlob, MediaObject
 from nora.domain.models import PersonRef
 from nora.ingest.comprehension import MediaComprehension, Subject
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import span
+from nora.obs.tracing import TRACE_KIND, attached, span
 from nora.testing import (
     FakeBlobStore,
     FakeMediaInterpreter,
@@ -271,9 +273,13 @@ async def test_a_voice_note_summarizes_its_transcript_and_never_listens_again():
 
     assert interpreter.calls == [], "no second listen"
     assert interpreter.summarized == ["喂你今日得唔得閒啊"]
+    # The TEXT model, not the audio describer. A voice note's headline is
+    # written entirely by `comprehension_text_model`, and deriving the column
+    # from the media type recorded `""` for the one modality with a single
+    # named author.
     assert store.comprehended == [
         (SHA, "a voice note", "asking about tonight", "喂你今日得唔得閒啊",
-         "fake-vision"),
+         "fake-text"),
     ]
 
 
@@ -476,11 +482,10 @@ async def test_the_row_records_the_describer_this_modality_actually_used():
     and `model_for` existed on the adapter for exactly this with no caller."""
 
     class _PerModality(FakeMediaInterpreter):
-        model = "glm-image"
-
-        def model_for(self, media_type: str) -> str:
-            return {"video": "k3-256k"}.get(
-                media_type.partition("/")[0], "glm-image")
+        async def describe(self, *, data, media_type, label=""):
+            got = await super().describe(
+                data=data, media_type=media_type, label=label)
+            return replace(got, model="k3-256k")
 
     store = FakeMediaObjectStore()
     job, spawn = _job(interpreter=_PerModality(), store=store)
@@ -548,12 +553,54 @@ async def test_the_read_opens_its_own_root_rather_than_hanging_off_the_ingest_tr
         await spawn.drain()
 
     names = [s.name for s in exported_spans.get_finished_spans()]
-    # THE POSITIVE CONTROL — without it, an exporter that captured nothing at
-    # all would pass this test, and so would a job that never ran.
+    # CONTROL 1 — the exporter was capturing.
     assert "ingest.media" in names, "the exporter captured nothing"
-    assert job._inflight == set(), "the read must actually have completed"
+    # CONTROL 2 — a span was actually OPENED. Absence is the pass condition
+    # above, so without this, DELETING the `span(...)` block entirely would
+    # pass exactly as readily as detaching it does, and the test would be
+    # guarding nothing. `_inflight` proves the coroutine ran; only a tracer
+    # that saw the span proves the span exists.
+    seen: list[str] = []
+    with span("probe"), attached(None), span("comprehend", **{TRACE_KIND: "generation"}):
+        seen.append(trace.get_current_span().name)
+    assert seen == ["comprehend"], (
+        "the harness cannot observe a span at all; the assertion below would "
+        "pass against a build that opened none"
+    )
     assert "comprehend" not in names, (
         "the comprehension span was exported, which means it was a CHILD of "
         "the ingest span — a plumbing declaration on a non-root does nothing "
         "under ParentBased, so `attached(None)` is missing"
     )
+    # And the span the JOB opened is the one named `comprehend`: a build that
+    # renamed it would satisfy the absence assertion for the wrong reason.
+    assert "comprehend" in _span_names_opened_by(job), (
+        "the job no longer opens a span called `comprehend`"
+    )
+
+
+def _span_names_opened_by(job) -> set[str]:
+    """The span names `MediaComprehension._run` opens, read off its source.
+
+    A static read, and deliberately so: the span is DROPPED at the sampler
+    (that is the pass condition above), so no exporter can name it, and a
+    runtime probe would have to disable the very sampler the rest of the test
+    depends on. What this guards is narrow and worth guarding — that the
+    absence asserted above is the absence of THIS span rather than of a span
+    somebody renamed or deleted.
+    """
+    import ast
+    import inspect
+
+    from nora.ingest import comprehension as _mod
+
+    tree = ast.parse(inspect.getsource(_mod))
+    return {
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "span"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+    }

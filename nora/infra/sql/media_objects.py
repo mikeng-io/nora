@@ -123,13 +123,42 @@ class SqlMediaObjectStore:
             describe_model=model or None, provenance=provenance or {},
             created_at_ms=0,
         )
+        # AN EMPTY INCOMING FIELD NEVER CLOBBERS A STORED ONE. Two writers
+        # reach this: the comprehension job, which fills all three, and the
+        # custody stage's inline voice-note write, which fills `content` alone
+        # and sends `title=""`/`description=""`/`model=""`. Unconditional SETs
+        # meant a RESENT voice note wiped the title and describe_model the job
+        # had written — self-healing only because `_already_read` re-runs the
+        # text pass, at one extra model call per resend, and NOT self-healing
+        # at all with `comprehension = false` or no text model.
+        #
+        # The same `coalesce(nullif(...))` shape `SqlMediaDescriptionStore
+        # .remember` already uses, and with the same consequence stated: a
+        # re-read cannot CLEAR a field by answering empty. That is the right
+        # trade — a describer answering nothing is a failure, and the caller
+        # refuses an all-empty result before it ever reaches this method.
+        def _keep(
+            column: sa.ColumnElement[Any], incoming: sa.ColumnElement[Any],
+        ) -> sa.ColumnElement[Any]:
+            return sa.func.coalesce(sa.func.nullif(incoming, ""), column)
+
         stmt = insert.on_conflict_do_update(
             index_elements=[MEDIA_OBJECTS.c.sha256],
             set_={
-                "title": insert.excluded.title,
-                "description": insert.excluded.description,
-                "content": insert.excluded.content,
-                "describe_model": insert.excluded.describe_model,
+                "title": _keep(MEDIA_OBJECTS.c.title, insert.excluded.title),
+                "description": _keep(
+                    MEDIA_OBJECTS.c.description, insert.excluded.description),
+                "content": _keep(MEDIA_OBJECTS.c.content, insert.excluded.content),
+                # Moves WITH the description, or not at all: a row whose text
+                # was kept must keep the model that wrote it, or the provenance
+                # of the text names a describer that never produced it.
+                "describe_model": sa.case(
+                    (
+                        insert.excluded.description != "",
+                        insert.excluded.describe_model,
+                    ),
+                    else_=MEDIA_OBJECTS.c.describe_model,
+                ),
                 "provenance": MEDIA_OBJECTS.c.provenance.op("||")(
                     insert.excluded.provenance
                 ),

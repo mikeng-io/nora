@@ -449,9 +449,14 @@ comprehension = true
 # The CHEAP TEXT pass: a voice note's title/description over the SenseVoice
 # transcript that [speech.stt] already produced, and a video's over its
 # timecoded chunk run. NEVER a second listen or a second watch — the expensive
-# read has already happened. Empty = no text pass: a voice note keeps its words
-# with no title, a video keeps its chunk run. Set it to any text model on the
-# gateway; the image model works.
+# read has already happened.
+#
+# Empty = no text pass, and BOTH media keep what the expensive half produced: a
+# voice note keeps its words, a video keeps its timecoded chunk run. Neither
+# gets a title, and the transcript renders the run itself in that case rather
+# than a headline. Set it to any text model on the gateway; the image model
+# works. Worth setting — a ten-window video run is a lot of prompt where two
+# sentences would do.
 comprehension_text_model = ""
 # What the TRANSCRIPT may spend on one attachment's title + description. The
 # STORED comprehension is unbounded on purpose — the old 200-char clip existed

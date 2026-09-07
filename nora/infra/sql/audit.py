@@ -290,6 +290,11 @@ class SqlRecordStore:
                 MESSAGES.c.id, MESSAGES.c.platform, MESSAGES.c.sender_id,
                 MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.conversation_id,
                 MESSAGES.c.raw_json,
+                # The custody index, so lazy adoption can join what a photo
+                # showed before it feeds the row to Honcho (issue #116). Without
+                # it a back-filled row reaches memory as `[image a3f2c1]` and
+                # nothing else — which is the state the issue was opened to end.
+                MESSAGES.c.media_json,
             )
             .where(MESSAGES.c.person_id.is_(None), MESSAGES.c.is_nora == 0)
             .order_by(MESSAGES.c.ts.asc(), MESSAGES.c.id.asc())
@@ -301,6 +306,7 @@ class SqlRecordStore:
             UnattributedRow(
                 id=r.id, platform=r.platform, sender_id=r.sender_id, ts=r.ts,
                 body=r.body, conversation_id=r.conversation_id, raw_json=r.raw_json,
+                media_json=r.media_json,
             )
             for r in rows
         ]

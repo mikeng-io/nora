@@ -54,6 +54,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
+from nora.domain.media_join import MediaJoin
 from nora.domain.ports import MemoryStore, RecordStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
@@ -91,6 +92,7 @@ async def backfill(
     memory: MemoryStore,
     persons: Persons,
     metrics: Metrics,
+    media_join: MediaJoin | None = None,
     limit: int = DEFAULT_SCAN_LIMIT,
     start_delay_seconds: float = DEFAULT_START_DELAY_SECONDS,
 ) -> AdoptionCounts:
@@ -102,6 +104,14 @@ async def backfill(
     try:
         rows = await audit.unattributed(limit=limit)
         scanned = len(rows)
+        if media_join is not None:
+            # The shared media join (issue #116). These rows are FED TO HONCHO
+            # below, and on master a photo's description and a voice note's
+            # words rode in `body` — so a back-filled row reached memory with
+            # them. Without this it reaches memory as `[image a3f2c1]` and
+            # nothing else, which is precisely the empty marker the issue was
+            # opened to end, on the one path that exists to repair memory.
+            rows = list(await media_join.enrich(rows))
         for row in rows:
             person = persons.resolve(row.platform, row.sender_id)
             if person is None:

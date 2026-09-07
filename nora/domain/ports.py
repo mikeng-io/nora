@@ -968,6 +968,15 @@ class MediaDescription:
     # per-instance, so it never established the safety the comment claimed.
     # A value that travels with its result cannot race.
     provenance: dict[str, object] | None = None
+    # WHICH MODEL wrote this text. Returned rather than asked of the adapter
+    # afterwards, for `provenance`'s reason and one more: the answer is not a
+    # function of the MODALITY. A voice note's title and description come from
+    # the TEXT model (`comprehension_text_model`), not from the audio
+    # describer — so a caller deriving it from the media type recorded `""`
+    # for the one modality whose text is written entirely by a single named
+    # model. Empty means the implementation does not track it and the caller
+    # records nothing, which is honest; it never means "the image model".
+    model: str = ""
 
 
 @runtime_checkable

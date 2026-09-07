@@ -231,7 +231,7 @@ class FakeRecordStore:
             UnattributedRow(
                 id=r["id"], platform=r["platform"], sender_id=r["sender_id"],
                 ts=r["ts"], body=r["body"], conversation_id=r["conversation_id"],
-                raw_json=r["raw_json"],
+                raw_json=r["raw_json"], media_json=r["media_json"],
             )
             for r in candidates[:limit]
         ]
@@ -833,9 +833,19 @@ class FakeMediaObjectStore:
                 describe_model=model or None, provenance=merged, created_at_ms=0,
             )
             return True
+        # An EMPTY incoming field keeps what is stored, matching the SQL
+        # store's `coalesce(nullif(...))` exactly: the custody stage's inline
+        # voice-note write sends `content` alone, and unconditional SETs had a
+        # RESENT voice note wiping the title the job had written.
         self.objs[sha256] = replace(
-            row, title=title, description=description, content=content,
-            describe_model=model or None, provenance=merged,
+            row,
+            title=title or row.title,
+            description=description or row.description,
+            content=content or row.content,
+            describe_model=(
+                (model or None) if description else row.describe_model
+            ),
+            provenance=merged,
         )
         return True
 
@@ -970,6 +980,7 @@ class FakeMediaInterpreter:
         self.labels: list[str] = []
         self.summarized: list[str] = []
         self.model = "fake-vision"
+        self.text_model = "fake-text"
 
     async def describe(
         self, *, data: bytes, media_type: str, label: str = "",
@@ -989,7 +1000,8 @@ class FakeMediaInterpreter:
             # caller store a blank comprehension and stay green (R-51).
             return MediaDescription(available=False, reason="empty")
         return MediaDescription(
-            available=True, title=self.title, text=self.text, content=self.content,
+            available=True, title=self.title, text=self.text,
+            content=self.content, model=self.model,
         )
 
     async def summarize(self, *, text: str) -> MediaDescription:
@@ -1000,7 +1012,14 @@ class FakeMediaInterpreter:
             return MediaDescription(available=False, reason=self.reason or "vision")
         if not (self.title or self.text):
             return MediaDescription(available=False, reason="empty")
-        return MediaDescription(available=True, title=self.title, text=self.text)
+        # A DIFFERENT model from `describe`'s, mirroring production: a voice
+        # note's headline is written by the text model, not by the describer
+        # that would have read its bytes. A fake reporting one model for both
+        # would let a caller conflate them and stay green.
+        return MediaDescription(
+            available=True, title=self.title, text=self.text,
+            model=self.text_model,
+        )
 
 
 class FakeTranscriber:

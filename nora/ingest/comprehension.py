@@ -254,12 +254,19 @@ class MediaComprehension:
                 )
             return
 
-        # The model THIS MODALITY used, not the image one. `describe_model` is
-        # the provenance of the text on the row, and recording `glm-5.3-flash`
-        # against a clip that `k3-256k` described is a lie in the one column an
+        # The model that WROTE THIS TEXT, off the result. `describe_model` is
+        # the provenance of the text on the row, and recording the image model
+        # against a clip the video describer read is a lie in the one column an
         # operator reads to find out which describer produced what.
-        # `model_for` exists on the adapter for exactly this and had no caller.
-        model = self._model_for(blob.media_type)
+        #
+        # It comes back WITH the result rather than being derived from the
+        # media type, because the answer is not a function of the modality: a
+        # voice note's title and description are written by
+        # `comprehension_text_model`, not by the audio describer, so deriving
+        # it recorded `""` for the one modality whose text has a single named
+        # author.
+        model = result.model
+        provenance = dict(result.provenance or {})
         await self._store.comprehend(
             sha256=blob.sha256, title=result.title, description=result.text,
             content=content, model=model,
@@ -267,12 +274,16 @@ class MediaComprehension:
             # job spawns one task per subject, so a video and a photo on one
             # message run two `describe` calls concurrently on one shared
             # interpreter, and stashed state raced.
-            provenance=dict(result.provenance or {}),
+            provenance=provenance,
         )
         await self._feed(
             platform=platform, conversation_id=conversation_id, person=person,
             timestamp=timestamp, blob=blob, label=label,
             title=result.title, description=result.text, content=content,
+            # The caveat rides to memory too, and last. What a read did not see
+            # is not a rendering detail — a recalled description of half a clip
+            # is as wrong in a peer card as it is in a transcript.
+            caveat=str(provenance.get("media_caveat", "")),
         )
         self._count(platform, label, "ok", "")
 
@@ -307,7 +318,7 @@ class MediaComprehension:
     async def _feed(
         self, *, platform: str, conversation_id: str, person: PersonRef | None,
         timestamp: int, blob: MediaBlob, label: str,
-        title: str, description: str, content: str,
+        title: str, description: str, content: str, caveat: str = "",
     ) -> None:
         """ALL THREE FIELDS to Honcho, under the sender's own peer, SCREENED.
 
@@ -340,7 +351,8 @@ class MediaComprehension:
             return
         marker = f"[{label} {blob.handle}]"
         detail = "\n".join(
-            sanitize_description(part) for part in (title, description, content)
+            sanitize_description(part)
+            for part in (title, description, content, caveat)
             if part
         )
         kind = scan_identifiers(detail) if detail else None
@@ -379,15 +391,6 @@ class MediaComprehension:
         if label in CONTENT_LABELS:
             return bool(existing.title or existing.description)
         return existing.comprehended
-
-    def _model_for(self, media_type: str) -> str:
-        """The describer this modality actually used, if the interpreter can
-        say. A fake, or a future adapter with one model, falls back to `model`
-        — the same value the row carried before."""
-        resolver = getattr(self._interpreter, "model_for", None)
-        if callable(resolver):
-            return str(resolver(media_type) or "")
-        return str(getattr(self._interpreter, "model", "") or "")
 
     def _count(self, platform: str, label: str, status: str, reason: str) -> None:
         self._metrics.inc(

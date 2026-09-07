@@ -39,6 +39,7 @@ from nora.agent.dreamer import (
     RegistryToolSource,
     verify_tool_subsets,
 )
+from nora.agent.egress import scan_identifiers
 from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
@@ -47,6 +48,7 @@ from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_
 from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.compute import ComputeJobStore
+from nora.domain.media_join import MediaJoin
 from nora.domain.ports import (
     BlobStore,
     ComputeBackend,
@@ -454,6 +456,10 @@ class Dependencies:
     audit: RecordStore
     memory: MemoryStore
     persons: Persons
+    # The ONE media join (issue #116), so `__main__` can hand the same
+    # instance to the dream loop and to lazy adoption — the two transcript
+    # builders this module does not construct itself.
+    media_join: MediaJoin
     metrics: Metrics
     policy: EngagePolicy
     assembler: ContextAssembler
@@ -667,6 +673,23 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `media_fetch` serves it. One instance, `engine` reused for the reason
     # every other store here reuses it (one pool, one lifecycle).
     media_objects = SqlMediaObjectStore(engine)
+    # ONE media join for the whole process (issue #116, operator 2026-09-08),
+    # handed to every transcript builder there is: the tag assembler, the fire
+    # path, the tag-path debrief, the standing event fold, the note tier's two
+    # adaptors and lazy adoption. On master the sticker description and the
+    # voice-note transcript were baked into `messages.body`, so all of them saw
+    # them; the first cut of this change put the join on the tag assembler
+    # alone and left the other five rendering bare handles.
+    #
+    # `scan_identifiers` is INJECTED because `nora/language/` sits two layers
+    # below `nora/agent/` in the import contract and could not otherwise reach
+    # it — see `nora.domain.media_join`'s docstring.
+    media_join = MediaJoin(
+        store=media_objects,
+        screen=scan_identifiers,
+        metrics=metrics,
+        render_chars=cfg.media.comprehension_render_chars,
+    )
     # The per-turn verdict's store (26 §3). Built unconditionally beside
     # `standing_store` for the same reason: it costs one attribute with
     # the tier off, and the debrief's own `store_verdict is None` guard
@@ -895,12 +918,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # is that the read and the write are the same row seen twice, and two
         # objects for one row is how that stops being structurally true.
         standing=standing_store if cfg.standing.enabled else None,
-        # The media join (issue #116). The same `SqlMediaObjectStore` instance
-        # the ingest pipeline and the tool registry hold — the comprehension a
-        # spawned job wrote is the one the transcript renders and the one
-        # `media_fetch` serves, and three instances of one index would be three
-        # chances to disagree about what a picture shows.
-        media_objects=media_objects,
+        # The media join (issue #116). The same instance every other
+        # transcript builder holds — the comprehension a spawned job wrote is
+        # the one the transcript renders, the one the note tier reads and the
+        # one `media_fetch` serves, and six copies of that decision would be
+        # six chances to disagree about what a picture shows.
+        media_join=media_join,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -1196,6 +1219,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         standing_event_wiring = standing_event.Wiring(
             store=standing_store,
             record_store=audit,
+            media_join=media_join,
             client=_DebriefModelClient(
                 client=client,
                 model=cfg.standing.model or cfg.llm.model,
@@ -1761,6 +1785,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         debrief_wiring = DebriefWiring(
             store=standing_store,
             store_verdict=turn_verdict_store,
+            media_join=media_join,
             # The note tier's sink. `None` while `[notes] enabled = false`,
             # so the debrief parses no proposals and raises none — the
             # same inert shape the other optional collaborators use.
@@ -1887,6 +1912,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # It reads doctrine at `applies_to="heartbeat"` itself.
         fire_path = FirePath(
             persons=persons, records=audit, memory=memory,
+            media_join=media_join,
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters=dict(registry.adapters), registry=tool_registry,
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
@@ -2199,6 +2225,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 NoteCuratorAdaptor(
                     notes=note_store,
                     record=audit,
+                    media_join=media_join,
                     today=_today_hk,
                     max_expired_per_tick=cfg.notes.max_expired_per_tick,
                     max_revisits_per_tick=cfg.notes.max_revisits_per_tick,
@@ -2373,6 +2400,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
 
     return Dependencies(
         audit=audit, memory=memory, persons=persons, metrics=metrics,
+        media_join=media_join,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,

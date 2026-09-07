@@ -236,6 +236,13 @@ class UnattributedRow:
     # garbage feed.
     conversation_id: str
     raw_json: str | None = None
+    # The custody index for this row, exactly as `TranscriptRow` carries it.
+    # It is here because lazy adoption FEEDS these rows to Honcho, and issue
+    # #116 moved what a photo showed out of `body` and behind a join keyed on
+    # this column — without it, a back-filled row reaches memory as
+    # `[image a3f2c1]` and nothing else, which is the state the issue was
+    # opened to end. Defaulted, so every existing construction stays valid.
+    media_json: str | None = None
 
 
 @dataclass(frozen=True)

@@ -128,6 +128,7 @@ from typing import Any, ClassVar, Literal, Protocol, get_args
 
 from nora.domain.bounds import over_fetch
 from nora.domain.gatherings import AmbiguousOpenGatheringsError
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import (
     MAX_DATELESS_STRIKES,
@@ -530,6 +531,7 @@ class NoteCuratorAdaptor:
         evidence_messages_per_note: int = DEFAULT_EVIDENCE_MESSAGES_PER_NOTE,
         metrics: Metrics | None = None,
         clock: Callable[[], int] = _now_ms,
+        media_join: MediaJoin | None = None,
         # -- discharge (issue #101), all independent of the six args above --
         #
         # `discharge_enabled` is `NotesConfig.discharge_enabled` — its OWN
@@ -546,6 +548,11 @@ class NoteCuratorAdaptor:
     ) -> None:
         self._notes = notes
         self._record = record
+        # The shared media join (issue #116). The curator renders these rows as
+        # EVIDENCE for a model deciding whether a note still stands, so a photo
+        # it cannot see is evidence it silently does not have. On master the
+        # description rode in `messages.body` and this path had it.
+        self._media_join = media_join
         # A callable, not a date: the pass compares against a YYYYMMDD calendar
         # day and the clock is the caller's to own — a store or an adaptor that
         # reads the wall clock cannot be tested for the boundary case that
@@ -651,6 +658,8 @@ class NoteCuratorAdaptor:
             )
             rows = []
             state = "unavailable"
+        if rows and self._media_join is not None:
+            rows = list(await self._media_join.enrich(rows))
         # TRUNCATION read BEFORE either filter — a property of what `recent`
         # COULD return, not of what survived. `is_nora` rows are excluded HERE
         # because `recent` does not exclude them; her own words are an

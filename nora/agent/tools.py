@@ -1319,6 +1319,10 @@ def _stored_reading(obj) -> str:
         parts.append(obj.description)
     if obj.content and obj.content != obj.description:
         parts.append(obj.content)
+    # LAST, and unconditional: what a read did NOT see is the one line that
+    # must survive every composition of it (`MediaObject.caveat`).
+    if obj.caveat:
+        parts.append(obj.caveat)
     return "\n".join(parts)
 
 
@@ -4632,6 +4636,7 @@ Args:
         prompt = (
             f"{_QUERY_FRAME}\n\n{question}" if question else ""
         )
+
         async def _ask(payload: bytes):
             """One describer call on this modality's model, provider and
             ceiling. Never raises: `VisionClient.describe` turns every failure
@@ -4723,6 +4728,14 @@ Args:
                             "not say there is no media and do not describe it anyway.",
                 }
             description = result.description
+        # CACHED WITHOUT THE CAVEAT, and the caveat appended after. The cache
+        # is keyed on the sha256 alone, on the argument that a description is a
+        # pure function of the BYTES — but a coverage caveat is a function of
+        # (bytes, chunk geometry), so raising `chunk_max` would serve a stale
+        # «I have not seen the rest» from the durable table forever, about a
+        # clip that is now read whole. It is the same reasoning that makes
+        # layer 2 bypass the cache, applied one field over.
+        cacheable = description
         if coverage:
             # SAID on the way out, exactly as the comprehension pass says it —
             # a partial read that reads as complete is the whole of #117.
@@ -4740,7 +4753,7 @@ Args:
             # `media_descriptions` row records what produced it. Per-modality
             # since the split: an audio description and an image description
             # come from different models and must not be recorded as one.
-            await vision_cache.aput(sha256, description, model=describe_model)
+            await vision_cache.aput(sha256, cacheable, model=describe_model)
         return _serve_media(sha256, description, cached=False, code=serve_code)
 
     def _serve_media(

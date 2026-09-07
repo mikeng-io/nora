@@ -19,21 +19,11 @@ later.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
-from dataclasses import replace as _replace
 from typing import Any, Protocol
 
-from nora.agent.egress import scan_identifiers
-from nora.domain.media import (
-    CONTENT_LABELS,
-    HANDLE_CHARS,
-    enrich_placeholders,
-    media_detail,
-    placeholders_in,
-    sanitize_description,
-)
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
     NormalizedMessage,
     PersonRef,
@@ -43,7 +33,6 @@ from nora.domain.models import (
 from nora.domain.notes import Note
 from nora.domain.ports import (
     EngagementRequest,
-    MediaObjectStore,
     MemoryStore,
     RecordStore,
     StandingStore,
@@ -119,8 +108,7 @@ class TranscriptInjection:
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
         standing: StandingStore | None = None,
-        media_objects: MediaObjectStore | None = None,
-        media_detail_chars: int = 240,
+        media_join: MediaJoin | None = None,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -161,18 +149,13 @@ class TranscriptInjection:
         # across a workspace's rooms, so there is no workspace to resolve.
         self._standing_store = standing
         # THE MEDIA JOIN (issue #116). `messages.body` carries `[image a3f2c1]`
-        # and nothing more; the comprehension lives in `media_objects`, and
-        # this is where the two meet — HERE and not in `nora/agent/prefill.py`,
-        # which is a pure renderer over `TagContext` and must not gain a store.
-        # `None` is the inert state and renders exactly what is stored.
-        self._media_objects = media_objects
-        # What the TRANSCRIPT may spend on one attachment. The stored
-        # comprehension is unbounded on purpose (`sanitize_description`'s
-        # docstring: the bound belongs on the render, not on the store) and
-        # `media_fetch` is what serves the rest. A voice note is exempt — its
-        # detail is the words people said, and clipping those would be the
-        # collapse issue #116 decision 4 refuses.
-        self._media_detail_chars = media_detail_chars
+        # and nothing more; the comprehension lives in `media_objects`, and the
+        # join is where the two meet — in the ASSEMBLER and not in
+        # `nora/agent/prefill.py`, which is a pure renderer over `TagContext`
+        # and must not gain a store. `None` is the inert state and renders
+        # exactly what is stored. The object itself is shared with five other
+        # transcript builders; see `nora.domain.media_join`.
+        self._media_join = media_join
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -224,7 +207,17 @@ class TranscriptInjection:
         # in the gather above: it needs the rows the gather returns. It is
         # bounded by the window (one `get` per distinct blob in view, and the
         # window is `context_window` rows) and it degrades to the stored body.
-        transcript = await self._with_media(transcript, msg)
+        # THEN the media join (issue #116), after the transcript read and
+        # before the context is frozen. It is a second round trip, so it is NOT
+        # in the gather above: it needs the rows the gather returns.
+        #
+        # `MediaJoin` is SHARED with the fire path, the standing fold, the note
+        # tier's two adaptors and lazy adoption — six transcript builders, one
+        # answer to «what did that photo show». The first cut of #116 put this
+        # join here and nowhere else, so five of the six saw a bare handle
+        # where master had baked the description into `messages.body`.
+        if self._media_join is not None:
+            transcript = await self._media_join.enrich(transcript)
 
         return TagContext(
             tag_id=request.tag_id,
@@ -237,103 +230,6 @@ class TranscriptInjection:
             tagger_card=tagger_card,
             notes=notes,
             standing=standing,
-        )
-
-    async def _with_media(
-        self, transcript: tuple[TranscriptRow, ...], msg: NormalizedMessage,
-    ) -> tuple[TranscriptRow, ...]:
-        """Join each row's stored comprehension onto its `[image a3f2c1]`.
-
-        **This is the render half of issue #116, and it lives HERE rather than
-        in `nora/agent/prefill.py` on purpose.** The prefill is a pure renderer
-        over `TagContext` — every block it writes is a function of the value it
-        was handed — and giving it a store would make one prompt's text depend
-        on a database read taken at render time, which is exactly the property
-        that makes a prompt reproducible from its trace. The assembler is where
-        reads belong; the renderer stays pure.
-
-        **The egress screen runs HERE, on every render, on the composed
-        detail.** It used to run once at ingest over the placeholder run the
-        custody stage composed. Moving it is not a relaxation — it is the
-        stricter position, and it is `nora/ingest/stickers.py`'s own rule: a
-        screen applied before caching is one a cache hit skips, and this path
-        now has a durable cache in it (`media_objects`, keyed by sha256,
-        shared across rooms and across restarts). A row screened once at write
-        time would be served unscreened for the life of the deployment.
-
-        A hit costs THAT attachment's detail and nothing else: the placeholder
-        renders bare, exactly as an un-comprehended one does, and the message
-        is untouched. What the screen does not catch is unchanged and stated in
-        `_serve_media`'s docstring — a bare local number passes, which is
-        R-18's standing blind spot rather than a solved case.
-
-        Fail-soft, like every other read in this class: a store failure leaves
-        the transcript exactly as stored — handles, no details — which is a
-        thinner prompt and never a dead turn.
-        """
-        if self._media_objects is None or not transcript:
-            return transcript
-        wanted: dict[str, str] = {}      # sha256 -> handle
-        labels: dict[str, str] = {}      # handle -> label, from the body itself
-        for row in transcript:
-            for sha in _shas(row.media_json):
-                wanted[sha] = sha[:HANDLE_CHARS]
-        if not wanted:
-            return transcript
-        started = time.perf_counter()
-        for row in transcript:
-            for label, handle in placeholders_in(row.body or ""):
-                labels[handle] = label
-        details: dict[str, str] = {}
-        for sha, handle in wanted.items():
-            try:
-                obj = await self._media_objects.get(sha256=sha)
-            except Exception:
-                log.exception("media join read failed; rendering the bare handle")
-                self._metrics.inc(
-                    "nora_errors_total", stage="media_join", platform=msg.platform)
-                continue
-            if obj is None or not obj.comprehended:
-                continue
-            label = labels.get(handle, "")
-            detail = media_detail(
-                label=label, title=obj.title, description=obj.description,
-                content=obj.content,
-            )
-            # A voice note renders its FULL words (issue #116 decision 4): the
-            # transcript block is where the room's own speech belongs, and
-            # clipping it would mean Nora reads a summary of what somebody said
-            # instead of what they said. Everything else is bounded — the store
-            # keeps the whole thing and `media_fetch` serves it on demand.
-            clip = 0 if label in CONTENT_LABELS else self._media_detail_chars
-            detail = sanitize_description(detail, max_chars=clip)
-            if not detail:
-                continue
-            kind = scan_identifiers(detail)
-            if kind is not None:
-                log.warning(
-                    "a media comprehension would have carried a %s identifier "
-                    "— rendering the bare handle", kind,
-                )
-                self._metrics.inc("nora_egress_blocks_total", kind=kind)
-                continue
-            details[handle] = detail
-        # THE COST, measured where it is paid. Design 19 §10 names this join as
-        # what would reopen the decision — one sequential `get` per distinct
-        # blob, on the critical path of every tagged turn — and a reopening
-        # condition nothing can read is a hope rather than a condition. Both
-        # series are observed together and only when the join actually ran, so
-        # a turn with no media in its window never dilutes the latency the
-        # operator is watching.
-        self._metrics.observe(
-            "nora_media_join_seconds", time.perf_counter() - started)
-        self._metrics.observe("nora_media_blobs_joined", len(wanted))
-        if not details:
-            return transcript
-        return tuple(
-            _replace(row, body=enrich_placeholders(row.body or "", details))
-            if row.body else row
-            for row in transcript
         )
 
     async def _recent(self, msg: NormalizedMessage) -> tuple[TranscriptRow, ...]:
@@ -586,29 +482,3 @@ class TranscriptInjection:
         self._metrics.gauge(
             "nora_note_index_entries", len(standing), workspace=convo.workspace)
         return standing
-
-
-def _shas(media_json: str | None) -> tuple[str, ...]:
-    """Every sha256 in one row's `messages.media_json`, or `()`.
-
-    Total, like everything else on this path: a row whose JSON does not decode
-    contributes nothing rather than raising into a turn. The column is written
-    by `nora.domain.media.media_json` and pinned by the audit-store contract
-    suite, so a malformed value means something else wrote it — which is a
-    reason to render the bare handle, not a reason to fail.
-    """
-    if not media_json:
-        return ()
-    try:
-        blobs = json.loads(media_json)
-    except (ValueError, TypeError):
-        return ()
-    if not isinstance(blobs, list):
-        return ()
-    out = []
-    for blob in blobs:
-        if isinstance(blob, dict):
-            sha = str(blob.get("sha256", ""))
-            if sha:
-                out.append(sha)
-    return tuple(out)
