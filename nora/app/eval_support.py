@@ -34,6 +34,7 @@ from nora.doctrine.loader import Doctrine, DoctrineStore
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.standing import Standing
+from nora.engagement.stages.deliver import BUDGET_STOP_REASONS as _BUDGET_STOP_REASONS
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql.engine import create_sql_engine
 from nora.ingest.relevance_gate import GATE_AUDIENCE, RelevanceGate
@@ -114,6 +115,16 @@ __all__ = [
     "load_persons",
     "seed_from_dict",
 ]
+
+
+#: The stop reasons that mean a BUDGET cap ended the turn rather than the
+#: model. Re-exported, never re-typed: `evals` may not import
+#: `nora.engagement`, and the copy that lived in `evals/evaluators.py` was
+#: hand-written and WRONG — five of its six strings never appear in the field
+#: it guarded, so the guard was dead for the life of the participation suite.
+#: One name the code increments against, which is this repo's own rule for a
+#: label vocabulary.
+BUDGET_STOP_REASONS = _BUDGET_STOP_REASONS
 
 
 def eval_base_url(configured: str) -> str:
@@ -254,7 +265,9 @@ def build_live_participation_runner(
     )
 
 
-def build_eval_tool_registry() -> ToolRegistry:
+def build_eval_tool_registry(
+    *, notes: Any | None = None, note_workspace: str = _EVAL_WORKSPACE,
+) -> ToolRegistry:
     """A `ToolRegistry` wired with the canned eval backends (F4): `weather`,
     `web_search`, `place_info`, `route`, `transit`, `where_is` and `saved_places`
     answer `ok` instead of `unavailable`, so the live routing gate no longer
@@ -268,6 +281,22 @@ def build_eval_tool_registry() -> ToolRegistry:
     `route`/`transit` are `cast` because `ToolRegistry` types them as the concrete
     `RouteClient`/`TransitClient`, not a port — the canned doubles match the one
     method each tool calls (`place_info`/`route`, `arrivals`) but not the class.
+
+    `notes` is passed by the harness and was NOT before, which made two of the
+    participation suite's three knowledge-cut twins measure nothing. The four
+    note tools were registered and their store was `None`, so `note_read` and
+    `note_search` answered `unavailable` — and the `<notes>` block renders a
+    title and a description only, never the body. A `-known` case therefore
+    differed from its `-unknown` twin by one index line containing no answer,
+    backed by a tool that said it could not look, and the model reasoned
+    exactly that: «the Raft question is already tracked in the note». A pair
+    that cannot flip measures nothing, which is why the fact-lookup and
+    correction pairs were deleted; these two were left in the same state
+    (audit, 2026-09-08).
+
+    `note_workspace` is a constant here rather than a resolver: every seeded
+    row lands in the eval workspace by construction (`seed_from_dict`), and a
+    row keyed anywhere else silently never renders.
     """
     return ToolRegistry(
         weather=CannedWeatherProvider(),
@@ -278,6 +307,8 @@ def build_eval_tool_registry() -> ToolRegistry:
         transit=cast(Any, CannedTransitSource()),
         presence=CannedPresenceReader(),
         circles=(Circle(circle_id=EVAL_CIRCLE_ID, person_ids=frozenset({_EVAL_PERSON_ID})),),
+        notes=notes,
+        note_workspace=(lambda _platform, _conv: note_workspace) if notes else None,
     )
 
 

@@ -22,12 +22,21 @@
 #
 # Seed keys are documented on `nora.app.eval_support.seed_from_dict`; all tier
 # rows land in the eval workspace ("nora") from there, never keyed by hand.
+#
+# `sample: 5` runs a case five times. It is on EVERY case, because one draw of
+# a stochastic process is not a reading of it: the 2026-09-08 audit found
+# `commitment-followup-known` spoke 1 time in 5 with five distinct tool sets,
+# and the suite's aggregate looked stable only because the other cases sit
+# saturated at silence. The runner binds a SPEAK case on a strict majority and
+# a SILENCE case on zero speaks in five — a false speak is unrecoverable, the
+# room heard it, so one in five is one too many.
 
 # --- S2: the stalled question ----------------------------------------------
 
 - name: stalled-question-known
   input: "when is the next Raft update?"
   expect: speak
+  sample: 5
   seed:
     transcript:
       - "when is the next Raft update?"
@@ -43,6 +52,7 @@
 - name: stalled-question-unknown
   input: "when is the next Raft update?"
   expect: silence
+  sample: 5
   seed:
     transcript:
       - "when is the next Raft update?"
@@ -55,6 +65,7 @@
 - name: commitment-followup-known
   input: "so did anyone book the restaurant for Saturday?"
   expect: speak
+  sample: 5
   seed:
     transcript:
       - "Saturday dinner 8pm 好唔好"
@@ -65,6 +76,7 @@
 - name: commitment-followup-unknown
   input: "so did anyone book the restaurant for Saturday?"
   expect: silence
+  sample: 5
   seed:
     transcript:
       - "Saturday dinner 8pm 好唔好"
@@ -78,6 +90,7 @@
 - name: planning-context-known
   input: "weekday or weekend then?"
   expect: speak
+  sample: 5
   seed:
     transcript:
       - "Tai O 一日遊幾時去好"
@@ -93,6 +106,7 @@
 - name: planning-context-unknown
   input: "weekday or weekend then?"
   expect: silence
+  sample: 5
   seed:
     transcript:
       - "Tai O 一日遊幾時去好"
@@ -108,6 +122,7 @@
 - name: status-update
   input: "check this out 👉 https://example.com/that-thing"
   expect: silence
+  sample: 5
   seed:
     transcript:
       - "你哋睇咗尋晚嗰場波未"
@@ -116,6 +131,7 @@
 - name: private-exchange
   input: "3ish"
   expect: silence
+  sample: 5
   seed:
     transcript:
       - {name: "Grant", body: "what time Saturday?"}
@@ -123,6 +139,7 @@
 - name: acknowledgment
   input: "👍"
   expect: silence
+  sample: 5
   seed:
     transcript:
       - "done! thanks 🙏"
@@ -130,6 +147,7 @@
 - name: inside-joke
   input: "AGAIN 😂😂 佢又嚟"
   expect: silence
+  sample: 5
   seed:
     transcript:
       - {name: "Grant", body: "唔該睇下呢個 meme"}
@@ -138,6 +156,7 @@
 - name: other-service-command
   input: "/weather tomorrow"
   expect: silence
+  sample: 5
   seed:
     transcript:
       - "聽日會唔會落雨"

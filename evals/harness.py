@@ -138,6 +138,14 @@ class Case:
     # a case author cannot accidentally seed rows the eval room never reads.
     expect: str | None = None
     seed: dict | None = None
+    #: How many times to run this case. `1` is one draw of a stochastic
+    #: process, and a suite of one-draw cases reports a number that is not
+    #: reproducible: the participation audit (2026-09-08) found
+    #: `commitment-followup-known` spoke 1 time in 5 with five distinct tool
+    #: sets, while the aggregate looked stable only because the other cases
+    #: were saturated at silence. `evals/relevance_gate.py` has carried this
+    #: since it was written; the flip gate had not.
+    sample: int = 1
 
     @classmethod
     def from_dict(cls, raw: dict) -> Case:
@@ -154,6 +162,7 @@ class Case:
             prefill_sufficient=bool(meta.get("prefill_sufficient", True)),
             expect=expect,
             seed=raw.get("seed"),
+            sample=int(raw.get("sample", 1)),
         )
 
 
@@ -440,7 +449,14 @@ async def run_case(
         # Live mode wires the canned backends (F4) so the routing gate's siblings
         # answer `ok` and a leak is a real choice, not a fallback artifact. Scripted
         # mode keeps the bare registry — its tool_calls come from the script.
-        tool_registry = build_eval_tool_registry() if live else None
+        # `notes=` is what lets `note_read`/`note_search` answer. Without it
+        # the four note tools were registered against a `None` store and said
+        # `unavailable`, so a seeded note reached the prompt only as a
+        # title-and-description index line — and two of the three knowledge-cut
+        # twins could not flip.
+        tool_registry = (
+            build_eval_tool_registry(notes=notes_store) if live else None
+        )
         # Live mode also names the room so `saved_places`/`where_is` clear the R-31
         # subset gate (the room {miles} ⊆ the eval circle {miles}); scripted mode
         # leaves the room unavailable, as before.
@@ -481,10 +497,17 @@ async def run_case(
         sent = list(adapter.texts)
         # Live mode has no script to read tool intent from — reconstruct it from
         # what the tools actually recorded this run (see the helper's caveat).
-        stop_reason = None
+        # Read UNCONDITIONALLY. `nora_llm_stop_reason_total` is incremented by
+        # the production stages for a scripted agent exactly as for a live one,
+        # so gating this read on `live` made None mean two different things —
+        # "the model was never invoked" on the live path, and "scripted" on the
+        # other. `ParticipationVerdict` treats a None as an ERROR rather than a
+        # correct silence, and that is only sound if None has one meaning.
+        # (`tool_calls` stays live-only: a scripted case carries its tool intent
+        # in the script itself.)
+        stop_reason = _stop_reason_from_metrics(metrics)
         if live:
             tool_calls = _tool_calls_from_metrics(metrics)
-            stop_reason = _stop_reason_from_metrics(metrics)
         return Trajectory(
             tool_calls=tool_calls,
             sent=sent,

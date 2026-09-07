@@ -406,7 +406,16 @@ async def _run_adversarial_live(
         judge_model_id = _resolve_judge_model_id(cfg)
         judge_model = create_model_provider(
             model=judge_model_id,
-            max_tokens=cfg.llm.max_tokens,
+            # The judge's OWN budget, not the reply tier's. `[llm] max_tokens`
+            # is 2000, sized for a reply; a grader reasoning over a window plus
+            # a doctrine exhausts it and raises `MaxTokensReachedException`
+            # mid-suite — measured at `--effort high`, twice, each time killing
+            # the whole run.
+            #
+            # This is the SAME argument the `temperature` line below already
+            # makes, and it was made for only one of the two knobs: 0.7 is a
+            # reply tuning and a grader must not inherit it. Neither is 2000.
+            max_tokens=max(cfg.llm.max_tokens, 8000),
             # temperature 0, NOT cfg.llm.temperature (Kimi review 2026-08-09): 0.7 is
             # a REPLY tuning, and a grader inheriting it makes the gate stochastic —
             # a measurement instrument must be near-deterministic. Nobody chose 0.7
@@ -666,49 +675,164 @@ async def _run_participation_live(
                         f"participation case {case.name!r} has no `expect:` — "
                         "the verdict (speak/silence) is what this suite grades"
                     )
-                trajectory = await run_case(case, live=True, effort=effort)
-                verdict = ParticipationVerdict(case.expect).evaluate(trajectory)
-                all_passed = all_passed and verdict.passed
+                # SAMPLED, because one draw of a stochastic process is not a
+                # reading of it. `[llm] temperature` is not zero here (the
+                # instrument must run the production shape, and production is
+                # not greedy), so a case that speaks 1 time in 5 and a case
+                # that never speaks produce the same single-draw record.
+                spokes: list[bool] = []
+                stop_reasons: list[str | None] = []
+                reasons: list[str] = []
+                judged_reply: str | None = None
+                for _ in range(case.sample):
+                    trajectory = await run_case(case, live=True, effort=effort)
+                    verdict = ParticipationVerdict(case.expect).evaluate(trajectory)
+                    spokes.append(bool(trajectory.sent))
+                    stop_reasons.append(trajectory.stop_reason)
+                    if verdict.reason:
+                        reasons.append(verdict.reason)
+                    if trajectory.sent and judged_reply is None:
+                        judged_reply = trajectory.sent[-1]
+
+                # The verdict over the samples, and deliberately ASYMMETRIC.
+                # A false speak is unrecoverable — the room heard it — so ONE
+                # in `sample` is a false speak, exactly as the design's hard
+                # bar reads. A missed speak is recoverable (she is asked
+                # again), so it binds on a strict majority, ties failing
+                # closed, the same rule `_run_journeys_live` already uses.
+                spoke_count = sum(spokes)
+                passed = (
+                    spoke_count == 0 if case.expect == "silence"
+                    else spoke_count * 2 > case.sample
+                )
+                all_passed = all_passed and passed
 
                 judge_verdict = None
-                if trajectory.sent:
-                    raws = [
-                        await _invoke_agent(
-                            judge_model, "",
-                            _build_participation_judge_prompt(
-                                window_context=_participation_window_context(case),
-                                reply_text=trajectory.sent[-1],
-                                doctrine_text=doctrine.doctrine_text,
-                            ),
-                            role="judge",
+                if judged_reply is not None:
+                    # GUARDED, because this grader is documented as advisory —
+                    # "printed, never bound" — and an unguarded one killed the
+                    # suite twice: `MaxTokensReachedException` out of
+                    # `_invoke_agent` propagated, the process exited 1, and
+                    # because stdout is block-buffered to a pipe every verdict
+                    # already computed was lost with it. Not a partial result:
+                    # nothing.
+                    #
+                    # And it aborted with a SELECTION EFFECT. This branch only
+                    # runs when the room heard something, so the suite was most
+                    # likely to destroy itself on exactly the runs containing
+                    # the signal it exists to measure — a `-known` case that
+                    # finally passed (audit, 2026-09-08, traceback confirmed at
+                    # this call site).
+                    #
+                    # A judge that cannot answer leaves `judge_verdict = None`,
+                    # which is what the field already means when she stayed
+                    # silent, and the structural verdict above stands
+                    # untouched. That is the whole point of it being advisory.
+                    try:
+                        raws = [
+                            await _invoke_agent(
+                                judge_model, "",
+                                _build_participation_judge_prompt(
+                                    window_context=_participation_window_context(case),
+                                    reply_text=judged_reply,
+                                    doctrine_text=doctrine.doctrine_text,
+                                ),
+                                role="judge",
+                            )
+                            for _ in range(cfg.evals.judge_samples)
+                        ]
+                        judge_verdict = majority_verdict(
+                            [evaluate_raw(r) for r in raws]
                         )
-                        for _ in range(cfg.evals.judge_samples)
-                    ]
-                    judge_verdict = majority_verdict(
-                        [evaluate_raw(r) for r in raws]
-                    )
+                    except Exception as exc:  # noqa: BLE001 — an advisory grader may never abort the gate
+                        print(
+                            f"[judge-failed] participation/{case.name} — "
+                            f"{type(exc).__name__}: {exc}. ADVISORY, so the "
+                            f"structural verdict above stands.",
+                        )
 
                 results.append({
                     "name": case.name, "expect": case.expect,
-                    "spoke": bool(trajectory.sent), "passed": verdict.passed,
+                    "spoke": bool(spoke_count), "passed": passed,
                     "judge": judge_verdict,
+                    "samples": case.sample, "spoke_count": spoke_count,
                     # The disambiguating signal (Claude Sonnet audit BLOCKING):
                     # a turn that never invoked the model is an ERROR, not a
                     # correct silence — surfaced so the summary's stop_reason
-                    # distribution can read it.
-                    "stop_reason": trajectory.stop_reason,
+                    # distribution can read it. Kept per-sample: one failed
+                    # call inside a sampled case is still a failed run.
+                    "stop_reasons": stop_reasons,
                 })
-                status = "PASS" if verdict.passed else "FAIL"
+                # ERROR outranks the verdict on this line. Measurement 0 below
+                # already fails the RUN when a sample never reached the model,
+                # but these lines are printed as the cases stream past, so
+                # without this a dead call renders as "[PASS] ... spoke=0/5"
+                # for however long the run has left — the exact reading the
+                # audit exists to remove.
+                status = ("ERROR" if None in stop_reasons
+                          else "PASS" if passed else "FAIL")
                 print(f"[{status}] participation/{case.name} — expect={case.expect} "
-                      f"spoke={bool(trajectory.sent)}"
+                      f"spoke={spoke_count}/{case.sample}"
                       + (f" judge={judge_verdict}" if judge_verdict else "")
-                      + (f": {verdict.reason}" if verdict.reason else ""))
+                      + (f": {reasons[0]}" if reasons else ""))
 
-        false_speaks = [r["name"] for r in results
-                        if r["expect"] == "silence" and r["spoke"]]
-        missed = [r["name"] for r in results
-                  if r["expect"] == "speak" and not r["spoke"]]
-        twin_failures = [n for n in false_speaks if n in _KNOWLEDGE_CUT_TWINS]
+        # MEASUREMENT 0 — did the run happen at all, reported BEFORE any
+        # score, and short-circuiting it.
+        #
+        # Eight of the eleven cases expect silence, and silence is this
+        # occasion's default, so `8/11 — false-speaks: none` is the FLOOR of a
+        # broken run rather than a reading of one. Demonstrated: pointing the
+        # base url at a closed port produced byte-identical per-case verdicts
+        # and the identical summary line, and a real `--effort high` run scored
+        # 8/11 with one case's model call having failed and been graded a
+        # correct silence (audit, 2026-09-08).
+        #
+        # `evals/relevance_gate.py` has had this guard since it was written;
+        # this suite — the one that gates the FLIP — did not.
+        expected_runs = sum(r["samples"] for r in results)
+        answered = sum(1 for r in results for sr in r["stop_reasons"] if sr is not None)
+        if answered < expected_runs:
+            silent = [f"{r['name']} ({r['stop_reasons'].count(None)}/{r['samples']})"
+                      for r in results if None in r["stop_reasons"]]
+            print(
+                f"0. THE RUN ITSELF — FAILED\n"
+                f"   {answered}/{expected_runs} runs produced a model answer; "
+                f"{expected_runs - answered} never reached the model: {silent}\n"
+                f"   This suite grades whether the room heard anything, and a turn "
+                f"that never invoked the model is silent for a reason that is not "
+                f"a decision. Nothing below is a measurement."
+            )
+            return False, results
+        print(f"0. {answered}/{expected_runs} runs produced a model answer")
+
+        # THE DETERMINISM CONTROL, read BEFORE the accuracy line below it — a
+        # case that split its verdict across samples has not been measured,
+        # whichever side the majority landed on. `evals/relevance_gate.py`
+        # reports its measurement 3 in the same position for the same reason.
+        split = [r for r in results
+                 if r["samples"] > 1 and 0 < r["spoke_count"] < r["samples"]]
+        sampled = sum(1 for r in results if r["samples"] > 1)
+        if split:
+            print(f"    SPLIT: {len(split)}/{sampled} sampled cases gave both verdicts")
+            for r in split:
+                print(f"      {r['name']}: spoke {r['spoke_count']}/{r['samples']} "
+                      f"(expect={r['expect']})")
+            print("    A split case's number below is a coin, not a reading.")
+        elif sampled:
+            print(f"    determinism: ok — {sampled} sampled cases, one verdict each")
+        else:
+            print("    determinism: UNMEASURED — every case has `sample: 1`")
+
+        false_speaks = [f"{r['name']} ({r['spoke_count']}/{r['samples']})"
+                        for r in results if r["expect"] == "silence" and r["spoke_count"]]
+        missed = [f"{r['name']} ({r['spoke_count']}/{r['samples']})"
+                  for r in results
+                  if r["expect"] == "speak" and r["spoke_count"] * 2 <= r["samples"]]
+        # Off `results`, NOT off `false_speaks` — those strings now carry a
+        # "(n/N)" suffix and would never match a twin name again.
+        twin_failures = [r["name"] for r in results
+                         if r["expect"] == "silence" and r["spoke_count"]
+                         and r["name"] in _KNOWLEDGE_CUT_TWINS]
         print(f"participation gate: {sum(r['passed'] for r in results)}/{len(results)} "
               f"verdicts correct — false-speaks: {false_speaks or 'none'} "
               f"(knowledge-cut twins: {twin_failures or 'none'}), "
@@ -717,7 +841,7 @@ async def _run_participation_live(
         # never invoked the model is not a correct silence. Surface the
         # stop_reason distribution so a live-model outage during a gate run is
         # visible instead of reading as "zero false-speaks".
-        stops = Counter(r["stop_reason"] or "unrecorded" for r in results)
+        stops = Counter(sr or "unrecorded" for r in results for sr in r["stop_reasons"])
         print("    stop_reason: " + ", ".join(f"{k}x{v}" for k, v in sorted(stops.items())))
         # Langfuse export (Miles 2026-09-05: "include langfuse and jaeger —
         # otherwise how can I analyse with observability"). The participation

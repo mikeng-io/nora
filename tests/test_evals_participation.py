@@ -148,8 +148,19 @@ def test_participation_verdict_speak():
 
 def test_participation_verdict_silence():
     verdict = ParticipationVerdict("silence")
-    assert verdict.evaluate(Trajectory()).passed
-    assert not verdict.evaluate(Trajectory(sent=["oops"])).passed
+    assert verdict.evaluate(Trajectory(stop_reason="end_turn")).passed
+    assert not verdict.evaluate(Trajectory(sent=["oops"], stop_reason="end_turn")).passed
+
+
+def test_a_turn_that_never_reached_the_model_is_an_error_not_a_silence():
+    """The whole suite's floor. Eight of eleven cases expect silence, so a
+    provider outage scores near-perfect unless a dead call is separated from a
+    decision: pointing the base url at a closed port reproduced the suite's
+    usual summary line byte for byte (audit, 2026-09-08). `stop_reason is
+    None` is the only signal that says the model was never invoked."""
+    result = ParticipationVerdict("silence").evaluate(Trajectory())
+    assert not result.passed
+    assert "ERROR" in result.reason
 
 
 def test_participation_verdict_fails_closed_on_a_bad_expect():

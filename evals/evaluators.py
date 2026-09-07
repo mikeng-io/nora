@@ -4,7 +4,7 @@ from collections import Counter
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
-from nora.app.eval_support import REPLY_GUARD_BUDGETS
+from nora.app.eval_support import BUDGET_STOP_REASONS, REPLY_GUARD_BUDGETS
 
 
 @dataclass(frozen=True)
@@ -58,13 +58,24 @@ class HonchoFedOncePerReply:
         return Result(ok, f"honcho fed {t.honcho_feeds} time(s), expected {expected}")
 
 
-# The stop reasons that mean "the model was never successfully invoked" —
-# a timeout, an llm_error, or a budget cut. A turn ending in any of these is
-# an ERROR for eval purposes, never a correct silence (see evaluate()).
-_ERROR_STOP_REASONS = frozenset({
-    "invocation_timeout", "llm_error", "limit_total_tokens",
-    "limit_max_turns", "limit_request_timeout", "no_send_call",
-})
+# A turn ending in one of these is an ERROR for eval purposes, never a correct
+# silence (see `evaluate`).
+#
+# DERIVED from `nora.engagement.stages.deliver.BUDGET_STOP_REASONS`, which is
+# itself copied from `strands.types.event_loop.StopReason`. It used to be a
+# hand-written set of six strings and FIVE OF THEM COULD NEVER APPEAR:
+# `Trajectory.stop_reason` is read off `nora_llm_stop_reason_total{reason}`,
+# whose vocabulary is Strands', while `invocation_timeout`, `llm_error`,
+# `no_send_call` and `limit_request_timeout` are `nora_silent_failures_total`
+# labels — a different series. `limit_max_turns` was a misspelling of
+# `limit_turns`, and `limit_output_tokens` — the exact hypothesis
+# `Trajectory.stop_reason` was added to test — was missing.
+#
+# So the guard written to stop a model outage certifying the flip gate was
+# dead for the life of the suite, and a dead-provider run scored the same
+# 8/11 a healthy one does (audit, 2026-09-08). A hand-copied vocabulary is
+# what drifts; this one is now the same object the code increments against.
+_BUDGET_STOP_REASONS = frozenset(BUDGET_STOP_REASONS)
 
 
 class ParticipationVerdict:
@@ -97,7 +108,14 @@ class ParticipationVerdict:
         # BLOCKING). `FirePath._turn` catches timeouts/errors and returns a
         # failure string without raising, so `Trajectory.sent` stays empty
         # either way; `stop_reason` is the signal that disambiguates.
-        if not spoke and t.stop_reason in _ERROR_STOP_REASONS:
+        # `None` is the load-bearing half and was not covered before. A
+        # transport failure, a timeout or an `llm_error` never reaches the
+        # stop-reason counter at all — `FirePath` leaves the field at its
+        # initialiser — so the ONLY signal that the model was never invoked is
+        # the absence of a reason. Without this a dead provider produces a
+        # silent turn indistinguishable from a chosen one, which is exactly
+        # what a run against a closed port demonstrated.
+        if not spoke and (t.stop_reason is None or t.stop_reason in _BUDGET_STOP_REASONS):
             return Result(
                 False,
                 f"expected {self._expect}; the model was never successfully "
