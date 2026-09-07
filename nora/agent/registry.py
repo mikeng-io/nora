@@ -64,11 +64,8 @@ from .room import Room
 from .tools import (
     NATIVE_TOOL_BUDGETS,
     NATIVE_TOOLS,
-    EntityReadCollaborator,
     EventsCollaborator,
-    FactReadCollaborator,
     ImageGenerator,
-    KnowledgeCollaborator,
     NoteCollaborator,
     build_tool_specs,
     utc_now,
@@ -140,9 +137,6 @@ class ToolRegistry:
         notes: NoteCollaborator | None = None,
         note_workspace: Callable[[str, str], str | None] | None = None,
         workspace_for: Callable[[str, str], str | None] | None = None,
-        knowledge: KnowledgeCollaborator | None = None,
-        facts: FactReadCollaborator | None = None,
-        entities: EntityReadCollaborator | None = None,
         compute_backend: ComputeBackend | None = None,
         compute_jobs: ComputeJobStore | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
@@ -299,22 +293,10 @@ class ToolRegistry:
         self._notes = notes
         self._note_workspace = note_workspace
         # ONE resolver for every workspace-keyed tool. `note_workspace` is its
-        # older name and still works; `workspace_for` is what a new tier
-        # passes, so the knowledge tier does not have to read the NOTE tier's
+        # older name and still works; `workspace_for` is what a tier outside
+        # the note tier passes, so it does not have to read the NOTE tier's
         # parameter and thereby depend on the note tier being wired.
         self._workspace_for = workspace_for
-        self._knowledge = knowledge
-        # The knowledge tier's GRAPH reads (design/dreamer-agent-loop/32 §3.4)
-        # — `get_knowledge`/`knowledge_premises`/`knowledge_asserters`/
-        # `knowledge_entity`'s own pair, wired the identical honest way
-        # `knowledge` is: both None while `[facts] enabled = false` (every
-        # composition that has not wired the tier — offline, eval, and any
-        # test that does not care), and the four verbs answer `unavailable`
-        # (R-5) rather than crash or report an unconsulted store as an empty
-        # one. `entities` is the resolver `get_knowledge` needs FIRST, because
-        # `fact.subject_id` holds surface text, not entity ids.
-        self._facts = facts
-        self._entities = entities
         # `make_artifact`'s pair (Nora Compute spec §4), wired the same honest
         # way `reminders` is: NOT default-constructed — there is no backendless
         # or storeless default — so every composition that has not wired Nora
@@ -656,8 +638,6 @@ class ToolRegistry:
             events=self._events,
             notes=self._notes, note_workspace=self._note_workspace,
             workspace_for=self._workspace_for,
-            knowledge=self._knowledge,
-            facts=self._facts, entities=self._entities,
             supplied_workspace=supplied_workspace,
             links=links,
             relay=self._relay,

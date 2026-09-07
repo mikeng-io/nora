@@ -19,10 +19,6 @@ from nora.config import (
     SpeechConfig,
     load,
 )
-from nora.domain.facts import (
-    FACT_PREDICATE_CEILING_CHARS,
-    FACT_TERM_CEILING_CHARS,
-)
 from tests.builders import copy_example_config
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -423,70 +419,6 @@ def test_the_heartbeat_and_reminders_sections_are_optional_and_ship_inert(toml_p
     assert cfg.reminders.min_lead_seconds > cfg.heartbeat.tick_seconds
 
 
-def test_the_language_section_is_optional_and_ships_inert(toml_path):
-    """Task 11's `[language]` — a config.toml written before the Dreamer
-    existed must keep loading, and `enabled` must default to False: a new
-    subsystem does not switch itself on. The values asserted are the class
-    defaults, so this fails if one silently changes — including the
-    store > render relation the render cap depends on
-    (`nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT`, 15, is not
-    itself configurable, so it is checked here as a fixed constant rather
-    than a second config field)."""
-    from nora.engagement.context import DEFAULT_ROOM_LANGUAGE_STORE_LIMIT
-
-    text = toml_path.read_text()
-    head, _, tail = text.partition("[language]\n")
-    assert tail, "config.example.toml no longer declares [language]"
-    remainder = tail.split("\n[", 1)
-    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
-
-    cfg = load(toml_path)
-
-    assert cfg.language.enabled is False
-    assert cfg.language.tick_seconds == 300.0
-    assert cfg.language.safety_lag == 300
-    assert cfg.language.quiet_seconds == 1800.0
-    assert cfg.language.max_age_seconds == 86_400.0
-    assert cfg.language.batch_limit == 400
-    assert cfg.language.max_rendered_lexemes == 6
-    # The CODE default — deliberately NOT the deployment's `:0731` tag (the
-    # deployment carries the tag in config.toml because the bare id 400s
-    # against the re-synced OmniRoute catalog; the code default is unchanged).
-    assert cfg.language.model == "ollamacloud/deepseek-v4-flash"
-    assert cfg.language.timeout_seconds == 120.0
-    assert cfg.language.max_rendered_lexemes < DEFAULT_ROOM_LANGUAGE_STORE_LIMIT, (
-        "the render cap must stay below the store limit or the block "
-        "silently under-fills"
-    )
-
-
-def test_the_facts_section_is_optional_and_ships_inert(toml_path):
-    """The fact tier's `[facts]` — a config.toml written before this section
-    existed must keep loading, and `enabled` must default to False: a new
-    subsystem does not switch itself on, and nothing writes a fact yet. The
-    values asserted are the class defaults, so this fails if one silently
-    changes.
-
-    The workspace startup check the design doc's §7 argued for was cut
-    (operator, 2026-08-20): the store's read (`standing_facts`, Task 3, not
-    yet built) is specified to scope by workspace in SQL, so once it exists
-    there will be no second refusal-shaped property to test here — see
-    `docs/superpowers/plans/2026-08-20-fact-tier.md`'s Task 6 note."""
-    text = toml_path.read_text()
-    head, _, tail = text.partition("[facts]\n")
-    assert tail, "config.example.toml no longer declares [facts]"
-    remainder = tail.split("\n[", 1)
-    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
-
-    cfg = load(toml_path)
-
-    assert cfg.facts.enabled is False
-    assert cfg.facts.max_adjudications_per_tick == 10
-    assert cfg.facts.max_room_facts == 8
-    assert cfg.facts.max_sender_facts == 4
-    assert cfg.facts.retention_days == 180
-
-
 def test_the_notes_section_is_optional_and_ships_inert(toml_path):
     """The note tier's `[notes]`, its `[facts]` sibling's shape and reasoning:
     a config.toml written before this section existed must keep loading under
@@ -513,34 +445,6 @@ def test_the_notes_section_is_optional_and_ships_inert(toml_path):
         "the note index is uncapped by design (§5.1) — a render cap here "
         "would make a note silently invisible"
     )
-
-
-def test_a_render_cap_at_or_above_the_store_limit_is_refused(toml_path):
-    """`[language].max_rendered_lexemes` has no upper bound of its own
-    (`Field(ge=1)`) — this cross-field relation was a comment in
-    `LanguageConfig`'s own docstring and a rule in none, the same gap
-    `_lead_clears_the_tick` closed for `[reminders]`/`[heartbeat]`. Raising
-    the cap to or past the STORE limit (15) must refuse to start rather than
-    silently under-fill the rendered block."""
-    text = toml_path.read_text()
-    toml_path.write_text(
-        text.replace("max_rendered_lexemes = 6", "max_rendered_lexemes = 15")
-    )
-
-    with pytest.raises(ConfigError, match="max_rendered_lexemes"):
-        load(toml_path)
-
-
-def test_a_render_cap_below_the_store_limit_is_accepted(toml_path):
-    """The control for the test above — without it, a bug that refused
-    EVERY value (not just `>= 15`) would leave that one green."""
-    text = toml_path.read_text()
-    toml_path.write_text(
-        text.replace("max_rendered_lexemes = 6", "max_rendered_lexemes = 14")
-    )
-
-    cfg = load(toml_path)
-    assert cfg.language.max_rendered_lexemes == 14
 
 
 def test_a_minimum_lead_inside_the_tick_is_refused(toml_path):
@@ -857,12 +761,19 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     assert cfg.dreamer.enabled is False
     # The CLASS default, not the shipped file's value: this test deletes the
     # section, so what it measures is what a config predating it gets. Empty
-    # still means "fall back to [language].model", which is why that fallback
-    # stays wired even though config.toml now states the model outright.
+    # still means "fall back to [llm].model", which is why that fallback stays
+    # wired even though config.toml now states the model outright.
     assert cfg.dreamer.model == ""
-    assert cfg.dreamer_model() == cfg.language.model
+    assert cfg.dreamer_model() == cfg.llm.model
     assert cfg.dreamer.budgets == {}
-    assert cfg.dreamer.budget_for("room_language") == DreamBudgetConfig()
+    assert cfg.dreamer.budget_for("note-curation") == DreamBudgetConfig()
+    # The clock's own five numbers, which moved here from the deleted
+    # `[language]`: a config predating the move still gets a bounded loop.
+    assert cfg.dreamer.tick_seconds == 300.0
+    assert cfg.dreamer.safety_lag == 300
+    assert cfg.dreamer.quiet_seconds == 1800.0
+    assert cfg.dreamer.max_age_seconds == 86_400.0
+    assert cfg.dreamer.batch_limit == 400
 
 
 def test_two_configs_do_not_share_one_defaulted_dreamer_section(tmp_path, monkeypatch):
@@ -940,34 +851,7 @@ def test_the_shipped_dreamer_model_is_the_one_nora_runs(toml_path):
     cfg = load(toml_path)
     # Literal carries the `:0731` catalog tag the deployment moved to 2026-08-30.
     assert cfg.dreamer.model == "ollamacloud/deepseek-v4-flash:0731"
-    assert cfg.dreamer_model() == cfg.language.model
-
-
-def test_an_empty_dreamer_model_still_falls_back_to_the_language_model(toml_path):
-    """The fallback stays wired even though the shipped file no longer uses it:
-    a deployment whose `config.toml` predates this field must keep loading, and
-    `extra="forbid"` makes that a real constraint rather than a courtesy."""
-    toml_path.write_text(toml_path.read_text().replace(
-        'model = "ollamacloud/deepseek-v4-flash:0731"\n\n# One budget block',
-        'model = ""\n\n# One budget block',
-    ))
-    cfg = load(toml_path)
-    assert cfg.dreamer.model == ""
-    assert cfg.dreamer_model() == cfg.language.model
-
-
-def test_an_explicit_dreamer_model_overrides_the_language_model(toml_path):
-    """Otherwise the fallback would pin the knob open and D2's answer, when it
-    arrives, would be a no-op — the same failure
-    `test_an_explicit_image_model_wins_over_the_legacy_alias` guards for
-    `[media]`'s own alias."""
-    toml_path.write_text(toml_path.read_text().replace(
-        'model = "ollamacloud/deepseek-v4-flash:0731"\n\n# One budget block',
-        'model = "measured/dreamer-tier"\n\n# One budget block',
-    ))
-    cfg = load(toml_path)
-    assert cfg.language.model == "ollamacloud/deepseek-v4-flash:0731"
-    assert cfg.dreamer_model() == "measured/dreamer-tier"
+    assert cfg.dreamer_model() == cfg.llm.model
 
 
 def test_an_adaptor_with_no_budget_block_gets_the_default_budget(toml_path):
@@ -975,7 +859,7 @@ def test_an_adaptor_with_no_budget_block_gets_the_default_budget(toml_path):
 
     An adaptor added later — or renamed, or misspelled in the TOML — must still
     be bounded. The failure this replaces has no metric of its own: a `KeyError`
-    inside `_dream_once` is caught per scope, counted, and backed off, so it
+    inside the dream tick is caught per unit, counted, and backed off, so it
     would look exactly like a provider outage."""
     cfg = load(toml_path)
     assert "room_portrait" not in cfg.dreamer.budgets
@@ -1004,85 +888,67 @@ def test_a_partial_budget_block_fills_the_rest_from_the_default(toml_path):
     assert budget.timeout_seconds == DreamBudgetConfig().timeout_seconds == 120.0
 
 
-def test_the_declared_budgets_parse_into_bounded_budgets(toml_path):
-    """The template's own blocks, read back through the typed model.
+def test_the_shipped_template_declares_no_budget_block_at_all(toml_path):
+    """**Stated rather than hidden: every surviving adaptor runs on
+    `DreamBudgetConfig`'s defaults.**
 
-    "It loaded" is not the same as "it loaded what we think": a
-    `[dreamer.budgets.x]` block with a typo'd table name would parse as TOML,
-    refuse under `extra="forbid"`... but a block that parses into an EMPTY map
-    would not, and the section would silently be doing nothing."""
+    The template declared five blocks — two room ones that named nothing and
+    three `fact-*` ones that were the only measured numbers in the section.
+    All five went with the knowledge and language tiers. The note tier's three
+    adaptors never had a block, so nothing regressed; what changed is that the
+    section is now empty rather than partly filled, and this test says so out
+    loud instead of leaving the next reader to infer it from a passing suite.
+
+    `budget_for` falls back SILENTLY for an unknown key (its own docstring
+    concedes it), so an adaptor with no block runs on numbers nobody chose.
+    That is the shipped state and it is bounded — the assertion below is what
+    keeps it from being confused with «somebody sized these»."""
     budgets = load(toml_path).dreamer.budgets
-    # Pinned, so ADDING an adaptor is a decision rather than an omission —
-    # `budget_for` falls back to the defaults for an unknown key silently, so
-    # an adaptor with no block runs on numbers nobody chose. The three `fact-*`
-    # are the adaptors that exist today; the two `room_*` are Phase 3's
-    # migration targets and name nothing yet.
-    assert set(budgets) == {
-        "room_language", "room_exchange",
-        "fact-candidates", "fact-adjudication", "fact-entity-resolution",
-    }
-    for name, budget in budgets.items():
-        assert budget.turns > 0, name
-        assert budget.total_tokens > 0, name
-        assert budget.output_tokens > 0, name
-        assert budget.timeout_seconds > 0, name
+    assert budgets == {}, (
+        "a [dreamer.budgets.*] block arrived — pin it here with the reasoning "
+        "for its numbers, so the section cannot fill up unmeasured"
+    )
 
 
 def test_a_zero_budget_field_is_a_startup_failure(toml_path):
     """`ge=1`/`gt=0` on every field, for `LimitsConfig`'s own reason: a cap that
     can be zeroed is a cap an operator can turn into a silent outage by hand,
-    and this section's whole job is to be edited by hand."""
-    toml_path.write_text(toml_path.read_text().replace(
-        '[dreamer.budgets.room_language]\nturns = 6',
-        '[dreamer.budgets.room_language]\nturns = 0'))
+    and this section's whole job is to be edited by hand.
+
+    The block is APPENDED here rather than edited in place, because the shipped
+    template declares none (see the test above)."""
+    toml_path.write_text(
+        toml_path.read_text()
+        + "\n[dreamer.budgets.note-curation]\nturns = 0\n")
     with pytest.raises(ConfigError, match="turns"):
         load(toml_path)
 
 
 def test_an_unknown_budget_key_is_a_startup_failure(toml_path):
-    toml_path.write_text(toml_path.read_text().replace(
-        '[dreamer.budgets.room_language]\nturns = 6',
-        '[dreamer.budgets.room_language]\nturn = 6'))
+    toml_path.write_text(
+        toml_path.read_text()
+        + "\n[dreamer.budgets.note-curation]\nturn = 6\n")
     with pytest.raises(ConfigError, match="turn"):
         load(toml_path)
 
 
-def test_every_adaptor_that_exists_has_a_budget_of_its_own(toml_path):
-    """`budget_for` falls back to defaults for an unknown key, SILENTLY — its
-    own docstring concedes it. So a `[dreamer.budgets.*]` section naming only
-    adaptors that do not exist yet leaves the ones that DO on numbers nobody
-    chose, and nothing says so (2026-08-21 review, which found exactly that
-    shipped).
+def test_a_declared_budget_block_parses_into_a_bounded_budget(toml_path):
+    """The positive control for the two refusals above, and for the empty-map
+    assertion two tests up: a LEGAL block must actually reach `budget_for`.
 
-    Derived from the adaptor classes rather than hand-listed, so an adaptor
-    added tomorrow turns this red instead of quietly inheriting a default."""
-    from nora.language.fact_adaptor import FactAdaptor, FactCandidateAdaptor
-
-    cfg = load(toml_path)
-    for adaptor in (FactCandidateAdaptor, FactAdaptor):
-        assert adaptor.name in cfg.dreamer.budgets, (
-            f"adaptor {adaptor.name!r} has no [dreamer.budgets.{adaptor.name}] "
-            "block and would silently run on the shared defaults"
-        )
-
-
-def test_the_extractor_is_budgeted_for_its_daily_batch(toml_path):
-    """Design/dreamer-agent-loop/32 §3.2 REVERSED this test's premise — it
-    used to assert the adjudicator out-budgets the extractor, because the
-    extractor was one tool-free call over a 30-minute 100-message batch.
-    §3.1 moves the extractor onto its own clock: a DAILY 1000-message batch
-    (86400s interval, `AdaptorSchedule` in composition), and §3.2 enlarges
-    its budget to match — a call that must survive one slow daily pass over
-    the whole backlog, several rendered pages of transcript at a time. The
-    adjudicator's per-claim research loop is unchanged. This now asserts the
-    extractor actually carries the design's floor rather than silently
-    falling back to a number sized for a batch ten times smaller."""
-    cfg = load(toml_path)
-    extract = cfg.dreamer.budget_for("fact-candidates")
-
-    assert extract.turns >= 20
-    assert extract.total_tokens >= 200000
-    assert extract.timeout_seconds >= 3600
+    "It loaded" is not the same as "it loaded what we think": a
+    `[dreamer.budgets.x]` block with a typo'd table name would parse as TOML,
+    refuse under `extra="forbid"`... but a block that parses into an EMPTY map
+    would not, and the section would silently be doing nothing."""
+    toml_path.write_text(
+        toml_path.read_text()
+        + "\n[dreamer.budgets.note-curation]\n"
+        "turns = 7\ntotal_tokens = 50000\n"
+        "output_tokens = 5000\ntimeout_seconds = 90\n")
+    budget = load(toml_path).dreamer.budget_for("note-curation")
+    assert (budget.turns, budget.total_tokens, budget.output_tokens) == (
+        7, 50_000, 5_000)
+    assert budget.timeout_seconds == 90.0
 
 
 # --- [standing] (design/dreamer-agent-loop/26-standing §4.0) ----------------
@@ -1279,133 +1145,6 @@ def test_a_standing_fold_batch_of_zero_refuses_to_start(toml_path):
         load(toml_path)
 
 
-def test_a_fact_term_cap_above_the_database_ceiling_refuses_to_start(toml_path):
-    """`[standing] max_chars`' refusal, one tier over and for the same reason:
-    `fact_term_fits_the_ceiling_check` is DDL and cannot be a knob, so a config
-    above it means every fact the adjudicator writes is refused by Postgres —
-    in a background tick nobody is watching, rather than at boot."""
-    text = toml_path.read_text()
-    i = text.index("[facts]")
-    toml_path.write_text(
-        text[:i] + text[i:].replace(
-            "enabled = false",
-            f"enabled = false\nmax_term_chars = {FACT_TERM_CEILING_CHARS + 1}",
-            1))
-    with pytest.raises(ConfigError, match="ceiling"):
-        load(toml_path)
-
-
-def test_a_fact_predicate_cap_above_the_database_ceiling_refuses_to_start(toml_path):
-    """The second cap, asserted separately: one validator covering two fields
-    passes with either half deleted."""
-    text = toml_path.read_text()
-    i = text.index("[facts]")
-    toml_path.write_text(
-        text[:i] + text[i:].replace(
-            "enabled = false",
-            f"enabled = false\n"
-            f"max_predicate_chars = {FACT_PREDICATE_CEILING_CHARS + 1}",
-            1))
-    with pytest.raises(ConfigError, match="ceiling"):
-        load(toml_path)
-
-
-def test_fact_caps_exactly_at_their_ceilings_are_allowed(toml_path):
-    """The boundary from the accepting side: the ceiling is the largest value a
-    writer may pass, not the first one it may not.
-
-    **The numbers are IMPORTED, not written here.** Hard-coding 800 and 200 was
-    a fourth copy of a constant migration 0041's own docstring says must never
-    be repeated — and it made the test green through a raised ceiling while no
-    longer testing a boundary at all."""
-    text = toml_path.read_text()
-    i = text.index("[facts]")
-    toml_path.write_text(
-        text[:i] + text[i:].replace(
-            "enabled = false",
-            f"enabled = false\n"
-            f"max_term_chars = {FACT_TERM_CEILING_CHARS}\n"
-            f"max_predicate_chars = {FACT_PREDICATE_CEILING_CHARS}",
-            1))
-    cfg = load(toml_path)
-    assert cfg.facts.max_term_chars == FACT_TERM_CEILING_CHARS
-    assert cfg.facts.max_predicate_chars == FACT_PREDICATE_CEILING_CHARS
-
-
-def test_the_dispute_classifier_has_its_own_timeout_and_is_in_the_slot_hold(
-    toml_path,
-):
-    """**A 120-second model call sat ahead of every reply.**
-
-    `Recogniser`'s classifier was built with `[language] timeout_seconds`,
-    which is 120 because it bounds a DREAMER call in a background tick where a
-    slow model costs a tick. Recognition runs on the REPLY PATH — awaited in
-    `_run_turn` before context assembly, holding the conversation's slot — so
-    inherited there it was two minutes of silence before she answered.
-    `[standing]`, the other stage on this slot, bounds itself at 20 and made
-    the total a startup gate; this walked past that gate because it had no key
-    of its own to put in the sum.
-
-    Asserted BOTH ways round, because the default alone would be satisfied by
-    a key nothing reads: the value is in the sum the gate enforces, so raising
-    it past the budget refuses to start.
-    """
-    cfg = load(toml_path)
-    assert cfg.facts.dispute_classify_timeout_seconds == 8.0
-    assert cfg.language.timeout_seconds != 8.0, (
-        "the two must be different values or this proves nothing about which "
-        "one the classifier is built with"
-    )
-
-    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "50.0")
-    toml_path.write_text(text)
-    with pytest.raises(ConfigError, match="dispute_classify_timeout_seconds"):
-        load(toml_path)
-
-
-def test_an_empty_veto_file_setting_is_no_veto_file(toml_path):
-    """**`config.toml` documented this exact form**, and once a
-    configured-but-missing veto path started refusing to start, it became a
-    boot failure naming a path the operator never wrote.
-
-    Pydantic coerces `""` to `PosixPath(".")` — neither `None` nor a file — so
-    an operator uncommenting the repo's own example got "`[facts] veto_file`
-    points at `.`, which is not a readable file". The empty string is a
-    pydantic artifact rather than an operator intent, so it is normalised
-    HERE, in the layer that can tell the difference, rather than at the reader
-    which would then have to treat "." as special forever.
-
-    Through a real TOML load, not through `FactsConfig(...)`: the coercion is
-    what the file's own value goes through, and constructing the model with a
-    Python value takes a different path.
-    """
-    text = toml_path.read_text()
-    i = text.index("[facts]")
-    j = text.index("\n[", i + 1)
-    section = text[i:j] + '\nveto_file = ""\n'
-    toml_path.write_text(text[:i] + section + text[j:])
-
-    cfg = load(toml_path)
-
-    assert cfg.facts.veto_file is None
-
-
-def test_a_real_veto_path_survives_the_empty_string_normalisation(toml_path):
-    """The positive control: a normalisation that returned `None` for every
-    value would satisfy the test above while making the veto list
-    unconfigurable."""
-    text = toml_path.read_text()
-    i = text.index("[facts]")
-    j = text.index("\n[", i + 1)
-    section = text[i:j] + '\nveto_file = "/app/config/veto.txt"\n'
-    toml_path.write_text(text[:i] + section + text[j:])
-
-    cfg = load(toml_path)
-
-    assert cfg.facts.veto_file is not None
-    assert cfg.facts.veto_file.name == "veto.txt"
-
-
 def test_the_dreamer_carries_its_own_reasoning_effort(toml_path):
     """**The knowledge tier's first production failure**, and the reason the
     key is the Dreamer's rather than one level up.
@@ -1471,49 +1210,3 @@ def test_a_misspelt_dreamer_effort_refuses_to_start(toml_path):
 
     with pytest.raises(ConfigError, match="reasoning_effort"):
         load(toml_path)
-
-
-def test_the_adjudicator_has_room_to_converge(toml_path):
-    """**MEASURED, and it is the fix for the tier's second production
-    failure.** Five runs of the shipped `fact-adjudication` objective against
-    the shipped prompt, with a `web_search` schema attached and a plausible
-    result returned each turn, converged at turns 9, 15, 14, 10 and 13.
-
-    At `turns = 10`, four of those five would have exhausted the budget — and
-    an exhausted loop hands `parse_envelope` whatever text accumulated, which
-    the runtime reports as `unavailable` while HOLDING the watermark. A batch
-    that was read, re-read forever, under a counter saying the model could not
-    be reached.
-
-    Pinned against the OBSERVED MAXIMUM rather than as a round number: if a
-    later change makes the loop converge faster, lowering this should be a
-    decision with its own measurement rather than a tidy-up, and if the model
-    starts needing more this is the number that has to move.
-    """
-    cfg = load(toml_path)
-    budget = cfg.dreamer.budgets["fact-adjudication"]
-
-    assert budget.turns >= 16, (
-        "the adjudicator converged at turn 15 in one of five measured runs; "
-        "a budget at or below that exhausts the loop and reports an outage "
-        "for a batch it had read"
-    )
-    # 120_000 -> 2_000_000 (operator, 2026-09-07), which is this assertion's
-    # own docstring being taken up on its offer: "if the model starts needing
-    # more this is the number that has to move".
-    #
-    # It moved on evidence, not on preference. The first tick after the
-    # candidate filter opened (2026-09-06 17:56Z) reached the model for two
-    # workspaces, spent the loop on four `web_search` and two `web_fetch`
-    # calls, and emitted a ZERO-CHARACTER envelope in both — a fetched page is
-    # input-resident and re-paid on every later call, so 120k bought the
-    # research and left nothing to write the verdict with.
-    #
-    # The cadence is what makes the size sane rather than reckless: this
-    # adaptor runs ONCE A DAY per workspace, so a ceiling sized for a
-    # five-minute tick was bounding the wrong thing.
-    assert budget.total_tokens == 2_000_000
-    # `timeout_seconds` is now the BINDING bound, and that is the honest place
-    # for it: a research loop should be stopped by a clock a human would
-    # notice, not by a token budget it exhausts silently mid-answer.
-    assert budget.timeout_seconds == 300.0

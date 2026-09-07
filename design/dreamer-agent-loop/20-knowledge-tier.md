@@ -10,7 +10,77 @@ edges:
   - {dst: 19-between-tiers, rel: extends, provenance: asserted}
 ---
 
+> **DEPRECATED 2026-09-07 — the knowledge tier (the "fact tier") has been deprecated and its code deleted.**
+> This document is retained as a record of the reasoning, not as a description of the system. **Nothing here describes code that exists.**
+> The database tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
+> The evidence that decided it is in §0 below. See issue #115.
+
 # The Knowledge Tier
+
+## 0. DEPRECATED 2026-09-07 — why, and on what evidence
+
+**The knowledge tier has been deprecated and its code deleted.** Everything below
+§0 is the reasoning that built it, kept as a record. It no longer describes
+anything that runs. The `fact`, `fact_candidate`, `fact_entity`, `fact_premise`,
+`fact_asserter`, `rendered_claim` and `embedding` tables are **not** dropped by
+that change — the code goes, the schema
+stays, and dropping them is a separate explicit decision.
+
+All figures below were measured against the live database and the live traces on
+**2026-09-06/07**, after the tier had been enabled for eleven days.
+
+**1. It built the one warrant something else already does better.** Every fact
+the tier ever wrote carried `warrant_kind = 'source'` — *"a page said so"* — five
+facts in eleven days. A runtime `web_search` answers that question better,
+fresher, and with more context than the stored row keeps: `Windrose has_chinese
+true` knows *less* than one live search, because the row has dropped the context,
+the date and the qualification. It is a cache of a cheaper, better call, and it
+competes with `peer_card`/`representation` for the same per-turn context budget.
+
+**2. The warrant it did not build is the one that was already running.** §3's own
+table assigns `observation` to *"memory conclusions"* — i.e. Honcho, which holds
+**8,301** of them against this tier's **5**. `stated` and `premises` never got a
+writer at all.
+
+**3. Its declared purpose is not expressible in what it wrote.**
+`docs/superpowers/specs/2026-08-20-fact-tier-design.md` §5 ranks contradicting
+candidates first, *"because this is the tier's purpose"*. Live, **zero
+contradictions are expressible**: the extracted predicates carry their own object
+— `has_chinese = true`, `has_puzzle`, `has_similar_price_to`. A predicate that
+contains its answer can never be contradicted by a second value.
+
+**4. Nothing read it.** `get_knowledge` was called **3** times, all
+`nothing_found`. The `<facts>` block reached a turn **twice**, both times the
+same single row.
+
+**5. And the deepest reason — the apparatus is inert by CONSTRUCTION, not by
+bug.** A knowledge graph encodes a **social contract**: somebody is answerable
+for each claim, being wrong has a cost, somebody will audit it. A friends' group
+has none of that. So the warrant/fidelity/dispute/supersession machinery this
+bundle spent six nodes designing has nothing to bite on — measured on the live
+table, `valid_to`, `disputed_at`, `superseded_at` and any non-`tentative`
+fidelity are populated **0 times out of 5**.
+
+The operator's own F/S/C model (2026-08-15 — **fidelity**, **salience**,
+**currency**) had the right axes. What shipped built `fidelity` — the
+accountability axis, the one a friends' group cannot supply — never built
+`salience` at all, and wrote `currency` (`valid_to`) zero times. And the
+mechanism a friends' group actually needs is **decay** — things stop mattering —
+not **supersession**, which assumes an authority formally retracts.
+
+**Note on issue #115.** The issue this decision is filed under proposed
+*repositioning* the tier onto `stated` (group commitments) and says explicitly
+*"this is not a teardown"*. The operator decided otherwise on 2026-09-07: the
+code is deleted. §5 above is the argument that closed it — a `stated` writer
+would inherit the same missing social contract, and the supersession machinery it
+would need is the machinery measured at zero writes.
+
+The issue also records that the machinery was *"verified working"* on 2026-09-07
+— attribution, supersession, entity promotion, the negative cache. That is not in
+tension with §5: it was verified at the code level, and separately measured at
+**zero live writes**. Working machinery with nothing to work on is exactly the
+finding.
+
 
 ## 1. What the schema actually models
 

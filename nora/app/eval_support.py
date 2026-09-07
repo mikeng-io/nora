@@ -31,7 +31,6 @@ from nora.agent.whereis import Circle
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
-from nora.domain.facts import Fact, FactAsserter
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.standing import Standing
@@ -278,8 +277,8 @@ class ProductionSeed:
 
     These are the read surfaces the eval path exercises (`FakeRecordStore` only
     serves `recent(...)`, `FakeMemoryStore` serves `peer_card` from `cards`,
-    and `InMemoryStandingStore`/`InMemoryNoteStore`/`InMemoryFactStore` serve
-    `standing`/`notes`/`facts`), so seeding exactly those is what changes the
+    and `InMemoryStandingStore`/`InMemoryNoteStore` serve
+    `standing`/`notes`), so seeding exactly those is what changes the
     model-visible prompt without pretending the eval is something it is not.
 
     `standing` is the single latest row across every conversation, remapped
@@ -287,9 +286,9 @@ class ProductionSeed:
     "the eval room's own position" in production, so the closest production
     shape is whatever position Nora most recently held anywhere. `notes` pairs
     a `Note` with its HEAD `NoteRevision` (what `InMemoryNoteStore.standing`
-    reads), and `facts` are standing (non-superseded) `Fact` rows — both read
-    under `_EVAL_WORKSPACE` so they land where the eval's `permissive_policy()`
-    resolves every room to (see that constant's docstring).
+    reads), read under `_EVAL_WORKSPACE` so they land where the eval's
+    `permissive_policy()` resolves every room to (see that constant's
+    docstring).
     """
 
     recents: tuple[TranscriptRow, ...] = ()
@@ -297,19 +296,10 @@ class ProductionSeed:
     conclusions: dict[str, list[str]] = field(default_factory=dict)
     standing: Standing | None = None
     notes: tuple[tuple[Note, NoteRevision], ...] = ()
-    facts: tuple[Fact, ...] = ()
-    # The FACT_ASSERTER rows for the seeded `facts` — WHO said each `stated`
-    # fact (`FactAsserter`, 21-substrate-contract §7). Without these the
-    # `<facts>` sender slice (`facts_asserted_by`) and the stated-fact
-    # attribution (`_asserters_for`) render empty in evals even when
-    # production would show them — the exact "silently missing prompt
-    # content" class this branch exists to fix.
-    asserters: tuple[FactAsserter, ...] = ()
 
 
 async def build_production_seed(
     cfg: Config, *, recents_limit: int = 12,
-    facts_limit: int = 20,
 ) -> ProductionSeed:
     """Read a production-shaped context snapshot from the REAL stores
     (Postgres transcript + Honcho peer card), read-only, for `ProductionSeed`.
@@ -341,8 +331,6 @@ async def build_production_seed(
     recents: list[TranscriptRow] = []
     standing: Standing | None = None
     notes: list[tuple[Note, NoteRevision]] = []
-    facts: list[Fact] = []
-    asserters: list[FactAsserter] = []
     try:
         async with engine.connect() as conn:
             result = await conn.execute(
@@ -415,34 +403,6 @@ async def build_production_seed(
                 )
                 notes.append((note, revision))
 
-            # Facts: standing (non-superseded) rows in the eval workspace —
-            # `fact`'s columns match `Fact`'s fields by name, so a plain
-            # `SELECT *` maps straight into the dataclass by keyword.
-            fact_rows = (await conn.execute(
-                sa.text(
-                    "SELECT * FROM fact WHERE workspace = :ws "
-                    "AND superseded_at IS NULL ORDER BY created_at DESC LIMIT :n"
-                ),
-                {"ws": _EVAL_WORKSPACE, "n": facts_limit},
-            )).all()
-            facts.extend(Fact(**dict(frow._mapping)) for frow in fact_rows)
-
-            # Fact_ASSERTER rows for exactly the seeded facts — WHO said each
-            # stated fact. Scoped to the seeded ids, not the whole workspace:
-            # the `<facts>` sender slice and stated-fact attribution are the
-            # two reads that need these, and both are bounded by the facts
-            # actually shown.
-            if fact_rows:
-                fact_ids = [frow.id for frow in fact_rows]
-                asserter_rows = (await conn.execute(
-                    sa.text(
-                        "SELECT * FROM fact_asserter WHERE fact_id = ANY(:ids)"
-                    ),
-                    {"ids": fact_ids},
-                )).all()
-                asserters.extend(
-                    FactAsserter(**dict(arow._mapping)) for arow in asserter_rows
-                )
     finally:
         await engine.dispose()
     for row in rows:
@@ -507,8 +467,7 @@ async def build_production_seed(
         await honcho.aclose()
     return ProductionSeed(recents=tuple(recents), cards=cards,
                           conclusions=conclusions, standing=standing,
-                          notes=tuple(notes), facts=tuple(facts),
-                          asserters=tuple(asserters))
+                          notes=tuple(notes))
 
 
 #: Timestamp base for case-file seeds — 2026-08-31 08:00 HKT, matching
@@ -532,7 +491,7 @@ def seed_from_dict(raw: dict[str, Any]) -> ProductionSeed:
     gap 2).
 
     EVERYTHING is keyed to `_EVAL_WORKSPACE` ("nora"). That is the footgun
-    the design audit named: the note and fact tiers are workspace-keyed
+    the design audit named: the note tier is workspace-keyed
     (DEC-105) and the eval room resolves to this workspace through
     `permissive_policy()`, so a seed row keyed anywhere else silently
     vanishes — the case would grade a prompt missing the very block it is
@@ -547,14 +506,6 @@ def seed_from_dict(raw: dict[str, Any]) -> ProductionSeed:
           standing: "where the conversation had got to"
           notes:
             - {title, description, body, uncertainty?, closing_condition?}
-          facts:
-            - {subject, predicate, object, asserter?}
-
-    The room slice of `<facts>` is matched by subject mention against the
-    transcript + incoming message (the same matcher recognition uses), so a
-    fact only renders when the conversation actually TALKS ABOUT its
-    subject — which is exactly the property the knowledge-cut cases lean
-    on. `asserter` names the person_id a `stated` fact is attributed to.
     """
     recents: list[TranscriptRow] = []
     speakers: dict[str, tuple[str, str]] = {}   # name -> (sender_id, person-ish id)
@@ -607,26 +558,6 @@ def seed_from_dict(raw: dict[str, Any]) -> ProductionSeed:
         )
         notes.append((note, revision))
 
-    facts: list[Fact] = []
-    asserters: list[FactAsserter] = []
-    for n, entry in enumerate(raw.get("facts") or []):
-        fact_id = _seed_id(0x3000 + n, "fact")
-        facts.append(Fact(
-            id=fact_id, workspace=_EVAL_WORKSPACE,
-            subject_id=entry["subject"], predicate=entry["predicate"],
-            object_entity_id=None, object_literal=entry["object"],
-            warrant_kind="stated", valid_from=_SEED_TS_BASE,
-            created_at=_SEED_TS_BASE + n,
-            instruction_sha256="a" * 64, model="case-seed",
-            established_by="case-seed",
-        ))
-        if entry.get("asserter"):
-            asserters.append(FactAsserter(
-                fact_id=fact_id, person_id=entry["asserter"],
-                message_id=1000 + n, asserted_at=_SEED_TS_BASE + n,
-            ))
-
     return ProductionSeed(
         recents=tuple(recents), standing=standing, notes=tuple(notes),
-        facts=tuple(facts), asserters=tuple(asserters),
     )

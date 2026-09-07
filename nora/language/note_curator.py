@@ -141,7 +141,7 @@ is code-decided and a merged note is not retired via `supersede` at all (see
 **Classification rides the SAME model call that decides `closed`, not a new
 adaptor and not a second call.** `nora/dreamer/objectives/note-curation.md`
 asks the model for an optional `discharge` array on a `closed` verdict; this
-module parses it (`_parse_discharge`), drops what does not fit the three
+module parses it (`_parse_discharge`), drops what does not fit the two
 warrant categories, and only ACTS on it in `commit`, after the note has
 actually retired — a discharge write is never a reason to hold up or reopen a
 retirement that already landed, and it never fails the tick when a downstream
@@ -178,11 +178,6 @@ from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Literal, Protocol, get_args
 
 from nora.domain.bounds import over_fetch
-from nora.domain.facts import (
-    FACT_PREDICATE_CEILING_CHARS,
-    FACT_TERM_CEILING_CHARS,
-    FactVerdict,
-)
 from nora.domain.gatherings import AmbiguousOpenGatheringsError
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import (
@@ -276,7 +271,7 @@ CURATOR_GROUP_REFUSALS: frozenset[str] = frozenset({"no_entity_anchor"})
 #: retirement, already counted on `nora_note_curator_total`/
 #: `nora_note_retirements_total`).
 DISCHARGE_KINDS: frozenset[str] = frozenset({
-    "commitment", "world_claim", "person_claim",
+    "commitment", "person_claim",
 })
 
 #: R-27's three states, applied to ONE discharge item's write:
@@ -317,12 +312,6 @@ MAX_DISCHARGE_ITEMS_PER_NOTE = 5
 #: `nora.language.note_candidates` caps every model-authored field ahead of
 #: the store rather than trusting the store's own ceiling to catch it first.
 MAX_COMMITMENT_TITLE_CHARS = 200
-
-#: A world-claim's quoted excerpt — `nora.domain.facts.FactVerdict`'s
-#: `source_excerpt`. Generous: this is the note's own settled prose, not a
-#: whole page, but still long enough to carry more than one sentence of
-#: context for the claim it warrants.
-MAX_WORLD_CLAIM_EXCERPT_CHARS = 2000
 
 #: A person-claim's content, on its way to `MemoryStore.conclude`. Mirrors
 #: `nora.agent.tools`'s `remember` tool's own `_CONCLUSION_MAX_CHARS` for the
@@ -404,19 +393,6 @@ class _TranscriptSource(Protocol):
     ) -> list[TranscriptRow]: ...
 
 
-class _FactSink(Protocol):
-    """The knowledge tier's OWN write path, seen from here — `SqlFactStore`'s
-    `propose`, the `DreamSink` verb `nora.language.fact_adaptor` already
-    writes a `FactVerdict` through. A structural Protocol rather than the
-    concrete import: `nora.infra` is reachable from `nora.language` by the
-    layering contract, but this module only ever needs the one verb, and a
-    narrow Protocol is what every other collaborator here already is."""
-
-    async def propose(
-        self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
-    ) -> Sequence[str]: ...
-
-
 class _EventSink(Protocol):
     """`nora.app.gatherings.GatheringService`'s `create_event`, seen
     structurally. **Cannot be imported concretely**: `nora.app` sits ABOVE
@@ -460,22 +436,6 @@ class _CommitmentClaim:
 
 
 @dataclass(frozen=True)
-class _WorldClaim:
-    """A closing note's settled fact about the WORLD — design 33 §7's
-    "Yardbird is a yakitori place" row. The same `(subject, predicate,
-    object)` shape `nora.language.fact_adaptor` already extracts, plus the
-    excerpt that becomes `FactVerdict.source_excerpt` — the quoted text this
-    claim is warranted by, since the note itself is the source
-    (`_discharge_world_claim` sets `source_url=f"note:{note.id}"`).
-    """
-
-    subject: str
-    predicate: str
-    object: str
-    excerpt: str
-
-
-@dataclass(frozen=True)
 class _PersonClaim:
     """A closing note's settled claim about a PERSON — design 33 §7's "Miles
     likes Yardbird for the jazz" row. Just the content: WHO it is about is
@@ -488,11 +448,17 @@ class _PersonClaim:
 
 
 #: One classified discharge item — a closed note's settled content, en route
-#: to the tier whose warrant it carries (design 33 §7 / 19 §1's table). Three
+#: to the tier whose warrant it carries (design 33 §7 / 19 §1's table). TWO
 #: shapes with a discriminant (the type itself), never one shape with
 #: optional fields — this module's own convention, `nora.domain.notes`'
 #: `NoteCreationProposal`/`NoteRevisionProposal` split one layer over.
-_DischargeItem = _CommitmentClaim | _WorldClaim | _PersonClaim
+#:
+#: There were THREE. `_WorldClaim` routed a closed note's settled fact about
+#: the world into the knowledge tier's `propose`; that tier was deleted, so
+#: the route has no destination — and a branch that could only ever answer
+#: `unavailable` is not a route. The objective no longer asks for a
+#: `world_claim`, and `_parse_discharge_item` drops one if a model invents it.
+_DischargeItem = _CommitmentClaim | _PersonClaim
 
 
 @dataclass(frozen=True)
@@ -740,7 +706,6 @@ class NoteCuratorAdaptor:
         # wiring gap, reported `unavailable` per item rather than silently
         # skipped — see `_run_discharge`.
         discharge_enabled: bool = False,
-        facts: _FactSink | None = None,
         events: _EventSink | None = None,
         conclusions: _ConclusionSink | None = None,
         ai_peer: str = "nora",
@@ -763,7 +728,6 @@ class NoteCuratorAdaptor:
         # argument, inherited with the mechanism).
         self._clock = clock
         self._discharge_enabled = discharge_enabled
-        self._facts = facts
         self._events = events
         self._conclusions = conclusions
         self._ai_peer = ai_peer
@@ -1572,10 +1536,6 @@ class NoteCuratorAdaptor:
             if isinstance(item, _CommitmentClaim):
                 await self._discharge_commitment(
                     note=note, claim=item, cited_row=cited_row)
-            elif isinstance(item, _WorldClaim):
-                await self._discharge_world_claim(
-                    note=note, claim=item, now_ms=now_ms,
-                    provenance=provenance)
             elif isinstance(item, _PersonClaim):
                 await self._discharge_person_claim(
                     note=note, claim=item, cited_row=cited_row)
@@ -1655,72 +1615,6 @@ class NoteCuratorAdaptor:
             return
         self._inc_discharge(kind="commitment", outcome="written")
 
-    async def _discharge_world_claim(
-        self, *, note: Note, claim: _WorldClaim, now_ms: int,
-        provenance: Proposal | None,
-    ) -> None:
-        """A settled world-claim -> the fact store's own `propose` — never a
-        new write path.
-
-        **`warrant_kind="source"`, always — `SqlFactStore.propose` writes
-        nothing else.** Design 33 §7 / 19 §1 name `source`/`stated` as the
-        world-claim warrant, but the fact tier's only writer hard-codes
-        `warrant_kind="source"` (`nora/infra/sql/facts.py`'s own `propose`);
-        there is no `stated` write path anywhere in this codebase today, and
-        building one is new fact-write machinery this issue does not add.
-        `source_url=f"note:{note.id}"` is honest about what actually
-        happened — the source is the note, not a fetched page — and
-        `source_excerpt` is the model's own quoted text, the same field a
-        page-warranted fact carries. *The reading that would reopen this:* a
-        `stated` writer landing on the fact store, at which point a
-        discharged world-claim should use it instead.
-        """
-        if self._facts is None:
-            self._inc_discharge(kind="world_claim", outcome="unavailable")
-            log.warning(
-                "note discharge: no fact sink wired; world-claim dropped "
-                "(note=%s)", note.id,
-            )
-            return
-        try:
-            fact_verdict = FactVerdict(
-                subject=claim.subject, predicate=claim.predicate,
-                object=claim.object, status="supported", addresses_claim=True,
-                source_url=f"note:{note.id}", source_excerpt=claim.excerpt,
-            )
-        except ValueError:
-            self._inc_discharge(kind="world_claim", outcome="refused")
-            log.warning(
-                "note discharge: malformed world-claim for note %s; "
-                "dropped", note.id,
-            )
-            return
-        try:
-            await self._facts.propose(
-                key=note.workspace,
-                proposals=(
-                    Proposal(
-                        payload=fact_verdict,
-                        instruction_sha256=(
-                            provenance.instruction_sha256
-                            if provenance else "0" * 64
-                        ),
-                        model=provenance.model if provenance else "unknown",
-                        established_by=(
-                            provenance.established_by
-                            if provenance else "curator"
-                        ),
-                    ),
-                ),
-                now_ms=now_ms,
-            )
-        except Exception:
-            log.exception(
-                "note discharge: fact propose failed for note %s", note.id)
-            self._inc_discharge(kind="world_claim", outcome="unavailable")
-            return
-        self._inc_discharge(kind="world_claim", outcome="written")
-
     async def _discharge_person_claim(
         self, *, note: Note, claim: _PersonClaim,
         cited_row: TranscriptRow | None,
@@ -1798,17 +1692,6 @@ def _parse_discharge_item(entry: object) -> _DischargeItem | None:
         if title is None:
             return None
         return _CommitmentClaim(title=title)
-    if kind == "world_claim":
-        subject = _clip(entry.get("subject"), limit=FACT_TERM_CEILING_CHARS)
-        predicate = _clip(
-            entry.get("predicate"), limit=FACT_PREDICATE_CEILING_CHARS)
-        obj = _clip(entry.get("object"), limit=FACT_TERM_CEILING_CHARS)
-        excerpt = _clip(
-            entry.get("excerpt"), limit=MAX_WORLD_CLAIM_EXCERPT_CHARS)
-        if subject is None or predicate is None or obj is None or excerpt is None:
-            return None
-        return _WorldClaim(
-            subject=subject, predicate=predicate, object=obj, excerpt=excerpt)
     if kind == "person_claim":
         content = _clip(entry.get("content"), limit=MAX_PERSON_CLAIM_CHARS)
         if content is None:

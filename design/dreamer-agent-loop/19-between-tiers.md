@@ -10,17 +10,28 @@ edges:
   - {dst: 08-state, rel: depends_on, provenance: asserted}
 ---
 
+> **PARTLY DEPRECATED 2026-09-07 — the knowledge tier (the "fact tier") and the language tier have both been deprecated and their code deleted.** Every claim below about either tier is retained as a record of the reasoning; **none of it describes code that exists.** The note tier, Standing, the relevance gate and the Dreamer runtime itself are unaffected; **recognition** ([31](31-recognition.md)) went with the two tiers whose rows it marked.
+> Their tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
+> The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
+
+
 # Between the Tiers
 
 Nora holds four kinds of accumulated state, soon five. They are not four copies
 of one thing:
 
+**As of 2026-09-07 two of the five rows below are gone:** `fact` (the knowledge
+tier) and `lexeme` (the language tier) are deprecated and their code deleted
+(issue #115). What remains live is **memory** (Honcho), **note** and
+**standing**. The table is kept whole because the routing argument only reads if
+you can see what it was routing between.
+
 | | is about | settled? | its warrant |
 |---|---|---|---|
 | **memory** (Honcho) | **people** | soft, accumulating | how often it was seen |
-| **fact** | **the world** | yes — three-state | a source, quoted |
+| ~~**fact**~~ **(DEPRECATED 2026-09-07, deleted)** | **the world** | yes — three-state | a source, quoted |
 | **note** | **an open question** | **explicitly not** | a closing condition |
-| **lexeme** | **words** | scored, decaying | usage plus a quote |
+| ~~**lexeme**~~ **(DEPRECATED 2026-09-07, deleted)** | **words** | scored, decaying | usage plus a quote |
 | **standing** | **her own position** | revisable | the turn's trace |
 
 Different subjects, different settledness, different warrants. So the question

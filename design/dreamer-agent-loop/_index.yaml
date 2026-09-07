@@ -11,6 +11,15 @@ description: >
   what is live, what was designed and never shipped, and the decisions that
   close the gap.
 status: checkpoint
+deprecation: >
+  DEPRECATED IN PART, 2026-09-07. The knowledge tier (the "fact tier") and the
+  language tier have both been deprecated and their code deleted (issue #115).
+  Eight member nodes — 20, 21, 23, 24, 25, 28, 31, 32 — describe only those two
+  tiers and describe no code that exists; they are kept as a record of the
+  reasoning and are marked at the top of each file. Every other node carries a
+  partial-deprecation note. The database tables are NOT dropped by that change:
+  the code goes, the schema stays, and dropping them is a separate explicit
+  decision. The evidence is in 20-knowledge-tier.md section 0.
 governance: pre-governance-input
 timestamp: '2026-08-27'
 origin: >
@@ -42,19 +51,19 @@ members:
   - 17-failure-classes.md
   - 18-flows.md
   - 19-between-tiers.md
-  - 20-knowledge-tier.md
-  - 21-substrate-contract.md
+  - 20-knowledge-tier.md   # DEPRECATED 2026-09-07 — tier deleted, issue #115
+  - 21-substrate-contract.md   # DEPRECATED 2026-09-07 — tier deleted, issue #115
   - 22-config.md
-  - 23-retrieval.md
-  - 24-embedding-seam.md
-  - 25-knowledge-pipeline.md
+  - 23-retrieval.md   # DEPRECATED 2026-09-07 — tier deleted, issue #115
+  - 24-embedding-seam.md   # DEPRECATED 2026-09-07 — tier deleted, issue #115
+  - 25-knowledge-pipeline.md   # DEPRECATED 2026-09-07 — tier deleted, issue #115
   - 26-standing.md
   - 27-note-dreamer.md
-  - 28-language-tier.md
+  - 28-language-tier.md   # DEPRECATED 2026-09-07 — tier deleted, issue #115
   - 29-authority.md
   - 30-review-response.md
-  - 31-recognition.md
-  - 32-fact-dreamer-schedule.md
+  - 31-recognition.md   # DEPRECATED 2026-09-07 — marked rows in both deleted tiers, issue #115
+  - 32-fact-dreamer-schedule.md   # DEPRECATED 2026-09-07 — tier deleted, issue #115
   - 33-note-dreamer-schedule.md
   - 34-note-dreamer-consolidation.md
   - 35-ambient-participation.md

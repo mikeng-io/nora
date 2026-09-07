@@ -1,16 +1,8 @@
 from nora.agent.prefill import build_prefill, build_tag_message, escape
-from nora.domain.facts import Fact, FactExtent, FactsView
 from nora.domain.models import (
     DeliveryStatus,
-    ExchangeExample,
-    LexemeExample,
     NormalizedMessage,
     PersonRef,
-    RoomExchange,
-    RoomExchangePattern,
-    RoomLanguage,
-    RoomLexeme,
-    RoomPortrait,
     TagContext,
     TranscriptRow,
 )
@@ -18,31 +10,13 @@ from nora.domain.notes import Note
 from nora.domain.standing import Standing
 
 
-def _facts_view(*facts):
-    """A one-slice view. The block is three slices now (19 §6); these tests are
-    about the PREFILL's framing, so the slice a fact arrives in is not their
-    subject."""
-    return FactsView(
-        room=tuple(facts),
-        extent=FactExtent(standing=len(facts), shown=len(facts)),
-    )
-
-
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
-         quote=None, platform="signal", room_language=None, room_portrait=None,
-         room_exchange=None, tagger_card=(), facts=None, notes=(),
+         quote=None, platform="signal", tagger_card=(), notes=(),
          standing=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     kwargs = {"tagger_card": tuple(tagger_card),
-              "facts": FactsView() if facts is None else facts,
               "notes": tuple(notes), "standing": standing}
-    if room_language is not None:
-        kwargs["room_language"] = room_language
-    if room_portrait is not None:
-        kwargs["room_portrait"] = room_portrait
-    if room_exchange is not None:
-        kwargs["room_exchange"] = room_exchange
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       tuple(self_card), **kwargs)
 
@@ -50,17 +24,6 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, se
 def _standing(body="They are deciding where to eat; nobody has picked yet.") -> Standing:
     return Standing(platform="signal", conversation_id="g1", body=body,
                     fold_count=3, updated_at=1)
-
-
-def _fact(obj="black_tower") -> Fact:
-    return Fact(
-        id="0191f2c4-0000-7000-8000-000000000001", workspace="nora",
-        subject_id="Big Walk", predicate="has", object_entity_id=None,
-        object_literal=obj, source_url="https://keengamer.test/w",
-        source_excerpt="Red, Green, Yellow, Blue, and Black towers",
-        valid_from=1, created_at=1, instruction_sha256="a" * 64,
-        model="ollamacloud/deepseek-v4-flash", established_by="tick-1",
-    )
 
 
 def _note(title="9 Sept dinner") -> Note:
@@ -73,29 +36,6 @@ def _note(title="9 Sept dinner") -> Note:
         head_revision_id="0191f2c4-0000-7000-8000-00000000000b",
         anchor_date=20260909,
     )
-
-
-def _room_language(scope_id="g1") -> RoomLanguage:
-    lexeme = RoomLexeme(
-        canonical_form="on9", sense="clumsy/foolish", occurrence_count=5,
-        distinct_speakers=3, first_seen_ms=1700000000000, last_seen_ms=1700000100000,
-        state="live",
-        examples=(LexemeExample(message_id=1, person_id="miles", text="on9 咁做"),),
-    )
-    return RoomLanguage(scope_id=scope_id, lexemes=(lexeme,))
-
-
-def _room_exchange(scope_id="g1") -> RoomExchange:
-    pattern = RoomExchangePattern(
-        act="banter", participants=("miles", "tyler"), occurrence_count=4,
-        first_seen_ms=1700000000000, last_seen_ms=1700000100000, state="live",
-        examples=(ExchangeExample(message_id=1, person_id="miles", text="你又嚟"),),
-    )
-    return RoomExchange(scope_id=scope_id, patterns=(pattern,))
-
-
-def _room_portrait(scope_id="g1") -> RoomPortrait:
-    return RoomPortrait(scope_id=scope_id, narrative="This room has its own vocabulary.")
 
 
 def _row(row_id, name, body, ts, *, quoted_ts=None, is_nora=False, person_name=None):
@@ -165,8 +105,7 @@ def test_transcript_is_wrapped_and_labelled_untrusted():
 # wanting for. A new injected block that does not appear here is the thing to
 # be suspicious of.
 _ALL_BLOCKS = (
-    "group_transcript", "self_card", "peer_card", "peer_history",
-    "room_language", "room_exchange", "room_portrait", "facts", "notes",
+    "group_transcript", "self_card", "peer_card", "peer_history", "notes",
     "standing",
 )
 
@@ -177,9 +116,7 @@ def _full_prefill_body() -> str:
     ctx = _ctx(
         _rows("hello"), peer_card=("likes espresso",), self_card=("nora said a thing",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
-        room_language=_room_language(), room_exchange=_room_exchange(),
-        room_portrait=_room_portrait(), facts=_facts_view(_fact()), notes=(_note(),),
-        standing=_standing(),
+        notes=(_note(),), standing=_standing(),
     )
     return build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
 
@@ -193,7 +130,7 @@ def _opening_tag(body: str, name: str) -> str:
 
 
 def test_every_injected_block_is_labelled_untrusted():
-    """F3/F4: the marker, on all nine, not on one."""
+    """F3/F4: the marker, on all of them, not on one."""
     body = _full_prefill_body()
     for name in _ALL_BLOCKS:
         assert 'untrusted="true"' in _opening_tag(body, name), name
@@ -234,9 +171,6 @@ def test_the_existing_hedges_are_kept_not_replaced():
     body = _full_prefill_body()
     assert "not a description of who you are" in _opening_tag(body, "self_card")
     assert "you may be wrong about it" in _opening_tag(body, "peer_history")
-    # The two Dreamer closing frames live in the BODY, not the tag.
-    assert "not a set of words to reach for" in body
-    assert "not a claim about any one of them" in body
 
 
 # ---- A2: a conclusion reaches her undated, and is told so ------------------
@@ -871,94 +805,6 @@ def test_the_platform_is_not_in_the_cached_prefix():
     )
 
 
-# ---- <room_language>: the Dreamer's room-slang block (Task 10) -------------
-
-
-def test_the_room_language_block_is_after_the_context_header():
-    """The static head must stay byte-identical across tags — it is 95-99%
-    cached, re-measured 2026-08-08. A per-room block inside it fragments that
-    prefix into one per room."""
-    prefill = build_prefill(
-        _ctx(room_language=_room_language()), display_name="Nora", context_window=40
-    )
-    body = "\n".join(m["content"][0]["text"] for m in prefill)
-
-    assert body.index("<room_language") > body.index("</context_header>")
-    # Every block in the prompt now carries attributes (`untrusted`/`note`, A3),
-    # so these match the opening tag's fixed PREFIX rather than a bare
-    # `<room_language>`/`<group_transcript>` literal — neither of which appears
-    # on the wire. The markers themselves are pinned by their own named tests
-    # below; these only pin ORDER.
-    assert body.index("<room_language") < body.index("<group_transcript")
-
-
-def test_the_room_language_block_is_not_in_the_static_header():
-    """The head (message index 0) is the cache PREFIX; the room-language block
-    must sit only in the volatile per-turn message, never here."""
-    prefill = build_prefill(
-        _ctx(room_language=_room_language()), display_name="Nora", context_window=40
-    )
-
-    assert "<room_language" not in prefill[0]["content"][0]["text"]
-    assert "<room_language" in prefill[1]["content"][0]["text"]
-
-
-def test_the_room_language_block_is_absent_for_a_room_with_no_lexicon():
-    """`ctx.room_language` defaults empty, and an empty `RoomLanguage` must
-    render no block at all — not an empty `<room_language>` tag."""
-    prefill = build_prefill(_ctx(), display_name="Nora", context_window=40)
-    body = "\n".join(m["content"][0]["text"] for m in prefill)
-
-    assert "<room_language" not in body
-
-
-# ---- <room_portrait>: Dreamer Plan 3's own block ---------------------------
-
-
-def test_the_room_portrait_block_is_after_the_context_header():
-    prefill = build_prefill(
-        _ctx(room_portrait=_room_portrait()), display_name="Nora", context_window=40
-    )
-    body = "\n".join(m["content"][0]["text"] for m in prefill)
-
-    assert body.index("<room_portrait") > body.index("</context_header>")
-    assert body.index("<room_portrait") < body.index("<group_transcript")
-
-
-def test_the_room_portrait_block_is_not_in_the_static_header():
-    prefill = build_prefill(
-        _ctx(room_portrait=_room_portrait()), display_name="Nora", context_window=40
-    )
-
-    assert "<room_portrait" not in prefill[0]["content"][0]["text"]
-    assert "<room_portrait" in prefill[1]["content"][0]["text"]
-
-
-def test_the_room_portrait_block_is_absent_for_a_room_with_no_narrative():
-    """`ctx.room_portrait` defaults empty, and an empty `RoomPortrait` must
-    render no block at all — not an empty `<room_portrait>` tag."""
-    prefill = build_prefill(_ctx(), display_name="Nora", context_window=40)
-    body = "\n".join(m["content"][0]["text"] for m in prefill)
-
-    assert "<room_portrait" not in body
-
-
-def test_the_room_portrait_block_comes_after_room_language_and_room_exchange():
-    """Widening scope, in order: her own past, then theirs, then the room's
-    own slang and exchange patterns, then the synthesis of those two, then
-    the room. `room_portrait` is the newest and narrowest-audience block, so
-    it sits last among the three Dreamer blocks, immediately before the
-    transcript."""
-    prefill = build_prefill(
-        _ctx(room_language=_room_language(), room_portrait=_room_portrait()),
-        display_name="Nora", context_window=40,
-    )
-    body = "\n".join(m["content"][0]["text"] for m in prefill)
-
-    assert body.index("<room_language") < body.index("<room_portrait")
-    assert body.index("<room_portrait") < body.index("<group_transcript")
-
-
 # ---- <notes>: the note tier's index ----------------------------------------
 
 
@@ -990,19 +836,17 @@ def test_the_notes_block_is_absent_when_nothing_is_standing():
     assert "<notes" not in body
 
 
-def test_the_notes_block_comes_after_the_facts_block():
-    """Both are workspace-keyed, so they sit together at the wide end of the
-    widening-scope order the volatile tail is built on. Settled before open:
-    `<facts>` is what is known, `<notes>` is what is not, and the open
-    questions sit closest to the transcript that may bear on them."""
+def test_the_notes_block_sits_at_the_wide_end_of_the_volatile_tail():
+    """`<notes>` is the one WORKSPACE-keyed block left, so it sits at the wide
+    end of the widening-scope order the volatile tail is built on — after the
+    person blocks, and still ahead of the transcript that may bear on it."""
     prefill = build_prefill(
-        _ctx(room_language=_room_language(), facts=_facts_view(_fact()), notes=(_note(),)),
+        _ctx(peer_card=("likes espresso",), notes=(_note(),)),
         display_name="Nora", context_window=40,
     )
     body = "\n".join(m["content"][0]["text"] for m in prefill)
 
-    assert body.index("<room_language") < body.index("<facts")
-    assert body.index("<facts") < body.index("<notes")
+    assert body.index("<peer_card") < body.index("<notes")
     assert body.index("<notes") < body.index("<group_transcript")
 
 

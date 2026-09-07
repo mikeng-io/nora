@@ -13,6 +13,12 @@ edges:
   - {dst: 26-standing, rel: depends_on, provenance: asserted}
 ---
 
+> **DEPRECATED 2026-09-07 — recognition marked rows in the knowledge tier and the language tier, and both tiers have been deprecated and their code deleted (issue #115).** `nora/engagement/recognition.py` and the `fact-dispute` objective are gone with them.
+> This document is retained as a record of the reasoning, not as a description of the system. **Nothing here describes code that exists.**
+> The database tables (including the `disputed_*` columns) are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
+> The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0.
+
+
 # Recognition
 
 [30](30-review-response.md) §2.1.1 sequences the correction loop in nine steps.

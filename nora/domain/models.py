@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from .facts import FactsView
 from .media import MediaBlob, MediaRef
 from .notes import Note
 from .standing import Standing
@@ -286,48 +285,11 @@ class TagContext:
     # TWICE in one turn — `about` on the tagger points at this block instead of
     # fetching it again.
     tagger_card: tuple[str, ...] = ()
-    # What the Dreamer has distilled about THIS ROOM's own slang — the fifth
-    # `TranscriptInjection` gather branch (Task 10). `RoomLanguageReader.
-    # room_language` is documented never to raise, so a failed or not-yet-run
-    # read degrades to the same empty value a room with no evidence yet has —
-    # `nora.language.render.render_room_language` renders no block at all for
-    # either. Defaulted for the same reason `self_card`/`tagger_card` are: the
-    # existing construction sites (tests, the fire path) keep working, and an
-    # absent scope_id is indistinguishable from "nothing known yet" — which is
-    # safe here for the same reason it is safe there: advisory only, never the
-    # ground for a claim.
-    room_language: RoomLanguage = field(default_factory=lambda: RoomLanguage(scope_id=""))
-    # Dreamer Plan 2 (2026-08-20 exchange-patterns design) — the room's own
-    # sibling block, same shape as `room_language` above: distilled by the
-    # background consolidator, defaulted empty so existing construction sites
-    # keep working, never the ground for a claim about any one person (see
-    # `RoomExchange`'s own docstring for why that is a structural guarantee,
-    # not a convention).
-    room_exchange: RoomExchange = field(default_factory=lambda: RoomExchange(scope_id=""))
-    # Dreamer Plan 3 (2026-08-20 room-portrait design) — the room's synthesis
-    # of `room_language`/`room_exchange` above, same defaulted-empty shape.
-    # `RoomPortraitReader.room_portrait` is documented never to raise, same
-    # reason as its two siblings.
-    room_portrait: RoomPortrait = field(default_factory=lambda: RoomPortrait(scope_id=""))
-    # The fact tier (2026-08-20 fact-tier design), Task 5 — world-facts keyed
-    # on the WORKSPACE, not this room, unlike every block above. Defaulted
-    # empty for the same reason `room_language`/`room_exchange`/
-    # `room_portrait` are: the existing construction sites keep working, and
-    # nothing writes this tier yet — the store behind the generic `DreamSink`
-    # (that plan's Task 3) is blocked on a protocol another workstream owns,
-    # so every deployed `TagContext` holds `()` until then —
-    # `nora.language.fact_render.render_facts` renders no block for that,
-    # same as its siblings' empty state.
-    # 19 §6's three slices, not a flat tuple: room, sender, and an extent
-    # line that is counts only. A flat tuple could not carry the extent,
-    # and the extent is the half that stops the block being a subset
-    # presented as the whole.
-    facts: FactsView = field(default_factory=FactsView)
     # The note tier (2026-08-21 note-tier design), §5.1 — the INDEX of tracked
-    # uncertainties, workspace-keyed like `facts` above and unlike every block
-    # before it. Defaulted empty for the same reason all four of its siblings
-    # are: the existing construction sites keep working, and nothing writes
-    # this tier yet — `nora.language.note_render.render_notes` renders no block
+    # uncertainties, workspace-keyed and unlike every block before it.
+    # Defaulted empty for the same reason its siblings are: the existing
+    # construction sites keep working, and
+    # `nora.language.note_render.render_notes` renders no block
     # for an empty tuple, so a deployed prompt gains nothing until it does.
     # Deliberately the whole standing set and never a top-N: a note absent from
     # the index is invisible to her, and invisible is indistinguishable from
@@ -337,12 +299,12 @@ class TagContext:
     # Standing (design/dreamer-agent-loop/26-standing.md) — HER OWN position in
     # THIS conversation, folded from the previous turn by the debrief stage.
     #
-    # It is the odd one out among the six blocks above and in three ways worth
+    # It is the odd one out among the blocks above and in three ways worth
     # naming here, because each one is a rule somewhere else. It is the only
     # one that is Nora's own output rather than a distillation of other
     # people's (§8 — a position, not a record). It is the only one keyed on the
-    # CONVERSATION where `facts`/`notes` are keyed on the workspace, and unlike
-    # them it is not shared across a workspace's rooms at all: a position held
+    # CONVERSATION where `notes` is keyed on the workspace, and unlike
+    # it is not shared across a workspace's rooms at all: a position held
     # in one room is not a position held in another. And it is the only block
     # in the prompt that is REVISED IN PLACE rather than rebuilt from the store
     # each turn, which is why `nora.language.standing_render` still marks it
@@ -353,226 +315,10 @@ class TagContext:
     # `None` rather than a defaulted empty `Standing`: a conversation with no
     # position yet is not a conversation she has an empty opinion about, and
     # `render_standing(None)` emits no block for exactly that reason. Defaulted
-    # like its five siblings so the ~40 existing construction sites keep
+    # like its siblings so the ~40 existing construction sites keep
     # working, and `[standing] enabled = false` (the shipped default) leaves it
     # `None` on every turn.
     standing: Standing | None = None
-
-
-@dataclass(frozen=True)
-class LexemeCandidate:
-    """One observation `LexemeObserver` (`nora.language.observer`, Task 6)
-    extracted from a batch, joined back to its evidence.
-
-    Lives here rather than in `nora.language` for the same FORCED reason
-    `LexemeExample`/`RoomLexeme`/`RoomLanguage` do (see Task 4's own note):
-    `nora.infra.sql.language.SqlLanguageStore.append_observations` consumes
-    this type, `nora.infra` sits BELOW `nora.language` in the layers
-    contract, and a lower layer may never import a higher one — so a type
-    both packages need to name has to live at `nora.domain`, the layers'
-    floor, exactly where `TagContext` already does.
-
-    `message_id`/`person_id` are the EVIDENCE this candidate is grounded
-    in — `LexemeObserver` joins them back against the batch itself by
-    `message_id`, never trusting the model's own claim (a model can
-    hallucinate a `message_id`; a candidate whose evidence is not in the
-    batch is dropped before construction, never carried as one of these).
-    `person_id` in particular is never model-supplied: it is the JOINED
-    row's own `person_id`, the roster's canonical id.
-
-    `surface_form` is what the model actually saw on the wire, kept apart
-    from `canonical_form` (what it normalised to) because "kam"/"劲"/"勁"
-    can all be one word, and collapsing them at extraction time would make a
-    wrong normalisation unreviewable later.
-
-    `instruction_sha256` is PROVENANCE, and it is the one field here that is
-    about the writer rather than the evidence: `sense` is model-authored, and
-    without a record of the instruction text that asked for it a wrong gloss
-    cannot be attributed to a revision (see `nora.domain.provenance`). It has
-    NO default on purpose — `confidence` beside it is the model's own
-    self-report, which is the opposite of provenance, and a defaulted stamp
-    would let a new adaptor write unattributable rows in silence, which is
-    exactly the state this field exists to end.
-
-    `model` is the OTHER half of that same provenance, and it is undefaulted
-    for the same reason. The instruction text is one input to the row; the
-    model that read it is another, and the two do not substitute for each
-    other — the same instruction run against a different model produces
-    different glosses, so `instruction_sha256` alone cannot answer "what
-    produced this row". It is the model NAME the injected client reports, not
-    a config value read alongside it: a value read from anywhere but the
-    object that makes the call is a proxy that can drift from what actually
-    went on the wire.
-    """
-
-    surface_form: str
-    canonical_form: str
-    sense: str
-    part_of_speech: str
-    message_id: int
-    person_id: str | None
-    confidence: float
-    instruction_sha256: str
-    model: str
-
-
-@dataclass(frozen=True)
-class LexemeExample:
-    """One verbatim usage, kept WITH its attribution. The gloss above it is
-    model-authored; this is not. Rendering one of these under every entry is
-    what makes a wrong `sense` visible at the point of use instead of
-    authoritative."""
-
-    message_id: int
-    person_id: str | None
-    text: str
-
-
-@dataclass(frozen=True)
-class RoomLexeme:
-    canonical_form: str
-    sense: str
-    occurrence_count: int
-    distinct_speakers: int
-    first_seen_ms: int
-    last_seen_ms: int
-    state: str          # 'live' | 'fading' | 'stale'
-    examples: tuple[LexemeExample, ...] = ()
-    #: The correction loop's mark (31 §6), and the READ SIDE of it. The
-    #: columns landed with `mark_disputed` and nothing carried them out of the
-    #: store: a member could say «no, big walk is a video game», the row was
-    #: marked, the counter reported `ok`, and the gloss kept rendering into
-    #: every tag's prefill as unqualified truth. A mark nothing reads is worse
-    #: than no mark, because the instrument says the correction landed.
-    #:
-    #: **No clearing verb, and that is not the fact tier's ratchet.**
-    #: `room_lexeme`'s key is `(scope_id, canonical_form, sense)`, so a
-    #: re-glossed word arrives as a NEW ROW rather than an update — the
-    #: corrected meaning supersedes by existing, and the disputed row stays
-    #: marked because that is what it is. `Fact` needs `clear_disputed`
-    #: because supersession there rewrites the row in place.
-    disputed_at: int | None = None
-    disputed_by: str | None = None
-    disputed_reason: str | None = None
-
-    @property
-    def is_disputed(self) -> bool:
-        return self.disputed_at is not None
-
-
-@dataclass(frozen=True)
-class RoomLanguage:
-    """What the Dreamer knows about one scope, as of `generated_ms`.
-
-    Empty is a REAL state and the correct one for a room with no evidence yet —
-    the renderer emits no block at all rather than an empty one.
-    """
-
-    scope_id: str
-    lexemes: tuple[RoomLexeme, ...] = ()
-    generated_ms: int = 0
-
-    def __bool__(self) -> bool:
-        return bool(self.lexemes)
-
-
-@dataclass(frozen=True)
-class ExchangeCandidate:
-    """One observation `ExchangePatternObserver`
-    (`nora.language.exchange_observer`, Dreamer Plan 2) extracted from a
-    batch, joined back to its evidence — the exchange-pattern sibling of
-    `LexemeCandidate`, with the same evidence-grounding rule (`message_ids`
-    are real batch rows, `participants` are the JOINED rows' own `person_id`s,
-    never the model's own claim).
-
-    **`act` is the withhold rule's first structural guarantee.** It is drawn
-    from a closed, repo-authored set (`nora.infra.sql.schema.EXCHANGE_ACTS`)
-    — there is no free-text gloss field anywhere on this type for a model to
-    write a claim like "X is dumb" into. `message_ids`/`participants` both
-    hold at least two entries by construction (`ExchangePatternObserver`
-    drops anything shorter, mirroring the DB's own `array_length(...) >= 2`
-    CHECK) — the second guarantee: a candidate describing one person cannot
-    exist.
-
-    `instruction_sha256` is PROVENANCE, undefaulted, for the same reason
-    `LexemeCandidate`'s is: `act` is drawn from a closed set, but WHICH act a
-    stretch of messages was called is still a model judgement, and the
-    instruction text that framed the choice is what a later reviewer has to
-    be able to name.
-
-    `model` is the second half of that provenance, undefaulted for the reason
-    `LexemeCandidate.model` gives — and it is INDEPENDENTLY reachable here:
-    `[language].exchange_model` lets this adaptor run a different model from
-    the lexeme one against the same room, so two rows written on the same
-    tick can legitimately name different models.
-    """
-
-    act: str
-    message_ids: tuple[int, ...]
-    participants: tuple[str, ...]
-    confidence: float
-    instruction_sha256: str
-    model: str
-
-
-@dataclass(frozen=True)
-class ExchangeExample:
-    """One verbatim usage backing a `RoomExchangePattern` — the exchange
-    sibling of `LexemeExample`. `text` is a real message body, never
-    model-authored, for the same reason `LexemeExample.text` is."""
-
-    message_id: int
-    person_id: str | None
-    text: str
-
-
-@dataclass(frozen=True)
-class RoomExchangePattern:
-    """One consolidated exchange pattern for a scope: a closed-set `act`
-    traded among `participants` (always >= 2, sorted). Carries no field a
-    model could have used to make a claim ABOUT any one of `participants` —
-    `act` is the only classification, and it is drawn from
-    `nora.infra.sql.schema.EXCHANGE_ACTS`, never free text."""
-
-    act: str
-    participants: tuple[str, ...]
-    occurrence_count: int
-    first_seen_ms: int
-    last_seen_ms: int
-    state: str          # 'live' | 'fading' | 'stale'
-    examples: tuple[ExchangeExample, ...] = ()
-
-
-@dataclass(frozen=True)
-class RoomExchange:
-    """What the Dreamer's Plan 2 knows about one scope's exchange patterns,
-    as of `generated_ms` — the exchange sibling of `RoomLanguage`. Empty is
-    the correct state for a room with no evidence yet."""
-
-    scope_id: str
-    patterns: tuple[RoomExchangePattern, ...] = ()
-    generated_ms: int = 0
-
-    def __bool__(self) -> bool:
-        return bool(self.patterns)
-
-
-@dataclass(frozen=True)
-class RoomPortrait:
-    """What the Dreamer's Plan 3 knows about one scope, as of `generated_ms`
-    — a single synthesized narrative, the portrait sibling of `RoomLanguage`/
-    `RoomExchange`. One row per scope by construction (UPSERT, not an
-    append-only evidence log — see `nora.language.portrait_synthesizer`'s
-    module docstring for why this has no evidence layer of its own). Empty is
-    the correct state for a room with no `room_lexeme`/`room_exchange`
-    material yet."""
-
-    scope_id: str
-    narrative: str = ""
-    generated_ms: int = 0
-
-    def __bool__(self) -> bool:
-        return bool(self.narrative)
 
 
 @dataclass(frozen=True)

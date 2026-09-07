@@ -10,6 +10,11 @@ edges:
   - {dst: 05-transport, rel: depends_on, provenance: asserted}
 ---
 
+> **PARTLY DEPRECATED 2026-09-07 — the knowledge tier (the "fact tier") and the language tier have both been deprecated and their code deleted.** Every claim below about either tier is retained as a record of the reasoning; **none of it describes code that exists.** The note tier, Standing, the relevance gate and the Dreamer runtime itself are unaffected; **recognition** ([31](31-recognition.md)) went with the two tiers whose rows it marked.
+> Their tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
+> The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
+
+
 # The Config Surface
 
 ## 1. The promise that was made and not kept
@@ -39,7 +44,7 @@ is `reasoning_effort`, which is absent from the budget model entirely — so the
 one transport dimension [05-transport.md](05-transport.md) argues hardest about
 is the one with no key.
 
-## 3. The finding: every adaptor's cadence is named after the language tier
+## 3. The finding: every adaptor's cadence is named after the language tier **(DEPRECATED 2026-09-07, deleted)**
 
 `dream_loop` carries every adaptor, including the fact tier's. Its schedule is
 parameterised entirely from one section:

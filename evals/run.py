@@ -107,8 +107,8 @@ SUITES = {
     # journeys live in `evals/journeys.py` — so this maps to () and `main`
     # special-cases it, the same way `adversarial` runs its own live path.
     "journeys": (),
-    # The ambient-participation suite (design/dreamer-agent-loop/35 §9): 15
-    # cases — 5 relevance-Yes, their 5 knowledge-cut twins, 5 pure-No — each
+    # The ambient-participation suite (design/dreamer-agent-loop/35 §9): 11
+    # cases — 3 relevance-Yes, their 3 knowledge-cut twins, 5 pure-No — each
     # driven through the REAL participation path (ParticipationTrigger →
     # FirePath.speak) live. Like `journeys`/`adversarial` this runs its own
     # live path (`_run_participation_live`), not the scripted `_run_suite`.
@@ -580,15 +580,14 @@ async def _run_suite(paths: tuple[Path, ...], *, sink: EvalSink, run_name: str) 
 #: these out by name in its summary so a twin failure is never buried in a
 #: pass-count.
 _KNOWLEDGE_CUT_TWINS = (
-    "fact-lookup-unknown", "stalled-question-unknown",
-    "commitment-followup-unknown", "correction-unknown",
+    "stalled-question-unknown", "commitment-followup-unknown",
     "planning-context-unknown",
 )
 
 
 def _participation_window_context(case: Case) -> str:
     """Render a participation case's ground truth for the advisory judge: the
-    seeded transcript, the seeded standing/notes/facts, and the incoming
+    seeded transcript, the seeded standing/notes, and the incoming
     message — everything the determination's prompt carried, in plain text.
     The judge needs exactly this to grade `grounded_value` (did the reply draw
     on THIS, or on the base model's memory?)."""
@@ -606,8 +605,6 @@ def _participation_window_context(case: Case) -> str:
         lines.append(f"Standing: {seed['standing']}")
     for note in seed.get("notes") or []:
         lines.append(f"Note — {note['title']}: {note['body']}")
-    for fact in seed.get("facts") or []:
-        lines.append(f"Fact: {fact['subject']} {fact['predicate']} {fact['object']}")
     lines.append(f"Latest message: {case.input}")
     return "\n".join(lines)
 
@@ -622,7 +619,7 @@ async def _run_participation_live(
     `ParticipationTrigger`, real `FirePath.speak`, real policy opt-in, real
     model (`run_case(case, live=True)`; the LLM key env must be set) — and the
     verdict is graded on `Trajectory.sent` by `ParticipationVerdict`: the room
-    either heard a message or it did not. ALL 15 cases must pass; that
+    either heard a message or it did not. ALL 11 cases must pass; that
     subsumes the design's hard bar (zero false-speaks on the knowledge-cut
     twins, zero speaks on S6-S10), which the summary calls out by name.
 
@@ -889,7 +886,7 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
             effort=effort, skills_dir=skills_dir, seed=seed,
         ))
     elif suite == "participation":
-        # Live drive of the real participation path; every one of the 15
+        # Live drive of the real participation path; every one of the 11
         # cases must reach its expected verdict (see `_run_participation_live`).
         # Langfuse export rides the same `--export-langfuse` + config gate as
         # every other suite (Miles 2026-09-05).

@@ -1,130 +1,85 @@
 """Shared contract for `DreamSink`. Every implementation runs every test.
 
-Shipped with ONE implementation — a fake — for the reason
-`tests/contract/test_artifact_ingest_contract.py` states for the same
-situation: a port declared with nothing exercising it is a shape nobody has
-checked is satisfiable. `nora.infra.sql.facts.SqlFactStore` is the second and
-`nora.infra.sql.fact_candidates.SqlFactCandidateStore` the third; each joins
-by adding an `_Impl` entry to `IMPLEMENTATIONS`.
+Two implementations today: a fake (`_FakeDreamSink`, below) and the note
+tier's `nora.infra.sql.notes.SqlNoteStore`. Each joins by adding an `_Impl`
+entry to `IMPLEMENTATIONS`.
 
-**This file used to claim joining was "genuinely one `IMPLEMENTATIONS`
-entry", verified by building a non-fact store against it, and that if that
-stopped being true it was a defect. It stopped being true, and this is what
-the third implementation actually cost** — recorded rather than quietly
-deleted, because a docstring that drops a falsified claim teaches the next
-author nothing. Adding `SqlFactCandidateStore` as one entry and running it
-(2026-08-21) gave **4 passed, 9 failed**, in three groups:
+**There were four.** `SqlFactStore` and `SqlFactCandidateStore` were the
+second and third; both went with the knowledge tier when it was deleted. What
+they taught this file did not go with them, because it is what keeps the suite
+SHARED rather than shaped like whichever tier joined first — so the three
+per-implementation supplies below stay, and the two-implementation state is
+not an invitation to fold them back into hard-coded literals.
 
-- **Three assertions read back columns `fact_candidate` did not have.** One
-  was a real gap in the TABLE, not in this suite:
-  `test_provenance_survives_the_write` reads `instruction_sha256`/`model`,
-  the DEC-125/DEC-126 pair every `Proposal` carries and that store was
-  discarding. Closed by migration **`0027_fact_candidate_provenance`** (NOT
-  NULL, no backfill — read its docstring before adding the next tier's
-  table). The other two — a successor and a supersession warrant — are NOT
-  a gap: no candidate ever succeeds another (an adjudicated one is succeeded
-  by a `fact`, in a DIFFERENT table) and a supersession's citation belongs on
-  that `fact` row. They became axis states below, not columns.
-- **Five passed a non-null `replaced_by` (or `source`) into calls that store
-  refuses**, because point 3 below was a BOOL over a three-state axis.
-- **Three hard-coded `because` into a call this file assumed never reaches a
-  reason check.** See the correction under point 2.
-
-**The fourth implementation predicted "one entry" too, and missed for a
-DIFFERENT reason — recorded because two misses with two causes is the point.**
-`SqlNoteStore` (2026-08-27) could not join by adding an entry at all, and no
-test count would have shown why, because the obstacle is in the FACTORY's
-signature rather than in any assertion:
-
-> **Every existing `propose` INSERTS. The note store's APPENDS.**
-
-`SqlFactStore.propose` mints an id and writes a free-standing row. `SqlNoteStore.
-propose` appends a revision to a note that must already exist, under a
-compare-and-swap against its current head. So a valid note `Proposal` cannot be
-built from nothing: it needs the workspace key the test is about to choose, an
-already-created note, and that note's head-revision id — the last two requiring
-an `await` against the store. `make_proposal()` was zero-arg, synchronous, and
-called at 17 sites where each test picks its key inline.
-
-**THE FACTORY'S SIGNATURE ENCODED AN ASSUMPTION NOBODY WROTE DOWN** — that a
-proposal can be built without knowing where it will be written. Facts and
-candidates both happen to satisfy it, so it never had to be stated; an append is
-meaningless without the thing it appends to. That is a shape which is
-accidentally true of every case seen so far, read as a property — and it is why
-`make_proposal` is now `async` and takes the key.
-
-**The rule that keeps this file shared rather than fact-shaped, found by
-building the second implementation and confirmed by the third:** anything the
-shared suite needs that is not on `DreamSink` itself must be supplied PER
-IMPLEMENTATION, never hard-coded once and assumed to fit whoever joins next.
-Three things needed this, found in this order:
+**The rule, found by building the second implementation and confirmed by the
+third and fourth:** anything the shared suite needs that is not on `DreamSink`
+itself must be supplied PER IMPLEMENTATION, never hard-coded once and assumed
+to fit whoever joins next. Three things needed this, found in this order:
 
 1. **Constructing a valid `Proposal`.** `payload` is `object` at the port —
-   a fact-tier `FactVerdict` and a note-tier revision are both valid, and
-   neither is valid for the other. `IMPLEMENTATIONS` therefore carries a
-   `make_proposal` callable per entry, not one shared `_proposal(payload)`
-   helper with a hard-coded literal.
+   a note-tier revision is valid here and would be invalid for any other
+   tier. `IMPLEMENTATIONS` therefore carries a `make_proposal` callable per
+   entry, not one shared `_proposal(payload)` helper with a hard-coded
+   literal.
+
+   `make_proposal` is `async` and takes the key, and THAT signature is the
+   fourth implementation's lesson: every earlier `propose` INSERTED, while
+   the note store's APPENDS. `SqlNoteStore.propose` appends a revision to a
+   note that must already exist, under a compare-and-swap against its current
+   head — so a valid note `Proposal` cannot be built from nothing. The old
+   zero-arg synchronous factory encoded an assumption nobody wrote down: that
+   a proposal can be built without knowing where it will be written. A shape
+   accidentally true of every case seen so far, read as a property.
 2. **Reading a row back.** `DreamSink` has two verbs and *deliberately no
    third* (`test_the_port_has_no_delete_verb` below is the reason written as
    a test) — there is no read verb to assert through. `IMPLEMENTATIONS`
    therefore also carries a `read_row` callable per entry, returning a
    normalised view — `proposal, because, source, replaced_by, retired_at,
-   written_at` — built from whatever EACH implementation actually offers
-   (`_FakeDreamSink`'s own `.rows` dict for the fake, `SqlFactStore.
-   fact_by_id` for the sql store, `SqlFactCandidateStore.candidate_by_id`
-   for the candidate store — whose retirement reason IS its `status`
-   column, which is exactly why this view keeps `because` opaque).
-   `because` and `source` are opaque `str`/
-   `str | None` on this view, never a tier's own enum — typing `because` as
-   `FactSupersedeReason` here would make the view fact-shaped again, just
-   wearing the fix's clothes; the note tier's reasons
-   (`merged`/`retired-expired`/`retired-closed`) have no notion of
-   `contradicted`. A tier's one exotic field (the note store's head-revision
-   id, used for compare-and-swap) lives inside `payload`, which stays opaque
-   to this suite by construction and never reaches the view.
+   written_at` — built from whatever EACH implementation actually offers.
+   `because` and `source` are opaque `str`/`str | None` on this view, never a
+   tier's own enum: typing `because` as one tier's reason enum would make the
+   view that tier's shape again, just wearing the fix's clothes. A tier's one
+   exotic field (the note store's head-revision id, used for compare-and-swap)
+   lives inside `payload`, which stays opaque to this suite by construction
+   and never reaches the view.
 
    The SAME reasoning applies to *constructing* a legal `because` for a real
-   (row-affecting) `supersede` call, found while wiring `"sql"` in: `fact`'s
-   own `fact_supersede_reason_check` constrains `supersede_reason` to
-   `stale|wrong|merged`, so a shared test's free-text reason — chosen for
-   readability, not tier-legality — makes a REAL update raise
-   `IntegrityError` for `"sql"` while the fake accepts it unquestioned.
-   `IMPLEMENTATIONS` therefore also carries `make_because`, a per-
-   implementation callable returning a reason legal for THAT store, used
-   everywhere a `supersede` call is expected to actually affect a row.
+   (row-affecting) `supersede` call: a store constrains its own retirement
+   reasons, so a shared test's free-text reason — chosen for readability, not
+   tier-legality — makes a REAL update raise for one store while the fake
+   accepts it unquestioned. `IMPLEMENTATIONS` therefore also carries
+   `make_because`, a per-implementation callable returning a reason legal for
+   THAT store, used everywhere a `supersede` call is expected to actually
+   affect a row.
 
-   **Correction, found by the third implementation:** this file used to
-   exempt calls expected to affect ZERO rows (an unknown target, a wrong
-   key) and keep a descriptive literal there, reasoning that Postgres does
-   not evaluate a row constraint against a row it never touches. True of a
-   store that DEFERS its reason check to a CHECK; false of one that makes it
-   itself. `SqlFactCandidateStore` raises `ValueError` on a non-terminal
-   `because` before any row is looked at — deliberately, because
-   `fact_candidate_status_check` is a WIDER set than that verb's legal one
-   (it admits `pending`, which is a legal status for a row and not a legal
-   reason for a retirement). So the exemption is gone: **every** `supersede`
-   in this file takes its reason from `make_because()`, and a zero-row test
-   says what it is varying in a comment instead of in the reason string.
+   **And EVERY `supersede` here takes its reason from `make_because()`,
+   including calls expected to affect ZERO rows.** This file used to exempt
+   those, reasoning that Postgres does not evaluate a row constraint against
+   a row it never touches. True of a store that DEFERS its reason check to a
+   CHECK; false of one that makes the check itself, before any row is looked
+   at. A zero-row test says what it is varying in a comment instead of in the
+   reason string.
 3. **What each implementation promises about the two fields the PORT allows
    to be null** — `replaced_by` and `source`. `DreamSink.supersede`'s own
    docstring is explicit that this is "permissive at the port, strict at each
    implementation".
 
    This was a `nullable_replaced_by` BOOL, and a bool is one state short.
-   Three exist and all three are now real (`NullableAxis` is named for what
-   the VALUE is, so read each member as a promise about the non-null value):
+   Three exist (`NullableAxis` is named for what the VALUE is, so read each
+   member as a promise about the non-null value):
 
    - **null-legal / `OPTIONAL`** — the note tier's `retire` (an anchor date
      passed; a dinner that happened is replaced by nothing), and the fake.
      Both a value and a null are accepted.
-   - **null-refused / `REQUIRED`** — `SqlFactStore`, whose `fact` CHECK is a
-     biconditional, so a supersession without a successor is refused by the
-     database and by the store above it.
-   - **null-required / `REFUSED`** — `SqlFactCandidateStore`, which refuses a
-     NON-null `replaced_by` (and a non-null `source`) with `ValueError`,
-     because it has no column to record either and accepting-then-dropping
-     would report a successor recorded that nothing recorded — R-27's
-     ERROR-as-`ok`, written into a column instead of returned from a call.
+   - **null-refused / `REQUIRED`** — a store whose CHECK is a biconditional,
+     so a supersession without a successor is refused by the database and by
+     the store above it. No implementation carries this today; the state is
+     kept because the port allows it and the next tier may.
+   - **null-required / `REFUSED`** — the note store on `source`: it refuses a
+     non-null value with `ValueError`, because it has no column to record one
+     and accepting-then-dropping would report a citation recorded that
+     nothing recorded — R-27's ERROR-as-`ok`, written into a column instead
+     of returned from a call.
 
    So `IMPLEMENTATIONS` carries a `NullableAxis` **per field**, and that enum
    member is itself the per-implementation factory: `axis.offer(value)`
@@ -137,19 +92,18 @@ Three things needed this, found in this order:
 
    Deliberately NO skip anywhere on this axis. A test that does not run for
    an implementation is a property nobody checked; each of the three tests
-   here branches on what the entry promises, so all three implementations
-   run all three. `test_a_field_the_store_cannot_record_is_refused_not_dropped`
-   is where "refused" is actually measured, and it runs everywhere too — for
-   a store that CAN record the field it asserts the round trip instead.
+   here branches on what the entry promises, so every implementation runs all
+   three. `test_a_field_the_store_cannot_record_is_refused_not_dropped` is
+   where "refused" is actually measured, and it runs everywhere too — for a
+   store that CAN record the field it asserts the round trip instead.
 
-`test_a_foreign_payload_is_refused_not_duck_typed` is the shared assertion
-for the property `SqlFactStore.propose`'s own docstring calls out — an
-`isinstance` check refusing any payload it does not own. It is NOT run
-against `"fake"`: `_FakeDreamSink` declares no payload type of its own (it
+`test_a_foreign_payload_is_refused_not_duck_typed` is the shared assertion for
+an `isinstance` check refusing any payload the store does not own. It is NOT
+run against `"fake"`: `_FakeDreamSink` declares no payload type of its own (it
 stands for the port's own genericity, not for a production adaptor with a
 value to refuse), so the assertion would pass VACUOUSLY there — refusing
-nothing because it refuses everything indiscriminately — which is exactly
-the silently-green failure this test exists to rule out. See
+nothing because it refuses everything indiscriminately — which is exactly the
+silently-green failure this test exists to rule out. See
 `FOREIGN_PAYLOAD_EXEMPT` below; an implementation is excluded only with a
 stated reason, never silently.
 
@@ -157,13 +111,7 @@ stated reason, never silently.
 binds a fake to a suite, and `nora/testing/fakes.py`'s docstring enumerates
 every fake there as standing in for a *production* implementation at OTHER
 call sites. This one has no such job — its only purpose is exercising this
-contract. (`nora.testing.InMemoryFactStore` and
-`nora.testing.InMemoryFactCandidateStore` are a DIFFERENT thing: tier-specific
-doubles carrying their own tier's refusals, tested by
-`tests/infra/test_fact_store.py` and `tests/infra/test_fact_candidate_store.py`
-alongside the SQL store each mirrors — neither joins `IMPLEMENTATIONS` here,
-because this file's `"fake"` entry exists to exercise the PORT's genericity,
-and a tier-shaped fake would defeat that.)
+contract.
 
 The test that matters most is `test_the_port_has_no_delete_verb`. Every other
 test here checks behaviour an implementation could get right by accident; that
@@ -191,11 +139,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.notes import NoteRevisionProposal, NoteSupersedeReason
 from nora.domain.ports import DreamSink, Proposal
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.fact_candidates import SqlFactCandidateStore
-from nora.infra.sql.facts import SqlFactStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.notes import SqlNoteStore
-from nora.testing import fact_candidate_proposal_factory, fact_proposal_factory
 
 NOW = 1_755_000_000_000
 
@@ -251,9 +196,8 @@ _fake_seq = itertools.count(1)
 
 def _fake_proposal_factory(*, established_by: str | None = None) -> Proposal:
     """Three distinct default values per call — `instruction_sha256`,
-    `model`, `established_by` — mirroring `fact_proposal_factory`'s own
-    contract, so a field swap in an assertion is visible for EITHER
-    implementation, not just the real one."""
+    `model`, `established_by` — so a field swap in an assertion is visible
+    for the fake as well as for a real store."""
     n = next(_fake_seq)
     return Proposal(
         payload=f"fake-payload-{n}",
@@ -286,85 +230,11 @@ async def _fake_read_row(sink: _FakeDreamSink, *, key: str, row_id: str) -> _Rea
     )
 
 
-async def _sql_read_row(sink: SqlFactStore, *, key: str, row_id: str) -> _ReadBack:
-    fact = await sink.fact_by_id(workspace=key, fact_id=row_id)
-    assert fact is not None, f"{row_id} was just written and must be readable"
-    # `payload` is not reconstructed — `fact_by_id` returns the adjudicated
-    # `Fact`, not the `FactVerdict` that produced it, and no shared test
-    # compares `.payload`. Only the provenance columns are asserted on.
-    return _ReadBack(
-        proposal=Proposal(
-            payload=None, instruction_sha256=fact.instruction_sha256,
-            model=fact.model, established_by=fact.established_by,
-        ),
-        because=fact.supersede_reason, source=fact.supersede_source,
-        replaced_by=fact.superseded_by, retired_at=fact.superseded_at,
-        written_at=fact.created_at,
-    )
-
-
 _fake_because_seq = itertools.count(1)
 
 
 def _fake_make_because() -> str:
     return f"fake-reason-{next(_fake_because_seq)}"
-
-
-_sql_because_cycle = itertools.cycle(("stale", "wrong", "merged"))
-
-
-def _sql_make_because() -> str:
-    """`fact_supersede_reason_check` in `nora/infra/sql/schema.py` and
-    `nora/infra/sql/migrations/versions/0025_fact_tier.py`: any OTHER string
-    raises `IntegrityError` the moment a real row is touched."""
-    return next(_sql_because_cycle)
-
-
-async def _candidate_read_row(
-    sink: SqlFactCandidateStore, *, key: str, row_id: str,
-) -> _ReadBack:
-    """The candidate tier's row, normalised onto the shared view.
-
-    Three of the six fields are this tier saying something the other two do
-    not, and each is a mapping rather than a gap:
-
-    - `because` is the row's `status`. A candidate's retirement reason and
-      its terminal status are the SAME value (`adjudicated`/`not_covered`) —
-      which is the reason `_ReadBack.because` is an opaque `str` and not
-      anyone's enum. Before a retirement the status is `pending`, which is a
-      status and not a reason, so this reports `None` there rather than
-      handing a test the word "pending" as if a supersession had said it.
-    - `source` and `replaced_by` are always `None`: the table has no column
-      for either, which is why `SqlFactCandidateStore.supersede` REFUSES a
-      non-null value for them instead of accepting and dropping it. That is
-      the `NullableAxis.REQUIRED` entry below, not a hole in this view.
-    - `written_at` is `first_seen_at` — a re-sighting bumps `last_seen_at`,
-      and "when was this row written" is the first sighting.
-    """
-    c = await sink.candidate_by_id(workspace=key, candidate_id=row_id)
-    assert c is not None, f"{row_id} was just written and must be readable"
-    return _ReadBack(
-        proposal=Proposal(
-            payload=None, instruction_sha256=c.instruction_sha256, model=c.model,
-            established_by=c.established_by,
-        ),
-        because=c.status if c.last_adjudicated_at is not None else None,
-        source=None,
-        replaced_by=None,
-        retired_at=c.last_adjudicated_at,
-        written_at=c.first_seen_at,
-    )
-
-
-_candidate_because_cycle = itertools.cycle(("adjudicated", "not_covered"))
-
-
-def _candidate_make_because() -> str:
-    """The two TERMINAL statuses, and the reason the zero-row exemption had to
-    go: `SqlFactCandidateStore.supersede` raises `ValueError` on anything else
-    BEFORE looking at a row, because `fact_candidate_status_check` also admits
-    `pending` and «supersede a candidate into pending» is not a retirement."""
-    return next(_candidate_because_cycle)
 
 
 class NullableAxis(enum.Enum):
@@ -404,16 +274,6 @@ def _build_fake(_engine: AsyncEngine | None) -> _FakeDreamSink:
     return _FakeDreamSink()
 
 
-def _build_sql(engine: AsyncEngine | None) -> SqlFactStore:
-    assert engine is not None, "sql's build is only ever called with a real engine"
-    return SqlFactStore(engine)
-
-
-def _build_candidate(engine: AsyncEngine | None) -> SqlFactCandidateStore:
-    assert engine is not None, "candidate's build needs a real engine"
-    return SqlFactCandidateStore(engine)
-
-
 _note_seq = itertools.count(1)
 
 
@@ -423,24 +283,14 @@ def _distinct_sha256(seed: str) -> str:
 
 # ---- proposal factories, adapted to the async key-aware signature ----------
 #
-# The three below IGNORE both arguments, and that is the correct amount of work
-# for a tier whose `propose` inserts: there is nothing to look up, so there is
-# nothing to await. They are thin adapters rather than changes to
-# `fact_proposal_factory`/`fact_candidate_proposal_factory` themselves, which
-# are production helpers used outside this file — widening their signature to
-# satisfy one suite would push this suite's shape back into `nora/testing/`.
+# `_fake_make_proposal` IGNORES both arguments, and that is the correct amount
+# of work for a sink whose `propose` inserts: there is nothing to look up, so
+# there is nothing to await. `_note_make_proposal` is the one that cannot —
+# see its own docstring, and the module docstring's point 1.
 
 
 async def _fake_make_proposal(_sink: object, *, key: str, **overrides: object) -> Proposal:
     return _fake_proposal_factory(**overrides)  # type: ignore[arg-type]
-
-
-async def _sql_make_proposal(_sink: object, *, key: str, **overrides: object) -> Proposal:
-    return fact_proposal_factory(**overrides)  # type: ignore[arg-type]
-
-
-async def _candidate_make_proposal(_sink: object, *, key: str, **overrides: object) -> Proposal:
-    return fact_candidate_proposal_factory(**overrides)  # type: ignore[arg-type]
 
 
 async def _note_make_proposal(
@@ -593,28 +443,6 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
         make_because=_fake_make_because,
         read_row=_fake_read_row,
         successor=NullableAxis.OPTIONAL, source=NullableAxis.OPTIONAL,
-    ),
-    "sql": _Impl(
-        needs_engine=True, build=_build_sql,
-        make_proposal=_sql_make_proposal,
-        sample_payload=lambda: fact_proposal_factory().payload,
-        make_because=_sql_make_because,
-        read_row=_sql_read_row,
-        # `fact_supersession_is_timed_check` is a biconditional: a fact is
-        # either standing or superseded-with-a-successor.
-        successor=NullableAxis.REQUIRED, source=NullableAxis.OPTIONAL,
-    ),
-    "candidate": _Impl(
-        needs_engine=True, build=_build_candidate,
-        make_proposal=_candidate_make_proposal,
-        sample_payload=lambda: fact_candidate_proposal_factory().payload,
-        make_because=_candidate_make_because, read_row=_candidate_read_row,
-        # No candidate ever succeeds another (an adjudicated one is succeeded
-        # by a `fact`, in a different table) and a supersession's warrant
-        # belongs on that `fact` row. `fact_candidate` has a column for
-        # neither, so both are refused rather than accepted and dropped —
-        # see `SqlFactCandidateStore.supersede`'s three refusals.
-        successor=NullableAxis.REFUSED, source=NullableAxis.REFUSED,
     ),
     "note": _Impl(
         needs_engine=True, build=_build_note,

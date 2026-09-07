@@ -23,73 +23,33 @@ import logging
 import time
 from typing import Any, Protocol
 
-from nora.domain.facts import (
-    Fact,
-    FactExtent,
-    FactsView,
-    RenderedClaim,
-    mentions,
-    normalise_name,
-)
 from nora.domain.models import (
     NormalizedMessage,
     PersonRef,
-    RoomExchange,
-    RoomLanguage,
-    RoomPortrait,
     TagContext,
     TranscriptRow,
 )
 from nora.domain.notes import Note
 from nora.domain.ports import (
     EngagementRequest,
-    FactReader,
     MemoryStore,
     RecordStore,
-    RoomExchangeReader,
-    RoomLanguageReader,
-    RoomPortraitReader,
     StandingStore,
 )
 from nora.domain.standing import Standing
 from nora.persons import Persons
 from nora.policy import Policy
 
-
-class RenderedClaimWriter(Protocol):
-    """`SqlRenderedClaimStore.record`, seen from here — structural, so
-    `nora.engagement` does not import `nora.infra`. The same seam the fact
-    adaptor's three store protocols use."""
-
-    async def record(self, *, claims: tuple[RenderedClaim, ...]) -> str: ...
-
-
-log = logging.getLogger("nora.engagement.context")
-
-# How many rows `room_language(...)` asks the store for. Deliberately LARGER
-# than `nora.agent.prefill`'s render cap (`DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES`)
-# — see `nora.language.render`'s own docstring: the store filters on
-# `recognition_score` alone, then the renderer additionally drops any entry
-# with no quotable example and cannot reach further down to replace it,
-# because it was only ever handed as many rows as the store returned. Asking
-# the store for the SAME number as the render cap therefore silently
-# under-fills the block whenever any row lacks an example. A constructor
-# default rather than an inline literal so Task 11 has somewhere to wire a
-# config value without another signature change.
-DEFAULT_ROOM_LANGUAGE_STORE_LIMIT = 15
-
-# Dreamer Plan 2's own version of the same relation, for the same reason —
-# see `nora.config.Config._exchange_render_cap_stays_below_the_store_limit`.
-DEFAULT_ROOM_EXCHANGE_STORE_LIMIT = 10
+log = logging.getLogger(__name__)
 
 
 class StandingNotesReader(Protocol):
     """The one note-tier verb this assembler needs — `SqlNoteStore.standing`
     (2026-08-21 note-tier design §5.1), narrowed to a Protocol for the same
-    reason `RoomPortraitReader` exists: `TranscriptInjection` takes
+    reason every other collaborator here is one: `TranscriptInjection` takes
     Protocol-typed collaborators only, so it never imports `nora.infra`.
 
-    Declared HERE rather than beside `FactReader` in `nora.domain.ports`
+    Declared HERE rather than in `nora.domain.ports`
     because today the prefill is the tier's only reader; when `note_read` /
     `note_search` land in `nora.agent.tools` the tier's full read half belongs
     in `ports` next to its fact-tier sibling, and this Protocol becomes an
@@ -144,25 +104,8 @@ class TranscriptInjection:
         ai_peer: str = "",
         self_card_conclusions: int = 0,
         tagger_card_conclusions: int = 0,
-        language: RoomLanguageReader | None = None,
-        room_language_store_limit: int = DEFAULT_ROOM_LANGUAGE_STORE_LIMIT,
-        exchange: RoomExchangeReader | None = None,
-        room_exchange_store_limit: int = DEFAULT_ROOM_EXCHANGE_STORE_LIMIT,
-        portrait: RoomPortraitReader | None = None,
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
-        facts: FactReader | None = None,
-        # The render ledger (31 §3). Optional and defaulted for the same
-        # reason every block reader here is: a deployment without the
-        # fact tier has nothing to record, and a required collaborator
-        # would make every existing construction site a change.
-        rendered: RenderedClaimWriter | None = None,
-        # 19 §6's two caps, with its reasoning. ROOM is the working set —
-        # more than eight and the block competes with the transcript it sits
-        # beside. SENDER is the narrowest slice and the most often empty, and
-        # four is enough to ground «you told us…».
-        max_room_facts: int = 8,
-        max_sender_facts: int = 4,
         standing: StandingStore | None = None,
     ) -> None:
         self._audit = audit
@@ -173,19 +116,10 @@ class TranscriptInjection:
         self._ai_peer = ai_peer
         self._self_card_conclusions = self_card_conclusions
         self._tagger_card_conclusions = tagger_card_conclusions
-        # `language` is `None` at every call site until Task 11 wires a real
-        # `RoomLanguageReader` into composition/offline — the same "not yet
-        # configured" shape `ai_peer=""` already uses to disable the self/
-        # tagger card reads below, kept OFF rather than raising so those
-        # existing call sites keep working unchanged.
-        self._language = language
-        self._room_language_store_limit = room_language_store_limit
-        self._exchange = exchange
-        self._room_exchange_store_limit = room_exchange_store_limit
-        self._portrait = portrait
         # `notes` is `None` while `[notes] enabled = false` — the note tier
-        # ships dormant, the same "not yet wired" shape `language`/`exchange`/
-        # `portrait` above use, and the same one the fact tier will use.
+        # ships dormant, the same "not yet configured" shape `ai_peer=""`
+        # already uses to disable the self/tagger card reads below, kept OFF
+        # rather than raising so existing call sites keep working unchanged.
         self._notes_store = notes
         # policy.toml, ONLY so `_notes` can name the workspace a room belongs
         # to (`Conversation.workspace`, DEC-105). Nothing else in this class
@@ -195,16 +129,6 @@ class TranscriptInjection:
         # is what keeps this correct once a deployment runs two social units:
         # the workspace is a property of the ROOM, resolved per message.
         self._policy = policy
-        # The fact tier (2026-08-20 fact-tier design). `None` while
-        # `[facts] enabled = false`, the same "not yet wired" shape its four
-        # neighbours use. It resolves its workspace through `self._policy`, the
-        # SAME mechanism the note tier uses — two tiers keyed on
-        # `Conversation.workspace` must not each carry their own idea of what a
-        # room's workspace is.
-        self._facts_reader = facts
-        self._rendered = rendered
-        self._max_room_facts = max_room_facts
-        self._max_sender_facts = max_sender_facts
         # Standing (design/dreamer-agent-loop/26-standing.md). `None` while
         # `[standing] enabled = false`, the same "not yet wired" shape its five
         # neighbours use.
@@ -219,7 +143,7 @@ class TranscriptInjection:
         # (26 §4). One port, one instance, two callers.
         #
         # It is keyed `(platform, conversation_id)` and needs no `Policy`,
-        # unlike `notes`/`facts`: a position is held in a room, not shared
+        # unlike `notes`: a position is held in a room, not shared
         # across a workspace's rooms, so there is no workspace to resolve.
         self._standing_store = standing
 
@@ -261,57 +185,23 @@ class TranscriptInjection:
         # `(platform, conversation_id)` like `_recent` beside it, where all four
         # reads in the second branch are keyed on a workspace or a scope.
         #
-        # The EIGHTH (`_notes`, the note tier) joins the second branch rather
-        # than adding a third: both branches stay at four, well inside the six
-        # the overloads type, and the outer `gather` stays at two. It sits with
-        # the other prefill-block reads even though it is the one scoped by
-        # workspace and not by room — grouping is about arity here, and where a
-        # read is scheduled says nothing about what it is keyed on.
+        # `_notes` is the one read scoped by WORKSPACE rather than by room,
+        # and it is gathered beside the rest anyway — grouping is about arity
+        # here, and where a read is scheduled says nothing about what it is
+        # keyed on.
         (
-            (transcript, card, self_card, tagger_card, standing),
-            (room_language, room_exchange, room_portrait, notes, facts),
+            transcript, card, self_card, tagger_card, standing, notes,
         ) = await asyncio.gather(
-            asyncio.gather(
-                self._recent(msg),
-                self._peer_card(ref, msg),
-                self._recall_self(msg),
-                self._recall_tagger(ref, msg),
-                self._standing(msg),
-            ),
-            asyncio.gather(
-                self._room_language(msg),
-                self._room_exchange(msg),
-                self._room_portrait(msg),
-                self._notes(msg),
-                self._standing_facts_unused(),
-            ),
+            self._recent(msg),
+            self._peer_card(ref, msg),
+            self._recall_self(msg),
+            self._recall_tagger(ref, msg),
+            self._standing(msg),
+            self._notes(msg),
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
         transcript = self._persons.name_transcript(transcript, platform=msg.platform)
-
-        # **The fact block is read AFTER the transcript, and that is a
-        # deliberate latency decision** (19 §6, operator 2026-08-28). Its room
-        # slice is "facts whose subject is an entity this conversation has
-        # touched", and the only honest source for what the conversation has
-        # touched is the transcript — which the gather above reads in PARALLEL
-        # with everything else, so a fact read inside it cannot see one.
-        #
-        # The two alternatives were both refused with reasons. Keying the slice
-        # on the tagging message alone needs no extra read and is empty most
-        # turns, which makes a block claiming to be about what the room is
-        # discussing actually about one message. Filtering a wider recency read
-        # afterwards costs nothing and silently misses any fact outside that
-        # window — a subset presented as the whole, which is the exact defect
-        # the extent line exists to stop, rebuilt one level down.
-        #
-        # So it is one extra sequential round trip: a single indexed read, on a
-        # path whose latency histogram starts at 0.1s. That is a PRIOR and not
-        # a measurement, which is why it is measured on the real endpoint after
-        # this lands rather than asserted here.
-        facts = await self._facts(
-            msg, transcript=transcript, tagger=ref, tag_id=request.tag_id,
-        )
 
         return TagContext(
             tag_id=request.tag_id,
@@ -322,11 +212,7 @@ class TranscriptInjection:
             started_at=time.perf_counter(),
             self_card=self_card,
             tagger_card=tagger_card,
-            room_language=room_language,
-            room_exchange=room_exchange,
-            room_portrait=room_portrait,
             notes=notes,
-            facts=facts,
             standing=standing,
         )
 
@@ -464,235 +350,6 @@ class TranscriptInjection:
                 "nora_errors_total", stage="self_card", platform=msg.platform)
             return ()
         return recall.conclusions
-
-    async def _room_language(self, msg: NormalizedMessage) -> RoomLanguage:
-        """What the Dreamer has distilled about THIS ROOM's own slang.
-
-        `scope_id` is the conversation id — the same key `SqlLanguageStore`
-        writes under (`nora.infra.sql.language`'s `lag`/`seconds_since_last_message`
-        both key `WHERE conversation_id = scope_id`), so a room's own history is
-        what comes back, never another room's.
-
-        `language=None` (nothing wired yet — Task 11's job) and the store
-        asking for MORE rows than the render will use are both handled below;
-        see the module-level `DEFAULT_ROOM_LANGUAGE_STORE_LIMIT` for the second.
-
-        `RoomLanguageReader.room_language` is documented never to raise, and
-        `SqlLanguageStore` already guards broadly, so in principle this catch is
-        unreachable — but it is now one of five siblings in a `gather`, where an
-        unreachable exception stops being a thinner prompt and becomes four
-        cancelled reads and a dead turn. Same property `_peer_card` guards.
-        """
-        if self._language is None:
-            return RoomLanguage(scope_id=msg.conversation_id)
-        try:
-            return await self._language.room_language(
-                scope_id=msg.conversation_id, limit=self._room_language_store_limit,
-            )
-        except Exception:
-            log.exception("room-language read failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="room_language", platform=msg.platform)
-            return RoomLanguage(scope_id=msg.conversation_id)
-
-    async def _room_exchange(self, msg: NormalizedMessage) -> RoomExchange:
-        """Dreamer Plan 2's own sibling of `_room_language` — same reasoning,
-        same guard: `exchange=None` (not yet wired) and the store's own
-        `RoomExchangeReader.room_exchange` never-raises guarantee both mean
-        this catch should be unreachable, but it is now one of SIX siblings
-        in the `gather`, where an uncaught exception cancels every other
-        read."""
-        if self._exchange is None:
-            return RoomExchange(scope_id=msg.conversation_id)
-        try:
-            return await self._exchange.room_exchange(
-                scope_id=msg.conversation_id, limit=self._room_exchange_store_limit,
-            )
-        except Exception:
-            log.exception("room-exchange read failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="room_exchange", platform=msg.platform)
-            return RoomExchange(scope_id=msg.conversation_id)
-
-    async def _standing_facts_unused(self) -> None:
-        """A placeholder keeping the second gather at five members while the
-        fact read moves out of it. Five is what the `asyncio.gather` overloads
-        type against; dropping to four would work and would also make the two
-        branches asymmetric for a reason nobody reading them could see."""
-        return None
-
-    async def _facts(
-        self, msg: NormalizedMessage, *,
-        transcript: tuple[TranscriptRow, ...],
-        tagger: PersonRef | None,
-        tag_id: str,
-    ) -> FactsView:
-        """The `<facts>` block's three slices (19 §6).
-
-        **One block, three labelled slices** — room (8), sender (4), and an
-        extent line that is counts only. Three sibling blocks would read as
-        three unrelated systems rather than one store seen from three angles.
-
-        **The one block whose content is not derived from the room it renders
-        into**, which is why the workspace lookup is here rather than a
-        conversation id passed straight through. Within one workspace this
-        crosses no boundary R-31 guards — DEC-105/R-49's own reasoning, that
-        rooms sharing a workspace are one social unit. That argument is
-        borrowed, and it is only as strong as the workspace configuration is
-        honest.
-
-        **Never raises**, the same guard its siblings carry and for a reason
-        that survives the move out of the gather: a thinner reply beats no
-        reply, and every read below already degrades to nothing on its own.
-
-        **The extent is read even when both slices are empty.** That is the
-        whole point of it: a block that vanishes when nothing matched tells her
-        nothing exists, and one saying she holds forty and is being shown none
-        tells her the verb is worth reaching for.
-        """
-        reader = self._facts_reader
-        if reader is None:
-            return FactsView()
-        workspace = _workspace_of(self._policy, msg)
-        try:
-            subjects = await self._subjects_in_play(
-                reader, workspace=workspace, transcript=transcript, msg=msg,
-            )
-            room = await reader.standing_facts(
-                workspace=workspace,
-                subject_ids=subjects,
-                limit=self._max_room_facts,
-            )
-            sender: tuple[Fact, ...] = ()
-            if tagger is not None:
-                sender = await reader.facts_asserted_by(
-                    workspace=workspace,
-                    person_id=tagger.person_id,
-                    limit=self._max_sender_facts,
-                )
-            standing = await reader.standing_count(
-                workspace=workspace,
-            )
-        except Exception:
-            log.exception("fact read failed; continuing without the block")
-            self._metrics.inc(
-                "nora_errors_total", stage="facts", platform=msg.platform)
-            return FactsView()
-
-        shown = {f.id for f in room} | {f.id for f in sender}
-        await self._record_rendered(
-            room + sender, workspace=workspace, msg=msg, tag_id=tag_id,
-        )
-        return FactsView(
-            room=room, sender=sender,
-            extent=FactExtent(standing=standing, shown=len(shown)),
-            asserters=await self._asserters_for(reader, room + sender),
-        )
-
-    async def _record_rendered(
-        self, facts: tuple[Fact, ...], *, workspace: str,
-        msg: NormalizedMessage, tag_id: str,
-    ) -> None:
-        """The render ledger (31 §3) — the precondition recognition's own
-        wording presupposes and nothing had.
-
-        **AWAITED, not spawned**, unlike the `tag_trace` write. A fast
-        follow-up correction landing against a ledger this turn has not written
-        yet targets an empty set and reports «nothing matched», when the truth
-        is «I could not check» — R-27's exact inversion, on the path the
-        correction loop exists for.
-
-        **Never raises**, and a failure does not cost the reply: it is counted,
-        and the consequence lands on the NEXT turn's targeting, which then has
-        to say `unavailable` rather than pretend the ledger was empty.
-
-        Only what was actually shown. A fact read and then not rendered is not
-        a claim she made, and recording it would make «a claim Nora just
-        rendered» mean «a claim Nora looked at».
-        """
-        if self._rendered is None:
-            return
-        await self._rendered.record(claims=tuple(
-            RenderedClaim(
-                conversation_id=msg.conversation_id,
-                kind="fact",
-                row_key=f.id,
-                surface=f.subject_id,
-                workspace=workspace,
-                last_tag_id=tag_id,
-                last_rendered_at=int(time.time() * 1000),
-            )
-            for f in facts
-        ))
-
-    async def _subjects_in_play(
-        self, reader: FactReader, *, workspace: str,
-        transcript: tuple[TranscriptRow, ...], msg: NormalizedMessage,
-    ) -> tuple[str, ...]:
-        """The subjects this conversation has TOUCHED — 19 §6's room slice.
-
-        Matched by normalised containment against the transcript and the
-        tagging message, the same matcher recognition uses and for the same
-        reasons: the job is «does this text talk about X», which is a substring
-        question, and a similarity threshold nobody can calibrate would look
-        like evidence. It is also collation-independent, which matters on a
-        database about to be reindexed under a different libc's ordering.
-
-        `standing_subjects` is bounded by the workspace and **the cost of this
-        scan is measured by nothing.** The sentence that stood here named
-        `nora_facts_subject_scan` as reporting it; no such metric is declared
-        or emitted anywhere, so it was prose asserting a reading nobody can
-        take — at the exact point CLAUDE.md's rule applies, since the RESULT
-        here is a list of subjects and a correct list is compatible with any
-        cost. The gap is written down rather than papered over: the bound is
-        the workspace's standing-subject count, and if that grows this is
-        where it will be felt first.
-        """
-        haystack = normalise_name(
-            " ".join([msg.body or "", *(r.body or "" for r in transcript)])
-        )
-        if not haystack:
-            return ()
-        subjects = await reader.standing_subjects(workspace=workspace)
-        return tuple(
-            subject for subject in subjects
-            if mentions(haystack, normalise_name(subject))
-        )
-
-    async def _asserters_for(
-        self, reader: FactReader, facts: tuple[Fact, ...],
-    ) -> dict[str, tuple[str, ...]]:
-        """Who said each `stated` fact — 30 §2.3, and the read that makes a
-        prank legible rather than authoritative.
-
-        Only for `stated` rows: every other warrant renders what backs it
-        without a person, so asking would be one query per fact for a string
-        nothing shows.
-        """
-        out: dict[str, tuple[str, ...]] = {}
-        for fact in facts:
-            if fact.warrant_kind != "stated":
-                continue
-            rows = await reader.asserters(fact_id=fact.id)
-            if rows:
-                out[fact.id] = tuple(dict.fromkeys(a.person_id for a in rows))
-        return out
-
-    async def _room_portrait(self, msg: NormalizedMessage) -> RoomPortrait:
-        """Dreamer Plan 3's own sibling of `_room_language`/`_room_exchange`
-        — same reasoning, same guard. No store-limit parameter: unlike its
-        two siblings, `RoomPortraitReader.room_portrait` takes no `limit` —
-        a portrait is one row per scope by construction, not a top-N read
-        (see `nora.language.portrait_synthesizer`'s module docstring)."""
-        if self._portrait is None:
-            return RoomPortrait(scope_id=msg.conversation_id)
-        try:
-            return await self._portrait.room_portrait(scope_id=msg.conversation_id)
-        except Exception:
-            log.exception("room-portrait read failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="room_portrait", platform=msg.platform)
-            return RoomPortrait(scope_id=msg.conversation_id)
 
     async def _standing(self, msg: NormalizedMessage) -> Standing | None:
         """Her own position in THIS conversation, or `None`

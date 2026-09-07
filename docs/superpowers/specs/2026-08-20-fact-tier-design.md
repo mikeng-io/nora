@@ -12,6 +12,12 @@ derives_from:
   - design/09-decision-index.md
 ---
 
+> **DEPRECATED 2026-09-07 — the knowledge tier (the "fact tier") this document designs has been deprecated and its code deleted.**
+> This document is retained as a record of the reasoning, not as a description of the system. **Nothing here describes code that exists.**
+> The database tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
+> The evidence that decided it is in `design/dreamer-agent-loop/20-knowledge-tier.md` §0. See issue #115.
+
+
 # The fact tier
 
 ## 0. What this document is, and what owns what

@@ -1,9 +1,9 @@
 """The Dreamer's egress screen: nothing reaches a sink carrying an identifier
 or a raw coordinate.
 
-**Dreamer output reaches the model.** `room_lexeme` renders into
-`<room_language>`, `room_exchange` into `<room_exchange>`, `room_portrait` into
-`<room_portrait>`, and the fact tier into `<facts>`. Nora's own identifier and
+**Dreamer output reaches the model.** Whatever an adaptor persists is rendered
+back into a later turn's prefill — `note` into `<notes>` today, and whatever
+the next tier writes into whatever block it renders. Nora's own identifier and
 coordinate screens (R-18 in `nora.agent.egress`, R-28 in `nora.agent.security`)
 sit on **her egress** — the reply she sends and the arguments she hands a third
 party. An adaptor writing to its sink is a **second path into the prompt** that
@@ -15,9 +15,11 @@ Dreamer reads attacker-influenceable pages and writes distillations of them
 into a durable store. A page that says «her number is +85290000101» becomes a
 lexeme sense, and the sense renders into the prompt on every subsequent turn,
 long after the run that wrote it is forgotten. This is the 2026-08-20 audit's
-F14 — `room_language.sense` is an unbounded model-authored persistence channel,
-guarded today only by a truncation and a plausibility reject — generalised to
-every tier, and settled once here rather than re-argued per adaptor.
+F14 — an unbounded model-authored persistence channel, guarded only by a
+truncation and a plausibility reject — generalised to every tier, and settled
+once here rather than re-argued per adaptor. (The audit found it on the
+room-language tier's `sense` column; that tier is deleted and the class of
+defect is not.)
 
 **Where it sits, and why that is not where the plan put it.** The plan screened
 the *parsed proposals* an adaptor's `accept` returns. This screens the model's

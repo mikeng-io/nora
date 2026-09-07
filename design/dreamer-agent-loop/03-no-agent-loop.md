@@ -82,7 +82,7 @@ means by that vocabulary.
 
 | participant | on the runtime | tools | real loop |
 |---|---|---|---|
-| `LexemeObserver` | no — legacy one-shot | none | no |
+| ~~`LexemeObserver`~~ **(DEPRECATED 2026-09-07, deleted)** | no — legacy one-shot | none | no |
 | `ExchangePatternObserver` | no — legacy one-shot | none | no |
 | `RoomPortraitSynthesizer` | no — on the clock, not the runtime | none, and **no model call at all** | n/a, correct |
 | `FactCandidateAdaptor` | yes | none | no |

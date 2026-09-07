@@ -57,33 +57,25 @@ from nora.domain.ports import (
     PlatformAdapter,
     RecordStore,
     ReverseGeocoder,
-    RoomConsolidator,
-    RoomPortraitSynthesizer,
     RosterSource,
     SearchProvider,
 )
 from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.pipeline import EngagementPipeline
-from nora.engagement.recognition import Recogniser
 from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages.debrief import Completion as DebriefCompletion
 from nora.engagement.stages.debrief import Wiring as DebriefWiring
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.compute.docker_backend import LocalDockerBackend
-from nora.infra.embedding import OllamaEmbedder
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
-from nora.infra.sql.embeddings import SqlEmbeddingStore
 from nora.infra.sql.entities import SqlEntityStore
-from nora.infra.sql.exchange import SqlExchangeStore
-from nora.infra.sql.fact_candidates import SqlFactCandidateStore
-from nora.infra.sql.facts import SqlFactStore, oversized_terms
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
@@ -94,15 +86,12 @@ from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
-from nora.infra.sql.rendered_claims import SqlRenderedClaimStore
-from nora.infra.sql.room_portrait import SqlRoomPortraitStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
-from nora.infra.veto_list import load_veto_list
 from nora.infra.vision import StickerInterpreter, VisionClient, derive_vision_timeout
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
@@ -117,21 +106,9 @@ from nora.ingest.stages import standing_event
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
-from nora.language.consolidator import LanguageConsolidator
-from nora.language.exchange_consolidator import ExchangeConsolidator
-from nora.language.exchange_observer import ExchangePatternObserver
-from nora.language.fact_adaptor import (
-    FactAdaptor,
-    FactCandidateAdaptor,
-    FactEntityResolutionAdaptor,
-)
-from nora.language.fact_embedder import FactEmbedder
-from nora.language.knowledge_search import KnowledgeSearch
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.note_entity_adaptor import NoteEntityResolutionAdaptor
-from nora.language.observer import LexemeObserver
-from nora.language.portrait_synthesizer import PortraitSynthesizer
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
@@ -176,82 +153,6 @@ class StartupError(Exception):
     — see `design/09-decision-index.md`)."""
 
 
-class _LanguageModelClient:
-    """Satisfies `nora.language.observer.LexemeObserver`'s structural
-    `_ModelClient` shape (`async def complete(self, *, prompt: str) -> str`)
-    — a raw one-shot text completion over the process-wide OmniRoute
-    `client`, the `VisionClient._create` shape without the image half.
-
-    Lives HERE rather than in `nora.language` because that package may not
-    import `strands`, `nora.agent.factory`, or `nora.config` at all (see
-    `LexemeObserver`'s own module docstring) — the model client is INJECTED,
-    and this is the one place already holding both the process-wide client
-    and `[language].model`.
-
-    Two things every OTHER raw `chat.completions.create` in this repo already
-    has, that this one was missing until the final whole-branch review:
-
-    * `response_format={"type": "json_object"}` — the ask `observer.py`'s
-      prompt already makes ("Respond with ONLY a JSON object... no prose, no
-      markdown fence") was carried entirely by the PROMPT, with nothing on
-      the wire forcing the provider to honour it. The commit that introduced
-      this call was titled "schema-forced lexeme extraction"; without this
-      parameter that title was aspirational, not actual. This does not make
-      `_parse_observations`/`_extract`'s malformed-response handling
-      unnecessary — a provider can still return well-formed JSON of the
-      WRONG shape, or ignore the parameter outright — but it is the one
-      concrete lever this call has to ask the PROVIDER to hold up its side,
-      the same way every other structured call in this codebase does.
-    * **A bounded timeout.** Every other model call in the codebase is
-      explicitly bounded and says why (`nora.engagement.stages.invoke`'s
-      `asyncio.wait_for` around the whole agent loop;
-      `nora.infra.vision.client.derive_vision_timeout`, "so a slow or hung
-      MiMo becomes a bounded failure"). This one ran on the bare
-      `AsyncOpenAI` default (600s x retries) until now — and unlike a tag
-      turn's timeout, a hung Dreamer call is QUIET: `dream_loop` marks the
-      scope `running` and skips it every subsequent tick
-      (`nora_dream_skipped_total{reason="in_flight"}`) without ever raising,
-      so the exponential backoff non-negotiable 4 exists for — which only
-      triggers on an EXCEPTION — never engages. A hung provider would be
-      skipped forever, not backed off. `asyncio.TimeoutError` propagating
-      from here reaches `LexemeObserver.observe` uncaught, then
-      `LanguageConsolidator.consolidate` uncaught, then `_dream_once`'s
-      per-scope call site inside `dream_loop`'s own try/except — which is
-      exactly the already-proven "raising consolidator" path
-      (`tests/unit/test_runtime.py::
-      test_the_watermark_advances_only_after_observations_are_committed`'s
-      crash-shaped half): counted, backed off, and the watermark left
-      untouched, never advanced over a batch a hung call never actually read.
-    """
-
-    def __init__(self, *, client: AsyncOpenAI, model: str, timeout_seconds: float) -> None:
-        self._client = client
-        self._model = model
-        self._timeout_seconds = timeout_seconds
-
-    @property
-    def model(self) -> str:
-        """The model name every `complete` below actually calls — the second
-        half of `_ModelClient`'s shape, read by the observers so each row they
-        write records what produced it (`nora.domain.models.LexemeCandidate
-        .model`). It returns THIS object's `_model`, the same attribute the
-        request is built from, so the stamp and the wire cannot name
-        different models; handing the name to the observer separately would
-        make that possible."""
-        return self._model
-
-    async def complete(self, *, prompt: str) -> str:
-        response = await asyncio.wait_for(
-            self._client.chat.completions.create(
-                model=self._model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-            ),
-            timeout=self._timeout_seconds,
-        )
-        return (response.choices[0].message.content or "").strip()
-
-
 _REASONING_EFFORTS: frozenset[str] = frozenset(
     {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
 )
@@ -281,10 +182,10 @@ def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
 
 
 class _DebriefModelClient:
-    """Satisfies `nora.engagement.stages.debrief.ModelClient` — the same raw
-    one-shot completion `_LanguageModelClient` above makes, with ONE field
-    added and it is the reason this is a separate class rather than a
-    parameter on that one.
+    """Satisfies `nora.engagement.stages.debrief.ModelClient` — a raw one-shot
+    text completion over the process-wide OmniRoute client, with three things
+    on it that every other raw `chat.completions.create` in this repo either
+    has or was measured to need.
 
     **`finish_reason` comes back with the content.** A raw
     `chat.completions.create` does not raise on a cut-off the way a Strands
@@ -293,16 +194,22 @@ class _DebriefModelClient:
     parse as JSON into something shorter and wrong. That is the R-27
     substitution (an ERROR reported as a PASS) one layer down from where this
     repo usually enforces it, and the only way to keep it out is to hand the
-    caller the field it must check. `_LanguageModelClient` returns a bare `str`
-    and therefore cannot; widening it would change what four existing callers
-    receive for a check none of them make.
+    caller the field it must check.
 
-    Everything else is `_LanguageModelClient`'s, for its stated reasons:
-    `response_format={"type": "json_object"}` because prompt-only JSON
-    enforcement was proven insufficient here once already, and an explicit
-    `asyncio.wait_for` because the bare `AsyncOpenAI` default is 600s x
-    retries — and this call HOLDS THE CONVERSATION'S SLOT, so an unbounded one
-    is not a slow background job, it is a room that stops answering.
+    **`response_format={"type": "json_object"}`**, because prompt-only JSON
+    enforcement was proven insufficient on this exact call shape once already:
+    a commit titled "schema-forced extraction" carried the ask entirely in the
+    prompt with nothing on the wire asking the provider to honour it.
+
+    **An explicit `asyncio.wait_for`**, because the bare `AsyncOpenAI` default
+    is 600s x retries — and this call HOLDS THE CONVERSATION'S SLOT, so an
+    unbounded one is not a slow background job, it is a room that stops
+    answering.
+
+    (It used to be described as `_LanguageModelClient` plus a field. That class
+    was the language tier's and its three callers — the two room consolidators
+    and the reply-path recogniser — went with the tiers they belonged to, so
+    the reasons it held are restated here rather than pointed at.)
     """
 
     def __init__(
@@ -610,39 +517,27 @@ class Dependencies:
     # is built per-tag inside `factory.create_agent` and holds no
     # web-reachable listing method).
     skills_dir: Path
-    # The Dreamer's own pieces (Task 11), all `None`/empty when `[language]
-    # enabled = false` — `nora.__main__.App.run` reads these to spawn (or log
-    # skipping) `runtime.dream_loop`. `language_store` doubles as the
-    # `RoomLanguageReader` `assembler` above already holds; exposed again
-    # here because `dream_loop` needs the CONCRETE `SqlLanguageStore` (its
-    # cursor/measurement surface, not just the read-only port).
+    # The Dreamer's consolidation cursor and the scopes it ticks over.
+    # `language_store` is the CONCRETE `SqlLanguageStore` — the module keeps
+    # its inherited name; the class is now the cursor and nothing else (see
+    # `nora.infra.sql.language`'s own docstring). `None` when `[dreamer]
+    # enabled = false`; `nora.__main__.App.run` reads these to spawn (or log
+    # skipping) `runtime.dream_loop`.
     language_store: SqlLanguageStore | None
-    language_consolidators: tuple[RoomConsolidator, ...]
     language_scopes: Callable[[], Sequence[str]]
-    # Dreamer Plan 3 (2026-08-20 room-portrait design) — `None` under the same
-    # `[language].enabled` gate as `language_store`/`language_consolidators`
-    # above. Deliberately NOT a `RoomConsolidator`; `nora.app.runtime
-    # .dream_loop` takes it as its own `portrait=` keyword, not a member of
-    # `language_consolidators` — see that module's docstring for why.
-    portrait_synthesizer: RoomPortraitSynthesizer | None
     # The Dreamer's instruction corpus. Built unconditionally (see its
     # construction below), so unlike its neighbours here it is never None —
     # `dream_loop` reads it for the per-tick `instruction_versions=` line, and
     # both observers hold it as their objective source.
     dreamer_instructions: DreamerInstructions
     # The Dreamer RUNTIME and what it schedules — `None`/empty under
-    # `[dreamer] enabled = false`, the shipped default. Separate from the
-    # `[language]` gate above on purpose: `[language]` decides whether the
-    # CLOCK runs at all, `[dreamer]` decides whether the clock has a second,
-    # adaptor-shaped schedule on it. A deployment can run today's consolidators
-    # with no runtime, which is exactly what every deployment does today.
+    # `[dreamer] enabled = false`, the shipped default.
     dreamer_runtime: DreamerRuntime | None
     dream_adaptors: tuple[DreamAdaptor, ...]
     # Per-adaptor clocks for the dream clock (design/dreamer-agent-loop/32
     # §3.1), keyed by adaptor name and EMPTY under `[dreamer] enabled = false`.
-    # An adaptor with no entry keeps the shared `[language]` lag/quiet/age
-    # shape; the fact-candidate extractor's entry is what moves it onto its
-    # own daily interval, 1000-row batch and 256-item envelope cap.
+    # An adaptor with no entry keeps the shared lag/quiet/age shape; an entry
+    # is what moves one onto its own interval, batch and envelope cap.
     dream_schedules: Mapping[str, AdaptorSchedule]
     # Where a watermark-free scheduled adaptor's last fire is remembered.
     # ALWAYS built, even under `[dreamer] enabled = false`: it is one small
@@ -662,11 +557,6 @@ class Dependencies:
     # agent's event tools use, rather than a second `GatheringService` over the
     # same store.
     events: GatheringService
-    # The render ledger, or `None` while `[facts]` is off. Exposed here
-    # only so the retention sweep can prune it — 31 §3.1's trigger, which
-    # is the one that already exists rather than a new loop. LAST and
-    # defaulted, so every existing construction site keeps working.
-    rendered_claims: SqlRenderedClaimStore | None = None
 
 
 async def build_dependencies(cfg: Config) -> Dependencies:
@@ -776,214 +666,42 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # the tier off, and the debrief's own `store_verdict is None` guard
     # is what makes it inert rather than a second flag to forget.
     turn_verdict_store = SqlTurnVerdictStore(engine)
-    # The Dreamer's store (Task 11), REUSING `engine` for the same reason
+    # The Dreamer's CURSOR, REUSING `engine` for the same reason
     # `reminders`/`compute_jobs`/`tool_call_log_store` do above. UNLIKE those,
-    # this one IS gated on the feature flag — `[route]`/`[search]`-shaped,
-    # not `[compute]`-shaped: `TranscriptInjection`'s `language` reader has
-    # exactly one consumer (the tag/fire prefill), and `[language].enabled`
-    # is that consumer's own off switch (`LanguageConfig`'s docstring), so
-    # there is no second caller left stranded the way `remind`/`make_artifact`
-    # would be by gating `reminders`/`compute_jobs`. Off, `TranscriptInjection`
-    # gets `language=None` — the exact "not yet wired" state Task 9 shipped.
-    #
-    # **AND under `[dreamer]`, which is not a widening of the language tier.**
-    # `SqlLanguageStore` owns `consolidation_watermark` — the DREAMER's cursor,
-    # `(consolidator_name, scope_id) -> how far this adaptor has read` — so the
-    # Dreamer's clock cannot persist a watermark for ANY adaptor without this
-    # object, including adaptors that have nothing to do with language. That is
-    # why `[dreamer] enabled = true` was inert on its own: `__main__` spawns the
-    # loop only where this store exists, so a tier flag was deciding whether the
-    # RUNTIME ran (2026-08-27; the runtime shipped "on" and had not ticked in
-    # five days, and only `nora.log` said so).
-    #
-    # Building it here starts NOTHING language-shaped. The consolidators stay
-    # gated on `cfg.language.enabled` below and are `()` when it is off, so the
-    # loop ticks with no language adaptor registered — which is the state the
-    # note and fact adaptors need and could not have.
+    # this one IS gated on the feature flag: `SqlLanguageStore` owns
+    # `consolidation_watermark` — `(consolidator_name, scope_id) -> how far
+    # this adaptor has read` — so the Dreamer's clock cannot persist a
+    # watermark for ANY adaptor without this object, and `__main__` spawns the
+    # loop only where it exists. Off, `dream_loop` is never spawned.
     #
     # **The naming is the debt, and it is deliberate to leave it.** The
     # watermark table belongs to the Dreamer and lives in a module called
     # `language` for historical reasons; extracting it is its own port change
-    # with its own migration, and doing it inside a fix for an inert flag would
-    # put two unrelated risks in one deploy. Recorded rather than done.
+    # with its own migration, and doing it inside the language tier's deletion
+    # would put two unrelated risks in one deploy. Recorded rather than done.
     language_store: SqlLanguageStore | None = (
-        SqlLanguageStore(engine, metrics=metrics)
-        if (cfg.language.enabled or cfg.dreamer.enabled)
-        else None
+        SqlLanguageStore(engine, metrics=metrics) if cfg.dreamer.enabled else None
     )
-    # Dreamer Plan 2's store (2026-08-20 exchange-patterns design) — same
-    # gate, same reasoning as `language_store` immediately above: exactly one
-    # consumer (this same tag/fire prefill), and `[language].enabled` is its
-    # off switch too (`LanguageConfig`'s own docstring on why Plan 2 has no
-    # independent flag).
-    # The fact tier's read half (2026-08-20 fact-tier design §6). Its OWN
-    # gate, unlike the three room stores above: `[facts] enabled` is a
-    # different question from `[language] enabled`, because the fact tier
-    # renders a block whose content is not derived from the room it renders
-    # into — the only one — and that is a decision an operator makes
-    # separately from whether the room-language tier runs.
-    #
-    # Ships OFF, and flipping it before an adaptor writes anything would make
-    # `config.toml` assert a subsystem is running when none is — the defect
-    # class this tier exists to prevent, committed by its own switch.
-    # ONE entity store for the process, built here rather than inside the
-    # Dreamer block, because `21-substrate-contract.md` §4 makes it the fact
-    # SINK's collaborator and not only pass 6's: the sink upserts the entities
-    # an edge implies, in the same transaction that writes the edge. It was
-    # built only for the Dreamer, which is why that sentence was true of the
-    # document and false of the code.
-    fact_entities: SqlEntityStore | None = None
-    fact_embeddings: SqlEmbeddingStore | None = None
-    if cfg.facts.enabled:
-        try:
-            veto_extra = load_veto_list(cfg.facts.veto_file)
-        except OSError as exc:
-            # Converted, because every neighbouring step in this function
-            # converts: policy, identity, migrations, doctrine and the cap
-            # check all raise `StartupError`, and the cap check's own comment
-            # names a raw exception escaping from here as "the one boot
-            # failure in this function with no operator-readable message".
-            # `load_veto_list` refuses a configured-but-missing path on
-            # purpose, so this is a refusal an operator must be able to READ —
-            # a traceback would make the only startup refusal in the system
-            # that does not look like one.
-            raise StartupError(str(exc)) from exc
-        fact_entities = SqlEntityStore(
-            engine, veto_extra=veto_extra, metrics=metrics,
-        )
-        # The embedding seam, built HERE with the fact store rather than
-        # inside the Dreamer block, because both halves of the tier need it:
-        # pass 4 writes through it on the adjudication tick and the retrieval
-        # verb reads through it on a turn. One instance for the same reason
-        # `fact_entities` is one — two stores over one table is two answers to
-        # the same question.
-        fact_embeddings = SqlEmbeddingStore(engine, metrics=metrics)
-    fact_store: SqlFactStore | None = (
-        SqlFactStore(
-            engine,
-            max_term_chars=cfg.facts.max_term_chars,
-            max_predicate_chars=cfg.facts.max_predicate_chars,
-            entities=fact_entities,
-            metrics=metrics,
-        ) if cfg.facts.enabled else None
-    )
-    # The dense channel's endpoint, and its ABSENCE is a real deployment
-    # rather than a broken one: with no `embedding_url` the tier runs on the
-    # lexical channel alone, which loses cross-lingual and paraphrased recall
-    # in a way that is measured (`SqlEmbeddingStore.lexical`) and counted, not
-    # silent. `OllamaEmbedder` is reached through a port so a service that is
-    # down reports `unavailable` instead of raising (`23` §9).
-    fact_embedder: OllamaEmbedder | None = (
-        OllamaEmbedder(
-            base_url=cfg.facts.embedding_url,
-            model=cfg.facts.embedding_model,
-            timeout_seconds=cfg.facts.embedding_timeout_seconds,
-            metrics=metrics,
-        )
-        if cfg.facts.enabled and cfg.facts.embedding_url
-        else None
-    )
-    # Pass 4. Built even with no endpoint, because the sweep then reports
-    # `unavailable` on its first batch and says so — which is a reading — and
-    # because building it conditionally would make «the endpoint is absent»
-    # and «the pass is unwired» the same silence.
-    fact_sweeper: FactEmbedder | None = (
-        FactEmbedder(
-            facts=fact_store, embeddings=fact_embeddings,
-            embedder=fact_embedder,
-            max_rows_per_sweep=cfg.facts.max_embed_rows_per_sweep,
-            batch_size=cfg.facts.embed_batch_size,
-            metrics=metrics,
-        )
-        if fact_store is not None and fact_embeddings is not None
-        and fact_embedder is not None
-        else None
-    )
-    # Pass 5, the retrieval verb behind `search_knowledge`. `grounding` is the
-    # fact store because the corpus is a SECOND read path that does not carry
-    # supersession or the dispute mark — without it a retracted belief comes
-    # back indistinguishable from a current one, and R-79's mark is dropped.
-    knowledge_search: KnowledgeSearch | None = (
-        KnowledgeSearch(
-            channels=fact_embeddings, embedder=fact_embedder,
-            grounding=fact_store, metrics=metrics,
-        )
-        if fact_embeddings is not None and fact_store is not None
-        else None
-    )
-    # The render ledger (31 §3), wired only when the tier is on: with `[facts]`
-    # off nothing is rendered, so there is nothing to record and a store here
-    # would be a table that only ever holds zero rows. Named rather than
-    # inlined because the retention sweep needs it too.
-    rendered_claims: SqlRenderedClaimStore | None = (
-        SqlRenderedClaimStore(
-            engine,
-            window_hours=cfg.facts.recognition_window_hours,
-            metrics=metrics,
-        )
-        if cfg.facts.enabled else None
-    )
-    if fact_store is not None:
-        # 30 §5: a cap that only refuses a CONFIG above its ceiling leaves
-        # oversized rows satisfying the database CHECK while defeating the
-        # prompt budget the cap exists to protect. Lowering the knob below rows
-        # that already exist must be visible at startup, naming them — not
-        # discovered later as a tier that quietly kept rendering what the
-        # operator just said was too big.
-        # Inside `fact_store is not None`, so a lowered cap with `[facts]
-        # enabled = false` is accepted silently — deliberate, because a dark
-        # tier renders nothing and its rows defeat no prompt budget, and stated
-        # here because it is a real gap in the guarantee otherwise.
-        try:
-            oversized = await oversized_terms(
-                engine,
-                max_term_chars=cfg.facts.max_term_chars,
-                max_predicate_chars=cfg.facts.max_predicate_chars,
-            )
-        except Exception as exc:
-            # Every neighbouring step converts to `StartupError`; a raw
-            # `OperationalError` escaping from here would be the one boot
-            # failure in this function with no operator-readable message.
-            raise StartupError(f"[facts] cap check failed: {exc}") from exc
-        if oversized:
-            raise StartupError(
-                "[facts] caps are below rows that already exist "
-                f"(max_term_chars={cfg.facts.max_term_chars}, "
-                f"max_predicate_chars={cfg.facts.max_predicate_chars}). "
-                "Raise the caps or remove these rows; they will not be "
-                "truncated, because silently shortening a recorded claim to "
-                "satisfy a knob is worse than not starting:\n  "
-                + "\n  ".join(oversized)
-            )
-    exchange_store: SqlExchangeStore | None = (
-        SqlExchangeStore(engine, metrics=metrics) if cfg.language.enabled else None
-    )
-    # Dreamer Plan 3's store (2026-08-20 room-portrait design) — same gate,
-    # same reasoning: exactly one consumer (this same tag/fire prefill), and
-    # `[language].enabled` is its off switch too (no independent flag, same
-    # as Plan 2).
-    portrait_store: SqlRoomPortraitStore | None = (
-        SqlRoomPortraitStore(engine, metrics=metrics) if cfg.language.enabled else None
-    )
+    # ONE entity store for the process. `fact_entity` is a TIER-NEUTRAL name
+    # registry — an entity ("Big Walk") is a shared name, not any one tier's
+    # property — and `note_entity.entity_id` is a foreign key into it, so it
+    # outlived the knowledge tier that first built it. Built UNCONDITIONALLY
+    # rather than under a tier flag for exactly that reason: it is one small
+    # store over an engine that already exists, and gating it on a tier would
+    # be a tier deciding whether a shared registry exists. The table and the
+    # module keep their `fact_` names in this pass; renaming either is a
+    # separate change with its own migration.
+    fact_entities = SqlEntityStore(engine)
     # The note tier's store (2026-08-21 note-tier design), REUSING `engine`
-    # like every store above. Gated on its OWN flag rather than `[language]`'s,
-    # unlike the three Dreamer stores: this tier is not the Dreamer's — its
-    # reader is the tag prefill and its future writers are the agent's
-    # `note_create`/`note_update` and the curator, so `[language] enabled`
-    # would be somebody else's switch. Off, `TranscriptInjection` gets
-    # `notes=None` and `_notes` answers `()` without a query — the dormant
-    # state the tier shipped in. No `metrics=`: `SqlNoteStore.__init__` takes
-    # an engine and an optional `entities` collaborator and nothing else on
-    # purpose (its own docstring), and the one read on the critical path is
-    # counted by `_notes` instead.
+    # like every store above, and gated on its OWN flag. Off,
+    # `TranscriptInjection` gets `notes=None` and `_notes` answers `()`
+    # without a query — the dormant state the tier shipped in. No `metrics=`:
+    # `SqlNoteStore.__init__` takes an engine and an optional `entities`
+    # collaborator and nothing else on purpose (its own docstring), and the
+    # one read on the critical path is counted by `_notes` instead.
     #
     # `entities=fact_entities` (issue #100) is the deterministic half of the
-    # note tier's own entity resolution — built above under `cfg.facts.
-    # enabled`, `None` when that tier is off. No separate flag: this is the
-    # same affordance `SqlFactStore(entities=fact_entities)` already gets,
-    # and the fail-closed default (every anchor stays unresolved) is what a
-    # note store built with `entities=None` already did before this issue —
-    # `[facts]` being off costs the note tier nothing it did not already pay.
+    # note tier's own entity resolution, over the shared registry above.
     note_store: SqlNoteStore | None = (
         SqlNoteStore(engine, entities=fact_entities) if cfg.notes.enabled else None
     )
@@ -1160,17 +878,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     policy = CompositePolicy(tuple(engage_policies))
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
-        # `None` while `[language] enabled = false` — Task 9's "not yet
-        # wired" default, unchanged. The STORE limit stays this class's own
-        # default (`DEFAULT_ROOM_LANGUAGE_STORE_LIMIT`); `[language]` has no
-        # knob for it — see `LanguageConfig`'s docstring for why only the
-        # RENDER cap (`max_rendered_lexemes`, threaded below into
-        # `EngagementPipeline`/`FirePath`) is configurable, and why store
-        # staying wider than render is what the store limit not moving here
-        # depends on.
-        language=language_store,
-        exchange=exchange_store,
-        portrait=portrait_store,
         # `None` while `[notes] enabled = false`. `policy=allowlist` is the
         # SAME policy.toml instance the ingest pipeline and `EngagementPipeline`
         # are given below — the assembler needs it for one thing only, naming
@@ -1179,17 +886,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # Policy would scope the read to a workspace ingest never admitted.
         notes=note_store,
         policy=allowlist,
-        # The fact tier reads its workspace through the SAME `policy=allowlist`
-        # the note tier above uses — two tiers keyed on `Conversation.workspace`
-        # must not each carry their own idea of what a room's workspace is.
-        facts=fact_store,
-        # The render ledger, wired only when the tier is on: with `[facts]`
-        # off nothing is rendered, so there is nothing to record and a store
-        # here would be a table that only ever holds zero rows.
-        rendered=rendered_claims,
         # Standing's READ half. `None` while `[standing] enabled = false`, the
-        # shipped default, so `<standing>` renders nothing. Unlike `notes`/
-        # `facts` beside it this needs no `policy=` at all: a position is keyed
+        # shipped default, so `<standing>` renders nothing. Unlike `notes`
+        # beside it this needs no `policy=` at all: a position is keyed
         # `(platform, conversation_id)` (S4) and is NOT shared across a
         # workspace's rooms — two rooms in one social unit share what the
         # workspace knows, not where a conversation had got to.
@@ -1567,89 +1266,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             timeout_seconds=cfg.social.timeout_seconds,
             content_max_chars=cfg.social.content_max_chars,
         )
-    # The Dreamer's own consolidator (Task 11) — built ONLY when
-    # `[language] enabled`, mirroring `language_store` above (there is no
-    # second consumer to leave stranded by gating it, unlike `reminders`/
-    # `compute_jobs`). `LexemeObserver` gets its OWN `_LanguageModelClient`
-    # over the SAME process-wide `client` — one connection, `[language]
-    # .model` rather than `[llm].model`, because the Dreamer is a background
-    # job nobody is waiting on and may reasonably run a different tier.
-    #
-    # `search=search_client` is wired ONLY behind a THIRD gate,
-    # `[language].verify_known_entities` (2026-08-20 design doc) — moved to
-    # live AFTER `search_client` is built (it used to sit right after `client`
-    # above) because it now depends on it. `search_client` staying `None`
-    # (search off, or on but keyless) leaves `LexemeObserver`'s known-entity
-    # check unwired exactly like every other optional collaborator here —
-    # `verify_known_entities=true` with no working search client is silently
-    # a no-op, not a startup error, matching `[search]`'s own "unavailable,
-    # never a hard failure" shape.
-    language_consolidators: tuple[RoomConsolidator, ...] = ()
-    if cfg.language.enabled and language_store is not None:
-        language_consolidators = (
-            LanguageConsolidator(
-                observer=LexemeObserver(
-                    _LanguageModelClient(
-                        client=client, model=cfg.language.model,
-                        timeout_seconds=cfg.language.timeout_seconds,
-                    ),
-                    objective=dreamer_instructions,
-                    metrics=metrics,
-                    search=(
-                        search_client
-                        if cfg.language.verify_known_entities else None
-                    ),
-                    verify_max_candidates=cfg.language.verify_max_candidates,
-                ),
-                store=language_store,
-            ),
-        )
-        # Dreamer Plan 2 (DEC-120) — `nora.app.runtime._dream_once` hands
-        # every `RoomConsolidator` in this tuple the SAME batch over the ONE
-        # shared watermark, so this needs no cursor of its own (see
-        # `nora.infra.sql.exchange`'s module docstring). Gated on
-        # `exchange_store is not None` too, since that store is itself built
-        # only under `cfg.language.enabled` (see its own construction
-        # above) — the check is redundant today but documents the real
-        # dependency rather than assuming the two flags can never diverge.
-        # `exchange_model` defaults to `[language].model` one level down,
-        # the same way that field itself defaults to `[llm].model`.
-        if exchange_store is not None:
-            language_consolidators = (
-                *language_consolidators,
-                ExchangeConsolidator(
-                    observer=ExchangePatternObserver(
-                        _LanguageModelClient(
-                            client=client,
-                            model=cfg.language.exchange_model or cfg.language.model,
-                            timeout_seconds=cfg.language.timeout_seconds,
-                        ),
-                        objective=dreamer_instructions,
-                        metrics=metrics,
-                    ),
-                    store=exchange_store,
-                ),
-            )
-    # Dreamer Plan 3 (2026-08-20 room-portrait design, DEC-121) — built only
-    # when its THREE inputs are ready (language/exchange READERS, portrait
-    # WRITER), same gate as `language_consolidators` above. Deliberately not
-    # added to `language_consolidators`: `nora.app.runtime.dream_loop` takes
-    # it as its own `portrait=` keyword (see that module's docstring for why
-    # this is not a `RoomConsolidator`). No new model client — no model call
-    # in this module at all (see `nora.language.portrait_synthesizer`'s own
-    # docstring). Reuses `[language].max_rendered_lexemes`/
-    # `max_rendered_exchanges` — the SAME limits the live prefill already
-    # uses for `<room_language>`/`<room_exchange>` — rather than a new knob.
-    portrait_synthesizer: RoomPortraitSynthesizer | None = None
-    if (
-        cfg.language.enabled and language_store is not None
-        and exchange_store is not None and portrait_store is not None
-    ):
-        portrait_synthesizer = PortraitSynthesizer(
-            language=language_store, exchange=exchange_store, store=portrait_store,
-            max_rendered_lexemes=cfg.language.max_rendered_lexemes,
-            max_rendered_exchanges=cfg.language.max_rendered_exchanges,
-        )
     # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
     # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;
     # off leaves the registry without a provider and `weather` answers
@@ -2026,20 +1642,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # the note verbs report as `unavailable` rather than guessing a
         # notebook. Same `allowlist` instance the assembler and ingest hold.
         note_workspace=_note_workspace_of(allowlist),
-        # ONE resolver for both tiers. `search_knowledge` is workspace-keyed
-        # exactly as the note verbs are, and reading `note_workspace` for it
-        # would make the knowledge tier silently depend on the NOTE tier being
-        # wired — two absences covering for each other.
+        # ONE resolver for every workspace-keyed verb, so a verb outside the
+        # note tier does not silently depend on the NOTE tier being wired —
+        # two absences covering for each other.
         workspace_for=_note_workspace_of(allowlist),
-        knowledge=knowledge_search,
-        # The graph reads behind `get_knowledge`/`knowledge_premises`/
-        # `knowledge_asserters`/`knowledge_entity` (design/dreamer-agent-loop/32
-        # §3.4) — the SAME `fact_store`/`fact_entities` the Dreamer adaptors
-        # write through, so the tool surface and the tier never disagree about
-        # what is standing. Both `None` while `[facts] enabled = false`, which
-        # is exactly the verbs' `unavailable` path (R-5): a wiring gap, never
-        # an empty answer.
-        facts=fact_store, entities=fact_entities,
         versions=version_manifest,
         giphy=giphy_client,
         music=music_bridge,
@@ -2157,40 +1763,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
             rebuild_after_folds=cfg.standing.rebuild_after_folds,
         )
-    # Step 3 of the correction loop (31 §3). Built only when the fact tier is
-    # on: with `[facts]` off nothing is rendered, so there is nothing a member
-    # could be contradicting and the ledger it reads is empty by construction.
-    #
-    # `adjudicator_alive` is 31 §7.2's gate. Clearing a dispute happens ONLY
-    # inside adjudication, and adjudication is a Dreamer adaptor — so with the
-    # Dreamer off, marking would accumulate and never resolve, and the loop
-    # would be a ratchet rather than a loop. It degrades to proposing instead,
-    # which is the mechanism latent scope already has.
-    recogniser = (
-        Recogniser(
-            ledger=rendered_claims,
-            facts=fact_store,
-            lexemes=language_store,
-            classifier=_LanguageModelClient(
-                client=client, model=cfg.language.model,
-                # `[facts]`, not `[language]`. This call is on the REPLY PATH
-                # and `[language] timeout_seconds` is 120 because it bounds a
-                # Dreamer tick; inherited here it was two minutes of silence
-                # ahead of a live answer. 31 §5's own key, and it is in the
-                # startup slot-hold gate beside `[standing]`'s.
-                timeout_seconds=cfg.facts.dispute_classify_timeout_seconds,
-            ),
-            classify_timeout_seconds=cfg.facts.dispute_classify_timeout_seconds,
-            instruction=dreamer_instructions.objective_body(Recogniser.objective),
-            metrics=metrics,
-            window_hours=cfg.facts.recognition_window_hours,
-            adjudicator_alive=cfg.dreamer.enabled,
-        )
-        if cfg.facts.enabled
-        and fact_store is not None
-        and rendered_claims is not None
-        else None
-    )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the
         # platform it arrived from, and `registry.adapters` is exactly the set
@@ -2198,7 +1770,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         adapters=dict(registry.adapters),
         audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
-        recogniser=recogniser,
         tool_registry=tool_registry,
         # `allowlist` — policy.toml, the SAME instance the ingest pipeline
         # already checked this conversation is admitted under (DEC-18). This
@@ -2216,12 +1787,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         tool_call_log_store=tool_call_log_store,
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
-        # `[language].max_rendered_lexemes` — harmless to pass even when
-        # `[language] enabled = false`: `language_store` is `None` there, so
-        # `TranscriptInjection` never produces a non-empty `RoomLanguage` for
-        # this cap to bound in the first place.
-        room_language_max_entries=cfg.language.max_rendered_lexemes,
-        room_exchange_max_entries=cfg.language.max_rendered_exchanges,
     )
     # The Dispatcher is built LATE, below the fire path — the participation
     # trigger it may carry needs `fire_path.speak`, which does not exist yet
@@ -2308,8 +1873,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             preview_source=preview_source,
             llm_state=llm_state,
             tool_call_log_store=tool_call_log_store,
-            room_language_max_entries=cfg.language.max_rendered_lexemes,
-            room_exchange_max_entries=cfg.language.max_rendered_exchanges,
             # The reminder-derived Event registry (DEC-139,
             # design/event-abstraction/04): kind -> factory, wired here at
             # the composition root so the domain type stays free of app
@@ -2332,20 +1895,17 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # retaining a `TagTrace` at all (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
-            # The note/fact tiers (design/dreamer-agent-loop/35 Phase 2) — S5's
+            # The note tier (design/dreamer-agent-loop/35 Phase 2) — S5's
             # precedent one tier later: the participation determination grounds
-            # on «transcript + standing/notes/facts», which Phase 1's header
-            # already CLAIMED while `build_context` rendered neither. Wired for
-            # every fire occasion, gated exactly like the assembler's reads
-            # above: the SAME store instances (already `None` while the tier's
+            # on «transcript + standing/notes», which Phase 1's header already
+            # CLAIMED while `build_context` rendered neither. Wired for every
+            # fire occasion, gated exactly like the assembler's reads above:
+            # the SAME store instance (already `None` while the tier's
             # `enabled = false`), and the SAME `allowlist` the assembler scopes
             # its workspace reads through — two readers each carrying their own
             # idea of a room's workspace is the DEC-105 violation.
             notes=note_store,
-            facts=fact_store,
             policy=allowlist,
-            max_room_facts=cfg.facts.max_room_facts,
-            max_sender_facts=cfg.facts.max_sender_facts,
             # The participation occasion's own runner (§4) — None whenever the
             # occasion is disabled, which is also exactly when no participation
             # Event can reach `speak` (no policy marks one, no trigger exists).
@@ -2497,161 +2057,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # subsystem that is off builds NOTHING, so a wiring mistake in it cannot
     # cost a deployment that never turned it on.
     #
-    # `dream_adaptors` is EMPTY today and that is the honest state: the runtime
-    # exists, is bounded, screens, and has a sink contract — and nothing has
-    # been migrated onto it yet (Phase 3) and the fact adaptors are not built
-    # (Phase 4). `dream_loop` with an empty tuple is byte-for-byte the loop
-    # that has been carrying live traffic, which is what makes the cutover
-    # per-adaptor rather than a big-bang switch.
+    # `dream_adaptors` is empty unless `[notes]` turns its passes on:
+    # `dream_loop` with an empty tuple ticks the cursor and runs nothing.
     dream_adaptors: tuple[DreamAdaptor, ...] = ()
     dreamer_runtime: DreamerRuntime | None = None
     dream_schedules: Mapping[str, AdaptorSchedule] = {}
     if cfg.dreamer.enabled:
-        # The fact tier's two adaptors, built only when BOTH gates are on.
-        # `[dreamer]` decides whether the runtime exists; `[facts]` decides
-        # whether this tier is one of the things it runs — two questions, and
-        # an operator turning on the research loop has not thereby asked for a
-        # fact store to start filling.
-        if cfg.facts.enabled and fact_store is not None:
-            # The roster is `identity.toml`'s person ids. It is what lets the
-            # sink REFUSE a claim whose subject is somebody in the room (25
-            # §2.4) — the objective's first exclusion, measured broken at five
-            # person-claims in six edges with the roster supplied to the model.
-            fact_candidates = SqlFactCandidateStore(
-                engine,
-                roster=frozenset(persons.by_person),
-                # Every name the group calls them. `PersonRef.aliases` is
-                # operator-authored (阿Miles, 米高, a handle) and its own note
-                # says it must never resolve who a message is FROM — refusing
-                # on one is the opposite direction and the safe one.
-                roster_names=frozenset(
-                    name
-                    for ref in persons.by_person.values()
-                    for name in (ref.name, ref.first_name, ref.last_name,
-                                 *ref.aliases)
-                    if name
-                ),
-                max_term_chars=cfg.facts.max_term_chars,
-                max_predicate_chars=cfg.facts.max_predicate_chars,
-                metrics=metrics,
-            )
-            # The SAME instance the fact sink writes through (§4), not a
-            # second one: two stores over one table is two veto lists loaded
-            # from one file at two moments, and the promotion pass and the
-            # sink would be able to disagree about what is a thing.
-            if fact_entities is None:  # pragma: no cover - `cfg.facts.enabled`
-                raise RuntimeError(
-                    "the entity store is built with the fact store under the "
-                    "same flag; reaching here means that pairing was broken"
-                )
-
-            # The extractor's OWN clock (design/dreamer-agent-loop/32 §3.1-2),
-            # keyed by name rather than declared on the adaptor: a defaulted
-            # field on the @runtime_checkable `DreamAdaptor` Protocol would
-            # break `isinstance` for every adaptor lacking it (measured).
-            # 86400s/1000 rows — one daily pass over the whole backlog, sized
-            # for it; `max_items` lifts the envelope cap so a daily batch's
-            # yield is not silently dropped past 64 while the watermark
-            # advances anyway.
-            dream_schedules = {
-                "fact-candidates": AdaptorSchedule(
-                    min_interval_seconds=86400,
-                    batch_limit=1000,
-                    max_items=256,
-                ),
-                # **The other two adaptors of this tier get a clock too, and
-                # until 2026-09-06 they had none.** `config.toml`'s own
-                # comment claimed all three ran daily; only this one did.
-                # Both are `uses_watermark = False`, so with no schedule entry
-                # they inherit the bare 5-minute tick — measured live at 21
-                # runs in 24 minutes across three workspaces, one per
-                # workspace per tick. That was invisible because both return
-                # `nothing_found` in ~0.4s when their queue is empty, which is
-                # exactly what a healthy quiet tier looks like.
-                #
-                # **The offsets are the ordering.** These three have a real
-                # data dependency — candidates write the queue, adjudication
-                # drains it, entity resolution reads what adjudication wrote —
-                # and `dream_loop` dispatches adaptors CONCURRENTLY with no
-                # ordering (design 33 §6 M6). Equal intervals alone would make
-                # them coincide every day, so a claim extracted this morning
-                # would wait until tomorrow to be adjudicated and until the day
-                # after to resolve. Offsetting the phases collapses that to one
-                # day.
-                #
-                # 06:00 and 07:00 UTC because `fact-candidates` is
-                # watermark-BEARING and has no slot to place: it fires when
-                # `lag > 0` AND its watermark row is 24h old, which in practice
-                # settles around 04:30 UTC (observed 2026-09-04/05/06). These
-                # sit after that, with an hour between them, and neither is
-                # tied to it — a phase offset is a deliberate gap, not a
-                # promise that the upstream pass has finished.
-                "fact-adjudication": AdaptorSchedule(
-                    min_interval_seconds=86400,
-                    phase_offset_seconds=6 * 3600,
-                    # Inert here (watermark-free adaptors never reach
-                    # `record.since`), set to the adaptor's real per-tick
-                    # ceiling so the number means something to a reader —
-                    # `note-curation`'s entry below makes the same choice.
-                    batch_limit=cfg.facts.max_adjudications_per_tick,
-                ),
-                "fact-entity-resolution": AdaptorSchedule(
-                    min_interval_seconds=86400,
-                    phase_offset_seconds=7 * 3600,
-                    batch_limit=cfg.facts.max_adjudications_per_tick,
-                ),
-            }
-            dream_adaptors = (
-                # PHASE A, scope-keyed: it reads one room's message batch.
-                # `workspace_for` is not a convenience — the extractor's KEY is
-                # a scope and the candidate table's key is a WORKSPACE, so
-                # without the translation every room's candidates would land
-                # under a workspace named after the room and the adjudicator
-                # would never see one. The tier would be wired end to end and
-                # silently inert. An unresolvable scope RAISES rather than
-                # guessing: within one workspace a fact crosses rooms by design
-                # (R-49/DEC-105), so a guessed workspace is one social unit's
-                # claims entering another's.
-                FactCandidateAdaptor(
-                    candidates=fact_candidates,
-                    workspace_for={
-                        conv.primary_id: conv.workspace
-                        for conv in allowlist.conversations
-                        if conv.primary_id and conv.workspace
-                    }.get,
-                    max_term_chars=cfg.facts.max_term_chars,
-                    max_predicate_chars=cfg.facts.max_predicate_chars,
-                ),
-                # PHASE B, workspace-keyed and watermark-free: its input is the
-                # candidate table, not a message batch.
-                FactAdaptor(
-                    facts=fact_store,
-                    candidates=fact_candidates,
-                    max_adjudications_per_tick=cfg.facts.max_adjudications_per_tick,
-                    max_term_chars=cfg.facts.max_term_chars,
-                    max_predicate_chars=cfg.facts.max_predicate_chars,
-                    # Pass 3 rides the adjudication tick: degree changes only
-                    # when a fact lands, so this is exactly when there is
-                    # something new to promote.
-                    entities=fact_entities,
-                    # Pass 4 rides it too, AFTER pass 3, and on every tick
-                    # rather than only on one that wrote — staleness is
-                    # `fingerprint(model, text)` and the model half moves with
-                    # no write at all.
-                    embedder=fact_sweeper,
-                    metrics=metrics,
-                ),
-                # PASS 6, workspace-keyed and watermark-free like the
-                # adjudicator: its input is the entity table and the candidate
-                # queue, not a message batch. It is the half of resolution that
-                # needs judgement (21 §5); the deterministic half already ran
-                # in the sink, on the SUBJECT end of every fact written —
-                # `SqlFactStore._resolve_subjects`, through the same
-                # `fact_entities` instance this adaptor holds.
-                FactEntityResolutionAdaptor(
-                    entities=fact_entities, metrics=metrics,
-                ),
-            )
         # The note tier's curator, on its OWN gate and behind the tier's.
         # `[notes] enabled` decides whether the index is injected and the four
         # tools reachable; `curator_enabled` decides whether a background pass
@@ -2784,18 +2195,21 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     # The discharge pipeline (design/dreamer-agent-loop/33 §7,
                     # issue #101), on its OWN gate — see `NotesConfig.
                     # discharge_enabled`'s docstring for why it does not ride
-                    # `curator_enabled`. The three collaborators are the
-                    # SAME instances every other write path in this file
-                    # already uses (`fact_store`/`events`/`memory`, built
-                    # above) — discharge never gets its own fact store, event
-                    # service or Honcho client. Passed unconditionally
-                    # (harmless while the flag is off: `commit` never calls
-                    # them), so a later flip of the flag alone — no restart
-                    # needed beyond the config's own load-once rule — has
-                    # real collaborators waiting rather than `None`s that
-                    # would report every discharge as `unavailable`.
+                    # `curator_enabled`. Both collaborators are the SAME
+                    # instances every other write path in this file already
+                    # uses (`events`/`memory`, built above) — discharge never
+                    # gets its own event service or Honcho client. Passed
+                    # unconditionally (harmless while the flag is off:
+                    # `commit` never calls them), so a later flip of the flag
+                    # alone — no restart needed beyond the config's own
+                    # load-once rule — has real collaborators waiting rather
+                    # than `None`s that would report every discharge as
+                    # `unavailable`.
+                    #
+                    # There was a THIRD, `facts=fact_store`, routing a closed
+                    # note's world-claims into the knowledge tier. That tier
+                    # is deleted and the route went with it.
                     discharge_enabled=cfg.notes.discharge_enabled,
-                    facts=fact_store,
                     events=events,
                     conclusions=memory,
                     ai_peer=cfg.memory.ai_peer,
@@ -2817,16 +2231,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # operator who has not turned the curator on has nothing that
             # would ever read what this pass writes — the exact "declared
             # with no call site" shape CLAUDE.md warns against, one layer up
-            # from a metric. `fact_entities is not None` is the OTHER half:
-            # the table this pass reads and writes is the fact tier's, built
-            # only under `cfg.facts.enabled` above.
-            if fact_entities is not None:
-                dream_adaptors = (
-                    *dream_adaptors,
-                    NoteEntityResolutionAdaptor(
-                        entities=fact_entities, metrics=metrics,
-                    ),
-                )
+            # from a metric. The entity registry it reads and writes is built
+            # unconditionally (see `fact_entities` above), so there is no
+            # second condition left to check.
+            dream_adaptors = (
+                *dream_adaptors,
+                NoteEntityResolutionAdaptor(
+                    entities=fact_entities, metrics=metrics,
+                ),
+            )
         # The note tier's CREATE PATH (design/dreamer-agent-loop/33 §4, issue
         # #98) — a THIRD gate, on `NotesConfig.candidates_enabled`'s own
         # two-risks argument: `[notes] enabled` decides whether the index and
@@ -2835,13 +2248,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # operator who turned `[notes]` on for the index did not thereby sign
         # up for a background process creating notes on their behalf.
         #
-        # Scope-keyed, like `fact-candidates` above and unlike the curator and
-        # revisitor: a note's arrangement spans days of conversation, so this
-        # needs a PER-ROOM watermark to see the whole exchange rather than a
-        # slice. `workspace_for` is the same translation `fact-candidates`
-        # needs and for the same reason (DEC-105) — a fresh closure rather
-        # than the one built under `cfg.facts.enabled` above, since that block
-        # may not have run at all.
+        # Scope-keyed, unlike the curator: a note's arrangement spans days of
+        # conversation, so this needs a PER-ROOM watermark to see the whole
+        # exchange rather than a slice. The scope key must still be translated
+        # to a WORKSPACE for the note table (DEC-105) — an unresolvable scope
+        # RAISES rather than guessing, since a guessed workspace is one social
+        # unit's notes entering another's.
         if cfg.notes.enabled and cfg.notes.candidates_enabled and note_store is not None:
             dream_schedules = {
                 **dream_schedules,
@@ -2850,8 +2262,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 # exchange to read without paying for a model call every
                 # 5-minute tick. `batch_limit=200`: "a week of one room's
                 # planning" (33 §5), the size the design itself argues for
-                # rather than the fact tier's 1000-messages-a-day figure,
-                # which is sized for a whole workspace's world-claims rather
+                # rather than a whole-workspace daily figure, which is sized
+                # for a different unit of work rather
                 # than one room's arrangements.
                 "note-candidates": AdaptorSchedule(
                     min_interval_seconds=3600, batch_limit=200,
@@ -2973,7 +2385,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         verify_tool_subsets(dream_adaptors, tools=dream_tools)
 
     return Dependencies(
-        rendered_claims=rendered_claims,
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         dispatcher=dispatcher, adapter=adapter, registry=registry,
@@ -2985,9 +2396,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         presence=presence_store, presence_circles=presence_circles,
         mobility=mobility,
         skills_dir=cfg.doctrine.dir.parent / "skills",
-        language_store=language_store, language_consolidators=language_consolidators,
+        language_store=language_store,
         language_scopes=language_scopes,
-        portrait_synthesizer=portrait_synthesizer,
         dreamer_instructions=dreamer_instructions,
         dreamer_runtime=dreamer_runtime,
         dream_adaptors=dream_adaptors,

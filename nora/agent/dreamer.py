@@ -18,9 +18,9 @@ arrives through `DreamAdaptor`. The path is fixed and the ORDER is the design:
 **There is no write tool and there must not be one.** A `write_fact` tool is an
 act verb pointed at the database instead of at the group, and it would defeat
 the screen: if the model writes directly there is no sink left to screen at.
-The model proposes; code disposes — the same asymmetry the existing
-consolidators already have, where `LexemeObserver` extracts and
-`LanguageConsolidator` persists.
+The model proposes; code disposes — the same asymmetry every adaptor has,
+where the model's envelope is parsed into typed proposals and a SINK decides
+what actually lands.
 
 **Why the runtime cannot use `create_agent`, which no spec says.**
 `create_agent` requires a `ReplyGuard` — a deliverer, a set of terminal verbs,
@@ -253,8 +253,8 @@ class DreamToolSource(Protocol):
 # adaptor's key IS the workspace, and `DreamerRuntime.run` hands it through
 # `RegistryToolSource.build(workspace=...)` to `build_tool_specs`, where
 # `_workspace()` returns it directly instead of deriving it from the room.
-# Before that fix this set deliberately EXCLUDED `search_knowledge` and the
-# note verbs: they resolve their workspace through the ROOM — `workspace_for(
+# Before that fix this set deliberately EXCLUDED the note verbs: they resolve
+# their workspace through the ROOM — `workspace_for(
 # room.platform, conversation_id)` — and `RegistryToolSource.build` hands a
 # workspace-keyed adaptor a `Room` with no platform and the workspace in the
 # conversation slot, so policy could never name it and every call answered
@@ -287,14 +287,10 @@ WORKSPACE_SAFE_TOOLS: frozenset[str] = frozenset({
     # conversation-scoped like `load_transcript`).
     "media_search",
     # The workspace-scoped reads, admitted with the supplied key path
-    # (32 §3.4): the knowledge tier's retrieval verb and its four graph
-    # verbs, the note tier's two read verbs, and the workspace-wide memory
+    # (32 §3.4): the note tier's two read verbs and the workspace-wide memory
     # variant of `search_memory`. Each resolves its workspace from the
     # SUPPLIED key rather than from a room a workspace-keyed adaptor does
     # not have.
-    "search_knowledge",
-    "get_knowledge", "knowledge_premises", "knowledge_asserters",
-    "knowledge_entity",
     "note_read", "note_search",
     "search_memory_workspace",
 })
@@ -579,8 +575,8 @@ class RegistryToolSource:
             ),
             # The key-path fix (design/dreamer-agent-loop/32 §3.4): for a
             # WORKSPACE-keyed adaptor `key` IS the workspace, so the runtime
-            # SUPPLIES it and the workspace-scoped verbs (`search_knowledge`,
-            # the note reads, the knowledge graph verbs) read it directly
+            # SUPPLIES it and the workspace-scoped verbs (the note reads,
+            # `search_memory_workspace`) read it directly
             # rather than deriving one from the synthetic room above — where
             # `workspace_for("", key)` can only answer `None`. `None` for a
             # scope-keyed adaptor, whose key is a real conversation id and

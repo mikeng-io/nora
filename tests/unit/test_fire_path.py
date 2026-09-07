@@ -28,8 +28,7 @@ from nora.app.fire import (
 )
 from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.events import Event
-from nora.domain.facts import Fact, FactAsserter, FactsView
-from nora.domain.models import ConversationTarget, DeliveryStatus, PersonRef
+from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.ports import JobResult, JobStatus, PlatformIdentity, SendResult
 from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
@@ -38,7 +37,6 @@ from nora.persons import Persons
 from nora.policy import permissive_policy
 from nora.testing import (
     FakeAgentRunner,
-    InMemoryFactStore,
     InMemoryNoteStore,
     ScriptedTurn,
 )
@@ -298,15 +296,12 @@ def _fire_path(
     shadow_channel: str | None = None,
     shadow_platform: str = "discord",
     timeout_seconds: float = 5.0,
-    room_language_max_entries: int | None = None,
     event_registry: dict | None = None,
     standing=None,
     standing_store_timeout_seconds: float = 5.0,
 ) -> FirePath:
     extra = {"standing": standing,
              "standing_store_timeout_seconds": standing_store_timeout_seconds}
-    if room_language_max_entries is not None:
-        extra["room_language_max_entries"] = room_language_max_entries
     if event_registry is not None:
         extra["event_registry"] = event_registry
     return FirePath(
@@ -856,32 +851,6 @@ async def test_a_fire_turn_for_an_unwired_platform_fails_rather_than_speaking(
     ) >= 1.0
 
 
-async def test_the_configured_room_language_render_cap_reaches_build_prefill(
-    persons: Persons, doctrine_store, metrics: Metrics, monkeypatch,
-) -> None:
-    """Task 11: `[language].max_rendered_lexemes` is inert unless it actually
-    reaches `build_prefill`'s `room_language_max_entries` on the FIRE path
-    too, not just the tag path — this proves the wiring, not merely that the
-    constructor accepts the parameter."""
-    captured: list[int] = []
-    real_build_prefill = fire_module.build_prefill
-
-    def _spy(*args, **kwargs):
-        captured.append(kwargs["room_language_max_entries"])
-        return real_build_prefill(*args, **kwargs)
-
-    monkeypatch.setattr(fire_module, "build_prefill", _spy)
-    path = _fire_path(
-        persons=persons, doctrine_store=doctrine_store, metrics=metrics,
-        runner=FakeAgentRunner(_send_turns("收到")),
-        room_language_max_entries=1,
-    )
-
-    await path.run([_reminder()])
-
-    assert captured == [1]
-
-
 # ---------------------------------------------------------------------------
 # DEC-139 — kind dispatch, registry fail-closed, gathering-notify
 # ---------------------------------------------------------------------------
@@ -1086,16 +1055,16 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
 
 
 # ---------------------------------------------------------------------------
-# The note/fact tiers on the fire path (design/dreamer-agent-loop/35 Phase 2)
+# The note tier on the fire path (design/dreamer-agent-loop/35 Phase 2)
 # ---------------------------------------------------------------------------
 # S5's precedent one tier later: the participation determination grounds on
-# «transcript + standing/notes/facts», which Phase 1's header already claimed
-# while `build_context` rendered neither block. These pin the read itself, the
-# fail-soft accounting, and the wiring-gap state.
+# «transcript + standing/notes», which Phase 1's header already claimed while
+# `build_context` rendered no block. These pin the read itself, the fail-soft
+# accounting, and the wiring-gap state.
 
 async def _fire_path_with_tiers(
     persons, record_store, memory_store, doctrine_store, metrics, *,
-    notes=None, facts=None, policy="permissive",
+    notes=None, policy="permissive",
 ) -> FirePath:
     """`fire_path`'s own builder plus the tier collaborators — same
     model-side-collaborators-are-None shape, for the same reason: these tests
@@ -1108,7 +1077,7 @@ async def _fire_path_with_tiers(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40, limits={},
         timeout_seconds=120.0, clock=lambda: T0,
-        notes=notes, facts=facts,
+        notes=notes,
         policy=permissive_policy() if policy == "permissive" else None,
     )
 
@@ -1132,23 +1101,6 @@ def _seeded_note_store() -> InMemoryNoteStore:
     return store
 
 
-def _seeded_fact_store() -> InMemoryFactStore:
-    store = InMemoryFactStore()
-    store.seed_fact(Fact(
-        id="33333333-0000-4000-8000-000000000003", workspace="nora",
-        subject_id="aws community day 2026", predicate="is on",
-        object_entity_id=None, object_literal="October 26 at IVE",
-        warrant_kind="stated", valid_from=1, created_at=1,
-        instruction_sha256="a" * 64, model="test-model",
-        established_by="test-seed",
-    ))
-    store.seed_asserters(FactAsserter(
-        fact_id="33333333-0000-4000-8000-000000000003",
-        person_id="miles", message_id=1, asserted_at=1,
-    ))
-    return store
-
-
 async def test_the_fire_path_reads_the_note_index(
     persons, record_store, memory_store, doctrine_store, metrics,
 ) -> None:
@@ -1163,34 +1115,6 @@ async def test_the_fire_path_reads_the_note_index(
     ctx = await fire.build_context(reminder_occasion([_reminder()]))
 
     assert [n.title for n in ctx.notes] == ["Raft roadmap"]
-
-
-async def test_the_fire_path_reads_the_fact_slices(
-    persons, record_store, memory_store, doctrine_store, metrics,
-) -> None:
-    """Both slices: the ROOM slice (the transcript mentions the subject) and
-    the SENDER slice (the occasion's person asserted the fact) — plus the
-    extent line and the stated-fact attribution."""
-    record_store.rows.append({
-        "id": 1, "platform": "signal", "conversation_id": "conv-1",
-        "sender_id": "+85212345678", "sender_name": "Miles", "person_id": "miles",
-        "ts": 1, "body": "does anyone know when AWS Community Day 2026 is?",
-        "is_nora": False, "delivery_status": DeliveryStatus.SENT,
-        "quoted_ts": None, "raw_json": {}, "media_json": None,
-    })
-    fire = await _fire_path_with_tiers(
-        persons, record_store, memory_store, doctrine_store, metrics,
-        facts=_seeded_fact_store(),
-    )
-
-    ctx = await fire.build_context(reminder_occasion([_reminder()]))
-
-    assert [f.object_literal for f in ctx.facts.room] == ["October 26 at IVE"]
-    assert [f.object_literal for f in ctx.facts.sender] == ["October 26 at IVE"]
-    assert ctx.facts.extent.standing == 1
-    assert ctx.facts.asserters == {
-        "33333333-0000-4000-8000-000000000003": ("miles",),
-    }
 
 
 async def test_a_failed_note_read_is_counted_not_silent(
@@ -1213,52 +1137,32 @@ async def test_a_failed_note_read_is_counted_not_silent(
     assert metrics.get("nora_errors_total", stage="fire_notes") == 1
 
 
-async def test_a_failed_fact_read_is_counted_not_silent(
+async def test_a_wired_tier_without_a_policy_is_a_counted_wiring_gap(
     persons, record_store, memory_store, doctrine_store, metrics,
 ) -> None:
-    class _Down:
-        async def standing_subjects(self, *, workspace: str):
-            raise RuntimeError("db down")
-
-    fire = await _fire_path_with_tiers(
-        persons, record_store, memory_store, doctrine_store, metrics,
-        facts=_Down(),
-    )
-
-    ctx = await fire.build_context(reminder_occasion([_reminder()]))
-
-    assert ctx.facts == FactsView()
-    assert metrics.get("nora_errors_total", stage="fire_facts") == 1
-
-
-async def test_wired_tiers_without_a_policy_are_a_counted_wiring_gap(
-    persons, record_store, memory_store, doctrine_store, metrics,
-) -> None:
-    """A store wired but no `Policy` to scope it by: both tiers default safely
+    """A store wired but no `Policy` to scope it by: the tier defaults safely
     AND the gap is counted ONCE for the turn — guessing a workspace would
     render another social unit's notes into this room (DEC-105)."""
     fire = await _fire_path_with_tiers(
         persons, record_store, memory_store, doctrine_store, metrics,
-        notes=_seeded_note_store(), facts=_seeded_fact_store(), policy=None,
+        notes=_seeded_note_store(), policy=None,
     )
 
     ctx = await fire.build_context(reminder_occasion([_reminder()]))
 
     assert ctx.notes == ()
-    assert ctx.facts == FactsView()
     assert metrics.get("nora_errors_total", stage="fire_workspace") == 1
 
 
 async def test_the_dormant_default_reads_nothing_and_counts_nothing(
     fire_path: FirePath, metrics,
 ) -> None:
-    """No tier collaborators wired (the shipped `[notes]/[facts] enabled =
-    false`): empty fields, and no wiring-gap count — a deployment with the
-    tiers off does not HAVE the gap."""
+    """No tier collaborator wired (the shipped `[notes] enabled = false`):
+    empty field, and no wiring-gap count — a deployment with the tier off does
+    not HAVE the gap."""
     ctx = await fire_path.build_context(reminder_occasion([_reminder()]))
 
     assert ctx.notes == ()
-    assert ctx.facts == FactsView()
     assert metrics.get("nora_errors_total", stage="fire_workspace") == 0
 
 

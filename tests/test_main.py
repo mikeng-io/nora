@@ -325,56 +325,49 @@ async def _run_briefly_and_record_dream_wiring(env, monkeypatch) -> list[dict]:
     return calls
 
 
-async def test_the_dream_loop_is_not_spawned_when_neither_flag_is_on(env, monkeypatch):
+async def test_the_dream_loop_is_not_spawned_when_the_dreamer_is_off(env, monkeypatch):
     """A new subsystem does not switch itself on.
 
-    **This test used to assert `language.enabled = false must not spawn
-    dream_loop`, and that sentence was the defect written down as a
-    requirement.** The clock belongs to the runtime; `[language]` selects one
-    tier's adaptors. Asserting the tier flag alone made the coupling look
-    intended, and it is why `[dreamer] enabled = true` could ship inert with a
-    green suite behind it — the runtime was merged as "on", never ticked for
-    five days, and nothing here noticed because nothing here asked.
-
-    So the condition is BOTH flags, and the assertion names both."""
+    **This used to assert BOTH `[dreamer]` and `[language]`, and the second
+    half was the defect written down as a requirement.** The clock belongs to
+    the runtime; a tier flag never selected whether it ran. Asserting the tier
+    flag made the coupling look intended, and it is why `[dreamer] enabled =
+    true` could ship inert with a green suite behind it — the runtime was
+    merged as "on", never ticked for five days, and nothing here noticed
+    because nothing here asked. `[language]` is deleted; the condition is one
+    flag and the assertion names one."""
     import tomllib
 
     cfg = tomllib.loads(env.read_text())
-    assert cfg["language"]["enabled"] is False, (
-        "this test's point is the DEFAULT; the fixture must not enable it"
-    )
     assert cfg.get("dreamer", {}).get("enabled", False) is False, (
         "this test's point is the DEFAULT; the fixture must not enable it"
     )
 
     assert await _run_briefly_and_record_dream_wiring(env, monkeypatch) == [], (
-        "with neither [dreamer] nor [language] on, nothing may spawn the clock"
+        "with [dreamer] off, nothing may spawn the clock"
     )
 
 
-async def test_the_dream_loop_is_spawned_by_the_dreamer_flag_with_language_off(
+async def test_the_dream_loop_is_spawned_by_the_dreamer_flag_alone(
     env, monkeypatch,
 ):
     """**The case that was silently false, and the reason this branch exists.**
 
-    `[dreamer] enabled = true` with `[language] enabled = false` is the live
-    production configuration, and until 2026-08-27 it spawned nothing: the
-    runtime, its adaptors, budgets and instructions were all built and the
-    clock was gated on the language tier. The only evidence was one ERROR line
-    in `nora.log`, and the last real `dream tick` was five days old.
+    `[dreamer] enabled = true` is the live production configuration, and until
+    2026-08-27 it spawned nothing: the runtime, its adaptors, budgets and
+    instructions were all built and the clock was gated on a TIER's flag. The
+    only evidence was one ERROR line in `nora.log`, and the last real `dream
+    tick` was five days old.
 
-    It is also the configuration the note and fact adaptors REQUIRE. `[language]`
-    cannot be turned on to obtain a clock — room-language's MEASURE verb does
-    not exist yet (28 §4.1, D34), so it would resume the single-sighting lexeme
-    writes that produced two contradictory "big walk" rows. A tier that must not
-    run cannot be the price of a runtime that must."""
+    The clock's own five numbers moved into `[dreamer]` with the language
+    tier's deletion, so this also asserts they reach the spawn — a flag that
+    starts a loop on numbers from nowhere is the same defect one level down."""
     import tomllib
 
     import tomli_w
 
     cfg = tomllib.loads(env.read_text())
     cfg.setdefault("dreamer", {})["enabled"] = True
-    cfg["language"] = {"enabled": False}
     env.write_text(tomli_w.dumps(cfg))
 
     calls = await _run_briefly_and_record_dream_wiring(env, monkeypatch)
@@ -382,134 +375,23 @@ async def test_the_dream_loop_is_spawned_by_the_dreamer_flag_with_language_off(
         "[dreamer] enabled = true must spawn the clock on its own — this "
         "asserting nothing is what let an inert runtime ship as 'on'"
     )
-
-
-async def test_the_dream_loop_is_still_spawned_by_the_language_flag_alone(
-    env, monkeypatch,
-):
-    """The `or` goes both ways, and this is the regression guard on the half
-    that already worked: the fix must not trade one flag's coupling for the
-    other's. A deployment running the language tier with `[dreamer]` off still
-    gets its clock."""
-    import tomllib
-
-    import tomli_w
-
-    cfg = tomllib.loads(env.read_text())
-    cfg["language"] = {"enabled": True}
-    cfg.setdefault("dreamer", {})["enabled"] = False
-    env.write_text(tomli_w.dumps(cfg))
-
-    calls = await _run_briefly_and_record_dream_wiring(env, monkeypatch)
-    assert calls, "language.enabled = true must still spawn dream_loop"
     # The config values actually reached the spawn, not just the flag.
     assert calls[0]["tick_seconds"] == 300.0
     assert calls[0]["safety_lag"] == 300
     assert calls[0]["batch_limit"] == 400
 
 
-async def test_build_app_wires_the_language_consolidator_when_enabled(env):
-    """The composition half of Task 11: with `[language] enabled = true`,
-    `build_dependencies` must build a real store and a real consolidator,
-    not just leave the flag readable on `cfg`.
-
-    Two consolidators, not one, since the 2026-08-20 exchange-patterns
-    design (Dreamer Plan 2): `ExchangeConsolidator` is gated by the SAME
-    `[language].enabled` flag as `LanguageConsolidator`, both riding the one
-    shared watermark `nora.app.runtime._dream_once` reads per scope."""
-    import tomllib
-
-    import tomli_w
-
-    from nora.infra.sql.language import SqlLanguageStore
-    from nora.language.consolidator import LanguageConsolidator
-    from nora.language.exchange_consolidator import ExchangeConsolidator
-
-    cfg = tomllib.loads(env.read_text())
-    cfg["language"] = {"enabled": True}
-    env.write_text(tomli_w.dumps(cfg))
-
-    app = await build_app(env)
-    try:
-        assert isinstance(app.deps.language_store, SqlLanguageStore)
-        assert len(app.deps.language_consolidators) == 2
-        assert isinstance(app.deps.language_consolidators[0], LanguageConsolidator)
-        assert isinstance(app.deps.language_consolidators[1], ExchangeConsolidator)
-    finally:
-        await app.shutdown()
-
-
-async def test_build_app_leaves_the_language_consolidator_unwired_when_disabled(env):
-    """The control for the test above — `[language] enabled = false` (the
-    shipped default) must leave the store `None` and the consolidator tuple
-    empty, the exact "not yet wired" state Task 9 shipped `TranscriptInjection`
-    in."""
-    app = await build_app(env)
-    try:
-        assert app.deps.language_store is None
-        assert app.deps.language_consolidators == ()
-    finally:
-        await app.shutdown()
-
-
-async def test_build_app_wires_search_into_the_observer_when_verification_is_on(
-    env, monkeypatch,
-):
-    """The third gate (2026-08-20 design doc,
-    docs/superpowers/specs/2026-08-20-dreamer-known-entity-check-design.md):
-    `[language].verify_known_entities = true` must actually reach
-    `LexemeObserver` as a real `search` collaborator when `[search]` is ALSO
-    enabled and keyed — not just sit readable on `cfg`, the same composition
-    gap the sibling test above closes for `language_consolidators` itself."""
-    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
-    cfg = tomllib.loads(env.read_text())
-    cfg["language"] = {"enabled": True, "verify_known_entities": True}
-    cfg["search"] = {"enabled": True}
-    env.write_text(tomli_w.dumps(cfg))
-
-    app = await build_app(env)
-    try:
-        # Index [0], not a single-element unpack: Dreamer Plan 2's
-        # `ExchangeConsolidator` rides the same `[language].enabled` gate
-        # (see `test_build_app_wires_the_language_consolidator_when_enabled`
-        # above), so this tuple has two entries whenever `[language].enabled`
-        # is true.
-        consolidator = app.deps.language_consolidators[0]
-        assert consolidator._observer._search is not None
-    finally:
-        await app.shutdown()
-
-
-async def test_build_app_leaves_search_unwired_when_verification_is_off(env, monkeypatch):
-    """The control for the test above: `[search]` enabled and keyed alone
-    must NOT be enough — `verify_known_entities` defaults `false`, so turning
-    search on for the chat agent must not silently also spend it on the
-    Dreamer."""
-    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
-    cfg = tomllib.loads(env.read_text())
-    cfg["language"] = {"enabled": True}
-    cfg["search"] = {"enabled": True}
-    env.write_text(tomli_w.dumps(cfg))
-
-    app = await build_app(env)
-    try:
-        # Index [0] — see the sibling test above for why this tuple has two
-        # entries (Dreamer Plan 2's `ExchangeConsolidator` rides the same
-        # `[language].enabled` gate).
-        consolidator = app.deps.language_consolidators[0]
-        assert consolidator._observer._search is None
-    finally:
-        await app.shutdown()
-
-
 # ---- which search backend gets built (DEC-157) ------------------------------
 #
 # `[search] provider` is the whole user-facing feature, and "the config field
-# exists and is readable on `cfg`" is not evidence that it selects anything —
-# the same composition gap the `language_consolidators` tests above close.
+# exists and is readable on `cfg`" is not evidence that it selects anything.
 # These assert the CONSTRUCTED object and the key it resolved, because picking
 # the right class while reading the wrong env var is a silent way to answer
 # `unavailable` forever.
+#
+# They used to observe the client through the language tier's
+# `LexemeObserver._search`. That tier is deleted, so they observe it where it
+# still lands: the `ToolRegistry` the reply path builds `web_search` from.
 
 
 @pytest.mark.parametrize(
@@ -527,13 +409,12 @@ async def test_build_app_builds_the_search_backend_the_config_names(
     monkeypatch.setenv("TAVILY_API_KEY", "tavily-key")
     monkeypatch.setenv("EXA_API_KEY", "exa-key")
     cfg = tomllib.loads(env.read_text())
-    cfg["language"] = {"enabled": True, "verify_known_entities": True}
     cfg["search"] = {"enabled": True, "provider": provider}
     env.write_text(tomli_w.dumps(cfg))
 
     app = await build_app(env)
     try:
-        client = app.deps.language_consolidators[0]._observer._search
+        client = app.deps.engagement._tool_registry._search
         assert type(client).__name__ == expected_class
         assert client._api_key == expected_key
     finally:
@@ -551,13 +432,12 @@ async def test_build_app_leaves_search_unwired_when_the_selected_backend_is_keyl
     monkeypatch.setenv("TAVILY_API_KEY", "tavily-key")
     monkeypatch.delenv("EXA_API_KEY", raising=False)
     cfg = tomllib.loads(env.read_text())
-    cfg["language"] = {"enabled": True, "verify_known_entities": True}
     cfg["search"] = {"enabled": True, "provider": "exa"}
     env.write_text(tomli_w.dumps(cfg))
 
     app = await build_app(env)
     try:
-        assert app.deps.language_consolidators[0]._observer._search is None
+        assert app.deps.engagement._tool_registry._search is None
     finally:
         await app.shutdown()
 

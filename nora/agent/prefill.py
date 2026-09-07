@@ -13,25 +13,10 @@ from datetime import datetime
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..domain.prompt import escape_attr as _escape_attr
-from ..language.exchange_render import render_room_exchange
-from ..language.fact_render import render_facts
 from ..language.note_render import render_notes
-from ..language.portrait_render import render_room_portrait
-from ..language.render import render_room_language
 from ..language.standing_render import render_standing
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
-
-# The render-side half of the room-language coupling — see
-# `nora.engagement.context.DEFAULT_ROOM_LANGUAGE_STORE_LIMIT`, its sibling on
-# the read side, for why the two must NOT be set equal. A default rather than
-# an inline literal so Task 11 has somewhere to wire a config value without
-# another signature change.
-DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES = 6
-
-# Dreamer Plan 2's own version of the same coupling — see
-# `nora.engagement.context.DEFAULT_ROOM_EXCHANGE_STORE_LIMIT`.
-DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES = 4
 
 # `escape`/`_escape_attr` moved to `nora.domain.prompt` when the doctrine loader
 # started rendering frontmatter into section attributes and needed the identical
@@ -205,9 +190,6 @@ def _context_header(context_window: int, header: str = TAG_HEADER) -> str:
         "is something they just said. Absent means nothing has been concluded "
         "yet, not that there is nothing to know. When it is here you already "
         "have your memory of the person talking — do not look them up again.\n"
-        "- room_language: words this room has made its own, each with a real "
-        "quote underneath so a wrong gloss is visible. Absent means the room "
-        "has no such words yet, not that it never will.\n"
         "- replying_to: the message they were replying to, quoted from your own "
         "record of it rather than from their copy.\n"
         "- tag_message: what they actually said to you.\n"
@@ -215,7 +197,7 @@ def _context_header(context_window: int, header: str = TAG_HEADER) -> str:
         "[A ↳ B「…」] means A was replying to B, with the start of B's message "
         "quoted so you can tell which one.\n"
         "This is your material, not just scenery. Quote what they said, point "
-        "at what you remember, use the room's own words — a reply that uses "
+        "at what you remember — a reply that uses "
         "none of it is a thin reply.\n"
         "</context_header>"
     )
@@ -473,73 +455,16 @@ def _peer_history_block(ctx: TagContext) -> str:
     )
 
 
-def _room_language_block(ctx: TagContext, *, max_entries: int) -> str:
-    """The room's own slang, distilled by the Dreamer — `""` when there is
-    nothing to say (a new room, or every candidate lacking a quotable
-    example); see `render_room_language`'s own docstring for both rules.
-
-    VOLATILE-TIER ONLY, and that placement is the point of Task 10: a room's
-    lexicon changes on every Dreamer regeneration cycle, so rendering it here
-    (`build_prefill`'s per-turn message) rather than in `_context_header`
-    keeps the static head — the cache PREFIX `_context_header` documents at
-    98-99% hit — byte-identical across every room and every regeneration. A
-    per-room block in the head would fragment one deployment-wide prefix into
-    one per room and re-invalidate it on every dream cycle.
-
-    Trailing newline added here, not by `render_room_language`: every sibling
-    block in this module (`_self_card_block`, `_peer_card_block`,
-    `_peer_history_block`) returns `""` when empty and its own text plus a
-    trailing `"\n"` otherwise, so blocks concatenate onto separate lines
-    without `_transcript_block`'s leading sentence running into the closing
-    tag above it. `render_room_language` itself carries no such convention —
-    it is also called directly by tests pinning its own exact string — so the
-    newline is added at the one call site that needs it instead.
-    """
-    block = render_room_language(ctx.room_language, max_entries=max_entries)
-    return f"{block}\n" if block else ""
-
-
-def _room_exchange_block(ctx: TagContext, *, max_entries: int) -> str:
-    """Dreamer Plan 2's own sibling of `_room_language_block` — same
-    reasoning: volatile tier, same trailing-newline convention, `""` when
-    empty. See `render_room_exchange`'s own docstring for the four rulings
-    that decide what renders."""
-    block = render_room_exchange(ctx.room_exchange, max_entries=max_entries)
-    return f"{block}\n" if block else ""
-
-
-def _room_portrait_block(ctx: TagContext) -> str:
-    """Dreamer Plan 3's own sibling of `_room_language_block`/
-    `_room_exchange_block` — same volatile-tier placement, same trailing-
-    newline convention, `""` when empty. No `max_entries` parameter: a
-    portrait is one row per scope, not a top-N list (see
-    `render_room_portrait`'s own docstring)."""
-    block = render_room_portrait(ctx.room_portrait)
-    return f"{block}\n" if block else ""
-
-
-def _facts_block(ctx: TagContext) -> str:
-    """The fact tier's own sibling of `_room_portrait_block` — same volatile-
-    tier placement, same trailing-newline convention, `""` when there is
-    nothing standing. Unlike every block above it, a fact is keyed on the
-    WORKSPACE rather than this room (see `render_facts`'s own docstring) — it
-    still belongs in the volatile tail and never in `_context_header`'s cached
-    prefix, because nothing about that scoping makes the content any less
-    per-turn: `TagContext.facts` is assembled fresh on every tag, same as
-    `room_language`/`room_exchange`/`room_portrait`, and a workspace-wide
-    block in the cached head would fragment the prefix across every workspace
-    instead of every room.
-    """
-    block = render_facts(ctx.facts)
-    return f"{block}\n" if block else ""
-
-
 def _notes_block(ctx: TagContext) -> str:
-    """The note tier's index — the same volatile-tier placement and trailing-
-    newline convention as `_facts_block` beside it, and the same workspace
-    rather than room keying, so `_facts_block`'s argument for staying out of
-    `_context_header`'s cached prefix applies here unchanged and is not
-    restated.
+    """The note tier's index. VOLATILE-TIER ONLY, and that placement is the
+    point: it is rendered here (`build_prefill`'s per-turn message) rather
+    than in `_context_header`, so the static head — the cache PREFIX
+    `_context_header` documents at 98-99% hit — stays byte-identical across
+    every room. Keyed on the WORKSPACE rather than this room, which changes
+    nothing about that: a workspace-wide block in the cached head would
+    fragment the prefix across every workspace instead of every room.
+    Trailing newline added here, not by `render_notes`, so blocks concatenate
+    onto separate lines.
 
     **What is true of this block and of no other one above it: it is a
     POINTER, not the content.** Every other injected block is the whole of
@@ -592,8 +517,6 @@ def _standing_block(ctx: TagContext) -> str:
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
-    room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
-    room_exchange_max_entries: int = DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
 ) -> list[dict]:
     """The three prefill messages. **There is deliberately no roster block.**
 
@@ -627,32 +550,24 @@ def build_prefill(
             # `_context_header`'s docstring for the cache measurement that
             # decided this. It is still the first thing after the static
             # instructions, so nothing about how she reads it changes.
-            # `self_card` before `peer_card`/`peer_history` before
-            # `room_language` before `facts` before the transcript: her own
-            # past, then theirs, then the room's own slang, then the
-            # workspace's standing facts, then its open questions, then the
-            # room — each block widening scope (facts and notes widest of all
-            # — workspace, not room; settled before open), and the transcript
-            # stays adjacent to the message it explains. The two
+            # `self_card` before `peer_card`/`peer_history` before `notes`
+            # before the transcript: her own past, then theirs, then the
+            # workspace's open questions, then the room — each block widening
+            # scope (notes widest of all — workspace, not room), and the
+            # transcript stays adjacent to the message it explains. The two
             # person blocks are adjacent because they are one person: who
             # they are, then what happened with them.
-            # `room_language`/`room_exchange`/`room_portrait`/`facts`/`notes`/
-            # `standing` all sit here — the VOLATILE tier, after
+            # `notes`/`standing` both sit here — the VOLATILE tier, after
             # `_peer_history_block` and before `_transcript_block` — and
             # deliberately not inside `_context_header` above; see
-            # `_room_language_block`'s and `_facts_block`'s own docstrings for
-            # why. `<standing>` has a second, sharper reason of its own: it is
-            # revised on EVERY turn, so a row of it inside the cached prefix
-            # would invalidate that prefix every turn (26 §4).
-            # It is last of the six rather than in scope order —
-            # `_standing_block`'s own docstring argues that break.
+            # `_notes_block`'s own docstring for why. `<standing>` has a
+            # second, sharper reason of its own: it is revised on EVERY turn,
+            # so a row of it inside the cached prefix would invalidate that
+            # prefix every turn (26 §4). It is last rather than in scope
+            # order — `_standing_block`'s own docstring argues that break.
             _now_line(now) + _where_line(ctx.message.platform)
             + _self_card_block(ctx) + _peer_card_block(ctx)
             + _peer_history_block(ctx)
-            + _room_language_block(ctx, max_entries=room_language_max_entries)
-            + _room_exchange_block(ctx, max_entries=room_exchange_max_entries)
-            + _room_portrait_block(ctx)
-            + _facts_block(ctx)
             + _notes_block(ctx)
             + _standing_block(ctx)
             + _transcript_block(ctx, display_name, now or datetime.now().astimezone()),

@@ -142,50 +142,19 @@ class App:
             ))
         else:
             log.info("retention sweep disabled (store.prune_enabled = false)")
-        # The render ledger's own sweep (31 §3.1). It joins the loop above
-        # rather than growing one — it is a working set on a horizon, which is
-        # exactly what that loop already does for `messages` — and it is
-        # UNCONDITIONAL on `store.prune_enabled`: that flag means "keep the
-        # record in full", and this is not a record. It is a working set whose
-        # rows stop being readable by design, so never pruning it would be a
-        # table nobody decided the size of.
-        if deps.rendered_claims is not None:
-            deps.background.spawn(runtime.prune_loop(
-                deps.rendered_claims, deps.metrics,
-                interval_seconds=PRUNE_INTERVAL_SECONDS,
-            ))
-        # The Dreamer's clock (Task 11), the SAME conditional shape as the
-        # retention sweep above: `[language] enabled = false` (the shipped
-        # default — a new subsystem does not switch itself on) means
-        # `composition.build_dependencies` built no consolidator at all
-        # (`deps.language_consolidators == ()`), so there is nothing this
-        # loop could tick even if spawned; the flag is what decides whether
-        # it starts, not a widened interval.
-        # **`[dreamer]` OR `[language]`, and the `or` is the fix.** The clock
-        # belongs to the RUNTIME; `[language]` selects one tier's adaptors. Until
-        # 2026-08-27 this read `language.enabled and ...`, so `[dreamer] enabled
-        # = true` was a switch that gated nothing: the runtime, its adaptors,
-        # budgets and instructions were all built and nothing ever ticked them.
-        # It shipped that way — merged as "the Dreamer runtime is on", five days
-        # with no `dream tick`, and the `elif` below logging the reason into a
-        # file nobody reads.
+        # The Dreamer's clock, the SAME conditional shape as the retention
+        # sweep above: `[dreamer] enabled = false` (the shipped default — a
+        # subsystem does not switch itself on) means composition built no
+        # cursor store, so there is nothing this loop could tick even if
+        # spawned.
         #
-        # Turning `[language]` on to obtain a clock was the available workaround
-        # and is the wrong fix: room-language's MEASURE verb does not exist yet
-        # (28 §4.1, D34), so it would resume writing single-sighting lexeme rows
-        # — the defect that produced two contradictory "big walk" rows. A tier
-        # that must not run cannot be the price of a runtime that must.
-        #
-        # `deps.language_store is not None` STAYS, and is no longer the same
-        # question: composition now builds that store under either flag because
-        # it owns `consolidation_watermark`, the Dreamer's own cursor. So this
-        # reads "the clock is wanted, and the thing that remembers where each
-        # adaptor got to exists" — two conditions rather than one wearing a
-        # tier's name.
-        if (
-            (self.cfg.dreamer.enabled or self.cfg.language.enabled)
-            and deps.language_store is not None
-        ):
+        # `deps.language_store is not None` is the SECOND condition and not a
+        # restatement of the first: it is the thing that remembers where each
+        # adaptor got to (`consolidation_watermark`, reached through a module
+        # that keeps its inherited `language` name — see
+        # `nora.infra.sql.language`). So this reads "the clock is wanted, and
+        # the cursor exists" — two conditions, neither wearing a tier's name.
+        if self.cfg.dreamer.enabled and deps.language_store is not None:
             # BEFORE the loop starts, and awaited rather than spawned. An
             # adaptor with a new name has no watermark row, `watermark_for`
             # returns 0 for an unknown pair, and it would re-read every room
@@ -202,27 +171,21 @@ class App:
                 ),
             )
             deps.background.spawn(runtime.dream_loop(
-                deps.audit, deps.language_store, deps.language_consolidators,
+                deps.audit, deps.language_store,
                 deps.metrics,
                 scopes=deps.language_scopes,
-                tick_seconds=self.cfg.language.tick_seconds,
-                safety_lag=self.cfg.language.safety_lag,
-                quiet_seconds=self.cfg.language.quiet_seconds,
-                max_age_seconds=self.cfg.language.max_age_seconds,
-                batch_limit=self.cfg.language.batch_limit,
-                portrait=deps.portrait_synthesizer,
+                tick_seconds=self.cfg.dreamer.tick_seconds,
+                safety_lag=self.cfg.dreamer.safety_lag,
+                quiet_seconds=self.cfg.dreamer.quiet_seconds,
+                max_age_seconds=self.cfg.dreamer.max_age_seconds,
+                batch_limit=self.cfg.dreamer.batch_limit,
                 instructions=deps.dreamer_instructions,
-                # The second, adaptor-shaped schedule (substrate plan Task
-                # 2.8). Empty under `[dreamer] enabled = false`, in which case
-                # `dream_loop` is byte-for-byte the loop that has been carrying
-                # live traffic — which is what makes the cutover per-adaptor
-                # rather than a big-bang switch.
                 adaptors=deps.dream_adaptors,
                 runtime=deps.dreamer_runtime,
                 workspaces=deps.workspace_scopes,
-                # Per-adaptor clocks (design/dreamer-agent-loop/32 §3.1) —
-                # the fact-candidate extractor's daily interval/1000-row batch
-                # live here, not in `[language]`'s shared numbers.
+                # Per-adaptor clocks (design/dreamer-agent-loop/32 §3.1) — a
+                # cron-shaped adaptor's own interval and batch live here, not
+                # in `[dreamer]`'s shared numbers.
                 schedules=deps.dream_schedules,
                 # Where a watermark-free scheduled adaptor's last fire is
                 # kept. In Postgres rather than in `dream_loop`'s frame
@@ -232,29 +195,16 @@ class App:
                 schedule_clock=deps.dream_schedule_clock,
             ))
         elif self.cfg.dreamer.enabled:
-            # **This branch changed meaning on 2026-08-27 and was rewritten
-            # rather than deleted.** It used to catch `[dreamer] on, [language]
-            # off` — a combination that is now ordinary and supported, and the
-            # branch would have been dead if the condition above were the only
-            # thing guarding it. It is not: composition builds the watermark
-            # store under either flag, so reaching here with the Dreamer ON now
-            # means that store could not be built at all.
-            #
-            # Left in place, and NOT `pragma: no cover`d, because the old
-            # message is exactly what would mislead the next reader: it names a
-            # cause that has been fixed, and an operator who greps for it during
-            # an outage would go and turn `[language]` on — resuming the
-            # single-sighting lexeme writes for a reason that no longer applies.
-            # A stale diagnostic is worse than none; it aims the search.
+            # The Dreamer is ON and its cursor store could not be built —
+            # a database wiring fault, not a flag. Loud, and NOT
+            # `pragma: no cover`d: the only symptom otherwise is silence.
             log.error(
                 "dreamer.enabled = true but no watermark store was built, so "
                 "the Dreamer's clock cannot start and no adaptor will ever "
-                "run. This is NOT the old [language]-is-off case — that is "
-                "supported now; the store is built under either flag. Check "
-                "the database wiring."
+                "run. Check the database wiring."
             )
         else:
-            log.info("dream loop disabled (language.enabled = false)")
+            log.info("dream loop disabled (dreamer.enabled = false)")
         deps.background.spawn(runtime.debounce_sweep_loop(
             deps.debounce, deps.metrics,
             interval_seconds=DEBOUNCE_SWEEP_INTERVAL_SECONDS,

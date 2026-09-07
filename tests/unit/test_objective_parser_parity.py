@@ -13,10 +13,10 @@ end and inert.
 Two properties make this a check rather than a claim:
 
 1. **It reads the SHIPPED objective**, from `nora/dreamer/objectives/`, not a
-   fixture. `fact-candidates` and `fact-adjudication` are `NATIVELY_AUTHORED` —
-   no byte-pin, operator-editable on the bind mount — so a fixture would be a
-   copy that drifts from the file the container loads, which is the same
-   failure one level down.
+   fixture. The objectives are `NATIVELY_AUTHORED` — no byte-pin,
+   operator-editable on the bind mount — so a fixture would be a copy that
+   drifts from the file the container loads, which is the same failure one
+   level down.
 2. **It derives the parser's fields from the PARSER**, by walking its AST for
    every `item[...]` / `item.get(...)` subscript. A hand-copied tuple would be
    a third place to drift; CLAUDE.md's rule about label vocabularies is the
@@ -38,9 +38,10 @@ from pathlib import Path
 
 import pytest
 
-from nora.language import fact_adaptor
+import nora
 
-OBJECTIVES = Path(fact_adaptor.__file__).resolve().parents[1] / "dreamer" / "objectives"
+NORA_ROOT = Path(nora.__file__).resolve().parent
+OBJECTIVES = NORA_ROOT / "dreamer" / "objectives"
 
 
 def _return_examples(objective: str, envelope_key: str) -> list[dict[str, object]]:
@@ -48,14 +49,13 @@ def _return_examples(objective: str, envelope_key: str) -> list[dict[str, object
 
     The union across items is deliberate: an objective demonstrates optional
     fields by omitting them from one example and including them in another
-    (`fact-adjudication`'s `not_covered` entry carries no `source_url`), so any
-    single item would understate the contract.
+    so any single item would understate the contract.
     """
     body = (OBJECTIVES / f"{objective}.md").read_text(encoding="utf-8")
 
-    # The WHOLE file, not a `## What to return` section. That heading is the
-    # fact tier's house style; `note-revisit` states its return shape in
-    # running prose and has no such heading, so anchoring on it made this
+    # The WHOLE file, not a `## What to return` section. Not every objective
+    # has that heading — some state their return shape in running prose — so
+    # anchoring on it made this
     # test's coverage depend on a formatting convention rather than on the
     # contract. The discriminator is the ENVELOPE KEY the adaptor declares,
     # which is precise: no other JSON in an objective carries it.
@@ -153,10 +153,9 @@ def _keys_read_by(fn: Callable[..., object], *, name: str = "item") -> set[str]:
 
 
 #: Where a reader can live. `nora.language` holds the Dreamer's adaptors;
-#: `nora.engagement` holds `Recogniser`, which reads an objective on the REPLY
-#: path and is not an adaptor at all. Restricting the walk to `nora.language`
-#: is why `fact-dispute` — the newest pair on the branch — was the one
-#: contract this gate did not cover.
+#: `nora.engagement` is walked too because a reader on the REPLY path is not
+#: an adaptor at all, and restricting the walk to one package is how a
+#: contract goes uncovered.
 READER_PACKAGES = ("nora.language", "nora.engagement")
 
 
@@ -266,10 +265,10 @@ def test_the_case_list_is_derived_and_not_empty():
     silently-shrinking `CASES` makes every parametrized test below vacuous, and
     a hand-written list was exactly the hand-copied vocabulary this file's own
     docstring outlaws."""
-    assert len(CASES) >= 6
+    assert len(CASES) >= 3
     assert {c.id for c in CASES} >= {
-        "FactCandidateAdaptor", "FactAdaptor", "NoteCuratorAdaptor",
-        "Recogniser",
+        "NoteCandidateAdaptor", "NoteCuratorAdaptor",
+        "NoteEntityResolutionAdaptor",
     }
 
 
@@ -298,16 +297,16 @@ def test_every_shipped_objective_is_read_by_something():
     other way round.
 
     The floor is deliberately weak — the objective's NAME appears somewhere in
-    `nora/` — because the readers are genuinely three different shapes: a
-    `DreamAdaptor` class attribute, a module constant
-    (`ROOM_LANGUAGE_OBJECTIVE`), and a `Recogniser` class attribute. A strong
-    check would need to know which, which is the hand-copied vocabulary this
-    file exists to outlaw. A weak check over the whole population still fails
-    on the case that matters: an objective loaded by nobody.
+    `nora/` — because a reader can declare its objective in more than one
+    shape (a `DreamAdaptor` class attribute today; a module constant
+    historically). A strong check would need to know which, which is the
+    hand-copied vocabulary this file exists to outlaw. A weak check over the
+    whole population still fails on the case that matters: an objective loaded
+    by nobody.
     """
     source = "\n".join(
         path.read_text(encoding="utf-8")
-        for path in Path(fact_adaptor.__file__).resolve().parents[1].rglob("*.py")
+        for path in NORA_ROOT.rglob("*.py")
     )
     orphans = [
         path.stem for path in sorted(OBJECTIVES.glob("*.md"))
@@ -328,7 +327,7 @@ def test_the_orphan_check_can_actually_fire():
         path.stem for path in sorted(OBJECTIVES.glob("*.md"))
         if f'"{path.stem}"' not in source
     ]
-    assert len(orphans) == len(list(OBJECTIVES.glob("*.md"))) >= 6
+    assert len(orphans) == len(list(OBJECTIVES.glob("*.md"))) >= 5
 
 
 @pytest.mark.parametrize(("objective", "envelope_key", "sites"), CASES)

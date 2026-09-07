@@ -4,28 +4,12 @@ import re
 import subprocess
 from pathlib import Path
 
-import pytest
-import sqlalchemy as sa
-from sqlalchemy.exc import DBAPIError, IntegrityError
-
 from nora.domain.media import MediaRef
 from nora.domain.models import (
-    ExchangeExample,
-    LexemeExample,
     NormalizedMessage,
-    RoomExchange,
-    RoomExchangePattern,
-    RoomLanguage,
-    RoomLexeme,
 )
-from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.migrations_runner import run_migrations
-from nora.infra.sql.schema import ROOM_EXCHANGE
 from nora.ingest.stages import media as media_stage
 from nora.ingest.stickers import StickerReader
-from nora.language.exchange_observer import _parse_item
-from nora.language.portrait_synthesizer import PortraitSynthesizer
 from nora.obs.metrics import Metrics
 from nora.platform.registry import MediaSourceRegistry
 from nora.testing import (
@@ -267,19 +251,6 @@ RULE_TESTS = {
     # read as a denial and overturned a correct sourced answer (audit F7,
     # 2026-08-17 02:16 UTC). Next free number after R-52.
     "R-53": "test_r53_is_covered_by_the_source_scope_corpus",
-    # R-54 (fact-tier spec, DEC-78's move applied to inference over sources):
-    # R-53 states this rule for the model, in prose, in conduct.md — and its
-    # own corpus (`evals/adversarial/source_scope.yaml`) is deliberately held
-    # out of `SUITES`, so the prose cannot be shown to hold as a passing gate.
-    # R-54 is the same rule moved into a SHAPE instead: `FactVerdict.not_covered`
-    # has no reachable `supersedes`, and `contradicted` requires both a source
-    # and `addresses_claim` — «the source did not cover it, therefore drop the
-    # fact» is unrepresentable rather than merely discouraged. Points at
-    # `tests/domain/test_facts.py`'s own pin rather than a third copy of the
-    # same assertion (review finding, task 9 round 1): that file already names
-    # both halves — `test_not_covered_cannot_supersede_anything` and
-    # `test_contradicted_requires_a_source_that_addresses_the_claim`.
-    "R-54": "test_not_covered_cannot_supersede_anything",
     # R-56 (DEC-133, the Dreamer runtime). R-55 was taken by the note tier's
     # read-before-write latch, which landed first — re-read the index at MERGE
     # time, not at claim time.: the Dreamer may LOOK and may not
@@ -333,27 +304,6 @@ RULE_TESTS = {
     # costs something, and a test that reads the set goes green against a
     # latch that never vetoes anything.
     "R-55": "test_r55_a_revision_is_vetoed_when_this_turn_never_read_the_note",
-    # DEC-111 (the Dreamer, room-language consolidator): her own words are
-    # never evidence for the room lexicon. `RecordStore.since` — the
-    # consolidation cursor `LanguageConsolidator` reads — excludes `is_nora`
-    # rows IN THE QUERY, not in a caller that could forget it. The loop this
-    # prevents is real: she emits a word, it strengthens, the block
-    # normalises it, she emits it more.
-    "DEC-111": "test_her_own_words_are_never_evidence_for_the_room_lexicon",
-    # DEC-120 (Dreamer Plan 2, exchange patterns): the withhold rule DEC-111
-    # deferred is a structural guarantee, not a convention — no model-authored
-    # gloss field exists (a closed-set `act` only), and the database refuses
-    # any row naming fewer than two people.
-    "DEC-120": "test_exchange_pattern_cannot_attribute_a_disposition_to_a_person",
-    # DEC-121 (Dreamer Plan 3, room portrait): the narrative-construction
-    # function cannot be called with participant/speaker identity —
-    # `_LexemeFact`/`_ExchangeFact` carry no `person_id`/`participants`
-    # field, so identity is stripped at the TYPE boundary before any
-    # narrative string is built, proved behaviourally against the real
-    # synthesizer (a `CHECK` cannot forbid "contains a person's id" in a
-    # free-text column, so this is the type-boundary sibling of DEC-120's
-    # DB-CHECK guarantee, not a weaker substitute for it).
-    "DEC-121": "test_room_portrait_narrative_cannot_reference_a_person",
     # R-59 (design/discord-music/03-state-and-persistence.md, "Connect
     # trigger — and its rejection"): starting a NEW music session for a
     # guild requires the requester to be in a voice channel; an existing
@@ -476,30 +426,6 @@ RULE_TESTS = {
     # `generation` root and requires it exported anyway; the two drop tests and
     # the two engagement ones are named in the index row.
     "R-76": "test_a_generation_root_keeps_the_plumbing_underneath_it",
-    # The knowledge tier's two new behavioural rules — R-77/R-78, not 75/76:
-    # master took those first for the note tier's date-only collision and the
-    # Langfuse root rule, and the number goes to whoever landed. Both of these
-    # are enforced where the WRITES happen rather than at a render, which is
-    # why their named tests live beside the stores.
-    "R-77": "test_a_claim_about_a_roster_person_is_refused_at_the_sink",
-    "R-78": "test_degree_two_promotes_and_degree_one_does_not",
-    # R-79 names the LEXEME render, not the fact one, and that is the whole
-    # point of the choice. «A dispute marks rather than mutes» held in the
-    # fact tier from the first commit and reddens under mutation there; the
-    # lexeme half wrote its four columns and NOTHING READ THEM, so the
-    # contradicted gloss kept rendering as unqualified truth while
-    # `nora_dispute_targets_total` reported `ok`. The clause a future change
-    # breaks is the read, and this is the tier where it was already broken
-    # once. The fact-render tests and the store round trip are named in the
-    # index row.
-    "R-79": "test_a_disputed_gloss_renders_marked_and_still_renders",
-    # R-80 names the MIXED-GEOMETRY test rather than the re-embed one, and the
-    # choice is the same as R-79's: both are needed, and the one a future
-    # change breaks is the filter. `model=` reads like a convenience argument
-    # — the kind a later author deletes as tidying — and the design bundle
-    # never raises the problem it solves, so the row and this entry are the
-    # only places the reason is written down.
-    "R-80": "test_the_dense_read_never_mixes_two_models_geometries",
     # R-81 (DEC-145): attribution is SOURCING. The debrief's grounding rubric
     # asked whether a claim was supported by «something someone said in the
     # transcript» and said in as many words that it was «not about
@@ -628,144 +554,6 @@ async def test_r51_a_sticker_description_is_never_invented():
         )
         assert out.body.startswith("[sticker ")
         assert ": " not in out.body, f"{interpreter.reason} invented a description"
-
-
-async def test_her_own_words_are_never_evidence_for_the_room_lexicon(pg_url):
-    """DEC-111. The runaway loop this prevents: she emits a word -> it
-    strengthens -> the block normalises it -> she emits it more. `is_nora = 0`
-    lives in `RecordStore.since` itself (`nora/infra/sql/audit.py`) — the
-    Dreamer's consolidation cursor — not in a caller that could forget it.
-
-    Reverting the predicate must turn this red: it is asserted here against
-    the real `SqlRecordStore`, not the fake, because the predicate lives in
-    the SQL `WHERE` clause itself."""
-    run_migrations(pg_url)
-    store = SqlRecordStore(create_sql_engine(pg_url))
-    try:
-        ids = []
-        for i, (body, is_nora) in enumerate(
-            [("what's the play tmr", False), ("the play is at 8pm", True)], start=1
-        ):
-            ids.append(await store.append(
-                message=NormalizedMessage(
-                    "signal", "g1", "group", "+852111", "Miles", i, body, {}),
-                is_nora=is_nora,
-            ))
-
-        rows = await store.since(conversation_id="g1", after_id=0, limit=10)
-
-        assert [r.body for r in rows] == ["what's the play tmr"], (
-            "a Nora-authored row reached the Dreamer's evidence stream"
-        )
-    finally:
-        await store.aclose()
-
-
-async def test_exchange_pattern_cannot_attribute_a_disposition_to_a_person(pg_url):
-    """DEC-120. Two structural guarantees, proved at the layer that cannot be
-    bypassed — mirrors `test_her_own_words_are_never_evidence_for_the_room_lexicon`'s
-    own "assert it where it cannot be forgotten" shape.
-
-    (1) `_parse_item` rejects any `act` outside the closed set, at PARSE
-    time — no model-authored gloss field exists anywhere on this feature for
-    a rejected claim to fall back into.
-    (2) The DATABASE, not application code, refuses a row naming fewer than
-    two participants — proved with a direct INSERT against `room_exchange`,
-    bypassing every Python-side guard, exactly the "prove it at the layer
-    that cannot be bypassed" argument DEC-111's own test makes for `is_nora`.
-    """
-    # (1) closed-set enforcement at parse time.
-    assert _parse_item({
-        "act": "made_up_act_not_in_the_set", "message_ids": [1, 2], "confidence": 0.9,
-    }) is None, "an act outside EXCHANGE_ACTS must be rejected, not stored"
-    assert _parse_item({
-        "act": "insult_trade", "message_ids": [1, 2], "confidence": 0.9,
-    }) is not None, "a genuine closed-set act must still parse"
-
-    # (2) the database refuses a single-participant row.
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
-
-    async def _insert_one_participant() -> None:
-        # `pytest.raises` wraps this WHOLE call, not a statement inside the
-        # `async with` — the exception must still be in flight when
-        # `engine.begin()`'s own `__aexit__` runs, so it rolls back rather
-        # than trying (and failing a SECOND time) to commit an already
-        # -aborted Postgres transaction.
-        async with engine.begin() as conn:
-            await conn.execute(sa.insert(ROOM_EXCHANGE).values(
-                scope_id="g1", act="insult_trade", participants=["miles"],
-                first_seen_at=1, last_seen_at=1,
-            ))
-
-    try:
-        with pytest.raises((IntegrityError, DBAPIError)):
-            await _insert_one_participant()
-    finally:
-        await engine.dispose()
-
-
-async def test_room_portrait_narrative_cannot_reference_a_person():
-    """DEC-121. The behavioural, grounded version of the guarantee (R-27:
-    bind to the real property) — a `CHECK` cannot forbid "contains a
-    person's id" in `room_portrait.narrative` (free text), so this proves it
-    the way DEC-111's own test does for `is_nora`: at the layer that cannot
-    be bypassed, which here is the REAL synthesizer, not a mock of it.
-
-    `LexemeExample.person_id` and `RoomExchangePattern.participants` both
-    carry a deliberately identifiable marker; if `PortraitSynthesizer` ever
-    started threading either field into `_build_narrative` (directly, or by
-    widening `_LexemeFact`/`_ExchangeFact` to carry it), this test goes red.
-    """
-    marker = "WITNESS_MARKER_person_should_never_appear"
-
-    class _FakeLanguageReader:
-        async def room_language(self, *, scope_id: str, limit: int) -> RoomLanguage:
-            return RoomLanguage(scope_id=scope_id, lexemes=(
-                RoomLexeme(
-                    canonical_form="big walk", sense="a group hike", occurrence_count=3,
-                    distinct_speakers=2, first_seen_ms=1, last_seen_ms=2, state="live",
-                    examples=(
-                        LexemeExample(message_id=1, person_id=marker, text="big walk?"),
-                    ),
-                ),
-            ))
-
-    class _FakeExchangeReader:
-        async def room_exchange(self, *, scope_id: str, limit: int) -> RoomExchange:
-            return RoomExchange(scope_id=scope_id, patterns=(
-                RoomExchangePattern(
-                    act="banter", participants=(marker, "someone_else"),
-                    occurrence_count=4, first_seen_ms=1, last_seen_ms=2, state="live",
-                    examples=(
-                        ExchangeExample(message_id=1, person_id=marker, text="lol stop"),
-                    ),
-                ),
-            ))
-
-    class _FakePortraitStore:
-        def __init__(self) -> None:
-            self.narrative: str | None = None
-
-        async def upsert_portrait(
-            self, *, scope_id: str, narrative: str,
-            lexeme_basis: tuple[str, ...], exchange_basis: tuple[str, ...],
-        ) -> None:
-            self.narrative = narrative
-
-    store = _FakePortraitStore()
-    synthesizer = PortraitSynthesizer(
-        language=_FakeLanguageReader(), exchange=_FakeExchangeReader(), store=store,
-        max_rendered_lexemes=6, max_rendered_exchanges=4,
-    )
-    await synthesizer.synthesize(scope_id="g1")
-
-    assert store.narrative is not None and store.narrative != "", (
-        "the synthesizer should have produced a narrative from real material"
-    )
-    assert marker not in store.narrative, (
-        f"a person identifier leaked into the room portrait narrative: {store.narrative!r}"
-    )
 
 
 def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():

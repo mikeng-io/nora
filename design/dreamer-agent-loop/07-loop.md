@@ -148,7 +148,7 @@ preference: *"a note body is bounded and a fetched page is not."*
 
 That is a direct containment for context and output exhaustion — §3's failure —
 and it is stronger than a token cap because it bounds the shape rather than
-trimming the size. Nothing in the fact tier does this: a fetched page stays in
+trimming the size. Nothing in the fact tier *(deprecated 2026-09-07, code deleted — issue #115)* does this: a fetched page stays in
 the loop's context for every subsequent turn, growing the input the model must
 re-read each time.
 

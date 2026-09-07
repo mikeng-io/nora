@@ -76,8 +76,6 @@ from typing import Any
 from nora.agent.guards import ReplyGuard
 from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
-    DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
-    DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
     build_prefill,
     build_tag_message,
     escape,
@@ -87,7 +85,6 @@ from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.compute import ComputeJob
 from nora.domain.events import Event, EventFactory
-from nora.domain.facts import Fact, FactExtent, FactsView, mentions, normalise_name
 from nora.domain.models import (
     ConversationTarget,
     NormalizedMessage,
@@ -97,7 +94,6 @@ from nora.domain.models import (
 )
 from nora.domain.notes import Note
 from nora.domain.ports import (
-    FactReader,
     JobResult,
     JobStatus,
     LinkPreviewSource,
@@ -489,16 +485,11 @@ class FirePath:
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
         tool_call_log_store: ToolCallLogStore | None = None,
-        room_language_max_entries: int = DEFAULT_ROOM_LANGUAGE_MAX_ENTRIES,
-        room_exchange_max_entries: int = DEFAULT_ROOM_EXCHANGE_MAX_ENTRIES,
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
         notes: StandingNotesReader | None = None,
-        facts: FactReader | None = None,
         policy: Policy | None = None,
-        max_room_facts: int = 8,
-        max_sender_facts: int = 4,
         participation_runner: AgentRunner | None = None,
         shadow_channel: str | None = None,
         shadow_platform: str = "discord",
@@ -541,30 +532,25 @@ class FirePath:
         # `debrief.run` did. That defect was fixed and then RE-CREATED here in
         # the same change; this is the second half of the same fix.
         self._standing_store_timeout_seconds = standing_store_timeout_seconds
-        # The note/fact tiers on the fire path (design/dreamer-agent-loop/35,
+        # The note tier on the fire path (design/dreamer-agent-loop/35,
         # Phase 2) — S5's exact precedent, one tier later. A participation
-        # determination grounds on «transcript + standing/notes/facts», which
-        # was a lie as shipped: Phase 1's own header told the model "whatever
-        # standing, notes and facts came with it" while `build_context` left
-        # both fields at their dataclass defaults, so no `<notes>`/`<facts>`
-        # block ever rendered on ANY fire occasion. Wired for every occasion
-        # kind, not gated to participation: one `build_context` shape, no
-        # per-occasion special case, and the tiers are default-disabled so no
-        # shipped prompt changes until an operator enables them.
+        # determination grounds on «transcript + standing/notes», which was a
+        # lie as shipped: Phase 1's own header told the model "whatever
+        # standing and notes came with it" while `build_context` left the
+        # field at its dataclass default, so no `<notes>` block ever rendered
+        # on ANY fire occasion. Wired for every occasion kind, not gated to
+        # participation: one `build_context` shape, no per-occasion special
+        # case, and the tier is default-disabled so no shipped prompt changes
+        # until an operator enables it.
         #
-        # `policy` is here for exactly one read: both tiers are keyed on
-        # `Conversation.workspace` (DEC-105), so scoping them needs the same
+        # `policy` is here for exactly one read: the tier is keyed on
+        # `Conversation.workspace` (DEC-105), so scoping it needs the same
         # `Policy` instance the assembler holds — a fire path with its own
         # idea of a room's workspace would render another social unit's notes
-        # into this one. `None` keeps both tiers inert, the pre-wiring shape
+        # into this one. `None` keeps the tier inert, the pre-wiring shape
         # every test construction site has.
         self._notes = notes
-        self._facts = facts
         self._policy = policy
-        # The two render caps `TranscriptInjection` takes off `FactsConfig`;
-        # same defaults (19 §6), threaded from cfg at the composition root.
-        self._max_room_facts = max_room_facts
-        self._max_sender_facts = max_sender_facts
         self._persons = persons
         self._records = records
         self._memory = memory
@@ -623,13 +609,6 @@ class FirePath:
         # this path exactly as inert as it already is for a deployment that
         # has not wired one.
         self._tool_call_log_store = tool_call_log_store
-        # `build_prefill`'s RENDER cap — see `EngagementPipeline`'s identical
-        # field for why this defaults to `build_prefill`'s own default and
-        # what threads a configured value through in production
-        # (`[language].max_rendered_lexemes`).
-        self._room_language_max_entries = room_language_max_entries
-        # Dreamer Plan 2's own sibling of the above.
-        self._room_exchange_max_entries = room_exchange_max_entries
         # The participation occasion's runner (design/dreamer-agent-loop/35):
         # the SAME AgentRunner shape composed with `tool_choice="auto"` —
         # the determination may end in silence, which `required` (the tag
@@ -737,12 +716,11 @@ class FirePath:
                     "nora_errors_total", stage="fire_peer_card", platform=occasion.platform,
                 )
 
-        # Both workspace-keyed tiers resolve the workspace ONCE per turn — two
-        # resolutions would double-count the wiring gap `_workspace_for`
-        # reports, and the read is skipped entirely when neither tier is wired
-        # (the dormant default must not count a gap it does not have).
+        # The workspace-keyed tier resolves the workspace ONCE per turn, and
+        # the read is skipped entirely when it is not wired (the dormant
+        # default must not count a gap it does not have).
         workspace: str | None = None
-        if self._notes is not None or self._facts is not None:
+        if self._notes is not None:
             workspace = self._workspace_for(occasion)
 
         return TagContext(
@@ -754,22 +732,19 @@ class FirePath:
             started_at=time.perf_counter(),
             standing=await self._read_standing(occasion),
             notes=await self._read_notes(occasion, workspace),
-            facts=await self._read_facts(
-                occasion, workspace, transcript=transcript, tagger=ref,
-            ),
         )
 
     def _workspace_for(self, occasion: Event) -> str | None:
         """The workspace this occasion's room belongs to, or `None`.
 
-        Both workspace-keyed tiers scope through the SAME `Policy` read, for
-        the reason `TranscriptInjection` carries one `_workspace_of` for both
-        (DEC-105): two tiers each carrying their own idea of a room's
-        workspace disagree the first time a deployment runs two social units.
+        The workspace-keyed tier scopes through the SAME `Policy` read
+        `TranscriptInjection._workspace_of` uses (DEC-105): two readers each
+        carrying their own idea of a room's workspace disagree the first time
+        a deployment runs two social units.
 
         `None` — a store wired but no `Policy` or no `Conversation` for the
         room — is a WIRING GAP, not an empty tier: guessing a workspace would
-        render another unit's notes/facts into this room. Counted, because a
+        render another unit's notes into this room. Counted, because a
         block missing for the life of a deployment with nothing saying so is
         how `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
         """
@@ -780,15 +755,15 @@ class FirePath:
                 else None
             )
         except Exception:
-            # Fail-soft like the three sibling reads (`_read_notes`,
-            # `_read_facts`, `_read_standing`): a Policy read that raises must
+            # Fail-soft like the two sibling reads (`_read_notes`,
+            # `_read_standing`): a Policy read that raises must
             # not turn a deliverable reminder into a silent no-send (Claude
             # Sonnet audit 2026-09-05 MINOR). Counted, because a block missing
             # for the life of a deployment with nothing saying so is how
             # `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
             log.exception(
-                "policy conversation read failed for %s/%s — the note/fact "
-                "tiers cannot be scoped to a workspace; continuing without them",
+                "policy conversation read failed for %s/%s — the note "
+                "tier cannot be scoped to a workspace; continuing without it",
                 occasion.platform, occasion.conversation_id,
             )
             self._metrics.inc(
@@ -798,8 +773,8 @@ class FirePath:
             return None
         if convo is None:
             log.warning(
-                "no policy conversation for %s/%s — the note/fact tiers cannot "
-                "be scoped to a workspace; continuing without them",
+                "no policy conversation for %s/%s — the note tier cannot "
+                "be scoped to a workspace; continuing without it",
                 occasion.platform, occasion.conversation_id,
             )
             self._metrics.inc(
@@ -832,69 +807,6 @@ class FirePath:
                 platform=occasion.platform,
             )
             return ()
-
-    async def _read_facts(
-        self, occasion: Event, workspace: str | None, *,
-        transcript: tuple[TranscriptRow, ...],
-        tagger: PersonRef | None,
-    ) -> FactsView:
-        """The `<facts>` block's three slices, `TranscriptInjection._facts`
-        mirrored — room (subjects the conversation has touched), sender (the
-        occasion's person, when it has one), and the extent line.
-
-        One deliberate omission: the render ledger (`_record_rendered`) is NOT
-        written here. It exists so a later correction can target «a claim Nora
-        just rendered», and this path retains no `TagTrace` for that loop to
-        consult (the Phase 1 deferral `__init__` names) — recording renders
-        nobody can later recognise would be a write with no reader.
-
-        Fail-SOFT and COUNTED like every sibling read: a thinner prompt beats
-        no turn, and a failed read is never folded silently into «no facts».
-        """
-        reader = self._facts
-        if reader is None or workspace is None:
-            return FactsView()
-        try:
-            haystack = normalise_name(
-                " ".join([occasion.body or "", *(r.body or "" for r in transcript)])
-            )
-            subjects: tuple[str, ...] = ()
-            if haystack:
-                subjects = tuple(
-                    subject
-                    for subject in await reader.standing_subjects(workspace=workspace)
-                    if mentions(haystack, normalise_name(subject))
-                )
-            room = await reader.standing_facts(
-                workspace=workspace, subject_ids=subjects, limit=self._max_room_facts,
-            )
-            sender: tuple[Fact, ...] = ()
-            if tagger is not None:
-                sender = await reader.facts_asserted_by(
-                    workspace=workspace, person_id=tagger.person_id,
-                    limit=self._max_sender_facts,
-                )
-            standing = await reader.standing_count(workspace=workspace)
-        except Exception:
-            log.exception("fire fact read failed; continuing without the block")
-            self._metrics.inc(
-                "nora_errors_total", stage="fire_facts",
-                platform=occasion.platform,
-            )
-            return FactsView()
-        shown = {f.id for f in room} | {f.id for f in sender}
-        asserters: dict[str, tuple[str, ...]] = {}
-        for fact in (*room, *sender):
-            if fact.warrant_kind != "stated":
-                continue
-            rows = await reader.asserters(fact_id=fact.id)
-            if rows:
-                asserters[fact.id] = tuple(dict.fromkeys(a.person_id for a in rows))
-        return FactsView(
-            room=room, sender=sender,
-            extent=FactExtent(standing=standing, shown=len(shown)),
-            asserters=asserters,
-        )
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
         """This conversation's position, or `None` (S5).
@@ -1236,8 +1148,6 @@ class FirePath:
                 ctx, display_name=self._display_name,
                 context_window=self._context_window,
                 now=now, header=occasion.header(tagger, now),
-                room_language_max_entries=self._room_language_max_entries,
-                room_exchange_max_entries=self._room_exchange_max_entries,
             )
             # `tagger.name`, NOT `Persons.display_name(ctx.message)` — that reads
             # `sender_id`, which is blank here, and would attribute the request to

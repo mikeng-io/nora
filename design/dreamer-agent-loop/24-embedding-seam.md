@@ -9,6 +9,12 @@ edges:
   - {dst: 19-between-tiers, rel: depends_on, provenance: asserted}
 ---
 
+> **DEPRECATED 2026-09-07 — the knowledge tier (the "fact tier") and the language tier have both been deprecated and their code deleted.**
+> This document is retained as a record of the reasoning, not as a description of the system. **Nothing here describes code that exists.**
+> The database tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
+> This node designed **one** seam for three tiers. Its only implementation was ever the knowledge tier's — `nora/language/fact_embedder.py`, `nora/language/knowledge_search.py` and the `embedding` table. The note tier, which survives, never adopted it; the language tier never ran. With both deprecated there is no consumer of the seam left in the repo.
+> The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
+
 # The Shared Retrieval Seam
 
 ## 1. Why this is one seam and not three

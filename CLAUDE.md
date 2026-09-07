@@ -130,6 +130,15 @@ the decision.
    inside the file itself. Read for *why*, not for current state — that's
    what 1–4 are for.
 
+**Deprecated 2026-09-07 — the knowledge tier (the "fact tier") and the language
+tier.** Both are gone: the code is deleted, the decision-index rows are marked
+(never renumbered), and every design node and spec that describes them carries a
+`DEPRECATED` banner. **Their database tables are NOT dropped** — the code goes,
+the schema stays, and dropping them is a separate explicit decision. The evidence
+that decided it is `design/dreamer-agent-loop/20-knowledge-tier.md` §0; the issue
+is #115. Nothing under `design/dreamer-agent-loop/` numbered 20, 21, 23, 24, 25,
+28, 31 or 32 describes code that exists.
+
 ## The three config files
 
 Three files, three lifetimes, deliberately not merged (DEC-8's argument):

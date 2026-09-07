@@ -10,6 +10,11 @@ edges:
   - {dst: 09-measurement, rel: extends, provenance: asserted}
 ---
 
+> **DEPRECATED 2026-09-07 — the language tier has been deprecated and its code deleted, as part of the same decision that deprecated the knowledge tier.**
+> This document is retained as a record of the reasoning, not as a description of the system. **Nothing here describes code that exists.**
+> The language tier never ran in production — `[language] enabled = false` throughout its life. Its tables — `language_observation`, `room_lexeme`, `exchange_observation`, `room_exchange`, `room_portrait` — are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
+> The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
+
 # The Language Tier
 
 ## 1. The inversion that found this node
