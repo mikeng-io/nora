@@ -84,10 +84,19 @@ class SqlMediaDescriptionStore:
         the SAME junk row, each one clobbering the last hash it wrote. The
         description row is written regardless: content-level dedup is the
         whole point even when there is no identity to index.
+
+        `description=""` means "index this identity, describe nothing" — the
+        shape `StickerReader` uses since issue #116 moved the model pass off
+        the ingest path into the spawned comprehension job. It must NOT clobber
+        a description already on the row: the empty string is what every
+        un-comprehended row already carries (`describe` reads it as a MISS),
+        so an unguarded overwrite would silently erase a real comprehension
+        every time the same sticker was seen again. `nullif`+`coalesce` is what
+        makes the write index-only in that case.
         """
         desc_insert = pg_insert(MEDIA_OBJECTS).values(
             sha256=blob.sha256, media_type=blob.media_type, size=blob.size,
-            source="inbound", description=description, describe_model=model,
+            source="inbound", description=description, describe_model=model or None,
             provenance={}, created_at_ms=0,
         )
         desc_stmt = desc_insert.on_conflict_do_update(
@@ -96,10 +105,24 @@ class SqlMediaDescriptionStore:
             # may refresh it (DEC-138). Provenance is NEVER overwritten — the
             # first source to hold the bytes wins. `source` stays as first
             # seen; a sticker described as 'inbound' is inbound even if the
-            # same art was later generated.
+            # same art was later generated. An EMPTY incoming description
+            # keeps whatever is there — see the docstring.
             set_={
-                "description": desc_insert.excluded.description,
-                "describe_model": desc_insert.excluded.describe_model,
+                "description": sa.func.coalesce(
+                    sa.func.nullif(desc_insert.excluded.description, ""),
+                    MEDIA_OBJECTS.c.description,
+                ),
+                # Moves WITH the description or not at all: a row whose
+                # description was kept must keep the model that wrote it, or
+                # the provenance of the text on the row would name a describer
+                # that never produced it.
+                "describe_model": sa.case(
+                    (
+                        desc_insert.excluded.description != "",
+                        desc_insert.excluded.describe_model,
+                    ),
+                    else_=MEDIA_OBJECTS.c.describe_model,
+                ),
             },
         )
         try:

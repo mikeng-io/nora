@@ -40,7 +40,6 @@ from dataclasses import dataclass
 from openai import AsyncOpenAI
 
 from nora.domain.media import parse_media_type
-from nora.domain.ports import MediaDescription
 
 log = logging.getLogger("nora.vision")
 
@@ -294,6 +293,42 @@ class VisionClient:
             return VisionResult(available=False, reason="error")
         return VisionResult(available=True, description=text)
 
+    async def complete(self, *, prompt: str, text: str, model: str = "") -> str:
+        """One TEXT-only call on this same client, connection and budget.
+
+        The audio half of issue #116 and the video synthesis half of #117 both
+        need a cheap pass over text Nora already holds — a voice note's
+        SenseVoice transcript, a video's chunk run. Neither is a vision call
+        and neither should build a second client for it: the aggregate timeout
+        proof `derive_vision_timeout` makes is about ONE budget, and a separate
+        client would be a second one that could outlast the loop.
+
+        `text` rides in its OWN user message, after the authored `prompt`,
+        rather than concatenated into it. The text is a transcript of what
+        people said or a model's notes about somebody's video — untrusted, and
+        an instruction inside it must read as data rather than as the tail of
+        the instruction it was appended to.
+
+        Raises rather than returning a typed failure, unlike `describe`: the
+        one caller (`MediaComprehender.summarize`) already owns a
+        `MediaDescription` shape to degrade into and wraps this, and adding a
+        second never-raises result type for one call site would be a port for
+        an audience of one.
+        """
+        response = await asyncio.wait_for(
+            self._client.chat.completions.create(
+                model=model or self._model,
+                max_tokens=self._max_tokens,
+                messages=[
+                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": text},
+                ],
+                extra_body={"reasoning_effort": self._reasoning_effort},
+            ),
+            timeout=self._timeout,
+        )
+        return (response.choices[0].message.content or "").strip()
+
     async def _describe_with_retry(
         self, *, block: dict[str, object], prompt: str, model: str = "",
         provider: str = "omniroute",
@@ -353,53 +388,3 @@ class VisionClient:
         )
         choice = response.choices[0]
         return (choice.message.content or "").strip()
-
-
-# Authored, fixed, and small — never model-supplied, like `_PROMPT` above. The
-# final clause is load-bearing rather than polite: ingest holds the sticker and
-# NOT the conversation, so an intent judgment made here is made blind, cannot be
-# checked against anything, and would replace the evidence that lets anything
-# downstream disagree with it (spec §2.1). The pixels are the claim; the
-# conversational force is Nora's, made where the transcript is.
-_STICKER_PROMPT = (
-    "This is a chat sticker. In one sentence, describe what it depicts, "
-    "including any text written in it. Describe only what is shown — do not "
-    "interpret the sender's mood or intent."
-)
-
-# What a vision model can actually decode. `application/json` (Discord lottie)
-# is the case this exists for: handing JSON to a vision model is not a degraded
-# read, it is a wrong one, and the model would answer something anyway.
-_INTERPRETABLE = ("image/",)
-
-
-class StickerInterpreter:
-    """Satisfies `nora.domain.ports.MediaInterpreter` over `VisionClient`.
-
-    A thin adapter, not a second client: the same process-wide OmniRoute
-    connection, a different prompt and its own timeout. NOT a smaller token
-    budget — that was the original reasoning ("a sticker needs a sentence, not
-    `media_fetch`'s 1024-token transcription allowance"), and the 2026-08-07
-    probe refuted it: MiMo's reasoning tokens share the same `max_tokens`
-    budget as its answer, and 128 failed 0/4 attempts to get a sentence back.
-    The shipped `sticker_prompt_max_tokens` is 1024, identical to
-    `vision_max_tokens`.
-    """
-
-    def __init__(self, client: VisionClient, *, model: str) -> None:
-        self._client = client
-        self._model = model
-
-    @property
-    def model(self) -> str:
-        return self._model
-
-    async def describe(self, *, data: bytes, media_type: str) -> MediaDescription:
-        if not media_type.startswith(_INTERPRETABLE):
-            return MediaDescription(available=False, reason="unsupported_format")
-        result = await self._client.describe(
-            data=data, media_type=media_type, prompt=_STICKER_PROMPT
-        )
-        if not result.available:
-            return MediaDescription(available=False, reason=result.reason or "vision")
-        return MediaDescription(available=True, text=result.description)

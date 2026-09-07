@@ -899,10 +899,37 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # `StickerReader`'s own ladder-level label — identity / content / none.
     _CounterSpec(
         "nora_sticker_descriptions_total",
-        "Sticker-branch outcomes in the media custody stage, by platform, "
-        "status (ok / the StickerOutcome reason), and which ladder level "
-        "answered — level=identity/content/none.",
+        "Sticker-branch CUSTODY outcomes in the media stage, by platform, "
+        "status (ok = the bytes are held / the StickerOutcome reason), and "
+        "which ladder level answered — level=identity/content/none. Since "
+        "issue #116 the description itself is nora_media_comprehension_total's; "
+        "this series is the identity ladder's hit rate.",
         ("platform", "status", "level"),
+    ),
+    # ── media comprehension (issue #116) ────────────────────────────────────
+    # The SPAWNED read: one model pass per medium into title/description/
+    # content. R-27's three states and nothing else:
+    #   ok            — a comprehension was written for these bytes.
+    #   nothing_found — a final answer ABOUT the bytes: `unreadable` (a PDF, a
+    #                   lottie sticker — nothing here will ever read it) or
+    #                   `already_read` (this sha256 was comprehended before; a
+    #                   description is a pure function of the bytes). Neither
+    #                   is a failure and neither is an `ok`: counting a cache
+    #                   hit as ok would make the ok rate say the describer is
+    #                   working when it may not have run for days.
+    #   unavailable   — every wiring gap and every failure: no describer
+    #                   configured for that modality (`no_<top>_describer`),
+    #                   the blob could not be opened (`blob`), the model did
+    #                   not answer (`vision`/`timeout`/`empty`), ffmpeg refused
+    #                   a video (`ffmpeg`), or the job raised (`error`).
+    #                   NEVER nothing_found — «I could not look» is not «there
+    #                   was nothing there».
+    _CounterSpec(
+        "nora_media_comprehension_total",
+        "Spawned media comprehension outcomes, by platform, media label, "
+        "R-27 status (ok / nothing_found / unavailable) and the reason that "
+        "produced it.",
+        ("platform", "label", "status", "reason"),
     ),
     # ── the speech (STT) lane (spec 2026-08-21) ─────────────────────────────
     # Voice-note transcription outcomes in the media custody stage, by
@@ -1823,10 +1850,23 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "Excluded from nora_tag_latency_seconds on purpose. Gate: p95 <= 5s.",
         (0.5, 1, 2, 3, 5, 8, 13, 21),
     ),
+    # REPLACES `nora_sticker_describe_seconds`, which was removed with the
+    # model rung it measured (issue #116): the sticker ladder is custody now
+    # and makes no model call, so that name would have been a declared metric
+    # with no call site — CLAUDE.md's "a lie", rendering as a series that is
+    # genuinely always zero.
+    #
+    # Measured around the READ ALONE — the interpreter call, or the whole chunk
+    # run for a video — not the job around it. A `nothing_found` never reaches
+    # this line, so the dedup that skips a re-read cannot dilute what this says
+    # about a describer's own latency. The buckets reach 300s deliberately:
+    # a chunked video read (issue #117) is ten model calls, not one, and a
+    # histogram whose top bucket is 21s would report every video as +Inf.
     _HistogramSpec(
-        "nora_sticker_describe_seconds",
-        "Sticker interpreter (vision model) call latency, measured around "
-        "the describe() call alone — not the dedup ladder around it.",
+        "nora_media_comprehension_seconds",
+        "One media comprehension read's latency — the model call alone for an "
+        "image, the whole chunk run for a video. Excludes cache hits.",
+        (1, 2, 5, 10, 20, 40, 80, 160, 300),
     ),
 )
 

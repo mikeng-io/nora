@@ -416,6 +416,41 @@ vision_timeout_seconds = 40.0
 # is the off switch and nothing else has to change.
 sticker_descriptions = true
 
+# ONE model read per medium at ingest (issue #116) — image, video, sticker,
+# voice note — producing three fields on `media_objects`: a title (what it is),
+# a description (what it shows) and content (everything legible in it, in
+# full). The transcript renders `[image a3f2c1: <title> - <description>]`;
+# Honcho gets all three; `media_fetch` serves the rest on demand.
+#
+# The read is SPAWNED, never awaited on the ingest path: custody (bytes ->
+# sha256 -> blob -> handle in the body) is what has to be inline, because the
+# handle is a promise the bytes are retrievable. An UNREAD medium is exactly
+# the state every medium was in before this existed, so a late comprehension
+# makes nothing untrue — and an inline one would stall serialized Signal
+# ingest behind every video.
+#
+# false = the pre-#116 deployment exactly: handles in the body, nothing read.
+# Not an error state, and nothing anywhere claims a description it does not
+# have. `sticker_descriptions` above is the sticker sub-gate — off excludes
+# stickers from the read and leaves their identity ladder (custody, and what
+# makes a repeat sighting cost zero platform RPC) alone.
+comprehension = true
+# The CHEAP TEXT pass: a voice note's title/description over the SenseVoice
+# transcript that [speech.stt] already produced, and a video's over its
+# timecoded chunk run. NEVER a second listen or a second watch — the expensive
+# read has already happened. Empty = no text pass: a voice note keeps its words
+# with no title, a video keeps its chunk run. Set it to any text model on the
+# gateway; the image model works.
+comprehension_text_model = ""
+# What the TRANSCRIPT may spend on one attachment's title + description. The
+# STORED comprehension is unbounded on purpose — the old 200-char clip existed
+# only because the description was baked into `messages.body`, which two
+# consumers read verbatim; it is a join now, so the bound belongs on the
+# render and `media_fetch` serves the whole thing. A VOICE NOTE is exempt: its
+# detail is the words people said, and clipping those would mean Nora reads a
+# summary of what somebody said instead of what they said.
+comprehension_render_chars = 240
+
 # WHERE the (always-encrypted) bytes above land (DEC-136). OFF by default: a
 # config.toml written before this existed keeps writing to
 # store.data_dir / "media" exactly as before. On, an S3-compatible object
@@ -1382,3 +1417,21 @@ provider = "kimi"
 # upload lane (probed 2026-08-30 for larger videos) is the escape hatch —
 # base64 inline works for small clips, file-id for big ones.
 max_bytes = 104857600
+# CHUNKED READ (issue #117). A clip used to be cut to its first 120 seconds
+# before the model saw it, with no metric, no log line, and nothing in the
+# answer admitting the cut — so a ten-minute video produced a description of
+# its first two minutes, phrased as a description of the video. Storage is
+# untouched (one blob, the whole original); ffmpeg cuts transient windows at
+# READ time and each one goes to the describer above unchanged.
+#
+# `chunk_max` is the ceiling that turns an unbounded clip into a bounded
+# number of model calls — 10 x 90 s = 15 minutes read in full. **When it binds
+# it is recorded and SAID**: the clip's length, how much was read and the fact
+# that the rest was not land in `media_objects.provenance`, and a sentence
+# saying so is appended to the description. That is the actual fix — not
+# "never truncate", but "never truncate silently".
+#
+# The chunks are silent: the video path passes `-an` and strips the audio
+# track, exactly as it did before, and #117 explicitly does not change that.
+chunk_seconds = 90
+chunk_max = 10

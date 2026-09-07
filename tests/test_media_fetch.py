@@ -23,7 +23,7 @@ from nora.agent.guards import Deliverer
 from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOL_BUDGETS, build_tools
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.media import MediaBlob
+from nora.domain.media import MediaBlob, MediaObject
 from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.domain.ports import MediaDescription
 from nora.infra.blobs import FilesystemBlobStore
@@ -31,10 +31,14 @@ from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.infra.vision import StickerInterpreter, VisionCache, VisionResult
+from nora.infra.vision import MediaComprehender, VisionCache, VisionResult
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeMediaDescriptionStore, FakeMemoryStore
+from nora.testing import (
+    FakeMediaDescriptionStore,
+    FakeMediaObjectStore,
+    FakeMemoryStore,
+)
 from tests.fakes import SinkSender
 from tests.test_doctrine_loader import write
 
@@ -108,7 +112,7 @@ async def wiring(tmp_path, pg_url):
     cache = VisionCache()
 
     def build(*, vision_source=vision, blob_store=blobs, vision_cache=cache,
-              describe_models=None, describe_providers=None):
+              describe_models=None, describe_providers=None, media_store=None):
         # Image-only by default, which is the shipped configuration: audio and
         # video are wired but inert until a model is named for them. A NAMED
         # model, not "": since the split an empty model means «not configured»
@@ -125,6 +129,7 @@ async def wiring(tmp_path, pg_url):
             describe_models=describe_models,
             describe_providers=describe_providers,
             question="what is in the photo", context_window=40,
+            media_store=media_store,
         )
         return {t.tool_name: t for t in tools}["media_fetch"]
 
@@ -602,9 +607,9 @@ def test_the_advertised_schema_names_the_parameter_code(wiring):
     assert "http" in schema["properties"]["url"]["description"]
 
 
-# ---- StickerInterpreter (Task 11): bytes to a sentence, sticker-only ---------
-# Nothing in the ingest path calls this yet — the dedup ladder that wires it in
-# is two tasks away. These tests pin the adapter's own contract in isolation.
+# ---- MediaComprehender (issue #116): bytes to a comprehension ---------------
+# One model pass, three fields. These tests pin the adapter's own contract in
+# isolation; the job that schedules it is `tests/unit/test_media_comprehension.py`.
 
 
 class _RecordingVisionClient:
@@ -614,46 +619,285 @@ class _RecordingVisionClient:
     record would make that assertion vacuous."""
 
     def __init__(self, *, result: VisionResult | None = None) -> None:
-        self.result = result or VisionResult(available=True, description="a cartoon cat")
+        self.result = result or VisionResult(
+            available=True,
+            description='{"title": "a cat", "description": "a cartoon cat", '
+                        '"content": ""}',
+        )
         self.calls: list[tuple[bytes, str, str]] = []
+        self.completions: list[str] = []
 
     async def describe(self, *, data: bytes, media_type: str,
-                       prompt: str = "", model: str = "") -> VisionResult:
+                       prompt: str = "", model: str = "",
+                       provider: str = "omniroute",
+                       max_bytes: int | None = None) -> VisionResult:
         self.calls.append((data, media_type, prompt))
         return self.result
 
+    async def complete(self, *, prompt: str, text: str, model: str = "") -> str:
+        self.completions.append(text)
+        return '{"title": "a cat", "description": "a cartoon cat"}'
 
-async def test_a_sticker_interpreter_refuses_a_non_image_without_calling_out():
+
+def _comprehender(client) -> MediaComprehender:
+    return MediaComprehender(
+        client=client,
+        describe_models={"image": "mimo", "video": "k3", "audio": "mimo"},
+        text_model="mimo",
+    )
+
+
+async def test_a_comprehender_refuses_a_non_readable_type_without_calling_out():
     """Discord lottie stickers are JSON. Handing JSON to a vision model is not
     a degraded read, it is a wrong one — and the model would answer something."""
     client = _RecordingVisionClient()
-    interpreter = StickerInterpreter(client, model="mimo")
 
-    got = await interpreter.describe(data=b'{"v":"5.5"}', media_type="application/json")
+    got = await _comprehender(client).describe(
+        data=b'{"v":"5.5"}', media_type="application/json")
 
     assert got.available is False
     assert got.reason == "unsupported_format"
     assert client.calls == [], "nothing was sent"
 
 
-async def test_an_unavailable_vision_result_never_becomes_a_blank_description():
-    """R-51. A timeout must not turn into `[sticker a3f2c1: ]`."""
-    client = _RecordingVisionClient(result=VisionResult(available=False, reason="timeout"))
-    interpreter = StickerInterpreter(client, model="mimo")
+async def test_a_modality_with_no_configured_describer_is_unavailable():
+    """R-27, at the adapter. A wiring gap is «I could not look», never «there
+    was nothing there» — and never a silent fallback to the image model, which
+    would send a video to a router that drops it and answer about the text it
+    did receive."""
+    client = _RecordingVisionClient()
+    comprehender = MediaComprehender(client=client, describe_models={"image": "mimo"})
 
-    got = await interpreter.describe(data=b"\x89PNG...", media_type="image/png")
+    got = await comprehender.describe(data=b"\x00\x00", media_type="video/mp4")
+
+    assert got.available is False
+    assert got.reason == "no_video_describer"
+    assert client.calls == []
+
+
+async def test_an_unavailable_vision_result_never_becomes_a_blank_comprehension():
+    """R-51. A timeout must not turn into `[image a3f2c1: ]`."""
+    client = _RecordingVisionClient(
+        result=VisionResult(available=False, reason="timeout"))
+
+    got = await _comprehender(client).describe(
+        data=b"\x89PNG...", media_type="image/png")
 
     assert got.available is False
     assert got.reason == "timeout"
-    assert got.text == ""
+    assert (got.title, got.text, got.content) == ("", "", "")
 
 
-async def test_a_described_sticker_carries_its_text():
-    client = _RecordingVisionClient(
-        result=VisionResult(available=True, description="a cartoon cat collapsing")
+async def test_one_pass_carries_all_three_fields():
+    client = _RecordingVisionClient(result=VisionResult(
+        available=True,
+        description='{"title": "a whiteboard", "description": "a whiteboard in '
+                    'a meeting room", "content": "Q3 targets: 40%"}',
+    ))
+
+    got = await _comprehender(client).describe(
+        data=b"\x89PNG...", media_type="image/png")
+
+    assert got == MediaDescription(
+        available=True, title="a whiteboard",
+        text="a whiteboard in a meeting room", content="Q3 targets: 40%",
     )
-    interpreter = StickerInterpreter(client, model="mimo")
+    assert len(client.calls) == 1, "three fields, ONE call"
 
-    got = await interpreter.describe(data=b"\x89PNG...", media_type="image/png")
 
-    assert got == MediaDescription(available=True, text="a cartoon cat collapsing")
+async def test_a_label_picks_the_authored_question():
+    """The prompt is selected by LABEL — a system-controlled fact (the
+    platform's own sticker flag plus the blob's MIME type), never anything a
+    room typed. A sticker is asked what it depicts and explicitly not what the
+    sender meant by it; a photo is asked what it shows."""
+    client = _RecordingVisionClient()
+
+    await _comprehender(client).describe(
+        data=b"\x89PNG...", media_type="image/png", label="sticker")
+
+    prompt = client.calls[0][2]
+    assert "chat sticker" in prompt
+    assert "do not interpret the sender's mood or intent" in prompt.lower()
+
+
+async def test_prose_instead_of_json_becomes_the_description():
+    """FAIL-SOFT, not fail-blank. A model that answers in a paragraph has still
+    READ the bytes; reporting `unavailable` for it would throw away a real
+    reading over punctuation, and `unavailable` means «I could not look»."""
+    client = _RecordingVisionClient(result=VisionResult(
+        available=True, description="a cartoon cat, sitting on a laptop"))
+
+    got = await _comprehender(client).describe(
+        data=b"\x89PNG...", media_type="image/png")
+
+    assert got.available is True
+    assert got.text == "a cartoon cat, sitting on a laptop"
+    assert got.title == ""
+
+
+async def test_a_fenced_json_answer_is_not_lost_to_its_fence():
+    client = _RecordingVisionClient(result=VisionResult(
+        available=True,
+        description='```json\n{"title": "a cat", "description": "a cat", '
+                    '"content": ""}\n```',
+    ))
+
+    got = await _comprehender(client).describe(
+        data=b"\x89PNG...", media_type="image/png")
+
+    assert got.title == "a cat"
+
+
+async def test_summarize_is_a_text_call_and_never_a_second_listen():
+    """The audio lane. A voice note's content is already in hand — SenseVoice
+    transcribed it at ingest — so the title and description come from a cheap
+    text pass over those words, never from asking a model to listen again."""
+    client = _RecordingVisionClient()
+
+    got = await _comprehender(client).summarize(text="喂你今日得唔得閒啊")
+
+    assert got.available is True
+    assert client.calls == [], "no vision call for a transcript already held"
+    assert client.completions == ["喂你今日得唔得閒啊"]
+    assert got.content == "", "the caller already holds the words"
+
+
+async def test_summarize_with_no_text_model_is_a_wiring_gap():
+    """R-27 again: `no_text_describer` is `unavailable`. The caller keeps the
+    transcript it has and stores it with no title — the words are the evidence,
+    the title is a convenience."""
+    client = _RecordingVisionClient()
+    comprehender = MediaComprehender(client=client, describe_models={"image": "m"})
+
+    got = await comprehender.summarize(text="喂你今日得唔得閒啊")
+
+    assert got.available is False
+    assert got.reason == "no_text_describer"
+
+
+# ---- the two layers (issue #116) -------------------------------------------
+#
+# Layer 1 serves what the spawned comprehension already read at ingest — no
+# model call, no wait, and the SAME reading the transcript rendered a line of,
+# so the tool cannot contradict the prompt about what a picture shows.
+#
+# Layer 2 takes a caller-supplied question, reads the media AGAIN with it,
+# bypasses the cache on read and WRITES NOTHING BACK. That is not an
+# optimisation: the cache rests on "a description is a pure function of the
+# BYTES, so a sha256 hit is valid forever", and a query-conditioned answer is a
+# function of (bytes, question). Writing one to `media_objects.description`
+# would poison that hash for every room and every future sighting of the same
+# image.
+
+
+def _comprehended(sha: str, **kw) -> MediaObject:
+    base: dict = {
+        "sha256": sha, "media_type": "image/png", "size": len(RED_PNG),
+        "source": "inbound", "title": "a red square",
+        "description": "a single red pixel",
+        "content": "", "created_at_ms": 1,
+    }
+    base.update(kw)
+    return MediaObject(**base)
+
+
+async def test_layer_1_serves_the_stored_comprehension_without_a_model_call(wiring):
+    """The ordinary answer. Everything the model pass produced — title, what it
+    shows, and everything written in it — because `media_fetch` is exactly the
+    surface the untruncated `content` was kept for."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(
+        PNG_SHA, content="a whiteboard reading Q3 targets 40%")])
+
+    out = await _call(
+        wiring["build"](media_store=index), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert "a red square" in out["description"]
+    assert "a single red pixel" in out["description"]
+    assert "Q3 targets 40%" in out["description"]
+    assert wiring["vision"].calls == 0, "the read already happened at ingest"
+
+
+async def test_an_uncomprehended_medium_still_falls_through_to_a_live_read(wiring):
+    """The positive control for the test above AND the honest degrade: an index
+    row with all three fields empty is an INDEX ENTRY, not a description of
+    nothing. Serving it as an answer would return `ok` with nothing in it."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(
+        PNG_SHA, title="", description="", content="")])
+
+    out = await _call(wiring["build"](media_store=index), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].calls == 1
+
+
+async def test_layer_2_reads_again_with_the_question_and_bypasses_the_cache(wiring):
+    """A question the stored reading does not answer. The cache is not consulted
+    (a hit would answer somebody else's question) and the vision call carries
+    the caller's words inside an AUTHORED frame."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
+    cache = VisionCache()
+    cache.put(PNG_SHA, "a stale cached description")
+    tool = wiring["build"](media_store=index, vision_cache=cache)
+
+    out = await _call(
+        tool, code=PNG_SHA[:6], question="what colour is the pixel")
+
+    assert out["status"] == "ok"
+    assert out["description"] == "A red one-pixel square."
+    assert wiring["vision"].calls == 1, "a question always costs a real look"
+
+
+async def test_layer_2_writes_nothing_to_either_cache_tier(wiring):
+    """**The soundness property.** A query-conditioned answer written back to
+    `media_objects.description` would poison that sha256 for every room and
+    every future sighting — the transcript would then render one room's answer
+    to one room's question as what the picture IS."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
+    cache = VisionCache()
+    tool = wiring["build"](media_store=index, vision_cache=cache)
+
+    await _call(tool, code=PNG_SHA[:6], question="what colour is the pixel")
+
+    assert len(cache) == 0, "a question-conditioned answer is never cached"
+    assert index.comprehended == [], "and never lands on the row"
+
+    # POSITIVE CONTROL — the same tool, the same image, NO question: this one
+    # is a pure function of the bytes and does populate the cache, so the
+    # assertion above is not passing because nothing writes the cache at all.
+    fresh = FakeMediaObjectStore([_comprehended(PNG_SHA, title="", description="")])
+    await _call(
+        wiring["build"](media_store=fresh, vision_cache=cache), code=PNG_SHA[:6])
+    assert len(cache) == 1
+
+
+async def test_layer_2_is_screened_on_the_way_out_like_every_other_serve(wiring):
+    """The authored-prompt invariant is broken here deliberately, and the
+    barrier that makes it acceptable is unchanged: `scan_identifiers` runs on
+    EVERY serve, this one included."""
+    uuid = "12345678-1234-1234-1234-1234567890ab"
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    wiring["vision"].description = f"The form says account {uuid}."
+    index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
+
+    out = await _call(
+        wiring["build"](media_store=index),
+        code=PNG_SHA[:6], question="what account number is on the form",
+    )
+
+    assert out["status"] == "ok" and out.get("withheld") is True
+    assert uuid not in repr(out)
+
+
+async def test_the_schema_advertises_the_question_parameter(wiring):
+    """The model can only reach layer 2 through the schema. Every other test
+    here calls `tool._tool_func(**kw)` directly, which bypasses Strands and
+    therefore bypasses the schema — the exact surface that failed once before
+    (the `handle`/`code` rename)."""
+    schema = wiring["build"]().tool_spec["inputSchema"]["json"]
+    assert "question" in schema["properties"]
+    assert "required" not in schema

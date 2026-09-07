@@ -1,22 +1,39 @@
 """E.7 criterion 5: every rule R-1…R-17 has a passing named test."""
 
+import hashlib
 import re
 import subprocess
 from pathlib import Path
 
-from nora.domain.media import MediaRef
+from nora.domain.media import MediaBlob, MediaObject, MediaRef
 from nora.domain.models import (
     NormalizedMessage,
+    PersonRef,
 )
+from nora.domain.ports import EngageDecision, EngagementRequest
+from nora.engagement.context import TranscriptInjection
+from nora.ingest.comprehension import MediaComprehension, Subject
 from nora.ingest.stages import media as media_stage
-from nora.ingest.stickers import StickerReader
 from nora.obs.metrics import Metrics
+from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
 from nora.testing import (
     FakeBlobStore,
-    FakeMediaDescriptionStore,
     FakeMediaInterpreter,
+    FakeMediaObjectStore,
     FakeMediaSource,
+    FakeMemoryStore,
+    FakeRecordStore,
+)
+
+# R-90's fixture: one real image, and a roster that can name its sender — the
+# assembler resolves the transcript's speakers before the media join runs.
+_R90_BYTES = b"\x89PNG r-89 pixels"
+_R90_SHA = hashlib.sha256(_R90_BYTES).hexdigest()
+_R90_PERSONS = Persons(
+    by_person={"miles": PersonRef(
+        person_id="miles", name="Miles", honcho_peer_id="miles")},
+    index={("signal", "+85212345678"): "miles"},
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -234,12 +251,26 @@ RULE_TESTS = {
     # tool that would fetch it again points at the block instead. The duplicate
     # is the whole risk the block carries, so the guard is the named rule.
     "R-50": "test_about_the_tagger_points_at_the_block_instead_of_fetching_it",
-    # R-51: a sticker description is never invented (sticker spec §6). Every
-    # way `StickerReader`/`StickerInterpreter` can fail to produce one — a
-    # timeout, an unreadable format, an empty read-back — must leave the bare
-    # `[sticker a3f2c1]` placeholder, never a blank `[sticker a3f2c1: ]` and
-    # never a guessed sentence. Next free number after R-50.
-    "R-51": "test_r51_a_sticker_description_is_never_invented",
+    # R-90 (issue #116): `messages.body` carries a media label and a handle
+    # and nothing else; the comprehension is joined at RENDER time, in the
+    # context assembler, and `scan_identifiers` runs on every render. The
+    # durable body is read verbatim by two consumers with opposite needs, so a
+    # description in it made "Honcho detailed, transcript short" structurally
+    # impossible.
+    #
+    # NOT R-89, which looked free: R-89 was minted INSIDE DEC-159's row body
+    # rather than as a row of its own, so the CLAUDE.md duplicate check (whose
+    # trailing `\|` only reads real rows) reported it clear. Re-reading the
+    # index at merge time is what caught it — exactly the war-story that rule
+    # is written from.
+    "R-90": "test_r90_the_body_carries_the_handle_and_the_render_carries_the_reading",
+    # R-51: a media description is never invented (sticker spec §6, widened to
+    # every medium by issue #116). Every way the comprehension pass can fail to
+    # produce one — a timeout, an unreadable format, an empty answer — must
+    # leave the bare `[image a3f2c1]` placeholder, never a blank
+    # `[image a3f2c1: ]` and never a guessed sentence. Next free number after
+    # R-50.
+    "R-51": "test_r51_a_media_description_is_never_invented",
     # R-53 (DEC-123): a source that is SILENT on the question is not a source
     # that denies it. Behavioural, the same shape as R-14 and R-41 — asserted
     # by `conduct.md`'s "What a source does not say", measured by the corpus,
@@ -530,30 +561,90 @@ def _message(*, platform: str, body: str, media: tuple[MediaRef, ...]) -> Normal
     )
 
 
-async def test_r51_a_sticker_description_is_never_invented():
-    """R-51. Every way reading a sticker can fail — the model timing out, the
-    format being unreadable, the bytes being gone, the description carrying an
-    identifier — leaves the placeholder and is counted. None of them produces a
-    blank description, and none produces a guessed one. An ERROR is never a
-    PASS."""
-    ref = MediaRef(platform_id="", media_type="image/png", sticker=True,
-                   fetch_token="sticker:p:1")  # noqa: S106
-    for interpreter in (
-        FakeMediaInterpreter(available=False, reason="timeout"),
-        FakeMediaInterpreter(available=False, reason="unsupported_format"),
-        FakeMediaInterpreter(""),
+class _CollectingSpawn:
+    """`spawn`, collected instead of backgrounded. The comprehension job never
+    awaits its own work — that is the point of it — so a test that wants to
+    observe the result must hold the coroutine and await it explicitly. The
+    alternative (a real `create_task` plus a sleep) is a race written into an
+    assertion."""
+
+    def __init__(self) -> None:
+        self.coros: list = []
+
+    def __call__(self, coro) -> None:
+        self.coros.append(coro)
+
+    async def drain(self) -> None:
+        for coro in self.coros:
+            await coro
+        self.coros.clear()
+
+
+async def test_r51_a_media_description_is_never_invented():
+    """R-51. Every way reading a medium can fail — the model timing out, the
+    format being unreadable, the answer coming back empty — leaves the bare
+    placeholder and is counted with an R-27 `unavailable`. None of them writes
+    a blank description, and none writes a guessed one. An ERROR is never a
+    PASS.
+
+    **The rule widened with the mechanism** (issue #116). It used to be about
+    stickers, because stickers were the only thing ever read; every medium is
+    read now, and the way a failure has to look is the same for all of them.
+    Asserted at the STORE rather than at a body: nothing written is what makes
+    every later render show the bare handle, which is the property the rule is
+    actually about.
+
+    The positive control is the last block: the same job, the same wiring, an
+    interpreter that DOES answer — so this cannot be passing because nothing
+    ran."""
+    blob = MediaBlob(sha256="c" * 64, media_type="image/png", size=4)
+    subject = Subject(blob=blob, label="image")
+    blobs = FakeBlobStore()
+    blobs.blobs[blob.sha256] = b"\x89PNG"
+
+    for interpreter, reason in (
+        (FakeMediaInterpreter(available=False, reason="timeout"), "timeout"),
+        (FakeMediaInterpreter(available=False, reason="unsupported_format"),
+         "unsupported_format"),
+        (FakeMediaInterpreter("", title="", content=""), "empty"),
     ):
-        reader = StickerReader(
-            blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
-            interpreter=interpreter, model="fake", metrics=Metrics(),
+        store = FakeMediaObjectStore()
+        memory = FakeMemoryStore()
+        metrics = Metrics()
+        spawn = _CollectingSpawn()
+        job = MediaComprehension(
+            blobs=blobs, store=store, interpreter=interpreter, memory=memory,
+            metrics=metrics, spawn=spawn,
         )
-        out = await media_stage.run(
-            message=_message(platform="signal", body="[sticker]", media=(ref,)),
-            sources=MediaSourceRegistry([FakeMediaSource({"sticker:p:1": b"\x89PNG"})]),
-            blobs=FakeBlobStore(), metrics=Metrics(), stickers=reader,
+        job.schedule(
+            subjects=(subject,), platform="signal", conversation_id="g1",
+            person=None, timestamp=1700,
         )
-        assert out.body.startswith("[sticker ")
-        assert ": " not in out.body, f"{interpreter.reason} invented a description"
+        await spawn.drain()
+
+        assert store.comprehended == [], f"{reason} invented a comprehension"
+        assert metrics.get(
+            "nora_media_comprehension_total", platform="signal", label="image",
+            status="unavailable", reason=reason,
+        ) == 1
+        assert metrics.get(
+            "nora_media_comprehension_total", platform="signal", label="image",
+            status="nothing_found", reason=reason,
+        ) == 0, "a failed read is never «there was nothing there»"
+
+    # POSITIVE CONTROL — the identical wiring with a describer that answers.
+    store = FakeMediaObjectStore()
+    spawn = _CollectingSpawn()
+    job = MediaComprehension(
+        blobs=blobs, store=store, interpreter=FakeMediaInterpreter("a cartoon cat"),
+        memory=FakeMemoryStore(), metrics=Metrics(), spawn=spawn,
+    )
+    job.schedule(
+        subjects=(subject,), platform="signal", conversation_id="g1",
+        person=None, timestamp=1700,
+    )
+    await spawn.drain()
+    assert len(store.comprehended) == 1, "the control must actually comprehend"
 
 
 def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
@@ -871,3 +962,60 @@ async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
     assert "m60" in joined
     row = await store.read(platform="signal", conversation_id="g1")
     assert row is not None and row.last_folded_row_id == 60
+
+
+async def test_r90_the_body_carries_the_handle_and_the_render_carries_the_reading():
+    """R-90, end to end across the seam it is about.
+
+    The durable body written by custody carries `[image a3f2c1]` and nothing
+    else — no description, no transcript — and the SAME row, read back through
+    the context assembler with the comprehension on it, renders the short form.
+    One row, two readings, which is the whole point: `memory_feed` wants
+    everything and the prefill wants a line, and one string could not serve
+    both.
+
+    Written across BOTH halves deliberately. Asserting only that the body is
+    bare would pass against a build that never renders a description anywhere;
+    asserting only that the render works would pass against one that also bakes
+    it in. The pair is the rule.
+    """
+    blob = MediaBlob(sha256=_R90_SHA, media_type="image/png", size=len(_R90_BYTES))
+    audit = FakeRecordStore()
+    source = FakeMediaSource({"att1": _R90_BYTES})
+
+    stored = await media_stage.run(
+        message=_message(
+            platform="signal", body="睇下 [image]",
+            media=(MediaRef(platform_id="att1", media_type="image/png"),),
+        ),
+        sources=MediaSourceRegistry([source]), blobs=FakeBlobStore(),
+        metrics=Metrics(),
+    )
+
+    handle = blob.sha256[:6]
+    assert stored.body == f"睇下 [image {handle}]", "the body is a label and a handle"
+
+    await audit.append(message=stored)
+    media = FakeMediaObjectStore([MediaObject(
+        sha256=blob.sha256, media_type="image/png", size=4, source="inbound",
+        title="a plate of noodles", description="a bowl of wonton noodles",
+        content="生記粥麵", created_at_ms=1,
+    )])
+    assembler = TranscriptInjection(
+        audit=audit, memory=FakeMemoryStore(), persons=_R90_PERSONS,
+        context_window=10, metrics=Metrics(), media_objects=media,
+    )
+
+    ctx = await assembler.assemble(request=EngagementRequest(
+        message=_message(platform="signal", body="nora.000 呢個係咩", media=()),
+        decision=EngageDecision(engage=True, reason="trigger_text"),
+        tag_id="t1",
+    ))
+
+    assert ctx.transcript[-1].body == (
+        f"睇下 [image {handle}: a plate of noodles - a bowl of wonton noodles]"
+    )
+    # The full `content` stays OUT of the transcript — it is what `media_fetch`
+    # serves, and putting it in every prefill is the token cost the split
+    # exists to avoid.
+    assert "生記粥麵" not in ctx.transcript[-1].body

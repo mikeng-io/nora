@@ -817,7 +817,16 @@ MEDIA_OBJECTS = sa.Table(
     sa.Column("media_type", sa.Text, nullable=False, server_default=""),
     sa.Column("size", sa.BigInteger, nullable=False, server_default="0"),
     sa.Column("source", sa.Text, nullable=False),
+    # THE THREE COMPREHENSION FIELDS (issue #116, migration 0052). One model
+    # pass per medium fills all three: `title` is what the thing IS (a few
+    # words), `description` what it SHOWS (a sentence or two), `content`
+    # everything legible in it — the transcript renders title+description, the
+    # Honcho feed and `media_fetch` get all three. All three empty is an INDEX
+    # ENTRY, not a description: the row says Nora holds the bytes and claims
+    # nothing about them.
+    sa.Column("title", sa.Text, nullable=False, server_default=""),
     sa.Column("description", sa.Text, nullable=False, server_default=""),
+    sa.Column("content", sa.Text, nullable=False, server_default=""),
     sa.Column("describe_model", sa.Text),
     sa.Column("provenance", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
     sa.Column("created_at_ms", sa.BigInteger, nullable=False),

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from nora.config import Config
 from nora.domain.ports import (
+    MediaObjectStore,
     MemoryStore,
     RecordStore,
     StandingStore,
@@ -42,6 +43,7 @@ def build_assembler(
     policy: Policy,
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
+    media_objects: MediaObjectStore | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -51,4 +53,11 @@ def build_assembler(
         tagger_card_conclusions=cfg.memory.tagger_card_conclusions,
         notes=notes, policy=policy,
         standing=standing,
+        # The media join (issue #116): the transcript's `[image a3f2c1]`
+        # placeholders gain their stored comprehension here, in the assembler,
+        # so `nora/agent/prefill.py` stays a pure renderer over `TagContext`.
+        # `None` (every harness that wires no media index) renders the bare
+        # handles, which is what the row actually says.
+        media_objects=media_objects,
+        media_detail_chars=cfg.media.comprehension_render_chars,
     )

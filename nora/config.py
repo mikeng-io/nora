@@ -467,6 +467,21 @@ class DescriberConfig(BaseModel):
     model: str = ""
     provider: Literal["omniroute", "kimi"] = "omniroute"
     api_key_env: str = ""
+    # ---- video chunking (issue #117) ---------------------------------------
+    #
+    # Only the video describer reads these; they live on the shared shape
+    # because a per-modality model is what already lives here and a second
+    # `[media.describe.video.chunks]` table would be a section for two keys.
+    #
+    # The bug they close: every clip used to be cut to its first 120 s before
+    # the model saw it, with no metric, no log line and nothing in the answer
+    # admitting the cut — a ten-minute video produced a description of its
+    # first two minutes phrased as a description of the video. Chunking without
+    # a REPORTED ceiling would only move the same silent lie to a larger
+    # number, so `chunk_max` is not merely a cost bound: when it binds, the cap
+    # is written into `media_objects.provenance` AND said in the description.
+    chunk_seconds: int = 90
+    chunk_max: int = 10
     # A per-modality byte ceiling for the describer, overriding the shared
     # `media.vision_max_bytes` (which exists for still images — "no still
     # image worth describing is that large"). Video bytes are routinely far
@@ -618,6 +633,30 @@ class MediaConfig(BaseModel):
     # position, and the animated-WebP question (spec §7) is unresolved until a
     # probe answers it on the deployed gateway.
     sticker_descriptions: bool = False
+    # ---- the spawned comprehension pass (issue #116) ------------------------
+    #
+    # ONE model read per medium at ingest, into title/description/content on
+    # `media_objects`. `False` is the pre-#116 deployment exactly: handles in
+    # the body, nothing read, nothing claimed — which is why the off state is a
+    # degrade rather than an error. `sticker_descriptions` above stays the
+    # sticker sub-gate: off excludes stickers from the read and leaves the
+    # identity ladder (custody, and what makes a repeat sighting free) alone.
+    #
+    # `comprehension_text_model` is the CHEAP TEXT pass — a voice note's
+    # title/description over the SenseVoice transcript already in hand, and a
+    # video's over its chunk run. Empty means no text pass: a voice note keeps
+    # its words with no title (the words are the evidence, the title is a
+    # convenience) and a video keeps its timecoded chunk run. Never a vision
+    # call: asking a model to listen again to learn what Nora already knows is
+    # the one cost this avoids by construction.
+    comprehension: bool = True
+    comprehension_text_model: str = ""
+    # What the TRANSCRIPT may spend rendering one attachment's title +
+    # description. The STORED comprehension is unbounded on purpose (issue #116
+    # removed `max_description_chars` from the store side — the bound belongs
+    # on the render, and `media_fetch` serves the rest); this is the render
+    # bound. A voice note is exempt: its detail is the words people said.
+    comprehension_render_chars: int = 240
     # NOT a sentence-vs-transcription budget — the §7 probe (2026-08-15, live
     # MiMo-v2.5) found that reasoning tokens and answer tokens share this one
     # ceiling, so a small allowance is spent thinking with nothing left to
@@ -637,9 +676,14 @@ class MediaConfig(BaseModel):
     # correlation to image size or token budget (gateway variance); 20s is
     # headroom over that observed maximum, not a guess.
     sticker_timeout_seconds: float = 20.0
-    # The description is untrusted model output rendered into the durable body.
-    # Bounded here; newline, bracket and identifier screening live in
-    # `nora.domain.media.sanitize_description` and the custody stage.
+    # DEPRECATED (issue #116) and read by nothing. It bounded a description
+    # rendered into the durable BODY, and no description is rendered there any
+    # more — the comprehension lives in `media_objects` and the render bound is
+    # `comprehension_render_chars` above. The key stays declared because
+    # `extra="forbid"` is on every model in this file and the deployment's
+    # `config.toml` is untracked: deleting the field would turn a live file
+    # that still carries the line into a container that refuses to boot. It
+    # goes when the operator has removed it from that file.
     sticker_description_max_chars: int = 200
 
     def describer_for(self, modality: str) -> DescriberConfig | None:

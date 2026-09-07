@@ -41,6 +41,7 @@ from nora.domain.ports import (
     RecordStore,
     Transcriber,
 )
+from nora.ingest.comprehension import MediaComprehension
 from nora.ingest.stickers import StickerReader
 from nora.obs.tracing import TRACE_KIND, annotate, span
 from nora.persons import Persons
@@ -154,8 +155,8 @@ class IngestPipeline:
         media_store: MediaObjectStore | None = None,
         stickers: StickerReader | None = None,
         transcriber: Transcriber | None = None,
+        comprehension: MediaComprehension | None = None,
         language: str = "",
-        max_description_chars: int = 200,
         standing_event_wiring: Any | None = None,
     ) -> None:
         """`media_sources`/`blobs` default to None — media custody OFF — and
@@ -175,6 +176,13 @@ class IngestPipeline:
         behaves exactly like custody-without-interpretation (a handle, no
         description), never like a failure. Only stickers are ever read this
         way — see `nora/ingest/stages/media.py`'s docstring for why.
+
+        `comprehension` is `[media] comprehension`'s wiring state and the
+        SPAWNED read (issue #116): `None` — the inert default, and every
+        offline/eval composition — leaves every attachment with a bare handle
+        and nothing read, exactly as before the job existed. Present, each held
+        blob gets one model pass whose three fields land in `media_objects` and
+        in Honcho, off this path.
 
         `transcriber` is `[speech.stt]`'s wiring state, the same shape as
         `stickers`: `None` (deployment default) records a voice note with a
@@ -203,8 +211,8 @@ class IngestPipeline:
         self._media_store = media_store
         self._stickers = stickers
         self._transcriber = transcriber
+        self._comprehension = comprehension
         self._language = language
-        self._max_description_chars = max_description_chars
         self._standing_event_wiring = standing_event_wiring
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
@@ -303,7 +311,12 @@ class IngestPipeline:
                 message=message, sources=self._media_sources, blobs=self._blobs,
                 media_store=self._media_store, metrics=m,
                 stickers=self._stickers, transcriber=self._transcriber,
-                language=self._language, max_description_chars=self._max_description_chars,
+                comprehension=self._comprehension,
+                # `person` is resolved above and rides in ONLY so a spawned
+                # comprehension can be fed to Honcho under the sender's own
+                # peer (D6, mapped senders only). The custody stage neither
+                # resolves identity nor reads it for anything else.
+                person=person, language=self._language,
             )
         with span("ingest.audit"):
             recorded = await audit_stage.run(

@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "Nora now reads every photo, video, sticker and voice note she receives, so what people send is part of what she remembers instead of an empty marker.",
+  "details": [
+    "Each medium is read once when it arrives, producing a short name for it, a sentence on what it shows, and everything legible in it. The transcript shows the short form beside the marker; her memory keeps all three.",
+    "A voice note still shows what was actually said, in full, rather than a summary of it.",
+    "media_fetch serves the full reading with no wait, and takes an optional question when what you need is not in the stored reading -- that one costs a fresh look.",
+    "Long videos are read in one-and-a-half-minute chunks in order, instead of only the first two minutes. When a clip is longer than she can read, her description says so."
+  ],
+  "limitations": [
+    "The read happens in the background, so a photo sent and asked about in the same breath may not be described yet; the marker is there either way and she will say she has not looked rather than guess.",
+    "Videos longer than about fifteen minutes are still read only in part. That is now stated in the description instead of being silent.",
+    "Set [media] comprehension = false to keep the previous behaviour (markers only, nothing read)."
+  ]
+}

@@ -1,8 +1,15 @@
 """The sticker dedup ladder, one test per rung (sticker spec §4). These are the
-tests that would go green against a reader that always called the vision model,
-so each one asserts on the CALL LOGS of the collaborators rather than only on
-the returned description — "no RPC happened" is the property that matters, and
-a description alone cannot prove it.
+tests that would go green against a reader that always went back to the
+platform, so each one asserts on the CALL LOGS of the collaborators rather than
+only on the returned blob — "no RPC happened" is the property that matters, and
+a blob alone cannot prove it.
+
+**The MODEL rung is gone (issue #116).** This ladder is custody now: identity
+resolves to a blob before any bytes move, a miss fetches once and records the
+identity so the next sighting does not. The description that used to sit at the
+bottom of it is the spawned comprehension job's
+(`tests/unit/test_media_comprehension.py`), keyed on the same sha256 — one
+mechanism for every medium instead of one for stickers and none for photos.
 
 **On the single-flight test specifically.** `asyncio.gather` alone does NOT
 force two `reader.read()` calls to race: every fake collaborator in this module
@@ -12,17 +19,17 @@ this exact shape) that when neither coroutine truly `await`s anything
 unresolved, the first Task runs to FULL completion — in-flight entry
 registered, used, and cleaned up — before the event loop ever schedules the
 second Task. Two plain `reader.read()` calls under `asyncio.gather` would
-therefore call the interpreter twice regardless of whether single-flight is
+therefore call the platform twice regardless of whether single-flight is
 implemented at all, and the test would prove nothing.
 
-`_SlowMediaInterpreter` below fixes that by giving the interpreter one genuine
-suspension point (`await asyncio.sleep(...)`), standing in for the real
-interpreter's HTTP round trip — the same `_EchoRunner(delay=...)` pattern
-`tests/unit/test_engagement_pipeline.py` already uses to force two pipeline
-runs to overlap. With that suspension in place, the first `read()` reaches the
-interpreter and yields control mid-flight; the second `read()`, issued while
-the first is still suspended there, genuinely observes the first one's
-in-flight future rather than an already-cleaned-up map.
+`_SlowMediaSource` below fixes that by giving the FETCH one genuine suspension
+point (`await asyncio.sleep(...)`), standing in for the real platform RPC — the
+same `_EchoRunner(delay=...)` pattern `tests/unit/test_engagement_pipeline.py`
+already uses to force two pipeline runs to overlap. With that suspension in
+place, the first `read()` reaches the fetch and yields control mid-flight; the
+second `read()`, issued while the first is still suspended there, genuinely
+observes the first one's in-flight future rather than an already-cleaned-up
+map.
 """
 
 from __future__ import annotations
@@ -41,7 +48,6 @@ from nora.platform.signal.parser import parse_event
 from nora.testing import (
     FakeBlobStore,
     FakeMediaDescriptionStore,
-    FakeMediaInterpreter,
     FakeMediaSource,
 )
 
@@ -56,145 +62,123 @@ def _source(payload: bytes | None = BYTES) -> FakeMediaSource:
     return src
 
 
-def _reader(store, interpreter, blobs=None, metrics=None) -> StickerReader:
+def _reader(store, blobs=None, metrics=None) -> StickerReader:
     return StickerReader(
         blobs=blobs or FakeBlobStore(), descriptions=store,
-        interpreter=interpreter, model="fake-vision",
         metrics=metrics if metrics is not None else Metrics(),
     )
 
 
-class _SlowMediaInterpreter(FakeMediaInterpreter):
-    """`FakeMediaInterpreter` with one genuine suspension point inserted
-    before it does its (synchronous) work — see the module docstring for why
-    the plain fake cannot exercise a real race on its own."""
+class _SlowMediaSource(FakeMediaSource):
+    """`FakeMediaSource` with one genuine suspension point inserted before it
+    answers — see the module docstring for why the plain fake cannot exercise
+    a real race on its own. It stands in for the platform RPC, which is what
+    single-flight now exists to spend only once."""
 
     def __init__(self, *args, delay: float = 0.02, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.delay = delay
+        self.platform = "signal"
 
-    async def describe(self, *, data: bytes, media_type: str):
+    async def fetch(self, *, ref):
         await asyncio.sleep(self.delay)
-        return await super().describe(data=data, media_type=media_type)
+        return await super().fetch(ref=ref)
 
 
-async def test_an_identity_hit_makes_no_platform_call_and_no_vision_call():
+async def test_an_identity_hit_makes_no_platform_call_at_all():
     """The 41% case, and the whole reason the identity level exists: it is the
     only level checkable BEFORE the bytes move, on a path the listener awaits."""
     store = FakeMediaDescriptionStore()
     blob = MediaBlob(sha256="a" * 64, media_type="image/png", size=len(BYTES))
     store.index[("signal", TOKEN)] = blob
-    store.descriptions["a" * 64] = "a cartoon cat"
-    source, interpreter = _source(), FakeMediaInterpreter()
+    blobs = FakeBlobStore()
+    blobs.blobs["a" * 64] = BYTES
+    source = _source()
 
-    out = await _reader(store, interpreter).read(
+    out = await _reader(store, blobs).read(
         platform="signal", ref=REF, source=source)
 
     assert out.blob == blob
-    assert out.description == "a cartoon cat"
     assert out.level == "identity"
     assert source.fetched == [], "no platform RPC on a repeat sticker"
-    assert interpreter.calls == [], "no vision call on a repeat sticker"
+    assert store.remembered == [], "a hit re-records nothing"
 
 
-async def test_a_content_hit_fetches_but_does_not_describe():
-    """The same art in a second pack, or on the other platform. One RPC is
-    unavoidable — the hash is only knowable from the bytes — but the expensive
-    half is not paid twice."""
+async def test_a_cold_sticker_fetches_once_and_records_its_identity():
+    """The identity write is what makes the NEXT sighting free. Without it the
+    ladder would fetch every time and the 41% would be 0%."""
     store = FakeMediaDescriptionStore()
-    blobs = FakeBlobStore()
-    sha = hashlib.sha256(BYTES).hexdigest()
-    store.descriptions[sha] = "a cartoon cat"
-    source, interpreter = _source(), FakeMediaInterpreter()
+    source = _source()
 
-    out = await _reader(store, interpreter, blobs).read(
-        platform="signal", ref=REF, source=source)
+    out = await _reader(store).read(platform="signal", ref=REF, source=source)
 
     assert out.level == "content"
-    assert out.description == "a cartoon cat"
+    assert out.blob is not None
+    assert out.blob.sha256 == hashlib.sha256(BYTES).hexdigest()
     assert source.fetched == [TOKEN]
-    assert interpreter.calls == []
-
-
-async def test_a_cold_sticker_pays_once_and_is_remembered():
-    store = FakeMediaDescriptionStore()
-    source, interpreter = _source(), FakeMediaInterpreter("a cartoon cat")
-
-    out = await _reader(store, interpreter).read(
-        platform="signal", ref=REF, source=source)
-
-    assert out.level == "none"
-    assert out.description == "a cartoon cat"
-    assert len(interpreter.calls) == 1
     assert store.remembered == [("signal", TOKEN, out.blob.sha256)]
 
 
-async def test_two_simultaneous_sightings_make_one_vision_call():
+async def test_the_identity_write_never_carries_a_description():
+    """`description=""` means "index this identity, describe nothing" — the
+    comprehension is the spawned job's and is keyed on the same sha256. If the
+    ladder wrote a description here it would clobber whatever that job had
+    already learned about these bytes, every time the sticker was seen again.
+
+    Positive control: the identity row IS written (the test above asserts it),
+    so a reader that wrote nothing at all would not pass this by doing less."""
+    store = FakeMediaDescriptionStore()
+
+    out = await _reader(store).read(platform="signal", ref=REF, source=_source())
+
+    assert out.blob is not None
+    assert store.descriptions[out.blob.sha256] == ""
+
+
+async def test_two_simultaneous_sightings_make_one_platform_call():
     """Signal ingest is serialized but the Discord listener is a separate
     task, so this race is real rather than theoretical — see the module
-    docstring for why `_SlowMediaInterpreter` is what makes it REAL in this
+    docstring for why `_SlowMediaSource` is what makes it REAL in this
     test rather than an accident of `asyncio.gather` scheduling."""
     store = FakeMediaDescriptionStore()
-    source, interpreter = _source(), _SlowMediaInterpreter()
-    reader = _reader(store, interpreter)
+    source = _SlowMediaSource({TOKEN: BYTES})
+    reader = _reader(store)
 
     first = asyncio.create_task(
         reader.read(platform="signal", ref=REF, source=source))
     # One tick is enough for `first` to register itself in the in-flight map
-    # and reach the interpreter's real suspension point — see the module
-    # docstring's probe. Bounded implicitly: `first` is awaited below, so a
-    # `first` that never reaches that point fails the test rather than
-    # hanging it.
+    # and reach the fetch's real suspension point — see the module docstring's
+    # probe. Bounded implicitly: `first` is awaited below, so a `first` that
+    # never reaches that point fails the test rather than hanging it.
     await asyncio.sleep(0)
     second = await reader.read(platform="signal", ref=REF, source=source)
     first_outcome = await first
 
-    assert len(interpreter.calls) == 1
-    assert {first_outcome.description, second.description} == {"a cartoon cat"}
+    assert source.fetched == [TOKEN]
+    assert first_outcome.blob is not None
+    assert second.blob == first_outcome.blob
 
 
 async def test_an_unfetchable_sticker_yields_no_blob_and_a_reason():
     store = FakeMediaDescriptionStore()
-    interpreter = FakeMediaInterpreter()
 
-    out = await _reader(store, interpreter).read(
+    out = await _reader(store).read(
         platform="signal", ref=REF, source=_source(payload=None))
 
     assert out.blob is None
-    assert out.description == ""
     assert out.reason == "not_found"
-    assert interpreter.calls == []
+    assert store.remembered == [], "a failed fetch records no identity"
 
 
-async def test_a_failed_interpretation_still_yields_the_blob():
-    """Custody succeeded even though the read did not. The body must keep its
-    handle — `[sticker a3f2c1]` — because the bytes really are held."""
-    store = FakeMediaDescriptionStore()
-    interpreter = FakeMediaInterpreter(available=False, reason="timeout")
-
-    out = await _reader(store, interpreter).read(
-        platform="signal", ref=REF, source=_source())
-
-    assert out.blob is not None
-    assert out.description == ""
-    assert out.reason == "timeout"
-    assert store.remembered == [], "a failure is never cached as a description"
-    # I4 (whole-branch review): a fetch-then-fail is not a content-level hit.
-    # `level` was set to "content" as a side effect of the fetch above, before
-    # level 2 was ever consulted — over-reporting "the cache is working" on
-    # exactly the failure path an operator would be watching it for.
-    assert out.level == "none"
-
-
-async def test_a_store_outage_costs_a_re_description_not_the_sticker():
+async def test_a_store_outage_costs_the_dedup_not_the_sticker():
+    """The identity store is a cache in front of custody. Losing it costs one
+    re-fetch on the next sighting, never the sticker."""
     store = FakeMediaDescriptionStore(unavailable=True)
-    interpreter = FakeMediaInterpreter()
 
-    out = await _reader(store, interpreter).read(
-        platform="signal", ref=REF, source=_source())
+    out = await _reader(store).read(platform="signal", ref=REF, source=_source())
 
-    assert out.description == "a cartoon cat"
     assert out.blob is not None
+    assert out.level == "content"
 
 
 async def test_a_reader_raising_mid_ladder_degrades_to_unavailable_and_cleans_up():
@@ -208,8 +192,7 @@ async def test_a_reader_raising_mid_ladder_degrades_to_unavailable_and_cleans_up
             raise RuntimeError("db on fire")
 
     store = _Explodes()
-    interpreter = FakeMediaInterpreter()
-    reader = _reader(store, interpreter)
+    reader = _reader(store)
 
     out = await reader.read(platform="signal", ref=REF, source=_source())
     assert out.blob is None
@@ -234,17 +217,17 @@ async def test_an_identity_hit_whose_blob_is_gone_claims_no_custody():
     store = FakeMediaDescriptionStore()
     blob = MediaBlob(sha256="b" * 64, media_type="image/png", size=123)
     store.index[("signal", TOKEN)] = blob
-    # No entry in `store.descriptions[blob.sha256]` (level 2 misses) and no
-    # entry in the blob store for that sha256 (level 3's own-custody read
-    # comes up empty) — the exact combination that reaches `blob_missing`.
-    interpreter = FakeMediaInterpreter()
+    # No entry in the blob store for that sha256 — the identity row outlived
+    # its bytes (a rotated key, a pruned volume), which is the exact
+    # combination that reaches `blob_missing`.
+    source = _source()
 
-    out = await _reader(store, interpreter, FakeBlobStore()).read(
-        platform="signal", ref=REF, source=_source())
+    out = await _reader(store, FakeBlobStore()).read(
+        platform="signal", ref=REF, source=source)
 
     assert out.blob is None, "custody was just disproven; must not claim it"
     assert out.reason == "blob_missing"
-    assert interpreter.calls == []
+    assert source.fetched == [], "an identity hit still makes no platform call"
 
 
 async def test_a_real_signal_sticker_envelope_survives_the_ladder():
@@ -258,6 +241,11 @@ async def test_a_real_signal_sticker_envelope_survives_the_ladder():
     feature is built from. This test drives the real `parse_event` output
     into the real ladder rather than a hand-built ref, so it fails against
     that bug instead of a fake with the fix already baked into its fixture.
+
+    The sniff still matters after issue #116 moved the model rung out: the
+    sha256 is computed from these bytes and `media_type` is what the
+    comprehension job branches on to pick a describer, so an unresolved `""`
+    would send every real Signal sticker down the `unreadable` path instead.
     """
     envelope = {
         "envelope": {
@@ -285,15 +273,12 @@ async def test_a_real_signal_sticker_envelope_survives_the_ladder():
     source = FakeMediaSource({ref.fetch_token: png_bytes})
     source.platform = "signal"
     store = FakeMediaDescriptionStore()
-    interpreter = FakeMediaInterpreter("a cartoon otter waving")
 
-    out = await _reader(store, interpreter).read(
-        platform="signal", ref=ref, source=source)
+    out = await _reader(store).read(platform="signal", ref=ref, source=source)
 
     assert out.blob is not None
     assert out.blob.media_type == "image/png", "sniffed from the PNG signature"
-    assert out.description == "a cartoon otter waving"
-    assert interpreter.calls == [("image/png", len(png_bytes))]
+    assert out.blob.size == len(png_bytes)
 
 
 async def test_a_cancelled_winner_does_not_hang_its_waiters():
@@ -303,17 +288,17 @@ async def test_a_cancelled_winner_does_not_hang_its_waiters():
     deleted the in-flight map entry — every waiter already awaiting that
     future then blocked forever on a future nobody would ever resolve."""
     store = FakeMediaDescriptionStore()
-    interpreter = _SlowMediaInterpreter(delay=0.2)
-    reader = _reader(store, interpreter)
+    reader = _reader(store)
+    slow = _SlowMediaSource({TOKEN: BYTES}, delay=0.2)
 
     winner = asyncio.create_task(
-        reader.read(platform="signal", ref=REF, source=_source()))
+        reader.read(platform="signal", ref=REF, source=slow))
     # One tick is enough for `winner` to register itself and reach the
-    # interpreter's genuine suspension point — the same shape the
-    # single-flight test above relies on.
+    # fetch's genuine suspension point — the same shape the single-flight
+    # test above relies on.
     await asyncio.sleep(0)
     loser = asyncio.create_task(
-        reader.read(platform="signal", ref=REF, source=_source()))
+        reader.read(platform="signal", ref=REF, source=slow))
     await asyncio.sleep(0)  # let `loser` observe the winner's in-flight future
 
     winner.cancel()
@@ -370,9 +355,8 @@ async def test_an_animated_sticker_keeps_all_its_frames():
     blobs = FakeBlobStore()
     source = FakeMediaSource({TOKEN: original})
     source.platform = "signal"
-    interpreter = FakeMediaInterpreter()
 
-    out = await _reader(store, interpreter, blobs).read(
+    out = await _reader(store, blobs).read(
         platform="signal", ref=REF, source=source)
 
     assert out.blob is not None

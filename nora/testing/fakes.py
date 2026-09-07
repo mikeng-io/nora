@@ -778,6 +778,7 @@ class FakeMediaObjectStore:
     def __init__(self, objs: Sequence[MediaObject] = (), *, fail: bool = False) -> None:
         self.objs: dict[str, MediaObject] = {}
         self.saved: list[MediaObject] = []
+        self.comprehended: list[tuple[str, str, str, str, str]] = []
         self.fail = fail
         for obj in objs:
             self.objs.setdefault(obj.sha256, obj)
@@ -792,6 +793,36 @@ class FakeMediaObjectStore:
         self.objs.setdefault(obj.sha256, obj)
         return True
 
+    async def comprehend(
+        self, *, sha256: str, title: str, description: str, content: str,
+        model: str, provenance: dict[str, object] | None = None,
+    ) -> bool:
+        """The read landing on a row, matching the SQL store's upsert exactly:
+        it creates the row when custody has not written one yet (the two
+        writers race by design — custody is inline, the read is spawned), it
+        replaces the three comprehension fields and `describe_model`, and it
+        MERGES `provenance` rather than replacing it so a generated image's
+        birth record survives a later read of the same bytes. `source` and
+        `created_at_ms` are never touched on the conflict arm."""
+        if self.fail:
+            return False
+        self.comprehended.append((sha256, title, description, content, model))
+        row = self.objs.get(sha256)
+        merged = dict((row.provenance if row else None) or {})
+        merged.update(provenance or {})
+        if row is None:
+            self.objs[sha256] = MediaObject(
+                sha256=sha256, media_type="", size=0, source="inbound",
+                title=title, description=description, content=content,
+                describe_model=model or None, provenance=merged, created_at_ms=0,
+            )
+            return True
+        self.objs[sha256] = replace(
+            row, title=title, description=description, content=content,
+            describe_model=model or None, provenance=merged,
+        )
+        return True
+
     async def search(
         self, *, query: str, limit: int = 20, sources: tuple[str, ...] = (),
     ) -> tuple[MediaObject, ...]:
@@ -803,7 +834,16 @@ class FakeMediaObjectStore:
             pool = [o for o in pool if o.source in sources]
         if words:
             def matches(o: MediaObject) -> bool:
-                haystacks = (o.description.casefold(), json.dumps(o.provenance or {}).casefold())
+                # All THREE comprehension fields plus the provenance text,
+                # matching `SqlMediaObjectStore.search` exactly (issue #116):
+                # one model pass writes the title and the legible content too,
+                # and a fake that searched only `description` would let a query
+                # that works in Postgres come back empty here.
+                haystacks = (
+                    o.title.casefold(), o.description.casefold(),
+                    o.content.casefold(),
+                    json.dumps(o.provenance or {}).casefold(),
+                )
                 return all(any(w in h for h in haystacks) for w in words)
             pool = [o for o in pool if matches(o)]
         return tuple(pool[:limit])
@@ -879,37 +919,72 @@ class FakeGeocodeCacheStore:
 
 
 class FakeMediaInterpreter:
-    """In-memory `MediaInterpreter`. `calls` is the point of it: the invariant
-    that only stickers are interpreted (spec §5.3) is proved by what this
+    """In-memory `MediaInterpreter`, bound to `MediaComprehender` by
+    `tests/contract/test_media_interpreter_contract.py`. `calls` is the point
+    of it: which media actually reached a model is proved by what this
     RECORDS, not by reading the stage and believing it.
 
-    Mirrors `StickerInterpreter`'s own `media_type` gate (the review that
-    added `tests/contract/test_media_interpreter_contract.py`, fix round 1):
-    a non-image `media_type` refuses with `unsupported_format` before
-    touching `available`/`text`, exactly like production refuses a lottie
-    before any vision call goes out. Without this gate a test could feed a
-    lottie through the fake and see "no description" even if the real
-    pipeline never checked the format at all — the fake would mask the
-    omission instead of proving it absent. The refusal is still RECORDED in
-    `.calls`: only the result changes, because Task 14's sticker-only
-    invariant test asserts on what was asked, not just what was answered.
+    Mirrors `MediaComprehender`'s own gates rather than a convenient subset,
+    because a fake that answered every request the same way would make every
+    test above it decorative:
+
+    - a media type outside image/video/audio refuses with
+      `unsupported_format` before touching `available`, exactly like
+      production refuses a lottie before any model call goes out — and the
+      refusal is still RECORDED, because the invariant tests assert on what
+      was ASKED, not only on what was answered;
+    - EMPTY bytes refuse the same way (there is nothing to read);
+    - `summarize` refuses `empty` for blank text, so the voice-note lane's
+      "no transcript, no claim" branch is reachable here too.
+
+    THREE FIELDS (issue #116): `title`/`text`/`content` come back together,
+    because one model pass produces all three and a fake returning only a
+    description would let a caller forget to store the other two.
     """
 
     def __init__(self, text: str = "a cartoon cat", *, available: bool = True,
-                 reason: str = "") -> None:
+                 reason: str = "", title: str = "a cat",
+                 content: str = "") -> None:
         self.text = text
+        self.title = title
+        self.content = content
         self.available = available
         self.reason = reason
         self.calls: list[tuple[str, int]] = []
+        self.labels: list[str] = []
+        self.summarized: list[str] = []
         self.model = "fake-vision"
 
-    async def describe(self, *, data: bytes, media_type: str) -> MediaDescription:
+    async def describe(
+        self, *, data: bytes, media_type: str, label: str = "",
+    ) -> MediaDescription:
         self.calls.append((media_type, len(data)))
-        if not media_type.startswith("image/"):
+        self.labels.append(label)
+        top = media_type.partition("/")[0].lower()
+        if top not in ("image", "video", "audio") or not data:
             return MediaDescription(available=False, reason="unsupported_format")
         if not self.available:
             return MediaDescription(available=False, reason=self.reason or "vision")
-        return MediaDescription(available=True, text=self.text)
+        if not (self.title or self.text or self.content):
+            # A 200 with nothing readable in it is a FAILURE TO ANSWER, never
+            # "the image was blank" — the same call `MediaComprehender` makes,
+            # and the same call `VisionClient` makes one level below it. A fake
+            # that returned an available-but-empty triple here would let a
+            # caller store a blank comprehension and stay green (R-51).
+            return MediaDescription(available=False, reason="empty")
+        return MediaDescription(
+            available=True, title=self.title, text=self.text, content=self.content,
+        )
+
+    async def summarize(self, *, text: str) -> MediaDescription:
+        self.summarized.append(text)
+        if not text.strip():
+            return MediaDescription(available=False, reason="empty")
+        if not self.available:
+            return MediaDescription(available=False, reason=self.reason or "vision")
+        if not (self.title or self.text):
+            return MediaDescription(available=False, reason="empty")
+        return MediaDescription(available=True, title=self.title, text=self.text)
 
 
 class FakeTranscriber:

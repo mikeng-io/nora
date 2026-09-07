@@ -201,3 +201,97 @@ async def test_an_unreachable_database_answers_false_and_empty_and_never_raises(
     assert await broken.get(sha256=CAT) is None
     assert await broken.search(query="cat") == ()
     assert await broken.by_prefix(handle="aabbcc") == ()
+    # `comprehend` runs in a SPAWNED task, where an exception would surface
+    # only as a done-callback log line. A lost comprehension costs one re-read
+    # on the next sighting and must never cost anything else.
+    assert await broken.comprehend(
+        sha256=CAT, title="a cat", description="a cat", content="", model="glm",
+    ) is False
+
+
+# ---- the comprehension verb (issue #116) -----------------------------------
+#
+# `save` is first-source-wins and `comprehend` is an upsert, and the pair has
+# to hold in BOTH orders because the two writers race by design: custody writes
+# the index row INLINE (the handle is a promise the bytes are retrievable) and
+# the model pass is SPAWNED, so a fast model on a slow disk arrives first.
+
+
+async def test_a_comprehension_lands_on_a_row_custody_already_wrote(store):
+    await store.save(obj=_obj(CAT, source="inbound", prompt="", description=""))
+
+    assert await store.comprehend(
+        sha256=CAT, title="a plate of noodles",
+        description="a bowl of wonton noodles on a marble table",
+        content="生記粥麵", model="glm",
+    ) is True
+
+    got = await store.get(sha256=CAT)
+    assert got is not None
+    assert (got.title, got.description, got.content) == (
+        "a plate of noodles",
+        "a bowl of wonton noodles on a marble table",
+        "生記粥麵",
+    )
+    assert got.describe_model == "glm"
+    assert got.comprehended is True
+
+
+async def test_a_comprehension_that_beats_custody_creates_the_row(store):
+    """The spawned read finishing before the inline index write is not an
+    error — it is the ordinary race. A plain UPDATE would have silently dropped
+    the comprehension on the floor."""
+    assert await store.comprehend(
+        sha256=DOG, title="a dog", description="a dog in the park",
+        content="", model="glm",
+    ) is True
+
+    got = await store.get(sha256=DOG)
+    assert got is not None
+    assert got.title == "a dog"
+
+
+async def test_a_comprehension_never_overwrites_the_birth_record(store):
+    """DEC-138: provenance belongs to whoever first held the bytes, and a read
+    is not a birth. The chunk record a video read leaves (issue #117) MERGES
+    beside it rather than replacing it — a fact about the reading and a fact
+    about the birth have to coexist on one row."""
+    await store.save(obj=_obj(CAT, source="generated", prompt="a cat on a sofa"))
+
+    await store.comprehend(
+        sha256=CAT, title="a cat", description="a cat on a sofa", content="",
+        model="glm", provenance={"video_capped": True, "video_chunks": 10},
+    )
+
+    got = await store.get(sha256=CAT)
+    assert got is not None
+    assert got.source == "generated", "source is never touched by a read"
+    assert got.provenance is not None
+    assert got.provenance["prompt"] == "a cat on a sofa"
+    assert got.provenance["video_capped"] is True
+    assert got.provenance["video_chunks"] == 10
+
+
+async def test_an_uncomprehended_row_says_so(store):
+    """All three fields empty is an INDEX ENTRY, not a description of nothing.
+    Everything downstream branches on this: the job skips a row that is already
+    read, `media_fetch` refuses to serve an empty one as an answer, and the
+    transcript renders the bare handle."""
+    await store.save(obj=_obj(CAT, source="inbound", prompt="", description=""))
+    got = await store.get(sha256=CAT)
+    assert got is not None
+    assert got.comprehended is False
+
+
+async def test_search_finds_a_word_carried_only_by_the_title_or_the_content(store):
+    """One model pass writes all three fields; an index that could not find
+    «the whiteboard that said Q3» would be holding the answer and refusing to
+    look at it."""
+    await store.save(obj=_obj(CAT, source="inbound", prompt="", description=""))
+    await store.comprehend(
+        sha256=CAT, title="a whiteboard", description="a photo of a meeting room",
+        content="Q3 targets: 40%", model="glm",
+    )
+
+    assert [h.sha256 for h in await store.search(query="whiteboard")] == [CAT]
+    assert [h.sha256 for h in await store.search(query="Q3")] == [CAT]

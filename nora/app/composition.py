@@ -91,7 +91,8 @@ from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
-from nora.infra.vision import StickerInterpreter, VisionClient, derive_vision_timeout
+from nora.infra.vision import MediaComprehender, VisionClient, derive_vision_timeout
+from nora.ingest.comprehension import MediaComprehension
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
     CompositePolicy,
@@ -659,6 +660,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # writer, forgot the reader" mistake. What the flag gates is the FOLD,
     # which is the part that spends a model call inside the reply slot.
     standing_store = SqlStandingStore(engine)
+    # The unified media index (DEC-138), built HERE rather than beside the
+    # vision client below because THREE readers now hold it and the earliest is
+    # the context assembler: ingest writes the custody row, the comprehension
+    # job writes the read, the assembler joins it into the transcript and
+    # `media_fetch` serves it. One instance, `engine` reused for the reason
+    # every other store here reuses it (one pool, one lifecycle).
+    media_objects = SqlMediaObjectStore(engine)
     # The per-turn verdict's store (26 §3). Built unconditionally beside
     # `standing_store` for the same reason: it costs one attribute with
     # the tier off, and the debrief's own `store_verdict is None` guard
@@ -887,6 +895,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # is that the read and the write are the same row seen twice, and two
         # objects for one row is how that stops being structurally true.
         standing=standing_store if cfg.standing.enabled else None,
+        # The media join (issue #116). The same `SqlMediaObjectStore` instance
+        # the ingest pipeline and the tool registry hold — the comprehension a
+        # spawned job wrote is the one the transcript renders and the one
+        # `media_fetch` serves, and three instances of one index would be three
+        # chances to disagree about what a picture shows.
+        media_objects=media_objects,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -1042,7 +1056,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # lifecycle; a second `create_sql_engine` would fork the pool and its own
     # `aclose()` would dispose the engine everything else is still using).
     media_descriptions = SqlMediaDescriptionStore(engine)
-    media_objects = SqlMediaObjectStore(engine)
     # The per-modality DIRECT lanes (provider-aware describers, 2026-08-30):
     # a describer configured `provider = "kimi"` travels through a client
     # pointed at `api.kimi.com/coding/v1`, NOT the process-wide OmniRoute
@@ -1098,29 +1111,44 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 budget_overrides=cfg.llm.budgets).budgets()["media_fetch"],
         ),
     )
-    # A SECOND VisionClient, not a second connection: same process-wide
-    # OmniRoute client, the SAME token budget as `media_fetch`'s vision call
-    # (the 2026-08-07 probe refuted a smaller one — see `StickerInterpreter`'s
-    # docstring) and a sticker-specific timeout.
-    # `derive_vision_timeout` is deliberately not used — see MediaConfig.
+    # The sticker IDENTITY ladder — custody, not description (issue #116). Its
+    # model rung moved to the spawned comprehension job below, so this needs no
+    # interpreter and no second `VisionClient`: what it still buys is a repeat
+    # sighting costing zero platform RPC, decided at parse time before any
+    # bytes move.
     sticker_reader = None
     if cfg.media.sticker_descriptions and blobs is not None:
         sticker_reader = StickerReader(
             blobs=blobs,
             descriptions=media_descriptions,
-            interpreter=StickerInterpreter(
-                VisionClient(
-                    client=client,
-                    model=cfg.media.vision_model,
-                    max_tokens=cfg.media.sticker_prompt_max_tokens,
-                    reasoning_effort=cfg.media.vision_reasoning_effort,
-                    max_bytes=cfg.media.vision_max_bytes,
-                    timeout_seconds=cfg.media.sticker_timeout_seconds,
-                ),
-                model=cfg.media.vision_model,
-            ),
-            model=cfg.media.vision_model,
             metrics=metrics,
+        )
+    # THE COMPREHENSION JOB (issue #116) — one model pass per medium into
+    # title/description/content, spawned off the ingest path. Wired only when
+    # custody is on AND `[media] comprehension` is set: with either off, every
+    # attachment keeps its bare handle and nothing anywhere claims a
+    # description it does not have. It reuses `vision_client` — one connection,
+    # one budget, the modality picking the model — for `derive_vision_timeout`'s
+    # reason (three clients would be three budgets, and three hung calls could
+    # outlast the loop).
+    comprehension: MediaComprehension | None = None
+    if cfg.media.comprehension and blobs is not None:
+        comprehension = MediaComprehension(
+            blobs=blobs,
+            store=media_objects,
+            interpreter=MediaComprehender(
+                client=vision_client,
+                describe_models=_describe_models(cfg),
+                describe_providers=describe_providers,
+                describe_max_bytes=_describe_max_bytes(cfg),
+                text_model=cfg.media.comprehension_text_model,
+                chunk_seconds=cfg.media.describe.video.chunk_seconds,
+                max_chunks=cfg.media.describe.video.chunk_max,
+            ),
+            memory=memory,
+            metrics=metrics,
+            spawn=_spawn,
+            stickers_enabled=cfg.media.sticker_descriptions,
         )
     # `[speech.stt]`'s transcriber: wired ONLY when enabled — the same
     # inert-ship rule as `stickers`. Off leaves the ingest stage without a
@@ -1188,8 +1216,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         media_sources=media_sources, blobs=blobs,
         media_store=media_objects,
         stickers=sticker_reader, transcriber=transcriber,
+        comprehension=comprehension,
         language=cfg.speech.stt.language,
-        max_description_chars=cfg.media.sticker_description_max_chars,
         standing_event_wiring=standing_event_wiring,
     )
     # `web_search`/`web_fetch` (DEC-73/DEC-116) are wired ONLY when `[search]

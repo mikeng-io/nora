@@ -28,6 +28,7 @@ from nora.config import Config
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.ports import (
     EngagePolicy,
+    MediaObjectStore,
     MemoryStore,
     RecordStore,
     RosterSource,
@@ -70,6 +71,7 @@ def build_offline_pipeline(
     # caller keeps working unchanged.
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
+    media_objects: MediaObjectStore | None = None,
     participation: ParticipationTrigger | None = None,
     extra_engage_policies: tuple[EngagePolicy, ...] = (),
     participation_runner: Any = None,
@@ -124,6 +126,11 @@ def build_offline_pipeline(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=permissive_policy(),
         notes=notes, standing=standing,
+        # The media join (issue #116). `None` renders the bare handles a row
+        # actually carries; an eval that wants `[image a3f2c1: …]` in its
+        # prompt passes `nora.testing.FakeMediaObjectStore`, exactly as it
+        # passes its own doubles for `notes`/`standing`.
+        media_objects=media_objects,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:

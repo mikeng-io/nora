@@ -816,9 +816,28 @@ class MediaObjectStore(Protocol):
     keyed by the same content address the `BlobStore` uses. `source` is an
     attribute; generated objects carry prompt/title/description in
     provenance. Search by text so Nora can find and resend her own media
-    days later without regenerating it."""
+    days later without regenerating it.
+
+    `save` is FIRST-SOURCE-WINS: it writes the index entry and never
+    overwrites one. `comprehend` is the other verb and it is deliberately
+    separate rather than a flag on `save` — custody writes the row inline
+    (the handle is a promise the bytes are retrievable), and the model pass
+    lands on it LATER, from a spawned job (issue #116). One verb doing both
+    would make the ordering invisible and let a late index write erase a
+    comprehension that beat it. It is an UPSERT, so a comprehension can land
+    on a row nothing indexed yet, and it never touches `source` — the birth
+    record stays the first source's. Its `provenance` argument MERGES into
+    whatever is there rather than replacing it: what a READ leaves behind (a
+    video's chunk record, issue #117 — how long the clip was, how much reached
+    a model, whether the ceiling bound) is a fact about the reading, not about
+    the birth, and the two have to coexist on one row."""
 
     async def save(self, *, obj: MediaObject) -> bool: ...
+
+    async def comprehend(
+        self, *, sha256: str, title: str, description: str, content: str,
+        model: str, provenance: dict[str, object] | None = None,
+    ) -> bool: ...
 
     async def search(
         self, *, query: str, limit: int = 20,
@@ -911,27 +930,69 @@ class MediaDescription:
     """What an interpreter made of some bytes. Two axes, like `MediaBytes` and
     `Roster`: "could not describe" must stay distinguishable from "described
     nothing", or a wedged model and a blank image become the same value and the
-    counter that says interpretation is failing sits at zero."""
+    counter that says interpretation is failing sits at zero.
+
+    **THREE FIELDS, ONE PASS (issue #116).** `text` is the description and
+    keeps its name and its meaning; `title` and `content` come back from the
+    SAME model call, because reading the bytes is the expensive part and extra
+    output fields on that call are near-free. See `nora.domain.media
+    .MediaObject` for what each one is and for why a query-conditioned answer
+    belongs in none of them.
+
+    `available=False` means NONE of the three is trustworthy — an unavailable
+    result never carries a partial triple, so a caller cannot half-store a
+    comprehension it could not make.
+    """
 
     available: bool
     text: str = ""
     reason: str = ""
+    # Defaulted, so a describer that only produces a sentence (and every
+    # existing construction site) stays valid and simply comprehends less.
+    title: str = ""
+    content: str = ""
 
 
 @runtime_checkable
 class MediaInterpreter(Protocol):
-    """Bytes to a plain-text description. Never raises.
+    """Bytes to a comprehension — title, description, content. Never raises.
 
-    Called from the ingest path for STICKERS ONLY (sticker spec §2.2, §5.3).
-    Images, audio and video are not automatically interpreted: a sticker is
-    published pack art, identical for everyone who has the pack, and a photo is
-    a photograph of somebody's life. Reading the second one permanently into
-    the durable record, the Honcho feed and every future transcript is a
-    materially different act, and `media_fetch` already exists for the case
-    where Nora has a reason to look.
+    **It used to say STICKERS ONLY, and issue #116 is what changed that
+    sentence.** The old position was that a sticker is published pack art,
+    identical for everyone who has the pack, while a photo is a photograph of
+    somebody's life — so only the first was read automatically. What that cost
+    is the issue's own story: ten photos of a meal, the whole group replying
+    around them, and the subject of the conversation is the one thing the
+    record does not hold. Every reply is preserved and unreadable without it.
+
+    What did NOT change is where the result may go. The comprehension lands in
+    `media_objects` and in Honcho; the transcript renders only title and
+    description; `scan_identifiers` runs on every render and on every serve,
+    never once at store time. The read is automatic now — the egress screen
+    around it is the same one, applied later rather than earlier.
+
+    `label` is the media LABEL (`nora.domain.media.LABELS`) and it selects the
+    authored prompt: a sticker is asked what it depicts, a photo what it shows.
+    It is a SYSTEM-CONTROLLED fact — derived from the platform's own flags and
+    the blob's MIME type — never anything a room typed, which is the property
+    `nora/infra/vision/client.py`'s prompt table exists to keep. Empty resolves
+    from the media type alone.
+
+    `summarize` is the AUDIO half, and it takes text rather than bytes on
+    purpose: a voice note's `content` is already in hand — `nora/infra/speech
+    .py` transcribed it at ingest with SenseVoice — so asking a vision model to
+    listen again would spend a second, larger call to learn what Nora already
+    knows. The title and description come from a cheap text pass over that
+    transcript instead. Same port, same never-raises promise, same three-field
+    result; `content` is what the CALLER already holds and this verb does not
+    return it.
     """
 
-    async def describe(self, *, data: bytes, media_type: str) -> MediaDescription: ...
+    async def describe(
+        self, *, data: bytes, media_type: str, label: str = "",
+    ) -> MediaDescription: ...
+
+    async def summarize(self, *, text: str) -> MediaDescription: ...
 
 
 @dataclass(frozen=True)

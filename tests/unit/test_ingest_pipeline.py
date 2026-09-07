@@ -281,12 +281,20 @@ async def test_with_custody_unwired_the_row_is_recorded_and_the_loss_is_counted(
 AUDIO = b"\x00\xff pretend opus"
 
 
-async def test_a_voice_note_is_transcribed_at_custody_and_the_transcript_rides_the_body():
+async def test_a_voice_note_is_transcribed_at_custody_and_the_row_keeps_the_handle():
     """A voice note is conversation CONTENT — the ingest path transcribes it
-    inline and the words ride the body beside the handle, so Nora sees them
-    without ever calling a tool. A song (`voice_note=False`) stays on the
+    INLINE, before the audit write, so the words are captured on the same pass
+    that takes custody of the bytes. A song (`voice_note=False`) stays on the
     bare-handle path even when a transcriber is wired (the gate is the
     `voiceNote` flag, NOT the audio/* MIME type).
+
+    **The words no longer ride the BODY** (issue #116). `messages.body` is read
+    verbatim by `memory_feed` and by the prefill, so one string could not serve
+    both; the transcript lands in `media_objects.content` and is joined back
+    into the transcript block at render time, in full. What this test pins is
+    the half that has to stay true regardless: the STT call still happens
+    inline, with the right type and language hint, and the durable row carries
+    the handle that names the bytes.
     """
     store = FakeRecordStore()
     blobs = FakeBlobStore()
@@ -308,7 +316,7 @@ async def test_a_voice_note_is_transcribed_at_custody_and_the_transcript_rides_t
     digest = hashlib.sha256(AUDIO).hexdigest()
     assert len(store.rows) == 1
     row = store.rows[0]
-    assert row["body"] == f"[voice note {digest[:6]}: 喂你今日得唔得閒啊]"
+    assert row["body"] == f"[voice note {digest[:6]}]"
     assert transcriber.calls[0][1] == "audio/aac"
     assert transcriber.calls[0][2] == "yue-HK"
     assert metrics.get("nora_speech_transcriptions_total", status="ok") == 1
@@ -405,7 +413,11 @@ async def test_a_voice_note_transcribes_even_when_the_blob_store_cannot_be_read_
 
     digest = hashlib.sha256(AUDIO).hexdigest()
     assert len(store.rows) == 1
-    assert store.rows[0]["body"] == f"[voice note {digest[:6]}: 喂你今日得唔得閒啊]"
+    assert store.rows[0]["body"] == f"[voice note {digest[:6]}]"
+    # The transcriber saw the SAME plaintext `_take` held — which is the whole
+    # point: a `blobs.get` round trip through the just-written key would have
+    # raised on this store, and the message would have been lost to a read the
+    # stage never needed to make.
     assert transcriber.calls[0][0] == AUDIO
     assert metrics.get("nora_speech_transcriptions_total", status="ok") == 1
 

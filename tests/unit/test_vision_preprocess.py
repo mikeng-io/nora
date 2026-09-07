@@ -14,7 +14,13 @@ import base64
 
 import pytest
 
-from nora.infra.vision.preprocess import download_media, preprocess_media
+from nora.infra.vision.preprocess import (
+    VideoCut,
+    cut_video,
+    download_media,
+    preprocess_media,
+    probe_duration,
+)
 
 # NOTE: no `pytest_plugins = ("aiohttp.pytest_plugin",)` here — the env's
 # pytest-aiohttp already provides `aiohttp_server`. Registering aiohttp's own
@@ -208,3 +214,148 @@ async def test_download_timeout_returns_empty(aiohttp_server):
     )
     assert data == b""
     assert ctype == ""
+
+
+# ---- the chunked video read (issue #117) -----------------------------------
+#
+# The bug this closes was never "a clip is bounded" — a bounded read is a
+# legitimate policy. It was that NOTHING recorded the cut: no metric, no log
+# line, and nothing in the description admitting the clip was longer than what
+# was read. A ten-minute video produced a description of its first two minutes,
+# phrased as a description of the video. So every test here checks what the cut
+# SAYS as well as what it did.
+
+
+def _runner(*, duration: str | None, chunk: bytes = b"chunk"):
+    """An ffmpeg/ffprobe stand-in that records every argv it was handed.
+
+    Recording is the point: `[a for a in calls if "-ss" in a]` is what proves
+    the windows are seeked rather than decoded from zero, and a double that
+    only returned bytes would make that assertion unwritable.
+    """
+    calls: list[list[str]] = []
+
+    async def run(args, timeout_seconds, data):
+        calls.append(args)
+        if args[0] == "ffprobe":
+            if duration is None:
+                return 1, b"", b"no such file"
+            return 0, duration.encode(), b""
+        return 0, chunk, b""
+
+    run.calls = calls          # type: ignore[attr-defined]
+    return run
+
+
+async def test_a_short_clip_is_read_whole_and_says_so():
+    run = _runner(duration="45.0")
+
+    cut = await cut_video(b"video", chunk_seconds=90, max_chunks=10, runner=run)
+
+    assert len(cut.chunks) == 1
+    assert cut.complete is True
+    assert cut.capped is False
+    assert cut.note() == "", "a whole read has nothing to admit"
+
+
+async def test_a_long_clip_is_read_in_order_and_seeked_per_window():
+    """`-ss` BEFORE `-i` is the difference between a chunk of a ten-minute clip
+    costing a second and costing ten — it makes ffmpeg seek the input rather
+    than decode and discard everything ahead of the window."""
+    run = _runner(duration="300.0")
+
+    cut = await cut_video(b"video", chunk_seconds=90, max_chunks=10, runner=run)
+
+    assert len(cut.chunks) == 4          # 90 + 90 + 90 + 30
+    assert cut.complete is True
+    starts = [a[a.index("-ss") + 1] for a in run.calls if "-ss" in a]
+    assert starts == ["0.000", "90.000", "180.000", "270.000"]
+    for args in run.calls:
+        if "-ss" in args:
+            assert args.index("-ss") < args.index("-i"), "seek the INPUT"
+
+
+async def test_the_chunks_stay_silent():
+    """`-an` strips the audio track, exactly as the single-view path did before
+    this change. Issue #117 explicitly does NOT change that: extracting the
+    audio and running STT over it was proposed and rejected as scope."""
+    run = _runner(duration="100.0")
+
+    await cut_video(b"video", chunk_seconds=90, max_chunks=10, runner=run)
+
+    for args in run.calls:
+        if args[0] == "ffmpeg":
+            assert "-an" in args
+
+
+async def test_the_cap_binding_is_recorded_and_said():
+    """**The actual fix.** Chunking without a REPORTED ceiling would only move
+    the same silent lie to a larger number — so when the ceiling binds, the
+    clip's length, how much was read, and the fact that the rest was not, are
+    all on the cut, and `note()` is a sentence the answer can carry."""
+    run = _runner(duration="1200.0")     # 20 minutes
+
+    cut = await cut_video(b"video", chunk_seconds=90, max_chunks=3, runner=run)
+
+    assert len(cut.chunks) == 3
+    assert cut.capped is True
+    assert cut.complete is False
+    note = cut.note()
+    assert "20 minutes" in note
+    assert "have not seen the rest" in note
+
+
+async def test_an_unmeasurable_clip_is_read_once_and_admits_it_does_not_know():
+    """ffprobe could not read the duration. UNMEASURABLE is not SHORT: the read
+    falls back to one view — the exact pre-#117 behaviour — and `complete` is
+    False, so nothing downstream may claim it saw the whole thing. Degrading to
+    the old SHAPE is right; degrading to the old SILENCE is what this issue
+    exists to end."""
+    run = _runner(duration=None)
+
+    cut = await cut_video(b"video", chunk_seconds=90, max_chunks=10, runner=run)
+
+    assert len(cut.chunks) == 1
+    assert cut.duration_seconds is None
+    assert cut.complete is False
+    assert cut.capped is False, "the ceiling did not bind; the clock is unknown"
+    assert "may not have watched all of it" in cut.note()
+
+
+async def test_one_refused_window_shortens_the_read_rather_than_failing_it():
+    """Failing the whole read over one bad window would throw away fourteen
+    good minutes. The covered time shrinks with it, so what the caller may
+    claim to have seen stays honest."""
+    calls: list[list[str]] = []
+
+    async def run(args, timeout_seconds, data):
+        calls.append(args)
+        if args[0] == "ffprobe":
+            return 0, b"270.0", b""
+        if args[args.index("-ss") + 1] == "90.000":
+            return 1, b"", b"broken frame"
+        return 0, b"chunk", b""
+
+    cut = await cut_video(b"video", chunk_seconds=90, max_chunks=10, runner=run)
+
+    assert len(cut.chunks) == 2
+    assert cut.covered_seconds == 180.0
+    assert cut.complete is False
+
+
+async def test_an_empty_clip_is_not_a_read_at_all():
+    cut = await cut_video(b"", runner=_runner(duration="10.0"))
+    assert cut == VideoCut(
+        chunks=(), duration_seconds=None, covered_seconds=0.0, capped=False,
+        reason="empty",
+    )
+
+
+async def test_probe_duration_answers_none_rather_than_zero_when_it_cannot_read():
+    """`None` is a real answer and not a zero: «I could not measure it» is what
+    makes `cut_video` fall back to one view and SAY it does not know, rather
+    than asserting a duration it does not have (R-27)."""
+    assert await probe_duration(b"video", runner=_runner(duration=None)) is None
+    assert await probe_duration(b"video", runner=_runner(duration="nonsense")) is None
+    assert await probe_duration(b"video", runner=_runner(duration="0")) is None
+    assert await probe_duration(b"video", runner=_runner(duration="12.5")) == 12.5
