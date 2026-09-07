@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Operator docs: how a session reaches the deployment host (key-only SSH, live config, compose db, no docker logs).",
+  "reason": "Documentation only — CLAUDE.md and docs/CONVENTIONS.md; no runtime change.",
+  "details": [],
+  "limitations": []
+}

@@ -168,6 +168,36 @@ nothing (`nora_unmapped_senders_total` is the tell). `identity.toml` takes one
 `person_id` (their Honcho peer, A2/DEC-14). `policy.toml` is deny-by-default and
 Nora **refuses to start** if it is missing or allows nothing (R-5).
 
+## Reaching the deployment
+
+Nora runs on the `norty` host; development happens on the MacBook. The host is
+a **deploy target, not a dev checkout** — nothing is edited there, and no
+session runs there. Every read-back the "Never claim without reading back"
+rule demands is one `ssh` away:
+
+```bash
+ssh norty 'cd ~/workspace/nora && git log --oneline -1'          # what is checked out
+ssh norty 'cd ~/workspace/nora && docker compose ps'              # what is running
+ssh norty 'cd ~/workspace/nora && docker compose exec -T db psql -U nora -d nora -Atc "select count(*) from note"'
+ssh norty 'curl -s localhost:9100/metrics | grep ^nora_dream_'    # the metric that proves it
+ssh norty 'cd ~/workspace/nora && awk "/^\[notes\]/,/^\[/" config.toml'   # the LIVE config, untracked
+```
+
+- **Key auth only.** `~/.ssh/norty` is a dedicated ed25519 key, installed once
+  with `ssh-copy-id`; `Host norty` in `~/.ssh/config` binds user, host and key.
+  **Never `sshpass`, never a password in `.env`, in chat, or in a file a session
+  reads** — a password typed into a session is transcribed into memory (this
+  happened once), and `.env` is the compose environment on both machines.
+- **`config.toml` on the host is the only copy that matters.** It is untracked
+  since 2026-09-07; the worktree's copy, if any, is stale. Read the live file
+  before asserting what a flag is set to.
+- **The db container is reached through compose** (`docker compose exec -T db`),
+  never by grepping `docker ps` for a name — Komodo's own databases live on the
+  same host and match the same patterns.
+- **Container logs are not on the docker log driver** — `docker compose logs
+  nora` is empty. Use the metrics endpoint and the tables; that is what the
+  instruments are for.
+
 ## Gate commands
 
 **While iterating**, use the fast loop — it is what the edit-run-edit cycle is for:
