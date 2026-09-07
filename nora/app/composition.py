@@ -2173,8 +2173,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 # call every five minutes per workspace, arriving weeks later
                 # as somebody else's mystery.
                 #
-                # 08:00 UTC: after `fact-entity-resolution` at 07:00, since a
-                # note anchor resolves against names that pass has minted.
+                # 08:00 UTC: a slot of its own, well clear of `note-curation`
+                # at 16:00. It used to follow the knowledge tier's entity
+                # pass at 07:00; that pass is gone (issue #115), and the only
+                # thing minting names for it now is the note sink itself.
                 "note-entity-resolution": AdaptorSchedule(
                     min_interval_seconds=86400,
                     phase_offset_seconds=8 * 3600,

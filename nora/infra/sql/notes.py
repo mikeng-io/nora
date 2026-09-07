@@ -765,8 +765,8 @@ class SqlNoteStore:
         **Not on `DreamSink`.** That port has two verbs and deliberately no
         third; this is a store method the note curator's `commit` calls
         directly, which is where a tier's own write SEQUENCE belongs
-        (`FactAdaptor.commit` does propose-then-supersede-then-retire for the
-        same reason).
+        (`DreamAdaptor.commit`'s docstring: the runtime cannot know a tier's
+        verb order, so the adaptor drives its sink).
 
         The CAS on the survivor is unchanged and unweakened: if the tag path
         revised it while the curator was thinking, the whole merge is refused

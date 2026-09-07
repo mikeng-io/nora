@@ -1622,8 +1622,9 @@ class NotesConfig(BaseModel):
     it is the operator's switch for the moment a writer lands, not a
     retroactive one.
 
-    **There is deliberately no render cap here**, and that is the one place
-    this section differs from `[facts]`' `max_rendered_facts`. §5.1 decides the
+    **There is deliberately no render cap here** (the deleted knowledge tier's
+    section had one, `max_rendered_facts`, and it was the one place the two
+    differed). §5.1 decides the
     index is UNCAPPED: a note silently missing from it is invisible to her, and
     invisible is indistinguishable from absent — the same
     `unavailable`-reported-as-`nothing_found` failure R-27 exists to prevent. A
@@ -1961,9 +1962,8 @@ class DreamerConfig(BaseModel):
     the Dreamer RUNTIME, shipping `false`."* This is that arrival. `enabled`
     below is what turns the section from a description of a CORPUS into the
     switch for a SUBSYSTEM, and it ships **False** — a new subsystem does not
-    switch itself on, the `[presence]`/`[search]`/`[compute]`/`[language]`/
-    `[analytics]`/`[facts]` shape. Off, nothing constructs a `DreamerRuntime`
-    and the existing consolidators keep running exactly as they do today.
+    switch itself on, the `[presence]`/`[search]`/`[compute]`/`[analytics]`
+    shape. Off, nothing constructs a `DreamerRuntime` and no adaptor ticks.
 
     `model = ""` means **fall back to `[llm].model`** — resolved by
     `Config.dreamer_model()` and nowhere else, the `MediaConfig.describer_for`
