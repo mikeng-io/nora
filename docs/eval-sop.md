@@ -51,6 +51,16 @@ OMNIROUTE_API_KEY=… DATABASE_URL=… uv run python -m evals.run --suite journe
 
 # identity-grounding / injection judge gate
 OMNIROUTE_API_KEY=… uv run python -m evals.run --suite adversarial
+
+# the note-candidates scenario suite (design 37 §7, issue #118): ten batches
+# through the REAL DreamerRuntime + NoteCandidateAdaptor over an in-memory
+# notebook, N samples each, graded on the notebook (a note created, a head
+# revised, or nothing) — never on the envelope text and never by a judge.
+# `--dreamer-dir` measures a prompt variant held as files; the run reports
+# the instruction hash it measured, so a verdict is bound to a prompt.
+OMNIROUTE_API_KEY=… uv run python -m evals.run --suite note_candidates --samples 5
+OMNIROUTE_API_KEY=… uv run python -m evals.run --suite note_candidates \
+    --dreamer-dir /path/to/variant   # holds doctrine/ and objectives/
 ```
 
 The `journeys` suite live-runs each journey (`evals/journeys.py`) and grades its

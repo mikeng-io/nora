@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -24,6 +25,7 @@ import sqlalchemy as sa
 
 from nora.agent import factory
 from nora.agent import tool_choice as tool_choice_module
+from nora.agent.dreamer import AdaptorBudget, DreamerRuntime
 from nora.agent.factory import create_client, create_model_provider
 from nora.agent.guards import LeakGuard
 from nora.agent.registry import ToolRegistry
@@ -36,6 +38,8 @@ from nora.domain.notes import Note, NoteRevision
 from nora.domain.standing import Standing
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql.engine import create_sql_engine
+from nora.instructions.dreamer import DreamerInstructions
+from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
 from nora.tag import is_tagged
@@ -49,6 +53,7 @@ from nora.testing import (
     CannedStreetParkingProvider,
     CannedTransitSource,
     CannedWeatherProvider,
+    InMemoryNoteStore,
     transcript_rows,
 )
 
@@ -109,6 +114,7 @@ __all__ = [
     "is_tagged",
     "load_config",
     "load_persons",
+    "run_note_candidates_case",
     "seed_from_dict",
 ]
 
@@ -560,4 +566,142 @@ def seed_from_dict(raw: dict[str, Any]) -> ProductionSeed:
 
     return ProductionSeed(
         recents=tuple(recents), standing=standing, notes=tuple(notes),
+    )
+
+
+# ---------------------------------------------------------------------------
+# The note-candidates scenario suite's drive (design/dreamer-agent-loop/37 §7,
+# issue #118): the REAL DreamerRuntime and the REAL NoteCandidateAdaptor over
+# an in-memory notebook, with only the model live. Everything the adaptor
+# does in production — render the batch and the notes index, screen the
+# envelope, stage, gate, materialise — runs here unchanged; what differs is
+# the store (`InMemoryNoteStore`, the note tier's contract-suite double) and
+# the absence of a database, Honcho, or any tool (the adaptor is tool-free).
+# ---------------------------------------------------------------------------
+
+
+class _NoDreamTools:
+    """`DreamToolSource` for an adaptor that declares no tools. `read_only`
+    is the ceiling the runtime checks the adaptor's (empty) subset against;
+    `build` is never asked for a name because there are none to ask for."""
+
+    def read_only(self) -> frozenset[str]:
+        return frozenset()
+
+    def build(
+        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+    ) -> list[Any]:
+        return []
+
+
+@dataclass(frozen=True)
+class NoteCandidatesDrive:
+    """What one live run left behind, in plain tuples so `evals/` can grade it
+    without importing the note tier's types: the runtime's outcome, the
+    notebook before and after as `(id, title, anchor_date, head_revision_id)`,
+    and every staged candidate as `(title, anchor_date, message_ids, status)`."""
+
+    status: str
+    stop_reason: str | None
+    instruction_sha256: str
+    before: tuple[tuple[str, str, int | None, str], ...]
+    after: tuple[tuple[str, str, int | None, str], ...]
+    staged: tuple[tuple[str, int, tuple[int, ...], str], ...]
+
+
+def build_note_candidates_runtime(
+    cfg: Config, *, client: Any, effort: str | None = None,
+    dreamer_dir: str | Path | None = None, model: str | None = None,
+) -> tuple[DreamerRuntime, str]:
+    """The Dreamer runtime exactly as `composition.build_dependencies` wires
+    it for the live model — same model id, same tier scalars, same retry
+    policy, same default budget — minus the tool registry (no tools) and the
+    schedules (a drive fires on demand). `dreamer_dir` overrides
+    `[dreamer] dir` so a prompt VARIANT is a directory of files, hashed and
+    stamped like production's, never an inline string. `model` overrides
+    `[dreamer] model` (then `[llm] model`) so a run from a dev machine can
+    name the DEPLOYED alias (`nora-dreamer` on OmniRoute) rather than the
+    template's provider id."""
+    model = model or cfg.dreamer_model()
+    reasoning = effort or cfg.dreamer.reasoning_effort or cfg.llm.reasoning_effort
+    models = factory.ModelSource(
+        client=client,
+        spec=factory.ModelSpec(
+            model=model, max_tokens=cfg.llm.max_tokens,
+            temperature=cfg.llm.temperature, reasoning_effort=reasoning,
+            tool_choice=tool_choice_module.AFTER_SPEAKING,
+        ),
+    )
+    instructions = DreamerInstructions(
+        Path(dreamer_dir) if dreamer_dir is not None else cfg.dreamer.dir,
+        reload="startup", strict=cfg.dreamer.strict, metrics=Metrics(),
+    )
+    fallback = cfg.dreamer.budget_for("")
+    runtime = DreamerRuntime(
+        models=models, instructions=instructions, tools=_NoDreamTools(),
+        budgets={},
+        default_budget=AdaptorBudget(
+            turns=fallback.turns, total_tokens=fallback.total_tokens,
+            output_tokens=fallback.output_tokens,
+            timeout_seconds=fallback.timeout_seconds,
+        ),
+        retry=factory.build_retry_policy(timeout_seconds=cfg.llm.timeout_seconds),
+        metrics=Metrics(), model_name=model,
+    )
+    return runtime, f"{model}/{reasoning}"
+
+
+async def run_note_candidates_case(
+    runtime: DreamerRuntime, *, workspace: str, scope: str,
+    batch: Sequence[dict[str, Any]], notebook: Sequence[dict[str, Any]],
+    now_ms: int,
+) -> NoteCandidatesDrive:
+    """One case: seed the notebook, hand the batch to the real adaptor through
+    the real runtime, snapshot the notebook on both sides.
+
+    `batch` rows are `{id, ts_ms, person, name, body, media}`; `notebook`
+    entries are `{title, description, anchor_date, body}`. Seeded through the
+    tag path's own `create` shape (`established_by="tag:eval"`), so the
+    standing notes the adaptor renders look exactly like ones a person made.
+    """
+    store = InMemoryNoteStore()
+    for entry in notebook:
+        await store.create(
+            workspace=workspace, title=entry["title"], description=entry["description"],
+            uncertainty=entry["description"], closing_condition="the arrangement settles",
+            established_in=scope, body=entry["body"], established_by="tag:eval",
+            now_ms=now_ms - 86_400_000, anchor_date=int(entry["anchor_date"]),
+        )
+    adaptor = NoteCandidateAdaptor(
+        notes=store, candidates=store, workspace_for=lambda _key: workspace,
+        metrics=Metrics(),
+    )
+    rows = [
+        TranscriptRow(
+            id=int(m["id"]), sender_id=str(m["person"]), sender_name=str(m["name"]),
+            ts=int(m["ts_ms"]), body=m.get("body"), is_nora=False,
+            delivery_status=DeliveryStatus.SENT, raw_json=None,
+            media_json="[{}]" if m.get("media") else None,
+            person_id=str(m["person"]), person_name=str(m["name"]),
+        )
+        for m in batch
+    ]
+
+    async def _snapshot() -> tuple[tuple[str, str, int | None, str], ...]:
+        return tuple(
+            (n.id, n.title, n.anchor_date, n.head_revision_id)
+            for n in await store.standing(workspace=workspace)
+        )
+
+    before = await _snapshot()
+    outcome = await runtime.run(adaptor=adaptor, key=scope, batch=rows)
+    after = await _snapshot()
+    staged = tuple(
+        (c.title, int(c.anchor_date), tuple(int(i) for i in c.message_ids), c.status)
+        for c in store.create_candidates.values()
+    )
+    return NoteCandidatesDrive(
+        status=outcome.status, stop_reason=outcome.stop_reason,
+        instruction_sha256=outcome.instruction_sha256,
+        before=before, after=after, staged=staged,
     )

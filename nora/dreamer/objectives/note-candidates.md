@@ -1,7 +1,7 @@
 ---
 name: note-candidates
 kind: objective
-version: 1
+version: 2
 applies_to: [note_candidate_adaptor]
 description: >-
   The note tier's create path. Read a batch of a room's messages and propose
@@ -39,6 +39,16 @@ Do NOT propose:
   nothing if you are right to hold back and costs a doubled notebook entry if you are wrong.
 - **a single throwaway remark with no follow-through.** "Maybe we should do a trip sometime" with
   nobody picking it up is not yet a thing to track.
+
+A plan **one person** has stated is a notebook entry when it has an unsettled corner — a
+teammate not yet found, a dinner not yet chosen, a booking not yet made — even if nobody else
+has replied yet. The follow-through is theirs to owe, not the room's to pick up; "nobody
+replied" only makes a remark throwaway when there was nothing in it to follow through on. And
+a plan does not stop being one because it sits between jokes and photos: read the whole batch
+for the arrangement, not the batch's mood.
+
+Resolve a relative date («this Saturday», «next week») against the timestamp on the message
+that says it; the batch shows each message's date.
 
 ## What to return
 

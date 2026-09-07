@@ -207,8 +207,23 @@ problem and none of the above applies yet.
 
 ## Status / Checkpoint
 
-Design only. No code, no objective change, no schedule change. Issue to be
-opened on `mikeng-io/nora` for the build, sequenced behind §7's positive
-control. Related: #98 (create path, shipped), #99/#102 (curator, shipped),
+**2026-09-08, §7 step 1 executed.** The positive control fired at 02:19 HKT
+on the operator's own dated arrangement and returned an empty envelope; the
+trace showed the prompt, not the pipeline. The scenario suite
+(`evals.run --suite note_candidates`, issue #118) was built and run against
+the deployed model (`nora-dreamer`, reasoning none, 3 samples per case):
+
+| prompt | precision | recall | majority-pass |
+|---|---|---|---|
+| as deployed (`c9a73442`) | 1.00 | 0.60 | 8/10 |
+| objective v2 only | 1.00 | 0.87 | 10/10 |
+| judge doctrine only | 1.00 | 0.67 | 9/10 |
+| both (shipped) | 1.00 | 0.93 | 10/10 |
+
+No variant wrote a false note on any negative sample. Objective v2 and
+doctrine v2 are the shipped prompt. Steps 2–4 remain as written.
+
+Design as of this node's first version: no code, no objective change, no
+schedule change. Issue #118 tracks the build, sequenced behind §7. Related: #98 (create path, shipped), #99/#102 (curator, shipped),
 #101 (discharge, shipped, off), #103 (proactive adapter, design only),
 #100 (entity resolution — resolved by removal, 2026-09-08).
