@@ -788,7 +788,7 @@ async def _run_note_candidates_live(
                 tally = CaseTally(name=case.name, expect=case.expect)
                 for _ in range(samples):
                     drive = await run_note_candidates_case(
-                        runtime, workspace=case.workspace,
+                        runtime, cfg=cfg, workspace=case.workspace,
                         scope=f"eval:{case.name}",
                         batch=[dataclasses.asdict(m) for m in case.batch],
                         notebook=[dataclasses.asdict(n) for n in case.notebook],

@@ -205,7 +205,7 @@ def _drive(monkeypatch, cfg, case: NoteCandidatesCase, raw: str):
     )
     assert "/" in label
     return asyncio.run(run_note_candidates_case(
-        runtime, workspace=case.workspace, scope="eval:t",
+        runtime, cfg=cfg, workspace=case.workspace, scope="eval:t",
         batch=[dataclasses.asdict(m) for m in case.batch],
         notebook=[dataclasses.asdict(n) for n in case.notebook],
         now_ms=case.batch[-1].ts_ms + 60_000,

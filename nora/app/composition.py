@@ -2225,6 +2225,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         if conv.primary_id and conv.workspace
                     }.get,
                     metrics=metrics,
+                    # The ROOM's zone for each rendered message's moment —
+                    # the same `[reminders] timezone` the curator's `_today`
+                    # reads, for the same reason: «this Saturday» is a
+                    # question about the room's calendar, not the process's.
+                    timezone=ZoneInfo(cfg.reminders.timezone),
                 ),
             )
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on

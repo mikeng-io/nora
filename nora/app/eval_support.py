@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
+from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 
@@ -652,7 +653,7 @@ def build_note_candidates_runtime(
 
 
 async def run_note_candidates_case(
-    runtime: DreamerRuntime, *, workspace: str, scope: str,
+    runtime: DreamerRuntime, *, cfg: Config, workspace: str, scope: str,
     batch: Sequence[dict[str, Any]], notebook: Sequence[dict[str, Any]],
     now_ms: int,
 ) -> NoteCandidatesDrive:
@@ -663,6 +664,8 @@ async def run_note_candidates_case(
     entries are `{title, description, anchor_date, body}`. Seeded through the
     tag path's own `create` shape (`established_by="tag:eval"`), so the
     standing notes the adaptor renders look exactly like ones a person made.
+    `cfg` supplies the room's zone (`[reminders] timezone`) exactly as
+    composition does, so a rendered moment reads the same here as live.
     """
     store = InMemoryNoteStore()
     for entry in notebook:
@@ -674,7 +677,7 @@ async def run_note_candidates_case(
         )
     adaptor = NoteCandidateAdaptor(
         notes=store, candidates=store, workspace_for=lambda _key: workspace,
-        metrics=Metrics(),
+        metrics=Metrics(), timezone=ZoneInfo(cfg.reminders.timezone),
     )
     rows = [
         TranscriptRow(

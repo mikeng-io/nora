@@ -1280,3 +1280,24 @@ async def test_a_valid_inherited_effort_still_starts(cfg):
 
     assert deps.dreamer_runtime is not None
     assert deps.dreamer_runtime._models._spec.reasoning_effort == "medium"
+
+
+async def test_note_candidates_renders_moments_in_the_operators_timezone(cfg):
+    """The sibling of `test_the_curator_reads_the_day_from_the_operators_
+    timezone`, for the create path: «this Saturday» in a message is resolved
+    against the moment the model is SHOWN, so that moment must be the room's
+    (`[reminders] timezone`), not the process's. Two zones 25 hours apart
+    cannot agree; a hardcoded zone makes them equal."""
+    from zoneinfo import ZoneInfo
+
+    async def _zone(zone: str):
+        deps = await build_dependencies(override_config(cfg, {
+            "dreamer.enabled": True, "notes.enabled": True,
+            "notes.candidates_enabled": True, "reminders.timezone": zone,
+        }))
+        adaptor = next(a for a in deps.dream_adaptors if a.name == "note-candidates")
+        return adaptor._tz
+
+    assert await _zone("Pacific/Kiritimati") == ZoneInfo("Pacific/Kiritimati")
+    assert await _zone("Pacific/Niue") == ZoneInfo("Pacific/Niue")
+    assert await _zone("Pacific/Kiritimati") != await _zone("Pacific/Niue")

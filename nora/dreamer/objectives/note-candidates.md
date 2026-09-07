@@ -1,7 +1,7 @@
 ---
 name: note-candidates
 kind: objective
-version: 2
+version: 3
 applies_to: [note_candidate_adaptor]
 description: >-
   The note tier's create path. Read a batch of a room's messages and propose
@@ -47,8 +47,9 @@ replied" only makes a remark throwaway when there was nothing in it to follow th
 a plan does not stop being one because it sits between jokes and photos: read the whole batch
 for the arrangement, not the batch's mood.
 
-Resolve a relative date («this Saturday», «next week») against the timestamp on the message
-that says it; the batch shows each message's date.
+Resolve a relative date («this Saturday», «next week») against the moment shown on the message
+that says it. Each message carries its date, its weekday and the room's own time zone — read the
+weekday from there rather than working it out.
 
 ## What to return
 
