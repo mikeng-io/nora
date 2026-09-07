@@ -58,7 +58,7 @@ from typing import Any, Literal, Protocol
 from xml.sax.saxutils import escape
 
 from nora.domain.models import TranscriptRow
-from nora.domain.ports import RecordStore, StandingStore
+from nora.domain.ports import RecordStore
 from nora.domain.provenance import instruction_sha256
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, annotate, span
@@ -100,6 +100,21 @@ class Completion:
 
     content: str
     finish_reason: str
+
+
+class StandingReader(Protocol):
+    """The gate's view of `StandingStore`: one verb, `read`.
+
+    Narrow on purpose. The gate never writes a position and typing it as the
+    full `StandingStore` said otherwise — which is not only a wider contract
+    than it needs, it obliged every test double to grow a `write` that exists
+    only to be refused. `nora.engagement.stages.debrief.ModelClient`'s
+    precedent: one consumer, one verb, a documented structural type.
+    """
+
+    async def read(
+        self, *, platform: str, conversation_id: str
+    ) -> Any | None: ...
 
 
 class ModelClient(Protocol):
@@ -327,7 +342,7 @@ class RelevanceGate:
         records: RecordStore,
         metrics: Metrics,
         persons: Persons | None = None,
-        standing: StandingStore | None = None,
+        standing: StandingReader | None = None,
         transcript_limit: int = 40,
         standing_timeout_seconds: float = 2.0,
     ) -> None:

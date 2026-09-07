@@ -1,4 +1,5 @@
-"""Eval gate entry point: `python -m evals.run --suite {trigger,no_trigger,all,adversarial}`.
+"""Eval gate entry point: `python -m evals.run --suite {trigger,no_trigger,all,
+adversarial,relevance_gate}`.
 
 Runs every case in the named suite through `evals.harness.run_case`, grades the
 resulting `Trajectory` with the deterministic hard-gate evaluators appropriate to the
@@ -113,6 +114,11 @@ SUITES = {
     # FirePath.speak) live. Like `journeys`/`adversarial` this runs its own
     # live path (`_run_participation_live`), not the scripted `_run_suite`.
     "participation": (CASES_DIR / "participation" / "participation.yaml",),
+    # The Relevance Gate suite (design/dreamer-agent-loop/36). Grades the GATE,
+    # not a turn: no agent, no tools, no `run_case`. Its own live path
+    # (`evals.relevance_gate.run_gate_suite`) for the same reason `journeys`
+    # and `adversarial` have theirs.
+    "relevance_gate": (CASES_DIR / "relevance_gate" / "gate.yaml",),
 }
 
 # Evaluator class -> the Langfuse score `name` it exports under. All five verdicts
@@ -896,6 +902,13 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
         ok, _results = asyncio.run(_run_participation_live(
             paths, effort=effort, sink=sink, run_name=run_name,
         ))
+    elif suite == "relevance_gate":
+        # The gate's own four measurements — determinism first, because it is
+        # the control on the other three (see `evals.relevance_gate`).
+        from evals.relevance_gate import run_gate_suite
+        ok, summary = asyncio.run(run_gate_suite(paths))
+        print(summary)
+        return 0 if ok else 1
     elif suite == "adversarial":
         # B1: the verdict cache is ON by default — an unchanged re-run costs 0 model
         # calls. --no-cache disables it; --force re-runs every case (and refreshes it).

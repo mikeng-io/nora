@@ -31,11 +31,13 @@ from nora.agent.whereis import Circle
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
-from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.standing import Standing
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql.engine import create_sql_engine
+from nora.ingest.relevance_gate import GATE_AUDIENCE, RelevanceGate
+from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
 from nora.tag import is_tagged
@@ -51,6 +53,7 @@ from nora.testing import (
     CannedWeatherProvider,
     transcript_rows,
 )
+from nora.testing.fakes import FakeRecordStore
 
 from .agent_runner import LiveAgentRunner
 
@@ -560,4 +563,195 @@ def seed_from_dict(raw: dict[str, Any]) -> ProductionSeed:
 
     return ProductionSeed(
         recents=tuple(recents), standing=standing, notes=tuple(notes),
+    )
+
+
+# --- the Relevance Gate's eval seam (design/dreamer-agent-loop/36) ---------
+#
+# `evals/` may import `nora.app` and `nora.testing` and nothing else, so the
+# gate's construction lives HERE rather than in `evals/relevance_gate.py`:
+# building it there meant reaching into `nora.ingest`, `nora.obs`,
+# `nora.doctrine`, `nora.domain` and `nora.agent` directly, which is six
+# violations of the one boundary this module exists to hold. The suite keeps
+# what is genuinely its own — the cases, the four measurements, the report.
+
+
+@dataclass(frozen=True)
+class GateProbeResult:
+    """One gate call, as the suite needs to read it."""
+
+    verdict: str
+    score: float | None
+    source: str
+    error_kind: str | None
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    total_tokens: int | None
+
+
+#: The conversation the gate probe's rows are written under AND read back
+#: under. One constant, because two spellings is what went wrong: the store
+#: was filled under one id and `decide` was called with another, so `recent`
+#: matched nothing and every case silently judged an EMPTY ROOM. The suite
+#: still reported verdicts — the gate is fail-closed and an empty room is a
+#: legitimate no_go — so it read as three dead capabilities rather than as a
+#: broken harness. The tell was in the cost line: identical token totals for
+#: a one-line and a seven-line window.
+GATE_PROBE_CONVERSATION = "gate-eval"
+
+
+async def _gate_records(bodies: tuple[str, ...]) -> FakeRecordStore:
+    """`nora.testing.fakes.FakeRecordStore`, filled — NOT a hand-rolled store.
+
+    That fake PASSES `tests/contract/test_audit_store_contract.py`, which pins
+    the two properties this suite depends on: `recent` returns rows
+    OLDEST-first and its `limit` takes the NEWEST. A convenient local fake got
+    the first one wrong once already, and the gate rendered every conversation
+    backwards while the test written to guard the ordering passed — because it
+    was fed rows in the order the bug expected. A store that a contract suite
+    has already judged is the only kind worth measuring against.
+    """
+    store = FakeRecordStore()
+    names = ("Kit", "Sam", "Aaron")
+    for i, body in enumerate(bodies, 1):
+        await store.append(
+            message=NormalizedMessage(
+                platform="discord", conversation_id=GATE_PROBE_CONVERSATION,
+                conversation_type="group", sender_id=f"p{i % 3}",
+                sender_name=names[i % 3], timestamp=i, body=body, raw={},
+            ),
+        )
+    return store
+
+
+class _GateStanding:
+    """Satisfies `RelevanceGate`'s `StandingReader` — `read` and nothing else.
+
+    It carried a `write` that raised, purely to satisfy the full
+    `StandingStore` protocol the gate used to declare. That method had no
+    production counterpart and made the name ambiguous to
+    `tests/architecture/test_store_methods_have_production_callers.py`,
+    which is the gate that notices a store method losing its last real
+    caller. Narrowing the gate's own type was the fix; this is the fake
+    getting smaller as a result.
+    """
+
+    def __init__(self, body: str | None) -> None:
+        self._body = body
+
+    async def read(self, *, platform: str, conversation_id: str) -> Standing | None:
+        if self._body is None:
+            return None
+        return Standing(
+            platform=platform, conversation_id=conversation_id,
+            body=self._body, fold_count=1, updated_at=1,
+        )
+
+
+class _MeasuringGateClient:
+    """The gate's real call, plus the token usage the suite must report.
+
+    NOT a wrapper around the composition root's client: that one returns the
+    gate's `Completion`, which carries `content` and `finish_reason` and
+    deliberately nothing else — usage is the provider's fact and the gate has
+    no use for it, so adding a field there to serve an eval would be the
+    measurement changing the thing it measures.
+    """
+
+    def __init__(self, *, client: Any, gate_cfg: Any, reasoning_effort: Any) -> None:
+        self._client = client
+        self._cfg = gate_cfg
+        self._reasoning_effort = reasoning_effort
+        self.usage: tuple[int, int, int] | None = None
+
+    @property
+    def model(self) -> str:
+        return str(self._cfg.model)
+
+    async def complete(self, *, prompt: str) -> GateCompletion:
+        response = await asyncio.wait_for(
+            self._client.chat.completions.create(
+                model=self._cfg.model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                max_tokens=self._cfg.max_tokens,
+                temperature=self._cfg.temperature,
+                reasoning_effort=self._reasoning_effort,
+            ),
+            timeout=self._cfg.timeout_seconds,
+        )
+        usage = response.usage
+        if usage is not None:
+            self.usage = (
+                usage.prompt_tokens, usage.completion_tokens, usage.total_tokens,
+            )
+        choice = response.choices[0]
+        return GateCompletion(
+            content=(choice.message.content or "").strip(),
+            finish_reason=choice.finish_reason or "",
+        )
+
+
+@dataclass(frozen=True)
+class GateProbe:
+    """A built gate, plus the instruction provenance a run is read against."""
+
+    _cfg: Any
+    _client: Any
+    _doctrine: Any
+    _effort: Any
+    base_url: str
+    instruction_version: int | None
+    instruction_sha256: str
+
+    async def run(
+        self, *, transcript: tuple[str, ...], standing: str | None, label: str,
+    ) -> GateProbeResult:
+        model = _MeasuringGateClient(
+            client=self._client, gate_cfg=self._cfg, reasoning_effort=self._effort,
+        )
+        gate = RelevanceGate(
+            client=model, prompts=self._doctrine,
+            records=await _gate_records(transcript), metrics=Metrics(),
+            standing=_GateStanding(standing),
+            transcript_limit=self._cfg.transcript_rows,
+        )
+        got = await gate.decide(
+            platform="discord", conversation_id=GATE_PROBE_CONVERSATION,
+        )
+        p, c, t = model.usage if model.usage else (None, None, None)
+        return GateProbeResult(
+            verdict=got.verdict, score=got.score, source=got.source,
+            error_kind=got.error_kind,
+            prompt_tokens=p, completion_tokens=c, total_tokens=t,
+        )
+
+
+def build_gate_probe(cfg: Config) -> GateProbe:
+    """The real `RelevanceGate`, on the real `participation.md`, no turn.
+
+    `[llm] base_url` is CONTAINER-side (`host.docker.internal`), which does not
+    resolve on the host a suite is usually run from. `NORA_EVAL_BASE_URL`
+    overrides it. Every live suite shares that limitation; this one reports the
+    URL it used so a misconfigured run is legible rather than a bare connection
+    error.
+    """
+    base_url = os.environ.get("NORA_EVAL_BASE_URL") or cfg.llm.base_url
+    client = create_client(
+        base_url=base_url, api_key=os.environ.get(cfg.llm.api_key_env, "")
+    )
+    doctrine = DoctrineStore(
+        cfg.doctrine.dir, strict=cfg.doctrine.strict, reload="never",
+        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
+        trigger=cfg.engagement.trigger.text, metrics=Metrics(),
+    )
+    assembled = doctrine.get(applies_to=GATE_AUDIENCE)
+    return GateProbe(
+        _cfg=cfg.relevance_gate, _client=client, _doctrine=doctrine,
+        _effort=cast(Any, cfg.relevance_gate.reasoning_effort),
+        base_url=base_url,
+        instruction_version=(
+            assembled.sections[0].version if assembled.sections else None
+        ),
+        instruction_sha256=assembled.sha256,
     )
