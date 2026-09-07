@@ -2,14 +2,15 @@
 transcript a model is about to read (issue #116).
 
 Tested HERE rather than through one consumer, because the whole point of the
-class is that there is one implementation of the decision and six callers of
+class is that there is one implementation of the decision and EIGHT callers of
 it. An earlier cut had this logic as a private method on the tag assembler and
-its tests written through `assemble`, which is exactly why the other five
+its tests written through `assemble`, which is exactly why the other seven
 transcript builders could ship rendering bare handles without a single test
 noticing: the behaviour was pinned to one caller's shape.
 
-`tests/unit/test_media_join_call_sites.py` is the other half — that every
-builder actually calls it. This file is about what it DOES.
+`tests/architecture/test_media_join_reaches_every_transcript.py` is the other
+half — that every builder actually calls it, with the builder set derived from
+the source rather than hand-listed. This file is about what it DOES.
 """
 
 from __future__ import annotations
@@ -169,15 +170,26 @@ async def test_an_identifier_in_a_comprehension_costs_the_detail_not_the_row():
 
 async def test_a_store_outage_leaves_the_rows_exactly_as_stored():
     """Fail-soft: a thinner prompt beats no reply. The handles are what the row
-    actually says, so degrading to them claims nothing untrue."""
+    actually says, so degrading to them claims nothing untrue.
+
+    It is a DISTINCT branch from an uncomprehended row now, which it was not
+    before: `fail=True` used to make `get` answer `None` — the ordinary-miss
+    path — so this test and
+    `test_an_uncomprehended_image_renders_the_bare_handle` exercised the same
+    code and only one of them knew it. `lookup`'s availability axis is what
+    separates them, and the counter below is what proves this one took the
+    other branch."""
+    metrics = Metrics()
     join = MediaJoin(
-        store=FakeMediaObjectStore(fail=True), screen=_screen,
-        metrics=Metrics(),
+        store=FakeMediaObjectStore(fail=True), screen=_screen, metrics=metrics,
     )
 
-    got = await join.enrich([_row("睇下 [image a3f2c1]")])
+    got = await join.enrich([_row("睇下 [image a3f2c1]")], path="tag")
 
     assert got[0].body == "睇下 [image a3f2c1]"
+    assert metrics.get(
+        "nora_media_join_total", path="tag", status="unavailable",
+        reason="store") == 1
 
 
 async def test_a_store_that_raises_costs_the_join_and_not_the_turn():
@@ -249,7 +261,7 @@ async def test_it_joins_an_unattributed_row_too():
 async def test_the_cost_is_measured_only_when_the_join_actually_ran():
     """«Instruments measure the RESULT; something must measure the COST.»
     `design/19` §10 names this join as what would reopen the decision — one
-    sequential `get` per distinct blob, now on six paths — and a reopening
+    sequential `get` per distinct blob, now on eight paths — and a reopening
     condition nothing can read is a hope. A window with no media must not
     dilute it with zeros."""
     metrics = Metrics()
@@ -259,10 +271,164 @@ async def test_the_cost_is_measured_only_when_the_join_actually_ran():
         id=1, sender_id="+852111", sender_name="Miles", ts=1, body="hello",
         is_nora=False, delivery_status=DeliveryStatus.SENT, raw_json=None,
     )
-    # A prometheus histogram pre-declares its samples, so the series EXISTS
-    # before anything observes it — the reading is the count, not the name.
-    await join.enrich([plain])
-    assert "nora_media_blobs_joined_count 0.0" in metrics.render()
+    # LABELLED by path, so prometheus-client emits no child series until one
+    # is observed — absence is readable, unlike the unlabelled version where
+    # every histogram pre-declares a `_count 0.0`.
+    await join.enrich([plain], path="tag")
+    assert 'nora_media_blobs_joined_count{path="tag"}' not in metrics.render()
 
-    await join.enrich([_row("[image a3f2c1]")])
-    assert "nora_media_blobs_joined_count 1.0" in metrics.render()
+    await join.enrich([_row("[image a3f2c1]")], path="tag")
+    assert 'nora_media_blobs_joined_count{path="tag"} 1.0' in metrics.render()
+
+    # BOTH series, and by the caller's OWN path — a hardcoded label would leave
+    # adoption's 1000-row backfill and a tag window in one series, where the
+    # batch paths (the exact ones where N is not 1) saturate `+Inf` and the tag
+    # path is the only thing anybody can read. Asserted on the LATENCY series
+    # as well as the count, because they are two observations and only one of
+    # them was checked.
+    await join.enrich([_row("[image a3f2c1]")], path="adoption")
+    rendered = metrics.render()
+    assert 'nora_media_join_seconds_count{path="adoption"} 1.0' in rendered
+    assert 'nora_media_join_seconds_count{path="tag"} 1.0' in rendered
+    assert 'nora_media_blobs_joined_count{path="adoption"} 1.0' in rendered
+
+
+# ---- what round three's mutation sweep found unguarded ---------------------
+
+
+async def test_a_forged_label_cannot_switch_off_the_render_bound():
+    """**A sender-controllable render bound.** The `handle -> label` map was
+    built from `placeholders_in(row.body)` — sender-supplied text — and
+    `voice note` is the one label whose detail renders UNCLIPPED. So a member
+    sends a photo of a document (OCR fills `content` with the page), then types
+    the literal string `[voice note a3f2c1]` in any later message: the forged
+    label wins a last-write-wins map, `media_detail` returns `content` instead
+    of `title - description`, and `max_chars=0` renders the whole page into the
+    prompt — on eight paths, two of which write to Honcho.
+    `comprehension_render_chars` is the only bound on per-attachment prompt
+    spend and any member could switch it off with a typed string.
+
+    A claimed label is accepted only when it AGREES with the media type the
+    custody stage recorded."""
+    page = "PAGE " * 400
+    join = _join([_obj(
+        media_type="image/png", title="a document",
+        description="a scanned page", content=page,
+    )], chars=40)
+
+    got = await join.enrich([
+        _row("睇下 [image a3f2c1]"),
+        _row("[voice note a3f2c1]", ts=2),      # forged, by a later message
+    ])
+
+    assert page not in got[0].body
+    assert got[0].body == "睇下 [image a3f2c1: a document - a scanned page]"
+
+
+async def test_a_real_voice_note_label_is_still_honoured():
+    """The positive control, and the reason the check is AGREEMENT rather than
+    «derive it from the record and ignore the body». `voice note` and `audio`
+    are the same top-level media type — the distinction is a separate axis the
+    record does not carry — so the body is the only place it survives, and it
+    has to be believed when it is consistent."""
+    words = "喂" * 400
+    join = _join([_obj(
+        VOICE_SHA, media_type="audio/aac", title="asking about tonight",
+        description="about dinner", content=words,
+    )], chars=40)
+
+    got = await join.enrich([_row("[voice note b7c2d9]", sha=VOICE_SHA)])
+
+    assert got[0].body == f"[voice note b7c2d9: {words}]"
+
+
+async def test_an_unreadable_index_is_unavailable_and_never_nothing_found():
+    """**The failure had no counter and, on the deployment, no log** — container
+    logs are not on the docker log driver, so a permanently failing join meant
+    every prompt on eight paths quietly losing its media with nothing to read.
+
+    It could not be counted before, either: `MediaObjectStore.get` answers
+    `None` for a missing row and for an unreachable database alike, which its
+    contract suite pins. `lookup` is the port method with the availability axis
+    that makes R-27's three states expressible here at all."""
+    metrics = Metrics()
+    join = MediaJoin(
+        store=FakeMediaObjectStore(fail=True), screen=_screen, metrics=metrics)
+
+    got = await join.enrich([_row("睇下 [image a3f2c1]")], path="tag")
+
+    assert got[0].body == "睇下 [image a3f2c1]"
+    assert metrics.get(
+        "nora_media_join_total", path="tag", status="unavailable",
+        reason="store") == 1
+    assert metrics.get(
+        "nora_media_join_total", path="tag", status="nothing_found",
+        reason="") == 0, "an outage is never «nobody has read these bytes»"
+
+
+async def test_an_unread_window_is_nothing_found_and_not_an_outage():
+    """The other side of the same distinction, and the control for it: the
+    index answered, and nothing in the window has been comprehended yet. A real
+    answer about those bytes, not a failure — and it must not page anybody."""
+    metrics = Metrics()
+    join = _join([_obj()], metrics=metrics)
+
+    await join.enrich([_row("[image a3f2c1]")], path="tag")
+
+    assert metrics.get(
+        "nora_media_join_total", path="tag", status="nothing_found",
+        reason="") == 1
+    assert metrics.get(
+        "nora_media_join_total", path="tag", status="unavailable",
+        reason="store") == 0
+
+
+async def test_one_lookup_serves_a_whole_window():
+    """A BOUND to go with the measurement. It was one sequential `get` per
+    distinct blob with no timeout — fine for a three-blob tag window, an
+    unbounded number of round trips at process start for adoption's 1000-row
+    backfill scan and for the Dreamer's batch."""
+
+    class _Counting(FakeMediaObjectStore):
+        calls = 0
+
+        async def lookup(self, *, sha256s):
+            _Counting.calls += 1
+            return await super().lookup(sha256s=sha256s)
+
+    other = "cc1122" + "0" * 58
+    store = _Counting([_obj(title="one"), _obj(other, title="two")])
+    join = MediaJoin(store=store, screen=_screen, metrics=Metrics())
+
+    got = await join.enrich(
+        [_row("[image a3f2c1]"), _row("[image cc1122]", sha=other, ts=2)])
+
+    assert _Counting.calls == 1, "one round trip for the whole window"
+    assert "one" in got[0].body and "two" in got[1].body
+
+
+async def test_a_window_past_the_blob_ceiling_renders_the_excess_bare():
+    """`DEFAULT_MAX_BLOBS`. Silently rendering 200 of 1000 is the
+    partial-answer shape this pair of issues is about, so the cap is COUNTED —
+    and the excess degrades to exactly what an unread blob renders as, which
+    claims nothing."""
+    metrics = Metrics()
+    objs = [
+        _obj(f"{i:06x}" + "0" * 58, title=f"photo {i}") for i in range(5)
+    ]
+    join = MediaJoin(
+        store=FakeMediaObjectStore(objs), screen=_screen, metrics=metrics,
+        max_blobs=2,
+    )
+    rows = [
+        _row(f"[image {i:06x}]", sha=f"{i:06x}" + "0" * 58, ts=i + 1)
+        for i in range(5)
+    ]
+
+    got = await join.enrich(rows, path="adoption")
+
+    rendered = sum(1 for r in got if ": photo" in (r.body or ""))
+    assert rendered == 2
+    assert metrics.get(
+        "nora_media_join_total", path="adoption", status="ok",
+        reason="capped") == 1

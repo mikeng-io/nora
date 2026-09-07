@@ -146,7 +146,8 @@ model calls rather than one.
 
 `scan_identifiers` used to run once, at ingest, over the placeholder run the
 custody stage composed. It runs at RENDER time now, in
-`nora/engagement/context.py`, on every render.
+`nora.domain.media_join`, on every render on all EIGHT paths — and separately
+at the Honcho feed, which does not render (§5.1).
 
 **That is not a relaxation.** `media_objects` is a durable cache keyed by sha256
 and shared across rooms and across restarts, so a row screened once at write
@@ -187,6 +188,15 @@ consumer performs, five did not:
 | `nora/app/runtime.py` | the Dreamer's batch — both scope-keyed adaptors, including the note tier's candidates pass |
 | `nora/language/note_curator.py` | a note's evidence |
 | `nora/app/adoption.py` | lazy adoption's Honcho back-feed |
+| `nora/agent/tools.py` | `load_transcript`, the one builder inside a tool |
+
+`load_transcript` is the subtlest of them and was missed twice: it hands
+the model rows the PREFILL has already rendered with their comprehensions,
+so a join it does not perform puts `[image a3f2c1: a plate of noodles - …]`
+and `[image a3f2c1]` in the same prompt — DEC-80's disagreeing-renderers
+bug, in the one tool whose own comments say it exists not to reproduce it.
+A bare handle there does not read as a formatting difference; it reads as
+«nobody has looked at this», which is a claim about the record.
 
 The note tier is on that list, which is what makes this more than tidiness:
 «ten photos of a meal and the memory holds only the replies» is §0, and the
@@ -201,12 +211,34 @@ test_media_join_reaches_every_transcript.py` is the gate — a static read that
 every builder imports it and calls `enrich`, with each builder's own store read
 as the positive control that it is still a builder at all.
 
+**Two Honcho paths, and the asymmetry is deliberate.** The LIVE ambient
+path is fed by `nora/ingest/comprehension.py` at the moment the read
+completes — the comprehension has just been made and the row it belongs to
+was audited seconds ago, so feeding it there is one call with everything in
+hand. Lazy adoption is the REPAIR path: it replays rows whose sender mapped
+to nobody at ingest, months later, and the comprehension for those bytes
+already exists — there is nothing to feed at read time because the read is
+long over. So the join is what carries it, out of `media_objects`, at the
+moment the row is finally attributable. Neither one is a fallback for the
+other and a row cannot take both: `_feed` is skipped for an unmapped
+sender (D6), which is exactly the set adoption later repairs.
+
 **Scoped by `media_json`, never by the body.** A handle is six hex characters
 and a body is sender-supplied, so resolving `[image a3f2c1]` out of prose would
 let a member type another room's handle and have its description rendered here.
 `media_json` is written by custody from bytes Nora held for THAT row.
 `UnattributedRow` gained the column for exactly this — without it, adoption
 could not join safely at all.
+
+**And the LABEL is taken from the record too**, because the body is the only
+place `voice note` survives (it and `audio` are one media type) and
+`voice note` is the one label whose detail renders UNCLIPPED. A member who
+typed the literal string `[voice note a3f2c1]` could therefore switch off
+`comprehension_render_chars` — the only bound on per-attachment prompt spend
+— and push a whole OCR'd page into eight renders, two of which write to
+Honcho. A claimed label is now accepted only when it AGREES with the media
+type custody recorded (`label_agrees`): the body may refine, never
+contradict.
 
 **The join belongs in the assembler, not in the renderer.** `nora/agent/
 prefill.py` is a pure function of the `TagContext` it is handed; giving it a
@@ -389,10 +421,15 @@ root would hold that trace open for as long as a video read takes.
 | a failed read never writes a blank | `tests/test_acceptance_rules.py::test_r51_…` (R-51), with a positive control that DOES comprehend |
 | one pass, three fields | `tests/contract/test_media_interpreter_contract.py`, parametrized over `FakeMediaInterpreter` and `MediaComprehender` |
 | custody's row and the read's row are the same row, in either order | `tests/contract/test_media_object_store_contract.py::test_a_comprehension_that_beats_custody_creates_the_row` |
-| a voice note keeps its words | `tests/unit/test_engagement_context.py::test_a_voice_note_renders_its_whole_transcript_and_is_never_clipped`, `tests/unit/test_media_comprehension.py::test_a_voice_note_keeps_its_words_even_when_the_summary_fails` |
+| a voice note keeps its words | `tests/unit/test_media_join.py::test_a_voice_note_renders_its_whole_transcript_and_is_never_clipped`, `tests/unit/test_media_comprehension.py::test_a_voice_note_keeps_its_words_even_when_the_summary_fails` |
 | layer 2 writes nothing | `tests/test_media_fetch.py::test_layer_2_writes_nothing_to_either_cache_tier`, with a positive control showing the cache IS written on the no-question path |
 | every transcript builder joins, not just the tag one | `tests/architecture/test_media_join_reaches_every_transcript.py` |
 | the join screens, clips, and never clips the caveat | `tests/unit/test_media_join.py` |
+| a forged `[voice note …]` cannot switch off the render bound | `tests/unit/test_media_join.py::test_a_forged_label_cannot_switch_off_the_render_bound` |
+| an unreadable index is `unavailable`, never `nothing_found` | `tests/unit/test_media_join.py::test_an_unreadable_index_is_unavailable_and_never_nothing_found` |
+| no await inside a held conversation slot is unbounded | `tests/architecture/test_slot_held_awaits_are_bounded.py` |
+| a new transcript builder cannot be forgotten | `tests/architecture/test_media_join_reaches_every_transcript.py::test_the_builder_set_is_not_hand_maintained` (derived from the source) |
+| every fix in this bundle fails on revert | the mutation sweep in the round-four commit message — 18 reverts, 18 reds |
 | a handle a sender TYPED never resolves | `tests/unit/test_media_join.py::test_a_handle_a_sender_typed_is_never_resolved` |
 | layer 2's authored frame is actually there | `tests/test_media_fetch.py::test_layer_2_wraps_the_question_in_the_authored_frame` (probed: `prompt = question` turns it red) |
 | the video cap is said, not just done | `tests/unit/test_vision_preprocess.py::test_the_cap_binding_is_recorded_and_said`, `tests/unit/test_media_comprehender.py::test_a_capped_video_says_so_in_the_description_and_in_provenance` |

@@ -924,6 +924,27 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #                   a video (`ffmpeg`), or the job raised (`error`).
     #                   NEVER nothing_found — «I could not look» is not «there
     #                   was nothing there».
+    # R-27 on the join itself. `ok` rendered at least one detail;
+    # `nothing_found` read the index and nothing in the window had been
+    # comprehended yet — a real answer about those bytes; `unavailable` is the
+    # index refusing to be read, which the old shape could not express at all
+    # because `MediaObjectStore.get` answers `None` for a miss and for an
+    # outage alike (that is why `lookup` exists).
+    #
+    # It replaces a `nora_errors_total{stage="media_join"}` that could never
+    # fire for exactly that reason. Container logs are not on the docker log
+    # driver, so without this a permanently failing join is silent on the
+    # deployment — every prompt on eight paths quietly losing its media.
+    #
+    # `reason="capped"` on an `ok` is the OTHER thing worth seeing: the window
+    # held more distinct blobs than `DEFAULT_MAX_BLOBS`, so some rendered bare.
+    _CounterSpec(
+        "nora_media_join_total",
+        "Media join outcomes, by path and R-27 status (ok / nothing_found / "
+        "unavailable) with the reason that produced it (store / error / "
+        "capped).",
+        ("path", "status", "reason"),
+    ),
     _CounterSpec(
         "nora_media_comprehension_total",
         "Spawned media comprehension outcomes, by platform, media label, "
@@ -1871,16 +1892,26 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     # above that is already the answer.
     _HistogramSpec(
         "nora_media_join_seconds",
-        "Wall-clock cost of joining stored media comprehensions onto one "
-        "transcript window, in the context assembler. Excludes turns with no "
-        "media in the window.",
-        (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2),
+        "Wall-clock cost of one media join, by the PATH that paid it (tag / "
+        "fire / debrief / standing_event / dreamer / note_curator / adoption / "
+        "load_transcript). Excludes calls with no media in the window.",
+        # Reaching 30s, and labelled, because the eight paths have nothing in
+        # common but the code. A tag window is a handful of blobs under a
+        # reply's latency; adoption hands this a 1000-row backfill scan at
+        # process start. One unlabelled series with a 2s ceiling put both in
+        # one histogram, where the batch paths — the exact ones where N is not
+        # 1 — saturate `+Inf` and are unmeasurable, and the tag path is the
+        # only thing anybody can read.
+        (0.005, 0.025, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30),
+        ("path",),
     ),
     _HistogramSpec(
         "nora_media_blobs_joined",
-        "Distinct blobs looked up in one render join — the count the latency "
-        "above is a function of.",
-        (1, 2, 3, 5, 8, 13, 21, 40),
+        "Distinct blobs looked up in one media join, by path — the count the "
+        "latency above is a function of, and the reading that says whether "
+        "`DEFAULT_MAX_BLOBS` is binding.",
+        (1, 3, 8, 21, 50, 100, 200, 500),
+        ("path",),
     ),
     _HistogramSpec(
         "nora_media_comprehension_seconds",

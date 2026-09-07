@@ -344,3 +344,98 @@ async def test_search_finds_a_word_carried_only_by_the_title_or_the_content(stor
 
     assert [h.sha256 for h in await store.search(query="whiteboard")] == [CAT]
     assert [h.sha256 for h in await store.search(query="Q3")] == [CAT]
+
+
+# ---- what an EMPTY incoming field may not do (round two F4, round three N7)
+
+
+async def test_a_resent_voice_note_does_not_wipe_its_own_title(store):
+    """Two writers reach `comprehend`: the job, which fills all three, and the
+    custody stage's inline voice-note write, which fills `content` alone and
+    sends empty title/description/model. Unconditional SETs meant a RESENT
+    voice note wiped the title and the describe_model the job had written —
+    self-healing only because the already-read gate re-runs the text pass, at
+    one extra model call per resend, and not self-healing AT ALL with
+    `comprehension = false` or no text model."""
+    await store.comprehend(
+        sha256=DOG, title="", description="", content="喂你今日得唔得閒啊",
+        model="",
+    )
+    await store.comprehend(
+        sha256=DOG, title="asking about tonight",
+        description="a voice note about dinner", content="喂你今日得唔得閒啊",
+        model="glm",
+    )
+
+    # The resend: custody writes the words again, with nothing else.
+    await store.comprehend(
+        sha256=DOG, title="", description="", content="喂你今日得唔得閒啊",
+        model="",
+    )
+
+    got = await store.get(sha256=DOG)
+    assert got is not None
+    assert got.title == "asking about tonight"
+    assert got.description == "a voice note about dinner"
+    assert got.describe_model == "glm"
+
+
+async def test_a_real_re_read_still_replaces_what_it_finds(store):
+    """The control for the guard above: an empty field never clobbers, but a
+    NON-empty one must, or a re-read could never correct a bad description."""
+    await store.comprehend(
+        sha256=DOG, title="a cat", description="a cat", content="", model="v1")
+    await store.comprehend(
+        sha256=DOG, title="a dog", description="a dog in a park", content="",
+        model="v2")
+
+    got = await store.get(sha256=DOG)
+    assert got is not None
+    assert (got.title, got.description, got.describe_model) == (
+        "a dog", "a dog in a park", "v2")
+
+
+async def test_a_video_with_no_description_still_records_its_describer(store):
+    """**The shipped config's own path.** `comprehension_text_model = ""` makes
+    a video read produce `description=""` beside a full timecoded `content`,
+    and custody always writes the row first — so a guard keyed on the
+    DESCRIPTION alone never recorded the video model that did the read.
+    `describe_model` was NULL for every clip on the default config, which is
+    the exact column an operator reads to find out which describer produced
+    what. The guard added to protect it defeated the fix that fills it."""
+    await store.save(obj=_obj(
+        DOG, source="inbound", prompt="", description="",
+        created_at_ms=1_700_000_000_000))
+
+    await store.comprehend(
+        sha256=DOG, title="", description="",
+        content="0:00 — a car pulls away", model="k3-256k")
+
+    got = await store.get(sha256=DOG)
+    assert got is not None
+    assert got.describe_model == "k3-256k"
+    assert got.content == "0:00 — a car pulls away"
+
+
+async def test_a_lookup_reads_many_rows_and_says_whether_it_could(store):
+    """`get` answers `None` for a missing row and for an unreachable database
+    alike — correct for its callers, and useless to the render join, which has
+    to tell «ten photos nobody has read» from «the index is down». `lookup` is
+    the port method with that axis."""
+    await store.save(obj=_obj(CAT, prompt="a cat"))
+    await store.save(obj=_obj(DOG, prompt="a dog"))
+
+    got = await store.lookup(sha256s=(CAT, DOG, PHOTO))
+
+    assert got.available is True
+    assert set(got.objects) == {CAT, DOG}, "a missing row is simply absent"
+    assert got.objects[CAT].description == "a cat"
+    assert (await store.lookup(sha256s=())).available is True
+
+
+async def test_an_unreachable_database_makes_lookup_unavailable(broken):
+    """And it carries NO objects: a partial answer to «what does this window
+    hold» is one a caller renders as complete."""
+    got = await broken.lookup(sha256s=(CAT,))
+    assert got.available is False
+    assert got.objects == {}

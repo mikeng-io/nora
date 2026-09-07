@@ -81,6 +81,7 @@ from ..domain.media import (
     resolve_media_type,
     sniff_media_type,
 )
+from ..domain.media_join import MediaJoin
 from ..domain.models import TranscriptRow, WeatherObservation
 from ..domain.notes import (
     TAG_PATH_PREFIX,
@@ -2316,6 +2317,12 @@ def build_tool_specs(
     # same ceiling and cannot disagree about how much of a clip was seen.
     video_chunk_seconds: int = VIDEO_CHUNK_SECONDS,
     video_max_chunks: int = VIDEO_MAX_CHUNKS,
+    # The SHARED media join (issue #116). `load_transcript` is the eighth
+    # transcript builder and the only one inside a tool: it hands the model
+    # rows the prefill has already rendered WITH their comprehensions, so it
+    # must render them the same way or one prompt carries two answers about
+    # one photo.
+    media_join: MediaJoin | None = None,
     search_source=None,
     social_source=None,
     weather_source=None,
@@ -2670,6 +2677,19 @@ def build_tool_specs(
         # keeps its profile name rather than collapsing to "unknown", so the two
         # renderers cannot disagree in EITHER direction.
         rows = persons.name_transcript(rows, platform=room.platform)
+        # And the media join, for the SAME argument one paragraph up (issue
+        # #116). On master `messages.body` carried the description, so this
+        # path had it; behind a join the prefill performs and this tool does
+        # not, the identical blob renders
+        # `[image a3f2c1: a plate of noodles - …]` inside `<group_transcript>`
+        # and `[image a3f2c1]` with nothing after it in the tool result — IN
+        # THE SAME PROMPT. That is DEC-80's disagreeing-renderers bug, in the
+        # one tool whose comments say it exists not to reproduce it, and it is
+        # worse here than a name: a bare handle reads as «nobody has looked at
+        # this», which is a claim about the record rather than a formatting
+        # difference.
+        if media_join is not None:
+            rows = list(await media_join.enrich(rows, path="load_transcript"))
         # `_speaker`, module-level and shared with `who_said` — this used to be a
         # local `who()` here, and a second tool handing back transcript lines is
         # exactly how DEC-80's three-disagreeing-renderers bug gets a fourth.
@@ -4584,9 +4604,30 @@ Args:
         # `media_objects.description` would poison that hash for every room and
         # every future sighting of the same image. So a `question` read reads
         # nothing and writes nothing.
+        #
+        # **AND A VIDEO NEVER USES IT AT ALL, in either direction.** The cache
+        # is keyed on the sha256 alone, on the argument that a description is a
+        # pure function of the BYTES. A chunked video read is not: its answer
+        # is a function of (bytes, chunk geometry), and the COVERAGE SENTENCE
+        # is the part of it that says so. Caching the run without the caveat
+        # and serving it verbatim put #117's own bug back through the cache —
+        # first call «…I have not seen the rest», second call the ten-window
+        # run and nothing else, on the same twenty-minute clip. Caching it WITH
+        # the caveat is worse: raise `chunk_max` and a stale «I have not seen
+        # the rest» is served from the durable table forever, about a clip that
+        # is now read whole.
+        #
+        # So the geometry-dependent modality opts out, exactly as layer 2 does
+        # and for the same reason. What a video costs on a repeat is a
+        # re-read; what it would cost cached is a wrong answer nobody can see
+        # is wrong. The durable comprehension in `media_objects` is the right
+        # cache for a clip — it stores the caveat WITH the reading (layer 1),
+        # so it cannot come apart.
+        cacheable_modality = modality != "video"
         cached_description = (
             await vision_cache.aget(sha256)
-            if vision_cache is not None and not question else None
+            if vision_cache is not None and not question and cacheable_modality
+            else None
         )
         if cached_description is not None:
             return _serve_media(
@@ -4728,14 +4769,6 @@ Args:
                             "not say there is no media and do not describe it anyway.",
                 }
             description = result.description
-        # CACHED WITHOUT THE CAVEAT, and the caveat appended after. The cache
-        # is keyed on the sha256 alone, on the argument that a description is a
-        # pure function of the BYTES — but a coverage caveat is a function of
-        # (bytes, chunk geometry), so raising `chunk_max` would serve a stale
-        # «I have not seen the rest» from the durable table forever, about a
-        # clip that is now read whole. It is the same reasoning that makes
-        # layer 2 bypass the cache, applied one field over.
-        cacheable = description
         if coverage:
             # SAID on the way out, exactly as the comprehension pass says it —
             # a partial read that reads as complete is the whole of #117.
@@ -4746,14 +4779,14 @@ Args:
             # alone. Storing it would make the next room asking "what is this"
             # get an answer to a question it never asked.
             return _serve_media(sha256, description, cached=False, code=serve_code)
-        if vision_cache is not None:
+        if vision_cache is not None and cacheable_modality:
             # Store the RAW description, at both tiers; the screen runs on
             # every serve, not here. `model` is the describer THIS modality
             # actually used, threaded in — never hardcoded — so the durable
             # `media_descriptions` row records what produced it. Per-modality
             # since the split: an audio description and an image description
             # come from different models and must not be recorded as one.
-            await vision_cache.aput(sha256, cacheable, model=describe_model)
+            await vision_cache.aput(sha256, description, model=describe_model)
         return _serve_media(sha256, description, cached=False, code=serve_code)
 
     def _serve_media(
@@ -7799,6 +7832,12 @@ def build_tools(
     # same ceiling and cannot disagree about how much of a clip was seen.
     video_chunk_seconds: int = VIDEO_CHUNK_SECONDS,
     video_max_chunks: int = VIDEO_MAX_CHUNKS,
+    # The SHARED media join (issue #116). `load_transcript` is the eighth
+    # transcript builder and the only one inside a tool: it hands the model
+    # rows the prefill has already rendered WITH their comprehensions, so it
+    # must render them the same way or one prompt carries two answers about
+    # one photo.
+    media_join: MediaJoin | None = None,
     search_source=None,
     social_source=None,
     weather_source=None,
@@ -7853,5 +7892,19 @@ def build_tools(
         supplied_workspace=supplied_workspace,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         media_store=media_store,
+        # FORWARDED, and three of these were not. `build_tools` declares every
+        # parameter `build_tool_specs` does and hands them on by name, so one
+        # accepted and dropped here is a caller configuring something that
+        # silently keeps its default — which is what happened to
+        # `describe_max_bytes` (a per-modality byte ceiling that never bound
+        # through this wrapper) and then to the chunk geometry and the media
+        # join added beside it. `tests/architecture/
+        # test_media_join_reaches_every_transcript.py` pins the last of them by
+        # behaviour; this comment is the reason to check the others when adding
+        # a fourth.
+        describe_max_bytes=describe_max_bytes,
+        video_chunk_seconds=video_chunk_seconds,
+        video_max_chunks=video_max_chunks,
+        media_join=media_join,
     )
     return [adapt(spec) for spec in specs]

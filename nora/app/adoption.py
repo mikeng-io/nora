@@ -111,7 +111,7 @@ async def backfill(
             # them. Without this it reaches memory as `[image a3f2c1]` and
             # nothing else, which is precisely the empty marker the issue was
             # opened to end, on the one path that exists to repair memory.
-            rows = list(await media_join.enrich(rows))
+            rows = list(await media_join.enrich(rows, path="adoption"))
         for row in rows:
             person = persons.resolve(row.platform, row.sender_id)
             if person is None:

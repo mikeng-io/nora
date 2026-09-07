@@ -268,7 +268,27 @@ async def _event_fold(*, key: Key, wiring: Wiring, metrics: Metrics) -> None:
                 # The same join the tag path and the debrief run: this fold
                 # renders these rows for a model, so it must see what a photo
                 # showed or the position it forms is built on a bare handle.
-                rows = list(await wiring.media_join.enrich(rows))
+                #
+                # BOUNDED, like its two siblings above and for a harder reason
+                # than symmetry: this loop holds the conversation's slot until
+                # `finally: slots.release_and_dispatch(key)`, and `enrich`
+                # catches EXCEPTIONS, not hangs. A wedged `media_objects` would
+                # hold that room's rollup slot indefinitely. It was the only
+                # unbounded await on a slot-held path in the repo — the debrief
+                # got this right in the same commit because it has an AST
+                # validator deriving its receiver set from `run`'s parameters,
+                # and this module had none. It has one now
+                # (`tests/architecture/test_slot_held_awaits_are_bounded.py`).
+                try:
+                    rows = list(await asyncio.wait_for(
+                        wiring.media_join.enrich(rows, path="standing_event"),
+                        timeout=wiring.store_timeout_seconds,
+                    ))
+                except Exception:
+                    log.exception(
+                        "standing event fold: media join failed (%s); folding "
+                        "on the bare handles", key,
+                    )
             if not await _fold_batch(
                 prior=prior, rows=rows, key=key, wiring=wiring, metrics=metrics,
             ):

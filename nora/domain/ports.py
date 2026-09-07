@@ -198,7 +198,7 @@ change at every call site; keyword-only buys free extensibility forever.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -809,6 +809,34 @@ class BlobStore(Protocol):
     async def get(self, *, key: str) -> bytes | None: ...
 
 
+@dataclass(frozen=True)
+class MediaLookup:
+    """Many objects by content address, with an AVAILABILITY axis.
+
+    Two axes, like `MediaBytes`, `Roster` and `Recollection`, and for the
+    identical reason: «the index could not be read» must stay distinguishable
+    from «those bytes are not in it». `get` collapses them — it answers `None`
+    for a missing row and for an unreachable database alike, which its own
+    contract suite pins — so a caller built on `get` cannot report R-27's three
+    states however carefully it is written. The render join was that caller:
+    its failure had no counter at all and, on the deployment, no log an
+    operator can reach.
+
+    ONE call for a whole window, not one per blob. That is the other half:
+    seven paths join now, two of them over batches (a 1000-row adoption scan, a
+    Dreamer batch), and a sequential `get` per distinct blob is an unbounded
+    number of round trips with no timeout on a process-start path.
+
+    `objects` holds only the rows that EXIST; a sha with no row is simply
+    absent, which is `nothing_found` for that blob and not a failure of the
+    lookup.
+    """
+
+    available: bool
+    objects: Mapping[str, MediaObject] = field(default_factory=dict)
+    reason: str = ""
+
+
 @runtime_checkable
 class MediaObjectStore(Protocol):
     """The unified media index (DEC-138, migration 0032): metadata for every
@@ -845,6 +873,8 @@ class MediaObjectStore(Protocol):
     ) -> tuple[MediaObject, ...]: ...
 
     async def get(self, *, sha256: str) -> MediaObject | None: ...
+
+    async def lookup(self, *, sha256s: tuple[str, ...]) -> MediaLookup: ...
 
     async def by_prefix(self, *, handle: str, limit: int = 20) -> tuple[MediaObject, ...]: ...
 

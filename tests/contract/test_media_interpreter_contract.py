@@ -33,6 +33,12 @@ from nora.testing import FakeMediaInterpreter
 # prose fallback — the fake's own answer is structurally equivalent.
 _JSON = '{"title": "a cartoon cat", "description": "%s", "content": ""}'
 
+#: The two model names the fixtures configure, asserted by NAME rather than by
+#: inequality: `!=` is satisfied by any wrong value, and `describe_model` is a
+#: provenance column where a wrong value is worse than an empty one.
+_IMAGE_MODEL = "mimo"
+_TEXT_MODEL = "mimo-text"
+
 
 class _RecordingStubVisionClient:
     """The stub above plus the PROMPT it was handed — `label` is the one new
@@ -78,11 +84,22 @@ class _StubVisionClient:
     async def complete(self, *, prompt: str, text: str, model: str = "") -> str:
         if not self.result.available:
             raise RuntimeError(self.result.reason or "vision")
-        return _JSON % self.result.description
+        # NOT `self.result.description` — that is already the JSON the vision
+        # half hands back, and wrapping it again produced a nested object the
+        # parser then read as prose. The text lane answers its own shape.
+        return _JSON % "a cartoon cat"
 
 
 def _make_fake(*, available: bool, text: str, reason: str) -> MediaInterpreter:
-    return FakeMediaInterpreter(text, available=available, reason=reason)
+    fake = FakeMediaInterpreter(text, available=available, reason=reason)
+    # The SAME two names the comprehender fixture configures, so an assertion
+    # on the configured value is written once and holds over both
+    # implementations. `describe_model` is a provenance column; «they differ»
+    # is satisfied by any wrong answer, and the point is that each names what
+    # it actually used.
+    fake.model = _IMAGE_MODEL
+    fake.text_model = _TEXT_MODEL
+    return fake
 
 
 def _make_comprehender(
@@ -95,10 +112,14 @@ def _make_comprehender(
             reason=reason,
         )
     )
+    # DISTINCT model names on purpose: the text pass and the describer must be
+    # tellable apart in `describe_model`, and a fixture that named both "mimo"
+    # would make that assertion vacuous against production.
     return MediaComprehender(
         client=client,
-        describe_models={"image": "mimo", "video": "k3", "audio": "mimo"},
-        text_model="mimo",
+        describe_models={
+            "image": _IMAGE_MODEL, "video": "k3", "audio": _IMAGE_MODEL},
+        text_model=_TEXT_MODEL,
     )
 
 
@@ -247,7 +268,8 @@ async def test_a_label_reaches_the_model_as_a_different_authored_question():
     port's contract with the model."""
     client = _RecordingStubVisionClient()
     interpreter = MediaComprehender(
-        client=client, describe_models={"image": "mimo"}, text_model="mimo")
+        client=client, describe_models={"image": _IMAGE_MODEL},
+        text_model=_TEXT_MODEL)
 
     await interpreter.describe(
         data=b"\x89PNG...", media_type="image/png", label="sticker")
@@ -258,3 +280,60 @@ async def test_a_label_reaches_the_model_as_a_different_authored_question():
     assert "chat sticker" in sticker
     assert "do not interpret the sender's mood or intent" in sticker.lower()
     assert "chat sticker" not in photo
+
+
+async def test_the_model_that_wrote_the_text_comes_back_with_it(make_interpreter):
+    """`MediaDescription.model` is what `media_objects.describe_model` records —
+    the one column an operator reads to find out which describer produced what.
+
+    Pinned on the PORT, over both implementations, because the previous shape
+    was duck-typed off the adapter and nothing checked the real one: mutating
+    `MediaComprehender`'s returns to a wrong model left the entire media suite
+    green, since every `describe_model` assertion ran against the fake."""
+    interpreter = make_interpreter(available=True, text="a cartoon cat", reason="")
+
+    got = await interpreter.describe(data=b"\x89PNG...", media_type="image/png")
+
+    assert got.model == _IMAGE_MODEL, (
+        "an available comprehension names the model that actually wrote it"
+    )
+
+
+async def test_the_text_lane_names_the_text_model_not_the_describer(
+    make_interpreter,
+):
+    """The case the field exists for. A voice note's title and description are
+    written entirely by the text model; deriving the column from the media type
+    recorded the AUDIO describer — `""` on the shipped config — for the one
+    modality whose text has a single named author.
+
+    So the two verbs must not report the same model, and that is checkable on
+    the port rather than on one adapter."""
+    interpreter = make_interpreter(available=True, text="a cartoon cat", reason="")
+
+    described = await interpreter.describe(
+        data=b"\x89PNG...", media_type="image/png")
+    summarized = await interpreter.summarize(text="喂你今日得唔得閒啊")
+
+    assert summarized.model != described.model, (
+        "the text pass and the describer are different models, and the column "
+        "that records which one wrote the text has to be able to tell them "
+        "apart"
+    )
+    # THE CONFIGURED VALUE, not merely a different string. «They differ» is
+    # satisfied by any wrong answer — a mutation hardcoding `"WRONG-MODEL"` in
+    # the real adapter passed that assertion, which is the whole failure this
+    # test was written against one layer down.
+    assert summarized.model == _TEXT_MODEL
+    assert described.model == _IMAGE_MODEL
+
+
+async def test_an_unavailable_result_names_no_model(make_interpreter):
+    """Nothing wrote the text, because there is no text. A model name beside an
+    unavailable result would put a describer's name on a read that never
+    happened."""
+    interpreter = make_interpreter(available=False, text="", reason="timeout")
+
+    got = await interpreter.describe(data=b"\x89PNG...", media_type="image/png")
+
+    assert got.model == ""

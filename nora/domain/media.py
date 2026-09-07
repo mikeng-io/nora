@@ -382,6 +382,56 @@ def sniff_media_type(data: bytes) -> str:
     return ""
 
 
+def label_from_media_type(media_type: str) -> str:
+    """The label a RECORDED media type earns on its own.
+
+    `label_for` answers the same question from a `MediaRef`, which carries the
+    platform's `voice_note`/`sticker` flags; this answers it from what the
+    custody stage actually stored, which does not. So it can never return
+    `voice note` or `sticker` — those two are separate axes, and inventing
+    either from `audio/*` or `image/*` would put a claim in the record's mouth.
+
+    It exists for the render join, which must not take a label from a body:
+    `body` is sender-supplied and `voice note` is the one label whose detail
+    renders UNCLIPPED, so a typed `[voice note a3f2c1]` was a way for any member
+    to switch off the only bound on per-attachment prompt spend.
+    """
+    top, subtype = parse_media_type(media_type)
+    if not top:
+        return "file"
+    if top == "audio":
+        return "audio"
+    if top == "application":
+        return "document" if subtype in _DOCUMENT_SUBTYPES else "file"
+    return _BY_TOP_LEVEL.get(top, "file")
+
+
+def label_agrees(label: str, media_type: str) -> bool:
+    """Whether a label CLAIMED by a body is consistent with the recorded type.
+
+    The join reads a placeholder's label off the body — the record does not
+    store one, and `voice note` and `audio` are the same top-level type — so
+    the body is the only place the distinction survives. That is fine for a
+    label the custody stage wrote and dangerous for one a member typed, and the
+    two are indistinguishable at render.
+
+    So the body may REFINE but never contradict: `voice note` is accepted over
+    `audio/*` and `sticker` over `image/*`, because those are the two axes the
+    media type genuinely cannot express. Anything else must match what
+    `label_from_media_type` derives, and a mismatch falls back to it.
+    """
+    if not label or label not in LABELS:
+        return False
+    derived = label_from_media_type(media_type)
+    if label == derived:
+        return True
+    if label == "voice note":
+        return derived == "audio"
+    if label == "sticker":
+        return derived == "image"
+    return False
+
+
 def label_for(ref: MediaRef) -> str:
     """What KIND of thing this is, in words the group would use.
 

@@ -19,11 +19,13 @@ import hashlib
 
 import pytest
 
+from nora.agent.egress import scan_identifiers
 from nora.agent.guards import Deliverer
 from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOL_BUDGETS, build_tools
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import MediaBlob, MediaObject
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.domain.ports import MediaDescription
 from nora.infra.blobs import FilesystemBlobStore
@@ -139,8 +141,24 @@ async def wiring(tmp_path, pg_url):
         )
         return {t.tool_name: t for t in tools}["media_fetch"]
 
+    def build_all(**kw):
+        """Every tool, not just `media_fetch` — `load_transcript` is the
+        EIGHTH transcript builder and lives in this same closure, so its media
+        join is only reachable through the full registry."""
+        tools = build_tools(
+            store=store, conversation_id="g1", conversation_type="group",
+            persons=persons, honcho=FakeMemoryStore(), deliverer=deliverer,
+            metrics=metrics, room=room, transit_source=None,
+            vision_source=vision, blob_store=blobs, vision_cache=cache,
+            describe_models={"image": "test/image-model"},
+            question="what is in the photo", context_window=40,
+            **kw,
+        )
+        return {t.tool_name: t for t in tools}
+
     ctx = {"store": store, "blobs": blobs, "vision": vision, "cache": cache,
-           "metrics": metrics, "build": build, "tmp_path": tmp_path}
+           "metrics": metrics, "build": build, "build_all": build_all,
+           "tmp_path": tmp_path}
     try:
         yield ctx
     finally:
@@ -1155,3 +1173,114 @@ async def test_a_describer_that_raises_on_a_clip_is_wrapped_not_propagated(
 
     assert out["status"] == "unavailable"
     assert _Explodes.calls == 2, "both windows were attempted"
+
+
+async def test_a_second_look_at_a_capped_clip_still_admits_what_it_missed(
+    wiring, monkeypatch,
+):
+    """**#117 came back through the cache.** The description was cached without
+    its coverage sentence and a hit was served verbatim, so the first call on a
+    twenty-minute clip said «…I have not seen the rest» and the second returned
+    the ten-window run and nothing else. Layer 1 masks it whenever a
+    comprehension row exists; the live exposure is `comprehension = false`
+    (documented and supported), a URL fetch, and any clip whose comprehension
+    failed or has not run yet.
+
+    Caching it WITH the caveat is worse, not better: raise `chunk_max` and a
+    stale «I have not seen the rest» is served from the durable table forever
+    about a clip that is now read whole. A caveat is a function of (bytes,
+    chunk geometry) and the cache is keyed on bytes, so the geometry-dependent
+    modality opts out of the cache entirely — the same call layer 2 makes."""
+    from nora.infra.vision import preprocess as _pre
+
+    vision = _WindowVision()
+    cache = VisionCache()
+    await _append_image(
+        wiring["store"], conversation_id="g1", sha256=PNG_SHA,
+        media_type="video/mp4",
+    )
+    monkeypatch.setattr(_pre, "_run_video", _ffmpeg("1200.0"))
+    tool = wiring["build"](
+        vision_source=vision, vision_cache=cache,
+        describe_models={"video": "test/video-model"},
+        media_store=FakeMediaObjectStore(),
+    )
+
+    first = await _call(tool, code=PNG_SHA[:6])
+    second = await _call(tool, code=PNG_SHA[:6])
+
+    assert "have not seen the rest" in first["description"]
+    assert "have not seen the rest" in second["description"], (
+        "the second look served a cached run with its caveat stripped off"
+    )
+    assert len(cache) == 0, "a geometry-dependent read is never cached"
+
+
+async def test_a_still_is_still_cached(wiring):
+    """The control for the exclusion above: an image's description IS a pure
+    function of its bytes, so it caches exactly as it always has — the second
+    look makes no model call."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    cache = VisionCache()
+    tool = wiring["build"](vision_cache=cache, media_store=FakeMediaObjectStore())
+
+    await _call(tool, code=PNG_SHA[:6])
+    await _call(tool, code=PNG_SHA[:6])
+
+    assert wiring["vision"].calls == 1
+    assert len(cache) == 1
+
+
+async def test_layer_1_carries_the_caveat_too(wiring):
+    """The stored reading is what `media_fetch` serves when a comprehension
+    exists, and «what this read did not see» is not a rendering detail — an
+    answer about half a clip is as wrong here as in a transcript."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(
+        PNG_SHA,
+        provenance={"media_caveat": "(I only watched the first 4 of them.)"},
+    )])
+
+    out = await _call(wiring["build"](media_store=index), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert "I only watched the first 4" in out["description"]
+    assert wiring["vision"].calls == 0
+
+
+async def test_load_transcript_renders_media_the_way_the_prefill_does(wiring):
+    """**The eighth transcript builder.** On master `messages.body` carried the
+    description, so this path had it. Behind a join the prefill performs and
+    this tool does not, the identical blob renders
+    `[image a3f2c1: a plate of noodles - …]` inside `<group_transcript>` and
+    `[image a3f2c1]` with nothing after it in the tool result — IN THE SAME
+    PROMPT. That is the disagreeing-renderers bug this tool's own comments say
+    it exists not to reproduce, and it is worse than a name: a bare handle
+    reads as «nobody has looked at this», which is a claim about the record."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
+    join = MediaJoin(store=index, screen=scan_identifiers, metrics=Metrics())
+    tools = wiring["build_all"](media_join=join)
+
+    out = await tools["load_transcript"]._tool_func(limit=10)
+
+    bodies = [m["body"] for m in out["messages"]]
+    assert bodies, "the window must actually hold the row"
+    assert any("a red square" in (b or "") for b in bodies), (
+        f"load_transcript handed back a bare handle the prefill had just "
+        f"rendered with its comprehension: {bodies}"
+    )
+
+
+async def test_load_transcript_with_no_join_wired_renders_the_stored_body(
+    wiring,
+):
+    """The inert control — and the proof that the assertion above is about the
+    JOIN rather than about something the store already did."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    tools = wiring["build_all"](media_join=None)
+
+    out = await tools["load_transcript"]._tool_func(limit=10)
+
+    bodies = [m["body"] for m in out["messages"]]
+    assert any(f"[image {PNG_SHA[:6]}]" == (b or "") for b in bodies)

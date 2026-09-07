@@ -679,7 +679,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # adaptors and lazy adoption. On master the sticker description and the
     # voice-note transcript were baked into `messages.body`, so all of them saw
     # them; the first cut of this change put the join on the tag assembler
-    # alone and left the other five rendering bare handles.
+    # alone and left the other seven rendering bare handles.
     #
     # `scan_identifiers` is INJECTED because `nora/language/` sits two layers
     # below `nora/agent/` in the import contract and could not otherwise reach
@@ -921,8 +921,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # The media join (issue #116). The same instance every other
         # transcript builder holds — the comprehension a spawned job wrote is
         # the one the transcript renders, the one the note tier reads and the
-        # one `media_fetch` serves, and six copies of that decision would be
-        # six chances to disagree about what a picture shows.
+        # one `media_fetch` serves, and eight copies of that decision would be
+        # eight chances to disagree about what a picture shows.
         media_join=media_join,
     )
 
@@ -1631,6 +1631,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # automatic read did.
         video_chunk_seconds=cfg.media.describe.video.chunk_seconds,
         video_max_chunks=cfg.media.describe.video.chunk_max,
+        media_join=media_join,
         describe_max_bytes=_describe_max_bytes(cfg),
         blobs=blobs, descriptions=media_descriptions, search=search_client,
         social=social_client,

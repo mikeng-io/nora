@@ -659,7 +659,7 @@ class NoteCuratorAdaptor:
             rows = []
             state = "unavailable"
         if rows and self._media_join is not None:
-            rows = list(await self._media_join.enrich(rows))
+            rows = list(await self._media_join.enrich(rows, path="note_curator"))
         # TRUNCATION read BEFORE either filter — a property of what `recent`
         # COULD return, not of what survived. `is_nora` rows are excluded HERE
         # because `recent` does not exclude them; her own words are an

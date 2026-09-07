@@ -153,7 +153,7 @@ class TranscriptInjection:
         # join is where the two meet — in the ASSEMBLER and not in
         # `nora/agent/prefill.py`, which is a pure renderer over `TagContext`
         # and must not gain a store. `None` is the inert state and renders
-        # exactly what is stored. The object itself is shared with five other
+        # exactly what is stored. The object itself is shared with seven other
         # transcript builders; see `nora.domain.media_join`.
         self._media_join = media_join
 
@@ -211,13 +211,14 @@ class TranscriptInjection:
         # before the context is frozen. It is a second round trip, so it is NOT
         # in the gather above: it needs the rows the gather returns.
         #
-        # `MediaJoin` is SHARED with the fire path, the standing fold, the note
-        # tier's two adaptors and lazy adoption — six transcript builders, one
-        # answer to «what did that photo show». The first cut of #116 put this
-        # join here and nowhere else, so five of the six saw a bare handle
-        # where master had baked the description into `messages.body`.
+        # `MediaJoin` is SHARED with the fire path, both standing folds, the
+        # Dreamer's batch, the note curator, lazy adoption and
+        # `load_transcript` — EIGHT transcript builders, one answer to «what
+        # did that photo show». The first cut of #116 put this join here and
+        # nowhere else, so seven of the eight saw a bare handle where master
+        # had baked the description into `messages.body`.
         if self._media_join is not None:
-            transcript = await self._media_join.enrich(transcript)
+            transcript = await self._media_join.enrich(transcript, path="tag")
 
         return TagContext(
             tag_id=request.tag_id,

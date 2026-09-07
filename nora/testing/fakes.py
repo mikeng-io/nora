@@ -31,6 +31,7 @@ from nora.domain.ports import (
     JobStatus,
     LinkPreview,
     MediaDescription,
+    MediaLookup,
     MemoryHealth,
     Mention,
     MessageHits,
@@ -842,9 +843,13 @@ class FakeMediaObjectStore:
             title=title or row.title,
             description=description or row.description,
             content=content or row.content,
-            describe_model=(
-                (model or None) if description else row.describe_model
-            ),
+            # Keyed on the MODEL, mirroring the SQL store's `coalesce`: a
+            # writer that names none is custody, which wrote no text and must
+            # leave this column alone. Keyed on the description it was NULL for
+            # every video on the shipped config; keyed on "any of the three" a
+            # resent voice note wiped it, because custody always sends
+            # `content`.
+            describe_model=(model or None) or row.describe_model,
             provenance=merged,
         )
         return True
@@ -878,6 +883,19 @@ class FakeMediaObjectStore:
         if self.fail:
             return None
         return self.objs.get(sha256)
+
+    async def lookup(self, *, sha256s: tuple[str, ...]) -> MediaLookup:
+        """Mirrors `SqlMediaObjectStore.lookup`, INCLUDING the axis `get` does
+        not have: `fail=True` answers `available=False` with no objects, where
+        `get` answers `None` and is indistinguishable from a miss. A fake that
+        collapsed the two would let the render join's `unavailable` branch —
+        the one an operator is paged by — go untested."""
+        if self.fail:
+            return MediaLookup(available=False, reason="store")
+        return MediaLookup(
+            available=True,
+            objects={s: self.objs[s] for s in sha256s if s in self.objs},
+        )
 
     async def by_prefix(self, *, handle: str, limit: int = 100) -> tuple[MediaObject, ...]:
         if self.fail:

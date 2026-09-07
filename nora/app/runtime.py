@@ -720,7 +720,7 @@ async def _dream_adaptor_once(
         # renders these rows for a model deciding what the conversation
         # ARRANGED — a photo it cannot see is exactly the content the issue was
         # opened about.
-        batch = list(await media_join.enrich(batch))
+        batch = list(await media_join.enrich(batch, path="dreamer"))
 
     outcome = await runtime.run(adaptor=adaptor, key=key, batch=batch)
 

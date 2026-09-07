@@ -201,11 +201,17 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 # a non-Protocol class elsewhere under `nora/`. Two methods KNOWN to have no
 # production caller hide in here and cannot be proven so: `tag_traces.recent`
 # and `turn_verdicts.read`.
+#
+# `lookup` joined on 2026-09-08 with `MediaObjectStore.lookup` (issue #116):
+# `nora/infra/version.py` and `nora/infra/transit/catalogue.py` each define an
+# unrelated one, so `.lookup(...)` cannot be attributed. Its real caller is
+# `nora.domain.media_join.MediaJoin`, pinned by
+# `tests/unit/test_media_join.py` and by the store's own contract suite.
 _AMBIGUOUS: frozenset[str] = frozenset(
     {
         "aclose", "append", "claim", "create", "delete",
-        "describe", "enqueue", "get", "mark", "put", "read", "recent",
-        "resolve", "rsvps_for", "save", "search",
+        "describe", "enqueue", "get", "lookup", "mark", "put", "read",
+        "recent", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "update", "watermark",
     }
 )

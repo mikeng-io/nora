@@ -985,7 +985,8 @@ async def run(
             # evidence.
             try:
                 batch = await asyncio.wait_for(
-                    media_join.enrich(batch), timeout=store_timeout_seconds,
+                    media_join.enrich(batch, path="debrief"),
+                    timeout=store_timeout_seconds,
                 )
             except Exception:
                 log.exception(

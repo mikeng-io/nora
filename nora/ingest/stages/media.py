@@ -315,8 +315,9 @@ async def run(
     # it moved to where it binds harder. There is no free text in this body to
     # screen: the LABEL and HANDLE halves cannot carry an identifier by
     # construction (a closed label set plus hex). The description half now
-    # reaches a prompt through `nora/engagement/context.py`, which screens it on
-    # EVERY render — including a render served entirely from stored rows, which
+    # reaches a prompt through `nora.domain.media_join`, which screens it on
+    # EVERY render on all eight paths — including a render served entirely
+    # from stored rows, which
     # a store-time screen would have been bypassed by. That is `stickers.py`'s
     # own rule ("a screen applied before caching is one a cache hit skips")
     # applied to the path that finally has a cache in it.

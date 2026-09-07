@@ -2,22 +2,23 @@
 
 **This file exists because the first cut of issue #116 shipped without it.**
 `MediaJoin` was a private method on `TranscriptInjection`, so the tag path saw
-what a photo showed and the other five builders — the fire path, the tag-path
-debrief, the standing event fold, the note tier's two adaptors, lazy adoption —
-rendered bare handles. On master the sticker description and the voice-note
-transcript were baked into `messages.body`, which meant every one of them had
-it; the change was a regression on both flag settings, and it left the note
-tier blind to exactly the content the issue was opened to capture.
+what a photo showed and the other SEVEN builders — the fire path, the tag-path
+debrief, the standing event fold, the Dreamer's batch, the note curator, lazy
+adoption and `load_transcript` — rendered bare handles. On master the sticker
+description and the voice-note transcript were baked into `messages.body`,
+which meant every one of them had it; the change was a regression on both flag
+settings, and it left the note tier blind to exactly the content the issue was
+opened to capture.
 
 Every test above the join was written through ONE consumer, so nothing went
 red. That is the defect this file is the brake on.
 
-**A STATIC read of the source, deliberately.** The alternative is six
+**A STATIC read of the source, deliberately.** The alternative is eight
 integration tests, one per builder, each needing that builder's whole
 composition — and the thing being asserted is not what one builder does with a
 particular row, it is that no builder was FORGOTTEN. A grep-shaped question
-gets a grep-shaped gate: `nora.domain.media_join` is imported, and the join is
-awaited, in every module that reads transcript rows for a model.
+gets a grep-shaped gate: the builder set is DERIVED from the source, and every
+module reading the record store either joins or is exempted with a reason.
 
 `tests/unit/test_media_join.py` is the other half — what the join DOES.
 """
@@ -31,19 +32,60 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
-#: Every module that reads transcript rows and renders them for a model, with
-#: the read that makes it one. A new entry here is how a SEVENTH transcript
-#: builder joins the set; deleting one is how a builder stops being one, and
-#: both are edits somebody has to make on purpose.
+#: The record-store reads that MAKE a module a transcript builder. Any module
+#: calling one of these on the audit store is handing rows to something, and
+#: since issue #116 those rows carry `[image a3f2c1]` where master carried the
+#: description — so it either joins or it renders less than master did.
+_TRANSCRIPT_READS = ("recent", "since", "since_including_nora", "unattributed")
+
+#: Modules that call one of the four above and are NOT transcript builders,
+#: each with the reason. **This is the allowlist, and the direction matters.**
+#: The first version of this gate listed the BUILDERS instead, with no
+#: discovery step — so a rename was caught and a builder that was never listed
+#: was not, and «never listed» is the only failure mode that has actually
+#: happened. Twice: FIVE builders missed when the join shipped, then
+#: `load_transcript` missed by the gate written to catch that.
 #:
-#: `nora/engagement/context.py` is the tag path; `nora/app/fire.py` the fire
-#: path (reminders, announcements, heartbeat, participation);
-#: `nora/engagement/stages/debrief.py` the tag-path standing fold;
-#: `nora/ingest/stages/standing_event.py` the event-driven fold;
-#: `nora/app/runtime.py` the Dreamer's batch, which covers BOTH scope-keyed
-#: adaptors (the note candidates pass renders it and holds no store of its
-#: own); `nora/language/note_curator.py` its own evidence read; and
-#: `nora/app/adoption.py` the Honcho back-feed.
+#: Inverted, a new module reading the record store appears in the discovered
+#: set and has to be classified — joined, or exempted here with a sentence.
+_NOT_A_BUILDER = {
+    # The OPERATOR's surface, not a model's: `nora persons pending` lists rows
+    # whose sender maps to nobody so a human can add them to identity.toml. A
+    # human reading `[image a3f2c1]` in a CLI table is not being told a photo
+    # was never looked at; a model reading it in a prompt is.
+    "nora/app/cli.py": "renders unattributed rows for an operator on the CLI",
+}
+
+
+def _discovered_readers() -> dict[str, set[str]]:
+    """Every module under `nora/` that calls one of `_TRANSCRIPT_READS`.
+
+    A source scan, because the question is «was anything FORGOTTEN» and a
+    hand-written list cannot answer it about itself.
+    """
+    found: dict[str, set[str]] = {}
+    for path in sorted((ROOT / "nora").rglob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:                                # pragma: no cover
+            continue
+        hits = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _TRANSCRIPT_READS
+        }
+        if hits:
+            found[rel] = hits
+    return found
+
+
+#: Every module that reads transcript rows and renders them for a model, with
+#: the read that makes it one. DERIVED-CHECKED: `test_the_builder_set_is_not
+#: _hand_maintained` asserts this equals the discovered set minus
+#: `_NOT_A_BUILDER`, so a new builder cannot be forgotten — only classified.
 BUILDERS = {
     "nora/engagement/context.py": "recent",
     "nora/app/fire.py": "recent",
@@ -52,6 +94,7 @@ BUILDERS = {
     "nora/app/runtime.py": "since",
     "nora/language/note_curator.py": "recent",
     "nora/app/adoption.py": "unattributed",
+    "nora/agent/tools.py": "recent",
 }
 
 
@@ -97,27 +140,57 @@ def test_every_transcript_builder_awaits_the_shared_join(rel: str) -> None:
     assert calls_enrich, f"{rel} imports MediaJoin but never calls enrich()"
 
 
+def test_the_builder_set_is_not_hand_maintained() -> None:
+    """**The gate that would have caught `load_transcript`.**
+
+    `BUILDERS` was a hand-written allowlist with no discovery step, so a
+    renamed builder failed and a builder that was never listed did not — and
+    «never listed» is the only failure mode that has happened, twice: five
+    builders when the join shipped, then `load_transcript` past the gate
+    written to catch exactly that.
+
+    Every module under `nora/` that calls one of the record store's transcript
+    reads must be classified: a builder, or exempt with a reason. A new one is
+    a red test rather than a silent omission."""
+    discovered = set(_discovered_readers())
+    classified = set(BUILDERS) | set(_NOT_A_BUILDER)
+
+    unclassified = discovered - classified
+    assert not unclassified, (
+        f"these modules read the record store and are neither joined nor "
+        f"exempted: {sorted(unclassified)}. Either call `MediaJoin.enrich` "
+        f"(it renders what master rendered) or add it to `_NOT_A_BUILDER` "
+        f"with the reason it hands rows to nobody who needs them."
+    )
+    stale = classified - discovered
+    assert not stale, (
+        f"these are listed but no longer read the record store: "
+        f"{sorted(stale)} — delete the entry rather than leaving a list of "
+        f"modules the gate silently checks nothing about."
+    )
+
+
 @pytest.mark.parametrize("rel,read", sorted(BUILDERS.items()))
 def test_each_builder_still_makes_the_read_that_makes_it_one(
     rel: str, read: str,
 ) -> None:
-    """The POSITIVE CONTROL for the test above, and it is not decoration: if a
-    module stopped reading transcript rows, the first test would keep passing
-    on an import nobody uses, and this list would quietly become a list of
-    modules that no longer build transcripts."""
-    tree = ast.parse(_source(rel))
-    assert any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == read
-        for node in ast.walk(tree)
-    ), f"{rel} no longer calls {read}() — is it still a transcript builder?"
+    """The POSITIVE CONTROL for the join assertion, and it is not decoration:
+    if a module stopped reading transcript rows, the join test would keep
+    passing on an import nobody uses.
+
+    It asserts the SPECIFIC read this module was classified on, not merely that
+    the name appears somewhere — an earlier version accepted any attribute call
+    with a matching name, so a builder keeping an unrelated `foo.recent(...)`
+    stayed green."""
+    assert read in _discovered_readers().get(rel, set()), (
+        f"{rel} no longer calls {read}() — is it still a transcript builder?"
+    )
 
 
 def test_the_join_is_constructed_exactly_once() -> None:
-    """ONE instance for the process. Six copies would be six chances to
-    disagree about what a picture shows — and six render bounds, six screens,
-    six places to forget one."""
+    """ONE instance for the process. Eight copies would be eight chances to
+    disagree about what a picture shows — and eight render bounds, eight
+    screens, eight places to forget one."""
     composition = _source("nora/app/composition.py")
     assert composition.count("MediaJoin(") == 1, (
         "the composition root builds more than one MediaJoin; every consumer "
@@ -131,7 +204,7 @@ def test_the_screen_is_injected_rather_than_imported_by_the_join() -> None:
     be reached by the note tier — the layering failure that would have pushed
     the join back to one consumer. `lint-imports` would catch the violation;
     this catches the shape BEFORE somebody writes it and then has to unpick
-    five call sites.
+    seven call sites.
     """
     join = _source("nora/domain/media_join.py")
     tree = ast.parse(join)
@@ -144,5 +217,5 @@ def test_the_screen_is_injected_rather_than_imported_by_the_join() -> None:
     assert "MediaJoin(" in _source("nora/app/composition.py")
     assert "screen=scan_identifiers" in _source("nora/app/composition.py"), (
         "the composition root must hand the join the REAL screen; a join built "
-        "without one would render model prose into six prompts unscreened"
+        "without one would render model prose into eight prompts unscreened"
     )

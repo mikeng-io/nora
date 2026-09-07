@@ -604,3 +604,40 @@ def _span_names_opened_by(job) -> set[str]:
         and node.args
         and isinstance(node.args[0], ast.Constant)
     }
+
+
+async def test_the_caveat_reaches_memory_with_the_reading():
+    """What a read did NOT see is not a rendering detail. A recalled
+    description of half a clip is as wrong in a peer card as in a transcript —
+    and worse, because nothing re-screens or re-qualifies a card at render.
+
+    Round three added this line and nothing tested it: a reviewer deleted it
+    and the whole suite stayed green."""
+
+    class _Capped(FakeMediaInterpreter):
+        async def describe(self, *, data, media_type, label=""):
+            got = await super().describe(
+                data=data, media_type=media_type, label=label)
+            return replace(got, provenance={
+                "media_caveat": "(I only watched the first 4 of them.)"})
+
+    memory = FakeMemoryStore()
+    job, spawn = _job(interpreter=_Capped(), memory=memory)
+
+    _schedule(job, _subject(label="video", media_type="video/mp4"), person=MILES)
+    await spawn.drain()
+
+    assert len(memory.fed) == 1
+    assert "I only watched the first 4" in memory.fed[0][1]
+
+
+async def test_a_whole_read_carries_no_caveat_into_memory():
+    """The control: a caveat on every reading is a caveat that means nothing,
+    and it would also teach her to hedge about clips she saw in full."""
+    memory = FakeMemoryStore()
+    job, spawn = _job(memory=memory)
+
+    _schedule(job, _subject(), person=MILES)
+    await spawn.drain()
+
+    assert "watched" not in memory.fed[0][1]

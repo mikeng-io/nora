@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.media import MediaObject
+from nora.domain.ports import MediaLookup
 from nora.infra.sql.schema import MEDIA_OBJECTS
 
 log = logging.getLogger("nora.infra.sql.media_objects")
@@ -149,15 +150,24 @@ class SqlMediaObjectStore:
                 "description": _keep(
                     MEDIA_OBJECTS.c.description, insert.excluded.description),
                 "content": _keep(MEDIA_OBJECTS.c.content, insert.excluded.content),
-                # Moves WITH the description, or not at all: a row whose text
-                # was kept must keep the model that wrote it, or the provenance
-                # of the text names a describer that never produced it.
-                "describe_model": sa.case(
-                    (
-                        insert.excluded.description != "",
-                        insert.excluded.describe_model,
-                    ),
-                    else_=MEDIA_OBJECTS.c.describe_model,
+                # Keyed on the MODEL ITSELF, which is the only thing that
+                # actually discriminates the two writers. It was keyed on the
+                # description, and on the SHIPPED config —
+                # `comprehension_text_model = ""` — a video read writes
+                # `description=""` beside a full timecoded `content`, so the
+                # conflict arm never recorded the video model that did the
+                # read: `describe_model` was NULL for every clip, in the one
+                # column an operator reads to find out which describer produced
+                # what. Widening it to "any of the three" then broke the other
+                # direction, because custody's inline voice-note write always
+                # carries `content`.
+                #
+                # A writer that names no model is not claiming to have written
+                # any text — that is custody, and it must leave this column
+                # alone. A writer that names one wrote what it is sending.
+                "describe_model": sa.func.coalesce(
+                    insert.excluded.describe_model,
+                    MEDIA_OBJECTS.c.describe_model,
                 ),
                 "provenance": MEDIA_OBJECTS.c.provenance.op("||")(
                     insert.excluded.provenance
@@ -245,6 +255,36 @@ class SqlMediaObjectStore:
             log.exception("media_object get failed; treating as a miss")
             return None
         return None if row is None else _row_to_object(row)
+
+    async def lookup(self, *, sha256s: tuple[str, ...]) -> MediaLookup:
+        """Many rows in ONE round trip, and the only read here that says
+        whether it could read at all.
+
+        `get` answers `None` for a missing row and for an unreachable database
+        alike — that collapse is pinned by this store's contract suite and is
+        correct for its callers, which want «no such media». The render join
+        wants the other distinction: a window of ten photos rendering bare
+        because the index is down is a different event from ten photos nobody
+        has read yet, and only one of them is worth waking an operator for.
+
+        `available=False` carries NO objects even if some rows came back,
+        because a partial answer to «what does this window hold» is one a
+        caller would render as complete."""
+        if not sha256s:
+            return MediaLookup(available=True, objects={})
+        stmt = sa.select(MEDIA_OBJECTS).where(
+            MEDIA_OBJECTS.c.sha256.in_(sha256s)
+        )
+        try:
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(stmt)).all()
+        except Exception:
+            log.exception("media_objects lookup failed; the join cannot read")
+            return MediaLookup(available=False, reason="store")
+        return MediaLookup(
+            available=True,
+            objects={r.sha256: _row_to_object(r) for r in rows},
+        )
 
     async def by_prefix(
         self, *, handle: str, limit: int = 100,

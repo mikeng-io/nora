@@ -705,7 +705,7 @@ class FirePath:
         # the path nobody is watching when it fires.
         transcript = self._persons.name_transcript(transcript, platform=occasion.platform)
         if self._media_join is not None:
-            transcript = await self._media_join.enrich(transcript)
+            transcript = await self._media_join.enrich(transcript, path="fire")
 
         card: tuple[str, ...] = ()
         if ref is not None:
