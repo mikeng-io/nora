@@ -307,11 +307,13 @@ async def test_every_proposal_carries_the_runs_own_provenance(monkeypatch):
 async def test_a_well_formed_empty_return_is_nothing_found_and_still_commits(
     monkeypatch,
 ):
-    """The decay path. `commit(key, ())` is a REAL call a sink may act on —
-    `LanguageConsolidator` rescores for an empty batch because decay is
-    time-driven — so treating an empty result as "nothing to do, skip the call"
-    silently fades nothing and a dormant room's lexicon stays live describing a
-    slang era that ended months ago."""
+    """The decay path. `commit(key, ())` is a REAL call a sink may act on:
+    a sink whose state decays on a clock rather than on new input needs the
+    empty call to do it, so treating an empty result as "nothing to do, skip
+    the call" silently fades nothing. The room-language consolidator was the
+    original such sink and is deleted; the contract it earned is what this
+    test still holds, and the note curator's expiry sweep is the shape that
+    would need it next."""
     sink = _Sink()
     runtime, metrics = _runtime(monkeypatch, raw='{"observations": []}')
 
@@ -755,8 +757,8 @@ async def test_a_blank_prompt_skips_the_model_and_still_commits(monkeypatch):
     times a day per workspace on a prompt that says «Claims to settle: (none)».
 
     `commit(key, ())` is still called, so the decay contract survives: a
-    watermarked adaptor over a quiet room renders a blank prompt too, and that
-    is exactly where `LanguageConsolidator`'s time-driven rescore lives."""
+    watermarked adaptor over a quiet room renders a blank prompt too, and a
+    clock-driven sink does its fading on exactly that call."""
     invoked: list[int] = []
     sink = _Sink()
 

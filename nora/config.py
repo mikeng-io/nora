@@ -1723,10 +1723,11 @@ class NotesConfig(BaseModel):
     #: "carries none of those risks — it never touches a note's content, never
     #: creates a note, and never merges one" (see this file's own note beside
     #: `NoteEntityResolutionAdaptor`'s wiring). Discharge is the opposite case:
-    #: it WRITES to three tiers outside this one entirely — an Event, a fact
-    #: with a warrant, a Honcho conclusion about a named person — the moment a
-    #: note the curator was already going to retire turns out to classify as a
-    #: commitment, a world-claim or a person-claim. An operator who accepted
+    #: it WRITES to two tiers outside this one entirely — an Event, and a
+    #: Honcho conclusion about a named person — the moment a note the curator
+    #: was already going to retire turns out to classify as a commitment or a
+    #: person-claim. (A third kind, a world-claim, went to the knowledge tier
+    #: until that tier was deleted on 2026-09-07.) An operator who accepted
     #: "this pass merges and retires notes" did not thereby accept "this pass
     #: also creates calendar events and writes permanent memories about
     #: people"; that is a materially different, materially larger capability
@@ -1964,7 +1965,7 @@ class DreamerConfig(BaseModel):
     `[analytics]`/`[facts]` shape. Off, nothing constructs a `DreamerRuntime`
     and the existing consolidators keep running exactly as they do today.
 
-    `model = ""` means **fall back to `[language].model`** — resolved by
+    `model = ""` means **fall back to `[llm].model`** — resolved by
     `Config.dreamer_model()` and nowhere else, the `MediaConfig.describer_for`
     shape, so exactly one place knows the fallback exists. Empty is the shipped
     value ON PURPOSE: it reproduces today's tier, which makes this section's
@@ -2014,8 +2015,9 @@ class DreamerConfig(BaseModel):
     reload: Literal["mtime", "startup"] = "mtime"
     strict: bool = True
     enabled: bool = False
-    # Empty = `[language].model`. Never read directly — `Config.dreamer_model()`
-    # is the only resolver.
+    # Empty = `[llm].model`. Never read directly — `Config.dreamer_model()`
+    # is the only resolver, and its own docstring records why the fallback
+    # moved off `[language]` (that section is gone).
     model: str = ""
     # The Dreamer's OWN reasoning effort, `""` meaning «inherit `[llm]`» — the
     # shape `StandingConfig.reasoning_effort` already uses, and TYPED for its

@@ -46,9 +46,9 @@ PINNED: dict[str, tuple[int, str]] = {
     "identity": (7, "dd8390f3c03f2848fa47a2454efd03ab3c9747037a73ade016040b1c841c5a09"),
     "voice": (18, "e1e0195dc4d8d7cc5cbc04d0800b1481d56a7956f5b02afdb631dce8bf509db2"),
     "silence": (2, "55abb8beab124e1d7f696ebcdcd577093b0afa7d063c031cc01e4dd4e3e1b6cc"),
-    "conduct": (23, "4d44e8afd588c5de90fc0c697b6d272a3ab61354bd8318c7a118fb55f9e2c89b"),
+    "conduct": (24, "a304ae577f27a9fc547896185f13b4ac382f77b5643af03868a97af235e4136a"),
     "participation-conduct": (
-        1, "517ea25df95be7c926faad9d1d12ce293aa85d873a04970a9240216cbdc07dbd",
+        2, "c0e3e26d07acad69681357fabbc66820c414fb67d9f95df1e2364364fe954699",
     ),
     "constraints": (6, "1a814c41a079067b2143ee1b4417a9b9a85ca8922f3082120f3c29494fd3dc43"),
 }

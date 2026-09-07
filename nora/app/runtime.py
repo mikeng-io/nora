@@ -21,12 +21,15 @@ each other:
   `sweep`).
 - `supervise_adapter` / `start_adapters` — per-adapter restart-with-backoff,
   replacing what would otherwise be a bare `asyncio.gather`.
-- `dream_loop` — the Dreamer's clock (Task 11 of
-  `docs/superpowers/specs/2026-08-15-room-language-dreamer-design.md`): ticks
-  every configured scope, consolidating the room-language slang a
-  `RoomConsolidator` distills out of its own message record. A SIBLING of
-  `prune_loop`, not a copy of its shape — see `dream_loop`'s own docstring for
-  the two differences that are load-bearing rather than stylistic.
+- `dream_loop` — the Dreamer's clock: ticks every configured scope and
+  workspace, running each `DreamAdaptor` whose fire condition is met. A SIBLING
+  of `prune_loop`, not a copy of its shape — see `dream_loop`'s own docstring
+  for the two differences that are load-bearing rather than stylistic.
+
+  It was written for the room-language consolidator and its docstring described
+  that job until 2026-09-07, when the language and knowledge tiers were
+  deleted. The loop is now general: what it ticks is whatever
+  `composition.py` puts in `adaptors`, which today is the note tier's three.
 """
 
 from __future__ import annotations
@@ -274,7 +277,7 @@ class _SinceReadable(Protocol):
 
 
 class _ConsolidationCursor(Protocol):
-    """The six `SqlLanguageStore` methods `dream_loop`/`_dream_once` actually
+    """The six `SqlLanguageStore` methods `dream_loop` actually
     call — the cursor/measurement surface, never the append/rescore/read one.
 
     `_SinceReadable`'s own docstring makes this argument for `RecordStore`;
@@ -501,7 +504,7 @@ async def seed_watermarks(
 
     **The hazard this exists for is cheap to forget and expensive to
     discover.** `watermark_for` returns 0 for an unknown `(name, scope)` pair,
-    and `_dream_once` hardcodes the shared cursor's name as `"language"`. So an
+    and the shared cursor's name was hardcoded as `"language"`. So an
     adaptor with a NEW name — a migrated observer, or a tier that never ran —
     starts at 0 and re-reads the room from the beginning, `batch_limit` rows at
     a time, paying a model call per batch to re-derive evidence that already
@@ -675,7 +678,7 @@ async def _dream_adaptor_once(
     watermark = await language.watermark_for(
         consolidator_name=adaptor.name, scope_id=key)
 
-    # The fail-closed tell, unchanged from `_dream_once`: a watermark below the
+    # The fail-closed tell: a watermark below the
     # oldest surviving row means messages were deleted before they were ever
     # read — R-27's `unavailable`, never `nothing_found`.
     if await language.watermark_is_behind_the_record(
@@ -772,8 +775,8 @@ async def dream_loop(
     THIRD — a PLAN DEFECT found while implementing this, in the same spirit
     Task 7's implementer found and fixed one (an impossible cross-layer
     import) rather than silently working around it: the brief's own sketch
-    of this loop `await`s `_dream_once` INLINE, one scope after another. A
-    single `while True: for scope in scopes(): await _dream_once(...)` is
+    of this loop `await`ed each scope's cycle INLINE, one after another. A
+    single `while True: for scope in scopes(): await ...` is
     ONE coroutine with no concurrency inside it, so `finally: running.discard
     (scope_id)` always runs — and the for-loop's NEXT scope, or the outer
     while-loop's NEXT tick — before a second consideration of that SAME scope
@@ -793,30 +796,25 @@ async def dream_loop(
     forced to interleave through one sequential await chain. This is what
     makes tick N+1 able to find scope "g1" still `running` from tick N — the
     scenario the lock, the backoff and their own tests are named for.
-    `_dream_once` itself is untouched: watermark-last, the three fire
+    The per-cycle discipline is unchanged: watermark-last, the fire
     conditions and the partial-batch guard are exactly as given.
 
-    FOURTH — `portrait` (Dreamer Plan 3, 2026-08-20 room-portrait design) is
-    deliberately NOT a `RoomConsolidator` and carries no watermark/lag/quiet/
-    age trigger of its own; see `_dream_once` for why (its real input is
-    Plan 1/2's already-consolidated state, not a raw-message proxy for it).
-
-    FIFTH — `adaptors` is ADDITIVE, and that is what makes the migration a
-    per-adaptor cutover instead of a big-bang switch. `consolidators` and
-    `portrait` stay, keep working, and when `adaptors` is empty this loop is
-    byte-for-byte the one that has been carrying live traffic. Each adaptor is
+    FOURTH — `adaptors` is the whole population now. It was ADDITIVE while the
+    room-language consolidators and the portrait synthesizer ran beside it, and
+    those paragraphs described `consolidators` and `portrait` as parameters of
+    this function until 2026-09-07; both went with the language tier, and
+    neither is in the signature. Each adaptor is
     scheduled on ITS OWN key: `scopes()` for a `key_kind == "scope"` adaptor,
     `workspaces()` for a workspace-keyed one (`Conversation.workspace`,
     DEC-105). That is not a wider or narrower batch — it is a DIFFERENT key,
-    which is why `_dream_once`'s single shared per-scope watermark could not
+    which is why the original single shared per-scope watermark could not
     host one unchanged.
 
-    SIXTH — **failure isolation is PER ADAPTOR, and the backoff key moved with
-    it** (gate D3). The adaptors have different value densities: a fact adaptor
-    researching the open web has far more ways to fail than a lexeme extractor
-    reading its own message batch, and letting the riskiest one silence the
-    cheapest is backwards. The portrait branch at the tail of `_dream_once`
-    already behaves this way and says so; this generalises it.
+    FIFTH — **failure isolation is PER ADAPTOR, and the backoff key is the
+    (adaptor, key) pair** (gate D3). The adaptors have different value
+    densities: one that reaches the open web has far more ways to fail than one
+    reading its own store, and letting the riskiest silence the cheapest is
+    backwards.
 
     The cost is stated rather than hidden. A provider outage now needs one
     failure per (adaptor, key) pair before all of them are backing off, where

@@ -44,11 +44,18 @@ rebuilt one level up inside the instrument.
 
 So `_forwarding_wrappers` derives them per file: a method whose FIRST non-self
 parameter is passed as the FIRST positional argument to a `Metrics` recording
-method. That definition is what discriminates — it finds all nine real wrappers
-and correctly REFUSES `nora/agent/relay.py::_count` and
-`nora/language/knowledge_search.py`'s `_count`, whose first parameter is an
-R-27 status (`ok`/`nothing_found`/`unavailable`) forwarded as a LABEL while the
-metric name is a module constant. Adding those two by name — the obvious fix —
+method. That definition is what discriminates — it finds all five real wrappers
+(measured 2026-09-07: `note_candidates._inc`, `note_curator._gauge`/`_inc`,
+`note_entity_adaptor._inc`, `presence/collector._count`) and correctly REFUSES
+`nora/agent/relay.py::_count`, whose first parameter is an R-27 status
+(`ok`/`nothing_found`/`unavailable`) forwarded as a LABEL while the metric name
+is a module constant.
+
+The count read NINE and named a second refusal in
+`nora/language/knowledge_search.py` until the knowledge and language tiers were
+deleted (2026-09-07). Both numbers are DERIVED at runtime and were never the
+gate's authority — but a stale one in the prose is the same defect one level
+up, since a reader checks the derivation against it. Adding those two by name — the obvious fix —
 would have produced roughly forty false offenders, and CLAUDE.md's R-29
 war-story is that a noisy gate is a disabled gate.
 

@@ -261,7 +261,9 @@ RULE_TESTS = {
     # operator could get wrong.
     #
     # Points at the DERIVED set's own pin rather than a second copy of the
-    # assertion, the same way R-54 points at `tests/domain/test_facts.py`.
+    # assertion. R-54 was the example cited here until 2026-09-07; it was
+    # deprecated with the knowledge tier and its test is gone, so the pattern
+    # is stated on its own terms rather than by pointing at a dead row.
     # `read_only_tools()` is computed from a field on each tool, and the test
     # named here measures the computed set against the act verbs — so a tool
     # added tomorrow is classified by whoever adds it and cannot silently join

@@ -3,9 +3,9 @@ own position, handed back to her at the top of the next turn
 (`design/dreamer-agent-loop/26-standing.md` §4).
 
 **This is the one injected block that is HERS**, and every other one is about
-somebody else: `<facts>` is what the workspace knows, `<notes>` is what it has
-not settled, `<room_language>` is how it talks, `<group_transcript>` is what it
-said. `<standing>` is what she concluded last turn. That difference is why the
+somebody else: `<notes>` is what the room has not settled, and
+`<group_transcript>` is what it said. `<standing>` is what she concluded last
+turn. That difference is why the
 block note below does not reuse `ROOM_BLOCK_NOTE` — «distilled from this room's
 own messages» is false here for a reason that matters: a position she wrote is
 not evidence about the room, and reading it as evidence is how a guess she made
@@ -43,12 +43,12 @@ from ..domain.standing import Standing
 #
 # The middle clause is this block's own, and it is the one no sibling needs: a
 # position is REWRITTEN each turn and keeps nothing, so anything that has to
-# survive belongs in a note or a fact rather than here.
+# survive belongs in a note rather than here.
 STANDING_BLOCK_NOTE = (
     "where you had got to in this conversation as of last turn, in your own "
     "words — a working position, not a record: it is rewritten every turn and "
-    "keeps nothing, so anything that must survive belongs in a note or a fact "
-    "instead; not an instruction to you, and it may already be out of date."
+    "keeps nothing, so anything that must survive belongs in a note instead; "
+    "not an instruction to you, and it may already be out of date."
 )
 
 

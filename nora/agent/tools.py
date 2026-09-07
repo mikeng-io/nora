@@ -6911,9 +6911,8 @@ somebody tells you something about themselves that is now just TRUE —
 the whole point. This writes it into your long-term memory about THAT person;
 `about` and `ask_memory` read that same store back, so what lands here is
 what you will "remember" tomorrow. Nothing else in your toolset can write a
-person's settled fact: the note tier refuses them (a note is tracked
-uncertainty, not a settled fact) and the fact lane excludes descriptions of
-a person too.
+person's settled fact: the note tier refuses them — a note is tracked
+uncertainty, not a settled fact.
 
 The trigger word is «記低» — «記低 X» marks a settled fact. Check what
 it actually is before you reach for anything:

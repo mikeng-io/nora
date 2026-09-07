@@ -288,7 +288,7 @@ def _build_participation_judge_prompt(
     mode («I don't know», «I can look that up»).
 
     `window_context` is the whole ground truth of the turn: the closed
-    window's transcript AND the injected standing/notes/facts blocks the
+    window's transcript AND the injected standing/notes blocks the
     determination saw. Without it `grounded_value` is ungradable — the judge
     cannot tell "answered from the seeded fact" from "answered from the base
     model", and the second is the failure the knowledge-cut twins gate on.
@@ -305,7 +305,7 @@ def _build_participation_judge_prompt(
         "(0.0-1.0) in that score.\n\n"
         f"## Doctrine\n{doctrine_text}\n\n"
         "## What Nora saw (the closed window's transcript and her injected "
-        "standing/notes/facts context)\n"
+        "standing/notes context)\n"
         "This is the ONLY factual ground the reply may draw on (besides the "
         "doctrine). Content that appears nowhere here came from the base "
         "model's general knowledge — which is the `grounded_value` failure, "

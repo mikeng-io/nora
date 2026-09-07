@@ -1,7 +1,7 @@
 ---
 name: standing-debrief
 kind: objective
-version: 4
+version: 5
 applies_to: [standing_debrief]
 description: >-
   The debrief's STANDING half — a second model reading one FINISHED exchange
@@ -41,7 +41,7 @@ Two shapes of the SAME turn, to make the difference concrete. The turn: Miles as
 RECAP — wrong, this is a transcript summary:
 > Miles 問我讀 X post，我試咗好多次都讀唔到，最後 social_fetch 成功讀到。內容係 Ahmad Awais 鬧 Opus 5 差、讚 open models，167 likes。佢跟住問點裝我去另一個 Discord server，我俾咗 invite link 同 config 改法。佢 send 咗張相，我睇唔到叫佢再 send。
 
-Every sentence here is an event. A reader of the transcript already knows all of it. The post's content and like count are FACTS — they belong in the fact tier, not in a position that is rewritten every turn and keeps nothing.
+Every sentence here is an event. A reader of the transcript already knows all of it. The post's content and like count are settled detail — a position is rewritten every turn and keeps nothing, so putting them here loses them either way.
 
 POSITION — right, this is where the conversation stands:
 > 我 commit 咗要幫 Miles 確認 target server 係咪公開，先決定開唔開獨立 profile。voice channel 問題未解決，我未搵到 root cause。佢啱啱再 send 相，我睇唔到——media_fetch 對 Discord CDN 可能仲有問題，下次要再試。而家等緊佢下一個指令。

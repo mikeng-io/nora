@@ -42,11 +42,18 @@ like a pile of bugs:
   `defect`               — a live write path creates state that no production
       code can act on or leave. These are the ones that want fixing.
 
-THE COUNTS, so they reconcile with something: SIX methods are pinned below.
+THE COUNTS, so they reconcile with something: FIVE methods are pinned below.
 TWO more are known to have no production caller and cannot be proven so here —
 `SqlTagTraceStore.recent` and `SqlTurnVerdictStore.read` — because their names
-are shared with other stores (see the ambiguity rule). Eight in total; the six
+are shared with other stores (see the ambiguity rule). Seven in total; the five
 are what this file can check.
+
+These counts were SIX and EIGHT until 2026-09-07 and were not re-derived when
+the knowledge and language tiers were deleted — `SqlEntityStore.lookup` left
+the ambiguous set (the method went with the tools that were its only
+consumers) and `SqlRenderedClaimStore` left the module set entirely. A count
+in prose that nothing recomputes is a claim, and this file exists to refuse
+exactly that shape of claim about somebody else's code.
 
 HOW A CALLER IS RESOLVED, AND WHAT THAT STILL CANNOT SEE
 --------------------------------------------------------
@@ -218,11 +225,6 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "describe", "enqueue", "get", "mark", "put", "read", "recent",
         "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "update", "watermark",
-        # `SqlEntityStore.lookup` shares its name with `TransitCatalogue.lookup`
-        # and `VersionManifest.lookup`, both non-Protocol classes — a call to
-        # `.lookup(...)` cannot be attributed, so the name is UNCHECKED, never
-        # clean. Its production caller is `SqlNoteStore`'s own resolution path.
-        "lookup",
     }
 )
 
@@ -415,8 +417,8 @@ def test_every_uncalled_store_method_is_pinned() -> None:
 
     # POSITIVE CONTROL, on the MODULE SET rather than a count. An empty result
     # is also what a walk that silently dropped a module produces, and a
-    # numeric floor has slack a set does not: with a count alone, nine of the
-    # twenty-five store modules could vanish and every assertion stayed green.
+    # numeric floor has slack a set does not: with a count alone, several of
+    # the twenty store modules could vanish and every assertion stayed green.
     seen = {m.module for defs in methods.values() for m in defs}
     assert seen >= _STORE_MODULES, (
         "the walk missed store modules entirely: "

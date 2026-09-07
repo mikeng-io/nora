@@ -28,9 +28,8 @@ answer matters enough to decompose.
    not fan out across the whole room — pick the one or two people the answer
    turns on, one deep, others shallow.
 4. **Ask each layer the question it answers.** Memory for what people are like
-   and what happened; knowledge for settled group state; notes for what is
-   still open. Generate the query yourself — a situation question, not the
-   message you were tagged in.
+   and what happened; notes for what the room has not settled. Generate the
+   query yourself — a situation question, not the message you were tagged in.
 5. **Propose, then finish.** Form the candidate answer from what came back
    before reaching for anything else; only then decide what a live check, a
    venue, or a price still needs to add.

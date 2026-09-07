@@ -46,11 +46,11 @@ the sort of decision that gets re-litigated by whoever adds the fourth adaptor.
 
 **R-27 at this layer, and the mapping is the point.** A model response that
 will not parse is `unavailable` («this batch was never actually read»), never
-`nothing_found` («there was nothing in it») — because `_dream_once` must not
-advance a watermark past a batch nobody read. That is exactly what
-`ExtractionUnparseableError` protects today (`nora/language/consolidator.py`),
-and the outcome type is where that guarantee lands once the adaptor contract
-returns a value instead of raising.
+`nothing_found` («there was nothing in it») — because the loop must not
+advance a watermark past a batch nobody read. The room-language consolidator
+protected this by RAISING `ExtractionUnparseableError`; that consolidator went
+with the language tier on 2026-09-07, and the outcome type is where the same
+guarantee lands now that the adaptor contract returns a value instead.
 
 **The instruction digest is read PER RUN, never cached at construction**
 (DEC-128). The corpus hot-reloads off a bind mount; a digest captured at
