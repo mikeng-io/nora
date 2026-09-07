@@ -469,7 +469,7 @@ def _notes_block(ctx: TagContext) -> str:
     **What is true of this block and of no other one above it: it is a
     POINTER, not the content.** Every other injected block is the whole of
     what she is given on its axis — the transcript is the messages, the
-    portrait is the portrait. A `<notes>` line is a title and a summary of
+    standing block is the position. A `<notes>` line is a title and a summary of
     something whose substance lives behind `note_read`, and that is the
     tier's design rather than an economy (spec §5.1/§5.2): awareness in the
     prompt, content on demand, with §6.2's read-before-write latch built on

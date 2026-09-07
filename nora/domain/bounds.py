@@ -51,8 +51,8 @@ fires inside the store, so a bound that bites is visible whether or not anyone
 downstream thought about it.
 
 It does NOT close **model** calibration. Turning "there was more" into text the
-model reads is per-site render work — `fact_render`'s extent line is the model
-of it — and follows separately. One change, two audiences, and only one of them
+model reads is per-site render work — an extent line on the block itself is
+the model of it — and follows separately. One change, two audiences, and only one of them
 is served class-wide. Saying so here rather than letting the next reader assume
 both: a bounded tool result is still handed to the model as `ok` with no hint
 that its list was a ceiling.
@@ -71,7 +71,7 @@ is measured rather than predicted.** `[audit] context_window` is 40 while
 conversation; the busiest room held 970 rows when this was wired, against a
 window of 40. Both per-turn readers pass the window, so this bound bites on
 every turn in every established room, permanently. It is wired anyway — the
-window IS the thing whose clipping makes an empty room-facts block ambiguous
+window IS the thing whose clipping made an empty derived block ambiguous
 three ways — but an operator must read its always-1 as foreseen, not as a
 discovery. Its useful reading is the DAY it stops: a room whose transcript
 window suddenly fits is a room that went quiet or got pruned.

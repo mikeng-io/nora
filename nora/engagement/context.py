@@ -55,8 +55,8 @@ class StandingNotesReader(Protocol):
     in `ports` next to its fact-tier sibling, and this Protocol becomes an
     alias of it.
 
-    **Never raises**, the promise every critical-path read in this module makes
-    (`FactReader.standing_facts`' own wording). `SqlNoteStore.standing` does not
+    **Never raises**, the promise every critical-path read in this module
+    makes. `SqlNoteStore.standing` does not
     yet make it — it is a bare `SELECT` — which is why `_notes` guards rather
     than trusts, exactly as `_peer_card` does for a port that DOES promise it.
     """
@@ -165,30 +165,20 @@ class TranscriptInjection:
         # here: one exception would otherwise cancel its six siblings and take
         # the turn down with it. That is the same property `MemoryStore`'s
         # "never load-bearing" rule already claims — this just stops relying on
-        # the adapter to honour it. `_room_language` (Task 10), `_room_exchange`
-        # (Dreamer Plan 2) and `_room_portrait` (Dreamer Plan 3) all hold the
+        # the adapter to honour it. Every read left in the gather holds the
         # same property.
-        # NESTED gather, not one flat call: `asyncio.gather`'s stub only has
-        # distinctly-typed overloads up to six positional awaitables — a
-        # SEVENTH (`_room_portrait`, Dreamer Plan 3) falls through to the
-        # homogeneous `Future[list[_T]]` overload, where mypy joins all seven
-        # return types down to `object`. Nesting keeps every branch within
-        # the typed overloads AND keeps all eight leaf reads scheduled in the
-        # same wave: the outer `gather` wraps each inner `gather(...)`
-        # coroutine into a `Task` immediately, so the inner ones' own
-        # children start concurrently too — nothing here becomes sequential.
+        # ONE FLAT gather of six. It was a NESTED gather while there were
+        # eight and then nine leaf reads — `asyncio.gather`'s stub only types
+        # six positional awaitables distinctly, and a seventh falls through to
+        # the homogeneous overload where mypy joins every return type down to
+        # `object`. The room-language, room-exchange and room-portrait reads
+        # went with the language tier on 2026-09-07 and the facts read with the
+        # knowledge tier, which put the count back inside the typed overloads,
+        # so the nesting had nothing left to buy.
         #
-        # The NINTH (`_standing`) joins the FIRST branch, which had four, rather
-        # than the second, which now has five: both stay inside the six the
-        # `asyncio.gather` overloads type distinctly, and the first branch is
-        # where it belongs on grounds other than arity — `_standing` is keyed on
-        # `(platform, conversation_id)` like `_recent` beside it, where all four
-        # reads in the second branch are keyed on a workspace or a scope.
-        #
-        # `_notes` is the one read scoped by WORKSPACE rather than by room,
-        # and it is gathered beside the rest anyway — grouping is about arity
-        # here, and where a read is scheduled says nothing about what it is
-        # keyed on.
+        # `_notes` is the one read scoped by WORKSPACE rather than by room, and
+        # it is gathered beside the rest anyway — where a read is scheduled says
+        # nothing about what it is keyed on.
         (
             transcript, card, self_card, tagger_card, standing, notes,
         ) = await asyncio.gather(
@@ -355,11 +345,11 @@ class TranscriptInjection:
         """Her own position in THIS conversation, or `None`
         (`design/dreamer-agent-loop/26-standing.md` §4).
 
-        **Keyed `(platform, conversation_id)`** — S4, and unlike `_notes`/
-        `_facts` beside it there is no workspace to resolve and no `Policy` read
+        **Keyed `(platform, conversation_id)`** — S4, and unlike `_notes`
+        beside it there is no workspace to resolve and no `Policy` read
         here at all. A position is held in a room. Two rooms in one workspace
-        share what the workspace KNOWS (facts) and what it has not settled
-        (notes); they do not share where a conversation had got to, and keying
+        share what the workspace has not settled (notes); they do not share
+        where a conversation had got to, and keying
         this on the workspace would have one room's position rewritten by
         another room's turn.
 

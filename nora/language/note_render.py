@@ -1,9 +1,10 @@
 """Renders standing `Note`s into the `<notes>` block — the INDEX, not the notes.
 
-**Why this does not reuse `ROOM_BLOCK_NOTE`.** Same reason `fact_render` does
-not (read its docstring first; this is the second block on that footing, not a
-new argument). That constant (`nora.language.render`) says «distilled from this
-room's own messages», and a note is keyed on the WORKSPACE. `Note.established_in`
+**Why this does not reuse the room block's note.** The room-language block
+said «distilled from this room's own messages», and a note is keyed on the
+WORKSPACE. (That constant lived in `nora.language.render`, deleted with the
+language tier on 2026-09-07 — the argument survives it, and this is now the
+only block making it.) `Note.established_in`
 records the room it was born in but is a routing key, never a filter (spec §3) —
 it decides where a promoted `Event` lands, not who may see the note — so a note
 established in one room renders unchanged in every other room of the same
@@ -51,7 +52,7 @@ question, and §6.2 requires a `note_read` before any revision anyway.
 
 Nothing writes this tier yet (`TagContext.notes` defaults to `()`), so in
 production today this module always renders nothing; that is the intended,
-dormant shape, same as `fact_render` before it.
+dormant shape.
 """
 
 from __future__ import annotations
@@ -61,8 +62,7 @@ from collections.abc import Sequence
 from ..domain.notes import Note
 from ..domain.prompt import escape
 
-# Same shape as `nora.language.render.ROOM_BLOCK_NOTE` and
-# `nora.language.fact_render.FACTS_BLOCK_NOTE`: the FIRST half states the axis
+# The shape every injected block's note follows: the FIRST half states the axis
 # this block is actually true on (open questions, carried across rooms — never
 # "this room's own messages") and, uniquely here, that each line is a POINTER
 # rather than the thing itself, because a model shown a title and a summary will

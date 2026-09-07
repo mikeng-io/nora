@@ -1710,14 +1710,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # parameters would let a deployment wire the store and forget the client,
     # which runs the stage, finds nothing to do, and reports nothing).
     #
-    # `[standing] model` empty means `[llm] model`, the same defaulting
-    # `[language] exchange_model` uses one section over. A separate name is
+    # `[standing] model` empty means `[llm] model`, the defaulting every
+    # per-subsystem model key in this file uses. A separate name is
     # available because the fold is a different job from replying — one
     # structured output, no tools, no audience — and may want a cheaper or a
     # more literal model; empty is the honest default rather than a guess.
     #
     # `objective=dreamer_instructions` is the SAME hot-reloading instruction
-    # substrate the language observers hold, read through `objective_body` and
+    # substrate every Dreamer adaptor holds, read through `objective_body` and
     # NOT `for_objective`: the latter prepends the Dreamer's own doctrine,
     # which is research-framed, and «a research-framed doctrine on a task with
     # no research» is one of the two named causes of the 4096-token runaway
@@ -2052,8 +2052,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
 
     # ---- the Dreamer runtime (substrate plan Phase 2) --------------------
     #
-    # Constructed only when `[dreamer] enabled` is true, the shape
-    # `language_store` and `portrait_synthesizer` above already use: a
+    # Constructed only when `[dreamer] enabled` is true, the shape every
+    # gated subsystem in this file uses: a
     # subsystem that is off builds NOTHING, so a wiring mistake in it cannot
     # cost a deployment that never turned it on.
     #

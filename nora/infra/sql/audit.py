@@ -127,11 +127,12 @@ class SqlRecordStore:
             .where(MESSAGES.c.conversation_id == conversation_id)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
             # OVER-FETCH BY ONE (`nora.domain.bounds`). This window is what
-            # `_subjects_in_play` builds the room's subject set from, so a
-            # silent cut here makes an empty facts block ambiguous three ways
-            # — no such fact, its subject fell outside the window, or the
-            # window itself was clipped — and only this makes the third
-            # visible.
+            # every per-turn derived block was built from, so a silent cut
+            # here made an empty block ambiguous three ways — nothing to say,
+            # its subject fell outside the window, or the window itself was
+            # clipped — and only this makes the third visible. The blocks that
+            # motivated it went on 2026-09-07; the over-fetch is kept because
+            # the ambiguity is a property of the window, not of its readers.
             .limit(over_fetch(limit))
         )
         async with self._engine.connect() as conn:
