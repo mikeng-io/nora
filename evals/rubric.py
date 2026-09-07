@@ -105,10 +105,10 @@ PARTICIPATION_RUBRIC: tuple[Criterion, ...] = (
         "grounded_value",
         "The reply adds something TRUE and useful that the visible transcript does "
         "not already contain — and it is drawn from the injected context Nora was "
-        "given (the standing/notes/facts blocks), NOT from general knowledge. A "
+        "given (the standing/notes blocks), NOT from general knowledge. A "
         "reply whose factual content appears nowhere in the provided context scores "
         "LOW even if it happens to be true in the world: her memory boundary is her "
-        "standing/facts, and a model answering from parametric memory is the exact "
+        "standing and notes, and a model answering from parametric memory is the exact "
         "failure the knowledge-cut cases exist to catch.",
     ),
     Criterion(

@@ -1434,9 +1434,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_note_discharge_total",
         "One classified discharge item's write, by kind (commitment -> the "
-        "Gathering/Event service, world_claim -> the fact store with a "
-        "source warrant citing the note, person_claim -> Honcho's "
-        "conclusion lane) and outcome: written (ok), refused (a code-level "
+        "Gathering/Event service, person_claim -> Honcho's conclusion lane) "
+        "and outcome: written (ok), refused (a code-level "
         "decision — malformed, or the closing citation's sender maps to no "
         "resolvable person to attach it to — never a guess), unavailable "
         "(discharge_enabled is true but the owning tier's collaborator is "
@@ -1444,14 +1443,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "note_curator.NoteCuratorAdaptor's discharge step, which runs only "
         "for a GROUNDED closed verdict that actually retired — an "
         "expired/moot note answered nothing, so it never reaches this "
-        "metric at all.",
+        "metric at all. The kind vocabulary is nora.language.note_curator's "
+        "DISCHARGE_KINDS, which the writer validates against before "
+        "incrementing — a third kind was routed to the knowledge tier until "
+        "it was deleted on 2026-09-07, and this text is what said so after "
+        "the route was gone.",
         ("kind", "outcome"),
     ),
     _CounterSpec(
         "nora_note_discharge_notes_total",
         "Whether a closed, retired note had anything to discharge, by "
-        "result: items (its classification named at least one commitment, "
-        "world-claim or person-claim — regardless of whether each one then "
+        "result: items (its classification named at least one commitment "
+        "or person-claim — regardless of whether each one then "
         "wrote or was refused) or empty (the ordinary, common answer — most "
         "closed notes settle one question with nothing else worth routing, "
         "and that is R-27's nothing_found, not a wiring gap). Absence of a "

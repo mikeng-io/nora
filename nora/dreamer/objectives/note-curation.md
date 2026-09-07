@@ -1,7 +1,7 @@
 ---
 name: note-curation
 kind: objective
-version: 3
+version: 4
 applies_to: [note_curator_adaptor]
 description: >-
   The note tier's housekeeping pass. Decides, per note, whether an open question
@@ -14,7 +14,7 @@ description: >-
   for `closed`, and the evidence block every note now carries. Version 3
   (design/dreamer-agent-loop/33 §7, issue #101) adds an optional `discharge`
   array on a `closed` verdict: what a closing note's SETTLED content is —
-  a commitment, a world-claim, a person-claim — never a decision about
+  a commitment, a person-claim — never a decision about
   whether to route it, which stays code's job entirely.
 change_policy: operator-only
 ---

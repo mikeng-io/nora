@@ -436,7 +436,7 @@ def _participation_header() -> str:
         "quiet, and this turn is the offer of the floor, nothing more.\n"
         "The tag_message below is deliberately empty: nothing was put to you. "
         "Decide from what is already in front of you — the transcript above, "
-        "and whatever standing, notes and facts came with it. If speaking "
+        "and whatever standing and notes came with it. If speaking "
         "would add something the room can use, say it — once, briefly. If "
         "not, stay silent: silence is a complete answer here, not a failure."
     )

@@ -19,6 +19,7 @@ from nora.config import (
     SpeechConfig,
     load,
 )
+from nora.domain.standing import STANDING_STORE_CALLS_PER_FOLD
 from tests.builders import copy_example_config
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1043,13 +1044,33 @@ def test_an_unknown_standing_key_is_a_startup_failure(toml_path):
         load(toml_path)
 
 
+def _real_slot_hold(toml_path) -> float:
+    """The hold `Config._check_standing_slot_hold` actually computes, DERIVED
+    from the same two values and the same constant it uses.
+
+    Hand-computed in both tests below until 2026-09-07, and that is exactly how
+    they stopped measuring: the sum lost a term (recognition's classify
+    timeout, deleted with the knowledge tier) and the hardcoded 58 stayed above
+    the real 50, so the test that documents itself as reddening on a dropped
+    term passed silently. A literal cannot notice a term leaving the sum. This
+    can.
+    """
+    cfg = load(toml_path)
+    return (
+        cfg.standing.timeout_seconds
+        + STANDING_STORE_CALLS_PER_FOLD * cfg.standing.store_timeout_seconds
+    )
+
+
 def test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_path):
     """**The gate that catches an arity error in the one number deciding how
     long a live conversation can stop answering.** It has been wrong four
     times: 2x store calls when there were two, then four, then five, and then
     an `[llm] timeout_seconds` term that bounds nothing here at all.
 
-    44 is under the real hold (20 + 8 + 5 x 5 = 53).
+    The budget is derived as one second UNDER the real hold, so it stays
+    under whatever the sum currently is rather than under whatever it was the
+    day someone typed a literal.
     """
     # `count=0` on `re.sub` means replace ALL, not none — so the line that used
     # to sit here flipped every `enabled = false` in the file (~18 sections:
@@ -1057,7 +1078,10 @@ def test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_pa
     # it claimed the opposite, and made this test depend on every unrelated
     # subsystem tolerating being switched on. Removed; the targeted replace
     # below is the whole mechanism (review finding, 2026-08-27).
-    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "44.0")
+    text = _set_key(
+        toml_path.read_text(), "max_slot_hold_seconds",
+        f"{_real_slot_hold(toml_path) - 1:g}",
+    )
     i = text.index("[standing]")
     text = text[:i] + text[i:].replace("enabled = false", "enabled = true", 1)
     toml_path.write_text(text)
@@ -1078,16 +1102,18 @@ def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
     Falsification: put `self.llm.timeout_seconds` back in the sum and this
     refuses to start.
 
-    58, not 53: the real hold gained recognition's classify timeout (8) when
-    that stage stopped inheriting `[language]`'s 120s Dreamer ceiling, and the
-    standing fold's SIXTH store await — the watermark batch read
-    (`record_store.since_including_nora`, design/standing-watermark/20) — when
-    the fold switched from the reply path's window to the watermark read
-    (20 + 8 + 6 x 5). The number here is the WHOLE hold, deliberately — set to
-    exactly what the sum is, so a term added to it or dropped from it reddens
-    this test as well as the one below.
+    The budget is set to EXACTLY the real hold, deliberately, so a term added
+    to the sum or dropped from it reddens this test as well as the one above.
+    It is now DERIVED rather than typed — a literal 58 sat here while the sum
+    fell to 50 (recognition's classify timeout went with the knowledge tier on
+    2026-09-07) and 58 > 50 passed silently, which is the precise failure this
+    docstring claims the number prevents. A gate that cannot notice the thing
+    it exists to notice is worse than no gate, because it reads as coverage.
     """
-    text = _set_key(toml_path.read_text(), "max_slot_hold_seconds", "58.0")
+    text = _set_key(
+        toml_path.read_text(), "max_slot_hold_seconds",
+        f"{_real_slot_hold(toml_path):g}",
+    )
     # `timeout_seconds` appears in ten sections, so this one is scoped to
     # `[llm]` by hand — `_set_key` deliberately refuses an ambiguous key rather
     # than silently editing the first or all of them.
@@ -1101,7 +1127,13 @@ def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
 
     cfg = load(toml_path)
     assert cfg.llm.timeout_seconds == 600.0, "the edit did not land"
-    assert cfg.standing.max_slot_hold_seconds == 58.0
+    # The POSITIVE CONTROL for the whole test: it must have loaded with the
+    # budget set to exactly the real hold, not to some larger number that would
+    # have let an uncounted term hide underneath it.
+    assert cfg.standing.max_slot_hold_seconds == (
+        cfg.standing.timeout_seconds
+        + STANDING_STORE_CALLS_PER_FOLD * cfg.standing.store_timeout_seconds
+    )
 
 
 def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):
