@@ -31,32 +31,67 @@ from nora.obs.metrics import Metrics
 
 # A benign item per adaptor. Rides along in every rejection batch: if a drop
 # ever became per-batch, these are what would disappear with it.
+#
+# **Re-pointed 2026-09-07 at the adaptors that exist.** These fixtures were
+# `room_language`/`room_exchange`/`room_portrait`/`facts` — all four deleted
+# with the language and knowledge tiers — so every payload here was a shape no
+# adaptor could produce, and the suite exercised the screen against nothing
+# real while reading as full coverage. `screen` itself is generic (it walks the
+# item; `adaptor` is only a metric label), so the BEHAVIOUR never lapsed; what
+# lapsed was any evidence that it holds for a payload the Dreamer can actually
+# emit. The shapes below are read off the live `accept` parsers:
+# `note_candidates._parse_candidate`, `note_curator`'s verdict parse.
 BENIGN = {
-    "room_language": {"lexeme": "落閘", "sense": "收工唔再傾嘢", "confidence": 0.8},
-    "room_exchange": {"prompt": "食咩好", "reply": "隨便", "weight": 2},
-    "room_portrait": {"facet": "rhythm", "observation": "夜晚先郁"},
-    "facts": {"subject": "miles", "predicate": "drinks", "object": "齋啡"},
+    "note-candidates": {
+        "title": "揀邊隻 co-op game",
+        "description": "四個人以上、有主線",
+        "body": "傾咗幾日,未揀到",
+        "closing_condition": "揀咗邊隻就閂",
+    },
+    "note-curation": {
+        "note_id": "n1", "verdict": "open", "why": "冇人再提過",
+    },
 }
 
-# The same four shapes, each with a phone number written into the tier's own
+# The same shapes, each with a phone number written into the tier's own
 # free-text field — where a `web_fetch`ed page's contents would land.
 CARRIES_A_PHONE = {
-    "room_language": {"lexeme": "阿邊個", "sense": "個號碼係 +85290000101 嗰位"},
-    "room_exchange": {"prompt": "點搵佢", "reply": "打 +85290000101 啦"},
-    "room_portrait": {"facet": "contact", "observation": "reachable at +85290000101"},
-    "facts": {"subject": "miles", "predicate": "phone", "object": "+85290000101"},
+    "note-candidates": {
+        "title": "搵人裝冷氣",
+        "description": "阿邊個個號碼係 +85290000101",
+        "body": "打去問價",
+        "closing_condition": "裝好就閂",
+    },
+    "note-curation": {
+        "note_id": "n1", "verdict": "closed",
+        "why": "佢留低咗 +85290000101 所以搞掂",
+    },
 }
 
 # And with a raw lat/lng pair — the shape `scan_identifiers` alone does not see,
 # which is why `looks_like_coordinate` is the screen's second leg.
 CARRIES_A_COORDINATE = {
-    "room_language": {"lexeme": "個位", "sense": "即係 22.4106, 114.1245 嗰度"},
-    "room_exchange": {"prompt": "喺邊", "reply": "22.4106,114.1245"},
-    "room_portrait": {"facet": "haunt", "observation": "usually at 22.4106, 114.1245"},
-    "facts": {"subject": "miles", "predicate": "home", "object": "22.4106, 114.1245"},
+    "note-candidates": {
+        "title": "去邊度行山",
+        "description": "集合喺 22.4106, 114.1245",
+        "body": "早上九點",
+        "closing_condition": "行完就閂",
+    },
+    "note-curation": {
+        "note_id": "n1", "verdict": "closed",
+        "why": "最後去咗 22.4106, 114.1245 嗰度",
+    },
 }
 
-ADAPTORS = ("room_language", "room_exchange", "room_portrait", "facts")
+#: The Dreamer adaptors whose envelope carries FREE TEXT, and therefore the
+#: ones a leak can ride out on. `note-entity-resolution` is deliberately
+#: absent and has its own test below: its payload is two single-character
+#: handles, so it cannot express an identifier at all — parametrizing it here
+#: would mean asserting a drop on a shape it is incapable of producing, which
+#: is the exact defect this file was just repaired for.
+ADAPTORS = ("note-candidates", "note-curation")
+
+
 
 
 @pytest.mark.parametrize("adaptor", ADAPTORS)
@@ -91,7 +126,7 @@ def test_an_item_carrying_a_coordinate_never_reaches_the_kept_set(adaptor):
 def test_a_benign_batch_is_kept_whole_and_counts_nothing():
     metrics = Metrics()
     items = [BENIGN[a] for a in ADAPTORS]
-    kept, rejected = screen(adaptor="room_language", items=items, metrics=metrics)
+    kept, rejected = screen(adaptor="note-curation", items=items, metrics=metrics)
     assert kept == tuple(items)
     assert rejected == ()
     assert metrics.get("nora_dream_screened_total") == 0.0
@@ -122,7 +157,7 @@ def test_a_model_word_is_still_kept_by_the_screen(item):
     )
 
     metrics = Metrics()
-    kept, rejected = screen(adaptor="room_language", items=[item], metrics=metrics)
+    kept, rejected = screen(adaptor="note-curation", items=[item], metrics=metrics)
     assert kept == (item,)
     assert rejected == ()
     assert metrics.get("nora_dream_screened_total") == 0.0
@@ -134,18 +169,28 @@ def test_the_drop_is_counted_under_its_adaptor_and_reason():
     at all — one shared counter would only ever say «something was»."""
     metrics = Metrics()
     screen(
-        adaptor="facts",
-        items=[CARRIES_A_PHONE["facts"], CARRIES_A_COORDINATE["facts"], BENIGN["facts"]],
+        adaptor="note-candidates",
+        items=[
+            CARRIES_A_PHONE["note-candidates"],
+            CARRIES_A_COORDINATE["note-candidates"],
+            BENIGN["note-candidates"],
+        ],
         metrics=metrics,
     )
-    assert metrics.get("nora_dream_screened_total", adaptor="facts") == 2.0
+    assert metrics.get("nora_dream_screened_total", adaptor="note-candidates") == 2.0
     assert (
-        metrics.get("nora_dream_screened_total", adaptor="facts", reason="identifier") == 1.0
+        metrics.get(
+            "nora_dream_screened_total",
+            adaptor="note-candidates", reason="identifier",
+        ) == 1.0
     )
     assert (
-        metrics.get("nora_dream_screened_total", adaptor="facts", reason="coordinate") == 1.0
+        metrics.get(
+            "nora_dream_screened_total",
+            adaptor="note-candidates", reason="coordinate",
+        ) == 1.0
     )
-    assert metrics.get("nora_dream_screened_total", adaptor="room_language") == 0.0
+    assert metrics.get("nora_dream_screened_total", adaptor="note-curation") == 0.0
 
 
 def test_a_string_nested_in_a_list_value_is_still_screened():
@@ -155,11 +200,13 @@ def test_a_string_nested_in_a_list_value_is_still_screened():
     metrics = Metrics()
     nested = {"lexeme": "阿邊個", "aliases": ["佢", "+85290000101"]}
     kept, rejected = screen(
-        adaptor="room_language", items=[nested, BENIGN["room_language"]], metrics=metrics
+        adaptor="note-curation",
+        items=[nested, BENIGN["note-curation"]],
+        metrics=metrics,
     )
-    assert kept == (BENIGN["room_language"],)
+    assert kept == (BENIGN["note-curation"],)
     assert rejected == (Rejection(index=0, reason="identifier", path="aliases[1]"),)
-    assert metrics.get("nora_dream_screened_total", adaptor="room_language") == 1.0
+    assert metrics.get("nora_dream_screened_total", adaptor="note-curation") == 1.0
 
 
 def test_a_string_nested_two_levels_down_is_still_screened():
@@ -167,7 +214,7 @@ def test_a_string_nested_two_levels_down_is_still_screened():
     of recursion is not recursion."""
     metrics = Metrics()
     deep = {"lexeme": "個位", "evidence": {"quotes": ["幾時到", "22.4106, 114.1245"]}}
-    kept, rejected = screen(adaptor="room_language", items=[deep], metrics=metrics)
+    kept, rejected = screen(adaptor="note-curation", items=[deep], metrics=metrics)
     assert kept == ()
     assert rejected == (
         Rejection(index=0, reason="coordinate", path="evidence.quotes[1]"),
@@ -178,7 +225,7 @@ def test_an_empty_batch_returns_two_empty_tuples():
     """`nothing_found` is an ordinary R-27 outcome, not an error: an adaptor
     that looked and found nothing must not have to special-case the screen."""
     metrics = Metrics()
-    kept, rejected = screen(adaptor="room_language", items=[], metrics=metrics)
+    kept, rejected = screen(adaptor="note-curation", items=[], metrics=metrics)
     assert kept == ()
     assert rejected == ()
     assert metrics.get("nora_dream_screened_total") == 0.0
@@ -194,7 +241,7 @@ def test_a_uuid_and_a_key_shaped_string_are_identifiers_too():
         {"lexeme": "x", "sense": "a1000000-0000-4000-8000-000000000000"},
         {"lexeme": "y", "sense": "sk-abcdefghijklmnop1234567"},
     ]
-    kept, rejected = screen(adaptor="facts", items=items, metrics=metrics)
+    kept, rejected = screen(adaptor="note-candidates", items=items, metrics=metrics)
     assert kept == ()
     assert [r.reason for r in rejected] == ["identifier", "identifier"]
 
@@ -204,9 +251,44 @@ def test_a_rejection_never_carries_the_offending_text():
     a store that refused to hold it and into a log file that holds it forever."""
     metrics = Metrics()
     _, rejected = screen(
-        adaptor="facts", items=[CARRIES_A_PHONE["facts"]], metrics=metrics
+        adaptor="note-candidates",
+        items=[CARRIES_A_PHONE["note-candidates"]],
+        metrics=metrics,
     )
     assert len(rejected) == 1
     rendered = repr(rejected[0])
     assert "+85290000101" not in rendered
-    assert rejected[0].path == "object"
+    # The FIELD is named so the drop is diagnosable, while the value is not.
+    # `description` is where the fixture hides the number — the free-text field
+    # a `web_fetch`ed page's contents would land in.
+    assert rejected[0].path == "description"
+
+
+def test_the_entity_resolution_payload_cannot_express_an_identifier_at_all():
+    """**Why `note-entity-resolution` is absent from `ADAPTORS`.**
+
+    Its envelope items are `{"name": <one char>, "entity": <one char>|null}` —
+    handles into a list the runtime rendered, never free text
+    (`note_entity_adaptor._parse_resolution`). A leak has nowhere to sit, so
+    parametrizing it beside the other two would assert a drop on a shape it
+    cannot produce — which is exactly what this file did for four deleted
+    adaptors until 2026-09-07, and why it read as coverage while measuring
+    nothing.
+
+    This test pins the REASON rather than the absence: if that payload ever
+    grows a free-text field, the assertion below stops being true and this
+    adaptor has to join `ADAPTORS`.
+    """
+    metrics = Metrics()
+    item = {"name": "a", "entity": "b"}
+
+    kept, rejected = screen(
+        adaptor="note-entity-resolution", items=[item], metrics=metrics)
+
+    assert kept == (item,)
+    assert rejected == ()
+    # The structural claim, stated so a widened payload breaks it: every value
+    # is one character, so no identifier or coordinate is representable.
+    assert all(
+        isinstance(v, str) and len(v) == 1 for v in item.values()
+    ), "the payload grew a wider field — re-check whether it can now leak"

@@ -53,7 +53,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.facts import FactEntity, normalise_name
+from nora.domain.facts import normalise_name
 from nora.infra.sql.schema import FACT_ENTITY, NOTE
 
 log = logging.getLogger(__name__)
@@ -111,41 +111,6 @@ class SqlEntityStore:
                 return str(entity_id)
             if any(target == normalise_name(a) for a in aliases):
                 return str(entity_id)
-        return None
-
-    async def lookup(self, *, workspace: str, name: str) -> FactEntity | None:
-        """The ENTITY this name resolves to — canonical name AND aliases — or
-        `None` for no such entity (design/dreamer-agent-loop/32 §3.4).
-
-        `resolve` answers with an ID, which is the right shape for a writer
-        joining an edge to its node. The tool layer's `get_knowledge`/
-        `knowledge_entity` need the SURFACES: `fact.subject_id` stores the
-        claim's surface TEXT verbatim (see `facts.py`'s own comment), so the
-        standing-facts read that follows a resolution must be asked with the
-        canonical name and every alias — the strings that actually appear in
-        `subject_id` — and an id answers none of that.
-
-        Same scan and same normalisation as `resolve` (exact after
-        `normalise_name`, against `canonical_name` AND `aliases`), and the same
-        RAISE-on-outage contract: `None` must mean «no such entity», never
-        «the store could not be read» — the tool maps the exception to
-        `unavailable`, which is the distinction R-27 exists to keep."""
-        target = normalise_name(name)
-        if not target:
-            return None
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(
-                sa.select(FACT_ENTITY).where(FACT_ENTITY.c.workspace == workspace)
-            )).all()
-        for r in rows:
-            if target == normalise_name(r.canonical_name) or any(
-                target == normalise_name(a) for a in r.aliases
-            ):
-                return FactEntity(
-                    id=str(r.id), workspace=r.workspace,
-                    canonical_name=r.canonical_name, created_at=r.created_at,
-                    aliases=tuple(r.aliases),
-                )
         return None
 
     async def resolve_or_create(

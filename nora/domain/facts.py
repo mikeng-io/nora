@@ -17,8 +17,12 @@ each has a live consumer outside that tier:
   name, not knowledge-tier property — and `note_entity.entity_id` is a foreign
   key into it, so the note tier resolves through `nora.infra.sql.entities`,
   which normalises through this function and nothing else.
-- `FactEntity` is that registry's row. The name keeps its `fact_` prefix
-  because the TABLE does; renaming either is a separate pass.
+  The name keeps its `fact_` prefix because the TABLE does; renaming it is a
+  separate pass.
+- `FactEntity`, the registry's row dataclass, was deleted on 2026-09-07: it was
+  constructed only by `SqlEntityStore.lookup`, whose only consumers were the
+  deleted `get_knowledge`/`knowledge_entity` tools. The note tier resolves with
+  `resolve`, which answers with an id.
 
 Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 """
@@ -26,7 +30,6 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 from __future__ import annotations
 
 import unicodedata
-from dataclasses import dataclass
 
 # ---------------------------------------------------------------------------
 # The surviving CEILINGS. A ceiling is DDL: it is asserted here, in the
@@ -71,14 +74,3 @@ def normalise_name(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
 
 
-@dataclass(frozen=True)
-class FactEntity:
-    """A canonical subject or object. `aliases` is load-bearing at workspace
-    scope: `big walk` / `Big Walk` / 大步行 must resolve to ONE entity or the
-    tier fragments into near-duplicates that can never contradict each other."""
-
-    id: str
-    workspace: str
-    canonical_name: str
-    created_at: int
-    aliases: tuple[str, ...] = ()
