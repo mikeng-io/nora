@@ -102,6 +102,7 @@ key is worth a registry of its own.
 
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -300,23 +301,34 @@ def _media_placeholder(row: TranscriptRow) -> str:
     return "[media]" if row.media_json else ""
 
 
-def _render_line(row: TranscriptRow, *, room: str) -> str:
-    """One attributed transcript line: `<id> [<ts>] <name> (<room>): <body>`
-    — attributed on every line, so the model can attribute an arrangement
-    to a person, a moment and a room, which matters
-    more here than for a triple: a note's `established_in` is a routing key
-    the tag path reads later (`nora.domain.notes.Note`'s own docstring)."""
-    import datetime as _dt
+#: How a message's moment is rendered: the ROOM's local date, its weekday and
+#: the zone name — `2026-09-08 Tue 02:13 HKT`. Measured 2026-09-08 (issue
+#: #118): rendered as `2026-09-07 18:13:23 UTC`, the model resolved «今個禮拜六»
+#: to the 13th in two of ten samples — it was doing calendar arithmetic across
+#: a zone boundary with no reasoning budget. The weekday and the local day are
+#: facts this process has; asking the model to derive them is a cost with no
+#: upside, and the objective's own rule («resolve a relative date against the
+#: message's timestamp») only works when that timestamp is the room's.
+_LINE_TIME_FORMAT = "%Y-%m-%d %a %H:%M %Z"
 
+
+def _render_line(row: TranscriptRow, *, room: str, tz: _dt.tzinfo) -> str:
+    """One attributed transcript line: `<id> [<local moment>] <name> (<room>):
+    <body>` — attributed on every line, so the model can attribute an
+    arrangement to a person, a moment and a room, which matters more here
+    than for a triple: a note's `established_in` is a routing key the tag
+    path reads later (`nora.domain.notes.Note`'s own docstring).
+
+    `tz` is the operator's `[reminders] timezone`, the same zone the curator
+    reads «today» from — the room's day, not the process's."""
     name = row.person_name or row.sender_name or row.sender_id
     body = row.body or _media_placeholder(row)
-    ts = _dt.datetime.fromtimestamp(row.ts / 1000, tz=_dt.UTC).strftime(
-        "%Y-%m-%d %H:%M:%S UTC")
+    ts = _dt.datetime.fromtimestamp(row.ts / 1000, tz=tz).strftime(_LINE_TIME_FORMAT)
     line = f"{row.id} [{ts}] {name} ({room}): {body}"
     if row.quoted_ts is not None:
         quoted = _dt.datetime.fromtimestamp(
-            row.quoted_ts / 1000, tz=_dt.UTC,
-        ).strftime("%Y-%m-%d %H:%M:%S UTC")
+            row.quoted_ts / 1000, tz=tz,
+        ).strftime(_LINE_TIME_FORMAT)
         line += f" (reply to {quoted})"
     return line
 
@@ -393,11 +405,17 @@ class NoteCandidateAdaptor:
         candidates: _CandidateStore,
         workspace_for: Callable[[str], str | None],
         metrics: Metrics | None = None,
+        # The ROOM's zone for rendering each message's moment (see
+        # `_LINE_TIME_FORMAT`). Defaults to UTC so a bare construction still
+        # renders a true moment; the composition root passes `[reminders]
+        # timezone`, the zone the curator already reads «today» from.
+        timezone: _dt.tzinfo = _dt.UTC,
     ) -> None:
         self._notes = notes
         self._candidates = candidates
         self._workspace_for = workspace_for
         self._metrics = metrics
+        self._tz = timezone
         # Per key, written by `inputs` and read by `accept` — the only
         # channel between them (`DreamAdaptor.accept` takes no batch).
         # Keyed by `key`, not a bare attribute, because
@@ -437,7 +455,10 @@ class NoteCandidateAdaptor:
             return ""
         workspace = self._workspace_for(key)
         room = workspace or key
-        lines = [_render_line(row, room=room) for row in batch[:MAX_RENDERED_MESSAGES]]
+        lines = [
+            _render_line(row, room=room, tz=self._tz)
+            for row in batch[:MAX_RENDERED_MESSAGES]
+        ]
         if len(batch) > MAX_RENDERED_MESSAGES:
             omitted = batch[MAX_RENDERED_MESSAGES:]
             lines.append(

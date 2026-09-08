@@ -2288,7 +2288,28 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 # for a different unit of work rather
                 # than one room's arrangements.
                 "note-candidates": AdaptorSchedule(
-                    min_interval_seconds=3600, batch_limit=200,
+                    min_interval_seconds=3600,
+                    # 80, DOWN FROM 200 on 2026-09-08, and the reason is the
+                    # objective's shape rather than a cost preference. v4
+                    # asks for one verdict per message before the candidate
+                    # list (design 37 / issue #118), so the OUTPUT now scales
+                    # with the batch: at ~15 tokens a verdict, 200 messages
+                    # is ~3000 of the shipped 4000-token output budget before
+                    # a single candidate is written. An output cap that binds
+                    # truncates the JSON, `parse_envelope` reads no envelope,
+                    # the run is `unavailable` and the watermark is HELD — so
+                    # the same over-long batch is re-read and re-truncated on
+                    # every fire, forever. That trap is worth more than the
+                    # latency: a room that says more than 80 things in an
+                    # hour drains over the next fires, because the watermark
+                    # advances by what was read and lag stays positive.
+                    # *The reading that would reopen this*: a per-adaptor
+                    # `[dreamer.budgets.note-candidates] output_tokens` sized
+                    # for the batch, at which point the cap can go back up.
+                    batch_limit=80,
+                    # `[notes] candidate_samples` — model calls per fire,
+                    # unioned; see `NotesConfig.candidate_samples`.
+                    samples=cfg.notes.candidate_samples,
                 ),
             }
             dream_adaptors = (
@@ -2302,6 +2323,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         if conv.primary_id and conv.workspace
                     }.get,
                     metrics=metrics,
+                    # The ROOM's zone for each rendered message's moment —
+                    # the same `[reminders] timezone` the curator's `_today`
+                    # reads, for the same reason: «this Saturday» is a
+                    # question about the room's calendar, not the process's.
+                    timezone=ZoneInfo(cfg.reminders.timezone),
                 ),
             )
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on

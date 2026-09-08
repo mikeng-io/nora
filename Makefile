@@ -57,6 +57,16 @@ test-affected:
 eval-participation:
 	uv run python -m evals.run --suite participation
 
+# The note-candidates scenario suite (design/dreamer-agent-loop/37 §7, issue
+# #118): ten batches through the real Dreamer runtime + adaptor, N samples
+# each, graded on the notebook. `make eval-note-candidates SAMPLES=5
+# DREAMER_DIR=/path/to/variant` measures a prompt variant held as files.
+SAMPLES ?= 3
+eval-note-candidates:
+	uv run python -m evals.run --suite note_candidates --samples $(SAMPLES) \
+		$(if $(DREAMER_DIR),--dreamer-dir $(DREAMER_DIR),) $(if $(EFFORT),--effort $(EFFORT),) \
+		$(if $(MODEL),--model $(MODEL),) $(if $(PER_FIRE),--samples-per-fire $(PER_FIRE),)
+
 # --- release fragments ---
 
 release-check:

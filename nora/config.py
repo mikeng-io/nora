@@ -1827,6 +1827,18 @@ class NotesConfig(BaseModel):
     #: level, which is why the gauge exists and why the cap is generous.
     max_expired_per_tick: int = Field(default=20, ge=1, le=200)
 
+    #: Model calls per `note-candidates` fire, UNIONED (`AdaptorSchedule.
+    #: samples`, design/dreamer-agent-loop/37, issue #118). 1 is one call.
+    #: Measured 2026-09-08: one shape of entry — a plan one person states
+    #: with an unsettled corner — is recognised in ~30% of single samples at
+    #: the tier's temperature while no negative sample ever produced a note;
+    #: N samples recognise it with probability 1 - 0.7^N (3 → 0.66, 5 →
+    #: 0.83) and stay empty on a negative batch. Cost is N model calls per
+    #: fire, on a pass that fires at most hourly per room and only when the
+    #: room spoke. Duplicates across samples collapse in the staging key and
+    #: the create gate; the run is unavailable only when every sample was.
+    candidate_samples: int = Field(default=1, ge=1, le=10)
+
     # NO `max_body_chars`, and its absence is the decision. The field existed
     # here with a twelve-line docstring and a range validator and NOTHING READ
     # IT — the cap was `nora.domain.notes.BODY_MAX_CHARS` in four places the

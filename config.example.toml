@@ -999,6 +999,16 @@ curator_enabled = false
 # directly.
 candidates_enabled = false
 
+# Model calls per note-candidates fire, unioned. Measured 2026-09-08 (design
+# 37, issue #118): a plan ONE person states with an unsettled corner is
+# recognised in about 30% of single samples at the dreamer tier's temperature,
+# while no negative batch ever produced a note across every prompt variant
+# tried. N samples recognise it with probability 1 - 0.7^N (3 -> 0.66,
+# 5 -> 0.83) and stay empty on a negative batch; duplicates across samples
+# collapse in the staging key and the create gate. Cost is N calls per fire on
+# a pass that fires at most hourly per room and only when the room spoke.
+# candidate_samples = 1
+
 # The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
 # schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH gate, on its
 # own rather than riding curator_enabled: that pass merges and retires NOTES,
