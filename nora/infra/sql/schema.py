@@ -903,9 +903,10 @@ LANGUAGE_OBSERVATION = sa.Table(
     # the OPPOSITE of provenance: it says how sure the writer felt, never who
     # the writer was.
     #
-    # NULLABLE, with no server default. Every row written from here on carries
-    # a digest (`LexemeObserver` stamps at construction and the column has no
-    # other writer), so the nullable half is entirely about the rows already
+    # NULLABLE, with no server default. Every row written from here on carried
+    # a digest — the observer that stamped it was deleted with its tier on
+    # 2026-09-07, so the column now has no writer at all — and the nullable
+    # half is entirely about the rows already
     # in `nora-db-1`: they were produced by instructions nobody recorded, and
     # no backfill can recover which. A server default would stamp them with a
     # digest they were not written under — a fabricated attribution, strictly
@@ -1040,8 +1041,8 @@ ROOM_LEXEME = sa.Table(
 # this is the withhold-rule's first structural guarantee: there is no column
 # anywhere in this feature for a model to author a claim ABOUT a person into,
 # only a fixed vocabulary of acts plus pointers to real evidence. The render
-# gloss for each `act` is repo-authored text, never stored (see
-# `nora.language.exchange_render`).
+# gloss for each `act` was repo-authored text, never stored; the renderer
+# that held it went with the language tier on 2026-09-07.
 #
 # `message_ids`/`participants` both carry `array_length(...) >= 2` — the
 # second structural guarantee: a row naming fewer than two people cannot be
@@ -1140,7 +1141,8 @@ ROOM_EXCHANGE = sa.Table(
 # no evidence layer of its own, it is entirely re-derived from Plan 1/2's
 # already-durable state on every trigger, so there is nothing to accumulate
 # and no watermark row (no `consolidator_name` key here at all — see the
-# design doc's "Trigger shape" for why this is not a `RoomConsolidator`).
+# design doc's "Trigger shape" for why this was not shaped like the
+# append-and-rescore consolidator port, itself deleted 2026-09-07).
 # `lexeme_basis`/`exchange_basis` store `canonical_form`/`act` only — the same
 # non-identifying vocabulary Plan 1/2 already proved safe — kept purely for
 # operator audit of what a narrative was built from, never rendered to her.
@@ -1354,7 +1356,8 @@ FACT = sa.Table(
     # the row afterwards at any price, so it is captured at supersession
     # time or not at all.
     sa.Column("supersede_reason", sa.Text),
-    # `DreamSink.supersede`'s `source` argument (2026-08-21, `SqlFactStore`).
+    # `DreamSink.supersede`'s `source` argument (2026-08-21, for the tier
+    # whose store this table belonged to — deleted 2026-09-07, issue #115).
     # A WARRANT, never a row id — `superseded_by` already carries the
     # successor. Optional even when superseded (`because` is required,
     # `source` is not — the port's own docstring), so the CHECK below is a
@@ -1427,9 +1430,9 @@ FACT = sa.Table(
     ),
     # Biconditional, not an implication: a fact is either standing (both
     # NULL) or superseded (both set). `superseded_at` set alone would hide
-    # the row from `Fact.is_standing` and `idx_fact_standing` with no record
-    # of what replaced it — the unauditable merge Graphiti issue #1771 warns
-    # against.
+    # the row from `idx_fact_standing` and from the standing predicate the
+    # tier's own type carried (deleted 2026-09-07) with no record of what
+    # replaced it — the unauditable merge Graphiti issue #1771 warns against.
     sa.CheckConstraint(
         "(superseded_by is null) = (superseded_at is null)",
         name="fact_supersession_is_timed_check",

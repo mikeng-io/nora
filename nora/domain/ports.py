@@ -1323,8 +1323,8 @@ class Proposal:
     `payload` is deliberately `object`: the runtime never names an adaptor's own
     value type. A `DreamSink` implementation knows what it stores; the loop that
     hands it a `Proposal` does not, and typing this as anything narrower would
-    put `FactVerdict` (or `Lexeme`, or an exchange pattern) in the runtime's
-    imports and make every new adaptor a change to the runtime.
+    put `NoteCreationProposal` (or whatever the next tier's value type is) in
+    the runtime's imports and make every new adaptor a change to the runtime.
 
     Provenance rides HERE rather than inside `payload` for the same reason. Both
     fields are the columns DEC-125/DEC-126 added to every adaptor-written table,
@@ -1361,19 +1361,23 @@ class DreamAdaptor(Protocol):
     and how to turn the answer into rows.
 
     The Dreamer runtime owns the loop, the tool ceiling, the budget and its own
-    doctrine, and knows nothing about lexemes, exchanges or facts. Everything
-    that IS tier-specific arrives through this port. It is `RoomConsolidator`
-    generalised: that port's `consolidate(scope_id, batch) -> int` is
-    append-shaped — "extract, append, rescore, and nothing else" — which is why
-    a fact adaptor did not fit it (a fact adaptor invalidates as well as
-    appends, and is keyed on a workspace rather than a scope) and why
-    `RoomPortraitSynthesizer` had to be a separate parameter on `dream_loop`.
+    doctrine, and knows nothing about notes. Everything that IS tier-specific
+    arrives through this port. **It is the generalisation of a port that was
+    append-shaped**: `RoomConsolidator`'s `consolidate(scope_id, batch) -> int`
+    (deleted 2026-09-07 with the language tier) said "extract, append,
+    rescore, and nothing else", which is why an adaptor that INVALIDATES as
+    well as appends did not fit it, why a workspace-keyed adaptor did not fit
+    its scope key, and why a watermark-free one had to be a separate parameter
+    on `dream_loop` rather than another consolidator. This port has room for
+    all three, which is what makes a new tier a new adaptor rather than a new
+    parameter.
 
     **The runtime never names a tier's value type.** It hands the model's
     already-envelope-validated items to `accept`, which returns whatever that
     tier's typed values are as `object`, wraps each in a `Proposal` carrying the
-    provenance only the runtime knows, and hands them back to `commit`. A
-    `FactVerdict` never appears in an import in `nora/agent/`.
+    provenance only the runtime knows, and hands them back to `commit`. No
+    tier's value type — `NoteCreationProposal`, or whatever comes next — ever
+    appears in an import in `nora/agent/`.
 
     **Two deviations from the plan's sketch, both found by building it** —
     recorded here because each looks like an arbitrary difference until the
@@ -1387,9 +1391,10 @@ class DreamAdaptor(Protocol):
        layer further than it needs to and one more place it can be filled in
        wrongly.
     2. **`commit` drives the sink; the runtime does not call it directly.** The
-       runtime cannot: a contradicted fact is TWO verbs in order — `propose`
-       the correction, then `supersede` the old row naming the new id as
-       `replaced_by` — and knowing that sequence means knowing `FactVerdict`.
+       runtime cannot: a tier's write is often TWO verbs in order — `propose`
+       the new row, then `supersede` the old one naming the new id as
+       `replaced_by` — and knowing that sequence means knowing the tier's own
+       value type.
        So the sink is the adaptor's own collaborator (constructor-injected,
        never a port attribute the runtime reads and never uses) and `commit` is
        where a tier sequences its own writes.
@@ -1428,8 +1433,9 @@ class DreamAdaptor(Protocol):
     uses_watermark: bool
     """False for an adaptor that does not consume a message batch at all, and
     which therefore gets no watermark, lag or quiet condition and must carry
-    its own fire condition. `RoomPortraitSynthesizer` is the standing
-    precedent; the fact adaptor is the second."""
+    its own fire condition. `nora.language.note_curator.NoteCuratorAdaptor` is
+    the shipped one: it reads LIVE STATE — which anchors have passed, which
+    notes are due — and none of those questions has a "since when"."""
 
     objective: str
     """The objective FILE NAME, resolved by the runtime against
@@ -1493,9 +1499,10 @@ class DreamAdaptor(Protocol):
 
         **`commit(key, ())` is a legal and meaningful call**, not a call to
         skip: it is R-27's `nothing_found` — «I looked and there was nothing» —
-        and it is where time-driven decay lives. `LanguageConsolidator`
-        rescores even for an empty batch, because the 24h fire condition exists
-        precisely to fade a dormant room's lexicon, and none of the adaptor's
+        and it is where time-driven decay lives. Verified against the shipped
+        curator: `NoteCuratorAdaptor.commit` with zero proposals still records
+        a WAKE for every note the run selected, advancing `revisit_at` and
+        charging a strike to a note nobody answered. None of the adaptor's
         other fields has a slot for that. The runtime NOT calling `commit` is
         the different, third state: `unavailable`, «I could not check».
 
@@ -1504,11 +1511,11 @@ class DreamAdaptor(Protocol):
         false negative. That is the ERROR-reads-as-PASS failure R-27 exists to
         prevent, one layer up.
 
-        Returns rows WRITTEN, which is not `len(proposals)`: a fact store skips
-        a `not_covered` verdict by design (silence adds nothing and removes
-        nothing), so a legal commit of three proposals can write one row. The
-        count is what `_dream_once`'s existing `appended_total > 0` portrait
-        trigger reads."""
+        Returns rows WRITTEN, which is not `len(proposals)`: a tier refuses
+        its own proposals by design — the note create gate refuses a candidate
+        that duplicates a standing note without adding anything — so a legal
+        commit of three proposals can write one row. The count is what
+        `nora_dream_written_total` reports."""
         ...
 
 
@@ -1534,10 +1541,10 @@ class DreamSink(Protocol):
 
     - `propose(key, ())` — the adaptor ran and found nothing. `nothing_found`,
       «I looked and there was nothing». It is a LEGAL call and the sink may act
-      on it: `LanguageConsolidator` rescores even for an empty batch, because
-      decay is time-driven and the 24h fire condition exists exactly to fade a
-      dormant room's lexicon. None of the five adaptor fields has a slot for
-      that, so this is where it lives.
+      on it, because decay is TIME-driven rather than evidence-driven: the
+      shipped curator's own `commit` with zero proposals still records a wake
+      for every note the run selected. None of the five adaptor fields has a
+      slot for that, so this is where it lives.
     - not calling `propose` at all — the adaptor could not check. `unavailable`,
       «I could not check». An ERROR is never a PASS.
 

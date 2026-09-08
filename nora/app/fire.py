@@ -737,10 +737,11 @@ class FirePath:
     def _workspace_for(self, occasion: Event) -> str | None:
         """The workspace this occasion's room belongs to, or `None`.
 
-        The workspace-keyed tier scopes through the SAME `Policy` read
-        `TranscriptInjection._workspace_of` uses (DEC-105): two readers each
-        carrying their own idea of a room's workspace disagree the first time
-        a deployment runs two social units.
+        The workspace-keyed tier scopes through the SAME `Policy` read the
+        tag path's own note prefill uses (`nora.engagement.context.
+        TranscriptInjection._notes`, DEC-105): two readers each carrying
+        their own idea of a room's workspace disagree the first time a
+        deployment runs two social units.
 
         `None` — a store wired but no `Policy` or no `Conversation` for the
         room — is a WIRING GAP, not an empty tier: guessing a workspace would

@@ -2,7 +2,7 @@
 (spec §14.6: the re-derivation path this exists for is Task 6).
 
 `__init__(self, engine: AsyncEngine)` and nothing else, matching
-`SqlFactStore`/`SqlNoteStore`'s own contract-suite affordance: no config, no
+`SqlNoteStore`'s own contract-suite affordance: no config, no
 clock, no metrics. `created_at` arrives on the `TagTrace` itself, not on this
 constructor.
 
@@ -61,9 +61,9 @@ class SqlTagTraceStore:
     ) -> tuple[TagTrace, ...]:
         """Newest-first within `conversation_id`, matching
         `idx_tag_trace_conversation_created`'s own column order — the same
-        never-negative-`LIMIT` clamp `SqlFactStore.standing_facts` applies,
-        since a negative `LIMIT` errors outright in Postgres rather than
-        answering `()`."""
+        never-negative-`LIMIT` clamp every capped read in this package
+        applies, since a negative `LIMIT` errors outright in Postgres rather
+        than answering `()`."""
         if limit <= 0:
             return ()
         stmt = (
