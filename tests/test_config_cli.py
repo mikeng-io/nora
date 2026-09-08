@@ -150,7 +150,9 @@ def test_set_wrong_type_fails_closed(cfg_path: Path, capsys):
     before = cfg_path.read_text(encoding="utf-8")
     rc = run_cli("config", "set", "llm.budgets.web_fetch", "hello", "--config", str(cfg_path))
     assert rc != 0
-    assert "invalid resulting config" in capsys.readouterr().err
+    # Fail happens in PRE-write validation now (Kimi review MAJOR #4 fix) —
+    # the on-disk config is never invalid, not even for a moment.
+    assert "change rejected" in capsys.readouterr().err
     # File untouched: same bytes, still loads, still the old value
     assert cfg_path.read_text(encoding="utf-8") == before
     assert load(cfg_path, require_secrets=False).llm.budgets["web_fetch"] == 6

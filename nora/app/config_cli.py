@@ -45,7 +45,7 @@ from pathlib import Path
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
-from nora.config import ConfigError, load
+from nora.config import Config, ConfigError, load
 
 # ── deferred imports (circular-import break) ───────────────────────────────
 
@@ -56,7 +56,7 @@ def _cli_error(message: str) -> Exception:
     return CliError(message)
 
 
-def _load_config(args: argparse.Namespace):
+def _load_config(args: argparse.Namespace) -> Config:
     """Load the config for CLI use, without the deferred import cycle."""
     try:
         return load(Path(args.config), require_secrets=False)
@@ -66,7 +66,9 @@ def _load_config(args: argparse.Namespace):
 
 # ── dot-path navigation ──────────────────────────────────────────────────
 
-def _navigate(doc: tomlkit.container.Container, dotted: str) -> tuple:
+def _navigate(
+    doc: tomlkit.container.Container, dotted: str
+) -> tuple[tomlkit.container.Container | dict[object, object], str]:
     """Walk `a.b.c` into `doc`, returning (container, leaf_key).
 
     Raises a CliError with a helpful message when an intermediate section
@@ -89,14 +91,14 @@ def _navigate(doc: tomlkit.container.Container, dotted: str) -> tuple:
     return current, parts[-1]
 
 
-def _get_value(doc: tomlkit.container.Container, dotted: str):
+def _get_value(doc: tomlkit.container.Container, dotted: str) -> object:
     container, key = _navigate(doc, dotted)
     if key not in container:
         raise _cli_error(f"key {dotted!r} is not set")
     return container[key]
 
 
-def _render_value(value) -> str:
+def _render_value(value: object) -> str:
     """Render a TOML value for `get` output.
 
     Strings print raw so `nora config get platforms.signal.account` shows
@@ -109,14 +111,14 @@ def _render_value(value) -> str:
         return "true" if value else "false"
     if value is None:
         return ""
-    if isinstance(
-        value, (dict, list, tomlkit.container.Container, tomlkit.items.Array)
-    ):
+    if isinstance(value, (dict, tomlkit.container.Container)):
         return tomlkit.dumps(value).strip()
+    if isinstance(value, (list, tomlkit.items.Array)):
+        return str(value)
     return str(value)
 
 
-def _parse_value_expression(expression: str, current=None):
+def _parse_value_expression(expression: str, current: object | None = None) -> object:
     """Parse a `set` value, using a type-compatibility rule.
 
     Rule: a TOML literal is honoured *only when its type matches the key's
@@ -179,6 +181,27 @@ def _cmd_get(args: argparse.Namespace) -> int:
     return 0
 
 
+def _validate_candidate(path: Path, doc: tomlkit.container.Container) -> None:
+    """Validate the MUTATED document against the schema BEFORE any write.
+
+    The daemon's own config.load() opens the file from disk, so to check
+    the in-memory doc we serialise to a temp sibling, validate it, and
+    delete the temp. This closes the SIGKILL/OOM window that a
+    write-then-rollback design leaves open: the on-disk config is never
+    invalid, not even for a moment.
+    """
+    tmp = path.with_suffix(path.suffix + ".candidate")
+    try:
+        tmp.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        load(tmp, require_secrets=False)
+    except ConfigError as exc:
+        raise _cli_error(f"change rejected: {exc}") from exc
+    except OSError as exc:
+        raise _cli_error(f"could not validate candidate config: {exc}") from exc
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def _cmd_set(args: argparse.Namespace) -> int:
     _load_config(args)
     path = Path(args.config)
@@ -188,6 +211,8 @@ def _cmd_set(args: argparse.Namespace) -> int:
     old = container.get(key)
     value = _parse_value_expression(args.value, current=old)
     container[key] = value
+
+    _validate_candidate(path, doc)
 
     _atomic_write(path, tomlkit.dumps(doc))
     try:
@@ -215,6 +240,8 @@ def _cmd_unset(args: argparse.Namespace) -> int:
     if key not in container:
         raise _cli_error(f"key {args.key!r} is not set")
     old = container.pop(key)
+
+    _validate_candidate(path, doc)
 
     _atomic_write(path, tomlkit.dumps(doc))
     try:

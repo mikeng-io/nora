@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "nora config — the operator's safe config mutation surface: set/get/unset/validate/path (deploy convention §4.5).",
+  "details": [
+    "New `nora config` subcommands in nora/app/config_cli.py: dotted-key navigation, tomlkit read/write (comments survive — tomli_w would strip every rationale comment in a 75KB config), atomic tmp+os.replace write (M8 pattern), double validation via the daemon's own config.load() before and after the write.",
+    "set uses a type-compatibility rule: a TOML literal is honoured only when its type matches the key's current type, so an unquoted phone number stays a string (TOML would parse +852... as an int and the schema would reject it).",
+    "The CLI prints the restart command but never restarts the container; secrets never route through the config CLI (.env is their home). Mutations take effect on restart.",
+    "tomlkit added to runtime dependencies and uv.lock; 17 tests prove comment preservation, fail-closed rollback on invalid result, mode preservation, and the real parser surface."
+  ],
+  "limitations": [
+    "Read-only operator control plane commands (nora groups, nora persons pending) are untouched; this adds the write surface only.",
+    "No doctrine/dreamer mutation yet — those are git-versioned source (operator decision 2026-09-08), hot-reload by merge only; the config CLI deliberately does not touch them."
+  ]
+}
