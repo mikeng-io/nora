@@ -1195,3 +1195,39 @@ async def test_a_blank_prompt_takes_no_sample_at_all(monkeypatch):
     assert outcome.status == "nothing_found"
     assert metrics.get(
         "nora_dream_sample_total", adaptor="test-adaptor", status="ok") == 0
+
+
+async def test_each_sample_gets_its_own_guard(monkeypatch):
+    """`DreamGuard` owns a `CallLedger`, and a ledger is SPENT STATE. One
+    guard shared across samples would let the first sample's tool calls count
+    against the second's budget, so an adaptor with N samples would get a
+    fraction of its declared budget per sample — inert for the tool-free
+    adaptors that ship, and exactly the shape that stays inert until it does
+    not.
+
+    Asserted on OBJECT IDENTITY rather than on a call count, because the
+    defect is one object reused: a test that counted vetoes would pass on a
+    shared guard whose budget simply never bound."""
+    guards: list[Any] = []
+
+    def _create(**kwargs):
+        guards.append(kwargs["guard"])
+        return object()
+
+    monkeypatch.setattr(factory, "create_dream_agent", _create)
+    monkeypatch.setattr(factory, "invoke", lambda *a, **kw: _completed(_Result()))
+    monkeypatch.setattr(factory, "final_text", lambda result: '{"observations": []}')
+    runtime = DreamerRuntime(
+        models=_Models(), instructions=_InstructionStore(), tools=_ToolSource(),
+        budgets={}, default_budget=BUDGET,
+        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+        metrics=Metrics(), model_name="deepseek-v4-flash",
+        schedules=_sampled(3),
+    )
+
+    await runtime.run(adaptor=_Adaptor(sink=_Sink()), key="g1", batch=())
+
+    assert len(guards) == 3, "three samples, three agents"
+    assert len({id(g) for g in guards}) == 3, (
+        "each sample must get a fresh guard; a shared one shares its ledger"
+    )

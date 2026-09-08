@@ -198,6 +198,13 @@ class AdaptorSchedule:
     #: samples collapse in the adaptor's own staging key and create gate. A
     #: sample that is unreadable is counted and skipped; the run is
     #: `unavailable` only when EVERY sample was.
+    #:
+    #: **Samples run in SEQUENCE, so the run's worst case is N x the budget's
+    #: timeout.** They are not gathered: a background pass nobody waits on
+    #: buys nothing from parallelism except N concurrent calls at the
+    #: gateway, and `dream_loop` already holds a per-`(adaptor, key)`
+    #: `running` set, so a long run is skipped by the next tick rather than
+    #: piling up behind itself.
     samples: int = 1
 
     def __post_init__(self) -> None:
@@ -737,13 +744,16 @@ class DreamerRuntime:
                 # tools resolve through the room, unchanged.
                 workspace=key if adaptor.key_kind == "workspace" else None,
             )
-            guard = DreamGuard(
-                adaptor=adaptor.name,
-                budgets=_tool_budgets(
-                    tools, adaptor, self._tool_budget_overrides),
-                metrics=self._metrics,
-                result_caps=_TOOL_RESULT_CAPS,
-            )
+            # The BUDGETS, not the guard. A `DreamGuard` owns a
+            # `CallLedger`, and a ledger is SPENT STATE — build one per run
+            # and the second sample starts with the first's tool calls
+            # already counted against it, so an adaptor with N samples would
+            # silently get a fraction of its declared budget per sample.
+            # Inert for the two adaptors that ship (both tool-free) and
+            # exactly the shape that stays inert until it does not, so the
+            # guard is built inside `_sample` instead.
+            tool_budgets = _tool_budgets(
+                tools, adaptor, self._tool_budget_overrides)
             prompt = await adaptor.inputs(key=key, batch=batch)
             if not prompt.strip():
                 # **THE FIRE CONDITION, and it is general rather than the fact
@@ -794,7 +804,8 @@ class DreamerRuntime:
         for _ in range(samples):
             sample_items, sample_stop = await self._sample(
                 adaptor=adaptor, key=key, instructions_text=instructions.text,
-                sha=sha, tools=tools, guard=guard, prompt=prompt, budget=budget,
+                sha=sha, tools=tools, tool_budgets=tool_budgets,
+                prompt=prompt, budget=budget,
             )
             if sample_items is None:
                 self._metrics.inc(
@@ -815,6 +826,10 @@ class DreamerRuntime:
                 adaptor, "unavailable", 0, sha, stop_reason, started,
             )
         items = _dedupe_items(union)
+        # THE CAP IS PER RUN, and with sampling that is per UNION rather than
+        # per model answer. Identical items collapse first (above), so N
+        # samples that agree cost one slot; N samples that each invent
+        # something different are exactly the case a cap is for.
         max_items = self.max_items_for(adaptor.name)
         if len(items) > max_items:
             # Capped, never silently: a cap nobody counts reads as «we wrote
@@ -881,13 +896,27 @@ class DreamerRuntime:
 
     async def _sample(
         self, *, adaptor: DreamAdaptor, key: str, instructions_text: str,
-        sha: str, tools: list[Any], guard: DreamGuard, prompt: str,
-        budget: AdaptorBudget,
+        sha: str, tools: list[Any], tool_budgets: Mapping[str, int],
+        prompt: str, budget: AdaptorBudget,
     ) -> tuple[tuple[Mapping[str, object], ...] | None, str | None]:
-        """ONE model call: build the agent, invoke it under the budget, read
-        the envelope. Returns `(items, stop_reason)`; `items is None` means
-        this sample was not readable (timeout, exception, or no envelope) —
-        counted by the caller, never raised."""
+        """ONE model call: build a guard, build the agent, invoke it under the
+        budget, read the envelope. Returns `(items, stop_reason)`; `items is
+        None` means this sample was not readable (timeout, exception, or no
+        envelope) — counted by the caller, never raised.
+
+        **The guard is built HERE, once per sample**, because it owns a
+        `CallLedger` and a ledger is spent state: a shared one would let the
+        first sample's tool calls count against the second's budget. The
+        TOKEN budget (`budget`) is deliberately per sample too — it is the
+        model's own limit for one call, and N samples of a bounded call is
+        what sampling means.
+        """
+        guard = DreamGuard(
+            adaptor=adaptor.name,
+            budgets=dict(tool_budgets),
+            metrics=self._metrics,
+            result_caps=_TOOL_RESULT_CAPS,
+        )
         try:
             agent = factory.create_dream_agent(
                 model=self._models.create(),
