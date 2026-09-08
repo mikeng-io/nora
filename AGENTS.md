@@ -182,6 +182,14 @@ where there is no local `config.toml` (a fresh clone) and runs for real on the
 deployment machine, which is the one whose drift would stop a container
 booting under `extra = "forbid"`.
 
+**Config mutation goes through the CLI, not a hand edit** (deploy convention
+§4.5, implemented 2026-09-08): `nora config set/get/unset/validate --config
+<path>`. The subcommand validates against the schema, writes atomically
+(tmp + rename), prints what changed, and never touches `.env` — secrets stay
+there and are referenced by name. Hand-editing a 75KB TOML remains possible
+(`extra = "forbid"` still catches a broken file at boot) but is the last
+resort, because it bypasses the validation and the audit trail the CLI gives.
+
 The last two are bind-mounted read-only and **loaded once at
 startup** — editing either without a restart changes nothing and warns you about
 nothing (`nora_unmapped_senders_total` is the tell). `identity.toml` takes one

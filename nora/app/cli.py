@@ -1,5 +1,7 @@
-"""The read-only operator control plane: `nora groups`, `nora persons pending`,
-`nora presence members`, `nora reminders list`.
+"""The operator control plane: the read-only commands (`nora groups`,
+`nora persons pending`, `nora presence members`, `nora reminders list`) and
+the config write surface (`nora config set/get/unset/validate` — see
+`nora.app.config_cli`). This module's own commands only READ.
 
 design/10 §6, plan Task 6. This answers the operator's original complaint —
 *"I CANNOT identify that group ID belongs to which group ... there is NO
