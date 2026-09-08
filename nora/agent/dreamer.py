@@ -765,16 +765,16 @@ class DreamerRuntime:
                 # which gets no lag/quiet/age conditions at all and would
                 # otherwise fire on EVERY tick: at the shipped 300s cadence
                 # that is 288 full `web_search`/`web_fetch` loops per workspace
-                # per day with nothing pending. `RoomPortraitSynthesizer`, the
-                # standing precedent for a watermark-free participant, has its
-                # own trigger (`appended_total > 0`); the port's own docstring
-                # says such an adaptor "must carry its own fire condition", and
-                # this is where the runtime lets it.
+                # per day with nothing pending. The port's own docstring says
+                # such an adaptor "must carry its own fire condition", and this
+                # is where the runtime lets it: the shipped curator's is a
+                # daily slot plus a blank `inputs` on a tidy notebook.
                 #
                 # `commit(key, ())` is still called, so the decay contract is
                 # untouched: a watermarked adaptor over a quiet room renders a
-                # blank prompt too, and that path is exactly where
-                # `LanguageConsolidator`'s time-driven rescore lives. Reported
+                # blank prompt too, and that path is exactly where a tier's
+                # time-driven work lives — the curator records its wakes on an
+                # empty commit, whatever the model did or did not say. Reported
                 # `nothing_found` — «I looked and there was nothing» — because
                 # that is what happened; `unavailable` would hold a watermark
                 # over a batch that was genuinely empty.
@@ -872,9 +872,9 @@ class DreamerRuntime:
             )
             # Called even when `proposals` is empty, and that is not a
             # formality: an empty `commit` is R-27's `nothing_found` and the
-            # sink may act on it — `LanguageConsolidator` rescores for an empty
-            # batch because decay is time-driven. Skipping the call would drop
-            # decay silently.
+            # sink may act on it — the curator records its wakes on one,
+            # because decay is time-driven. Skipping the call would drop decay
+            # silently.
             written = await adaptor.commit(
                 key=key, proposals=proposals, now_ms=now_ms,
             )

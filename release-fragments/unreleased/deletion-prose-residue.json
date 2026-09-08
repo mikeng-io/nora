@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Internal only: one dead function with no callers, one unused test helper, a renamed test fixture, and about thirty docstring pointers rewritten. No behaviour, no prompt, no schema, no config surface changes — the doctrine and objective files are untouched, so nothing hot-reloads into a running deployment."
+}

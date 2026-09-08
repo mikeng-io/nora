@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Internal only: four comments and one docstring rewritten so that a live setting's justification rests on evidence that can still be taken, plus nine orphan rows deleted from dream_schedule_state on the deployment. No behaviour, no prompt, no schema, no config surface changes — [dreamer] reasoning_effort and [standing] max_slot_hold_seconds keep their shipped values and their types."
+}

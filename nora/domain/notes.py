@@ -4,8 +4,7 @@ is Honcho's `(observer, observed)` axis). See
 `docs/superpowers/specs/2026-08-21-note-tier-design.md`.
 
 **The four fields are the point of this module**, and three of them are only
-load-bearing if the wrong thing is *unrepresentable* rather than discouraged —
-the move `nora.domain.facts.FactVerdict` makes with `not_covered`:
+load-bearing if the wrong thing is *unrepresentable* rather than discouraged:
 
 - **`closing_condition`** — what would settle this. Retirement (§7.4),
   promotion-readiness (§7.3) and a revisit's success criterion (§10) are all
@@ -304,9 +303,11 @@ class Note:
 
     @property
     def is_standing(self) -> bool:
-        """True until retired. Unlike `Fact.is_standing` this reads only
-        `retired_at`, because a note may retire with no successor (see the
-        module docstring)."""
+        """True until retired. Reads only `retired_at` and never a successor,
+        because a note may retire with no successor at all — an anchor date
+        passed and the thing happened (see the module docstring). The
+        knowledge tier's own standing predicate required both, which is why
+        `DreamSink.supersede` types `replaced_by` as `str | None`."""
         return self.retired_at is None
 
     @property
@@ -403,7 +404,7 @@ class NoteRevisionProposal:
 
     **This type exists so the note sink has something to `isinstance` against.**
     `Proposal.payload` is `object` at the port, deliberately: the runtime never
-    names an adaptor's own value type, which is what keeps `FactVerdict` out of
+    names an adaptor's own value type, which is what keeps THIS type out of
     `nora/domain/ports.py` and makes "one runtime, many adaptors" true. The cost
     of an opaque field is that a wrong value travels a long way quietly, and the
     rule that pays it is that **the sink refuses anything else by `isinstance`
