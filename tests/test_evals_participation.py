@@ -368,26 +368,32 @@ async def test_a_declined_floor_is_recorded_and_is_not_a_silent_failure():
     assert trajectory.silent_failures == {}, "a declined floor is not a malfunction"
 
 
-async def test_prose_she_never_routed_is_indistinguishable_from_having_nothing_to_say():
-    """The finding, pinned so a fix to it shows up as this test going red.
+async def test_prose_she_never_routed_is_separable_from_having_nothing_to_say():
+    """THE partition. Two opposite findings used to be the same row.
 
-    Production collapses both into `nora_participation_silence_total`, so the
-    suite cannot say WHY she declined — and on 2026-09-08 she declined 13 of 15
-    runs on cases that expected her to speak. This is the argument for a
-    terminal `decline` verb: today the decision is counted, the reason for it
-    is observable nowhere.
+    "She wrote the answer and it never left the process" is a broken output
+    contract; "she had nothing to say" is a doctrine calibration. They have
+    opposite fixes, and on 2026-09-08 she declined 13 of 15 runs on cases that
+    expected her to speak with no way to say which had happened.
+
+    Note what stays collapsed: every counter still reads the same for both,
+    because production files both under `nora_participation_silence_total` by
+    design. The harness separates them; production does not.
     """
     case = Case.from_dict({
         "name": "declined", "input": "so when is it?",
         "expect": "silence", "seed": {"transcript": ["so when is it?"]},
     })
     wrote_prose = await run_case(
-        case, script=[ScriptedTurn(final_text="I don't have that")],
+        case, script=[ScriptedTurn(final_text="It's Oct 26 at IVE.")],
     )
     said_nothing = await run_case(case, script=[ScriptedTurn(final_text="")])
 
+    assert wrote_prose.unrouted_prose == "It's Oct 26 at IVE."
+    assert said_nothing.unrouted_prose == ""
+    # ... and the counters STILL cannot tell them apart. That is the finding.
     assert (wrote_prose.sent, wrote_prose.participation_silence,
             wrote_prose.silent_failures, wrote_prose.stop_reason) == (
         said_nothing.sent, said_nothing.participation_silence,
         said_nothing.silent_failures, said_nothing.stop_reason,
-    ), "these are different turns; if the harness can now tell them apart, say so here"
+    )

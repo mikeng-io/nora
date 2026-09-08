@@ -685,6 +685,7 @@ async def _run_participation_live(
                 reasons: list[str] = []
                 silent_failures: Counter[str] = Counter()
                 declined = 0
+                unrouted: list[str] = []
                 judged_reply: str | None = None
                 for _ in range(case.sample):
                     trajectory = await run_case(case, live=True, effort=effort)
@@ -693,6 +694,8 @@ async def _run_participation_live(
                     stop_reasons.append(trajectory.stop_reason)
                     silent_failures.update(trajectory.silent_failures)
                     declined += trajectory.participation_silence
+                    if trajectory.unrouted_prose and not trajectory.sent:
+                        unrouted.append(trajectory.unrouted_prose)
                     if verdict.reason:
                         reasons.append(verdict.reason)
                     if trajectory.sent and judged_reply is None:
@@ -765,6 +768,9 @@ async def _run_participation_live(
                     # the loop and declined (`declined`).
                     "silent_failures": dict(silent_failures),
                     "declined": declined,
+                    # THE partition on a missed speak: prose she wrote and
+                    # never routed, vs nothing at all.
+                    "unrouted": unrouted,
                     # The disambiguating signal (Claude Sonnet audit BLOCKING):
                     # a turn that never invoked the model is an ERROR, not a
                     # correct silence — surfaced so the summary's stop_reason
@@ -872,6 +878,22 @@ async def _run_participation_live(
         on_speak = sum(r["declined"] for r in results if r["expect"] == "speak")
         print(f"    declined the floor: {declined_total} runs "
               f"({on_speak} of them on a case that expected her to speak)")
+        # THE number that decides what to fix. A declined floor holding an
+        # answer is a broken output contract; a declined floor holding nothing
+        # is a doctrine calibration. Opposite fixes, and until this line
+        # existed they were the same row.
+        held = [(r["name"], r["unrouted"]) for r in results
+                if r["expect"] == "speak" and r["unrouted"]]
+        n_held = sum(len(p) for _n, p in held)
+        silent_speak_runs = sum(r["samples"] - r["spoke_count"]
+                                for r in results if r["expect"] == "speak")
+        print(f"    of {silent_speak_runs} silent runs on a speak case, "
+              f"{n_held} were holding prose they never routed")
+        for name, proses in held:
+            for text in proses:
+                one_line = " ".join(text.split())
+                print(f"      {name}: {one_line[:300]}"
+                      + ("…" if len(one_line) > 300 else ""))
         # Langfuse export (Miles 2026-09-05: "include langfuse and jaeger —
         # otherwise how can I analyse with observability"). The participation
         # suite is the flip gate; its per-case verdicts belong in the same

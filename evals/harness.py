@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import logging
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -145,6 +146,15 @@ class Trajectory:
     #: `decline` verb: today a declined floor is counted, but the reason for it
     #: is not observable anywhere.
     participation_silence: int = 0
+    #: The prose she wrote and never routed through `send_reply`, when the turn
+    #: declined the floor holding one.
+    #:
+    #: THE number that partitions a missed speak. Production collapses "nothing
+    #: needed saying" and "she wrote the answer and it never left the process"
+    #: into one counter, and the two have opposite fixes: the first is a
+    #: doctrine calibration, the second is a broken output contract. Empty
+    #: string when she genuinely produced nothing.
+    unrouted_prose: str = ""
 
 
 @dataclass
@@ -271,6 +281,46 @@ def _silent_failures_from_metrics(metrics: Metrics) -> dict[str, int]:
             if reason:
                 out[reason] = out.get(reason, 0) + int(value)
     return out
+
+
+class _UnroutedProseCapture(logging.Handler):
+    """Capture the prose a declined participation turn was holding.
+
+    A log record rather than a constructor seam on `FirePath`, deliberately:
+    the alternative that already carries this text is the shadow mirror, and
+    `run_case` forces shadow OFF because turning it on holds every send at the
+    Deliverer and fails every speak case vacuously. A handler observes the same
+    turn without being inside it.
+    """
+
+    #: The prefix of the DEBUG record in `nora/app/fire.py`. The text is read
+    #: off `record.args`, so the log formatting never has to be reversed.
+    PREFIX = "unrouted participation prose"
+
+    #: The logger carrying the record. Raised to DEBUG for the duration and put
+    #: back on exit, so the capture works whatever the ambient logging config is
+    #: and a case that raises cannot leave the next one's logging turned up.
+    LOGGER = "nora.app.fire"
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.prose: list[str] = []
+        self._log = logging.getLogger(self.LOGGER)
+        self._prior_level = self._log.level
+
+    def __enter__(self) -> _UnroutedProseCapture:
+        self._prior_level = self._log.level
+        self._log.setLevel(logging.DEBUG)
+        self._log.addHandler(self)
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self._log.removeHandler(self)
+        self._log.setLevel(self._prior_level)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.getMessage().startswith(self.PREFIX) and record.args:
+            self.prose.append(str(record.args[-1]))
 
 
 def _participation_silence_from_metrics(metrics: Metrics) -> int:
@@ -412,7 +462,10 @@ async def run_case(
         tool_names=TOOL_NAMES, metrics=metrics,
     )
 
-    with tempfile.TemporaryDirectory(prefix="nora-eval-") as tmp:
+    with (
+        tempfile.TemporaryDirectory(prefix="nora-eval-") as tmp,
+        _UnroutedProseCapture() as prose_capture,
+    ):
         identity_path = Path(tmp) / "identity.toml"
         identity_path.write_text(_IDENTITY_TOML)
         persons = load_persons(identity_path)
@@ -570,4 +623,5 @@ async def run_case(
             stop_reason=stop_reason,
             silent_failures=silent_failures,
             participation_silence=participation_silence,
+            unrouted_prose=(prose_capture.prose[-1] if prose_capture.prose else ""),
         )

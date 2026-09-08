@@ -1228,6 +1228,23 @@ class FirePath:
                 if failure is not None:
                     return failure
                 if participation:
+                    # WHAT the declined floor was made of. Two completely
+                    # different turns end here — she had nothing to say, or she
+                    # wrote the answer as prose and never routed it through
+                    # `send_reply` — and `nora_participation_silence_total`
+                    # counts them as one. The length goes to INFO because it
+                    # separates them without putting group speech in the log;
+                    # the prose itself is DEBUG, for a deliberate diagnosis.
+                    if final_text.strip():
+                        log.info(
+                            "participation turn declined the floor holding %d "
+                            "chars of unrouted prose (tag=%s)",
+                            len(final_text), ctx.tag_id,
+                        )
+                        log.debug(
+                            "unrouted participation prose (tag=%s): %s",
+                            ctx.tag_id, final_text,
+                        )
                     # SILENT, not FAILED_ERROR: a participation turn that
                     # delivered nothing is the HEALTHY default (§6), whether
                     # the model declined the floor or the send cooldown held
