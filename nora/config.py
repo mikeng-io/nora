@@ -1399,7 +1399,7 @@ class StandingConfig(BaseModel):
     """The debrief stage's gate and its four numbers
     (`design/dreamer-agent-loop/26-standing`).
 
-    `FactsConfig`/`NotesConfig`'s shape above, for the same reasons: the whole
+    `NotesConfig`'s shape, for the same reasons: the whole
     section is optional and every field defaults, so a `config.toml` written
     before this section existed keeps loading under `extra="forbid"`; and
     `enabled` defaults to **False**, because a new subsystem does not switch
@@ -1579,14 +1579,16 @@ class StandingConfig(BaseModel):
     # impossible to get wrong silently, not to relitigate `[llm]`'s own timeout,
     # which was raised to 120 deliberately on 2026-08-08. Lower it and the
     # startup refusal tells the operator exactly which numbers no longer fit.
-    # 45 -> 60 (2026-08-28). 45 was 20 + 5 x 5 EXACTLY, so the default budget
-    # sat on the default hold with nothing between them: a second stage
-    # arriving on the same slot — recognition, 8s — made a config with no
-    # `[standing]` section refuse to start, which is a default that cannot be
-    # left alone. 60 leaves seven seconds of headroom, so the next stage on
-    # this slot fails the GATE with a number to reason about rather than
-    # failing every deployment that never set the key. The deployment sets 150
-    # explicitly and is unaffected.
+    # 45 -> 60 (2026-08-28), KEPT at 60 on 2026-09-08 (operator). 45 was
+    # 20 + 5 x 5 EXACTLY, so the default budget sat on the default hold with
+    # nothing between them, and the first extra stage to arrive on this slot
+    # made a config with no `[standing]` section refuse to start — a default
+    # that cannot be left alone. (That stage was recognition, 8s; it went with
+    # the knowledge tier on 2026-09-07, which removes the instance and not the
+    # class of problem.) 60 is the headroom itself, not a fit to any one
+    # stage: the next thing on this slot fails the GATE with a number to
+    # reason about rather than failing every deployment that never set the
+    # key. The deployment sets 150 explicitly and is unaffected.
     max_slot_hold_seconds: float = Field(default=60.0, gt=0)
 
     @model_validator(mode="after")
@@ -2051,42 +2053,29 @@ class DreamerConfig(BaseModel):
     # likely reading of August's 963 messages producing 2 rows, on this same
     # model at this same setting.
     #
-    # Dreamer-WIDE rather than per-adaptor, and the other two passes are now
-    # MEASURED rather than assumed — the first version of this comment said
-    # neither had been, which is a gap that should not survive a review it can
-    # be closed before:
+    # **RE-MEASURED 2026-09-08 against the surviving tier, because the original
+    # evidence went with the tier it was taken on.** The paragraphs above were
+    # measured on the knowledge tier's two adaptors, both deleted 2026-09-07,
+    # and a live setting defended only by a probe nobody can repeat is a claim.
+    # The note tier's scenario suite (`evals.run --suite note_candidates`,
+    # design/dreamer-agent-loop/37 §7) re-ran the same question on
+    # `note-candidates`, sixteen scenarios against the deployed model:
     #
-    #   fact-entity-resolution  low   4 of 4 runs resolved `big walk`/`Big Walk`
-    #                           none  3 of 4; the fourth SPLIT them
-    #   fact-adjudication       low   `supported` with a source_url, tool-free
-    #                           none  `not_covered`
+    #   effort=none  16/16 cases majority-pass, precision 1.00, recall 0.84,
+    #                zero unavailable runs
+    #   effort=low   9/16, precision 1.00, recall 0.74, and SEVEN of fifty
+    #                samples returned nothing readable at all — the update
+    #                path went 0 of 4 while the model deliberated past its
+    #                budget
     #
-    # Entity resolution loses a little recall at "none", and it loses it in the
-    # direction `21` §5 chose on purpose: default to SPLIT, because two
-    # entities wrongly kept apart is a missing edge and two wrongly merged is a
-    # corrupted node. A small rate of over-splitting is the failure that design
-    # asked for.
-    #
-    # The adjudicator's real risk was not verdict quality, it was that a model
-    # told not to deliberate would stop REACHING FOR A TOOL — and an
-    # adjudicator that never searches marks nothing `supported`, writes no
-    # fact, and stalls the chain one step past extraction while every counter
-    # reports an honest empty. Measured with a `web_search` schema attached,
-    # three runs at each effort:
-    #
-    #   low    tool_calls=2 every run
-    #   none   tool_calls=2 every run, the same two queries
-    #
-    # It still researches. The earlier tool-free result — "low" answering
-    # `supported` with an invented `source_url` while "none" said
-    # `not_covered` — was a probe with nothing to search WITH, and
-    # `not_covered` was the correct answer to it rather than a recall loss.
-    #
-    # The Dreamer already has its own `ModelSource`, so this costs one line and
-    # keeps one model object; per-adaptor would need one object per adaptor.
-    # The reading that would split it is an adjudication run against real tools
-    # measurably worse at "none" — that is the measurement to take when the
-    # tier has traffic, and it needs production rather than a probe.
+    # Same shape as 2026-08-28: at "low" this model spends the ceiling on
+    # deliberation and the run reports `unavailable`, which HOLDS a watermark
+    # over a batch that was in fact read. The field stays, and it stays
+    # Dreamer-WIDE: the Dreamer already has its own `ModelSource`, so this
+    # costs one line and keeps one model object, and there is no longer a
+    # second adaptor whose needs could differ. The reading that would split it
+    # is a second adaptor measurably better at a different effort, on a suite
+    # rather than a probe.
     #
     # `[llm] reasoning_effort` is UNTOUCHED, so her replies are unaffected.
     reasoning_effort: Literal[
