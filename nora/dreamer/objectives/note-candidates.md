@@ -1,7 +1,7 @@
 ---
 name: note-candidates
 kind: objective
-version: 3
+version: 4
 applies_to: [note_candidate_adaptor]
 description: >-
   The note tier's create path. Read a batch of a room's messages and propose
@@ -55,8 +55,25 @@ weekday from there rather than working it out.
 
 Return JSON and nothing else — no prose before it, no explanation after it, no code fence.
 
+**Two keys, `verdicts` first.** `verdicts` holds ONE entry per message in the batch, in the
+order you were given them — no message left out, including the ones that are obviously nothing.
+For each: its `id`, whether it says anything about something **still to come** (a date, a
+weekday, a plan, a promise, something somebody owes), and — only when it does — which corners of
+it are still **open**. A message with nothing ahead of it is written `{"id": 4813, "ahead":
+false}` and nothing more.
+
+Write the verdicts before you decide anything. They are how you read each message on its own,
+rather than forming an impression of the batch and answering from that. Then `candidates` holds
+the notebook entries, each built only out of messages whose verdict said something was ahead.
+
 ```json
-{"candidates": [
+{"verdicts": [
+  {"id": 4812, "ahead": true, "open": ["which venue"]},
+  {"id": 4813, "ahead": false},
+  {"id": 4815, "ahead": true, "open": ["which venue"]},
+  {"id": 4820, "ahead": true, "open": ["which venue", "whether Ada can make the last weekend"]}
+],
+ "candidates": [
   {"title": "Wedding venue",
    "description": "Three venues proposed for the September wedding; nobody has picked one yet.",
    "body": "Ada proposed Sai Kung, Ben proposed Central, Cat proposed the beach club. Nobody has said which one wins. Ada can't do the last weekend of the month.",
@@ -88,15 +105,18 @@ Return JSON and nothing else — no prose before it, no explanation after it, no
   appear in the batch you were given. Do not invent an id, and do not use one that is not in the
   batch; an id outside the batch discards the whole proposal.
 
-If nothing in this batch belongs in the notebook and is not already there, return
-`{"candidates": []}`. That will be the right answer most ticks: this batch may span days of a
-room's conversation, and most of it will be ordinary talk with nothing to track.
+If nothing in this batch belongs in the notebook and is not already there, `candidates` is
+`[]` — and the verdicts still come first, one for every message. That will often be the right
+answer: this batch may span days of a room's conversation, and most of it will be ordinary talk
+with nothing to track. A message can have something ahead of it and still not be worth a
+notebook entry; the verdict says what the message holds, the candidate list says what the
+notebook should hold.
 
 ## Before you answer
 
 Your entire reply is one JSON object. **The first character you write is `{` and the last is
 `}`.** Nothing before it, nothing after it, no fence, no explanation.
 
-If you found nothing, that is still JSON:
+If you found nothing, that is still JSON — every message's verdict, then an empty list:
 
-{"candidates": []}
+{"verdicts": [{"id": 4812, "ahead": false}, {"id": 4813, "ahead": false}], "candidates": []}

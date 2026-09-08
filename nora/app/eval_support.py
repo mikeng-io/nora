@@ -26,7 +26,7 @@ import sqlalchemy as sa
 
 from nora.agent import factory
 from nora.agent import tool_choice as tool_choice_module
-from nora.agent.dreamer import AdaptorBudget, DreamerRuntime
+from nora.agent.dreamer import AdaptorBudget, AdaptorSchedule, DreamerRuntime
 from nora.agent.factory import create_client, create_model_provider
 from nora.agent.guards import LeakGuard
 from nora.agent.registry import ToolRegistry
@@ -613,6 +613,7 @@ class NoteCandidatesDrive:
 def build_note_candidates_runtime(
     cfg: Config, *, client: Any, effort: str | None = None,
     dreamer_dir: str | Path | None = None, model: str | None = None,
+    samples_per_fire: int = 1,
 ) -> tuple[DreamerRuntime, str]:
     """The Dreamer runtime exactly as `composition.build_dependencies` wires
     it for the live model — same model id, same tier scalars, same retry
@@ -622,7 +623,8 @@ def build_note_candidates_runtime(
     stamped like production's, never an inline string. `model` overrides
     `[dreamer] model` (then `[llm] model`) so a run from a dev machine can
     name the DEPLOYED alias (`nora-dreamer` on OmniRoute) rather than the
-    template's provider id."""
+    template's provider id. `samples_per_fire` is `[notes]
+    candidate_samples` for the drive — model calls per fire, unioned."""
     model = model or cfg.dreamer_model()
     reasoning = effort or cfg.dreamer.reasoning_effort or cfg.llm.reasoning_effort
     models = factory.ModelSource(
@@ -648,8 +650,17 @@ def build_note_candidates_runtime(
         ),
         retry=factory.build_retry_policy(timeout_seconds=cfg.llm.timeout_seconds),
         metrics=Metrics(), model_name=model,
+        # The production schedule entry's shape (composition.py), with the
+        # per-fire sample count under measurement; the interval and batch
+        # limit are inert for an on-demand drive.
+        schedules={
+            "note-candidates": AdaptorSchedule(
+                min_interval_seconds=3600, batch_limit=200,
+                samples=samples_per_fire,
+            ),
+        },
     )
-    return runtime, f"{model}/{reasoning}"
+    return runtime, f"{model}/{reasoning}/x{samples_per_fire}"
 
 
 async def run_note_candidates_case(

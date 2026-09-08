@@ -757,6 +757,7 @@ async def _run_participation_live(
 async def _run_note_candidates_live(
     paths: tuple[Path, ...], *, samples: int, effort: str | None = None,
     dreamer_dir: str | Path | None = None, model: str | None = None,
+    samples_per_fire: int = 1,
     sink: EvalSink | None = None, run_name: str | None = None,
 ) -> tuple[bool, list[dict]]:
     """The note-candidates suite's live drive (design/dreamer-agent-loop/37
@@ -780,6 +781,7 @@ async def _run_note_candidates_live(
     try:
         runtime, model_label = build_note_candidates_runtime(
             cfg, client=client, effort=effort, dreamer_dir=dreamer_dir, model=model,
+            samples_per_fire=samples_per_fire,
         )
         tallies: list[CaseTally] = []
         instruction_sha: str | None = None
@@ -970,7 +972,7 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
          force: bool = False, effort: str | None = None,
          with_skills: bool = False, seed_production: bool = False,
          samples: int = 3, dreamer_dir: str | None = None,
-         model: str | None = None) -> int:
+         model: str | None = None, samples_per_fire: int = 1) -> int:
     paths = SUITES.get(suite)
     if paths is None:
         print(f"unknown suite {suite!r}; expected one of {sorted(SUITES)}", file=sys.stderr)
@@ -1017,7 +1019,8 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
         run_name = f"gate-note-candidates-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
         ok, _results = asyncio.run(_run_note_candidates_live(
             paths, samples=samples, effort=effort, dreamer_dir=dreamer_dir,
-            model=model, sink=sink, run_name=run_name,
+            model=model, samples_per_fire=samples_per_fire,
+            sink=sink, run_name=run_name,
         ))
     elif suite == "adversarial":
         # B1: the verdict cache is ON by default — an unchanged re-run costs 0 model
@@ -1078,6 +1081,11 @@ if __name__ == "__main__":
              "passes on a majority of its graded samples.",
     )
     parser.add_argument(
+        "--samples-per-fire", type=int, default=1,
+        help="note_candidates only: model calls per fire, unioned "
+             "(`[notes] candidate_samples`; default 1).",
+    )
+    parser.add_argument(
         "--model", default=None,
         help="note_candidates only: the model id to drive INSTEAD of "
              "`[dreamer] model` — name the deployed OmniRoute alias "
@@ -1095,4 +1103,4 @@ if __name__ == "__main__":
                   effort=args.effort, with_skills=args.skills,
                   seed_production=args.seed_production,
                   samples=args.samples, dreamer_dir=args.dreamer_dir,
-                  model=args.model))
+                  model=args.model, samples_per_fire=args.samples_per_fire))

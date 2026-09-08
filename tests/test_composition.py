@@ -1282,6 +1282,22 @@ async def test_a_valid_inherited_effort_still_starts(cfg):
     assert deps.dreamer_runtime._models._spec.reasoning_effort == "medium"
 
 
+async def test_candidate_samples_reaches_the_note_candidates_schedule(cfg):
+    """`[notes] candidate_samples` is model calls per fire, unioned (design 37
+    / issue #118). A knob that did not reach `AdaptorSchedule.samples` would
+    be the config-file form of a declared metric with no call site — set and
+    read by nothing."""
+    async def _samples(n: int) -> int:
+        deps = await build_dependencies(override_config(cfg, {
+            "dreamer.enabled": True, "notes.enabled": True,
+            "notes.candidates_enabled": True, "notes.candidate_samples": n,
+        }))
+        return deps.dream_schedules["note-candidates"].samples
+
+    assert await _samples(1) == 1
+    assert await _samples(4) == 4
+
+
 async def test_note_candidates_renders_moments_in_the_operators_timezone(cfg):
     """The sibling of `test_the_curator_reads_the_day_from_the_operators_
     timezone`, for the create path: «this Saturday» in a message is resolved

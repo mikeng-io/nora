@@ -33,6 +33,7 @@ from nora.agent.dreamer import (
     MAX_ITEMS,
     WORKSPACE_SAFE_TOOLS,
     AdaptorBudget,
+    AdaptorSchedule,
     AdaptorToolError,
     DreamerRuntime,
     RegistryToolSource,
@@ -158,20 +159,34 @@ def _runtime(
     instructions: _InstructionStore | None = None,
     tools: _ToolSource | None = None, metrics: Metrics | None = None,
     budgets: dict[str, AdaptorBudget] | None = None,
+    replies: list[str] | None = None,
+    schedules: dict[str, AdaptorSchedule] | None = None,
 ) -> tuple[DreamerRuntime, Metrics]:
     """Wires the runtime with the Strands boundary replaced.
 
     `create_dream_agent`, `invoke` and `final_text` are the three points where
     this module touches the SDK; patching exactly those three keeps every test
     below free of strands while leaving the runtime's own logic — envelope,
-    screen, provenance, outcome — running for real."""
+    screen, provenance, outcome — running for real.
+
+    `replies` scripts ONE ANSWER PER SAMPLE (`AdaptorSchedule.samples`), taken
+    in order; `raw` is the single-answer form and repeats. A sampling run
+    calls the boundary N times, so a fixture that could only answer once
+    would make every sample identical and the union untestable."""
     metrics = metrics or Metrics()
     monkeypatch.setattr(factory, "create_dream_agent", lambda **kw: object())
     monkeypatch.setattr(
         factory, "invoke",
         invoke or (lambda *a, **kw: _completed(_Result())),
     )
-    monkeypatch.setattr(factory, "final_text", lambda result: raw or "")
+    scripted = list(replies) if replies is not None else None
+
+    def _final_text(result):
+        if scripted is None:
+            return raw or ""
+        return scripted.pop(0) if scripted else ""
+
+    monkeypatch.setattr(factory, "final_text", _final_text)
     runtime = DreamerRuntime(
         models=_Models(),
         instructions=instructions or _InstructionStore(),
@@ -181,8 +196,20 @@ def _runtime(
         retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
         metrics=metrics,
         model_name="deepseek-v4-flash",
+        schedules=schedules,
     )
     return runtime, metrics
+
+
+def _sampled(n: int) -> dict[str, AdaptorSchedule]:
+    """A schedule entry whose only live field here is `samples` — the
+    interval and the batch limit are the caller's clock's business, not the
+    runtime's."""
+    return {
+        "test-adaptor": AdaptorSchedule(
+            min_interval_seconds=3600, batch_limit=200, samples=n,
+        ),
+    }
 
 
 def _completed(value):
@@ -1006,3 +1033,165 @@ def test_an_override_naming_a_tool_the_adaptor_lacks_grants_nothing():
 
     assert budgets == {"web_fetch": 6}
     assert "send_reply" not in budgets
+
+
+# ---------------------------------------------------------------------------
+# per-fire sampling (design/dreamer-agent-loop/37, issue #118) — N model calls
+# per run, unioned. Measured on `note-candidates`: one shape of entry is
+# recognised in ~30% of samples while no negative sample ever produced one, so
+# the union raises recall on the exact axis where precision cannot be spent.
+# ---------------------------------------------------------------------------
+
+
+def test_an_adaptor_with_no_schedule_takes_one_sample(monkeypatch):
+    """The default is one call. Sampling is opt-in per adaptor; an adaptor
+    nobody scheduled must not silently start costing N times as much."""
+    runtime, _ = _runtime(monkeypatch, raw='{"observations": []}')
+    assert runtime.samples_for("test-adaptor") == 1
+    assert runtime.samples_for("anything") == 1
+
+
+def test_a_schedule_with_samples_reports_them():
+    assert AdaptorSchedule(
+        min_interval_seconds=1, batch_limit=1, samples=5,
+    ).samples == 5
+
+
+def test_a_schedule_cannot_ask_for_zero_samples():
+    """A zero would make `run` take no model call at all and report
+    `unavailable` forever, which reads as an outage rather than as the
+    misconfiguration it is."""
+    with pytest.raises(ValueError, match="samples must be >= 1"):
+        AdaptorSchedule(min_interval_seconds=1, batch_limit=1, samples=0)
+
+
+async def test_three_samples_make_three_calls_and_union_their_items(monkeypatch):
+    """The whole point: an item ONE sample saw reaches the sink. The three
+    replies are disjoint, so a runtime that kept only the last would write
+    one row and a runtime that kept the first would write one row."""
+    sink = _Sink()
+    runtime, metrics = _runtime(
+        monkeypatch,
+        replies=[
+            '{"observations": [{"term": "a"}]}',
+            '{"observations": [{"term": "b"}]}',
+            '{"observations": [{"term": "c"}]}',
+        ],
+        schedules=_sampled(3),
+    )
+
+    outcome = await runtime.run(adaptor=_Adaptor(sink=sink), key="g1", batch=())
+
+    assert outcome.status == "ok"
+    assert outcome.written == 3, "every sample's item reached the sink"
+    (_key, proposals) = sink.commits[0]
+    assert [p.payload["term"] for p in proposals] == ["a", "b", "c"]
+    assert metrics.get(
+        "nora_dream_sample_total", adaptor="test-adaptor", status="ok") == 3
+
+
+async def test_identical_items_across_samples_collapse(monkeypatch):
+    """Two samples that answer the same thing are one answer, not two rows.
+    Byte-identical only: two samples that PHRASE one arrangement differently
+    are the tier's own identity question, and a runtime that guessed at it
+    would be deciding a tier's dedupe rule for it."""
+    sink = _Sink()
+    runtime, _ = _runtime(
+        monkeypatch,
+        replies=[
+            '{"observations": [{"term": "a"}, {"term": "b"}]}',
+            '{"observations": [{"term": "a"}]}',
+        ],
+        schedules=_sampled(2),
+    )
+
+    outcome = await runtime.run(adaptor=_Adaptor(sink=sink), key="g1", batch=())
+
+    assert outcome.written == 2
+    (_key, proposals) = sink.commits[0]
+    assert [p.payload["term"] for p in proposals] == ["a", "b"]
+
+
+async def test_one_unreadable_sample_does_not_lose_the_others(monkeypatch):
+    """R-27, one level down. A sample that returned prose is `unavailable` FOR
+    THAT SAMPLE and is counted; the run read the batch through the samples
+    that worked, so it is `ok` and the watermark may advance. Reporting the
+    whole run unavailable here would hold a batch that WAS read."""
+    sink = _Sink()
+    runtime, metrics = _runtime(
+        monkeypatch,
+        replies=[
+            "I could not find anything useful.",
+            '{"observations": [{"term": "a"}]}',
+        ],
+        schedules=_sampled(2),
+    )
+
+    outcome = await runtime.run(adaptor=_Adaptor(sink=sink), key="g1", batch=())
+
+    assert outcome.status == "ok"
+    assert outcome.written == 1
+    assert metrics.get(
+        "nora_dream_sample_total", adaptor="test-adaptor", status="ok") == 1
+    assert metrics.get(
+        "nora_dream_sample_total", adaptor="test-adaptor",
+        status="unavailable") == 1
+
+
+async def test_every_sample_unreadable_is_an_unavailable_run(monkeypatch):
+    """The positive control for the test above: when NO sample was readable,
+    nobody read the batch, and that is the outcome that holds the cursor."""
+    sink = _Sink()
+    runtime, metrics = _runtime(
+        monkeypatch,
+        replies=["prose", "more prose"],
+        schedules=_sampled(2),
+    )
+
+    outcome = await runtime.run(adaptor=_Adaptor(sink=sink), key="g1", batch=())
+
+    assert outcome.status == "unavailable"
+    assert outcome.written == 0
+    assert sink.commits == [], "nothing is written on a run nobody could read"
+    assert metrics.get(
+        "nora_dream_sample_total", adaptor="test-adaptor",
+        status="unavailable") == 2
+
+
+async def test_a_sampling_run_that_finds_nothing_is_nothing_found(monkeypatch):
+    """Every sample readable and every sample empty is «I looked and there was
+    nothing», not an outage — the distinction the whole three-state contract
+    exists for, and it must survive the union."""
+    sink = _Sink()
+    runtime, _ = _runtime(
+        monkeypatch,
+        replies=['{"observations": []}', '{"observations": []}'],
+        schedules=_sampled(2),
+    )
+
+    outcome = await runtime.run(adaptor=_Adaptor(sink=sink), key="g1", batch=())
+
+    assert outcome.status == "nothing_found"
+    assert len(sink.commits) == 1, "the decay contract still gets its call"
+
+
+async def test_a_blank_prompt_takes_no_sample_at_all(monkeypatch):
+    """Sampling multiplies MODEL CALLS, and the cheapest call is the one not
+    made: an adaptor whose `inputs` render nothing still short-circuits before
+    the first sample, N or no N."""
+
+    class _Blank(_Adaptor):
+        async def inputs(self, *, key, batch):
+            return ""
+
+    sink = _Sink()
+    runtime, metrics = _runtime(
+        monkeypatch, raw='{"observations": [{"term": "a"}]}',
+        schedules=_sampled(5),
+    )
+
+    outcome = await runtime.run(adaptor=_Blank(sink=sink), key="g1", batch=())
+
+    assert outcome.status == "nothing_found"
+    assert metrics.get(
+        "nora_dream_sample_total", adaptor="test-adaptor", status="ok") == 0

@@ -186,6 +186,23 @@ class AdaptorSchedule:
     batch_limit: int
     max_items: int | None = None
     phase_offset_seconds: float = 0.0
+    #: Model calls per fire, UNIONED (design/dreamer-agent-loop/37, issue
+    #: #118). Measured 2026-09-08 on `note-candidates`: one shape of entry —
+    #: a plan one person states with an unsettled corner — is recognised in
+    #: ~30% of samples at temperature 0.7 while precision stays 1.00 on every
+    #: negative sample across every prompt variant tried. Three prompt-level
+    #: changes did not move it. Sampling exploits the temperature already
+    #: paid for: the union of N samples recognises it with probability
+    #: 1 - 0.7^N (N=3 → 0.66, N=5 → 0.83) and, because per-sample invention
+    #: is measured at ~0, stays empty on a negative batch. Duplicates across
+    #: samples collapse in the adaptor's own staging key and create gate. A
+    #: sample that is unreadable is counted and skipped; the run is
+    #: `unavailable` only when EVERY sample was.
+    samples: int = 1
+
+    def __post_init__(self) -> None:
+        if self.samples < 1:
+            raise ValueError(f"samples must be >= 1, got {self.samples}")
 
 
 @dataclass(frozen=True)
@@ -660,6 +677,12 @@ class DreamerRuntime:
     def budget_for(self, adaptor_name: str) -> AdaptorBudget:
         return self._budgets.get(adaptor_name, self._default_budget)
 
+    def samples_for(self, adaptor_name: str) -> int:
+        """Model calls per fire — `AdaptorSchedule.samples`, 1 for an adaptor
+        with no schedule entry."""
+        sched = self._schedules.get(adaptor_name)
+        return sched.samples if sched is not None else 1
+
     def max_items_for(self, adaptor_name: str) -> int:
         """This adaptor's envelope item cap — its schedule's `max_items`
         where set, else the runtime-wide `MAX_ITEMS`."""
@@ -751,67 +774,47 @@ class DreamerRuntime:
                 return self._finish(
                     adaptor, "nothing_found", written, sha, None, started,
                 )
-            agent = factory.create_dream_agent(
-                model=self._models.create(),
-                system_prompt=instructions.text,
-                tools=tools,
-                guard=guard,
-                trace_attributes={
-                    # Its OWN span, findable in Langfuse rather than merged into
-                    # Nora's — the provenance every claim about a run
-                    # re-derives from.
-                    "dreamer.adaptor": adaptor.name,
-                    "dreamer.key": key,
-                    "dreamer.objective": adaptor.objective,
-                    "dreamer.instruction_sha256": sha,
-                },
-                retry=self._retry,
-                agent_name=f"dreamer:{adaptor.name}",
-            )
-            result = await asyncio.wait_for(
-                factory.invoke(
-                    agent, prompt, invocation_state={},
-                    limits=factory.build_limits(
-                        output_tokens=budget.output_tokens,
-                        turns=budget.turns,
-                        total_tokens=budget.total_tokens,
-                    ),
-                ),
-                timeout=budget.timeout_seconds,
-            )
-        except TimeoutError:
-            log.error(
-                "dream run timed out after %.0fs (adaptor=%s key=%s)",
-                budget.timeout_seconds, adaptor.name, key,
-            )
-            return self._finish(adaptor, "unavailable", 0, sha, "timeout", started)
         except Exception:
             log.exception(
                 "dream run failed (adaptor=%s key=%s)", adaptor.name, key,
             )
             return self._finish(adaptor, "unavailable", 0, sha, None, started)
 
-        stop_reason = getattr(result, "stop_reason", None)
-        if stop_reason is not None:
+        # THE MODEL CALL(S) — `samples` of them, unioned (`AdaptorSchedule.
+        # samples`). Each sample is its own agent, its own timeout and its own
+        # envelope parse; one unreadable sample is counted and skipped, and
+        # the run is `unavailable` only when none was readable, because
+        # «nobody read this batch» is what holds the watermark and one good
+        # read is a read. `stop_reason` reported is the last readable
+        # sample's.
+        samples = self.samples_for(adaptor.name)
+        union: list[Mapping[str, object]] = []
+        readable = 0
+        stop_reason: str | None = None
+        for _ in range(samples):
+            sample_items, sample_stop = await self._sample(
+                adaptor=adaptor, key=key, instructions_text=instructions.text,
+                sha=sha, tools=tools, guard=guard, prompt=prompt, budget=budget,
+            )
+            if sample_items is None:
+                self._metrics.inc(
+                    "nora_dream_sample_total", adaptor=adaptor.name,
+                    status="unavailable",
+                )
+                if stop_reason is None:
+                    stop_reason = sample_stop
+                continue
             self._metrics.inc(
-                "nora_dream_stop_reason_total",
-                adaptor=adaptor.name, reason=str(stop_reason),
+                "nora_dream_sample_total", adaptor=adaptor.name, status="ok",
             )
-
-        raw = factory.final_text(result)
-        items = parse_envelope(raw, key=adaptor.envelope_key)
-        if items is None:
-            # The batch was never actually read. `unavailable`, so the caller
-            # holds the watermark — this is `ExtractionUnparseableError`'s
-            # guarantee, expressed as a value instead of an exception.
-            log.warning(
-                "dream run produced no readable envelope (adaptor=%s key=%s, "
-                "%d chars)", adaptor.name, key, len(raw),
-            )
+            readable += 1
+            stop_reason = sample_stop
+            union.extend(sample_items)
+        if readable == 0:
             return self._finish(
                 adaptor, "unavailable", 0, sha, stop_reason, started,
             )
-
+        items = _dedupe_items(union)
         max_items = self.max_items_for(adaptor.name)
         if len(items) > max_items:
             # Capped, never silently: a cap nobody counts reads as «we wrote
@@ -876,6 +879,68 @@ class DreamerRuntime:
         status: DreamStatus = "ok" if items else "nothing_found"
         return self._finish(adaptor, status, written, sha, stop_reason, started)
 
+    async def _sample(
+        self, *, adaptor: DreamAdaptor, key: str, instructions_text: str,
+        sha: str, tools: list[Any], guard: DreamGuard, prompt: str,
+        budget: AdaptorBudget,
+    ) -> tuple[tuple[Mapping[str, object], ...] | None, str | None]:
+        """ONE model call: build the agent, invoke it under the budget, read
+        the envelope. Returns `(items, stop_reason)`; `items is None` means
+        this sample was not readable (timeout, exception, or no envelope) —
+        counted by the caller, never raised."""
+        try:
+            agent = factory.create_dream_agent(
+                model=self._models.create(),
+                system_prompt=instructions_text,
+                tools=tools,
+                guard=guard,
+                trace_attributes={
+                    "dreamer.adaptor": adaptor.name,
+                    "dreamer.key": key,
+                    "dreamer.objective": adaptor.objective,
+                    "dreamer.instruction_sha256": sha,
+                },
+                retry=self._retry,
+                agent_name=f"dreamer:{adaptor.name}",
+            )
+            result = await asyncio.wait_for(
+                factory.invoke(
+                    agent, prompt, invocation_state={},
+                    limits=factory.build_limits(
+                        output_tokens=budget.output_tokens,
+                        turns=budget.turns,
+                        total_tokens=budget.total_tokens,
+                    ),
+                ),
+                timeout=budget.timeout_seconds,
+            )
+        except TimeoutError:
+            log.error(
+                "dream run timed out after %.0fs (adaptor=%s key=%s)",
+                budget.timeout_seconds, adaptor.name, key,
+            )
+            return None, "timeout"
+        except Exception:
+            log.exception(
+                "dream run failed (adaptor=%s key=%s)", adaptor.name, key,
+            )
+            return None, None
+        stop_reason = getattr(result, "stop_reason", None)
+        if stop_reason is not None:
+            self._metrics.inc(
+                "nora_dream_stop_reason_total",
+                adaptor=adaptor.name, reason=str(stop_reason),
+            )
+        raw = factory.final_text(result)
+        items = parse_envelope(raw, key=adaptor.envelope_key)
+        if items is None:
+            log.warning(
+                "dream run produced no readable envelope (adaptor=%s key=%s, "
+                "%d chars)", adaptor.name, key, len(raw),
+            )
+            return None, stop_reason
+        return items, stop_reason
+
     def _finish(
         self, adaptor: DreamAdaptor, status: DreamStatus, written: int,
         sha: str, stop_reason: str | None, started: float,
@@ -895,6 +960,28 @@ class DreamerRuntime:
             status=status, written=written, instruction_sha256=sha,
             stop_reason=stop_reason,
         )
+
+
+def _dedupe_items(
+    items: Sequence[Mapping[str, object]],
+) -> tuple[Mapping[str, object], ...]:
+    """The union of N samples with byte-identical items collapsed, first
+    occurrence kept in order. Two samples that phrase one arrangement
+    differently are NOT collapsed here — that is the adaptor's job (the
+    staging key and the create gate decide what is the same occasion), and a
+    runtime that guessed would be deciding a tier's identity rule for it."""
+    seen: set[str] = set()
+    out: list[Mapping[str, object]] = []
+    for item in items:
+        try:
+            fingerprint = json.dumps(item, sort_keys=True, ensure_ascii=False)
+        except (TypeError, ValueError):
+            fingerprint = repr(item)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        out.append(item)
+    return tuple(out)
 
 
 def _tool_budgets(

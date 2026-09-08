@@ -47,13 +47,25 @@ CORPUS = ROOT / "evals" / "cases" / "note_candidates" / "note_candidates.yaml"
 
 
 def test_the_corpus_loads_and_is_balanced():
+    """Ten cases at first; sixteen after the 2026-09-08 external brainstorm
+    added the shapes the first ten could not see — an adversarial negative
+    carrying every surface feature of a positive, the solo form of the update
+    path, an invitation with no uptake, the Cantonese-only twin of the
+    one-person plan, a settled solo plan, and a conditional."""
     cases = load_note_candidates_cases(CORPUS)
-    assert len(cases) == 10
+    assert len(cases) == 16
     by_expect = {}
     for c in cases:
         by_expect.setdefault(c.expect, []).append(c.name)
-    assert len(by_expect["none"]) == 5, by_expect
-    assert len(by_expect["create"]) + len(by_expect["update"]) == 5, by_expect
+    assert len(by_expect["none"]) == 9, by_expect
+    assert len(by_expect["create"]) + len(by_expect["update"]) == 7, by_expect
+    assert "n6_stated_then_cancelled" in by_expect["none"], (
+        "the adversarial negative: every surface feature of a positive, and "
+        "the plan is called off in the same batch"
+    )
+    assert "p7_cantonese_only_solo_plan" in by_expect["create"], (
+        "the twin any lexical lever would silently miss"
+    )
     assert SUITES["note_candidates"] == (CORPUS,)
 
 

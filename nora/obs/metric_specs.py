@@ -965,6 +965,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "check — an ERROR is never a PASS).",
         ("adaptor", "status"),
     ),
+    # Per-fire sampling (AdaptorSchedule.samples, design 37 / issue #118):
+    # one run is N model calls unioned, and a run's `unavailable` is now
+    # «no sample was readable». This is the per-sample reading, so an operator
+    # can tell «one of five samples timed out» from «the run failed».
+    _CounterSpec(
+        "nora_dream_sample_total",
+        "Model calls a Dreamer run made, by adaptor and by whether the "
+        "sample's envelope was readable: ok, or unavailable (timeout, "
+        "exception, or no envelope). A run unions its readable samples and "
+        "is unavailable only when this counts none as ok for it.",
+        ("adaptor", "status"),
+    ),
     _CounterSpec(
         "nora_dream_written_total",
         "Rows written through an adaptor's sink, by adaptor.",
