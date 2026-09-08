@@ -45,4 +45,4 @@ Shared modules at this level:
 - `fixtures/` — captured data files.
 
 Run `make test-affected` while iterating and `make gate` before claiming
-anything is done (`CLAUDE.md`, *Gate commands*).
+anything is done (`AGENTS.md`, *Gate commands*).

@@ -21,10 +21,20 @@ def test_architecture_doc_covers_every_package():
     assert not missing, f"ARCHITECTURE.md does not mention: {missing}"
 
 
-def test_claude_md_carries_the_operational_constraints():
-    text = (ROOT / "CLAUDE.md").read_text().lower()
+def test_agents_md_carries_the_operational_constraints():
+    text = (ROOT / "AGENTS.md").read_text().lower()
     for phrase in ("--network=host", "signal-cli", "uv add", "get /health"):
-        assert phrase in text, f"CLAUDE.md must carry: {phrase}"
+        assert phrase in text, f"AGENTS.md must carry: {phrase}"
+
+
+def test_claude_md_is_a_pointer_and_not_a_second_copy():
+    """Two copies of the rules drift, and the one that drifts is the one nobody
+    read. `CLAUDE.md` exists only so Claude Code finds `AGENTS.md` (ADR 0010)."""
+    text = (ROOT / "CLAUDE.md").read_text()
+    assert "AGENTS.md" in text, "CLAUDE.md must point at AGENTS.md"
+    assert len(text.splitlines()) < 30, (
+        "CLAUDE.md has grown past a pointer — the rules belong in AGENTS.md"
+    )
 
 
 def test_decision_index_lists_the_amended_decisions():

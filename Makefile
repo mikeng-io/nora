@@ -1,6 +1,6 @@
-# Thin wrappers around the commands CLAUDE.md/README.md already document as
+# Thin wrappers around the commands AGENTS.md/README.md already document as
 # the gate and the deploy/release workflow, plus the fast-pass targets
-# documented in docs/superpowers/specs/2026-08-21-fast-test-pass-design.md.
+# documented in CONTRIBUTING.md and AGENTS.md.
 # Nothing here is a new command in spirit — every recipe is one line (or a
 # small dispatch over one script's output) pulled from those docs, kept here
 # so it does not have to be retyped. Edit the docs first if the underlying
@@ -9,9 +9,10 @@
 .PHONY: test test-fast test-affected lint typecheck imports gate mutate \
         eval-participation \
         release-check release-notes release \
-        build build-release up stop logs ps
+        build build-release up stop logs ps \
+        branches
 
-# --- gate (CLAUDE.md: run before claiming anything is done, and before every commit) ---
+# --- gate (AGENTS.md: run before claiming anything is done, and before every commit) ---
 
 test:
 	uv run pytest -q
@@ -37,7 +38,7 @@ mutate:
 	@test -n "$(TABLE)" || { echo 'usage: make mutate TABLE=scripts/mutations/<name>.json'; exit 2; }
 	uv run python scripts/mutate.py $(TABLE)
 
-# --- fast pass (docs/superpowers/specs/2026-08-21-fast-test-pass-design.md) ---
+# --- fast pass (for the edit-run-edit loop) ---
 # For the edit-run-edit loop only. `make gate` above is unchanged and stays
 # serial — these do not shrink or replace it.
 
@@ -112,3 +113,19 @@ logs:
 
 ps:
 	docker compose ps
+
+# --- branch hygiene (CONTRIBUTING.md: "Cleanup") ---
+# Reports only. Deleting is a decision, and a branch with a live worktree or an
+# uncommitted change belongs to whoever is working in it.
+
+branches:
+	@echo "== worktrees =="; git worktree list
+	@echo; echo "== local, merged into master (candidates; '+' = checked out elsewhere) =="
+	@git branch --merged master | grep -v -E '^\*|master$$' || echo "  none"
+	@echo; echo "== local, NOT merged =="
+	@git branch --no-merged master || echo "  none"
+	@echo; echo "== remote, merged into origin/master (candidates) =="
+	@git branch -r --merged origin/master | grep -v -E 'HEAD|master$$' || echo "  none"
+	@echo; echo "== remote, NOT merged =="
+	@git branch -r --no-merged origin/master || echo "  none"
+	@echo; echo "Delete with: git branch -d <b> ; git push origin --delete <b>"

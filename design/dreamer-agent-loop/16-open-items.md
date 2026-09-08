@@ -244,7 +244,7 @@ Three further reasons it was refused — **none of which survived review**:
 - **"Honcho already provides the capability."** A **category error**. Honcho
   embeds *its own* corpus — inferred disposition about people — not facts.
   Searching the knowledge tier through it would mean writing facts into Honcho,
-  which `design/adr/0001-honcho-is-interpretation-not-record.md` forbids
+  which `docs/adr/0001-honcho-is-interpretation-not-record.md` forbids
   outright: *Honcho is the interpretation; the SQL store is the record.* The
   capability is not "already provided"; it is provided for a different corpus.
 - **"`pgvector` is not installable in the deployed image."** True — verified
