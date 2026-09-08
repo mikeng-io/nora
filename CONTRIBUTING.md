@@ -146,11 +146,11 @@ automated sweep over ~6000 tests is slow, and equivalent mutants (edits that do
 not change behaviour) drown the signal. A table of the lines you claim to have
 fixed answers the only question being asked, in minutes.
 
-Tooling — `scripts/mutate.py`, `scripts/mutations/README.md` and a `make mutate`
-taking a table argument — **lands separately on `mikeng-io/mutation-sweep`; it
-is not in this tree yet.** The rule above applies regardless: it describes what
-you must establish before claiming a fix, and a reverted line plus a named test
-needs no script. **It is deliberately NOT part of `make gate`** — a
+Tooling is `scripts/mutate.py`, driven by a JSON table under
+`scripts/mutations/`; `make mutate TABLE=scripts/mutations/<name>.json` runs it.
+The rule stands without the script — a reverted line plus a named test needs no
+tooling — but the script checks the two traps below for you, which hand-running
+does not. **It is deliberately NOT part of `make gate`** — a
 mutation table names exact source text, so it is the record of what a branch
 proved, not a gate that runs forever. A stale table failing the gate would teach
 people to delete tables rather than write them.
@@ -214,9 +214,12 @@ content on close"*, not *"Add discharge pipeline"*.
 That last section matters more than it looks: it scopes out the adjacent thing
 the next reader will suggest folding in.
 
-Labels are not currently used on this repo's issues. That is a gap, not a
-convention — adopting a taxonomy is its own decision, not something to invent
-per issue.
+**Labels are barely used and are not a convention.** Measured 2026-09-08: 11 of
+44 open issues carry a label, and every one of them is GitHub's default
+`enhancement` — applied by the issue form, not chosen. So a label currently
+carries no information: its presence says only that an issue was filed a
+particular way. Adopting a real taxonomy is its own decision; until someone
+makes it, do not read meaning into a label and do not invent one per issue.
 
 ## The flow: issue → branch → PR → merge
 

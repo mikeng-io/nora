@@ -124,7 +124,16 @@ _EXEMPT_SOURCE_PREFIXES = ("docs/superpowers/", ".superpowers/", "design/propose
 # stating outright that the file "deleted" / "resolves in git history only").
 _HISTORICAL_MARKERS = ("RETIRED", "DEPRECATED", "SUPERSEDED", "deleted", "resolves in git history")
 
-_DEPRECATED_BANNER = re.compile(r">\s*\*\*(PARTLY )?DEPRECATED")
+#: A whole-file historical record. **`PARTLY DEPRECATED` is deliberately NOT
+#: here.** A "partly" banner says one tier or section of the file is history and
+#: the rest still stands — treating it as a whole-file exemption unguarded 20 of
+#: the most-referenced design nodes under `design/dreamer-agent-loop/`,
+#: including the Standing documents. Reproduced 2026-09-08: a dangling reference
+#: injected into `26-standing.md`'s live Standing section, which its own banner
+#: calls unaffected, did not fail this gate. Paragraph-level markers
+#: (`_HISTORICAL_MARKERS`) carry the partly-deprecated case instead, which is
+#: the right grain: the banner scopes itself in prose, so the check should too.
+_DEPRECATED_BANNER = re.compile(r">\s*\*\*DEPRECATED")
 
 _PATH_TOKEN = re.compile(r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)`")
 
@@ -154,10 +163,13 @@ def _paragraphs(markdown: str) -> list[tuple[int, list[str]]]:
 
 
 def is_deprecated_file(markdown: str) -> bool:
-    """A `> **DEPRECATED` / `> **PARTLY DEPRECATED` banner anywhere in the
-    file's first 30 lines marks the whole file as a self-declared historical
-    record — CLAUDE.md's own description of how a deprecated design node is
-    marked ("never renumbered and never removed")."""
+    """A `> **DEPRECATED` banner in the file's first 30 lines marks the WHOLE
+    file as a self-declared historical record — the repo's own convention for a
+    deprecated design node ("never renumbered and never removed").
+
+    A `PARTLY DEPRECATED` banner does not qualify: it scopes itself to one tier
+    or section, so the rest of the file is live and must stay guarded. Those
+    files rely on the paragraph-level `_HISTORICAL_MARKERS` instead."""
     head = "\n".join(markdown.splitlines()[:30])
     return bool(_DEPRECATED_BANNER.search(head))
 
@@ -220,12 +232,6 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
-    ("CONTRIBUTING.md", "scripts/mutate.py"): (
-        "mutation-testing tooling described in prose; not built"
-    ),
-    ("CONTRIBUTING.md", "scripts/mutations/README.md"): (
-        "mutation-testing tooling described in prose; not built"
-    ),
     ("deploy/README.md", "deploy/egress.sh"): (
         "documented as the versioned egress governance script; not tracked in this checkout"
     ),
@@ -243,6 +249,17 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("design/09-decision-index.md", ".github/workflows/gates.yml"): (
         "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "
         "and the file was never added back after that decision"
+    ),
+    (
+        "design/dreamer-agent-loop/34-note-dreamer-consolidation.md",
+        "nora/language/note_revisitor.py",
+    ): (
+        "the consolidation this document designs never happened: NoteRevisitor "
+        "was deleted outright rather than merged into the curator (2026-09-08 "
+        "deprecation, R-75), and issue #99 was closed as superseded on that "
+        "basis. Surfaced only once PARTLY DEPRECATED stopped exempting whole "
+        "files. The document needs its own banner; that is the author's call, "
+        "not this gate's"
     ),
     ("design/11-recall-and-threading.md", "nora/engagement/recall.py"): (
         "early recall design; the module never landed at this path"

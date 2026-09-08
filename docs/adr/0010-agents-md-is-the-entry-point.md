@@ -1,6 +1,12 @@
 # 0010 — AGENTS.md is the entry point; CLAUDE.md is a pointer
 
 - **Status:** accepted
+- **Correction 2026-09-08:** the "what got worse" count below originally read
+  214. That was measured before this same commit deleted `docs/superpowers/`,
+  which held 49 of those citations, and was never re-measured after. The figure
+  is now 171, read back with `git grep -l "CLAUDE.md" | wc -l`. The decision is
+  unchanged; only the number was wrong, and an ADR whose cost is overstated is
+  no more trustworthy than one whose cost is hidden.
 - **Date:** 2026-09-08
 - **Index:** none — this is a governance decision about the repo's own
   documentation, not about Nora's runtime behaviour, so it earns no DEC row.
@@ -44,11 +50,11 @@ prevent.
 either convention. A vendor-neutral entry point, so adding a third tool costs
 nothing. A test that makes the copy-drift failure mode loud instead of silent.
 
-**What got worse.** 214 files in this repo name `CLAUDE.md` — production
+**What got worse.** 171 files in this repo name `CLAUDE.md` — production
 docstrings, migrations, `Makefile`, `docker-compose.yml`, most of `design/`.
 Every one of them now resolves to a pointer rather than to the rule it meant to
 cite: one extra hop for a human, and for an agent that reads the cited file and
-stops, a redirect it must follow. Sweeping all 214 was rejected as a worse trade
+stops, a redirect it must follow. Sweeping all 171 was rejected as a worse trade
 — a 214-file diff that touches migrations and production code to fix a doc
 reference is a review burden with real regression surface, for a link that still
 resolves. Only the top-level documents were updated; the in-code references are
