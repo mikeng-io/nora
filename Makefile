@@ -6,7 +6,7 @@
 # so it does not have to be retyped. Edit the docs first if the underlying
 # command changes; this file follows them, not the other way round.
 
-.PHONY: test test-fast test-affected lint typecheck imports gate \
+.PHONY: test test-fast test-affected lint typecheck imports gate mutate \
         eval-participation \
         release-check release-notes release \
         build build-release up stop logs ps
@@ -26,6 +26,16 @@ imports:
 	uv run lint-imports
 
 gate: lint typecheck imports test
+
+# --- proving a fix is guarded (scripts/mutate.py) ---------------------------
+# `gate` green says the suite passes. It does not say the suite would have
+# NOTICED the bug you just fixed. Revert each fix, require its test to go RED.
+# Deliberately NOT part of `gate`: a table names exact source text, so it is
+# per-change and disposable, and a stale table failing the gate would teach
+# people to delete tables rather than write them.
+mutate:
+	@test -n "$(TABLE)" || { echo 'usage: make mutate TABLE=scripts/mutations/<name>.json'; exit 2; }
+	uv run python scripts/mutate.py $(TABLE)
 
 # --- fast pass (docs/superpowers/specs/2026-08-21-fast-test-pass-design.md) ---
 # For the edit-run-edit loop only. `make gate` above is unchanged and stays
