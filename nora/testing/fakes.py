@@ -890,6 +890,14 @@ class FakeMediaObjectStore:
         `get` answers `None` and is indistinguishable from a miss. A fake that
         collapsed the two would let the render join's `unavailable` branch —
         the one an operator is paged by — go untested."""
+        if not sha256s:
+            # BEFORE the failure check, matching the SQL store exactly: no
+            # shas is no query, and a query nobody made cannot have failed.
+            # The fake checked `fail` first and answered `unavailable` for an
+            # empty tuple where production answers `available=True` — the
+            # wrong-call shape the contract suite exists to keep in step, and
+            # the healthy fixture was the only one testing that argument.
+            return MediaLookup(available=True, objects={})
         if self.fail:
             return MediaLookup(available=False, reason="store")
         return MediaLookup(

@@ -44,6 +44,7 @@ reasoning, and the volume is one root per attachment.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable, Coroutine
@@ -74,6 +75,18 @@ log = logging.getLogger("nora.ingest.comprehension")
 # `nothing_found`: a final answer about those bytes rather than a failure, and
 # never a model call that would produce prose about JSON.
 COMPREHENSIBLE_TOPS = ("image", "video", "audio")
+
+#: How many media reads may be in flight at once. Not a throughput knob — a
+#: memory and quota one: each in-flight job holds a decrypted blob plus the
+#: base64 copy the request carries, against ceilings of 8 MiB for a still and
+#: 100 MiB for a clip, and a video job additionally runs up to `chunk_max`
+#: sequential model calls while it holds them.
+#:
+#: Four, because the ordinary case is one message with a handful of
+#: attachments and the pathological one is a burst nobody is waiting on. A
+#: queued job costs latency on a path with no reader; an unqueued one costs
+#: memory on the process serving the room.
+DEFAULT_MAX_CONCURRENT = 4
 
 
 @dataclass(frozen=True)
@@ -117,6 +130,7 @@ class MediaComprehension:
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], None],
         stickers_enabled: bool = True,
+        max_concurrent: int = DEFAULT_MAX_CONCURRENT,
     ) -> None:
         self._blobs = blobs
         self._store = store
@@ -129,6 +143,9 @@ class MediaComprehension:
         # and stays on, because it is what makes a repeat sighting free.
         self._stickers_enabled = stickers_enabled
         self._inflight: set[str] = set()
+        # See `_run`: the bound is on the COUNT of in-flight reads, because
+        # each one holds a decrypted blob and its base64 copy.
+        self._slots = asyncio.Semaphore(max(1, max_concurrent))
 
     def schedule(
         self,
@@ -167,6 +184,36 @@ class MediaComprehension:
         operator reads instead.
         """
         try:
+            # THE CONCURRENCY SLOT, held around the WHOLE job. `_inflight`
+            # dedupes identical bytes, not volume, and `spawn` is a bare
+            # `create_task` — so fifty photos in a minute was fifty concurrent
+            # describer calls, each holding a decrypted blob plus its base64
+            # copy against an 8 MiB still ceiling and a 100 MiB video one, and
+            # three long clips was thirty jobs each running up to eleven
+            # minutes of sequential model calls.
+            #
+            # Around the whole job rather than around the model call alone: the
+            # blob read and the ffmpeg chunking ARE the memory, and a semaphore
+            # that let fifty jobs decrypt fifty videos before queueing at the
+            # describer would bound the wrong thing.
+            async with self._slots:
+                await self._read(
+                    subject=subject, platform=platform,
+                    conversation_id=conversation_id, person=person,
+                    timestamp=timestamp,
+                )
+        except Exception:
+            log.exception("media comprehension failed for %s", subject.blob.handle)
+            self._count(platform, subject.label, "unavailable", "error")
+        finally:
+            self._inflight.discard(subject.blob.sha256)
+
+    async def _read(
+        self, *, subject: Subject, platform: str, conversation_id: str,
+        person: PersonRef | None, timestamp: int,
+    ) -> None:
+        """One job, inside the concurrency slot and under its own trace root."""
+        try:
             # `attached(None)` DETACHES first, and that is the whole of it:
             # `asyncio.create_task` copies the caller's contextvars (measured
             # 2026-08-28, `nora/obs/tracing.py`), so this span was a CHILD of
@@ -190,8 +237,6 @@ class MediaComprehension:
         except Exception:
             log.exception("media comprehension failed for %s", subject.blob.handle)
             self._count(platform, subject.label, "unavailable", "error")
-        finally:
-            self._inflight.discard(subject.blob.sha256)
 
     async def _comprehend(
         self, *, subject: Subject, platform: str, conversation_id: str,
@@ -206,7 +251,15 @@ class MediaComprehension:
             self._count(platform, label, "nothing_found", "unreadable")
             return
 
-        existing = await self._store.get(sha256=blob.sha256)
+        # `lookup`, not `get`: a transient index outage answers `None` from
+        # `get` and is indistinguishable from «not read yet», so the job would
+        # re-run the describer — on a video, a fresh ten-window read. The
+        # availability axis is what makes «I could not check» a third answer.
+        found = await self._store.lookup(sha256s=(blob.sha256,))
+        if not found.available:
+            self._count(platform, label, "unavailable", "store")
+            return
+        existing = found.objects.get(blob.sha256)
         if existing is not None and self._already_read(existing, label):
             # Already read — the same meme forwarded five times is one read.
             # NOT counted as `ok`: nothing was comprehended on this pass, and
@@ -238,6 +291,16 @@ class MediaComprehension:
         if not result.available:
             self._count(platform, label, "unavailable", result.reason or "vision")
             if label in CONTENT_LABELS and content:
+                if existing is not None and existing.content == content:
+                    # ALREADY THERE, and this is the shipped default's own
+                    # path: with `comprehension_text_model = ""` the text pass
+                    # answers `no_text_describer` every time, and
+                    # `_already_read` keys on title/description for a content
+                    # label — so a forwarded voice note re-ran the pass and
+                    # re-fed the SAME words to memory on every sighting. The
+                    # words are already stored and already remembered; nothing
+                    # here has anything to add.
+                    return
                 # A voice note whose SUMMARY failed still has its words, and
                 # those words are the thing the room actually needs. Store the
                 # content with no title rather than throwing away a transcript
@@ -267,7 +330,7 @@ class MediaComprehension:
         # author.
         model = result.model
         provenance = dict(result.provenance or {})
-        await self._store.comprehend(
+        stored = await self._store.comprehend(
             sha256=blob.sha256, title=result.title, description=result.text,
             content=content, model=model,
             # RETURNED with the result rather than read off the adapter — this
@@ -276,6 +339,16 @@ class MediaComprehension:
             # interpreter, and stashed state raced.
             provenance=provenance,
         )
+        if not stored:
+            # THE READ HAPPENED AND NOTHING KEPT IT. Counting `ok` here is the
+            # «a tick that wrote nothing reporting ok» shape CONVENTIONS.md
+            # names: under load the metric says the pipeline is healthy while
+            # the index is empty. And the feed is skipped with it — Honcho
+            # would otherwise hold a description of bytes `media_objects` has
+            # no row for, and a redelivery would feed the same words twice with
+            # no row to dedup against.
+            self._count(platform, label, "unavailable", "store")
+            return
         await self._feed(
             platform=platform, conversation_id=conversation_id, person=person,
             timestamp=timestamp, blob=blob, label=label,

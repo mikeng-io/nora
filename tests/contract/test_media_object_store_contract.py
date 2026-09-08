@@ -439,3 +439,14 @@ async def test_an_unreachable_database_makes_lookup_unavailable(broken):
     got = await broken.lookup(sha256s=(CAT,))
     assert got.available is False
     assert got.objects == {}
+
+
+async def test_an_empty_lookup_is_available_even_while_the_store_is_down(broken):
+    """No shas is no query, and a query nobody made cannot have failed. Pinned
+    on the BROKEN fixture because that is where the two implementations
+    disagreed — the SQL store returns before its `try`, the fake checked its
+    failure switch first, and the healthy fixture was the only one exercising
+    the empty tuple."""
+    got = await broken.lookup(sha256s=())
+    assert got.available is True
+    assert got.objects == {}

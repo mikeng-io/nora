@@ -204,12 +204,10 @@ class TranscriptInjection:
         transcript = self._persons.name_transcript(transcript, platform=msg.platform)
         # THEN the media join (issue #116), after the transcript read and
         # before the context is frozen. It is a second round trip, so it is NOT
-        # in the gather above: it needs the rows the gather returns. It is
-        # bounded by the window (one `get` per distinct blob in view, and the
-        # window is `context_window` rows) and it degrades to the stored body.
-        # THEN the media join (issue #116), after the transcript read and
-        # before the context is frozen. It is a second round trip, so it is NOT
-        # in the gather above: it needs the rows the gather returns.
+        # in the gather above: it needs the rows the gather returns. ONE
+        # bounded query per `DEFAULT_QUERY_BLOBS` distinct blobs, and it
+        # degrades to the stored body — which already says `[image a3f2c1]`,
+        # so a join that does not happen claims nothing.
         #
         # `MediaJoin` is SHARED with the fire path, both standing folds, the
         # Dreamer's batch, the note curator, lazy adoption and

@@ -7898,10 +7898,15 @@ def build_tools(
         # silently keeps its default — which is what happened to
         # `describe_max_bytes` (a per-modality byte ceiling that never bound
         # through this wrapper) and then to the chunk geometry and the media
-        # join added beside it. `tests/architecture/
-        # test_media_join_reaches_every_transcript.py` pins the last of them by
-        # behaviour; this comment is the reason to check the others when adding
-        # a fourth.
+        # join added beside it.
+        #
+        # `tests/architecture/test_tool_builders_forward_everything.py` is what
+        # closes the CLASS: it compares this call's keywords against
+        # `build_tools`' own parameters, so a fourth dropped one is red. The
+        # media join additionally has a behavioural pin
+        # (`tests/test_media_fetch.py::test_load_transcript_renders_media_...`);
+        # the other three have none, which is exactly why the static gate is
+        # the one that matters here.
         describe_max_bytes=describe_max_bytes,
         video_chunk_seconds=video_chunk_seconds,
         video_max_chunks=video_max_chunks,

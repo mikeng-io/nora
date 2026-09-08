@@ -466,6 +466,20 @@ comprehension_text_model = ""
 # detail is the words people said, and clipping those would mean Nora reads a
 # summary of what somebody said instead of what they said.
 comprehension_render_chars = 240
+# How long ONE media-join query may take before a render gives up and shows the
+# bare `[image a3f2c1]` markers. Short on purpose — that degrade is cheap and
+# claims nothing, and without it a Postgres that is slow but alive held every
+# reply until the whole turn timed out. The two standing-fold paths wrap the
+# join in `[standing] store_timeout_seconds` as well; this is the inner bound
+# and should stay the smaller of the two.
+join_timeout_seconds = 3.0
+# How many media reads may be in flight at once. Not a throughput knob — a
+# memory and quota one: each in-flight read holds a decrypted blob plus the
+# base64 copy the request carries (8 MiB for a still, 100 MiB for a clip), and
+# a video read makes up to chunk_max sequential model calls while it holds
+# them. Raise it if new media takes too long to become readable; lower it if
+# the container's memory spikes when somebody drops twenty photos at once.
+comprehension_max_concurrent = 4
 
 # WHERE the (always-encrypted) bytes above land (DEC-136). OFF by default: a
 # config.toml written before this existed keeps writing to

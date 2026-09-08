@@ -206,7 +206,7 @@ note tier is one of the things that builds memory.
 DOMAIN because `nora/language/` sits two layers below `nora/agent/` in the
 import contract and could never have reached a join beside `scan_identifiers`;
 the screen is INJECTED instead, which puts the class at the bottom of the graph
-where all seven callers can import it. `tests/architecture/
+where all eight callers can import it. `tests/architecture/
 test_media_join_reaches_every_transcript.py` is the gate — a static read that
 every builder imports it and calls `enrich`, with each builder's own store read
 as the positive control that it is still a builder at all.
@@ -239,6 +239,44 @@ typed the literal string `[voice note a3f2c1]` could therefore switch off
 Honcho. A claimed label is now accepted only when it AGREES with the media
 type custody recorded (`label_agrees`): the body may refine, never
 contradict.
+
+### Why the join is per-builder, and what would reopen that
+
+**It is opt-in at each call site, and this branch's own history is the argument
+against that.** It reached one of eight builders, then seven; the eighth
+(`load_transcript`) was missed twice, including by the gate written to catch
+exactly that class of miss. Four review rounds found media-join placement bugs
+and every one of them was a call site that did not call.
+
+The placement that makes the leak unreachable **by construction** is doing the
+join inside the READ — a decorating `RecordStore` that returns already-joined
+rows, sitting below all eight builders, so a builder cannot forget because it
+never had the option. That would have made the round-two and round-three bugs
+impossible rather than merely caught.
+
+It is not what shipped, for three reasons worth stating rather than assuming:
+
+1. **A decorator makes the join unconditional and invisible.** `nora persons
+   pending` renders unattributed rows for a human on a CLI; the operator
+   surfaces want the stored body, and a store that always joins gives every
+   reader the model's view whether or not a model is reading. The exemption
+   would move from one line in a gate to a second un-decorated store, which is
+   the same forgettable decision one layer down.
+2. **The `path` label stops existing.** The eight callers differ by two orders
+   of magnitude in blob count and by everything in latency budget; below the
+   read, the join cannot know which one it is serving, and the cost instrument
+   that made §10's reopening condition readable collapses to one series.
+3. **`RecordStore` is a port with a contract suite and two implementations.**
+   A decorator either wraps both (and the fake stops being a fake) or wraps
+   one (and the two disagree about what a row's `body` says) — which is the
+   drift the contract suite exists to prevent.
+
+**The reading that would reopen it:** a NINTH builder shipping unjoined. The
+AST gate (`tests/architecture/test_media_join_reaches_every_transcript.py`)
+derives the builder set from the source and fails on any module reading the
+record store without joining, so the next miss should be a red test rather than
+a review round. If one gets past it anyway, the gate is not the answer and the
+decorator is — take the three costs above and pay them.
 
 **The join belongs in the assembler, not in the renderer.** `nora/agent/
 prefill.py` is a pure function of the `TagContext` it is handed; giving it a
@@ -307,11 +345,15 @@ is R-5's shape exactly.
   onto the description. Appended to it, the transcript's
   `comprehension_render_chars` bound clipped it off — worst of all when the
   description was rich, which is exactly when a confident partial read does the
-  most damage. Every renderer appends it LAST, after its own clip. It is also
-  the one thing `media_fetch` does NOT write to the vision cache: the cache is
-  keyed on the sha256, and a caveat is a function of (bytes, chunk geometry),
-  so raising `chunk_max` would otherwise serve a stale «I have not seen the
-  rest» forever.
+  most damage. Every renderer appends it LAST, after its own clip. And **`media_fetch` opts the whole VIDEO modality out
+  of the vision cache, in both directions.** Caching the run without the
+  caveat served #117's own bug back through the cache; caching it WITH the
+  caveat is worse, because raising `chunk_max` then serves a stale «I have
+  not seen the rest» from the durable table forever about a clip now read
+  whole. A chunked read is a function of (bytes, chunk geometry) and the
+  cache is keyed on bytes, so the geometry-dependent modality opts out —
+  the same call layer 2 makes. `media_objects` is the right cache for a
+  clip because it stores the caveat WITH the reading.
 * **The fix is not «never truncate» but «never truncate silently».** `chunk_max`
   is a real ceiling (10 × 90 s = 15 minutes read in full, both configurable
   under `[media.describe.video]`), and when it binds, the clip's length, how
@@ -393,8 +435,9 @@ including this one.
 | `nora_media_comprehension_total{platform,label,status,reason}` | R-27's three states. `ok` = a comprehension was written. `nothing_found` = a real, final answer ABOUT the bytes: `unreadable` (a PDF, a lottie) or `already_read` (this sha256 was read before). `unavailable` = every wiring gap and every failure — `no_<top>_describer`, `blob`, `vision`, `timeout`, `empty`, `ffmpeg`, `error`. |
 | `nora_media_comprehension_seconds` | one read's latency — the model call for a still, the whole chunk run for a video. Cache hits never reach it, so the dedup cannot dilute what it says about a describer. |
 | `nora_sticker_descriptions_total{platform,status,level}` | now the identity ladder's CUSTODY hit rate. `status=ok` means the bytes are held; `level` is identity/content/none. |
-| `nora_media_join_seconds` / `nora_media_blobs_joined` | the join's COST, now on SIX paths rather than one. §10 names the join as what would reopen this decision, and a reopening condition nothing can read is a hope rather than a condition. Observed only when the join actually ran, so a window with no media never dilutes it. |
+| `nora_media_join_seconds` / `nora_media_blobs_joined` | the join's COST, now on EIGHT paths rather than one, labelled by which one paid it (`JOIN_PATHS`, which the help text is derived from). §10 names the join as what would reopen this decision, and a reopening condition nothing can read is a hope rather than a condition. Observed only when the join actually ran, so a window with no media never dilutes it. |
 | `nora_egress_blocks_total{kind}` | an identifier in a comprehension, blocked — at the render join AND at the Honcho feed. |
+| `nora_media_join_total{path,status,reason}` | R-27 on the join: `ok` rendered a detail, `nothing_found` read the index and nothing in the window was comprehended yet, `unavailable` is the index refusing to be read or the query timing out. The distinction is only expressible because `MediaObjectStore.lookup` carries an availability axis that `get` structurally cannot. |
 
 **There is no `nora_errors_total{stage="media_join"}`, deliberately.** An
 earlier cut declared one and wrapped the store read to increment it — but
@@ -454,9 +497,11 @@ call.
 * **The render join costs a measurable amount of prefill latency.** It is one
   `get` per distinct blob in the window, bounded by `context_window` rows, taken
   after the existing `gather`, and `nora_media_join_seconds` /
-  `nora_media_blobs_joined` are what make that readable rather than arguable. If
-  it becomes visible in `nora_tag_latency_seconds`, the answer is a single
-  batched read on the port, not moving the join back into the body.
+  `nora_media_blobs_joined` (labelled by path) are what make that readable
+  rather than arguable. The batched read the earlier version of this bullet
+  named as the answer is now what it does; if the latency is still visible in
+  `nora_tag_latency_seconds`, the next move is caching the join's OUTPUT per
+  window, not moving it back into the body.
 * **`comprehension_render_chars` is the wrong number.** 240 is a guess against
   no measurement of what a title+description actually costs on a real window.
 * **A describer that will not answer in JSON at all.** The fail-soft parse

@@ -15,7 +15,9 @@ the source rather than hand-listed. This file is about what it DOES.
 
 from __future__ import annotations
 
-from nora.domain.media import MediaObject
+from typing import ClassVar
+
+from nora.domain.media import MediaObject, label_agrees
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import DeliveryStatus, TranscriptRow, UnattributedRow
 from nora.obs.metrics import Metrics
@@ -407,28 +409,246 @@ async def test_one_lookup_serves_a_whole_window():
     assert "one" in got[0].body and "two" in got[1].body
 
 
-async def test_a_window_past_the_blob_ceiling_renders_the_excess_bare():
-    """`DEFAULT_MAX_BLOBS`. Silently rendering 200 of 1000 is the
-    partial-answer shape this pair of issues is about, so the cap is COUNTED —
-    and the excess degrades to exactly what an unread blob renders as, which
-    claims nothing."""
-    metrics = Metrics()
-    objs = [
-        _obj(f"{i:06x}" + "0" * 58, title=f"photo {i}") for i in range(5)
-    ]
+async def test_every_blob_in_a_backfill_is_joined_in_bounded_batches():
+    """**The 200-blob cap was data loss on the one caller that is a backfill.**
+
+    It kept the LAST 200 distinct blobs; `RecordStore.unattributed` returns
+    rows OLDEST FIRST, adoption feeds each to Honcho and then calls
+    `set_person_id` — which is exactly what removes the row from every future
+    scan. So an operator adding a person after months of chat had the oldest
+    blobs in the scan go into memory as bare handles and be marked adopted,
+    with no second pass ever. For voice notes and stickers that is a regression
+    against master, where the words rode in `messages.body`.
+
+    Batching bounds the same thing without losing anything: each QUERY asks
+    about at most `query_blobs`, and the number of queries is bounded by the
+    caller's own row limit."""
+
+    class _Counting(FakeMediaObjectStore):
+        queries: ClassVar[list[int]] = []
+
+        async def lookup(self, *, sha256s):
+            _Counting.queries.append(len(sha256s))
+            return await super().lookup(sha256s=sha256s)
+
+    _Counting.queries = []
+    shas = [f"{i:06x}" + "0" * 58 for i in range(5)]
+    store = _Counting([_obj(sha, title=f"photo {i}") for i, sha in enumerate(shas)])
     join = MediaJoin(
-        store=FakeMediaObjectStore(objs), screen=_screen, metrics=metrics,
-        max_blobs=2,
-    )
-    rows = [
-        _row(f"[image {i:06x}]", sha=f"{i:06x}" + "0" * 58, ts=i + 1)
-        for i in range(5)
-    ]
+        store=store, screen=_screen, metrics=Metrics(), query_blobs=2)
+    rows = [_row(f"[image {sha[:6]}]", sha=sha, ts=i + 1)
+            for i, sha in enumerate(shas)]
 
     got = await join.enrich(rows, path="adoption")
 
-    rendered = sum(1 for r in got if ": photo" in (r.body or ""))
-    assert rendered == 2
+    assert all(": photo" in (r.body or "") for r in got), (
+        "a blob past the query bound rendered bare and its row was then "
+        "marked adopted — lost for good"
+    )
+    assert _Counting.queries == [2, 2, 1], "each query is bounded"
+
+
+async def test_the_oldest_blob_is_joined_too():
+    """The direction the truncation got wrong, pinned on its own. `[:n]` and
+    `[-n:]` both «bound» the work and they lose opposite ends; with the cap
+    gone neither is a choice anybody has to make right."""
+    old_sha, new_sha = "aa0001" + "0" * 58, "bb0002" + "0" * 58
+    join = MediaJoin(
+        store=FakeMediaObjectStore([
+            _obj(old_sha, title="the oldest"), _obj(new_sha, title="the newest"),
+        ]),
+        screen=_screen, metrics=Metrics(), query_blobs=1,
+    )
+
+    got = await join.enrich([
+        _row("[image aa0001]", sha=old_sha, ts=1),
+        _row("[image bb0002]", sha=new_sha, ts=2),
+    ])
+
+    assert "the oldest" in got[0].body
+    assert "the newest" in got[1].body
+
+
+async def test_the_blob_count_is_the_true_count():
+    """It was observed AFTER the truncation rebound the set, so the histogram
+    could never exceed the cap — and 201 blobs was indistinguishable from
+    5000, which is the number needed to size the very bound its own help text
+    says it exists to size."""
+    metrics = Metrics()
+    shas = [f"{i:06x}" + "0" * 58 for i in range(5)]
+    join = MediaJoin(
+        store=FakeMediaObjectStore([_obj(sha, title="x") for sha in shas]),
+        screen=_screen, metrics=metrics, query_blobs=2,
+    )
+
+    await join.enrich(
+        [_row(f"[image {sha[:6]}]", sha=sha, ts=i + 1)
+         for i, sha in enumerate(shas)],
+        path="adoption",
+    )
+
+    assert 'nora_media_blobs_joined_sum{path="adoption"} 5.0' in metrics.render()
+
+
+async def test_a_batch_that_cannot_be_read_refuses_the_whole_window():
+    """A partial answer to «what does this window hold» is one a caller renders
+    as complete. If any batch comes back unavailable the join degrades whole,
+    to the bare handles the rows already carry."""
+    metrics = Metrics()
+
+    class _FailsSecond(FakeMediaObjectStore):
+        seen = 0
+
+        async def lookup(self, *, sha256s):
+            _FailsSecond.seen += 1
+            if _FailsSecond.seen == 2:
+                from nora.domain.ports import MediaLookup
+                return MediaLookup(available=False, reason="store")
+            return await super().lookup(sha256s=sha256s)
+
+    shas = [f"{i:06x}" + "0" * 58 for i in range(4)]
+    join = MediaJoin(
+        store=_FailsSecond([_obj(sha, title="x") for sha in shas]),
+        screen=_screen, metrics=metrics, query_blobs=2,
+    )
+
+    got = await join.enrich(
+        [_row(f"[image {sha[:6]}]", sha=sha, ts=i + 1)
+         for i, sha in enumerate(shas)],
+        path="adoption",
+    )
+
+    assert all(":" not in (r.body or "") for r in got)
     assert metrics.get(
-        "nora_media_join_total", path="adoption", status="ok",
-        reason="capped") == 1
+        "nora_media_join_total", path="adoption", status="unavailable",
+        reason="store") == 1
+
+
+async def test_a_hanging_store_costs_the_join_and_not_the_turn():
+    """`enrich` catches exceptions; it cannot catch a HANG. Six of the eight
+    paths awaited the query bare — `nora/infra/sql/engine.py` sets no
+    `command_timeout` — so a Postgres that was slow but alive held every tag
+    reply until the agent loop's own budget killed the whole turn as
+    `invocation_timeout`, where it should degrade to bare handles in
+    milliseconds."""
+    import asyncio
+
+    class _Hangs(FakeMediaObjectStore):
+        async def lookup(self, *, sha256s):
+            await asyncio.sleep(30)
+            raise AssertionError("unreachable")
+
+    metrics = Metrics()
+    join = MediaJoin(
+        store=_Hangs(), screen=_screen, metrics=metrics, timeout_seconds=0.05)
+
+    got = await asyncio.wait_for(
+        join.enrich([_row("睇下 [image a3f2c1]")], path="tag"), timeout=5)
+
+    assert got[0].body == "睇下 [image a3f2c1]"
+    assert metrics.get(
+        "nora_media_join_total", path="tag", status="unavailable",
+        reason="error") == 1
+
+
+async def test_a_store_that_raises_is_counted_not_only_logged():
+    """The outer `except`'s own counter. R-27's `unavailable` covered the
+    `not available` branch only, so a store that broke the port's never-raise
+    promise was as silent as before the counter existed — and container logs
+    are not on the docker log driver."""
+
+    class _Explodes(FakeMediaObjectStore):
+        async def lookup(self, *, sha256s):
+            raise RuntimeError("db on fire")
+
+    metrics = Metrics()
+    join = MediaJoin(store=_Explodes(), screen=_screen, metrics=metrics)
+
+    got = await join.enrich([_row("[image a3f2c1]")], path="tag")
+
+    assert got[0].body == "[image a3f2c1]"
+    assert metrics.get(
+        "nora_media_join_total", path="tag", status="unavailable",
+        reason="error") == 1
+
+
+def test_label_agrees_refines_but_never_contradicts():
+    """`label_agrees` itself, because the JOIN cannot observe every branch of
+    it — and a test that ran through the join would have looked like a guard
+    while proving nothing.
+
+    Only `voice note` has a rendering consequence today (`CONTENT_LABELS`), so
+    a `sticker` claimed over `audio/*` renders the same clipped detail either
+    way and a join-level assertion is satisfied by both answers. The predicate
+    is what has to be right: the two SEPARATE AXES the media type genuinely
+    cannot express are refinements the body may make, and everything else must
+    match what the record derives.
+
+    A member's typed label reaching this function is the whole reason it
+    exists, so «accepts anything» is the failure to guard against."""
+    # The two refinements, each over its own top-level type.
+    assert label_agrees("voice note", "audio/aac")
+    assert label_agrees("sticker", "image/webp")
+
+    # And neither over anything else.
+    assert not label_agrees("voice note", "image/png")
+    assert not label_agrees("voice note", "video/mp4")
+    assert not label_agrees("sticker", "audio/aac")
+    assert not label_agrees("sticker", "video/mp4")
+
+    # An exact match is agreement; a contradiction is not.
+    assert label_agrees("image", "image/png")
+    assert not label_agrees("image", "audio/aac")
+
+    # And a label that is not one this taxonomy produces is never accepted —
+    # `LABELS` is a closed set and the body is sender-supplied.
+    assert not label_agrees("", "image/png")
+    assert not label_agrees("anything", "image/png")
+
+
+async def test_a_sticker_label_over_audio_does_not_unclip_the_detail():
+    """The join-level half: whatever `label_agrees` answers, a claimed
+    `sticker` must not reach `CONTENT_LABELS`' unclipped path. Kept beside the
+    predicate test because it is the CONSEQUENCE that matters and the two would
+    otherwise be one test doing neither job."""
+    join = _join([_obj(VOICE_SHA, media_type="audio/aac", title="a note",
+                       description="about dinner", content="x" * 400)],
+                 chars=20)
+
+    got = await join.enrich([_row("[sticker b7c2d9]", sha=VOICE_SHA)])
+
+    assert "x" * 400 not in got[0].body
+
+
+async def test_an_unknown_path_label_is_refused_at_runtime():
+    """CLAUDE.md's label-vocabulary rule, both halves. `JoinPath` is a
+    `Literal` and the help text is derived from `get_args` of it — but five of
+    the eight call sites are in packages `make gate`'s mypy does not cover, so
+    a static-only guard would be a claim (issue #61).
+
+    A typo'd label would otherwise render as its own series forever and look
+    like a path nobody had heard of."""
+    metrics = Metrics()
+    join = _join([_obj(title="a cat")], metrics=metrics)
+
+    await join.enrich([_row("[image a3f2c1]")], path="typo")  # type: ignore[arg-type]
+
+    assert metrics.get(
+        "nora_media_join_total", path="unknown", status="ok", reason="") == 1
+    assert metrics.get(
+        "nora_media_join_total", path="typo", status="ok", reason="") == 0
+
+
+def test_the_help_text_is_derived_from_the_vocabulary():
+    """One named constant the code increments against and the help reads from.
+    A list written out in `metric_specs` goes stale the first time a ninth
+    builder lands, and a help text naming seven paths for an eight-path series
+    is a metric that documents itself wrongly."""
+    from nora.domain.media_join import JOIN_PATHS
+    from nora.obs.metric_specs import _COUNTERS, _HISTOGRAMS
+
+    by_name = {m.name: m for m in (*_COUNTERS, *_HISTOGRAMS)}
+    for name in ("nora_media_join_seconds", "nora_media_join_total"):
+        help_text = by_name[name].help_text
+        for path in JOIN_PATHS:
+            assert path in help_text, f"{name} does not document {path!r}"

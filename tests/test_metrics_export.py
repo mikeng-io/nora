@@ -212,3 +212,32 @@ def test_an_unmigrated_call_site_still_records_under_an_empty_platform():
     m.inc("nora_errors_total", stage="prune")
     assert m.get("nora_errors_total", stage="prune") == 1
     assert 'nora_errors_total{platform="",stage="prune"} 1.0' in m.render()
+
+
+def test_the_media_join_histograms_can_measure_a_batch_path():
+    """N9's other half, and it survived a mutation: the buckets were sized for
+    a tag window (1s, 40 blobs) while the same series now carries adoption's
+    1000-row backfill and the Dreamer's batch. A histogram whose top bucket is
+    two orders of magnitude under the value it must record reports every batch
+    path as `+Inf` — unmeasurable, which is the exact state the `path` label
+    was added to end.
+
+    Asserted on the DECLARED buckets rather than on rendered output, because
+    the defect is in the sizing and a rendered series would only show it once
+    something real saturated it."""
+    from nora.obs.metric_specs import _HISTOGRAMS
+
+    by_name = {h.name: h for h in _HISTOGRAMS}
+
+    seconds = by_name["nora_media_join_seconds"]
+    assert max(seconds.buckets) >= 10, (
+        "a batch join cannot be distinguished from a slow one"
+    )
+    assert seconds.labelnames == ("path",)
+
+    blobs = by_name["nora_media_blobs_joined"]
+    assert max(blobs.buckets) >= 500, (
+        "the histogram cannot record the count needed to size "
+        "DEFAULT_QUERY_BLOBS, which its own help text says it exists to size"
+    )
+    assert blobs.labelnames == ("path",)

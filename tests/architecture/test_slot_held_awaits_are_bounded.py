@@ -44,6 +44,25 @@ def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
     return {c: n for n in ast.walk(tree) for c in ast.iter_child_nodes(n)}
 
 
+def _real_timeout(call: ast.Call) -> bool:
+    """Whether a `wait_for` actually BOUNDS anything.
+
+    `asyncio.wait_for(x, timeout=None)` waits forever — it is the documented
+    way to say «no timeout» — so a scan that stopped at «is there a wait_for
+    ancestor» let round three's slot-deadlock fix be defeated by one word while
+    its own gate stayed green. That is exactly the failure the fix's docstring
+    describes, reintroduced through the instrument written to prevent it.
+    """
+    args = [k.value for k in call.keywords if k.arg == "timeout"]
+    if len(call.args) > 1:
+        args.append(call.args[1])
+    if not args:
+        return False        # `wait_for` with no timeout at all
+    return not any(
+        isinstance(a, ast.Constant) and a.value is None for a in args
+    )
+
+
 def _in_wait_for(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
     cur = parents.get(node)
     while cur is not None:
@@ -51,7 +70,7 @@ def _in_wait_for(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
             f = cur.func
             if ((isinstance(f, ast.Attribute) and f.attr == "wait_for")
                     or (isinstance(f, ast.Name) and f.id == "wait_for")):
-                return True
+                return _real_timeout(cur)
         if isinstance(cur, ast.AsyncFunctionDef | ast.FunctionDef):
             return False
         cur = parents.get(cur)
@@ -108,8 +127,9 @@ def test_every_slot_held_collaborator_await_is_bounded() -> None:
 
     assert not unbounded, (
         f"these collaborator awaits run inside the held conversation slot "
-        f"with no `asyncio.wait_for`: {unbounded}. `enrich`/`read`/`write` "
-        f"catch exceptions, not hangs — the slot is held until they return."
+        f"with no `asyncio.wait_for`, or with `timeout=None`: {unbounded}. "
+        f"`enrich`/`read`/`write` catch exceptions, not hangs — the slot is "
+        f"held until they return."
     )
 
 
@@ -131,3 +151,26 @@ def test_the_validator_can_see_the_calls_it_is_checking() -> None:
     )
     assert "record_store.since_including_nora" in names
     assert "store.read" in names
+
+
+def test_a_wait_for_with_no_timeout_does_not_count_as_bounded() -> None:
+    """The gate's own instrument, checked before its output is read.
+
+    `asyncio.wait_for(x, timeout=None)` waits forever, and a scan that stopped
+    at «is there a wait_for ancestor» reported it as bounded — so the fix above
+    could be defeated by one word with this file still green. Driven through
+    the same predicate the walk uses, on synthetic source, because the
+    production text has (correctly) no such call to find."""
+    def _first_call(src: str) -> ast.Call:
+        tree = ast.parse(src)
+        return next(
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "wait_for"
+        )
+
+    assert _real_timeout(_first_call("asyncio.wait_for(x(), timeout=5.0)"))
+    assert _real_timeout(_first_call("asyncio.wait_for(x(), timeout=t)"))
+    assert _real_timeout(_first_call("asyncio.wait_for(x(), 5.0)"))
+    assert not _real_timeout(_first_call("asyncio.wait_for(x(), timeout=None)"))
+    assert not _real_timeout(_first_call("asyncio.wait_for(x(), None)"))
+    assert not _real_timeout(_first_call("asyncio.wait_for(x())"))

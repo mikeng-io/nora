@@ -641,3 +641,165 @@ async def test_a_whole_read_carries_no_caveat_into_memory():
     await spawn.drain()
 
     assert "watched" not in memory.fed[0][1]
+
+
+async def test_a_write_that_did_not_land_is_not_counted_ok():
+    """`SqlMediaObjectStore.comprehend` answers False on any database failure
+    and the job ignored it, incrementing `ok` regardless — the «a tick that
+    wrote nothing reporting ok» shape CONVENTIONS.md names. Under load the
+    metric said the pipeline was healthy while the index stayed empty.
+
+    The FEED goes with it: Honcho would otherwise hold a description of bytes
+    `media_objects` has no row for, and a redelivery would feed the same words
+    again with no row to dedup against."""
+    class _WriteFails(FakeMediaObjectStore):
+        """The index READS fine and the write does not — which is the shape
+        that matters and the shape a blanket `fail=True` cannot produce: with
+        the lookup failing too, the job returns at the already-read gate and
+        the write is never reached, so the assertion below would pass against a
+        build that ignores the return value."""
+
+        async def comprehend(self, **kw):
+            return False
+
+    metrics = Metrics()
+    memory = FakeMemoryStore()
+    store = _WriteFails()
+    job, spawn = _job(store=store, memory=memory, metrics=metrics)
+
+    _schedule(job, _subject(), person=MILES)
+    await spawn.drain()
+
+    assert metrics.get(
+        "nora_media_comprehension_total", platform="signal", label="image",
+        status="unavailable", reason="store") == 1
+
+    assert metrics.get(
+        "nora_media_comprehension_total", platform="signal", label="image",
+        status="ok", reason="") == 0
+    assert memory.fed == [], "nothing reached memory that nothing stored"
+
+
+async def test_a_forwarded_voice_note_does_not_re_feed_the_same_words():
+    """**The shipped default's own path.** With `comprehension_text_model = ""`
+    the text pass answers `no_text_describer` every time, and `_already_read`
+    keys on title/description for a content label — so a forwarded voice note
+    re-ran the pass and fed the SAME words to memory on every sighting.
+
+    The words are already stored and already remembered; a second sighting has
+    nothing to add."""
+    store = FakeMediaObjectStore()
+    memory = FakeMemoryStore()
+    interpreter = FakeMediaInterpreter(available=False, reason="no_text_describer")
+    job, spawn = _job(interpreter=interpreter, store=store, memory=memory)
+
+    subject = _subject(
+        label="voice note", media_type="audio/aac",
+        transcript="喂你今日得唔得閒啊")
+    _schedule(job, subject, person=MILES)
+    await spawn.drain()
+    _schedule(job, subject, person=MILES)          # the same bytes, forwarded
+    await spawn.drain()
+
+    assert len(memory.fed) == 1, "the same words reached memory twice"
+    assert len(store.comprehended) == 1
+
+
+async def test_a_voice_note_whose_words_changed_is_still_written():
+    """The control for the guard above — and the case that keeps it from being
+    «never write a voice note twice». It is the CONTENT that decides: a row
+    holding different words is a row with something to add."""
+    store = FakeMediaObjectStore()
+    memory = FakeMemoryStore()
+    interpreter = FakeMediaInterpreter(available=False, reason="no_text_describer")
+    job, spawn = _job(interpreter=interpreter, store=store, memory=memory)
+
+    _schedule(job, _subject(
+        label="voice note", media_type="audio/aac", transcript="first"),
+        person=MILES)
+    await spawn.drain()
+    _schedule(job, _subject(
+        label="voice note", media_type="audio/aac", transcript="second"),
+        person=MILES)
+    await spawn.drain()
+
+    assert [c[3] for c in store.comprehended] == ["first", "second"]
+
+
+async def test_an_unreadable_index_does_not_look_like_an_unread_blob():
+    """The already-read gate used `get`, which answers `None` for a missing row
+    and for an unreachable database alike — so a transient outage read as «not
+    yet comprehended» and the job re-ran the describer. On a video that is a
+    fresh ten-window read, paid for by an index that was merely briefly down."""
+    metrics = Metrics()
+    interpreter = FakeMediaInterpreter()
+    job, spawn = _job(
+        interpreter=interpreter, store=FakeMediaObjectStore(fail=True),
+        metrics=metrics)
+
+    _schedule(job, _subject())
+    await spawn.drain()
+
+    assert interpreter.calls == [], "the describer ran against an unknown row"
+    assert metrics.get(
+        "nora_media_comprehension_total", platform="signal", label="image",
+        status="unavailable", reason="store") == 1
+
+
+async def test_concurrent_reads_are_bounded():
+    """**`_inflight` dedupes identical BYTES, not volume.** `spawn` is a bare
+    `create_task`, so fifty photos in a minute was fifty concurrent describer
+    calls, each holding a decrypted blob plus its base64 copy against an 8 MiB
+    still ceiling and a 100 MiB video one — and three long clips is thirty jobs
+    each running up to eleven minutes of sequential model calls.
+
+    This module's own docstring argues that re-reading the bytes avoids a burst
+    memory spike. It moves the spike off the listener's loop; it does not bound
+    it. This is the bound.
+
+    Measured on the PEAK, not on the total: what matters is how many are inside
+    the describer at once, which is what holds the memory."""
+    import asyncio
+
+    peak = 0
+    live = 0
+
+    class _Slow(FakeMediaInterpreter):
+        async def describe(self, *, data, media_type, label=""):
+            nonlocal peak, live
+            live += 1
+            peak = max(peak, live)
+            await asyncio.sleep(0)
+            try:
+                return await super().describe(
+                    data=data, media_type=media_type, label=label)
+            finally:
+                live -= 1
+
+    blobs = FakeBlobStore()
+    subjects = []
+    for i in range(12):
+        sha = f"{i:06x}" + "0" * 58
+        blobs.blobs[sha] = BYTES
+        subjects.append(Subject(
+            blob=MediaBlob(sha256=sha, media_type="image/png", size=4),
+            label="image",
+        ))
+
+    spawn = _CollectingSpawn()
+    job = MediaComprehension(
+        blobs=blobs, store=FakeMediaObjectStore(),
+        interpreter=_Slow(), memory=FakeMemoryStore(), metrics=Metrics(),
+        spawn=spawn, max_concurrent=3,
+    )
+    job.schedule(
+        subjects=tuple(subjects), platform="signal", conversation_id="g1",
+        person=None, timestamp=1,
+    )
+
+    # Concurrently, which is how `BackgroundTasks.spawn` runs them.
+    await asyncio.gather(*(asyncio.create_task(c) for c in spawn.coros))
+    spawn.coros.clear()
+
+    assert peak <= 3, f"{peak} reads were in flight at once against a bound of 3"
+    assert peak > 1, "the harness did not actually overlap them"

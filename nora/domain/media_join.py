@@ -37,16 +37,18 @@ join at all.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from typing import Protocol, TypeVar
+from typing import Literal, Protocol, TypeVar, get_args
 
 from nora.domain.media import (
     CONTENT_LABELS,
     HANDLE_CHARS,
+    MediaObject,
     enrich_placeholders,
     label_agrees,
     label_from_media_type,
@@ -55,7 +57,7 @@ from nora.domain.media import (
     sanitize_description,
 )
 from nora.domain.models import TranscriptRow, UnattributedRow
-from nora.domain.ports import MediaObjectStore
+from nora.domain.ports import MediaLookup, MediaObjectStore
 
 log = logging.getLogger("nora.domain.media_join")
 
@@ -69,15 +71,46 @@ Row = TypeVar("Row", TranscriptRow, UnattributedRow)
 # Injected rather than imported — see the module docstring's layering note.
 Screen = Callable[[str], str | None]
 
-#: How many distinct blobs one join may look up. A BOUND to go with the
-#: measurement, and it is not the same number for every caller: the tag path
-#: joins a 40-row window, adoption hands this a 1000-row backfill scan and the
-#: Dreamer hands it a batch. Uncapped, those two were an unbounded number of
-#: rows through one query at process start. Over the cap the excess renders
-#: BARE — the honest degrade, identical to a blob nothing has read — and is
-#: counted, because silently rendering 200 of 1000 is the partial-answer shape
-#: this whole pair of issues is about.
-DEFAULT_MAX_BLOBS = 200
+#: WHO paid for a join. One named vocabulary, and the metric's help text is
+#: derived from it (`nora.obs.metric_specs`) rather than hand-copied — the two
+#: histograms are labelled by this and it is the only thing separating a tag
+#: window from a thousand-row backfill in a series whose buckets differ by two
+#: orders of magnitude.
+#:
+#: A `Literal` plus `get_args`, per CLAUDE.md, AND a runtime check in `enrich`:
+#: `nora/domain` is inside the strict mypy override, but the eight call sites
+#: are not all in packages it reaches, so a static-only guard would be a claim
+#: (issue #61).
+JoinPath = Literal[
+    "tag", "fire", "debrief", "standing_event", "dreamer", "note_curator",
+    "adoption", "load_transcript", "unknown",
+]
+JOIN_PATHS: tuple[str, ...] = get_args(JoinPath)
+
+#: How many distinct blobs one QUERY may ask about. A bound on the round trip,
+#: not on how much of the window gets served — and that distinction is the
+#: whole of it.
+#:
+#: The first cut TRUNCATED to this number, keeping the last 200. That is data
+#: loss on the one caller that is a backfill: `RecordStore.unattributed`
+#: returns rows OLDEST FIRST (`nora/infra/sql/audit.py` documents the ordering
+#: as load-bearing), adoption feeds each row to Honcho and then calls
+#: `set_person_id`, which is exactly what removes it from every future scan. So
+#: an operator adding a person after months of chat would have had the 400
+#: oldest blobs in a 600-blob scan go into memory as bare handles and be marked
+#: adopted — no second pass, ever, and for voice notes and stickers a
+#: regression against master, where the words rode in `messages.body`.
+#:
+#: Batching instead loses nothing and bounds the same thing: each query asks
+#: about at most this many, and the number of queries is bounded by the
+#: CALLER's own row limit, which every caller already has.
+DEFAULT_QUERY_BLOBS = 200
+
+#: How long ONE query may take before the join gives up and renders the bare
+#: handles. Short, because that degrade is cheap and correct: the row already
+#: says `[image a3f2c1]`, so a join that does not happen claims nothing. The
+#: two slot-held callers pass `[standing] store_timeout_seconds` instead.
+DEFAULT_TIMEOUT_SECONDS = 3.0
 
 
 class JoinMetrics(Protocol):
@@ -119,15 +152,19 @@ class MediaJoin:
         screen: Screen,
         metrics: JoinMetrics,
         render_chars: int = 240,
-        max_blobs: int = DEFAULT_MAX_BLOBS,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        query_blobs: int = DEFAULT_QUERY_BLOBS,
     ) -> None:
         self._store = store
         self._screen = screen
         self._metrics = metrics
         self._render_chars = render_chars
-        self._max_blobs = max(1, max_blobs)
+        self._timeout = timeout_seconds
+        self._query_blobs = max(1, query_blobs)
 
-    async def enrich(self, rows: Sequence[Row], *, path: str = "unknown") -> tuple[Row, ...]:
+    async def enrich(
+        self, rows: Sequence[Row], *, path: JoinPath = "unknown",
+    ) -> tuple[Row, ...]:
         """The rows with every resolvable placeholder rendered, or the rows.
 
         `path` names the CALLER, and it is required in practice because the
@@ -162,15 +199,6 @@ class MediaJoin:
                 wanted[sha] = sha[:HANDLE_CHARS]
         if not wanted:
             return tuple(rows)
-        capped = len(wanted) > self._max_blobs
-        if capped:
-            # Oldest-first order is `rows`' order, so the surviving slice is the
-            # OLDEST blobs in the window — which is wrong for a tag window and
-            # right for a backfill. Take the LAST `max_blobs` instead: the most
-            # recent media is what a prompt is most likely to be about, and
-            # a backfill's rows all get their own pass eventually.
-            wanted = dict(list(wanted.items())[-self._max_blobs:])
-
         # THE LABEL COMES FROM THE RECORD, and the body only refines it.
         # `body` is sender-supplied: a member who types the literal string
         # `[voice note a3f2c1]` in any later message used to win a
@@ -186,18 +214,27 @@ class MediaJoin:
                 claimed[handle] = label
 
         started = time.perf_counter()
-        found = await self._store.lookup(sha256s=tuple(wanted))
-        if not found.available:
-            # THE INDEX COULD NOT BE READ. Not «nothing has been read yet» —
-            # a window of ten photos rendering bare because the database is
-            # down is a different event from ten nobody has looked at, and
-            # only one of them is worth waking somebody for (R-27).
-            self._count(path, "unavailable", found.reason or "store")
-            return tuple(rows)
+        shas = tuple(wanted)
+        objects: dict[str, MediaObject] = {}
+        # BATCHED, and every blob is asked about — see `DEFAULT_QUERY_BLOBS`.
+        # Each query is bounded; the number of queries is bounded by the
+        # caller's own row limit, which every caller already has.
+        for start in range(0, len(shas), self._query_blobs):
+            found = await self._lookup(shas[start:start + self._query_blobs])
+            if not found.available:
+                # THE INDEX COULD NOT BE READ. Not «nothing has been read
+                # yet» — a window of ten photos rendering bare because the
+                # database is down is a different event from ten nobody has
+                # looked at, and only one of them is worth waking somebody for
+                # (R-27). A partial answer is refused whole: rendering the
+                # batches that did land would be a window that looks complete.
+                self._count(path, "unavailable", found.reason or "store")
+                return tuple(rows)
+            objects.update(found.objects)
 
         details: dict[str, str] = {}
         for sha, handle in wanted.items():
-            obj = found.objects.get(sha)
+            obj = objects.get(sha)
             if obj is None or not obj.comprehended:
                 continue
             record_label = label_from_media_type(obj.media_type)
@@ -230,11 +267,12 @@ class MediaJoin:
         # no media never dilutes it.
         self._metrics.observe(
             "nora_media_join_seconds", time.perf_counter() - started, path=path)
+        # `len(wanted)`, the TRUE count — it used to be observed after the
+        # truncation rebound it, so the histogram could never exceed the cap
+        # and 201 blobs was indistinguishable from 5000, which is the number
+        # needed to size the very cap the help text says it exists to size.
         self._metrics.observe("nora_media_blobs_joined", len(wanted), path=path)
-        self._count(
-            path, "ok" if details else "nothing_found",
-            "capped" if capped else "",
-        )
+        self._count(path, "ok" if details else "nothing_found", "")
         if not details:
             return tuple(rows)
         return tuple(
@@ -243,7 +281,32 @@ class MediaJoin:
             for row in rows
         )
 
+    async def _lookup(self, shas: tuple[str, ...]) -> MediaLookup:
+        """One query, BOUNDED. `enrich` catches exceptions; it cannot catch a
+        hang, and only the two slot-held callers wrapped it — the tag path, the
+        fire path, the Dreamer, the note curator, adoption and
+        `load_transcript` all awaited it bare. `nora/infra/sql/engine.py` sets
+        no `command_timeout`, so a Postgres that is slow-but-alive (a pool
+        saturated by a burst of comprehension jobs, say) held every tag reply
+        until the agent loop's own budget killed the whole turn as
+        `invocation_timeout` — where it should have degraded to bare handles in
+        milliseconds.
+
+        Here rather than at each call site for the reason the join itself is
+        one class: eight sites is eight chances to forget, and this branch's
+        own history is what that costs."""
+        return await asyncio.wait_for(
+            self._store.lookup(sha256s=shas), timeout=self._timeout,
+        )
+
     def _count(self, path: str, status: str, reason: str) -> None:
+        # The RUNTIME half of the vocabulary check. `Metrics.inc` would take
+        # any string, and five of the eight call sites are in packages
+        # `make gate`'s mypy does not cover — so a typo'd label would render as
+        # its own series forever and look like a path nobody had heard of.
+        if path not in JOIN_PATHS:
+            log.error("media join: unknown path label %r", path)
+            path = "unknown"
         self._metrics.inc(
             "nora_media_join_total", path=path, status=status, reason=reason)
 

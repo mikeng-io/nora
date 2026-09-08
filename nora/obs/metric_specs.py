@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from nora.domain.media_join import JOIN_PATHS
+
 _DEFAULT_BUCKETS: tuple[float, ...] = (0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30)
 
 
@@ -28,6 +30,14 @@ class _GaugeSpec(NamedTuple):
     name: str
     help_text: str
     labelnames: tuple[str, ...] = ()
+
+
+#: DERIVED from `nora.domain.media_join.JOIN_PATHS`, never hand-copied — one
+#: named constant the code increments against and the help text reads from
+#: (CLAUDE.md's label-vocabulary rule). A list written out here goes stale the
+#: first time a ninth transcript builder lands, and a help text naming seven
+#: paths for an eight-path series is a metric that documents itself wrongly.
+_JOIN_PATHS = " / ".join(JOIN_PATHS)
 
 
 class _HistogramSpec(NamedTuple):
@@ -941,8 +951,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_media_join_total",
         "Media join outcomes, by path and R-27 status (ok / nothing_found / "
-        "unavailable) with the reason that produced it (store / error / "
-        "capped).",
+        f"unavailable) with the reason that produced it (store / error). "
+        f"Paths: {_JOIN_PATHS}.",
         ("path", "status", "reason"),
     ),
     _CounterSpec(
@@ -1892,9 +1902,8 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     # above that is already the answer.
     _HistogramSpec(
         "nora_media_join_seconds",
-        "Wall-clock cost of one media join, by the PATH that paid it (tag / "
-        "fire / debrief / standing_event / dreamer / note_curator / adoption / "
-        "load_transcript). Excludes calls with no media in the window.",
+        "Wall-clock cost of one media join, by the PATH that paid it "
+        f"({_JOIN_PATHS}). Excludes calls with no media in the window.",
         # Reaching 30s, and labelled, because the eight paths have nothing in
         # common but the code. A tag window is a handful of blobs under a
         # reply's latency; adoption hands this a 1000-row backfill scan at

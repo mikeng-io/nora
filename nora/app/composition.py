@@ -689,6 +689,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         screen=scan_identifiers,
         metrics=metrics,
         render_chars=cfg.media.comprehension_render_chars,
+        # The per-QUERY timeout, on every path. The two slot-held callers wrap
+        # `enrich` in their own `wait_for` as well; this is what bounds the
+        # store read for the six that do not, and it is deliberately shorter
+        # than `[standing] store_timeout_seconds` so the inner bound is the one
+        # that fires and the outer stays the backstop it was written as.
+        timeout_seconds=cfg.media.join_timeout_seconds,
     )
     # The per-turn verdict's store (26 §3). Built unconditionally beside
     # `standing_store` for the same reason: it costs one attribute with
@@ -1180,6 +1186,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             metrics=metrics,
             spawn=_spawn,
             stickers_enabled=cfg.media.sticker_descriptions,
+            max_concurrent=cfg.media.comprehension_max_concurrent,
         )
     # `[speech.stt]`'s transcriber: wired ONLY when enabled — the same
     # inert-ship rule as `stickers`. Off leaves the ingest stage without a

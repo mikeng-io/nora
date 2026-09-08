@@ -666,6 +666,21 @@ class MediaConfig(BaseModel):
     # on the render, and `media_fetch` serves the rest); this is the render
     # bound. A voice note is exempt: its detail is the words people said.
     comprehension_render_chars: int = 240
+    # How long ONE media-join query may take before the render degrades to the
+    # bare handles. Short on purpose: the degrade is cheap and correct (the row
+    # already says `[image a3f2c1]`, so a join that does not happen claims
+    # nothing), and the alternative measured badly — `enrich` catches
+    # exceptions but not hangs, and a Postgres that is slow-but-alive held every
+    # tag reply until the agent loop's own budget killed the whole turn as
+    # `invocation_timeout`.
+    join_timeout_seconds: float = 3.0
+    # How many media reads may be in flight at once. Not a throughput knob — a
+    # memory and quota one: each in-flight job holds a decrypted blob plus the
+    # base64 copy the request carries, against ceilings of 8 MiB for a still
+    # and 100 MiB for a clip, and a video job runs up to `chunk_max`
+    # sequential model calls while it holds them. Fifty photos in a minute was
+    # fifty concurrent describer calls before this existed.
+    comprehension_max_concurrent: int = 4
     # DEPRECATED (issue #116) and read by nothing, like the two below. It
     # sized `StickerInterpreter`'s own `VisionClient`, and that class is gone:
     # the sticker read is one subject among the others in the spawned
