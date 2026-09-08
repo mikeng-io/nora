@@ -44,7 +44,7 @@ from pathlib import Path
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
-from nora.app import report
+from nora.app import config_cli, report
 from nora.app.pending import correlate
 from nora.config import Config, ConfigError, load
 from nora.domain.models import UnattributedRow
@@ -136,6 +136,11 @@ def add_subcommands(
         help="list your Life360 circles + members (id + name) to paste into identity.toml",
     )
     members.set_defaults(func=cmd_presence_members)
+
+    # `config` — the operator's safe config mutation surface (deploy
+    # convention §4.5). See config_cli.py for the atomic-write and
+    # double-validation guarantees.
+    config_cli.add_config_subcommands(subparsers, parent)
 
     # `xai-login` (DEC-137): the ONE command that WRITES — it walks Miles
     # through the xAI OAuth device flow and appends the refresh token to the
