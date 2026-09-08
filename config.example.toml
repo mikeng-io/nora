@@ -461,19 +461,84 @@ vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body
 # out. 40 keeps the configured ceiling above the derived budget so the derived
 # number is the true cap.
 vision_timeout_seconds = 40.0
-# Reading a sticker automatically at INGEST (sticker spec §6) — separate from
-# media_fetch above because the two calls have different budgets and risk.
+# Whether STICKERS are among the media that get read (sticker spec §6, rescoped
+# by issue #116).
 #
-# ON since 2026-08-16, operator's call. The spec §7 probe (2026-08-15, live
-# gateway) cleared the animated-WebP risk this flag was originally gated on;
-# what remained was a latency trade-off. The cost being accepted, measured
-# rather than estimated: a NEW sticker blocks the ingest path 3.9-12.2s while
-# the vision call runs, and when it rides on the tagging message that lands on
-# Nora's reply latency. A repeat is free — 41% of sightings already, rising as
-# the group's sticker set saturates. Watch nora_sticker_describe_seconds and the
-# level= label on nora_sticker_descriptions_total; if the p99 hurts, this line
-# is the off switch and nothing else has to change.
+# ON since 2026-08-16, operator's call: the spec §7 probe cleared the
+# animated-WebP risk the flag was originally gated on, and what remained was a
+# latency trade-off — a new sticker blocked the ingest path 3.9-12.2s while the
+# vision call ran, landing on Nora's reply latency when it rode on the tagging
+# message.
+#
+# THAT LATENCY IS GONE. The sticker read is no longer on the ingest path at
+# all: it is one subject among the others handed to the spawned comprehension
+# pass below, so this flag is now a COST switch (one model call per new
+# sticker) rather than a latency one. Off excludes stickers from the read and
+# NOTHING ELSE — the identity ladder that makes a repeat sighting cost zero
+# platform RPC is custody, is wired whenever `enabled` is on, and is unaffected.
+#
+# What to watch: the level= label on nora_sticker_descriptions_total for the
+# ladder's hit rate (41% of sightings and rising as the group's sticker set
+# saturates), and nora_media_comprehension_seconds{} for what a read costs.
 sticker_descriptions = true
+
+# ONE model read per medium at ingest (issue #116) — image, video, sticker,
+# voice note — producing three fields on `media_objects`: a title (what it is),
+# a description (what it shows) and content (everything legible in it, in
+# full). The transcript renders `[image a3f2c1: <title> - <description>]`;
+# Honcho gets all three; `media_fetch` serves the rest on demand.
+#
+# The read is SPAWNED, never awaited on the ingest path: custody (bytes ->
+# sha256 -> blob -> handle in the body) is what has to be inline, because the
+# handle is a promise the bytes are retrievable. An UNREAD medium is exactly
+# the state every medium was in before this existed, so a late comprehension
+# makes nothing untrue — and an inline one would stall serialized Signal
+# ingest behind every video.
+#
+# false = no model reads any media: handles in the body, nothing described,
+# and nothing anywhere claiming a description it does not have. Not an error
+# state. TWO things still happen with it off, because neither needs a model: a
+# voice note's transcript is written to `media_objects.content` by the custody
+# stage inline (STT has already run, so the words reach the record and the
+# transcript exactly as they did before this change — what they do NOT reach
+# with this off is Honcho, which gets the marker alone), and the sticker
+# identity ladder keeps turning a repeat sighting into zero platform RPC.
+# `sticker_descriptions` above is the sticker sub-gate on the READ only.
+comprehension = true
+# The CHEAP TEXT pass: a voice note's title/description over the SenseVoice
+# transcript that [speech.stt] already produced, and a video's over its
+# timecoded chunk run. NEVER a second listen or a second watch — the expensive
+# read has already happened.
+#
+# Empty = no text pass, and BOTH media keep what the expensive half produced: a
+# voice note keeps its words, a video keeps its timecoded chunk run. Neither
+# gets a title, and the transcript renders the run itself in that case rather
+# than a headline. Set it to any text model on the gateway; the image model
+# works. Worth setting — a ten-window video run is a lot of prompt where two
+# sentences would do.
+comprehension_text_model = ""
+# What the TRANSCRIPT may spend on one attachment's title + description. The
+# STORED comprehension is unbounded on purpose — the old 200-char clip existed
+# only because the description was baked into `messages.body`, which two
+# consumers read verbatim; it is a join now, so the bound belongs on the
+# render and `media_fetch` serves the whole thing. A VOICE NOTE is exempt: its
+# detail is the words people said, and clipping those would mean Nora reads a
+# summary of what somebody said instead of what they said.
+comprehension_render_chars = 240
+# How long ONE media-join query may take before a render gives up and shows the
+# bare `[image a3f2c1]` markers. Short on purpose — that degrade is cheap and
+# claims nothing, and without it a Postgres that is slow but alive held every
+# reply until the whole turn timed out. The two standing-fold paths wrap the
+# join in `[standing] store_timeout_seconds` as well; this is the inner bound
+# and should stay the smaller of the two.
+join_timeout_seconds = 3.0
+# How many media reads may be in flight at once. Not a throughput knob — a
+# memory and quota one: each in-flight read holds a decrypted blob plus the
+# base64 copy the request carries (8 MiB for a still, 100 MiB for a clip), and
+# a video read makes up to chunk_max sequential model calls while it holds
+# them. Raise it if new media takes too long to become readable; lower it if
+# the container's memory spikes when somebody drops twenty photos at once.
+comprehension_max_concurrent = 4
 
 # WHERE the (always-encrypted) bytes above land (DEC-136). OFF by default: a
 # config.toml written before this existed keeps writing to
@@ -940,24 +1005,13 @@ enabled = false
 #
 # What it does when on, on the schedule below, per workspace:
 #
-#   MERGE   — notes sharing an anchor (the same anchor_date AND the same
-#             RESOLVED people) are one occasion written twice. The merged body
-#             keeps everything both said, disagreements included; the oldest
-#             note survives and the rest are retired pointing at it.
-#             ELIGIBILITY IS DECIDED IN CODE, never by the model — merge keyed
-#             on topical similarity would merge two weddings, and that is
-#             unrecoverable.
-#
-#             **THIS DOES NOTHING YET, and turning the flag on will not change
-#             that.** The people half is read from the note_entity registry,
-#             which nothing in the system fills in, so every candidate pair is
-#             refused and counted. Matching on the words the model typed
-#             instead was rejected: it is wrong in both directions — three
-#             spellings of one wedding read as three occasions, and two
-#             unrelated notes that both say "wedding" read as one and would be
-#             combined irreversibly. Watch
-#             nora_note_curator_groups_refused_total: it is the case for
-#             building the registry writer.
+#   (MERGE was here until 2026-09-08 — notes sharing an anchor date AND the
+#             same RESOLVED people were one occasion written twice. The
+#             people half was read from note_entity, which nothing could
+#             fill once the knowledge tier stopped minting entities, so
+#             every pair was refused by construction and the verb was
+#             removed. Duplicates are now caught at the create gate, on
+#             the anchor date, before a second note exists.)
 #   RETIRE  — a note whose anchor date has passed, where the model reading the
 #             body says the question is answered ("closed") or can no longer be
 #             answered ("moot"). "Open" is the common answer and writes nothing.
@@ -966,20 +1020,16 @@ enabled = false
 # readable and a lossy step can be re-derived.
 curator_enabled = false
 
-# Bodies per tick, as two caps, because the curator's only real cost is reading
+# Expired bodies per tick, because the curator's only real cost is reading
 # whole note bodies and note_revision.body has no upper bound — ONE long body
-# can consume a tick's whole allowance.
-#
-# Groups is small: a collided anchor needs two notes about the same date AND
-# the same people, so three in one tick is already unusual and this is a bound
-# on a surprise rather than a throughput knob. Expired is larger because it is
-# the common case and arrives in bursts — after a quiet month every note whose
-# date has passed becomes eligible at once, and a cap of three would take a
-# fortnight of ticks to clear a backlog that appeared in a day.
+# can consume a tick's whole allowance. Expiry arrives in bursts: after a quiet
+# month every note whose date has passed becomes eligible at once, and a cap
+# of three would take a fortnight of ticks to clear a backlog that appeared in
+# a day. (There was a second cap, `max_groups_per_tick`, for merge groups;
+# merge was removed on 2026-09-08 and the knob went with it.)
 #
 # `nora_note_curator_bodies_read` is the reading. When it sits at the cap, the
 # pass is reporting "nothing to do" about notes it never reached.
-# max_groups_per_tick = 3
 # max_expired_per_tick = 20
 
 # A note body is capped at 8000 characters and the database refuses anything
@@ -1007,6 +1057,16 @@ curator_enabled = false
 # covers the same occasion, or nothing. The model never writes a note
 # directly.
 candidates_enabled = false
+
+# Model calls per note-candidates fire, unioned. Measured 2026-09-08 (design
+# 37, issue #118): a plan ONE person states with an unsettled corner is
+# recognised in about 30% of single samples at the dreamer tier's temperature,
+# while no negative batch ever produced a note across every prompt variant
+# tried. N samples recognise it with probability 1 - 0.7^N (3 -> 0.66,
+# 5 -> 0.83) and stay empty on a negative batch; duplicates across samples
+# collapse in the staging key and the create gate. Cost is N calls per fire on
+# a pass that fires at most hourly per room and only when the room spoke.
+# candidate_samples = 1
 
 # The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
 # schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH gate, on its
@@ -1456,3 +1516,21 @@ provider = "kimi"
 # upload lane (probed 2026-08-30 for larger videos) is the escape hatch —
 # base64 inline works for small clips, file-id for big ones.
 max_bytes = 104857600
+# CHUNKED READ (issue #117). A clip used to be cut to its first 120 seconds
+# before the model saw it, with no metric, no log line, and nothing in the
+# answer admitting the cut — so a ten-minute video produced a description of
+# its first two minutes, phrased as a description of the video. Storage is
+# untouched (one blob, the whole original); ffmpeg cuts transient windows at
+# READ time and each one goes to the describer above unchanged.
+#
+# `chunk_max` is the ceiling that turns an unbounded clip into a bounded
+# number of model calls — 10 x 90 s = 15 minutes read in full. **When it binds
+# it is recorded and SAID**: the clip's length, how much was read and the fact
+# that the rest was not land in `media_objects.provenance`, and a sentence
+# saying so is appended to the description. That is the actual fix — not
+# "never truncate", but "never truncate silently".
+#
+# The chunks are silent: the video path passes `-an` and strips the audio
+# track, exactly as it did before, and #117 explicitly does not change that.
+chunk_seconds = 90
+chunk_max = 10

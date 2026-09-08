@@ -26,6 +26,7 @@ from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.config import Config
 from nora.doctrine.loader import DoctrineStore
+from nora.domain.media_join import MediaJoin
 from nora.domain.ports import (
     EngagePolicy,
     MemoryStore,
@@ -70,6 +71,7 @@ def build_offline_pipeline(
     # caller keeps working unchanged.
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
+    media_join: MediaJoin | None = None,
     participation: ParticipationTrigger | None = None,
     extra_engage_policies: tuple[EngagePolicy, ...] = (),
     participation_runner: Any = None,
@@ -124,6 +126,11 @@ def build_offline_pipeline(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=permissive_policy(),
         notes=notes, standing=standing,
+        # The media join (issue #116). `None` renders the bare handles a row
+        # actually carries; an eval that wants `[image a3f2c1: …]` in its
+        # prompt builds a `MediaJoin` over `nora.testing.FakeMediaObjectStore`,
+        # exactly as it passes its own doubles for `notes`/`standing`.
+        media_join=media_join,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -209,6 +216,10 @@ def build_offline_pipeline(
         # instead of letting the eval prompt drift from production's.
         fire_path = FirePath(
             persons=persons, records=audit, memory=memory,
+            # The SAME join the tag assembler above is given, so an eval's fire
+            # prompt shows what an eval's tag prompt shows (the parity gate
+            # `tests/architecture/test_assembler_parity.py` enforces).
+            media_join=media_join,
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters={adapter.platform: adapter},
             registry=tool_registry,

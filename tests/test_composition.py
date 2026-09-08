@@ -919,18 +919,15 @@ async def test_the_curators_adaptors_are_appended_not_assigned(cfg):
     (`curator_enabled`, already covered by `test_the_curator_needs_three_gates_
     not_two`/`test_all_three_gates_on_builds_the_curator` above), not two.
 
-    `note-entity-resolution` (issue #100) rides the SAME `curator_enabled`
-    gate, appended after `note-curation` — see
-    `NoteEntityResolutionAdaptor`'s own module docstring for why it has no
-    flag of its own."""
+    `note-entity-resolution` (issue #100) rode the SAME `curator_enabled`
+    gate, appended after `note-curation`, until the entity chain was removed
+    on 2026-09-08."""
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True, "notes.enabled": True,
         "notes.curator_enabled": True,
     }))
 
-    assert [a.name for a in deps.dream_adaptors] == [
-        "note-curation", "note-entity-resolution",
-    ]
+    assert [a.name for a in deps.dream_adaptors] == ["note-curation"]
 
 
 async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg):
@@ -1332,3 +1329,40 @@ async def test_a_valid_inherited_effort_still_starts(cfg):
 
     assert deps.dreamer_runtime is not None
     assert deps.dreamer_runtime._models._spec.reasoning_effort == "medium"
+
+
+async def test_candidate_samples_reaches_the_note_candidates_schedule(cfg):
+    """`[notes] candidate_samples` is model calls per fire, unioned (design 37
+    / issue #118). A knob that did not reach `AdaptorSchedule.samples` would
+    be the config-file form of a declared metric with no call site — set and
+    read by nothing."""
+    async def _samples(n: int) -> int:
+        deps = await build_dependencies(override_config(cfg, {
+            "dreamer.enabled": True, "notes.enabled": True,
+            "notes.candidates_enabled": True, "notes.candidate_samples": n,
+        }))
+        return deps.dream_schedules["note-candidates"].samples
+
+    assert await _samples(1) == 1
+    assert await _samples(4) == 4
+
+
+async def test_note_candidates_renders_moments_in_the_operators_timezone(cfg):
+    """The sibling of `test_the_curator_reads_the_day_from_the_operators_
+    timezone`, for the create path: «this Saturday» in a message is resolved
+    against the moment the model is SHOWN, so that moment must be the room's
+    (`[reminders] timezone`), not the process's. Two zones 25 hours apart
+    cannot agree; a hardcoded zone makes them equal."""
+    from zoneinfo import ZoneInfo
+
+    async def _zone(zone: str):
+        deps = await build_dependencies(override_config(cfg, {
+            "dreamer.enabled": True, "notes.enabled": True,
+            "notes.candidates_enabled": True, "reminders.timezone": zone,
+        }))
+        adaptor = next(a for a in deps.dream_adaptors if a.name == "note-candidates")
+        return adaptor._tz
+
+    assert await _zone("Pacific/Kiritimati") == ZoneInfo("Pacific/Kiritimati")
+    assert await _zone("Pacific/Niue") == ZoneInfo("Pacific/Niue")
+    assert await _zone("Pacific/Kiritimati") != await _zone("Pacific/Niue")

@@ -57,6 +57,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 from xml.sax.saxutils import escape
 
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import RecordStore
 from nora.domain.provenance import instruction_sha256
@@ -345,11 +346,18 @@ class RelevanceGate:
         standing: StandingReader | None = None,
         transcript_limit: int = 40,
         standing_timeout_seconds: float = 2.0,
+        media_join: MediaJoin | None = None,
     ) -> None:
         self._client = client
         self._prompts = prompts
         self._records = records
         self._metrics = metrics
+        # The same join every other transcript builder runs. A gate blind to
+        # media does not merely render less — it under-admits exactly the
+        # windows a photo prompted, because `render_context` drops a row whose
+        # body is empty and an image-only message IS an empty body. `None` is
+        # the inert default and renders the bare handles the rows carry.
+        self._media_join = media_join
         # DEC-80's one-name-space projection. Without it `person_name` is
         # None on every row by construction and the label falls through to
         # the platform's self-set profile name — the two-name-space bug that
@@ -532,6 +540,12 @@ class RelevanceGate:
                 "nora_errors_total", stage="relevance_gate_context", platform=platform,
             )
             return None
+        if self._media_join is not None:
+            # Fail-SOFT, like the standing fold's: this runs before a cheap
+            # gate call, and a join that cannot answer must cost a thinner
+            # prompt rather than a verdict. `enrich` is total and counts its
+            # own failures, so a permanently failing join is not silent.
+            rows = await self._media_join.enrich(rows, path="relevance_gate")
         if self._persons is None:
             return rows
         return self._persons.name_transcript(rows, platform=platform)

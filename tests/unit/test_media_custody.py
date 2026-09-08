@@ -36,9 +36,9 @@ from nora.platform.registry import MediaSourceRegistry
 from nora.testing import (
     FakeBlobStore,
     FakeMediaDescriptionStore,
-    FakeMediaInterpreter,
     FakeMediaObjectStore,
     FakeMediaSource,
+    FakeTranscriber,
 )
 
 JPEG = b"\xff\xd8\xff\xe0 pretend jpeg"
@@ -185,6 +185,26 @@ def test_placeholder_suffix_tolerates_fewer_handles_than_labels():
     assert placeholder_suffix(("image", "video"), ("a3f2c1",)) == "[image a3f2c1] [video]"
 
 
+class _RecordingComprehension:
+    """A `MediaComprehension` stand-in that records what was SCHEDULED.
+
+    Local to this file rather than in `nora/testing/`: `MediaComprehension` is
+    a concrete job with an injected `spawn`, not a port with two
+    implementations, so there is no contract suite for a shared fake to be
+    parametrized into. What the stage owes it is one method, and what these
+    tests assert on is the argument — which media the custody stage decided
+    were worth reading, and under which label.
+    """
+
+    def __init__(self) -> None:
+        self.subjects: list = []
+        self.calls: list[tuple[str, str]] = []
+
+    def schedule(self, *, subjects, platform, conversation_id, person, timestamp):
+        self.subjects.extend(subjects)
+        self.calls.append((platform, conversation_id))
+
+
 # --- the description --------------------------------------------------------
 
 
@@ -228,21 +248,42 @@ def test_a_description_strips_an_escape_sequence():
     assert "\x1b" not in got
 
 
-def test_a_description_is_bounded():
+def test_a_description_is_bounded_when_a_bound_is_asked_for():
     got = sanitize_description("x" * 500, max_chars=200)
     assert len(got) <= 200
 
 
-def test_body_with_handles_carries_descriptions_into_the_tail():
-    body = "haha [sticker]"
-    got = body_with_handles(body, ("sticker",), ("a3f2c1",), ("a cat",))
-    assert got == "haha [sticker a3f2c1: a cat]"
+def test_a_description_is_unbounded_by_default():
+    """Issue #116. The 200-char clip existed because the description was baked
+    into `messages.body`, a durable string two consumers read verbatim — so
+    every character was paid for on every prefill forever. It is a join now,
+    and truncating what is STORED would throw away exactly the half
+    `media_fetch` exists to serve. The bound moved to the render."""
+    got = sanitize_description("x" * 500)
+    assert len(got) == 500
+
+
+def test_the_body_never_carries_a_description():
+    """The whole of issue #116 decision 2, at the one function that used to
+    take one. `messages.body` is read VERBATIM by `memory_feed` (which wants
+    everything) and by the prefill (which wants a line), so a description
+    living in it made "Honcho detailed, transcript short" structurally
+    impossible rather than merely untuned.
+
+    Written as a TypeError probe rather than a comment: a fourth positional
+    argument is what a caller re-adding the bake would pass, and this is what
+    turns that into a red test instead of a silent regression."""
+    assert body_with_handles("haha [sticker]", ("sticker",), ("a3f2c1",)) == (
+        "haha [sticker a3f2c1]"
+    )
+    with pytest.raises(TypeError):
+        body_with_handles("haha [sticker]", ("sticker",), ("a3f2c1",), ("a cat",))
 
 
 def test_body_with_handles_leaves_a_body_it_does_not_recognise_alone():
     """Unchanged precondition: replacing the k-th `[` by position would corrupt
     a body whose sender-supplied TEXT happened to contain a bracket."""
-    got = body_with_handles("who wrote [sticker] here", ("image",), ("a3f2c1",), ("x",))
+    got = body_with_handles("who wrote [sticker] here", ("image",), ("a3f2c1",))
     assert got == "who wrote [sticker] here"
 
 
@@ -395,7 +436,6 @@ async def test_a_sticker_gains_no_second_index_row():
     store = FakeMediaObjectStore()
     reader = StickerReader(
         blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
-        interpreter=FakeMediaInterpreter("a sticker"), model="fake",
         metrics=Metrics(),
     )
     sticker_ref = MediaRef(
@@ -542,16 +582,19 @@ async def test_the_stage_asks_the_source_for_the_platforms_own_id():
 # --- stickers, and stickers only ---------------------------------------------
 
 
-async def test_only_a_sticker_reaches_the_interpreter():
-    """Spec §5.3, and the operator's explicit constraint: NOT image, audio or
-    video. A sticker is published pack art; a photo is a photograph of
-    somebody's life, and reading it permanently into the record, the Honcho
-    feed and every future transcript is a different act."""
-    interpreter = FakeMediaInterpreter()
+async def test_every_held_medium_becomes_a_comprehension_subject():
+    """Issue #116's reversal, and the assertion is on WHAT WAS SCHEDULED
+    rather than on a body: a sticker used to be the only thing read, and every
+    photo, video and voice note got a bare handle forever.
+
+    The labels matter as much as the count — the label picks the authored
+    prompt and decides which lane runs (a voice note takes the text pass over
+    a transcript already in hand, never a second listen)."""
     reader = StickerReader(
         blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
-        interpreter=interpreter, model="fake", metrics=Metrics(),
+        metrics=Metrics(),
     )
+    job = _RecordingComprehension()
     media = (
         MediaRef(platform_id="i1", media_type="image/jpeg"),
         MediaRef(platform_id="a1", media_type="audio/aac", voice_note=True),
@@ -566,17 +609,42 @@ async def test_only_a_sticker_reaches_the_interpreter():
         message=_msg(platform="signal", body="[image] [voice note] [video] [sticker]",
                      refs=media),
         sources=MediaSourceRegistry([source]), blobs=FakeBlobStore(),
-        metrics=Metrics(), stickers=reader,
+        metrics=Metrics(), stickers=reader, comprehension=job,
     )
 
-    assert len(interpreter.calls) == 1
-    assert interpreter.calls[0][0] == "image/png"
+    assert [s.label for s in job.subjects] == [
+        "image", "voice note", "video", "sticker",
+    ]
 
 
-async def test_a_described_sticker_lands_in_the_body_with_its_handle():
+async def test_a_medium_whose_bytes_never_landed_is_never_scheduled():
+    """A comprehension subject rides only WITH a handle. Scheduling a read for
+    bytes Nora does not hold would be a job that can only ever answer
+    `unavailable`, and it would say so once per sighting forever.
+
+    The positive control is the second ref: a run that scheduled NOTHING would
+    also satisfy "the failed one was not scheduled"."""
+    job = _RecordingComprehension()
+
+    await media_stage.run(
+        message=_msg(body="[image] [image]", refs=(
+            MediaRef(platform_id="gone", media_type="image/jpeg"),
+            MediaRef(platform_id="here", media_type="image/jpeg"),
+        )),
+        sources=MediaSourceRegistry([FakeMediaSource({"here": JPEG})]),
+        blobs=FakeBlobStore(), metrics=Metrics(), comprehension=job,
+    )
+
+    assert len(job.subjects) == 1
+    assert job.subjects[0].blob.sha256 == hashlib.sha256(JPEG).hexdigest()
+
+
+async def test_a_stickers_body_carries_the_handle_and_nothing_else():
+    """The bake is gone (issue #116 decision 2). The sticker keeps its handle —
+    custody really did happen — and the description reaches the prompt through
+    the render-time join in `nora/engagement/context.py` instead."""
     reader = StickerReader(
         blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
-        interpreter=FakeMediaInterpreter("a cartoon cat"), model="fake",
         metrics=Metrics(),
     )
     ref = MediaRef(platform_id="", media_type="image/png", sticker=True,
@@ -586,39 +654,40 @@ async def test_a_described_sticker_lands_in_the_body_with_its_handle():
         message=_msg(body="haha [sticker]", refs=(ref,)),
         sources=MediaSourceRegistry([FakeMediaSource({"sticker:p:1": b"\x89PNG"})]),
         blobs=FakeBlobStore(), metrics=Metrics(), stickers=reader,
+        comprehension=_RecordingComprehension(),
     )
 
     assert out.body.startswith("haha [sticker ")
-    assert out.body.endswith(": a cartoon cat]")
+    assert out.body.endswith("]")
+    assert ":" not in out.body
 
 
-async def test_an_identifier_in_a_description_costs_the_description_not_the_message():
-    """R-18/R-28's floor. The description is text a vision model wrote about
-    bytes a group member sent — the trust class of a fetched web page."""
-    metrics = Metrics()
-    reader = StickerReader(
-        blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
-        interpreter=FakeMediaInterpreter("a note reading +85212345678"), model="fake",
-        metrics=metrics,
-    )
-    ref = MediaRef(platform_id="", media_type="image/png", sticker=True,
-                   fetch_token="sticker:p:1")  # noqa: S106
+async def test_a_voice_notes_transcript_rides_the_subject_not_the_body():
+    """Issue #116 decision 4, at the seam where it is decided. The words are
+    still captured INLINE — a voice note is conversation content, and the STT
+    lane is unchanged — but they land in `media_objects.content` through the
+    comprehension subject, not in the durable body two consumers read
+    verbatim."""
+    job = _RecordingComprehension()
+    ref = MediaRef(platform_id="a1", media_type="audio/aac", voice_note=True)
 
     out = await media_stage.run(
-        message=_msg(body="[sticker]", refs=(ref,)),
-        sources=MediaSourceRegistry([FakeMediaSource({"sticker:p:1": b"\x89PNG"})]),
-        blobs=FakeBlobStore(), metrics=metrics, stickers=reader,
+        message=_msg(body="[voice note]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"a1": b"aac"})]),
+        blobs=FakeBlobStore(), metrics=Metrics(),
+        transcriber=FakeTranscriber("喂你今日得唔得閒啊"),
+        comprehension=job,
     )
 
-    assert "85212345678" not in out.body
-    assert out.body.startswith("[sticker ") and out.body.endswith("]")
-    assert ":" not in out.body, "the whole description is dropped, not edited"
-    assert metrics.get("nora_egress_blocks_total", kind="phone") == 1
+    assert "得唔得閒" not in out.body
+    assert out.body.startswith("[voice note ") and ":" not in out.body
+    assert job.subjects[0].transcript == "喂你今日得唔得閒啊"
 
 
 async def test_a_sticker_with_no_reader_wired_keeps_its_handle():
     """`stickers=None` is the `sticker_descriptions = false` deployment. It must
-    behave exactly like custody-without-interpretation, not like a failure."""
+    behave exactly like custody-without-the-identity-ladder, not like a
+    failure."""
     ref = MediaRef(platform_id="", media_type="image/png", sticker=True,
                    fetch_token="sticker:p:1")  # noqa: S106
 
@@ -632,16 +701,16 @@ async def test_a_sticker_with_no_reader_wired_keeps_its_handle():
 
 
 async def test_a_failing_attachment_does_not_shift_the_stickers_own_handle():
-    """`handles.append(blob.handle if blob else "")` and the description
-    append beside it run unconditionally, shared by both branches of the
-    per-ref loop — the reviewer could certify that by construction for the
-    plain-custody path, but not for the sticker branch specifically. A desync
-    here would silently attach one attachment's description to a NEIGHBOUR's
-    placeholder: a wrong claim in the durable record, not a crash."""
+    """`handles.append(blob.handle if blob else "")` runs unconditionally,
+    shared by both branches of the per-ref loop — the reviewer could certify
+    that by construction for the plain-custody path, but not for the sticker
+    branch specifically. A desync here would attach one attachment's handle to
+    a NEIGHBOUR's placeholder: a wrong claim in the durable record, not a
+    crash, and the join in the assembler would then render one medium's
+    comprehension against another's marker."""
     sticker_png = b"\x89PNG sticker bytes"
     reader = StickerReader(
         blobs=FakeBlobStore(), descriptions=FakeMediaDescriptionStore(),
-        interpreter=FakeMediaInterpreter("a cartoon cat"), model="fake",
         metrics=Metrics(),
     )
     refs = (
@@ -658,4 +727,87 @@ async def test_a_failing_attachment_does_not_shift_the_stickers_own_handle():
     )
 
     sticker_handle = hashlib.sha256(sticker_png).hexdigest()[:6]
-    assert out.body == f"[image] [sticker {sticker_handle}: a cartoon cat]"
+    assert out.body == f"[image] [sticker {sticker_handle}]"
+
+
+async def test_a_voice_notes_words_are_recorded_even_with_no_comprehension_wired():
+    """`[media] comprehension = false`, and the case the flag's own
+    documentation got wrong. STT runs on the custody path and costs what it
+    costs whether or not a vision job exists, and its output used to reach only
+    a `Subject` that was never scheduled — so the words were captured and then
+    discarded. On master they rode in `messages.body` and reached the record
+    regardless of any vision wiring.
+
+    They are written INLINE now, by this stage, for the same reason they are
+    captured inline: they are conversation content and nothing about them needs
+    a model."""
+    store = FakeMediaObjectStore()
+    ref = MediaRef(platform_id="a1", media_type="audio/aac", voice_note=True)
+
+    out = await media_stage.run(
+        message=_msg(body="[voice note]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"a1": b"aac"})]),
+        blobs=FakeBlobStore(), media_store=store, metrics=Metrics(),
+        transcriber=FakeTranscriber("喂你今日得唔得閒啊"),
+        comprehension=None,          # the flag is off
+    )
+
+    assert out.body.startswith("[voice note ")
+    sha = hashlib.sha256(b"aac").hexdigest()
+    assert [c[3] for c in store.comprehended] == ["喂你今日得唔得閒啊"]
+    assert store.objs[sha].content == "喂你今日得唔得閒啊"
+
+
+async def test_a_voice_note_does_not_wait_on_a_model_for_its_words():
+    """The words are in hand synchronously, so they are stored synchronously.
+    Queuing them behind a spawned title meant somebody asking 「佢講咩」 two
+    seconds later saw a bare handle — the release fragment accepts that latency
+    for a PHOTO, whose content genuinely has to be read.
+
+    The comprehension job is wired here and its work is NOT drained, so
+    anything asserted below happened on the awaited custody path alone."""
+    store = FakeMediaObjectStore()
+    job = _RecordingComprehension()
+    ref = MediaRef(platform_id="a1", media_type="audio/aac", voice_note=True)
+
+    await media_stage.run(
+        message=_msg(body="[voice note]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"a1": b"aac"})]),
+        blobs=FakeBlobStore(), media_store=store, metrics=Metrics(),
+        transcriber=FakeTranscriber("喂你今日得唔得閒啊"),
+        comprehension=job,
+    )
+
+    assert [c[3] for c in store.comprehended] == ["喂你今日得唔得閒啊"]
+    assert job.subjects, "the title pass is still scheduled, just not waited on"
+
+
+async def test_a_failed_transcription_writes_no_content_at_all():
+    """R-27 on the inline write: no transcript, no claim. An empty `content`
+    row would make the join render `[voice note a3f2c1]` either way, but it
+    would also make the comprehension job's already-read gate see a
+    non-comprehended row — which is correct — while asserting in the index that
+    a read happened. Nothing is written."""
+    store = FakeMediaObjectStore()
+    ref = MediaRef(platform_id="a1", media_type="audio/aac", voice_note=True)
+
+    await media_stage.run(
+        message=_msg(body="[voice note]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"a1": b"aac"})]),
+        blobs=FakeBlobStore(), media_store=store, metrics=Metrics(),
+        transcriber=FakeTranscriber(available=False, reason="error"),
+        comprehension=None,
+    )
+
+    assert store.comprehended == []
+    # POSITIVE CONTROL on the SAME store and the SAME stage call shape: a
+    # stage that wrote nothing at all — or one whose `media_store` was never
+    # reached — would satisfy the assertion above by doing less.
+    await media_stage.run(
+        message=_msg(body="[voice note]", refs=(ref,)),
+        sources=MediaSourceRegistry([FakeMediaSource({"a1": b"aac"})]),
+        blobs=FakeBlobStore(), media_store=store, metrics=Metrics(),
+        transcriber=FakeTranscriber("喂你今日得唔得閒啊"),
+        comprehension=None,
+    )
+    assert [c[3] for c in store.comprehended] == ["喂你今日得唔得閒啊"]

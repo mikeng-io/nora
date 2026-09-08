@@ -1,0 +1,184 @@
+# The note-candidates scenario corpus (design/dreamer-agent-loop/37 §7,
+# issue #118). Each case is ONE batch the adaptor would be handed on a fire —
+# several messages from one room, attributed and timestamped — plus the
+# notebook that room's workspace already holds, and the outcome the notebook
+# must show afterwards.
+#
+# `expect` is graded STRUCTURALLY on the in-memory note store after the real
+# `DreamerRuntime` + real `NoteCandidateAdaptor` have run against the live
+# model (`nora.app.eval_support.run_note_candidates_case`). No judge:
+#
+#   create  — exactly one NEW standing note exists afterwards. `anchor_date`
+#             (when given) must match it; `must_cite` ids must be in the
+#             staged candidate's `message_ids`.
+#   update  — no new note; the note named by `updates` has a new head
+#             revision.
+#   none    — the notebook is unchanged: no new note, no new revision. A
+#             candidate the gate REFUSED as a duplicate still counts as
+#             `none` — the notebook is what the room sees.
+#
+# `unavailable` (timeout, prose instead of JSON, throttle) is ERROR for every
+# case, never PASS and never a correct `none` — R-27.
+#
+# Timestamps are ISO-8601 UTC. 2026-09-07 is a Monday; «今個禮拜六» from it is
+# 2026-09-12. Message ids are per-case and only need to be distinct within
+# the batch; the adaptor's own membership check reads the ids it rendered.
+
+- name: p1_group_dinner_date_set_venue_open
+  expect: create
+  workspace: friends
+  anchor_date: 20260919
+  must_cite: [101]
+  batch:
+    - {id: 101, ts: "2026-09-07T12:01:00Z", person: ada, name: Ada, body: "19號星期六大家得唔得食飯？"}
+    - {id: 102, ts: "2026-09-07T12:02:10Z", person: ben, name: Ben, body: "得"}
+    - {id: 103, ts: "2026-09-07T12:02:40Z", person: cat, name: Cat, body: "我都得，食邊度？"}
+    - {id: 104, ts: "2026-09-07T12:05:00Z", person: ada, name: Ada, body: "西貢定中環？我兩邊都ok"}
+    - {id: 105, ts: "2026-09-07T12:06:30Z", person: ben, name: Ben, body: "西貢遠啲喎，不過海鮮正"}
+
+- name: p2_one_person_stated_plan_with_open_corners
+  expect: create
+  workspace: ridgeline
+  anchor_date: 20260912
+  must_cite: [201]
+  batch:
+    - {id: 201, ts: "2026-09-07T18:13:23Z", person: miles, name: "Miles Novak", body: "嚟緊今個禮拜六我會去數碼港參加 AI Thinking 嘅 Hackathon。不過都唔知有咩隊員，同埋夜晚都唔知食咩好。"}
+
+- name: p3_follow_up_owed
+  expect: create
+  workspace: friends
+  anchor_date: 20260925
+  must_cite: [301]
+  batch:
+    - {id: 301, ts: "2026-09-07T09:10:00Z", person: ben, name: Ben, body: "25號嗰晚我屋企搞唔搞到？我聽日問咗業主先覆你哋，佢有時唔俾咁多人上嚟"}
+    - {id: 302, ts: "2026-09-07T09:11:00Z", person: ada, name: Ada, body: "ok 等你消息"}
+    - {id: 303, ts: "2026-09-07T09:11:30Z", person: cat, name: Cat, body: "如果唔得我哋再諗"}
+
+- name: p4_plan_inside_ordinary_talk
+  expect: create
+  workspace: friends
+  anchor_date: 20260920
+  must_cite: [404]
+  batch:
+    - {id: 401, ts: "2026-09-07T14:00:00Z", person: cat, name: Cat, body: "尋日場波睇到瞓著"}
+    - {id: 402, ts: "2026-09-07T14:00:40Z", person: ben, name: Ben, body: "哈哈 下半場先精彩"}
+    - {id: 403, ts: "2026-09-07T14:01:00Z", person: cat, name: Cat, body: "[media]"}
+    - {id: 404, ts: "2026-09-07T14:20:00Z", person: ada, name: Ada, body: "20號行山，大家想去大帽山定西貢？我 book 車要知人數"}
+    - {id: 405, ts: "2026-09-07T14:21:00Z", person: ben, name: Ben, body: "我去，邊度都得"}
+    - {id: 406, ts: "2026-09-07T14:25:00Z", person: cat, name: Cat, body: "睇下天氣先"}
+
+- name: p5_already_tracked_gains_a_decision
+  expect: update
+  workspace: friends
+  updates: "Dinner 19 Sept"
+  notebook:
+    - title: "Dinner 19 Sept"
+      description: "Dinner on the 19th; venue undecided between Sai Kung and Central."
+      anchor_date: 20260919
+      body: "Ada asked about the 19th; Ben and Cat can make it. Venue undecided: Sai Kung or Central. Ben prefers Sai Kung for the seafood."
+  batch:
+    - {id: 501, ts: "2026-09-08T10:00:00Z", person: ada, name: Ada, body: "19號定咗西貢，我 book 咗六福 7 點半，4 位"}
+    - {id: 502, ts: "2026-09-08T10:01:00Z", person: cat, name: Cat, body: "正"}
+
+- name: n1_settled_fact_nothing_open
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 601, ts: "2026-09-07T03:00:00Z", person: ada, name: Ada, body: "尋晚 Yardbird 好正，個雞翼"}
+    - {id: 602, ts: "2026-09-07T03:01:00Z", person: ben, name: Ben, body: "係，下次再去"}
+    - {id: 603, ts: "2026-09-07T03:02:00Z", person: cat, name: Cat, body: "[media]"}
+
+- name: n2_throwaway_nobody_picks_up
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 701, ts: "2026-09-07T06:00:00Z", person: ben, name: Ben, body: "不如幾時去下 trip"}
+    - {id: 702, ts: "2026-09-07T06:30:00Z", person: cat, name: Cat, body: "今日好熱"}
+    - {id: 703, ts: "2026-09-07T06:31:00Z", person: ada, name: Ada, body: "35 度"}
+
+- name: n3_media_and_stickers_only
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 801, ts: "2026-09-07T15:40:00Z", person: cat, name: Cat, body: null, media: true}
+    - {id: 802, ts: "2026-09-07T15:41:00Z", person: ben, name: Ben, body: null, media: true}
+    - {id: 803, ts: "2026-09-07T15:43:00Z", person: cat, name: Cat, body: "哈哈哈"}
+
+- name: n4_banter_no_plan
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 901, ts: "2026-09-07T16:00:00Z", person: ada, name: Ada, body: "邊個偷食咗我雪櫃嗰件蛋糕"}
+    - {id: 902, ts: "2026-09-07T16:00:30Z", person: ben, name: Ben, body: "唔係我"}
+    - {id: 903, ts: "2026-09-07T16:01:00Z", person: cat, name: Cat, body: "我淨係食咗一半"}
+    - {id: 904, ts: "2026-09-07T16:01:20Z", person: ada, name: Ada, body: "你死喇"}
+
+- name: n5_already_in_notebook_no_new_detail
+  expect: none
+  workspace: friends
+  notebook:
+    - title: "Dinner 19 Sept"
+      description: "Dinner on the 19th at Luk Fook, Sai Kung, 7:30pm, four people; booked by Ada."
+      anchor_date: 20260919
+      body: "Ada booked Luk Fook in Sai Kung for 7:30pm on the 19th, four people. Ben and Cat confirmed."
+  batch:
+    - {id: 1001, ts: "2026-09-09T11:00:00Z", person: ada, name: Ada, body: "19號西貢六福 7 點半記得啊"}
+    - {id: 1002, ts: "2026-09-09T11:00:30Z", person: ben, name: Ben, body: "記得"}
+
+# --- added 2026-09-08 after an external brainstorm (issue #118). Both
+# reviewers, independently, named shapes the first ten could not see: an
+# adversarial negative carrying every surface feature of a positive, the solo
+# form of the update path, an invitation with no uptake, the Cantonese-only
+# twin of p2 (a lexical lever would silently re-create the miss there), a
+# settled solo plan (so "one person's plan" is not learned as "always an
+# entry"), and a conditional.
+
+- name: p6_solo_update_to_an_existing_entry
+  expect: update
+  workspace: friends
+  updates: "Dinner 19 Sept"
+  notebook:
+    - title: "Dinner 19 Sept"
+      description: "Dinner on the 19th; venue undecided between Sai Kung and Central."
+      anchor_date: 20260919
+      body: "Ada asked about the 19th; Ben and Cat can make it. Venue undecided: Sai Kung or Central."
+  batch:
+    - {id: 1101, ts: "2026-09-08T10:00:00Z", person: ada, name: Ada, body: "19號我 book 咗西貢六福 7 點半，4 位"}
+
+- name: p7_cantonese_only_solo_plan
+  expect: create
+  workspace: friends
+  anchor_date: 20260912
+  must_cite: [1201]
+  batch:
+    - {id: 1201, ts: "2026-09-07T18:13:23Z", person: ben, name: Ben, body: "今個星期六我去數碼港個 hackathon，未搵到隊友，嗰晚食咩都未諗"}
+
+- name: n6_stated_then_cancelled
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 1301, ts: "2026-09-07T14:00:00Z", person: cat, name: Cat, body: "今個禮拜六去大帽山行山，大家得唔得？"}
+    - {id: 1302, ts: "2026-09-07T14:00:40Z", person: ben, name: Ben, body: "得"}
+    - {id: 1303, ts: "2026-09-07T14:30:00Z", person: cat, name: Cat, body: "算啦，天文台話禮拜六打風，取消咗佢"}
+    - {id: 1304, ts: "2026-09-07T14:31:00Z", person: ben, name: Ben, body: "ok 下次"}
+
+- name: n7_invitation_nobody_picks_up
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 1401, ts: "2026-09-07T11:00:00Z", person: ada, name: Ada, body: "今個禮拜六邊個得閒？"}
+    - {id: 1402, ts: "2026-09-07T12:10:00Z", person: cat, name: Cat, body: null, media: true}
+    - {id: 1403, ts: "2026-09-07T12:11:00Z", person: ben, name: Ben, body: "哈哈"}
+
+- name: n8_settled_solo_plan_nothing_open
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 1501, ts: "2026-09-07T18:20:00Z", person: ben, name: Ben, body: "今個禮拜六我去數碼港個 hackathon，隊友搵齊晒，嗰晚同佢哋食咗飯先返"}
+
+- name: n9_conditional_not_a_plan
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 1601, ts: "2026-09-07T09:00:00Z", person: cat, name: Cat, body: "如果禮拜六唔使返工，我可能去睇下個 hackathon"}
+    - {id: 1602, ts: "2026-09-07T09:01:00Z", person: ada, name: Ada, body: "睇下啦"}

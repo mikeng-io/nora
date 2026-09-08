@@ -353,15 +353,6 @@ NATIVELY_AUTHORED = {
     # `note-curation`: a new adaptor has no prior prompt to have moved and no
     # fixture that could pin one.
     "note-candidates",
-    # The note tier's pass 6, entity-resolution adjudication (issue #100).
-    # NATIVE even though its reasoning
-    # and its four worked examples are adapted from graphiti-core's
-    # `dedupe_nodes.py` (Apache-2.0 — see THIRD_PARTY_NOTICES.md): this set is
-    # about whether a prior prompt exists to pin byte-identity against, and a
-    # prompt re-authored in this repo's format has no more of one than a
-    # prompt written from scratch. The upstream shape did not survive contact
-    # anyway — its list variant echoes UUIDs, which `dream_screen` drops.
-    "note-entity-resolution",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

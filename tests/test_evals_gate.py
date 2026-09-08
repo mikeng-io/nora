@@ -251,4 +251,5 @@ def test_export_langfuse_suite_choice_is_scoped_to_deterministic_suites():
     pins the deterministic suites still resolve to the same corpus files, and
     the full suite set."""
     assert set(SUITES) == {"trigger", "no_trigger", "all", "adversarial",
-                           "journeys", "participation", "relevance_gate"}
+                           "journeys", "participation", "relevance_gate",
+                           "note_candidates"}

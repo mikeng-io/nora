@@ -142,6 +142,7 @@ from nora.agent.dream_screen import screen
 from nora.agent.egress import scan_identifiers
 from nora.agent.security import looks_like_coordinate
 from nora.agent.tools import note_handle
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import NoteCreationProposal
 from nora.domain.ports import (
@@ -183,15 +184,16 @@ class ModelClient(Protocol):
     """The debrief's one collaborator that talks to a model.
 
     A documented structural type rather than a `nora.domain.ports` Protocol,
-    following `nora.language.observer._ModelClient`'s stated precedent: one
-    consumer, one verb, and promoting it would commit a production
-    implementation plus a fake to the shared contract-suite rule for a shape
-    with nothing to share it with. `nora.engagement` may not import
+    on the rule that outlived the module that first stated it (the language
+    tier's observer, deleted 2026-09-07): one consumer, one verb, and
+    promoting it would commit a production implementation plus a fake to the
+    shared contract-suite rule for a shape with nothing to share it with.
+    `nora.engagement` may not import
     `nora.config` or build an OpenAI client, so the real one is constructed in
     the composition root and injected.
 
-    It returns a `Completion` and not a `str`, which is the one place this
-    differs from `_ModelClient` — see `Completion`.
+    It returns a `Completion` and not a `str`, which is the one place it
+    differs from the shape it inherited — see `Completion`.
     """
 
     @property
@@ -203,8 +205,9 @@ class ModelClient(Protocol):
 class ObjectiveSource(Protocol):
     """One objective body by name, read fresh on every call.
 
-    A SOURCE and not a string, for `nora.language.observer._ObjectiveSource`'s
-    reason: the objective files are bind-mounted and hot-reload on mtime, so a
+    A SOURCE and not a string, for the reason the same shape was given in the
+    language tier's observer (deleted 2026-09-07): the objective files are
+    bind-mounted and hot-reload on mtime, so a
     stage handed the text at construction would keep sending whatever was on
     disk when the process started and an operator's edit would look like it did
     nothing. That argument is stronger here than anywhere else it has been made
@@ -548,6 +551,13 @@ class Wiring:
     timeout_seconds: float
     store_timeout_seconds: float
     rebuild_after_folds: int
+    # The shared media join (issue #116). The fold renders these rows for a
+    # model, so it needs the same answer to «what did that photo show» that
+    # the reply path gets — on master the description rode in `messages.body`
+    # and every consumer had it. `None` is the inert state and renders the
+    # bare handles the row actually carries. LAST, because a defaulted field
+    # cannot precede the ones above it.
+    media_join: MediaJoin | None = None
 
 
 #: How many notes one fold may raise. The objective asks for at most two and
@@ -889,6 +899,7 @@ async def run(
     store_timeout_seconds: float,
     rebuild_after_folds: int,
     now_ms: int,
+    media_join: MediaJoin | None = None,
     notes_read: frozenset[str] = frozenset(),
     tz: tzinfo | None = None,
 ) -> None:
@@ -962,6 +973,28 @@ async def run(
             )
             outcome = "unavailable"
             return
+        if media_join is not None:
+            # BOUNDED like every other store call the fold makes, and counted
+            # in `STORE_CALLS_PER_FOLD`: this is a real read of
+            # `media_objects` on a slot-held path, and a hold whose declared
+            # ceiling omits one of its awaits is the arithmetic the validator
+            # exists to catch (it caught this one the moment it was written).
+            #
+            # Its failure is NOT the read's failure, though, so it is outside
+            # the `try` above: `enrich` degrades to the unmodified rows, and
+            # folding it into that `except` would report `unavailable` — a fold
+            # that did not happen — when what happened is a fold with thinner
+            # evidence.
+            try:
+                batch = await asyncio.wait_for(
+                    media_join.enrich(batch, path="debrief"),
+                    timeout=store_timeout_seconds,
+                )
+            except Exception:
+                log.exception(
+                    "debrief: media join failed (tag=%s); folding on the bare "
+                    "handles", trace.tag_id,
+                )
 
         # S2's TRIGGER. Two conditions, and the ORDER of the check is the
         # measurement: when both hold, this is an `ungrounded` re-derivation,

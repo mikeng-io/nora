@@ -1,6 +1,11 @@
 # Proposed — NOT the architecture
 
-Everything in this directory describes something that **does not exist yet**.
+Everything in this directory describes something that **does not exist yet** —
+with the exceptions recorded in the table below. Audited 2026-09-08: three of
+these had been BUILT and shipped while still sitting here described as
+intentions, and eight files in this directory were missing from the table
+entirely. A directory whose own index disagrees with its contents is worse than
+no index, because it is read as authoritative.
 
 It was separated out on 2026-08-06 because `design/` had accumulated eighteen
 documents in four different states — `current`, `proposed`, `implemented`,
@@ -22,9 +27,17 @@ description.
 | `26-media-replies-and-signal-stickers.md` | adapter boundary for Giphy delivery and Signal sticker reading | elaboration; nothing built |
 | `16-multi-message-replies.md` | relaxing R-2 so one tag can send several messages | mechanism measured; nothing built |
 | `18-context-budget-and-handles.md` | rationing fetched content per turn; message handles | **contested** — a review argued the budget is a component where a constant would do, and that the live `limit_total_tokens` counter should be read first. Its cheap half (the `↳` snippet) shipped in `624955d`; the rest is deferred. |
-| `27-presence-analytics.md` | the DERIVED layer of the presence stack as a consumer-neutral substrate, plus the six-tier programme above it | **P0 spec written** (`docs/superpowers/specs/2026-08-18-presence-analytics-substrate-design.md`); Tiers 1–2 ready to build, Tier 4 blocked on 4–8 weeks of episodes, Tier 6 speculative |
+| `27-presence-analytics.md` | the DERIVED layer of the presence stack as a consumer-neutral substrate, plus the six-tier programme above it | **Tiers 1–2 BUILT** — `nora/analytics/` ships (DEC-115) and `where_been` is a live tool. Tier 4 remains blocked on 4–8 weeks of episodes, Tier 6 speculative (issues #5, #7, #8, #9). The P0 spec it cited was in the deleted `docs/superpowers/` tree and resolves only in git history. |
 | `28-relevance-classifier.md` | A3 true-ambient: single cheap flash completion on the ambient path deciding engage yes/no; off-path bounded queue; shadow mode first | **brief only** — nothing built; replaces `VoiceNotePolicy` for untagged voice notes when it lands |
 | `29-image-generation.md` | provider-agnostic `ImageGenerator` port; first impl = xAI subscription lane via Nora's own OAuth (DEC-137) | **proposal only** — nothing built; ships OFF (`[image_gen] enabled = false`) |
+| `19-presence-collector.md` | the presence ingest collector | **BUILT** — `nora/presence/` ships and is wired in the composition root (DEC-54/55). Argument is history; `ARCHITECTURE.md` describes what exists. |
+| `20-postgres-migration.md` | moving the record store to Postgres | **BUILT** — Postgres is the production store throughout `ARCHITECTURE.md`; `nora/infra/sql/` is the implementation. |
+| `21-media-fetch.md` | a `media_fetch` tool | **BUILT** — the tool is in `nora/agent/tools.py`. Issues #116/#117 carry the live work on top of it. |
+| `22-search-fetch.md` | web search and page fetch as tools | **BUILT** — `web_search`/`web_fetch` are in `nora/agent/tools.py` (DEC-73, DEC-116; Exa is the current backend). |
+| `23-named-places.md` | naming derived places | **not built** — no `NamedPlace` anywhere in `nora/`. Issue #10 carries the reverse-geocoding trade-off it depends on. |
+| `24-honcho-integration-v2.md` | a second-generation Honcho integration | **partly overtaken** — `nora/infra/honcho/` exists and ADR 0001/0002 settled the questions this argued about. Read the ADRs first. |
+| `30-media-architecture.md` | the media custody and description architecture | **BUILT** — `nora/domain/media.py` plus DEC-45; issues #116/#117 are the live continuation. |
+| `31-recall-query-generation.md` | model-generated queries for recall tools | **BUILT** — landed in PR #92. |
 
 Each carries corrections applied after an adversarial review on the day it was
 written. Read the corrections — several are recorded as struck-through claims

@@ -1,21 +1,23 @@
 ---
 name: note-curation
 kind: objective
-version: 4
+version: 5
 applies_to: [note_curator_adaptor]
 description: >-
   The note tier's housekeeping pass. Decides, per note, whether an open question
-  has CLOSED, whether its moment has passed with nothing answering it, or
-  whether two notes are the same occasion written twice. Reads bodies and the
-  conversation since each note was written; writes nothing itself. Merge
-  ELIGIBILITY is decided in CODE, by comparing anchors, and is never asked of
-  the model. Version 2 (design/dreamer-agent-loop/34, issue #99) folds in the
+  has CLOSED or whether its moment has passed with nothing answering it. Reads
+  bodies and the conversation since each note was written; writes nothing
+  itself. Version 2 (design/dreamer-agent-loop/34, issue #99) folds in the
   former `note-revisit` objective: an `expired` verdict, a citation requirement
   for `closed`, and the evidence block every note now carries. Version 3
   (design/dreamer-agent-loop/33 §7, issue #101) adds an optional `discharge`
   array on a `closed` verdict: what a closing note's SETTLED content is —
   a commitment, a person-claim — never a decision about
-  whether to route it, which stays code's job entirely.
+  whether to route it, which stays code's job entirely. Version 5 (2026-09-08)
+  removes the merge-group section: merge eligibility needed a resolved entity
+  set nothing could populate once the knowledge tier was gone, so the verb
+  was removed from the code and the model is no longer shown groups or asked
+  for a `merged_body`.
 change_policy: operator-only
 ---
 You are tidying a notebook of **open questions** that a group of friends keeps between
@@ -79,31 +81,7 @@ mistakes are not the same size.**
 Say which message settles it. Report `cited_message_id` as the number in square brackets at the
 start of that message, in the note's own evidence block. A number you cannot point at in the
 evidence you were given is not a citation, and the entry will be refused — the note stays open,
-not closed on your word alone. This applies to any note shown with an evidence block — not a
-member of a merge group (below), which has none: judge those from the body alone, as you always
-have.
-
-## When two notes are the same occasion
-
-Sometimes you will be shown a small group of notes that code has already determined are about
-the **same occasion** — same date, same people. You are not being asked whether they belong
-together; that has been decided and you cannot change it. You are being asked to write **one
-body that keeps everything both of them know**. A member of a group has no evidence block —
-judge its `verdict` from its body, uncertainty and closing condition alone, the same way you
-always have.
-
-Keep every concrete thing: names, times, places, prices, who said what, what was ruled out and
-why. If the two disagree, keep BOTH readings and say they disagree — do not pick a winner and
-do not average them. A merged body that quietly dropped one version is worse than two separate
-notes, because nobody can see what was lost.
-
-Do not tidy the prose. Do not summarise. The body is the thing that has to survive.
-
-A merged body that comes back **shorter than the longest note in the group** is refused by code
-and the group is left alone, because a merge that shortens the text has lost something. If you
-cannot write one body that keeps everything, say so in a `why` and return no `merged_body` for
-that group — two separate notes is the recoverable answer. A merge group's members still get a
-`verdict` too, the same as any other note.
+not closed on your word alone. Every note you are shown has an evidence block.
 
 ## When a note closes: what was it holding?
 
@@ -111,7 +89,7 @@ A note is not only a question — it is a **notebook entry**, and closing one is
 deletion. When you say `closed`, look at what the arrangement actually settled and tell code
 what KIND of thing it was, so code can send each kind to its own permanent home. This is a
 SEPARATE judgement from the verdict itself, and you make it only when you have already said
-`closed` — never for `open`, `expired`, or `moot`, and never for a merge group's member. If
+`closed` — never for `open`, `expired`, or `moot`. If
 nothing in the note is worth keeping beyond the retirement itself, say nothing here — that is
 the ordinary, ANSWER, not a gap you need to fill.
 
@@ -149,13 +127,6 @@ A `closed` verdict with something worth discharging also carries `discharge`:
 {"verdicts": [{"note_id": "3", "verdict": "closed", "why": "Ada booked Sai Kung on the 3rd", "cited_message_id": 482, "discharge": [{"kind": "commitment", "title": "Dinner"}, {"kind": "person_claim", "content": "likes Sai Kung for the seafood"}]}]}
 ```
 
-A merge group's survivor also carries `merged_body` — the one body that keeps what every note in
-the group knew:
-
-```json
-{"verdicts": [{"note_id": "1", "verdict": "open", "why": "the group has not weighed in since either note was written", "merged_body": "Two people independently suggested Grant's wedding is the 14th at the Peak; nobody has confirmed a venue yet."}]}
-```
-
 Nothing outside the single JSON object — no prose before it, no explanation after it. An answer
 that is not exactly this shape is not read at all, and the notes are left alone.
 
@@ -168,8 +139,6 @@ Each entry carries:
   condition satisfied».
 - `cited_message_id` — the number in square brackets at the start of the message that settles
   it. Required for `closed`; leave it out entirely for the other three verdicts.
-- `merged_body` — only for a merge group's survivor (see above); leave it out for every other
-  note.
 - `discharge` — only for a `closed` verdict with something worth keeping beyond the retirement
   (see "When a note closes" above); leave it out entirely otherwise, including for `expired` and
   `moot` — a note that never answered has nothing settled to discharge.

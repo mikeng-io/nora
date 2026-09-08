@@ -34,6 +34,7 @@ from typing import Any
 from strands.tools.decorator import FunctionToolMetadata
 
 from ..domain.compute import ComputeJobStore
+from ..domain.media_join import MediaJoin
 from ..domain.models import TranscriptRow
 from ..domain.ports import (
     BlobStore,
@@ -56,6 +57,7 @@ from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
 from ..infra.version import VersionManifest
 from ..infra.vision import VisionCache, VisionClient
+from ..infra.vision.preprocess import VIDEO_CHUNK_SECONDS, VIDEO_MAX_CHUNKS
 from .links import LinkCarry
 from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
@@ -107,6 +109,9 @@ class ToolRegistry:
         describe_models: Mapping[str, str] | None = None,
         describe_providers: Mapping[str, str] | None = None,
         describe_max_bytes: Mapping[str, int] | None = None,
+        video_chunk_seconds: int = VIDEO_CHUNK_SECONDS,
+        video_max_chunks: int = VIDEO_MAX_CHUNKS,
+        media_join: MediaJoin | None = None,
         blobs: BlobStore | None = None,
         descriptions: MediaDescriptionStore | None = None,
         search: SearchProvider | None = None,
@@ -195,6 +200,17 @@ class ToolRegistry:
         # modality names one (0/None = inherit the VisionClient's shared
         # ceiling). Same VALUE-not-object split as the two maps above.
         self._describe_max_bytes = dict(describe_max_bytes or {})
+        # `[media.describe.video]`'s chunk geometry (issue #117). Held here for
+        # the same reason the per-modality maps are: `media_fetch` is built per
+        # turn and must read a clip the same way the ingest-side comprehension
+        # pass does, or the deliberate look and the automatic one disagree
+        # about how much of it was seen.
+        self._video_chunk_seconds = video_chunk_seconds
+        self._video_max_chunks = video_max_chunks
+        # The SHARED media join (issue #116) — `load_transcript` is a
+        # transcript builder inside a tool, and it must render a photo the same
+        # way the prefill just did or one prompt carries two answers about it.
+        self._media_join = media_join
         self._blobs = blobs
         # The description cache lives HERE, once per process, for the reason the
         # transit catalogue does: keyed by content hash, a per-tag cache would
@@ -621,6 +637,9 @@ class ToolRegistry:
             vision_cache=self._vision_cache, describe_models=self._describe_models,
             describe_providers=self._describe_providers,
             describe_max_bytes=self._describe_max_bytes,
+            video_chunk_seconds=self._video_chunk_seconds,
+            video_max_chunks=self._video_max_chunks,
+            media_join=self._media_join,
             search_source=self._search, weather_source=self._weather,
             parking_source=self._parking,
             street_parking_source=self._street_parking,

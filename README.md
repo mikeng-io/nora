@@ -4,7 +4,7 @@ A private ambient AI agent for a friend group's chat — Signal today, Discord
 alongside it. She reads every message silently and
 replies only when tagged. Nora v2 is a two-layer, [Strands Agents SDK](https://github.com/strands-agents/sdk-python)-based
 rebuild of the original hand-rolled v1 — see `design/00-overview.md` for the architecture
-and `docs/superpowers/specs/2026-08-03-nora-strands-spec.md` for the full spec.
+and `ARCHITECTURE.md` (arc42) for the map.
 
 ## Prerequisites
 

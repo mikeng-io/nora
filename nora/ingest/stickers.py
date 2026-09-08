@@ -1,5 +1,5 @@
-"""The sticker dedup ladder and the one vision call at the bottom of it
-(sticker spec §4).
+"""The sticker dedup ladder — CUSTODY, and the identity that makes a repeat
+sighting free (sticker spec §4).
 
 Separated from `nora.ingest.stages.media` because the responsibilities really
 are two: that module makes the body's media claims TRUE (fetch, strip, hash,
@@ -7,25 +7,30 @@ store, render), and this one decides whether any of that work is needed at all.
 Folding the ladder into `_take` would put four cache branches inside the
 function whose job is custody.
 
-**Order matters and is the whole design.** Identity before content before
-model, because each level is cheaper than the next and — crucially — the first
-is checkable before any bytes move, on a path the ingest listener awaits.
-Measured on real data: 17 sticker sightings across 10 distinct stickers, so 41%
-are already repeats before any platform RPC or vision call, and that share only
-grows as a group's sticker vocabulary saturates.
+**THE MODEL RUNG IS GONE (issue #116), and what is left is the half that was
+always about custody.** This module used to end in a vision call whose sentence
+was baked straight into `messages.body`. That is now one job for every medium —
+the spawned comprehension in `nora/ingest/comprehension.py` — because one string
+serving both the Honcho feed and the prefill made "Honcho detailed, transcript
+short" structurally impossible, and because a sticker described one way while a
+photo was described another is two mechanisms for one thing. What stays here is
+what the comprehension job cannot do: turn a repeat sighting into zero platform
+RPC, before any bytes move, on a path the ingest listener awaits.
+
+**Order still matters.** Measured on real data: 17 sticker sightings across 10
+distinct stickers, so 41% are already repeats before any platform RPC, and that
+share only grows as a group's sticker vocabulary saturates.
 
 * **Level 1, identity** (`resolve`) — known at parse time. A hit means ZERO
-  platform RPC and zero vision call.
-* **Level 2, content** (`describe` by sha256) — a description is a pure
-  function of the bytes, so the same art in a second pack or on the other
-  platform is one row and one vision call.
-* **Level 3, the model** — and the subtle case: on an identity hit the bytes
-  were never fetched, so if the description is missing they come from Nora's
-  OWN custody via `BlobStore.get`, still zero platform RPC.
+  platform RPC: the blob Nora already holds IS the answer.
+* **Level 2, custody** — a miss fetches once, stores once, and records the
+  identity so the next sighting is a level-1 hit. Content-level dedup (the same
+  art in a second pack) still happens, one layer up: the comprehension job
+  keys on the sha256 and a row that is already comprehended is never read again.
 
-**A failure is NEVER cached.** If the interpreter comes back unavailable, no
-`remember` call is made — a remembered failure would serve itself as an answer
-on every later sighting.
+**Nothing here is cached on failure.** A fetch that does not land records no
+identity — a remembered identity pointing at a blob Nora does not hold would
+serve itself as a custody claim on every later sighting.
 
 **Single-flight** sits outside all of it. Signal ingest is serialized, but the
 Discord listener is a separate task, so two people sending the same new sticker
@@ -44,7 +49,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -52,7 +56,6 @@ from nora.domain.media import MediaBlob, MediaRef, resolve_media_type, sniff_med
 from nora.domain.ports import (
     BlobStore,
     MediaDescriptionStore,
-    MediaInterpreter,
     MediaSource,
 )
 
@@ -63,19 +66,20 @@ log = logging.getLogger("nora.ingest.stickers")
 class StickerOutcome:
     """What one sticker cost and what it yielded.
 
-    `description` is RAW. The caller screens it on render, never this module at
-    store time — a screen applied before caching is one a cache hit skips.
-
     `level` is a metric label, not a branch: `identity` / `content` / `none` —
     which rung of the ladder actually answered. It is what makes "the cache is
     working" an observation instead of a belief, and it is a SEPARATE
     vocabulary from `nora_media_fetch_total`'s boolean `cached` label; the two
     were once spelled the same way and that was the wrong call (whole-branch
     review, 2026-08-15) — enumerated here so a caller cannot confuse the two.
+
+    It carries no `description` any more (issue #116): the comprehension is
+    the spawned job's, keyed on this blob's sha256, and a description handed
+    back here would have to be baked into the body to be of any use — which is
+    exactly the path that change removed.
     """
 
     blob: MediaBlob | None
-    description: str = ""
     level: str = "none"
     reason: str = ""
 
@@ -92,14 +96,10 @@ class StickerReader:
         *,
         blobs: BlobStore,
         descriptions: MediaDescriptionStore,
-        interpreter: MediaInterpreter,
-        model: str,
         metrics: Any,
     ) -> None:
         self._blobs = blobs
         self._descriptions = descriptions
-        self._interpreter = interpreter
-        self._model = model
         self._metrics = metrics
         # Per-instance, not module-level — the test-seam policy's whole point:
         # a module-level singleton would let one test's in-flight sticker leak
@@ -210,45 +210,35 @@ class StickerReader:
                 "content",
             )
 
-        # LEVEL 2 — content. A description is a pure function of the bytes, so
-        # the same art under a second identity is one row and one call.
-        existing = await self._descriptions.describe(sha256=blob.sha256)
-        if existing is not None:
-            return StickerOutcome(blob=blob, description=existing, level=level)
-
-        # LEVEL 3 — the model. On an identity hit the bytes were never fetched,
-        # so they come from Nora's own custody: still zero platform RPC.
-        if data is None:
+        # LEVEL 2 — the identity write. On an identity hit there is nothing
+        # left to record: the row already points at this blob and `resolve`
+        # just read it. On a MISS the bytes have just landed in custody, so
+        # the identity is written now — that write is what makes every LATER
+        # sighting of this sticker a level-1 hit and costs no platform RPC.
+        #
+        # `description=""` is deliberate and load-bearing: it means "index
+        # this identity, describe nothing". `SqlMediaDescriptionStore.remember`
+        # keeps whatever description is already on the row rather than
+        # clobbering it, so a sticker seen again after the comprehension job
+        # has read it does not erase what that job wrote. The description
+        # itself is the job's business now — `nora/ingest/comprehension.py` —
+        # and it is keyed on this same sha256.
+        if level == "content":
+            await self._descriptions.remember(
+                platform=platform, token=ref.fetch_token, blob=blob,
+                description="", model="",
+            )
+        elif data is None:
+            # An identity hit. Nothing was fetched, so PROVE custody before
+            # returning the blob: `[sticker a3f2c1]` promises `a3f2c1` can be
+            # produced, and an identity row outliving its bytes (a rotated key,
+            # a pruned volume) would make that promise a lie (whole-branch
+            # review I2). One `get` on a hit is the price of the claim.
             try:
-                data = await self._blobs.get(key=blob.sha256)
+                held = await self._blobs.get(key=blob.sha256)
             except Exception:
                 log.exception("could not open a held sticker blob")
-                data = None
-            if not data:
-                # `blob=None`, not `blob=blob`: custody just PROVED the bytes
-                # are absent (an identity hit whose blob store no longer has
-                # them), so returning the blob here would claim
-                # `[sticker a3f2c1]`'s promise — "a3f2c1 can be produced" —
-                # for a hash that cannot be (whole-branch review I2).
+                held = None
+            if not held:
                 return StickerOutcome(blob=None, reason="blob_missing")
-
-        # `nora_sticker_describe_seconds` (sticker spec §5.2): the interpreter
-        # call ALONE, not the ladder around it — a cache hit never reaches
-        # this line, so the ladder's near-zero lookups cannot dilute what this
-        # says about the vision model's own latency.
-        started = time.perf_counter()
-        result = await self._interpreter.describe(data=data, media_type=blob.media_type)
-        self._metrics.observe("nora_sticker_describe_seconds", time.perf_counter() - started)
-        if not result.available or not result.text:
-            # Never cached, AND `level="none"` — not the `level` this call
-            # entered with. A fetch-then-fail (or an identity hit whose model
-            # call then fails) reached this line because NOTHING answered it
-            # yet; reporting the ladder rung that merely supplied the bytes
-            # over-reports "the cache is working" on the one path an operator
-            # is watching it for (whole-branch review I4).
-            return StickerOutcome(blob=blob, level="none", reason=result.reason or "vision")
-        await self._descriptions.remember(
-            platform=platform, token=ref.fetch_token, blob=blob,
-            description=result.text, model=self._model,
-        )
-        return StickerOutcome(blob=blob, description=result.text, level="none")
+        return StickerOutcome(blob=blob, level=level)

@@ -34,17 +34,35 @@ handle — and increments `nora_media_custody_total{status=...}` with the reason
 The message is still recorded, in full, with its envelope. Nothing is silent
 and nothing is claimed.
 
-**Bytes reach a prompt for STICKERS and VOICE NOTES ONLY, and nothing else.**
-This stage still produces a type and a key for every attachment — Nora cannot
-read an arbitrary image or video, and this does not change that. A sticker is
-published pack art, identical for everyone who has the pack, not a photograph
-of somebody's life, so `stickers` (when wired) hands its bytes to one vision
-call and the description rides in the body beside the handle. A voice note is
-conversation content, not an attachment description, so `transcriber` (when
-wired) hands its bytes to local STT the same way — see `[speech.stt]` and
-`nora/infra/speech.py`. See `nora/ingest/stickers.py` for the dedup ladder
-that makes the sticker call cheap and the reasoning behind restricting vision
-to stickers alone.
+**THE BODY CARRIES A LABEL AND A HANDLE. NOTHING ELSE** (issue #116). It used
+to carry a sticker's description and a voice note's transcript baked in beside
+the handle, and that single string was read VERBATIM by two consumers with
+opposite needs — `memory_feed` wants everything, the prefill wants a line. So
+"Honcho detailed, transcript short" was not a tuning problem, it was
+structurally impossible. The comprehension lives in `media_objects` now and
+each consumer selects the fields it wants at render time.
+
+**Bytes reach a prompt for EVERY medium Nora holds, and they reach it off this
+path.** That is the other half of #116. A sticker used to be the only thing
+read automatically, on the argument that pack art is published while a photo is
+somebody's life; what that cost is the issue's own story — ten photos of a
+meal, the whole group replying around them, and the subject of the conversation
+is the one thing the record does not hold. The read is `nora/ingest/
+comprehension.py`'s, SPAWNED through the same injected `spawn` `memory_feed`
+uses, and this stage only says which blobs are worth reading. The egress screen
+did not move with it: `scan_identifiers` now runs at RENDER time, on every
+render, in the context assembler — which is stricter than running it here once,
+for the reason `nora/ingest/stickers.py` has always given (a screen applied
+before caching is one a cache hit skips).
+
+**A voice note is still transcribed INLINE, and that stays.** `transcriber`
+(when wired) hands its bytes to local STT here, before the audit write, because
+a voice note's transcript is conversation CONTENT rather than a description of
+an attachment — see `[speech.stt]` and `nora/infra/speech.py`. What changed is
+where it lands: `media_objects.content`, joined into the transcript at render,
+instead of baked into the body. The comprehension job adds a title and a
+description over that transcript with a cheap text pass; it never replaces the
+words.
 """
 
 from __future__ import annotations
@@ -53,19 +71,17 @@ import logging
 from dataclasses import replace
 from typing import Any
 
-from nora.agent.egress import scan_identifiers
 from nora.domain.media import (
     MediaBlob,
     MediaObject,
     MediaRef,
     body_with_handles,
     label_for,
-    placeholder_suffix,
     resolve_media_type,
-    sanitize_description,
 )
-from nora.domain.models import NormalizedMessage
+from nora.domain.models import NormalizedMessage, PersonRef
 from nora.domain.ports import BlobStore, MediaObjectStore, MediaSource, Transcriber
+from nora.ingest.comprehension import MediaComprehension, Subject
 from nora.ingest.exif import strip_exif
 from nora.ingest.stickers import StickerReader
 from nora.platform.registry import MediaSourceRegistry
@@ -82,8 +98,9 @@ async def run(
     metrics: Any,
     stickers: StickerReader | None = None,
     transcriber: Transcriber | None = None,
+    comprehension: MediaComprehension | None = None,
+    person: PersonRef | None = None,
     language: str = "",
-    max_description_chars: int = 200,
 ) -> NormalizedMessage:
     """Return `message` with every attachment Nora could copy in her custody.
 
@@ -103,12 +120,25 @@ async def run(
 
     `transcriber` is the `[speech.stt]` lane: when present AND a ref is a
     voice note, the custody stage transcribes the bytes INLINE (before the
-    audit write) and the transcript rides in the body beside the handle —
-    `[voice note #hex: 喂你今日...]`. A voice note is conversation CONTENT,
-    not an attachment description; a song is an audio file and stays on the
-    bare-handle path. A failed transcription is recorded with the bare handle
-    (a note is still a note), never a dropped message and never a guessed
-    transcript (R-27).
+    audit write). A voice note is conversation CONTENT, not an attachment
+    description; a song is an audio file and stays on the bare-handle path. A
+    failed transcription is recorded with the bare handle (a note is still a
+    note), never a dropped message and never a guessed transcript (R-27). The
+    transcript lands in `media_objects.content` through the comprehension job
+    rather than in the body (issue #116) — the words still reach the prompt, by
+    a join instead of by a bake.
+
+    `comprehension` is the SPAWNED read. `None` is the inert-by-config state
+    (`[media] comprehension = false`, or no vision wired): no MODEL reads any
+    medium, and every attachment keeps its bare handle. It is not «exactly the
+    deployment before this existed», and saying so was wrong in one specific
+    way this module is responsible for — a voice note's transcript is written
+    to `media_objects.content` below regardless, because STT already ran on
+    this awaited path and its words are conversation content that needs no
+    model. What the off state does cost is memory: with no job, nothing feeds
+    those words to Honcho. `person` rides along only so a comprehension can be fed to
+    Honcho under the sender's own peer (D6, mapped senders only) — this stage
+    never resolves identity and never reads it for anything else.
     """
     if not message.media:
         return message
@@ -129,31 +159,34 @@ async def run(
 
     held: list[MediaBlob] = []
     handles: list[str] = []
-    descriptions: list[str] = []
+    subjects: list[Subject] = []
     for ref in message.media:
         if ref.sticker and stickers is not None:
-            # STICKERS ONLY (spec §2.2, §5.3). Everything else keeps the
-            # pull-based path below: custody plus a bare placeholder, described
-            # only if Nora chooses to call the `media_fetch` tool. A sticker is
-            # published pack art; a photo is somebody's life — see this
-            # module's docstring and `nora/ingest/stickers.py`.
+            # STICKERS take the IDENTITY LADDER rather than the pull-based
+            # path below, and that is a CUSTODY optimisation now, not a
+            # description one: a sticker's platform-side identity is known at
+            # parse time, so a repeat sighting costs zero platform RPC. The
+            # model pass that used to live at the bottom of that ladder is the
+            # spawned comprehension job's (issue #116) — one mechanism for
+            # every medium, instead of one for stickers and none for photos.
             outcome = await stickers.read(
                 platform=message.platform, ref=ref, source=source
             )
-            blob, raw = outcome.blob, outcome.description
+            blob, raw = outcome.blob, ""
             _count(metrics, platform=message.platform,
                    status="stored" if blob else (outcome.reason or "unavailable"))
-            # `nora_sticker_descriptions_total` — the dedup ladder's cache hit
-            # rate as an OBSERVATION, not a belief (spec §5.2's justification
-            # for putting a vision call inline on the ingest path at all).
-            # `level` is `StickerOutcome.level`'s own vocabulary
+            # `nora_sticker_descriptions_total` — the dedup ladder's hit rate
+            # as an OBSERVATION, not a belief. `status` is now about CUSTODY
+            # (`ok` = the bytes are held) rather than about a description; the
+            # description's own outcome is `nora_media_comprehension_total`.
+            # `level` stays `StickerOutcome.level`'s own vocabulary
             # (identity/content/none), NOT `nora_media_fetch_total`'s
             # true/false `cached` — a separate label name on purpose, after
             # the two were once spelled the same way (whole-branch review).
             metrics.inc(
                 "nora_sticker_descriptions_total",
                 platform=message.platform,
-                status="ok" if raw else (outcome.reason or "unavailable"),
+                status="ok" if blob else (outcome.reason or "unavailable"),
                 level=outcome.level,
             )
         else:
@@ -167,11 +200,13 @@ async def run(
             # and stays on the pull-based path; this gate is the parser's
             # `voiceNote` flag, NOT the MIME top-level type (spec §4.2, and
             # `nora/domain/media.py` — voice note is a SEPARATE axis from
-            # audio/*). The transcript rides the same `descriptions` slot a
-            # sticker description would, so it inherits `sanitize_description`
-            # and the R-18 `scan_identifiers` egress guard below — a
-            # transcript is a member's words verbatim, with higher stakes than
-            # model-written prose.
+            # audio/*). The transcript rides to `media_objects.content` on the
+            # comprehension subject below, NOT into the body (issue #116); the
+            # sanitize and the R-18 `scan_identifiers` screen it inherited here
+            # now run at RENDER time, in the context assembler, on every render
+            # — a transcript is a member's words verbatim, with higher stakes
+            # than model-written prose, and a screen applied once at store time
+            # is one a cache hit skips.
             if taken is not None and ref.voice_note and transcriber is not None:
                 # `plaintext` is the SAME bytes `_take` just held to compute
                 # `blob` — reusing them here (rather than a second
@@ -200,15 +235,15 @@ async def run(
         # empty handle rather than shifting every later one onto the wrong
         # placeholder.
         handles.append(blob.handle if blob else "")
-        # A description rides only WITH a handle; `render_placeholder` enforces
-        # that too, and the empty string here is what makes a failed read read
-        # as `[sticker a3f2c1]` rather than as a colon with nothing after it.
-        descriptions.append(
-            sanitize_description(raw, max_chars=max_description_chars)
-            if blob and raw else ""
-        )
         if blob:
             held.append(blob)
+            # A comprehension subject rides only WITH a handle, for
+            # `render_placeholder`'s reason: reading bytes Nora does not hold
+            # is not something that can happen, and scheduling a read for one
+            # would be a job that can only ever answer `unavailable`.
+            subjects.append(Subject(
+                blob=blob, label=label_for(ref), transcript=raw,
+            ))
             # DEC-138 §3 M4 (inbound write path): every byte Nora takes
             # custody of gains a `source='inbound'` row in the unified media
             # index — the index is "one row per byte Nora holds", not only
@@ -238,32 +273,64 @@ async def run(
                 except Exception:
                     log.exception("media ingest: media_objects save failed")
 
+            # A VOICE NOTE'S WORDS ARE WRITTEN HERE, INLINE, AND NEVER WAIT ON
+            # A MODEL. They were captured synchronously two lines up — STT has
+            # already run and already cost what it costs — so holding them in a
+            # `Subject` until a spawned task got round to writing a TITLE for
+            # them was wrong twice:
+            #
+            #   * with `[media] comprehension = false` the job does not exist,
+            #     so the transcript reached nothing at all: STT ran, its output
+            #     went into a Subject that was never scheduled, and the words
+            #     were discarded. On master they rode in `messages.body` and
+            #     reached the record regardless of any vision wiring.
+            #   * with it on, somebody asking «佢講咩» two seconds later saw a
+            #     bare handle, because the words were queued behind a
+            #     convenience. The release fragment accepts that latency for a
+            #     PHOTO, whose content genuinely has to be read; a voice note's
+            #     content is already in hand.
+            #
+            # The comprehension job adds the title and description over this
+            # same row afterwards and passes the identical `content` through,
+            # so the two writers cannot disagree about the words.
+            if raw and ref.voice_note and media_store is not None:
+                try:
+                    await media_store.comprehend(
+                        sha256=blob.sha256, title="", description="",
+                        content=raw, model="",
+                    )
+                except Exception:
+                    log.exception("media ingest: voice transcript write failed")
+
     labels = tuple(label_for(ref) for ref in message.media)
-    rendered = placeholder_suffix(labels, tuple(handles), tuple(descriptions))
-    # R-18's floor, applied to exactly the text THIS stage composed — the
-    # placeholder run, not the sender's own words, which are the audit's
-    # business and not this stage's to censor. The LABEL and HANDLE halves
-    # cannot carry an identifier by construction (a closed label set plus
-    # hex); the DESCRIPTION half is free text a vision model wrote about a
-    # sticker's bytes, so this is no longer an assertion on an impossible
-    # state — it is a real guard. A hit costs the descriptions, never the
-    # handles: the sticker is unread, not lost, and the blob really is held.
-    kind = scan_identifiers(rendered)
-    if kind is not None:
-        log.warning(
-            "a media description would have carried a %s identifier — "
-            "rendering without descriptions", kind,
-        )
-        metrics.inc("nora_egress_blocks_total", kind=kind)
-        return replace(
-            message,
-            body=body_with_handles(message.body, labels, tuple(handles)),
-            media_blobs=tuple(held),
+
+    # THE READ, SCHEDULED — never awaited (issue #116). Custody is finished at
+    # this line: every handle in `handles` names bytes Nora holds, and the body
+    # about to be written is true whether or not a model ever looks at them. So
+    # the read goes through the same injected `spawn` `memory_feed` uses, and
+    # the listener moves on to the next message rather than waiting on a video.
+    #
+    # `scan_identifiers` USED TO RUN HERE, over the composed placeholder run,
+    # and it does not any more — not because the screen was dropped but because
+    # it moved to where it binds harder. There is no free text in this body to
+    # screen: the LABEL and HANDLE halves cannot carry an identifier by
+    # construction (a closed label set plus hex). The description half now
+    # reaches a prompt through `nora.domain.media_join`, which screens it on
+    # EVERY render on all eight paths — including a render served entirely
+    # from stored rows, which
+    # a store-time screen would have been bypassed by. That is `stickers.py`'s
+    # own rule ("a screen applied before caching is one a cache hit skips")
+    # applied to the path that finally has a cache in it.
+    if comprehension is not None and subjects:
+        comprehension.schedule(
+            subjects=tuple(subjects), platform=message.platform,
+            conversation_id=message.conversation_id, person=person,
+            timestamp=message.timestamp,
         )
 
     return replace(
         message,
-        body=body_with_handles(message.body, labels, tuple(handles), tuple(descriptions)),
+        body=body_with_handles(message.body, labels, tuple(handles)),
         media_blobs=tuple(held),
     )
 

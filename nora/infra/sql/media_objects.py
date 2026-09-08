@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.media import MediaObject
+from nora.domain.ports import MediaLookup
 from nora.infra.sql.schema import MEDIA_OBJECTS
 
 log = logging.getLogger("nora.infra.sql.media_objects")
@@ -37,17 +38,49 @@ class SqlMediaObjectStore:
         self._engine = engine
 
     async def save(self, *, obj: MediaObject) -> bool:
-        stmt = pg_insert(MEDIA_OBJECTS).values(
+        insert = pg_insert(MEDIA_OBJECTS).values(
             sha256=obj.sha256,
             media_type=obj.media_type,
             size=obj.size,
             source=obj.source,
+            title=obj.title,
             description=obj.description,
+            content=obj.content,
             describe_model=obj.describe_model,
             provenance=obj.provenance or {},
             created_at_ms=obj.created_at_ms,
-        ).on_conflict_do_nothing(
+        )
+        stmt = insert.on_conflict_do_update(
             index_elements=[MEDIA_OBJECTS.c.sha256],
+            # STILL first-source-wins for a real row — the `where` is what
+            # keeps that true. It repairs exactly one thing: the SHELL
+            # `comprehend` inserts when the spawned read beats the inline
+            # custody write (`media_type=''`, `size=0`, `created_at_ms=0`,
+            # empty provenance). Under a plain `on_conflict_do_nothing` custody
+            # then had nothing to update and the row stayed a shell forever —
+            # no media type for `media_fetch`'s modality gate, no size, no
+            # birth record, and `search`'s `created_at_ms DESC` ordering putting
+            # it last for all time. The comprehension FIELDS are untouched
+            # here: a read that already landed is never rolled back by the
+            # custody write catching up.
+            set_={
+                "media_type": insert.excluded.media_type,
+                "size": insert.excluded.size,
+                "source": insert.excluded.source,
+                # MERGED, not replaced: on the race path the shell already
+                # carries the READ's chunk record, and overwriting it with the
+                # birth record would throw away the "recorded" half of DEC-161
+                # exactly when the read finished first. Birth keys win a
+                # collision; the read's keys survive beside them.
+                "provenance": MEDIA_OBJECTS.c.provenance.op("||")(
+                    insert.excluded.provenance
+                ),
+                "created_at_ms": insert.excluded.created_at_ms,
+            },
+            where=sa.and_(
+                MEDIA_OBJECTS.c.media_type == "",
+                MEDIA_OBJECTS.c.created_at_ms == 0,
+            ),
         )
         try:
             async with self._engine.begin() as conn:
@@ -55,6 +88,98 @@ class SqlMediaObjectStore:
             return True
         except Exception:
             log.exception("media_objects save failed; media stays deliverable")
+            return False
+
+    async def comprehend(
+        self, *, sha256: str, title: str, description: str, content: str,
+        model: str, provenance: dict[str, object] | None = None,
+    ) -> bool:
+        """Land one model pass's three fields on the row for `sha256`.
+
+        An UPSERT rather than an UPDATE, because the two writers race by
+        design: custody writes the index entry inline and the comprehension job
+        is SPAWNED (issue #116), so a fast model on a slow disk can arrive
+        first. `source` is `'inbound'` on the insert arm for the same reason
+        `SqlMediaDescriptionStore.remember` uses it — a comprehension only ever
+        runs on bytes that arrived — and on the conflict arm `source` and
+        `created_at_ms` are NOT in the SET at all: the birth record belongs to
+        whoever first held the bytes and is never overwritten (DEC-138).
+
+        `provenance` MERGES (`jsonb ||`) rather than replacing. What a READ
+        leaves behind — a video's chunk record (issue #117): the clip's length,
+        how much of it reached a model, whether the chunk ceiling is why the
+        rest did not — is a fact about the READING, not about the birth, and a
+        generated image's prompt/provider/aspect_ratio has to survive beside
+        it. `||` is right-biased at the top level, so a re-read updates its own
+        keys and touches no others.
+
+        **Never raises**, like every other method here. A lost comprehension
+        costs one re-read on the next sighting; it must never cost the message,
+        and this runs in a spawned task where a raise would surface only as a
+        done-callback log line.
+        """
+        insert = pg_insert(MEDIA_OBJECTS).values(
+            sha256=sha256, media_type="", size=0, source="inbound",
+            title=title, description=description, content=content,
+            describe_model=model or None, provenance=provenance or {},
+            created_at_ms=0,
+        )
+        # AN EMPTY INCOMING FIELD NEVER CLOBBERS A STORED ONE. Two writers
+        # reach this: the comprehension job, which fills all three, and the
+        # custody stage's inline voice-note write, which fills `content` alone
+        # and sends `title=""`/`description=""`/`model=""`. Unconditional SETs
+        # meant a RESENT voice note wiped the title and describe_model the job
+        # had written — self-healing only because `_already_read` re-runs the
+        # text pass, at one extra model call per resend, and NOT self-healing
+        # at all with `comprehension = false` or no text model.
+        #
+        # The same `coalesce(nullif(...))` shape `SqlMediaDescriptionStore
+        # .remember` already uses, and with the same consequence stated: a
+        # re-read cannot CLEAR a field by answering empty. That is the right
+        # trade — a describer answering nothing is a failure, and the caller
+        # refuses an all-empty result before it ever reaches this method.
+        def _keep(
+            column: sa.ColumnElement[Any], incoming: sa.ColumnElement[Any],
+        ) -> sa.ColumnElement[Any]:
+            return sa.func.coalesce(sa.func.nullif(incoming, ""), column)
+
+        stmt = insert.on_conflict_do_update(
+            index_elements=[MEDIA_OBJECTS.c.sha256],
+            set_={
+                "title": _keep(MEDIA_OBJECTS.c.title, insert.excluded.title),
+                "description": _keep(
+                    MEDIA_OBJECTS.c.description, insert.excluded.description),
+                "content": _keep(MEDIA_OBJECTS.c.content, insert.excluded.content),
+                # Keyed on the MODEL ITSELF, which is the only thing that
+                # actually discriminates the two writers. It was keyed on the
+                # description, and on the SHIPPED config —
+                # `comprehension_text_model = ""` — a video read writes
+                # `description=""` beside a full timecoded `content`, so the
+                # conflict arm never recorded the video model that did the
+                # read: `describe_model` was NULL for every clip, in the one
+                # column an operator reads to find out which describer produced
+                # what. Widening it to "any of the three" then broke the other
+                # direction, because custody's inline voice-note write always
+                # carries `content`.
+                #
+                # A writer that names no model is not claiming to have written
+                # any text — that is custody, and it must leave this column
+                # alone. A writer that names one wrote what it is sending.
+                "describe_model": sa.func.coalesce(
+                    insert.excluded.describe_model,
+                    MEDIA_OBJECTS.c.describe_model,
+                ),
+                "provenance": MEDIA_OBJECTS.c.provenance.op("||")(
+                    insert.excluded.provenance
+                ),
+            },
+        )
+        try:
+            async with self._engine.begin() as conn:
+                await conn.execute(stmt)
+            return True
+        except Exception:
+            log.exception("media_objects comprehend failed; the read is not cached")
             return False
 
     async def search(
@@ -84,6 +209,15 @@ class SqlMediaObjectStore:
                 sa.and_(
                     *[
                         sa.or_(
+                            # All three comprehension fields (issue #116), not
+                            # description alone: one model pass writes the
+                            # title and the legible content too, and an index
+                            # that could not find «the whiteboard that said
+                            # Q3» would be holding the answer and refusing to
+                            # look at it. `FakeMediaObjectStore` matches the
+                            # same three.
+                            MEDIA_OBJECTS.c.title.ilike(f"%{w}%"),
+                            MEDIA_OBJECTS.c.content.ilike(f"%{w}%"),
                             MEDIA_OBJECTS.c.description.ilike(f"%{w}%"),
                             # provenance::text — cast, not `.astext` (which
                             # raises on SQLAlchemy 2.x JSONB columns; found
@@ -122,6 +256,36 @@ class SqlMediaObjectStore:
             return None
         return None if row is None else _row_to_object(row)
 
+    async def lookup(self, *, sha256s: tuple[str, ...]) -> MediaLookup:
+        """Many rows in ONE round trip, and the only read here that says
+        whether it could read at all.
+
+        `get` answers `None` for a missing row and for an unreachable database
+        alike — that collapse is pinned by this store's contract suite and is
+        correct for its callers, which want «no such media». The render join
+        wants the other distinction: a window of ten photos rendering bare
+        because the index is down is a different event from ten photos nobody
+        has read yet, and only one of them is worth waking an operator for.
+
+        `available=False` carries NO objects even if some rows came back,
+        because a partial answer to «what does this window hold» is one a
+        caller would render as complete."""
+        if not sha256s:
+            return MediaLookup(available=True, objects={})
+        stmt = sa.select(MEDIA_OBJECTS).where(
+            MEDIA_OBJECTS.c.sha256.in_(sha256s)
+        )
+        try:
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(stmt)).all()
+        except Exception:
+            log.exception("media_objects lookup failed; the join cannot read")
+            return MediaLookup(available=False, reason="store")
+        return MediaLookup(
+            available=True,
+            objects={r.sha256: _row_to_object(r) for r in rows},
+        )
+
     async def by_prefix(
         self, *, handle: str, limit: int = 100,
     ) -> tuple[MediaObject, ...]:
@@ -158,4 +322,13 @@ def _row_to_object(row: sa.Row[tuple[Any, ...]]) -> MediaObject:
         provenance=dict(row.provenance or {}),
         describe_model=row.describe_model,
         created_at_ms=row.created_at_ms,
+        # The COLUMN, and nothing else. A read here must round-trip what a
+        # write put in — a fallback onto `provenance["title"]` would make
+        # `get(save(obj)) != obj` for every generated object, which the
+        # contract suite is what caught. Generated rows written before
+        # migration 0052 carry their title only in provenance; `media_search`
+        # is the one reader that cares and it already falls back to the
+        # description, and `generate_image` fills the column now.
+        title=row.title,
+        content=row.content,
     )

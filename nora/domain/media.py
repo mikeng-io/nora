@@ -53,6 +53,8 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 # How much of the sha256 rides in the rendered placeholder. Six hex characters
@@ -183,14 +185,34 @@ class MediaObject:
     `sha256` is the content address of the bytes in the SAME `blob_store`
     (rustfs) every acquisition path uses — inbound photos, generated images
     and fetched attachments land in ONE table, distinguished by `source`
-    (an attribute, not a table). `description` is a pure function of the
-    bytes; it is SEEDED for generated media at creation (the prompt IS the
-    description) or learned by a describer on first sight.
+    (an attribute, not a table).
+
+    **`title` / `description` / `content` are the three comprehension fields
+    (issue #116, migration 0052), and they are ONE model pass, not three.**
+    Reading an image or a video is the expensive part; extra output fields on
+    the same call are near-free, so the pass produces all three at once:
+
+      `title`       what the thing IS — a few words, the handle a human
+                    would use for it.
+      `description` what it SHOWS — a sentence or two.
+      `content`     everything legible or audible IN it, in full: the text on
+                    the whiteboard, the words in a voice note. Never
+                    truncated; `media_fetch` is what serves it on demand.
+
+    Each is a pure function of the bytes, which is what makes the sha256 a
+    valid forever-key for all three (`VisionCache`'s argument, now applying
+    to the whole triple). ALL THREE EMPTY is an INDEX ENTRY — the row says
+    Nora holds these bytes and claims nothing about them, which is exactly
+    the state every inbound object is in between custody and comprehension.
+
+    A query-conditioned answer (`media_fetch`'s layer 2) is a function of
+    (bytes, question) and therefore belongs in NONE of these columns — see
+    `nora/agent/tools.py`'s media_fetch.
 
     `provenance` is source-dependent JSONB — the birth record:
       generated: prompt, title, description, provider, model, aspect_ratio,
                  platform, conversation_id
-    `describe_model` records which describer wrote the description (NULL
+    `describe_model` records which describer wrote the comprehension (NULL
     when seeded from the prompt). `platform`/`conversation_id`/`created_at_ms`
     record where the object was born — the audit trail.
     """
@@ -203,20 +225,52 @@ class MediaObject:
     provenance: dict[str, object] | None = None
     describe_model: str | None = None
     created_at_ms: int = 0
+    # Defaulted, so every existing construction site — the ingest index write,
+    # `generate_image`, four contract fixtures — stays valid and produces the
+    # honest "not comprehended yet" row.
+    title: str = ""
+    content: str = ""
 
     @property
     def handle(self) -> str:
         return self.sha256[:HANDLE_CHARS]
+
+    @property
+    def caveat(self) -> str:
+        """The sentence this READ has to carry about what it did NOT see.
+
+        Stored in provenance rather than glued onto `description`, and that is
+        a correctness fix rather than tidiness. Appended to the description it
+        was indistinguishable from it at render time, so the transcript's
+        `comprehension_render_chars` bound clipped it off — and it clipped it
+        precisely when the description was RICH, which is the case where a
+        confident-sounding partial read does the most damage. «This clip runs
+        about 20 minutes and I only watched the first 4» became «(This clip
+        runs a».
+
+        Kept apart, every renderer appends it LAST and after its own clip, so
+        no bound can eat it: the transcript join, `media_fetch`'s stored
+        reading, and the Honcho feed all carry it whole.
+        """
+        return str((self.provenance or {}).get("media_caveat", ""))
+
+    @property
+    def comprehended(self) -> bool:
+        """Whether anything has actually read these bytes.
+
+        The three columns default to `''` on every row custody writes, so
+        «indexed» and «understood» are the same shape in SQL and must not be
+        the same answer in Python: a comprehension job that treated an index
+        entry as done would never read a single photo, and `media_fetch`
+        serving one would answer `ok` with nothing in it.
+        """
+        return bool(self.title or self.description or self.content)
 
     # Generated-media provenance accessors (NULL-equivalent when the object
     # is not generated): the generated-image library shape DEC-137 built.
     @property
     def prompt(self) -> str:
         return str((self.provenance or {}).get("prompt", ""))
-
-    @property
-    def title(self) -> str:
-        return str((self.provenance or {}).get("title", ""))
 
     @property
     def provider(self) -> str:
@@ -308,8 +362,8 @@ def sniff_media_type(data: bytes) -> str:
     `resolve_media_type` can only resolve what was DECLARED or guessable from
     a FILENAME, and a Signal sticker has neither, so the type has to come from
     the bytes actually fetched, or the description never reaches the vision
-    model at all — `StickerInterpreter`'s `_INTERPRETABLE` gate (correctly)
-    refuses anything not starting with `image/`, and an unresolved sticker
+    model at all — the comprehension pass (correctly) refuses a media type
+    outside image/video/audio before any model call, and an unresolved sticker
     resolves to `""`.
 
     Deliberately a sniff of a closed, small set of magic numbers observed on
@@ -326,6 +380,56 @@ def sniff_media_type(data: bytes) -> str:
     if data[:4] == b"GIF8":
         return "image/gif"
     return ""
+
+
+def label_from_media_type(media_type: str) -> str:
+    """The label a RECORDED media type earns on its own.
+
+    `label_for` answers the same question from a `MediaRef`, which carries the
+    platform's `voice_note`/`sticker` flags; this answers it from what the
+    custody stage actually stored, which does not. So it can never return
+    `voice note` or `sticker` — those two are separate axes, and inventing
+    either from `audio/*` or `image/*` would put a claim in the record's mouth.
+
+    It exists for the render join, which must not take a label from a body:
+    `body` is sender-supplied and `voice note` is the one label whose detail
+    renders UNCLIPPED, so a typed `[voice note a3f2c1]` was a way for any member
+    to switch off the only bound on per-attachment prompt spend.
+    """
+    top, subtype = parse_media_type(media_type)
+    if not top:
+        return "file"
+    if top == "audio":
+        return "audio"
+    if top == "application":
+        return "document" if subtype in _DOCUMENT_SUBTYPES else "file"
+    return _BY_TOP_LEVEL.get(top, "file")
+
+
+def label_agrees(label: str, media_type: str) -> bool:
+    """Whether a label CLAIMED by a body is consistent with the recorded type.
+
+    The join reads a placeholder's label off the body — the record does not
+    store one, and `voice note` and `audio` are the same top-level type — so
+    the body is the only place the distinction survives. That is fine for a
+    label the custody stage wrote and dangerous for one a member typed, and the
+    two are indistinguishable at render.
+
+    So the body may REFINE but never contradict: `voice note` is accepted over
+    `audio/*` and `sticker` over `image/*`, because those are the two axes the
+    media type genuinely cannot express. Anything else must match what
+    `label_from_media_type` derives, and a mismatch falls back to it.
+    """
+    if not label or label not in LABELS:
+        return False
+    derived = label_from_media_type(media_type)
+    if label == derived:
+        return True
+    if label == "voice note":
+        return derived == "audio"
+    if label == "sticker":
+        return derived == "image"
+    return False
 
 
 def label_for(ref: MediaRef) -> str:
@@ -366,7 +470,7 @@ _FORBIDDEN = str.maketrans({
 })
 
 
-def sanitize_description(raw: str, *, max_chars: int) -> str:
+def sanitize_description(raw: str, *, max_chars: int = 0) -> str:
     """A model's sentence, made safe to render inside a placeholder.
 
     This module used to be safe BY CONSTRUCTION: `render_placeholder` could
@@ -375,6 +479,16 @@ def sanitize_description(raw: str, *, max_chars: int) -> str:
     property, and this function is what replaces it — explicit screening rather
     than a guarantee.
 
+    **`max_chars` defaults to 0 = UNBOUNDED, and that is the change issue #116
+    made.** The 200-character clip existed because the description was baked
+    into `messages.body`, a durable string two consumers read verbatim, so
+    every character of it was paid for on every prefill forever. It is not
+    baked in any more: the comprehension lives in `media_objects` and each
+    consumer selects the fields it wants at render time, so the bound belongs
+    on what the TRANSCRIPT renders (title + description), not on what is
+    STORED. Truncating the stored text would throw away exactly the half
+    `media_fetch` exists to serve.
+
     It does NOT screen for identifiers. That is `nora.agent.egress
     .scan_identifiers`' job and it runs in the caller, at every render, for the
     reason `VisionCache`'s docstring gives: a screen applied at STORE time can
@@ -382,17 +496,126 @@ def sanitize_description(raw: str, *, max_chars: int) -> str:
     """
     collapsed = " ".join(str(raw).split())
     cleaned = collapsed.translate(_FORBIDDEN).strip()
-    return cleaned[:max_chars]
+    return cleaned[:max_chars] if max_chars > 0 else cleaned
+
+
+# The label whose comprehension is the WORDS IN THE ROOM rather than a
+# description OF something (issue #116 decision 4). A voice note is
+# conversation content: `nora/ingest/stages/media.py` has said so since the
+# STT lane landed, and collapsing it to «title - description» would mean Nora
+# stops hearing what people actually said and starts reading a summary of it.
+# So this one label renders its `content` — the full transcript — and the
+# title/description it also carries exist for Honcho and for search.
+#
+# It is a SET rather than a string comparison so a future label with the same
+# property (a transcribed video note) is one entry, not a second branch.
+CONTENT_LABELS = frozenset({"voice note"})
+
+
+def media_detail(
+    *, label: str, title: str, description: str, content: str = "",
+) -> str:
+    """What rides after the colon in `[image a3f2c1: …]` at RENDER time.
+
+    `<title> - <description>` for everything Nora looked at, and the FULL
+    `content` for a voice note (see `CONTENT_LABELS`). Either half may be
+    missing — a comprehension that produced only a title renders only the
+    title, never a dangling separator — and all-empty renders `""`, which
+    `render_placeholder` turns back into the bare `[image a3f2c1]` an
+    un-comprehended object has always been.
+
+    **`content` is the FALLBACK for any label, not only a voice note's.** A
+    read can legitimately produce content and nothing else — a video read with
+    no `comprehension_text_model` (the shipped default) has a full timecoded
+    window run and no synthesized headline, and a model can answer a still with
+    a transcription and no caption. Without this fallback such a row is
+    `comprehended` (so the job never retries it) and renders BARE forever: the
+    read happened, cost what it cost, and reaches the prompt as nothing. The
+    caller clips it, which is what keeps the fallback from spending a window's
+    worth of tokens on one attachment.
+
+    Sanitized by the CALLER, not here: this composes, and the screen
+    (`sanitize_description` plus `scan_identifiers`) runs on the composed
+    string at every render, never once at store time. The CAVEAT is appended by
+    the caller too, and after the clip — see `MediaObject.caveat`.
+    """
+    if label in CONTENT_LABELS and content:
+        return content
+    headline = " - ".join(part for part in (title, description) if part)
+    return headline or content
+
+
+# `[<label> <handle>]` for any label this module can produce, with the handle
+# captured. A CLOSED alternation over `LABELS` plus fixed-width hex, built from
+# the frozenset rather than hand-written, so a new label cannot be added to the
+# taxonomy and silently miss the transcript join. Longest-first, or `audio`
+# would win the prefix of nothing and `voice note` would never match.
+_PLACEHOLDER_RE = re.compile(
+    r"\[(" + "|".join(re.escape(x) for x in sorted(LABELS, key=len, reverse=True))
+    + r") ([0-9a-f]{" + str(HANDLE_CHARS) + r"})\]"
+)
+
+
+def placeholders_in(body: str) -> tuple[tuple[str, str], ...]:
+    """`(label, handle)` for every placeholder in a stored body, in order.
+
+    The reader's half of `placeholder_suffix`. It exists so the render join
+    can take a row's LABEL from the body it is rendering rather than
+    re-deriving it from the blob's media type: `voice note` and `audio` are the
+    same top-level type and different events (this module's own docstring), and
+    it is the label that decides whether a transcript renders somebody's words
+    or a summary of them. Re-deriving would be a second opinion about a fact
+    already written down.
+    """
+    return tuple(
+        (m.group(1), m.group(2)) for m in _PLACEHOLDER_RE.finditer(body)
+    )
+
+
+def enrich_placeholders(body: str, details: Mapping[str, str]) -> str:
+    """`body` with each `[image a3f2c1]` re-rendered as `[image a3f2c1: …]`.
+
+    The RENDER-time half of issue #116: `messages.body` carries the handle and
+    nothing else, and the comprehension is joined on in the assembler for the
+    one prompt that is about to be built. A handle with no entry in `details`
+    (nothing has read those bytes yet, or the join failed) is left exactly as
+    stored — `[image a3f2c1]`, claiming nothing.
+
+    Rewriting is by REGEX over the closed label set rather than by position,
+    for `body_with_handles`' reason: the text around the placeholders is
+    sender-supplied and may contain brackets, so a positional replacement would
+    silently corrupt somebody's message. A match here is a label from `LABELS`
+    followed by exactly `HANDLE_CHARS` hex — a shape a sender cannot forge into
+    a DIFFERENT blob's handle, because the handle still has to resolve in
+    `details`, which the caller builds from this conversation's own
+    `media_json`.
+    """
+    if not details:
+        return body
+
+    def _sub(match: re.Match[str]) -> str:
+        label, handle = match.group(1), match.group(2)
+        detail = details.get(handle, "")
+        return render_placeholder(label, handle, detail)
+
+    return _PLACEHOLDER_RE.sub(_sub, body)
 
 
 def render_placeholder(label: str, handle: str = "", description: str = "") -> str:
     """`[image]` before custody, `[image a3f2c1]` after it, and
-    `[sticker a3f2c1: a cartoon cat]` once something has read the bytes.
+    `[image a3f2c1: a plate of noodles - …]` once something has read the bytes.
 
     The description rides only WITH a handle, never alone. The handle is a
     promise that the blob exists and can be produced; a description without one
     would claim Nora read bytes she does not hold, which is the same lie the
     handle's own asymmetry already refuses to tell.
+
+    **The third argument is a RENDER-time value only** (issue #116). It reaches
+    this function from `enrich_placeholders`, called by the context assembler
+    for one prompt; it never reaches `body_with_handles`, and so it never lands
+    in `messages.body`. That is the whole of decision 2: one string cannot
+    serve both «Honcho detailed» and «transcript short», so the durable string
+    carries the handle and each consumer selects what it wants at render.
     """
     if not handle:
         return f"[{label}]"
@@ -404,7 +627,6 @@ def render_placeholder(label: str, handle: str = "", description: str = "") -> s
 def placeholder_suffix(
     labels: tuple[str, ...],
     handles: tuple[str, ...] = (),
-    descriptions: tuple[str, ...] = (),
 ) -> str:
     """The trailing run of placeholders for one message's attachments.
 
@@ -412,12 +634,14 @@ def placeholder_suffix(
     a single space, so this string is exactly the tail of the body — which is
     what lets `body_with_handles` rewrite it without a second copy of the
     parser's assembly rules or any positional guesswork.
+
+    **Takes no descriptions** — see `render_placeholder`. A body is a label and
+    a handle, forever.
     """
     padded_handles = handles + ("",) * (len(labels) - len(handles))
-    padded_descriptions = descriptions + ("",) * (len(labels) - len(descriptions))
     return " ".join(
-        render_placeholder(a, b, c)
-        for a, b, c in zip(labels, padded_handles, padded_descriptions, strict=True)
+        render_placeholder(a, b)
+        for a, b in zip(labels, padded_handles, strict=True)
     )
 
 
@@ -458,9 +682,15 @@ def body_with_handles(
     body: str,
     labels: tuple[str, ...],
     handles: tuple[str, ...],
-    descriptions: tuple[str, ...] = (),
 ) -> str:
     """Re-render `body`'s attachment placeholders with the handles now held.
+
+    **Handles only.** The `descriptions` argument this used to take is what
+    issue #116 removed: a sticker description baked in here rode into
+    `messages.body`, which `memory_feed` and the prefill both read VERBATIM, so
+    "Honcho detailed, transcript short" was not tunable — it was structurally
+    impossible while one string served both. The comprehension now lives in
+    `media_objects` and is joined at render time.
 
     Returns `body` UNCHANGED if its tail is not the placeholder run this
     message's labels predict. That precondition is checked rather than assumed
@@ -475,4 +705,4 @@ def body_with_handles(
     old = placeholder_suffix(labels)
     if not body.endswith(old):
         return body
-    return body[: len(body) - len(old)] + placeholder_suffix(labels, handles, descriptions)
+    return body[: len(body) - len(old)] + placeholder_suffix(labels, handles)

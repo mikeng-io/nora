@@ -12,6 +12,7 @@ import json
 
 import pytest
 
+from nora.domain.media import MediaBlob
 from nora.domain.models import DeliveryStatus, NormalizedMessage, Quote
 from nora.domain.ports import RecordStore
 from nora.infra.sql.audit import SqlRecordStore
@@ -385,3 +386,27 @@ def test_both_implementations_satisfy_the_port():
     `FakeRecordStore` has every port method at all, since `nora.testing` sits
     outside mypy's gate scope."""
     assert isinstance(FakeRecordStore(), RecordStore)
+
+
+async def test_an_unattributed_row_carries_its_custody_index(store):
+    """`UnattributedRow.media_json` (issue #116). These rows are FED TO HONCHO
+    by lazy adoption, and on master a photo's description and a voice note's
+    words rode in `body` — so a back-filled row reached memory with them. The
+    join keys on `media_json` and NEVER on the body (a handle in prose is
+    forgeable), so without this column adoption could not join at all and every
+    repaired row reached memory as `[image a3f2c1]` and nothing else.
+
+    Selecting seven columns where the row now has eight leaves the whole suite
+    green, which is why this is asserted rather than assumed."""
+    blob = MediaBlob(
+        sha256="a3f2c1" + "0" * 58, media_type="image/png", size=4)
+    await store.append(message=NormalizedMessage(
+        "signal", "g1", "group", "+852111", "Miles", 1_000,
+        "睇下 [image a3f2c1]", {}, media_blobs=(blob,),
+    ))
+
+    rows = await store.unattributed(limit=10)
+
+    assert len(rows) == 1
+    assert rows[0].media_json is not None
+    assert blob.sha256 in rows[0].media_json

@@ -497,12 +497,12 @@ FOREIGN_PAYLOAD_EXEMPT: dict[str, str] = {
 # one, which is why it read as somebody else's flake.
 #
 # What isolation this suite actually needs is "no rows from the last test", not
-# "no schema from the last test" — so the schema is built once and the four
-# tables are truncated between tests. The ENGINE stays per test (cheap, and
+# "no schema from the last test" — so the schema is built once and the tables
+# this suite can reach are truncated between tests. The ENGINE stays per test (cheap, and
 # `dispose()` still runs) because a shared engine would let one test's pool
 # state reach another's.
 @pytest.fixture(scope="module")
-def fact_pg_url(pg_admin, request) -> Iterator[str]:
+def sink_pg_url(pg_admin, request) -> Iterator[str]:
     """One database, one migration chain, for the whole module."""
     dbname = "t_dreamsink_" + uuid.uuid4().hex
     with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
@@ -540,23 +540,27 @@ async def _open_sink(name: str, request) -> AsyncIterator[tuple[object, _Impl]]:
     if not impl.needs_engine:
         yield (impl.build(None), impl)
         return
-    url = request.getfixturevalue("fact_pg_url")
+    url = request.getfixturevalue("sink_pg_url")
     engine = create_sql_engine(url)
     try:
         # Row isolation, not schema isolation — the guarantee this suite needs.
         # RESTART IDENTITY CASCADE so a sequence-backed id cannot carry a value
-        # across tests, and every fact-tier table in one statement so ordering
-        # against the foreign keys is Postgres's problem rather than ours.
+        # across tests, and every table in one statement so ordering against
+        # the foreign keys is Postgres's problem rather than ours.
         async with engine.begin() as conn:
             await conn.execute(sa.text(
-                # note_revision before note (FK), and all four listed explicitly: the
-                # note tables have no FK into the fact ones, so CASCADE does not
-                # reach them and notes accumulated across the whole module until
-                # 2026-08-27. Nothing failed — every assertion keyed on an id
-                # from `propose` — but the guarantee two lines up was false for
-                # one of four implementations, and the first shared test to
-                # assert a COUNT or call `standing()` would have got a poisoned
-                # pass.
+                # note_revision before note (FK), and every table named
+                # explicitly: the note tables have no FK into the knowledge
+                # tier's, so CASCADE does not reach them and notes accumulated
+                # across the whole module until 2026-08-27. Nothing failed —
+                # every assertion keyed on an id from `propose` — but the
+                # guarantee two lines up was false for one implementation, and
+                # the first shared test to assert a COUNT or call `standing()`
+                # would have got a poisoned pass. The knowledge tier's four
+                # tables stay in the list because the tables themselves were
+                # kept when that tier was deleted (2026-09-07); truncating a
+                # table nothing writes costs nothing and keeps the statement
+                # honest about what the database holds.
                 "TRUNCATE note_revision, note, note_candidate, note_entity, "
                 "fact_premise, fact, fact_candidate, fact_entity "
                 "RESTART IDENTITY CASCADE"

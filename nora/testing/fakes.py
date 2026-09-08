@@ -31,6 +31,7 @@ from nora.domain.ports import (
     JobStatus,
     LinkPreview,
     MediaDescription,
+    MediaLookup,
     MemoryHealth,
     Mention,
     MessageHits,
@@ -231,7 +232,7 @@ class FakeRecordStore:
             UnattributedRow(
                 id=r["id"], platform=r["platform"], sender_id=r["sender_id"],
                 ts=r["ts"], body=r["body"], conversation_id=r["conversation_id"],
-                raw_json=r["raw_json"],
+                raw_json=r["raw_json"], media_json=r["media_json"],
             )
             for r in candidates[:limit]
         ]
@@ -779,6 +780,7 @@ class FakeMediaObjectStore:
     def __init__(self, objs: Sequence[MediaObject] = (), *, fail: bool = False) -> None:
         self.objs: dict[str, MediaObject] = {}
         self.saved: list[MediaObject] = []
+        self.comprehended: list[tuple[str, str, str, str, str]] = []
         self.fail = fail
         for obj in objs:
             self.objs.setdefault(obj.sha256, obj)
@@ -787,10 +789,70 @@ class FakeMediaObjectStore:
         return sorted(rows, key=lambda o: o.created_at_ms, reverse=True)
 
     async def save(self, *, obj: MediaObject) -> bool:
+        """First-source-wins, EXCEPT that it repairs a comprehension shell —
+        the row `comprehend` inserts when a spawned read beats the inline
+        custody write (`media_type=""`, `created_at_ms=0`). Mirrors the SQL
+        store's `where` clause exactly: the comprehension FIELDS are never
+        rolled back by custody catching up, and a real row is untouched."""
         if self.fail:
             return False
         self.saved.append(obj)
-        self.objs.setdefault(obj.sha256, obj)
+        row = self.objs.get(obj.sha256)
+        if row is None:
+            self.objs[obj.sha256] = obj
+            return True
+        if row.media_type == "" and row.created_at_ms == 0:
+            merged = dict(row.provenance or {})
+            merged.update(obj.provenance or {})
+            self.objs[obj.sha256] = replace(
+                obj, title=row.title, description=row.description,
+                content=row.content, describe_model=row.describe_model,
+                provenance=merged,
+            )
+        return True
+
+    async def comprehend(
+        self, *, sha256: str, title: str, description: str, content: str,
+        model: str, provenance: dict[str, object] | None = None,
+    ) -> bool:
+        """The read landing on a row, matching the SQL store's upsert exactly:
+        it creates the row when custody has not written one yet (the two
+        writers race by design — custody is inline, the read is spawned), it
+        replaces the three comprehension fields and `describe_model`, and it
+        MERGES `provenance` rather than replacing it so a generated image's
+        birth record survives a later read of the same bytes. `source` and
+        `created_at_ms` are never touched on the conflict arm."""
+        if self.fail:
+            return False
+        self.comprehended.append((sha256, title, description, content, model))
+        row = self.objs.get(sha256)
+        merged = dict((row.provenance if row else None) or {})
+        merged.update(provenance or {})
+        if row is None:
+            self.objs[sha256] = MediaObject(
+                sha256=sha256, media_type="", size=0, source="inbound",
+                title=title, description=description, content=content,
+                describe_model=model or None, provenance=merged, created_at_ms=0,
+            )
+            return True
+        # An EMPTY incoming field keeps what is stored, matching the SQL
+        # store's `coalesce(nullif(...))` exactly: the custody stage's inline
+        # voice-note write sends `content` alone, and unconditional SETs had a
+        # RESENT voice note wiping the title the job had written.
+        self.objs[sha256] = replace(
+            row,
+            title=title or row.title,
+            description=description or row.description,
+            content=content or row.content,
+            # Keyed on the MODEL, mirroring the SQL store's `coalesce`: a
+            # writer that names none is custody, which wrote no text and must
+            # leave this column alone. Keyed on the description it was NULL for
+            # every video on the shipped config; keyed on "any of the three" a
+            # resent voice note wiped it, because custody always sends
+            # `content`.
+            describe_model=(model or None) or row.describe_model,
+            provenance=merged,
+        )
         return True
 
     async def search(
@@ -804,7 +866,16 @@ class FakeMediaObjectStore:
             pool = [o for o in pool if o.source in sources]
         if words:
             def matches(o: MediaObject) -> bool:
-                haystacks = (o.description.casefold(), json.dumps(o.provenance or {}).casefold())
+                # All THREE comprehension fields plus the provenance text,
+                # matching `SqlMediaObjectStore.search` exactly (issue #116):
+                # one model pass writes the title and the legible content too,
+                # and a fake that searched only `description` would let a query
+                # that works in Postgres come back empty here.
+                haystacks = (
+                    o.title.casefold(), o.description.casefold(),
+                    o.content.casefold(),
+                    json.dumps(o.provenance or {}).casefold(),
+                )
                 return all(any(w in h for h in haystacks) for w in words)
             pool = [o for o in pool if matches(o)]
         return tuple(pool[:limit])
@@ -813,6 +884,27 @@ class FakeMediaObjectStore:
         if self.fail:
             return None
         return self.objs.get(sha256)
+
+    async def lookup(self, *, sha256s: tuple[str, ...]) -> MediaLookup:
+        """Mirrors `SqlMediaObjectStore.lookup`, INCLUDING the axis `get` does
+        not have: `fail=True` answers `available=False` with no objects, where
+        `get` answers `None` and is indistinguishable from a miss. A fake that
+        collapsed the two would let the render join's `unavailable` branch —
+        the one an operator is paged by — go untested."""
+        if not sha256s:
+            # BEFORE the failure check, matching the SQL store exactly: no
+            # shas is no query, and a query nobody made cannot have failed.
+            # The fake checked `fail` first and answered `unavailable` for an
+            # empty tuple where production answers `available=True` — the
+            # wrong-call shape the contract suite exists to keep in step, and
+            # the healthy fixture was the only one testing that argument.
+            return MediaLookup(available=True, objects={})
+        if self.fail:
+            return MediaLookup(available=False, reason="store")
+        return MediaLookup(
+            available=True,
+            objects={s: self.objs[s] for s in sha256s if s in self.objs},
+        )
 
     async def by_prefix(self, *, handle: str, limit: int = 100) -> tuple[MediaObject, ...]:
         if self.fail:
@@ -880,37 +972,81 @@ class FakeGeocodeCacheStore:
 
 
 class FakeMediaInterpreter:
-    """In-memory `MediaInterpreter`. `calls` is the point of it: the invariant
-    that only stickers are interpreted (spec §5.3) is proved by what this
+    """In-memory `MediaInterpreter`, bound to `MediaComprehender` by
+    `tests/contract/test_media_interpreter_contract.py`. `calls` is the point
+    of it: which media actually reached a model is proved by what this
     RECORDS, not by reading the stage and believing it.
 
-    Mirrors `StickerInterpreter`'s own `media_type` gate (the review that
-    added `tests/contract/test_media_interpreter_contract.py`, fix round 1):
-    a non-image `media_type` refuses with `unsupported_format` before
-    touching `available`/`text`, exactly like production refuses a lottie
-    before any vision call goes out. Without this gate a test could feed a
-    lottie through the fake and see "no description" even if the real
-    pipeline never checked the format at all — the fake would mask the
-    omission instead of proving it absent. The refusal is still RECORDED in
-    `.calls`: only the result changes, because Task 14's sticker-only
-    invariant test asserts on what was asked, not just what was answered.
+    Mirrors `MediaComprehender`'s own gates rather than a convenient subset,
+    because a fake that answered every request the same way would make every
+    test above it decorative:
+
+    - a media type outside image/video/audio refuses with
+      `unsupported_format` before touching `available`, exactly like
+      production refuses a lottie before any model call goes out — and the
+      refusal is still RECORDED, because the invariant tests assert on what
+      was ASKED, not only on what was answered;
+    - EMPTY bytes refuse the same way (there is nothing to read);
+    - `summarize` refuses `empty` for blank text, so the voice-note lane's
+      "no transcript, no claim" branch is reachable here too.
+
+    THREE FIELDS (issue #116): `title`/`text`/`content` come back together,
+    because one model pass produces all three and a fake returning only a
+    description would let a caller forget to store the other two.
     """
 
     def __init__(self, text: str = "a cartoon cat", *, available: bool = True,
-                 reason: str = "") -> None:
+                 reason: str = "", title: str = "a cat",
+                 content: str = "") -> None:
         self.text = text
+        self.title = title
+        self.content = content
         self.available = available
         self.reason = reason
         self.calls: list[tuple[str, int]] = []
+        self.labels: list[str] = []
+        self.summarized: list[str] = []
         self.model = "fake-vision"
+        self.text_model = "fake-text"
 
-    async def describe(self, *, data: bytes, media_type: str) -> MediaDescription:
+    async def describe(
+        self, *, data: bytes, media_type: str, label: str = "",
+    ) -> MediaDescription:
         self.calls.append((media_type, len(data)))
-        if not media_type.startswith("image/"):
+        self.labels.append(label)
+        top = media_type.partition("/")[0].lower()
+        if top not in ("image", "video", "audio") or not data:
             return MediaDescription(available=False, reason="unsupported_format")
         if not self.available:
             return MediaDescription(available=False, reason=self.reason or "vision")
-        return MediaDescription(available=True, text=self.text)
+        if not (self.title or self.text or self.content):
+            # A 200 with nothing readable in it is a FAILURE TO ANSWER, never
+            # "the image was blank" — the same call `MediaComprehender` makes,
+            # and the same call `VisionClient` makes one level below it. A fake
+            # that returned an available-but-empty triple here would let a
+            # caller store a blank comprehension and stay green (R-51).
+            return MediaDescription(available=False, reason="empty")
+        return MediaDescription(
+            available=True, title=self.title, text=self.text,
+            content=self.content, model=self.model,
+        )
+
+    async def summarize(self, *, text: str) -> MediaDescription:
+        self.summarized.append(text)
+        if not text.strip():
+            return MediaDescription(available=False, reason="empty")
+        if not self.available:
+            return MediaDescription(available=False, reason=self.reason or "vision")
+        if not (self.title or self.text):
+            return MediaDescription(available=False, reason="empty")
+        # A DIFFERENT model from `describe`'s, mirroring production: a voice
+        # note's headline is written by the text model, not by the describer
+        # that would have read its bytes. A fake reporting one model for both
+        # would let a caller conflate them and stay green.
+        return MediaDescription(
+            available=True, title=self.title, text=self.text,
+            model=self.text_model,
+        )
 
 
 class FakeTranscriber:

@@ -201,3 +201,252 @@ async def test_an_unreachable_database_answers_false_and_empty_and_never_raises(
     assert await broken.get(sha256=CAT) is None
     assert await broken.search(query="cat") == ()
     assert await broken.by_prefix(handle="aabbcc") == ()
+    # `comprehend` runs in a SPAWNED task, where an exception would surface
+    # only as a done-callback log line. A lost comprehension costs one re-read
+    # on the next sighting and must never cost anything else.
+    assert await broken.comprehend(
+        sha256=CAT, title="a cat", description="a cat", content="", model="glm",
+    ) is False
+
+
+# ---- the comprehension verb (issue #116) -----------------------------------
+#
+# `save` is first-source-wins and `comprehend` is an upsert, and the pair has
+# to hold in BOTH orders because the two writers race by design: custody writes
+# the index row INLINE (the handle is a promise the bytes are retrievable) and
+# the model pass is SPAWNED, so a fast model on a slow disk arrives first.
+
+
+async def test_a_comprehension_lands_on_a_row_custody_already_wrote(store):
+    await store.save(obj=_obj(CAT, source="inbound", prompt="", description=""))
+
+    assert await store.comprehend(
+        sha256=CAT, title="a plate of noodles",
+        description="a bowl of wonton noodles on a marble table",
+        content="生記粥麵", model="glm",
+    ) is True
+
+    got = await store.get(sha256=CAT)
+    assert got is not None
+    assert (got.title, got.description, got.content) == (
+        "a plate of noodles",
+        "a bowl of wonton noodles on a marble table",
+        "生記粥麵",
+    )
+    assert got.describe_model == "glm"
+    assert got.comprehended is True
+
+
+async def test_a_comprehension_that_beats_custody_creates_the_row(store):
+    """The spawned read finishing before the inline index write is not an
+    error — it is the ordinary race. A plain UPDATE would have silently dropped
+    the comprehension on the floor."""
+    assert await store.comprehend(
+        sha256=DOG, title="a dog", description="a dog in the park",
+        content="", model="glm",
+    ) is True
+
+    got = await store.get(sha256=DOG)
+    assert got is not None
+    assert got.title == "a dog"
+
+
+async def test_custody_repairs_the_shell_a_winning_read_left_behind(store):
+    """And the row it leaves is a SHELL — `media_type=""`, `size=0`,
+    `created_at_ms=0`, no birth record — because a read knows nothing about
+    where the bytes came from. Under a plain `on_conflict_do_nothing` custody
+    then had nothing to update and the shell was permanent: no media type for
+    `media_fetch`'s modality gate, no size, and `search`'s
+    `created_at_ms DESC` ordering putting it last for all time.
+
+    What custody may NOT do is roll the comprehension back. The read landed
+    first; catching up is not overwriting."""
+    await store.comprehend(
+        sha256=DOG, title="a dog", description="a dog in the park",
+        content="woof", model="glm", provenance={"video_capped": True},
+    )
+
+    assert await store.save(obj=_obj(
+        DOG, source="inbound", prompt="", description="",
+        created_at_ms=1_700_000_000_000,
+    )) is True
+
+    got = await store.get(sha256=DOG)
+    assert got is not None
+    assert got.media_type == "image/png", "the shell was repaired"
+    assert got.size == 4
+    assert got.created_at_ms == 1_700_000_000_000
+    assert got.provenance is not None
+    assert got.provenance["platform"] == "signal", "the birth record landed"
+    assert got.provenance["video_capped"] is True, "and the read's survived"
+    assert (got.title, got.description, got.content) == (
+        "a dog", "a dog in the park", "woof",
+    ), "a read that landed first is never rolled back by custody catching up"
+
+
+async def test_custody_still_does_not_overwrite_a_real_row(store):
+    """The `where` clause's other half, and the property `save` has always had.
+    A second writer — the same photo forwarded into another room — must not
+    move the birth record. Only a SHELL is repairable."""
+    await store.save(obj=_obj(
+        CAT, source="inbound", prompt="", description="", created_at_ms=1_000))
+
+    await store.save(obj=_obj(
+        CAT, source="generated", prompt="a cat on a sofa", created_at_ms=9_000))
+
+    got = await store.get(sha256=CAT)
+    assert got is not None
+    assert got.source == "inbound"
+    assert got.created_at_ms == 1_000
+
+
+async def test_a_comprehension_never_overwrites_the_birth_record(store):
+    """DEC-138: provenance belongs to whoever first held the bytes, and a read
+    is not a birth. The chunk record a video read leaves (issue #117) MERGES
+    beside it rather than replacing it — a fact about the reading and a fact
+    about the birth have to coexist on one row."""
+    await store.save(obj=_obj(CAT, source="generated", prompt="a cat on a sofa"))
+
+    await store.comprehend(
+        sha256=CAT, title="a cat", description="a cat on a sofa", content="",
+        model="glm", provenance={"video_capped": True, "video_chunks": 10},
+    )
+
+    got = await store.get(sha256=CAT)
+    assert got is not None
+    assert got.source == "generated", "source is never touched by a read"
+    assert got.provenance is not None
+    assert got.provenance["prompt"] == "a cat on a sofa"
+    assert got.provenance["video_capped"] is True
+    assert got.provenance["video_chunks"] == 10
+
+
+async def test_an_uncomprehended_row_says_so(store):
+    """All three fields empty is an INDEX ENTRY, not a description of nothing.
+    Everything downstream branches on this: the job skips a row that is already
+    read, `media_fetch` refuses to serve an empty one as an answer, and the
+    transcript renders the bare handle."""
+    await store.save(obj=_obj(CAT, source="inbound", prompt="", description=""))
+    got = await store.get(sha256=CAT)
+    assert got is not None
+    assert got.comprehended is False
+
+
+async def test_search_finds_a_word_carried_only_by_the_title_or_the_content(store):
+    """One model pass writes all three fields; an index that could not find
+    «the whiteboard that said Q3» would be holding the answer and refusing to
+    look at it."""
+    await store.save(obj=_obj(CAT, source="inbound", prompt="", description=""))
+    await store.comprehend(
+        sha256=CAT, title="a whiteboard", description="a photo of a meeting room",
+        content="Q3 targets: 40%", model="glm",
+    )
+
+    assert [h.sha256 for h in await store.search(query="whiteboard")] == [CAT]
+    assert [h.sha256 for h in await store.search(query="Q3")] == [CAT]
+
+
+# ---- what an EMPTY incoming field may not do (round two F4, round three N7)
+
+
+async def test_a_resent_voice_note_does_not_wipe_its_own_title(store):
+    """Two writers reach `comprehend`: the job, which fills all three, and the
+    custody stage's inline voice-note write, which fills `content` alone and
+    sends empty title/description/model. Unconditional SETs meant a RESENT
+    voice note wiped the title and the describe_model the job had written —
+    self-healing only because the already-read gate re-runs the text pass, at
+    one extra model call per resend, and not self-healing AT ALL with
+    `comprehension = false` or no text model."""
+    await store.comprehend(
+        sha256=DOG, title="", description="", content="喂你今日得唔得閒啊",
+        model="",
+    )
+    await store.comprehend(
+        sha256=DOG, title="asking about tonight",
+        description="a voice note about dinner", content="喂你今日得唔得閒啊",
+        model="glm",
+    )
+
+    # The resend: custody writes the words again, with nothing else.
+    await store.comprehend(
+        sha256=DOG, title="", description="", content="喂你今日得唔得閒啊",
+        model="",
+    )
+
+    got = await store.get(sha256=DOG)
+    assert got is not None
+    assert got.title == "asking about tonight"
+    assert got.description == "a voice note about dinner"
+    assert got.describe_model == "glm"
+
+
+async def test_a_real_re_read_still_replaces_what_it_finds(store):
+    """The control for the guard above: an empty field never clobbers, but a
+    NON-empty one must, or a re-read could never correct a bad description."""
+    await store.comprehend(
+        sha256=DOG, title="a cat", description="a cat", content="", model="v1")
+    await store.comprehend(
+        sha256=DOG, title="a dog", description="a dog in a park", content="",
+        model="v2")
+
+    got = await store.get(sha256=DOG)
+    assert got is not None
+    assert (got.title, got.description, got.describe_model) == (
+        "a dog", "a dog in a park", "v2")
+
+
+async def test_a_video_with_no_description_still_records_its_describer(store):
+    """**The shipped config's own path.** `comprehension_text_model = ""` makes
+    a video read produce `description=""` beside a full timecoded `content`,
+    and custody always writes the row first — so a guard keyed on the
+    DESCRIPTION alone never recorded the video model that did the read.
+    `describe_model` was NULL for every clip on the default config, which is
+    the exact column an operator reads to find out which describer produced
+    what. The guard added to protect it defeated the fix that fills it."""
+    await store.save(obj=_obj(
+        DOG, source="inbound", prompt="", description="",
+        created_at_ms=1_700_000_000_000))
+
+    await store.comprehend(
+        sha256=DOG, title="", description="",
+        content="0:00 — a car pulls away", model="k3-256k")
+
+    got = await store.get(sha256=DOG)
+    assert got is not None
+    assert got.describe_model == "k3-256k"
+    assert got.content == "0:00 — a car pulls away"
+
+
+async def test_a_lookup_reads_many_rows_and_says_whether_it_could(store):
+    """`get` answers `None` for a missing row and for an unreachable database
+    alike — correct for its callers, and useless to the render join, which has
+    to tell «ten photos nobody has read» from «the index is down». `lookup` is
+    the port method with that axis."""
+    await store.save(obj=_obj(CAT, prompt="a cat"))
+    await store.save(obj=_obj(DOG, prompt="a dog"))
+
+    got = await store.lookup(sha256s=(CAT, DOG, PHOTO))
+
+    assert got.available is True
+    assert set(got.objects) == {CAT, DOG}, "a missing row is simply absent"
+    assert got.objects[CAT].description == "a cat"
+    assert (await store.lookup(sha256s=())).available is True
+
+
+async def test_an_unreachable_database_makes_lookup_unavailable(broken):
+    """And it carries NO objects: a partial answer to «what does this window
+    hold» is one a caller renders as complete."""
+    got = await broken.lookup(sha256s=(CAT,))
+    assert got.available is False
+    assert got.objects == {}
+
+
+async def test_an_empty_lookup_is_available_even_while_the_store_is_down(broken):
+    """No shas is no query, and a query nobody made cannot have failed. Pinned
+    on the BROKEN fixture because that is where the two implementations
+    disagreed — the SQL store returns before its `try`, the fake checked its
+    failure switch first, and the healthy fixture was the only one exercising
+    the empty tuple."""
+    got = await broken.lookup(sha256s=())
+    assert got.available is True
+    assert got.objects == {}

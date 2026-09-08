@@ -4,8 +4,7 @@ is Honcho's `(observer, observed)` axis). See
 `docs/superpowers/specs/2026-08-21-note-tier-design.md`.
 
 **The four fields are the point of this module**, and three of them are only
-load-bearing if the wrong thing is *unrepresentable* rather than discouraged —
-the move `nora.domain.facts.FactVerdict` makes with `not_covered`:
+load-bearing if the wrong thing is *unrepresentable* rather than discouraged:
 
 - **`closing_condition`** — what would settle this. Retirement (§7.4),
   promotion-readiness (§7.3) and a revisit's success criterion (§10) are all
@@ -37,7 +36,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 #: The injected index carries one line per note on EVERY tag (§5.1), so these
@@ -138,9 +137,8 @@ def anchor_bounds_ms(anchor_date: int) -> tuple[int, int] | None:
 
     Moved here from `nora.language.note_revisitor` in the note-curator merge
     (design 34) — a pure function two modules need (the merged curator's
-    grounding check, and `default_revisit_at` below) belongs beside
-    `anchor_key`/`group_on_anchor_key`, not duplicated or imported sideways
-    between two `nora.language` modules.
+    grounding check, and `default_revisit_at` below) belongs in the domain,
+    not duplicated or imported sideways between two `nora.language` modules.
 
     Both start and end are returned, but **only the end had a reader before
     this merge** — the curator's `default_revisit_at` is this function's
@@ -305,25 +303,26 @@ class Note:
 
     @property
     def is_standing(self) -> bool:
-        """True until retired. Unlike `Fact.is_standing` this reads only
-        `retired_at`, because a note may retire with no successor (see the
-        module docstring)."""
+        """True until retired. Reads only `retired_at` and never a successor,
+        because a note may retire with no successor at all — an anchor date
+        passed and the thing happened (see the module docstring). The
+        knowledge tier's own standing predicate required both, which is why
+        `DreamSink.supersede` types `replaced_by` as `str | None`."""
         return self.retired_at is None
 
     @property
     def written_anchor_entities(self) -> tuple[str, ...]:
         """The entity strings the WRITER typed, sorted and de-duplicated.
 
-        **This is not what merge compares** — `anchor_key` is, and it is fed
-        RESOLVED entity ids out of `note_entity`. The distinction is the whole
-        of §2: 「Grant 婚禮」, 「Gabe's wedding」 and 「婚禮」 are three
-        different strings and one occasion, while two unrelated notes that both
-        say 「wedding」 are one string and two occasions. A key built from these
-        is wrong in both directions at once.
+        **This is free text, never a key.** 「Grant 婚禮」, 「Gabe's wedding」
+        and 「婚禮」 are three different strings and one occasion, while two
+        unrelated notes that both say 「wedding」 are one string and two
+        occasions — a key built from these is wrong in both directions at
+        once, which is why the curator's merge (removed 2026-09-08) never
+        compared them, and why nothing compares them now.
 
         Kept because `note_has_an_anchor_check` reads the column and a reader
-        asking «what did somebody write here» deserves an answer that is not
-        the merge key.
+        asking «what did somebody write here» deserves an answer.
         """
         return tuple(sorted(set(self.anchor_entity_ids)))
 
@@ -398,164 +397,6 @@ class NoteRevision:
             )
 
 
-def anchor_key(
-    anchor_date: int | None, entity_ids: Sequence[str],
-) -> tuple[int | None, tuple[str, ...]]:
-    """What merge eligibility compares, and **the only thing it compares**
-    (§7.1).
-
-    Entities are sorted and de-duplicated so the key is a property of *which
-    entities* rather than of the order somebody happened to list them — without
-    that, a merge candidate is missed for an artifact of insertion order.
-
-    Two weddings differ in both components, so they are structurally ineligible
-    to merge however alike their prose reads. That is the point: topical
-    similarity is precisely the signal that would destroy the venue-to-groom
-    mapping, so it is not the signal used.
-
-    **A FUNCTION over ids the caller resolved, not a property of `Note`.** It
-    was a property reading `Note.anchor_entity_ids` until 2026-08-28, which
-    made the key a comparison of MODEL-AUTHORED FREE TEXT — see
-    `group_on_anchor_key` for why that is wrong in both directions at once.
-    `Note` has no resolved-entity field on purpose: `standing` and `read` do
-    not join `note_entity`, and a field that is populated on one read path and
-    empty on the others is where two implementations quietly disagree.
-    """
-    return (anchor_date, tuple(sorted(set(entity_ids))))
-
-
-def group_on_anchor_key(
-    notes: Sequence[tuple[Note, str]],
-    *,
-    resolved_entities: Mapping[str, Sequence[str]],
-    limit: int,
-) -> tuple[
-    tuple[tuple[tuple[Note, str], ...], ...],
-    tuple[tuple[Note, ...], ...],
-]:
-    """The grouping itself, shared by `SqlNoteStore` and its in-memory double.
-
-    Returns **(eligible, refused)** — groups that may merge WITH their bodies,
-    and groups that collide on a date alone and therefore may not, as NOTES
-    ALONE.
-
-    **`resolved_entities` maps a note id to the entity ids `note_entity` holds
-    for it, and it is the merge key's second half.** Not `Note.anchor_entity_
-    ids`, which is what `note_create` stored verbatim from the model with no
-    resolution and no validation. That distinction is the finding this
-    signature exists for:
-
-    - 「Grant 婚禮」, 「Gabe's wedding」 and 「婚禮」 are three raw strings and
-      ONE occasion, so a raw-string key misses the collision §7.1 exists for.
-    - two unrelated notes that both say 「wedding」 are one raw string and TWO
-      occasions, so a raw-string key MERGES THEM — the two-weddings failure,
-      entered through the guard rather than around it.
-
-    A key wrong in both directions is not a weaker key; it is a different rule
-    wearing this one's name. So eligibility joins the entity registry, and a
-    note with no `note_entity` row resolves to `()` — which is what
-    `no_entity_anchor` counts, and it now means «unresolved» rather than «the
-    model typed nothing».
-
-    **The consequence, stated rather than discovered later: `note_entity` had
-    no writer, so merge WAS inert in production — until issue #100
-    (`d10093af`).** 27 §2 already decided that — populating `note_entity` is
-    "the curator's real precondition, NOT its flag" — and #100 built exactly
-    that writer: `SqlNoteStore.create`/`propose` now resolve
-    `anchor_entity_ids` against the shared entity registry and write
-    `note_entity` in the same transaction. Merge is therefore REACHABLE
-    whenever entities resolve; `nora_note_curator_groups_refused_total` is
-    still the number that says how much of the notebook does not (a group
-    with nothing resolved is still refused and counted, per-candidate now
-    rather than always). The retire half is unaffected either way and is the
-    half that answers "the notebook only grows".
-
-    **The refused half carries no bodies, and the asymmetry is deliberate.**
-    Nothing reads a refused group's body — it is counted and discarded — so a
-    body there is a value with no consumer, and a value with no consumer is
-    where two implementations quietly disagree. They did: `SqlNoteStore` ran
-    the grouping over a placeholder-body pass and returned `''`, while the
-    double returned the real text. Harmless, and therefore exactly the kind
-    that survives.
-
-    Fixed by removing the field rather than by making the two agree on it,
-    because agreement has to be maintained and a type does not. Two return
-    values rather than one filtered list because the refused ones are the ONLY
-    evidence of what entity resolution would unlock, and a function that
-    silently dropped them would make "merge does nothing" indistinguishable
-    from "there is nothing to merge".
-
-    **In the DOMAIN, and imported by both**, rather than the same rule written
-    twice. This is the comparison that decides whether two notes get merged, so
-    a double that grouped differently from the store would make the contract
-    suite compare two definitions of "same occasion" and pass.
-
-    It lives here rather than in either store because `lint-imports` refused
-    the alternative and was right to: `nora.testing` and `nora.infra` are
-    siblings, so a helper shared by both belongs in the layer beneath them —
-    and "which notes are the same occasion" is a rule about notes, not about
-    Postgres. `anchor_key` is one function up for the same reason.
-
-    Ordering matches what both stores promise elsewhere: most-collided first,
-    then by anchor date, and within a group by `(created_at, id)` — which is
-    what makes the SURVIVOR (the first entry) stable across ticks. A retried
-    merge that picked a different survivor would produce two merged notes.
-    """
-    if limit <= 0:
-        return ((), ())
-    buckets: dict[tuple[int | None, tuple[str, ...]], list[tuple[Note, str]]] = {}
-    for note, body in notes:
-        if note.anchor_date is None:
-            continue
-        key = anchor_key(
-            note.anchor_date, resolved_entities.get(note.id, ()),
-        )
-        buckets.setdefault(key, []).append((note, body))
-    collided = [(k, v) for k, v in buckets.items() if len(v) > 1]
-    collided.sort(key=lambda kv: (-len(kv[1]), kv[0][0] or 0))
-
-    # A GROUP WITH NO RESOLVED ENTITIES IS REFUSED, NOT MERGED — and counted,
-    # so that refusal is a reading rather than a silence.
-    #
-    # An anchor is `(anchor_date, entity_set)` and BOTH halves are what make it
-    # an occasion. A group whose entity half is empty is "everything that
-    # happens on the 9th" — «Dinner, 9 Sept» beside «Ada's flight to Tokyo».
-    # Merging those is the two-weddings failure with a different label, and it
-    # is unrecoverable in the direction that matters.
-    #
-    # The entity half was EMPTY FOR EVERY NOTE IN PRODUCTION, because
-    # `note_entity` had no writer anywhere in the system — until issue #100
-    # (`d10093af`) gave it one: `SqlNoteStore.create`/`propose` resolve
-    # `anchor_entity_ids` against the shared entity registry now, in the same
-    # transaction as the note write. This branch refuses a group whenever its
-    # entities did NOT resolve, which is a per-candidate outcome today rather
-    # than a certainty for every group. 27 §2 already decided the underlying
-    # rule: populating `note_entity` is "the curator's real precondition, NOT
-    # its flag".
-    #
-    # **The alternative that was rejected**: key on `Note.anchor_entity_ids`,
-    # which IS populated — with whatever free text the model handed
-    # `note_create`. That makes merge fire, and fire wrongly in both
-    # directions, and it makes the guard's own name a lie: `no_entity_anchor`
-    # would mean «the model typed nothing» rather than «nothing resolved».
-    #
-    # **Relying on the model to decline is not the alternative either.** Since
-    # the bodies are rendered it probably WOULD decline — and that is
-    # self-attestation on a destructive operation, which is exactly what
-    # keeping eligibility in code exists to avoid.
-    #
-    # THE REVERSAL CONDITION HAS FIRED: `note_entity` gained a writer (#100)
-    # and entities now resolve. The refused count is what says how much of the
-    # notebook still does not, measured against the real notebook rather than
-    # estimated.
-    eligible = [(k, v) for k, v in collided if k[1]]
-    refused = [(k, v) for k, v in collided if not k[1]]
-    return (
-        tuple(tuple(v) for _, v in eligible[:limit]),
-        tuple(tuple(n for n, _ in v) for _, v in refused),
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class NoteRevisionProposal:
     """What the curator hands `DreamSink.propose` — a revision to append, named
@@ -563,7 +404,7 @@ class NoteRevisionProposal:
 
     **This type exists so the note sink has something to `isinstance` against.**
     `Proposal.payload` is `object` at the port, deliberately: the runtime never
-    names an adaptor's own value type, which is what keeps `FactVerdict` out of
+    names an adaptor's own value type, which is what keeps THIS type out of
     `nora/domain/ports.py` and makes "one runtime, many adaptors" true. The cost
     of an opaque field is that a wrong value travels a long way quietly, and the
     rule that pays it is that **the sink refuses anything else by `isinstance`
@@ -635,16 +476,13 @@ class NoteCreationProposal:
 
     **The anchor is required, and in practice it is a DATE.** `Note`
     `__post_init__` refuses a note anchored to nothing — without a referent
-    there is nothing to look it up by later, nothing to compare for a merge,
-    and no way to retire it mechanically. `anchor_entity_ids` needs its
-    strings to actually RESOLVE against the entity registry (`note_entity`,
-    which gained a writer in issue #100 — see `group_on_anchor_key`'s own
-    docstring) — an anchor whose entities never match anything still resolves
-    to none, so a type that accepted only entity anchors would still be a
-    shape a candidate can fail to satisfy. So both are offered and at least
-    one is required, which is `Note`'s own rule stated one layer earlier,
-    where the proposal can be refused instead of raising inside a background
-    tick.
+    there is nothing to look it up by later, nothing for the create gate to
+    compare against, and no way to retire it mechanically. `anchor_entity_ids`
+    is the writer's free text and nothing resolves it (the entity-resolution
+    chain was removed 2026-09-08), so an entity-only anchor is a note the
+    clock can never retire. Both are offered and at least one is required,
+    which is `Note`'s own rule stated one layer earlier, where the proposal
+    can be refused instead of raising inside a background tick.
 
     **A create proposal never names a note, so it cannot collide with one — and
     the sink does NOT check whether a similar note already exists.** That is
@@ -890,11 +728,14 @@ class NoteSupersedeReason:
     the same reason.
     """
 
-    MERGED = "merged"
     RETIRED_EXPIRED = "retired-expired"
     RETIRED_CLOSED = "retired-closed"
 
-    ALL: tuple[str, ...] = (MERGED, RETIRED_EXPIRED, RETIRED_CLOSED)
+    #: `"merged"` was the third value until 2026-09-08, written only by the
+    #: curator's merge verb, which is gone. A live row carrying it would
+    #: still read back (`retire_reason` is free text at the column); nothing
+    #: writes it now, so the vocabulary no longer names it.
+    ALL: tuple[str, ...] = (RETIRED_EXPIRED, RETIRED_CLOSED)
 
 
 class StaleNoteHeadError(Exception):

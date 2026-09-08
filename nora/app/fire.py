@@ -85,6 +85,7 @@ from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.compute import ComputeJob
 from nora.domain.events import Event, EventFactory
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
     ConversationTarget,
     NormalizedMessage,
@@ -518,6 +519,7 @@ class FirePath:
         limits: dict[str, Any],
         timeout_seconds: float,
         clock: Callable[[], datetime],
+        media_join: MediaJoin | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
@@ -592,6 +594,12 @@ class FirePath:
         self._policy = policy
         self._persons = persons
         self._records = records
+        # The shared media join (issue #116). A fire turn renders the SAME
+        # transcript block through the SAME prefill as a tag, so leaving it out
+        # here would reintroduce the two-consumer split on exactly the path
+        # nobody is watching when it fires — the argument the
+        # `name_transcript` projection below already makes.
+        self._media_join = media_join
         self._memory = memory
         self._doctrine_store = doctrine_store
         self._metrics = metrics
@@ -741,6 +749,8 @@ class FirePath:
         # leaving it out here would reintroduce the two-name-space bug on exactly
         # the path nobody is watching when it fires.
         transcript = self._persons.name_transcript(transcript, platform=occasion.platform)
+        if self._media_join is not None:
+            transcript = await self._media_join.enrich(transcript, path="fire")
 
         card: tuple[str, ...] = ()
         if ref is not None:
@@ -782,10 +792,11 @@ class FirePath:
     def _workspace_for(self, occasion: Event) -> str | None:
         """The workspace this occasion's room belongs to, or `None`.
 
-        The workspace-keyed tier scopes through the SAME `Policy` read
-        `TranscriptInjection._workspace_of` uses (DEC-105): two readers each
-        carrying their own idea of a room's workspace disagree the first time
-        a deployment runs two social units.
+        The workspace-keyed tier scopes through the SAME `Policy` read the
+        tag path's own note prefill uses (`nora.engagement.context.
+        TranscriptInjection._notes`, DEC-105): two readers each carrying
+        their own idea of a room's workspace disagree the first time a
+        deployment runs two social units.
 
         `None` — a store wired but no `Policy` or no `Conversation` for the
         room — is a WIRING GAP, not an empty tier: guessing a workspace would

@@ -589,6 +589,21 @@ class DescriberConfig(BaseModel):
     model: str = ""
     provider: Literal["omniroute", "kimi"] = "omniroute"
     api_key_env: str = ""
+    # ---- video chunking (issue #117) ---------------------------------------
+    #
+    # Only the video describer reads these; they live on the shared shape
+    # because a per-modality model is what already lives here and a second
+    # `[media.describe.video.chunks]` table would be a section for two keys.
+    #
+    # The bug they close: every clip used to be cut to its first 120 s before
+    # the model saw it, with no metric, no log line and nothing in the answer
+    # admitting the cut — a ten-minute video produced a description of its
+    # first two minutes phrased as a description of the video. Chunking without
+    # a REPORTED ceiling would only move the same silent lie to a larger
+    # number, so `chunk_max` is not merely a cost bound: when it binds, the cap
+    # is written into `media_objects.provenance` AND said in the description.
+    chunk_seconds: int = 90
+    chunk_max: int = 10
     # A per-modality byte ceiling for the describer, overriding the shared
     # `media.vision_max_bytes` (which exists for still images — "no still
     # image worth describing is that large"). Video bytes are routinely far
@@ -731,37 +746,99 @@ class MediaConfig(BaseModel):
     # has to differ per modality.
     describe: DescribersConfig = DescribersConfig()
 
-    # ---- reading a sticker at INGEST (sticker spec §6) -----------------------
+    # ---- whether STICKERS are among what gets read (sticker spec §6) --------
     #
-    # The vision fields above govern `media_fetch`, which Nora CHOOSES to call.
-    # These govern the automatic read that happens to every sticker before the
-    # audit row is written, and they are separate because the two calls have
-    # different budgets and different risk. Ships FALSE: document 26 slice 5's
-    # position, and the animated-WebP question (spec §7) is unresolved until a
-    # probe answers it on the deployed gateway.
+    # Ships FALSE: document 26 slice 5's position, and the animated-WebP
+    # question (spec §7) was unresolved until a probe answered it on the
+    # deployed gateway.
+    #
+    # RESCOPED by issue #116. It used to govern a read that happened before the
+    # audit row was written, on a budget of its own because that call sat on
+    # the ingest path; the read is spawned now and shares the comprehension
+    # pass's wiring, so this is a COST switch rather than a latency one. Off
+    # excludes stickers from the read and NOTHING ELSE — the identity ladder in
+    # `StickerReader` is custody, is wired whenever `enabled` is on, and is
+    # what makes a repeat sighting cost zero platform RPC.
     sticker_descriptions: bool = False
-    # NOT a sentence-vs-transcription budget — the §7 probe (2026-08-15, live
-    # MiMo-v2.5) found that reasoning tokens and answer tokens share this one
-    # ceiling, so a small allowance is spent thinking with nothing left to
-    # emit. 128 returned HTTP 200 with empty content on 4/4 calls (surfacing
-    # as `unavailable`, not a timeout); 256 succeeded 2/3; 512 was the lowest
-    # value that succeeded 3/3. 1024 matches `vision_max_tokens` above and
-    # buys margin over that floor rather than pricing it exactly.
+    # ---- the spawned comprehension pass (issue #116) ------------------------
+    #
+    # ONE model read per medium at ingest, into title/description/content on
+    # `media_objects`. `False` is the pre-#116 deployment exactly: handles in
+    # the body, nothing read, nothing claimed — which is why the off state is a
+    # degrade rather than an error — with ONE exception now stated rather than
+    # glossed: a voice note's words are written to `media_objects.content` by
+    # the custody stage itself, inline, so they still reach the record and the
+    # transcript with this off. What they do not reach with it off is Honcho,
+    # which gets the marker alone. `sticker_descriptions` above stays the
+    # sticker sub-gate: off excludes stickers from the read and leaves the
+    # identity ladder (custody, and what makes a repeat sighting free) alone.
+    #
+    # `comprehension_text_model` is the CHEAP TEXT pass — a voice note's
+    # title/description over the SenseVoice transcript already in hand, and a
+    # video's over its chunk run. Empty means no text pass: a voice note keeps
+    # its words with no title (the words are the evidence, the title is a
+    # convenience) and a video keeps its timecoded chunk run. Never a vision
+    # call: asking a model to listen again to learn what Nora already knows is
+    # the one cost this avoids by construction.
+    comprehension: bool = True
+    comprehension_text_model: str = ""
+    # What the TRANSCRIPT may spend rendering one attachment's title +
+    # description. The STORED comprehension is unbounded on purpose (issue #116
+    # removed `max_description_chars` from the store side — the bound belongs
+    # on the render, and `media_fetch` serves the rest); this is the render
+    # bound. A voice note is exempt: its detail is the words people said.
+    comprehension_render_chars: int = 240
+    # How long ONE media-join query may take before the render degrades to the
+    # bare handles. Short on purpose: the degrade is cheap and correct (the row
+    # already says `[image a3f2c1]`, so a join that does not happen claims
+    # nothing), and the alternative measured badly — `enrich` catches
+    # exceptions but not hangs, and a Postgres that is slow-but-alive held every
+    # tag reply until the agent loop's own budget killed the whole turn as
+    # `invocation_timeout`.
+    join_timeout_seconds: float = 3.0
+    # How many media reads may be in flight at once. Not a throughput knob — a
+    # memory and quota one: each in-flight job holds a decrypted blob plus the
+    # base64 copy the request carries, against ceilings of 8 MiB for a still
+    # and 100 MiB for a clip, and a video job runs up to `chunk_max`
+    # sequential model calls while it holds them. Fifty photos in a minute was
+    # fifty concurrent describer calls before this existed.
+    comprehension_max_concurrent: int = 4
+    # DEPRECATED (issue #116) and read by nothing, like the two below. It
+    # sized `StickerInterpreter`'s own `VisionClient`, and that class is gone:
+    # the sticker read is one subject among the others in the spawned
+    # comprehension pass and shares `vision_max_tokens` with every other
+    # modality. The measurement it records is still true of the gateway and is
+    # kept for whoever tunes the shared ceiling — the §7 probe (2026-08-15, live
+    # MiMo-v2.5) found reasoning tokens and answer tokens share ONE budget, so
+    # a small allowance is spent thinking with nothing left to emit: 128
+    # returned HTTP 200 with empty content 4/4, 256 succeeded 2/3, 512 was the
+    # lowest value that succeeded 3/3.
+    #
+    # Declared but unread, for `sticker_description_max_chars`' reason below:
+    # `extra="forbid"` is on every model in this file and the deployment's
+    # `config.toml` is untracked, so deleting the field would turn a live file
+    # that still carries the line into a container that refuses to boot.
     sticker_prompt_max_tokens: int = 1024
-    # DELIBERATELY not derived from `llm.timeout_seconds` the way
-    # `derive_vision_timeout` is. That invariant protects the agent LOOP from a
-    # hung call; this call runs on the ingest path before the loop exists, so
-    # reusing it would borrow a guarantee about the wrong thing. The real
-    # constraint: the custody stage is inline and the listener awaits it, so
-    # this stall delays the next message — and when the sticker rides on the
-    # TAGGING message it is added straight to Nora's reply latency. The §7
-    # probe timed nine successful-or-failed calls at 3.9s-12.2s, with no
-    # correlation to image size or token budget (gateway variance); 20s is
-    # headroom over that observed maximum, not a guess.
+    # DEPRECATED (issue #116) and read by nothing — same story as
+    # `sticker_prompt_max_tokens` above, and the reasoning it carried is now
+    # OBSOLETE rather than merely homeless. It was deliberately not derived
+    # from `llm.timeout_seconds` because the sticker call ran on the ingest
+    # path before the loop existed, so borrowing the loop's guarantee would
+    # have protected the wrong thing; the real constraint was that the stall
+    # delayed the next message, and landed on Nora's reply latency when the
+    # sticker rode on the tagging message. **That stall is gone**: the read is
+    # spawned now. The §7 probe's nine calls at 3.9-12.2s remain the only
+    # measurement of a sticker read's latency and are what
+    # `nora_media_comprehension_seconds`'s buckets were set against.
     sticker_timeout_seconds: float = 20.0
-    # The description is untrusted model output rendered into the durable body.
-    # Bounded here; newline, bracket and identifier screening live in
-    # `nora.domain.media.sanitize_description` and the custody stage.
+    # DEPRECATED (issue #116) and read by nothing. It bounded a description
+    # rendered into the durable BODY, and no description is rendered there any
+    # more — the comprehension lives in `media_objects` and the render bound is
+    # `comprehension_render_chars` above. The key stays declared because
+    # `extra="forbid"` is on every model in this file and the deployment's
+    # `config.toml` is untracked: deleting the field would turn a live file
+    # that still carries the line into a container that refuses to boot. It
+    # goes when the operator has removed it from that file.
     sticker_description_max_chars: int = 200
 
     def describer_for(self, modality: str) -> DescriberConfig | None:
@@ -1521,7 +1598,7 @@ class StandingConfig(BaseModel):
     """The debrief stage's gate and its four numbers
     (`design/dreamer-agent-loop/26-standing`).
 
-    `FactsConfig`/`NotesConfig`'s shape above, for the same reasons: the whole
+    `NotesConfig`'s shape, for the same reasons: the whole
     section is optional and every field defaults, so a `config.toml` written
     before this section existed keeps loading under `extra="forbid"`; and
     `enabled` defaults to **False**, because a new subsystem does not switch
@@ -1701,14 +1778,16 @@ class StandingConfig(BaseModel):
     # impossible to get wrong silently, not to relitigate `[llm]`'s own timeout,
     # which was raised to 120 deliberately on 2026-08-08. Lower it and the
     # startup refusal tells the operator exactly which numbers no longer fit.
-    # 45 -> 60 (2026-08-28). 45 was 20 + 5 x 5 EXACTLY, so the default budget
-    # sat on the default hold with nothing between them: a second stage
-    # arriving on the same slot — recognition, 8s — made a config with no
-    # `[standing]` section refuse to start, which is a default that cannot be
-    # left alone. 60 leaves seven seconds of headroom, so the next stage on
-    # this slot fails the GATE with a number to reason about rather than
-    # failing every deployment that never set the key. The deployment sets 150
-    # explicitly and is unaffected.
+    # 45 -> 60 (2026-08-28), KEPT at 60 on 2026-09-08 (operator). 45 was
+    # 20 + 5 x 5 EXACTLY, so the default budget sat on the default hold with
+    # nothing between them, and the first extra stage to arrive on this slot
+    # made a config with no `[standing]` section refuse to start — a default
+    # that cannot be left alone. (That stage was recognition, 8s; it went with
+    # the knowledge tier on 2026-09-07, which removes the instance and not the
+    # class of problem.) 60 is the headroom itself, not a fit to any one
+    # stage: the next thing on this slot fails the GATE with a number to
+    # reason about rather than failing every deployment that never set the
+    # key. The deployment sets 150 explicitly and is unaffected.
     max_slot_hold_seconds: float = Field(default=60.0, gt=0)
 
     @model_validator(mode="after")
@@ -1744,8 +1823,9 @@ class NotesConfig(BaseModel):
     it is the operator's switch for the moment a writer lands, not a
     retroactive one.
 
-    **There is deliberately no render cap here**, and that is the one place
-    this section differs from `[facts]`' `max_rendered_facts`. §5.1 decides the
+    **There is deliberately no render cap here** (the deleted knowledge tier's
+    section had one, `max_rendered_facts`, and it was the one place the two
+    differed). §5.1 decides the
     index is UNCAPPED: a note silently missing from it is invisible to her, and
     invisible is indistinguishable from absent — the same
     `unavailable`-reported-as-`nothing_found` failure R-27 exists to prevent. A
@@ -1810,10 +1890,9 @@ class NotesConfig(BaseModel):
     #: The curator, separately from the tier. `[notes] enabled` decides whether
     #: the INDEX is injected and the four tools reachable; this decides whether
     #: the background pass runs. Two switches because they are two risks: the
-    #: tag path only reads, and the curator MERGES AND RETIRES — the one thing
-    #: in this tier that removes something from her index. An operator turning
-    #: notes on should not thereby have signed up for a pass that reorganises
-    #: them.
+    #: tag path only reads, and the curator RETIRES — the one thing in this
+    #: tier that removes something from her index. An operator turning notes
+    #: on should not thereby have signed up for a pass that reorganises them.
     #:
     #: Also off because the curator is the tier's only writer that acts across
     #: notes, and 27 §2 makes that the Dreamer's alone precisely because it is
@@ -1840,17 +1919,17 @@ class NotesConfig(BaseModel):
     #: The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
     #: schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH switch on
     #: the same two-risks argument, and deliberately its own rather than riding
-    #: `curator_enabled`. That precedent cuts both ways: `[notes] enabled`'s
-    #: sibling entity-resolution pass rides `curator_enabled` because it
-    #: "carries none of those risks — it never touches a note's content, never
-    #: creates a note, and never merges one" (see this file's own note beside
-    #: `NoteEntityResolutionAdaptor`'s wiring). Discharge is the opposite case:
-    #: it WRITES to two tiers outside this one entirely — an Event, and a
+    #: `curator_enabled`. That precedent cuts both ways: the note tier's
+    #: entity-resolution pass (deleted 2026-09-08) rode `curator_enabled`
+    #: because it "carried none of those risks — it never touched a note's
+    #: content, never created a note, and never merged one". Discharge is the
+    #: opposite case: it WRITES to two tiers outside this one entirely — an
+    #: Event, and a
     #: Honcho conclusion about a named person — the moment a note the curator
     #: was already going to retire turns out to classify as a commitment or a
     #: person-claim. (A third kind, a world-claim, went to the knowledge tier
     #: until that tier was deleted on 2026-09-07.) An operator who accepted
-    #: "this pass merges and retires notes" did not thereby accept "this pass
+    #: "this pass retires notes" did not thereby accept "this pass
     #: also creates calendar events and writes permanent memories about
     #: people"; that is a materially different, materially larger capability
     #: and it gets its own flag, the same reasoning `candidates_enabled` states
@@ -1860,16 +1939,6 @@ class NotesConfig(BaseModel):
     #: `candidates_enabled`: landing this code must not change what any
     #: deployed `config.toml` does on the next restart.
     discharge_enabled: bool = False
-
-    #: MERGE GROUPS per tick, not notes. The curator's cost is bodies read, and
-    #: a group is the unit it reads — typically two notes, occasionally more.
-    #:
-    #: Small on purpose. A collided anchor is rare (it needs two notes about the
-    #: same date AND the same people), so a tick that finds three groups is
-    #: already unusual, and the cap is a bound on a surprise rather than a
-    #: throughput knob. `nora_note_curator_bodies_read` is what says whether it
-    #: binds.
-    max_groups_per_tick: int = Field(default=3, ge=1, le=50)
 
     #: EXPIRED notes per tick. Larger than the group cap because expiry is the
     #: common case and each costs one body: after a quiet month, every note
@@ -1881,6 +1950,18 @@ class NotesConfig(BaseModel):
     #: not reach — the `unavailable`-as-`nothing_found` failure at the pass
     #: level, which is why the gauge exists and why the cap is generous.
     max_expired_per_tick: int = Field(default=20, ge=1, le=200)
+
+    #: Model calls per `note-candidates` fire, UNIONED (`AdaptorSchedule.
+    #: samples`, design/dreamer-agent-loop/37, issue #118). 1 is one call.
+    #: Measured 2026-09-08: one shape of entry — a plan one person states
+    #: with an unsettled corner — is recognised in ~30% of single samples at
+    #: the tier's temperature while no negative sample ever produced a note;
+    #: N samples recognise it with probability 1 - 0.7^N (3 → 0.66, 5 →
+    #: 0.83) and stay empty on a negative batch. Cost is N model calls per
+    #: fire, on a pass that fires at most hourly per room and only when the
+    #: room spoke. Duplicates across samples collapse in the staging key and
+    #: the create gate; the run is unavailable only when every sample was.
+    candidate_samples: int = Field(default=1, ge=1, le=10)
 
     # NO `max_body_chars`, and its absence is the decision. The field existed
     # here with a twelve-line docstring and a range validator and NOTHING READ
@@ -2083,9 +2164,8 @@ class DreamerConfig(BaseModel):
     the Dreamer RUNTIME, shipping `false`."* This is that arrival. `enabled`
     below is what turns the section from a description of a CORPUS into the
     switch for a SUBSYSTEM, and it ships **False** — a new subsystem does not
-    switch itself on, the `[presence]`/`[search]`/`[compute]`/`[language]`/
-    `[analytics]`/`[facts]` shape. Off, nothing constructs a `DreamerRuntime`
-    and the existing consolidators keep running exactly as they do today.
+    switch itself on, the `[presence]`/`[search]`/`[compute]`/`[analytics]`
+    shape. Off, nothing constructs a `DreamerRuntime` and no adaptor ticks.
 
     `model = ""` means **fall back to `[llm].model`** — resolved by
     `Config.dreamer_model()` and nowhere else, the `MediaConfig.describer_for`
@@ -2172,42 +2252,29 @@ class DreamerConfig(BaseModel):
     # likely reading of August's 963 messages producing 2 rows, on this same
     # model at this same setting.
     #
-    # Dreamer-WIDE rather than per-adaptor, and the other two passes are now
-    # MEASURED rather than assumed — the first version of this comment said
-    # neither had been, which is a gap that should not survive a review it can
-    # be closed before:
+    # **RE-MEASURED 2026-09-08 against the surviving tier, because the original
+    # evidence went with the tier it was taken on.** The paragraphs above were
+    # measured on the knowledge tier's two adaptors, both deleted 2026-09-07,
+    # and a live setting defended only by a probe nobody can repeat is a claim.
+    # The note tier's scenario suite (`evals.run --suite note_candidates`,
+    # design/dreamer-agent-loop/37 §7) re-ran the same question on
+    # `note-candidates`, sixteen scenarios against the deployed model:
     #
-    #   fact-entity-resolution  low   4 of 4 runs resolved `big walk`/`Big Walk`
-    #                           none  3 of 4; the fourth SPLIT them
-    #   fact-adjudication       low   `supported` with a source_url, tool-free
-    #                           none  `not_covered`
+    #   effort=none  16/16 cases majority-pass, precision 1.00, recall 0.84,
+    #                zero unavailable runs
+    #   effort=low   9/16, precision 1.00, recall 0.74, and SEVEN of fifty
+    #                samples returned nothing readable at all — the update
+    #                path went 0 of 4 while the model deliberated past its
+    #                budget
     #
-    # Entity resolution loses a little recall at "none", and it loses it in the
-    # direction `21` §5 chose on purpose: default to SPLIT, because two
-    # entities wrongly kept apart is a missing edge and two wrongly merged is a
-    # corrupted node. A small rate of over-splitting is the failure that design
-    # asked for.
-    #
-    # The adjudicator's real risk was not verdict quality, it was that a model
-    # told not to deliberate would stop REACHING FOR A TOOL — and an
-    # adjudicator that never searches marks nothing `supported`, writes no
-    # fact, and stalls the chain one step past extraction while every counter
-    # reports an honest empty. Measured with a `web_search` schema attached,
-    # three runs at each effort:
-    #
-    #   low    tool_calls=2 every run
-    #   none   tool_calls=2 every run, the same two queries
-    #
-    # It still researches. The earlier tool-free result — "low" answering
-    # `supported` with an invented `source_url` while "none" said
-    # `not_covered` — was a probe with nothing to search WITH, and
-    # `not_covered` was the correct answer to it rather than a recall loss.
-    #
-    # The Dreamer already has its own `ModelSource`, so this costs one line and
-    # keeps one model object; per-adaptor would need one object per adaptor.
-    # The reading that would split it is an adjudication run against real tools
-    # measurably worse at "none" — that is the measurement to take when the
-    # tier has traffic, and it needs production rather than a probe.
+    # Same shape as 2026-08-28: at "low" this model spends the ceiling on
+    # deliberation and the run reports `unavailable`, which HOLDS a watermark
+    # over a batch that was in fact read. The field stays, and it stays
+    # Dreamer-WIDE: the Dreamer already has its own `ModelSource`, so this
+    # costs one line and keeps one model object, and there is no longer a
+    # second adaptor whose needs could differ. The reading that would split it
+    # is a second adaptor measurably better at a different effort, on a suite
+    # rather than a probe.
     #
     # `[llm] reasoning_effort` is UNTOUCHED, so her replies are unaffected.
     reasoning_effort: Literal[

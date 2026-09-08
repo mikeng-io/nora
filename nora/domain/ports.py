@@ -198,7 +198,7 @@ change at every call site; keyword-only buys free extensibility forever.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -842,6 +842,34 @@ class BlobStore(Protocol):
     async def get(self, *, key: str) -> bytes | None: ...
 
 
+@dataclass(frozen=True)
+class MediaLookup:
+    """Many objects by content address, with an AVAILABILITY axis.
+
+    Two axes, like `MediaBytes`, `Roster` and `Recollection`, and for the
+    identical reason: «the index could not be read» must stay distinguishable
+    from «those bytes are not in it». `get` collapses them — it answers `None`
+    for a missing row and for an unreachable database alike, which its own
+    contract suite pins — so a caller built on `get` cannot report R-27's three
+    states however carefully it is written. The render join was that caller:
+    its failure had no counter at all and, on the deployment, no log an
+    operator can reach.
+
+    ONE call for a whole window, not one per blob. That is the other half:
+    seven paths join now, two of them over batches (a 1000-row adoption scan, a
+    Dreamer batch), and a sequential `get` per distinct blob is an unbounded
+    number of round trips with no timeout on a process-start path.
+
+    `objects` holds only the rows that EXIST; a sha with no row is simply
+    absent, which is `nothing_found` for that blob and not a failure of the
+    lookup.
+    """
+
+    available: bool
+    objects: Mapping[str, MediaObject] = field(default_factory=dict)
+    reason: str = ""
+
+
 @runtime_checkable
 class MediaObjectStore(Protocol):
     """The unified media index (DEC-138, migration 0032): metadata for every
@@ -849,9 +877,28 @@ class MediaObjectStore(Protocol):
     keyed by the same content address the `BlobStore` uses. `source` is an
     attribute; generated objects carry prompt/title/description in
     provenance. Search by text so Nora can find and resend her own media
-    days later without regenerating it."""
+    days later without regenerating it.
+
+    `save` is FIRST-SOURCE-WINS: it writes the index entry and never
+    overwrites one. `comprehend` is the other verb and it is deliberately
+    separate rather than a flag on `save` — custody writes the row inline
+    (the handle is a promise the bytes are retrievable), and the model pass
+    lands on it LATER, from a spawned job (issue #116). One verb doing both
+    would make the ordering invisible and let a late index write erase a
+    comprehension that beat it. It is an UPSERT, so a comprehension can land
+    on a row nothing indexed yet, and it never touches `source` — the birth
+    record stays the first source's. Its `provenance` argument MERGES into
+    whatever is there rather than replacing it: what a READ leaves behind (a
+    video's chunk record, issue #117 — how long the clip was, how much reached
+    a model, whether the ceiling bound) is a fact about the reading, not about
+    the birth, and the two have to coexist on one row."""
 
     async def save(self, *, obj: MediaObject) -> bool: ...
+
+    async def comprehend(
+        self, *, sha256: str, title: str, description: str, content: str,
+        model: str, provenance: dict[str, object] | None = None,
+    ) -> bool: ...
 
     async def search(
         self, *, query: str, limit: int = 20,
@@ -859,6 +906,8 @@ class MediaObjectStore(Protocol):
     ) -> tuple[MediaObject, ...]: ...
 
     async def get(self, *, sha256: str) -> MediaObject | None: ...
+
+    async def lookup(self, *, sha256s: tuple[str, ...]) -> MediaLookup: ...
 
     async def by_prefix(self, *, handle: str, limit: int = 20) -> tuple[MediaObject, ...]: ...
 
@@ -944,27 +993,95 @@ class MediaDescription:
     """What an interpreter made of some bytes. Two axes, like `MediaBytes` and
     `Roster`: "could not describe" must stay distinguishable from "described
     nothing", or a wedged model and a blank image become the same value and the
-    counter that says interpretation is failing sits at zero."""
+    counter that says interpretation is failing sits at zero.
+
+    **THREE FIELDS, ONE PASS (issue #116).** `text` is the description and
+    keeps its name and its meaning; `title` and `content` come back from the
+    SAME model call, because reading the bytes is the expensive part and extra
+    output fields on that call are near-free. See `nora.domain.media
+    .MediaObject` for what each one is and for why a query-conditioned answer
+    belongs in none of them.
+
+    `available=False` means NONE of the three is trustworthy — an unavailable
+    result never carries a partial triple, so a caller cannot half-store a
+    comprehension it could not make.
+    """
 
     available: bool
     text: str = ""
     reason: str = ""
+    # Defaulted, so a describer that only produces a sentence (and every
+    # existing construction site) stays valid and simply comprehends less.
+    title: str = ""
+    content: str = ""
+    # What the READ itself left worth recording — for a chunked video (issue
+    # #117): how long the clip was, how much of it actually reached a model,
+    # and whether the ceiling is why the rest did not. The caller merges it
+    # into `media_objects.provenance` beside the birth record.
+    #
+    # **RETURNED, not stashed on the adapter.** The first cut kept it as
+    # `MediaComprehender.last_provenance` on the grounds that a video-only
+    # field in the domain would be a shape only one adapter can fill. That was
+    # wrong twice over: it is not video-only in principle (it is «what this
+    # read did»), and the comprehension job spawns ONE TASK PER SUBJECT, so a
+    # message carrying a video and a photo runs two `describe` calls
+    # concurrently on one adapter — the still's reset raced the video's
+    # chunk loop and the chunk record, the RECORDED half of DEC-161, was lost
+    # or landed on the wrong row. Single-flight is per-sha256, not
+    # per-instance, so it never established the safety the comment claimed.
+    # A value that travels with its result cannot race.
+    provenance: dict[str, object] | None = None
+    # WHICH MODEL wrote this text. Returned rather than asked of the adapter
+    # afterwards, for `provenance`'s reason and one more: the answer is not a
+    # function of the MODALITY. A voice note's title and description come from
+    # the TEXT model (`comprehension_text_model`), not from the audio
+    # describer — so a caller deriving it from the media type recorded `""`
+    # for the one modality whose text is written entirely by a single named
+    # model. Empty means the implementation does not track it and the caller
+    # records nothing, which is honest; it never means "the image model".
+    model: str = ""
 
 
 @runtime_checkable
 class MediaInterpreter(Protocol):
-    """Bytes to a plain-text description. Never raises.
+    """Bytes to a comprehension — title, description, content. Never raises.
 
-    Called from the ingest path for STICKERS ONLY (sticker spec §2.2, §5.3).
-    Images, audio and video are not automatically interpreted: a sticker is
-    published pack art, identical for everyone who has the pack, and a photo is
-    a photograph of somebody's life. Reading the second one permanently into
-    the durable record, the Honcho feed and every future transcript is a
-    materially different act, and `media_fetch` already exists for the case
-    where Nora has a reason to look.
+    **It used to say STICKERS ONLY, and issue #116 is what changed that
+    sentence.** The old position was that a sticker is published pack art,
+    identical for everyone who has the pack, while a photo is a photograph of
+    somebody's life — so only the first was read automatically. What that cost
+    is the issue's own story: ten photos of a meal, the whole group replying
+    around them, and the subject of the conversation is the one thing the
+    record does not hold. Every reply is preserved and unreadable without it.
+
+    What did NOT change is where the result may go. The comprehension lands in
+    `media_objects` and in Honcho; the transcript renders only title and
+    description; `scan_identifiers` runs on every render and on every serve,
+    never once at store time. The read is automatic now — the egress screen
+    around it is the same one, applied later rather than earlier.
+
+    `label` is the media LABEL (`nora.domain.media.LABELS`) and it selects the
+    authored prompt: a sticker is asked what it depicts, a photo what it shows.
+    It is a SYSTEM-CONTROLLED fact — derived from the platform's own flags and
+    the blob's MIME type — never anything a room typed, which is the property
+    `nora/infra/vision/client.py`'s prompt table exists to keep. Empty resolves
+    from the media type alone.
+
+    `summarize` is the AUDIO half, and it takes text rather than bytes on
+    purpose: a voice note's `content` is already in hand — `nora/infra/speech
+    .py` transcribed it at ingest with SenseVoice — so asking a vision model to
+    listen again would spend a second, larger call to learn what Nora already
+    knows. The title and description come from a cheap text pass over that
+    transcript instead. Same port, same never-raises promise, same three-field
+    result; `content` is what the CALLER already holds and this verb does not
+    return it.
     """
 
-    async def describe(self, *, data: bytes, media_type: str) -> MediaDescription: ...
+    async def describe(
+        self, *, data: bytes, media_type: str, label: str = "",
+    ) -> MediaDescription: ...
+
+    async def summarize(self, *, text: str) -> MediaDescription: ...
 
 
 @dataclass(frozen=True)
@@ -1356,8 +1473,8 @@ class Proposal:
     `payload` is deliberately `object`: the runtime never names an adaptor's own
     value type. A `DreamSink` implementation knows what it stores; the loop that
     hands it a `Proposal` does not, and typing this as anything narrower would
-    put `FactVerdict` (or `Lexeme`, or an exchange pattern) in the runtime's
-    imports and make every new adaptor a change to the runtime.
+    put `NoteCreationProposal` (or whatever the next tier's value type is) in
+    the runtime's imports and make every new adaptor a change to the runtime.
 
     Provenance rides HERE rather than inside `payload` for the same reason. Both
     fields are the columns DEC-125/DEC-126 added to every adaptor-written table,
@@ -1394,19 +1511,23 @@ class DreamAdaptor(Protocol):
     and how to turn the answer into rows.
 
     The Dreamer runtime owns the loop, the tool ceiling, the budget and its own
-    doctrine, and knows nothing about lexemes, exchanges or facts. Everything
-    that IS tier-specific arrives through this port. It is `RoomConsolidator`
-    generalised: that port's `consolidate(scope_id, batch) -> int` is
-    append-shaped — "extract, append, rescore, and nothing else" — which is why
-    a fact adaptor did not fit it (a fact adaptor invalidates as well as
-    appends, and is keyed on a workspace rather than a scope) and why
-    `RoomPortraitSynthesizer` had to be a separate parameter on `dream_loop`.
+    doctrine, and knows nothing about notes. Everything that IS tier-specific
+    arrives through this port. **It is the generalisation of a port that was
+    append-shaped**: `RoomConsolidator`'s `consolidate(scope_id, batch) -> int`
+    (deleted 2026-09-07 with the language tier) said "extract, append,
+    rescore, and nothing else", which is why an adaptor that INVALIDATES as
+    well as appends did not fit it, why a workspace-keyed adaptor did not fit
+    its scope key, and why a watermark-free one had to be a separate parameter
+    on `dream_loop` rather than another consolidator. This port has room for
+    all three, which is what makes a new tier a new adaptor rather than a new
+    parameter.
 
     **The runtime never names a tier's value type.** It hands the model's
     already-envelope-validated items to `accept`, which returns whatever that
     tier's typed values are as `object`, wraps each in a `Proposal` carrying the
-    provenance only the runtime knows, and hands them back to `commit`. A
-    `FactVerdict` never appears in an import in `nora/agent/`.
+    provenance only the runtime knows, and hands them back to `commit`. No
+    tier's value type — `NoteCreationProposal`, or whatever comes next — ever
+    appears in an import in `nora/agent/`.
 
     **Two deviations from the plan's sketch, both found by building it** —
     recorded here because each looks like an arbitrary difference until the
@@ -1420,9 +1541,10 @@ class DreamAdaptor(Protocol):
        layer further than it needs to and one more place it can be filled in
        wrongly.
     2. **`commit` drives the sink; the runtime does not call it directly.** The
-       runtime cannot: a contradicted fact is TWO verbs in order — `propose`
-       the correction, then `supersede` the old row naming the new id as
-       `replaced_by` — and knowing that sequence means knowing `FactVerdict`.
+       runtime cannot: a tier's write is often TWO verbs in order — `propose`
+       the new row, then `supersede` the old one naming the new id as
+       `replaced_by` — and knowing that sequence means knowing the tier's own
+       value type.
        So the sink is the adaptor's own collaborator (constructor-injected,
        never a port attribute the runtime reads and never uses) and `commit` is
        where a tier sequences its own writes.
@@ -1461,8 +1583,9 @@ class DreamAdaptor(Protocol):
     uses_watermark: bool
     """False for an adaptor that does not consume a message batch at all, and
     which therefore gets no watermark, lag or quiet condition and must carry
-    its own fire condition. `RoomPortraitSynthesizer` is the standing
-    precedent; the fact adaptor is the second."""
+    its own fire condition. `nora.language.note_curator.NoteCuratorAdaptor` is
+    the shipped one: it reads LIVE STATE — which anchors have passed, which
+    notes are due — and none of those questions has a "since when"."""
 
     objective: str
     """The objective FILE NAME, resolved by the runtime against
@@ -1526,9 +1649,10 @@ class DreamAdaptor(Protocol):
 
         **`commit(key, ())` is a legal and meaningful call**, not a call to
         skip: it is R-27's `nothing_found` — «I looked and there was nothing» —
-        and it is where time-driven decay lives. `LanguageConsolidator`
-        rescores even for an empty batch, because the 24h fire condition exists
-        precisely to fade a dormant room's lexicon, and none of the adaptor's
+        and it is where time-driven decay lives. Verified against the shipped
+        curator: `NoteCuratorAdaptor.commit` with zero proposals still records
+        a WAKE for every note the run selected, advancing `revisit_at` and
+        charging a strike to a note nobody answered. None of the adaptor's
         other fields has a slot for that. The runtime NOT calling `commit` is
         the different, third state: `unavailable`, «I could not check».
 
@@ -1537,11 +1661,11 @@ class DreamAdaptor(Protocol):
         false negative. That is the ERROR-reads-as-PASS failure R-27 exists to
         prevent, one layer up.
 
-        Returns rows WRITTEN, which is not `len(proposals)`: a fact store skips
-        a `not_covered` verdict by design (silence adds nothing and removes
-        nothing), so a legal commit of three proposals can write one row. The
-        count is what `_dream_once`'s existing `appended_total > 0` portrait
-        trigger reads."""
+        Returns rows WRITTEN, which is not `len(proposals)`: a tier refuses
+        its own proposals by design — the note create gate refuses a candidate
+        that duplicates a standing note without adding anything — so a legal
+        commit of three proposals can write one row. The count is what
+        `nora_dream_written_total` reports."""
         ...
 
 
@@ -1567,10 +1691,10 @@ class DreamSink(Protocol):
 
     - `propose(key, ())` — the adaptor ran and found nothing. `nothing_found`,
       «I looked and there was nothing». It is a LEGAL call and the sink may act
-      on it: `LanguageConsolidator` rescores even for an empty batch, because
-      decay is time-driven and the 24h fire condition exists exactly to fade a
-      dormant room's lexicon. None of the five adaptor fields has a slot for
-      that, so this is where it lives.
+      on it, because decay is TIME-driven rather than evidence-driven: the
+      shipped curator's own `commit` with zero proposals still records a wake
+      for every note the run selected. None of the five adaptor fields has a
+      slot for that, so this is where it lives.
     - not calling `propose` at all — the adaptor could not check. `unavailable`,
       «I could not check». An ERROR is never a PASS.
 

@@ -1,0 +1,18 @@
+{
+  "type": "feature",
+  "summary": "Nora now reads every photo, video, sticker and voice note she receives, so what people send is part of what she remembers instead of an empty marker.",
+  "details": [
+    "Each medium is read once when it arrives. For a photo that is a short name, a sentence on what it shows, and everything legible in it; for a video and a voice note the name and sentence need [media] comprehension_text_model set, and without it you get the reading itself (the timecoded run, or the words) and no headline. The transcript shows the short form beside the marker; her memory keeps all of it.",
+    "A voice note still shows what was actually said, in full, rather than a summary of it.",
+    "media_fetch serves the full reading with no wait, and takes an optional question when what you need is not in the stored reading -- that one costs a fresh look.",
+    "Long videos are read in one-and-a-half-minute chunks in order, instead of only the first two minutes. When a clip is longer than she can read, her description says so.",
+    "What a photo showed reaches every place Nora reads a conversation back -- replies and reminders, her running sense of where a conversation got to, and the notes she keeps -- not just the reply she was tagged for.",
+    "When she asks a question about a picture and the question itself contains something that looks like a phone number or an ID, she asks it a different way rather than sending it on -- the same rule her web searches already follow."
+  ],
+  "limitations": [
+    "The read happens in the background, so a photo sent and asked about in the same breath may not be described yet; the marker is there either way and she will say she has not looked rather than guess. A voice note is the exception -- its words are recorded as it arrives.",
+    "Videos longer than about fifteen minutes are read only in part, and a part of a clip that will not open is skipped. Both are now stated in the description instead of being silent.",
+    "Set [media] comprehension = false to switch the model reads off. Markers only, nothing described -- except that a voice note still keeps its words in the record and in the transcript, because those are captured without a model. With it off her longer-term memory gets the marker alone.",
+    "When a person is added to identity.toml long after they started chatting, the backfill that feeds their old messages into memory reads them in batches; a very large backlog is read in several passes rather than one, and each pass is bounded so it cannot stall the start-up."
+  ]
+}

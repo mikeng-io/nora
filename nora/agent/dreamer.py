@@ -168,11 +168,13 @@ class AdaptorSchedule:
 
     `phase_offset_seconds` shifts a watermark-free adaptor's slot boundary,
     and it exists because separating PERIODS is not separating PHASES. The
-    fact tier's three adaptors have a real data dependency — candidates write
-    the queue, adjudication drains it, entity resolution reads what
-    adjudication wrote — while `dream_loop` dispatches adaptors as CONCURRENT
-    tasks with no ordering (design/dreamer-agent-loop/33 §6 M6 states this and
-    declines to solve it for the note tier, which has no such dependency).
+    knowledge tier's three adaptors (deleted 2026-09-07, issue #115) had a
+    real data dependency — candidates wrote a queue, adjudication drained it,
+    entity resolution read what adjudication wrote — while `dream_loop`
+    dispatches adaptors as CONCURRENT tasks with no ordering
+    (design/dreamer-agent-loop/33 §6 M6 states this and declines to solve it
+    for the note tier, which has no such dependency). The mechanism stays
+    because the note tier's own slots use it (`note-curation` at 16:00 UTC).
     Give all three the same daily interval and they coincide every day; give
     them the same interval at different offsets and a claim written in the
     morning is adjudicated the same afternoon rather than tomorrow. Ignored
@@ -184,6 +186,30 @@ class AdaptorSchedule:
     batch_limit: int
     max_items: int | None = None
     phase_offset_seconds: float = 0.0
+    #: Model calls per fire, UNIONED (design/dreamer-agent-loop/37, issue
+    #: #118). Measured 2026-09-08 on `note-candidates`: one shape of entry —
+    #: a plan one person states with an unsettled corner — is recognised in
+    #: ~30% of samples at temperature 0.7 while precision stays 1.00 on every
+    #: negative sample across every prompt variant tried. Three prompt-level
+    #: changes did not move it. Sampling exploits the temperature already
+    #: paid for: the union of N samples recognises it with probability
+    #: 1 - 0.7^N (N=3 → 0.66, N=5 → 0.83) and, because per-sample invention
+    #: is measured at ~0, stays empty on a negative batch. Duplicates across
+    #: samples collapse in the adaptor's own staging key and create gate. A
+    #: sample that is unreadable is counted and skipped; the run is
+    #: `unavailable` only when EVERY sample was.
+    #:
+    #: **Samples run in SEQUENCE, so the run's worst case is N x the budget's
+    #: timeout.** They are not gathered: a background pass nobody waits on
+    #: buys nothing from parallelism except N concurrent calls at the
+    #: gateway, and `dream_loop` already holds a per-`(adaptor, key)`
+    #: `running` set, so a long run is skipped by the next tick rather than
+    #: piling up behind itself.
+    samples: int = 1
+
+    def __post_init__(self) -> None:
+        if self.samples < 1:
+            raise ValueError(f"samples must be >= 1, got {self.samples}")
 
 
 @dataclass(frozen=True)
@@ -445,9 +471,10 @@ def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | 
     rather than text parsed out of a reply.
 
     The first is overturned by evidence it did not have: the objective fix
-    LANDED. `fact-adjudication.md` spends its closing paragraph on «your
-    entire reply is one JSON object, the first character you write is `{`»,
-    and the model narrates anyway — measured below. An instruction that has
+    LANDED. The (since deleted) `fact-adjudication.md` spent its closing
+    paragraph on «your entire reply is one JSON object, the first character
+    you write is `{`», and the model narrated anyway — measured below, and
+    the surviving objectives carry the same closing paragraph. An instruction that has
     been given and is not followed is not a fix that is still pending.
 
     The second is not overturned, it is deferred: a terminal tool call is the
@@ -456,8 +483,9 @@ def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | 
     narration keeps costing batches after this, the parser is the wrong layer
     and 07 §57 is where to go.
 
-    Measured 2026-08-28, driving the shipped `fact-adjudication` objective
-    through its whole tool loop:
+    Measured 2026-08-28, driving the then-shipped `fact-adjudication`
+    objective through its whole tool loop (the objective is gone; the
+    measurement is why the parser tolerates narration):
 
       effort=none, empty results  converged turn 6 — «Search returning empty
                                   results consistently. Cannot find any
@@ -498,10 +526,9 @@ def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | 
     # counter green. That is silent and irreversible where the bug it replaced
     # was loud and retryable.
     #
-    # Worse than lossy on `fact-adjudication`, whose objective prints a
-    # POPULATED example: the tier would have written the documentation's own
-    # worked example as a fact about the world, marked supported, carrying a
-    # source_url out of the objective file.
+    # Worse than lossy on an objective that prints a POPULATED example (the
+    # deleted `fact-adjudication` did; `note-candidates` does): the tier would
+    # write the documentation's own worked example as a real row.
     #
     # Last is also what the measurement says: the model narrates, then
     # answers. Nothing pinned first-vs-last before this comment existed —
@@ -641,8 +668,9 @@ class DreamerRuntime:
         # applies it for a turn; `_tool_budgets` below read `spec.budget`
         # straight off the table, so one number in `config.toml` meant two
         # different ceilings depending on which loop was asking — with nothing
-        # naming the difference. Measured live on the first tick after the
-        # knowledge tier's schedule landed: `[llm.budgets] web_fetch = 6` was
+        # naming the difference. Measured live on 2026-09-07, the first tick
+        # after the (since deleted) knowledge tier's schedule landed:
+        # `[llm.budgets] web_fetch = 6` was
         # set, and `DreamGuard` vetoed the Dreamer at «you already called
         # web_fetch 2 time(s)», the TABLE value, twelve times in one run that
         # then produced a 0-char envelope.
@@ -655,6 +683,12 @@ class DreamerRuntime:
 
     def budget_for(self, adaptor_name: str) -> AdaptorBudget:
         return self._budgets.get(adaptor_name, self._default_budget)
+
+    def samples_for(self, adaptor_name: str) -> int:
+        """Model calls per fire — `AdaptorSchedule.samples`, 1 for an adaptor
+        with no schedule entry."""
+        sched = self._schedules.get(adaptor_name)
+        return sched.samples if sched is not None else 1
 
     def max_items_for(self, adaptor_name: str) -> int:
         """This adaptor's envelope item cap — its schedule's `max_items`
@@ -710,13 +744,16 @@ class DreamerRuntime:
                 # tools resolve through the room, unchanged.
                 workspace=key if adaptor.key_kind == "workspace" else None,
             )
-            guard = DreamGuard(
-                adaptor=adaptor.name,
-                budgets=_tool_budgets(
-                    tools, adaptor, self._tool_budget_overrides),
-                metrics=self._metrics,
-                result_caps=_TOOL_RESULT_CAPS,
-            )
+            # The BUDGETS, not the guard. A `DreamGuard` owns a
+            # `CallLedger`, and a ledger is SPENT STATE — build one per run
+            # and the second sample starts with the first's tool calls
+            # already counted against it, so an adaptor with N samples would
+            # silently get a fraction of its declared budget per sample.
+            # Inert for the two adaptors that ship (both tool-free) and
+            # exactly the shape that stays inert until it does not, so the
+            # guard is built inside `_sample` instead.
+            tool_budgets = _tool_budgets(
+                tools, adaptor, self._tool_budget_overrides)
             prompt = await adaptor.inputs(key=key, batch=batch)
             if not prompt.strip():
                 # **THE FIRE CONDITION, and it is general rather than the fact
@@ -728,16 +765,16 @@ class DreamerRuntime:
                 # which gets no lag/quiet/age conditions at all and would
                 # otherwise fire on EVERY tick: at the shipped 300s cadence
                 # that is 288 full `web_search`/`web_fetch` loops per workspace
-                # per day with nothing pending. `RoomPortraitSynthesizer`, the
-                # standing precedent for a watermark-free participant, has its
-                # own trigger (`appended_total > 0`); the port's own docstring
-                # says such an adaptor "must carry its own fire condition", and
-                # this is where the runtime lets it.
+                # per day with nothing pending. The port's own docstring says
+                # such an adaptor "must carry its own fire condition", and this
+                # is where the runtime lets it: the shipped curator's is a
+                # daily slot plus a blank `inputs` on a tidy notebook.
                 #
                 # `commit(key, ())` is still called, so the decay contract is
                 # untouched: a watermarked adaptor over a quiet room renders a
-                # blank prompt too, and that path is exactly where
-                # `LanguageConsolidator`'s time-driven rescore lives. Reported
+                # blank prompt too, and that path is exactly where a tier's
+                # time-driven work lives — the curator records its wakes on an
+                # empty commit, whatever the model did or did not say. Reported
                 # `nothing_found` — «I looked and there was nothing» — because
                 # that is what happened; `unavailable` would hold a watermark
                 # over a batch that was genuinely empty.
@@ -747,67 +784,52 @@ class DreamerRuntime:
                 return self._finish(
                     adaptor, "nothing_found", written, sha, None, started,
                 )
-            agent = factory.create_dream_agent(
-                model=self._models.create(),
-                system_prompt=instructions.text,
-                tools=tools,
-                guard=guard,
-                trace_attributes={
-                    # Its OWN span, findable in Langfuse rather than merged into
-                    # Nora's — the provenance every claim about a run
-                    # re-derives from.
-                    "dreamer.adaptor": adaptor.name,
-                    "dreamer.key": key,
-                    "dreamer.objective": adaptor.objective,
-                    "dreamer.instruction_sha256": sha,
-                },
-                retry=self._retry,
-                agent_name=f"dreamer:{adaptor.name}",
-            )
-            result = await asyncio.wait_for(
-                factory.invoke(
-                    agent, prompt, invocation_state={},
-                    limits=factory.build_limits(
-                        output_tokens=budget.output_tokens,
-                        turns=budget.turns,
-                        total_tokens=budget.total_tokens,
-                    ),
-                ),
-                timeout=budget.timeout_seconds,
-            )
-        except TimeoutError:
-            log.error(
-                "dream run timed out after %.0fs (adaptor=%s key=%s)",
-                budget.timeout_seconds, adaptor.name, key,
-            )
-            return self._finish(adaptor, "unavailable", 0, sha, "timeout", started)
         except Exception:
             log.exception(
                 "dream run failed (adaptor=%s key=%s)", adaptor.name, key,
             )
             return self._finish(adaptor, "unavailable", 0, sha, None, started)
 
-        stop_reason = getattr(result, "stop_reason", None)
-        if stop_reason is not None:
+        # THE MODEL CALL(S) — `samples` of them, unioned (`AdaptorSchedule.
+        # samples`). Each sample is its own agent, its own timeout and its own
+        # envelope parse; one unreadable sample is counted and skipped, and
+        # the run is `unavailable` only when none was readable, because
+        # «nobody read this batch» is what holds the watermark and one good
+        # read is a read. `stop_reason` reported is the last readable
+        # sample's.
+        samples = self.samples_for(adaptor.name)
+        union: list[Mapping[str, object]] = []
+        readable = 0
+        stop_reason: str | None = None
+        for _ in range(samples):
+            sample_items, sample_stop = await self._sample(
+                adaptor=adaptor, key=key, instructions_text=instructions.text,
+                sha=sha, tools=tools, tool_budgets=tool_budgets,
+                prompt=prompt, budget=budget,
+            )
+            if sample_items is None:
+                self._metrics.inc(
+                    "nora_dream_sample_total", adaptor=adaptor.name,
+                    status="unavailable",
+                )
+                if stop_reason is None:
+                    stop_reason = sample_stop
+                continue
             self._metrics.inc(
-                "nora_dream_stop_reason_total",
-                adaptor=adaptor.name, reason=str(stop_reason),
+                "nora_dream_sample_total", adaptor=adaptor.name, status="ok",
             )
-
-        raw = factory.final_text(result)
-        items = parse_envelope(raw, key=adaptor.envelope_key)
-        if items is None:
-            # The batch was never actually read. `unavailable`, so the caller
-            # holds the watermark — this is `ExtractionUnparseableError`'s
-            # guarantee, expressed as a value instead of an exception.
-            log.warning(
-                "dream run produced no readable envelope (adaptor=%s key=%s, "
-                "%d chars)", adaptor.name, key, len(raw),
-            )
+            readable += 1
+            stop_reason = sample_stop
+            union.extend(sample_items)
+        if readable == 0:
             return self._finish(
                 adaptor, "unavailable", 0, sha, stop_reason, started,
             )
-
+        items = _dedupe_items(union)
+        # THE CAP IS PER RUN, and with sampling that is per UNION rather than
+        # per model answer. Identical items collapse first (above), so N
+        # samples that agree cost one slot; N samples that each invent
+        # something different are exactly the case a cap is for.
         max_items = self.max_items_for(adaptor.name)
         if len(items) > max_items:
             # Capped, never silently: a cap nobody counts reads as «we wrote
@@ -850,9 +872,9 @@ class DreamerRuntime:
             )
             # Called even when `proposals` is empty, and that is not a
             # formality: an empty `commit` is R-27's `nothing_found` and the
-            # sink may act on it — `LanguageConsolidator` rescores for an empty
-            # batch because decay is time-driven. Skipping the call would drop
-            # decay silently.
+            # sink may act on it — the curator records its wakes on one,
+            # because decay is time-driven. Skipping the call would drop decay
+            # silently.
             written = await adaptor.commit(
                 key=key, proposals=proposals, now_ms=now_ms,
             )
@@ -871,6 +893,82 @@ class DreamerRuntime:
         # model.
         status: DreamStatus = "ok" if items else "nothing_found"
         return self._finish(adaptor, status, written, sha, stop_reason, started)
+
+    async def _sample(
+        self, *, adaptor: DreamAdaptor, key: str, instructions_text: str,
+        sha: str, tools: list[Any], tool_budgets: Mapping[str, int],
+        prompt: str, budget: AdaptorBudget,
+    ) -> tuple[tuple[Mapping[str, object], ...] | None, str | None]:
+        """ONE model call: build a guard, build the agent, invoke it under the
+        budget, read the envelope. Returns `(items, stop_reason)`; `items is
+        None` means this sample was not readable (timeout, exception, or no
+        envelope) — counted by the caller, never raised.
+
+        **The guard is built HERE, once per sample**, because it owns a
+        `CallLedger` and a ledger is spent state: a shared one would let the
+        first sample's tool calls count against the second's budget. The
+        TOKEN budget (`budget`) is deliberately per sample too — it is the
+        model's own limit for one call, and N samples of a bounded call is
+        what sampling means.
+        """
+        guard = DreamGuard(
+            adaptor=adaptor.name,
+            budgets=dict(tool_budgets),
+            metrics=self._metrics,
+            result_caps=_TOOL_RESULT_CAPS,
+        )
+        try:
+            agent = factory.create_dream_agent(
+                model=self._models.create(),
+                system_prompt=instructions_text,
+                tools=tools,
+                guard=guard,
+                trace_attributes={
+                    "dreamer.adaptor": adaptor.name,
+                    "dreamer.key": key,
+                    "dreamer.objective": adaptor.objective,
+                    "dreamer.instruction_sha256": sha,
+                },
+                retry=self._retry,
+                agent_name=f"dreamer:{adaptor.name}",
+            )
+            result = await asyncio.wait_for(
+                factory.invoke(
+                    agent, prompt, invocation_state={},
+                    limits=factory.build_limits(
+                        output_tokens=budget.output_tokens,
+                        turns=budget.turns,
+                        total_tokens=budget.total_tokens,
+                    ),
+                ),
+                timeout=budget.timeout_seconds,
+            )
+        except TimeoutError:
+            log.error(
+                "dream run timed out after %.0fs (adaptor=%s key=%s)",
+                budget.timeout_seconds, adaptor.name, key,
+            )
+            return None, "timeout"
+        except Exception:
+            log.exception(
+                "dream run failed (adaptor=%s key=%s)", adaptor.name, key,
+            )
+            return None, None
+        stop_reason = getattr(result, "stop_reason", None)
+        if stop_reason is not None:
+            self._metrics.inc(
+                "nora_dream_stop_reason_total",
+                adaptor=adaptor.name, reason=str(stop_reason),
+            )
+        raw = factory.final_text(result)
+        items = parse_envelope(raw, key=adaptor.envelope_key)
+        if items is None:
+            log.warning(
+                "dream run produced no readable envelope (adaptor=%s key=%s, "
+                "%d chars)", adaptor.name, key, len(raw),
+            )
+            return None, stop_reason
+        return items, stop_reason
 
     def _finish(
         self, adaptor: DreamAdaptor, status: DreamStatus, written: int,
@@ -891,6 +989,28 @@ class DreamerRuntime:
             status=status, written=written, instruction_sha256=sha,
             stop_reason=stop_reason,
         )
+
+
+def _dedupe_items(
+    items: Sequence[Mapping[str, object]],
+) -> tuple[Mapping[str, object], ...]:
+    """The union of N samples with byte-identical items collapsed, first
+    occurrence kept in order. Two samples that phrase one arrangement
+    differently are NOT collapsed here — that is the adaptor's job (the
+    staging key and the create gate decide what is the same occasion), and a
+    runtime that guessed would be deciding a tier's identity rule for it."""
+    seen: set[str] = set()
+    out: list[Mapping[str, object]] = []
+    for item in items:
+        try:
+            fingerprint = json.dumps(item, sort_keys=True, ensure_ascii=False)
+        except (TypeError, ValueError):
+            fingerprint = repr(item)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        out.append(item)
+    return tuple(out)
 
 
 def _tool_budgets(

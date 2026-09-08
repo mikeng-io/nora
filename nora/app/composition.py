@@ -39,6 +39,7 @@ from nora.agent.dreamer import (
     RegistryToolSource,
     verify_tool_subsets,
 )
+from nora.agent.egress import scan_identifiers
 from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
@@ -47,6 +48,7 @@ from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_
 from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.compute import ComputeJobStore
+from nora.domain.media_join import MediaJoin
 from nora.domain.ports import (
     BlobStore,
     ComputeBackend,
@@ -75,7 +77,6 @@ from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
-from nora.infra.sql.entities import SqlEntityStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
@@ -92,7 +93,8 @@ from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
-from nora.infra.vision import StickerInterpreter, VisionClient, derive_vision_timeout
+from nora.infra.vision import MediaComprehender, VisionClient, derive_vision_timeout
+from nora.ingest.comprehension import MediaComprehension
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
     CompositePolicy,
@@ -110,7 +112,6 @@ from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
-from nora.language.note_entity_adaptor import NoteEntityResolutionAdaptor
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
@@ -530,6 +531,10 @@ class Dependencies:
     audit: RecordStore
     memory: MemoryStore
     persons: Persons
+    # The ONE media join (issue #116), so `__main__` can hand the same
+    # instance to the dream loop and to lazy adoption — the two transcript
+    # builders this module does not construct itself.
+    media_join: MediaJoin
     metrics: Metrics
     policy: EngagePolicy
     assembler: ContextAssembler
@@ -736,6 +741,36 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # writer, forgot the reader" mistake. What the flag gates is the FOLD,
     # which is the part that spends a model call inside the reply slot.
     standing_store = SqlStandingStore(engine)
+    # The unified media index (DEC-138), built HERE rather than beside the
+    # vision client below because THREE readers now hold it and the earliest is
+    # the context assembler: ingest writes the custody row, the comprehension
+    # job writes the read, the assembler joins it into the transcript and
+    # `media_fetch` serves it. One instance, `engine` reused for the reason
+    # every other store here reuses it (one pool, one lifecycle).
+    media_objects = SqlMediaObjectStore(engine)
+    # ONE media join for the whole process (issue #116, operator 2026-09-08),
+    # handed to every transcript builder there is: the tag assembler, the fire
+    # path, the tag-path debrief, the standing event fold, the note tier's two
+    # adaptors and lazy adoption. On master the sticker description and the
+    # voice-note transcript were baked into `messages.body`, so all of them saw
+    # them; the first cut of this change put the join on the tag assembler
+    # alone and left the other seven rendering bare handles.
+    #
+    # `scan_identifiers` is INJECTED because `nora/language/` sits two layers
+    # below `nora/agent/` in the import contract and could not otherwise reach
+    # it — see `nora.domain.media_join`'s docstring.
+    media_join = MediaJoin(
+        store=media_objects,
+        screen=scan_identifiers,
+        metrics=metrics,
+        render_chars=cfg.media.comprehension_render_chars,
+        # The per-QUERY timeout, on every path. The two slot-held callers wrap
+        # `enrich` in their own `wait_for` as well; this is what bounds the
+        # store read for the six that do not, and it is deliberately shorter
+        # than `[standing] store_timeout_seconds` so the inner bound is the one
+        # that fires and the outer stays the backstop it was written as.
+        timeout_seconds=cfg.media.join_timeout_seconds,
+    )
     # The per-turn verdict's store (26 §3). Built unconditionally beside
     # `standing_store` for the same reason: it costs one attribute with
     # the tier off, and the debrief's own `store_verdict is None` guard
@@ -757,28 +792,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     language_store: SqlLanguageStore | None = (
         SqlLanguageStore(engine, metrics=metrics) if cfg.dreamer.enabled else None
     )
-    # ONE entity store for the process. `fact_entity` is a TIER-NEUTRAL name
-    # registry — an entity ("Big Walk") is a shared name, not any one tier's
-    # property — and `note_entity.entity_id` is a foreign key into it, so it
-    # outlived the knowledge tier that first built it. Built UNCONDITIONALLY
-    # rather than under a tier flag for exactly that reason: it is one small
-    # store over an engine that already exists, and gating it on a tier would
-    # be a tier deciding whether a shared registry exists. The table and the
-    # module keep their `fact_` names in this pass; renaming either is a
-    # separate change with its own migration.
-    fact_entities = SqlEntityStore(engine)
     # The note tier's store (2026-08-21 note-tier design), REUSING `engine`
     # like every store above, and gated on its OWN flag. Off,
     # `TranscriptInjection` gets `notes=None` and `_notes` answers `()`
     # without a query — the dormant state the tier shipped in. No `metrics=`:
-    # `SqlNoteStore.__init__` takes an engine and an optional `entities`
-    # collaborator and nothing else on purpose (its own docstring), and the
-    # one read on the critical path is counted by `_notes` instead.
-    #
-    # `entities=fact_entities` (issue #100) is the deterministic half of the
-    # note tier's own entity resolution, over the shared registry above.
+    # `SqlNoteStore.__init__` takes an engine and nothing else on purpose (its
+    # own docstring), and the one read on the critical path is counted by
+    # `_notes` instead. It took an `entities=` registry collaborator from
+    # issue #100 until 2026-09-08, when the note tier's entity-resolution
+    # chain was removed (issue #115's follow-up): nothing minted an entity
+    # once the knowledge tier was gone, so the chain could only ever link an
+    # anchor name to the eight stale rows that tier left behind.
     note_store: SqlNoteStore | None = (
-        SqlNoteStore(engine, entities=fact_entities) if cfg.notes.enabled else None
+        SqlNoteStore(engine) if cfg.notes.enabled else None
     )
 
     # Resolved here, not inside AdapterRegistry — the same convention every
@@ -973,6 +999,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # is that the read and the write are the same row seen twice, and two
         # objects for one row is how that stops being structurally true.
         standing=standing_store if cfg.standing.enabled else None,
+        # The media join (issue #116). The same instance every other
+        # transcript builder holds — the comprehension a spawned job wrote is
+        # the one the transcript renders, the one the note tier reads and the
+        # one `media_fetch` serves, and eight copies of that decision would be
+        # eight chances to disagree about what a picture shows.
+        media_join=media_join,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -1134,7 +1166,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # lifecycle; a second `create_sql_engine` would fork the pool and its own
     # `aclose()` would dispose the engine everything else is still using).
     media_descriptions = SqlMediaDescriptionStore(engine)
-    media_objects = SqlMediaObjectStore(engine)
     # The per-modality DIRECT lanes (provider-aware describers, 2026-08-30):
     # a describer configured `provider = "kimi"` travels through a client
     # pointed at `api.kimi.com/coding/v1`, NOT the process-wide OmniRoute
@@ -1190,29 +1221,53 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 budget_overrides=cfg.llm.budgets).budgets()["media_fetch"],
         ),
     )
-    # A SECOND VisionClient, not a second connection: same process-wide
-    # OmniRoute client, the SAME token budget as `media_fetch`'s vision call
-    # (the 2026-08-07 probe refuted a smaller one — see `StickerInterpreter`'s
-    # docstring) and a sticker-specific timeout.
-    # `derive_vision_timeout` is deliberately not used — see MediaConfig.
+    # The sticker IDENTITY ladder — custody, not description (issue #116). Its
+    # model rung moved to the spawned comprehension job below, so this needs no
+    # interpreter and no second `VisionClient`: what it still buys is a repeat
+    # sighting costing zero platform RPC, decided at parse time before any
+    # bytes move.
+    # Built whenever custody is on, and NOT gated on `sticker_descriptions`:
+    # since issue #116 this ladder is pure custody — it turns a repeat sighting
+    # into zero platform RPC and reads nothing. Gating it on the READ switch
+    # meant `sticker_descriptions = false` also threw away the dedup, so every
+    # repeat sighting paid a platform RPC again, while three artefacts said the
+    # ladder stayed on. `sticker_descriptions` gates the comprehension job's
+    # sticker subjects instead (`stickers_enabled` below), which is the only
+    # thing it now describes.
     sticker_reader = None
-    if cfg.media.sticker_descriptions and blobs is not None:
+    if blobs is not None:
         sticker_reader = StickerReader(
             blobs=blobs,
             descriptions=media_descriptions,
-            interpreter=StickerInterpreter(
-                VisionClient(
-                    client=client,
-                    model=cfg.media.vision_model,
-                    max_tokens=cfg.media.sticker_prompt_max_tokens,
-                    reasoning_effort=cfg.media.vision_reasoning_effort,
-                    max_bytes=cfg.media.vision_max_bytes,
-                    timeout_seconds=cfg.media.sticker_timeout_seconds,
-                ),
-                model=cfg.media.vision_model,
-            ),
-            model=cfg.media.vision_model,
             metrics=metrics,
+        )
+    # THE COMPREHENSION JOB (issue #116) — one model pass per medium into
+    # title/description/content, spawned off the ingest path. Wired only when
+    # custody is on AND `[media] comprehension` is set: with either off, every
+    # attachment keeps its bare handle and nothing anywhere claims a
+    # description it does not have. It reuses `vision_client` — one connection,
+    # one budget, the modality picking the model — for `derive_vision_timeout`'s
+    # reason (three clients would be three budgets, and three hung calls could
+    # outlast the loop).
+    comprehension: MediaComprehension | None = None
+    if cfg.media.comprehension and blobs is not None:
+        comprehension = MediaComprehension(
+            blobs=blobs,
+            store=media_objects,
+            interpreter=MediaComprehender(
+                client=vision_client,
+                describe_models=_describe_models(cfg),
+                describe_providers=describe_providers,
+                describe_max_bytes=_describe_max_bytes(cfg),
+                text_model=cfg.media.comprehension_text_model,
+                chunk_seconds=cfg.media.describe.video.chunk_seconds,
+                max_chunks=cfg.media.describe.video.chunk_max,
+            ),
+            memory=memory,
+            metrics=metrics,
+            spawn=_spawn,
+            stickers_enabled=cfg.media.sticker_descriptions,
+            max_concurrent=cfg.media.comprehension_max_concurrent,
         )
     # `[speech.stt]`'s transcriber: wired ONLY when enabled — the same
     # inert-ship rule as `stickers`. Off leaves the ingest stage without a
@@ -1252,6 +1307,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         standing_event_wiring = standing_event.Wiring(
             store=standing_store,
             record_store=audit,
+            media_join=media_join,
             client=_DebriefModelClient(
                 client=client,
                 model=cfg.standing.model or cfg.llm.model,
@@ -1280,8 +1336,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         media_sources=media_sources, blobs=blobs,
         media_store=media_objects,
         stickers=sticker_reader, transcriber=transcriber,
+        comprehension=comprehension,
         language=cfg.speech.stt.language,
-        max_description_chars=cfg.media.sticker_description_max_chars,
         standing_event_wiring=standing_event_wiring,
     )
     # `web_search`/`web_fetch` (DEC-73/DEC-116) are wired ONLY when `[search]
@@ -1657,6 +1713,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),
         describe_providers=_describe_providers(cfg),
+        # `[media.describe.video]`'s chunk geometry (issue #117): the SAME two
+        # numbers the comprehension pass is built with just above, so
+        # `media_fetch`'s deliberate look reads a clip exactly as far as the
+        # automatic read did.
+        video_chunk_seconds=cfg.media.describe.video.chunk_seconds,
+        video_max_chunks=cfg.media.describe.video.chunk_max,
+        media_join=media_join,
         describe_max_bytes=_describe_max_bytes(cfg),
         blobs=blobs, descriptions=media_descriptions, search=search_client,
         social=social_client,
@@ -1811,6 +1874,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         debrief_wiring = DebriefWiring(
             store=standing_store,
             store_verdict=turn_verdict_store,
+            media_join=media_join,
             # The note tier's sink. `None` while `[notes] enabled = false`,
             # so the debrief parses no proposals and raises none — the
             # same inert shape the other optional collaborators use.
@@ -1937,6 +2001,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # It reads doctrine at `applies_to="heartbeat"` itself.
         fire_path = FirePath(
             persons=persons, records=audit, memory=memory,
+            media_join=media_join,
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters=dict(registry.adapters), registry=tool_registry,
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
@@ -2159,6 +2224,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # it see one room and not two.
             standing=standing_store if cfg.standing.enabled else None,
             transcript_limit=cfg.relevance_gate.transcript_rows,
+            # The SAME join the turn behind it runs. Without it the gate reads
+            # an image-only message as an EMPTY BODY, `render_context` drops
+            # the row, and the window a photo prompted is the one the gate is
+            # least able to see — a systematic under-admission exactly where
+            # the room is most likely to be asking something.
+            media_join=media_join,
         )
         participation_trigger = ParticipationTrigger(
             speak=fire_path.speak,
@@ -2224,9 +2295,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # The note tier's curator, on its OWN gate and behind the tier's.
         # `[notes] enabled` decides whether the index is injected and the four
         # tools reachable; `curator_enabled` decides whether a background pass
-        # MERGES AND RETIRES. Two switches for two risks: the tag path only
-        # reads, and this is the one thing in the tier that removes something
-        # from her index.
+        # RETIRES. Two switches for two risks: the tag path only reads, and
+        # this is the one thing in the tier that removes something from her
+        # index. (It merged too, until 2026-09-08 — merge eligibility needed a
+        # resolved entity set that nothing could populate once the knowledge
+        # tier was gone, so the verb was inert by construction and went with
+        # the entity-resolution chain.)
         #
         # This is ALSO where `note-revisit` used to be wired, before the
         # note-curator merge (design/dreamer-agent-loop/34, issue #99): the
@@ -2276,7 +2350,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
 
             # A TRUE CRON, not a data-gated one (design/dreamer-agent-loop/33
             # §5, issue #102): `NoteCuratorAdaptor.uses_watermark = False` and
-            # its retirement/merge sweep must fire on the CALENDAR even when
+            # its retirement sweep must fire on the CALENDAR even when
             # the room is silent — a note's anchor date passes whether or not
             # anybody is talking. `AdaptorSchedule` only gates a watermark-free
             # adaptor's clock once `_dream_adaptor_once` checks the schedule
@@ -2317,35 +2391,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     # per-tick ceiling finds one that means something.
                     batch_limit=cfg.notes.max_expired_per_tick,
                 ),
-                # The THIRD adaptor found running on the bare 5-minute tick
-                # (the fact tier's two were the first two). Watermark-free and
-                # workspace-keyed with no schedule entry, so it inherited it.
-                #
-                # It has been cheap only by accident: `unresolved_note_anchor_
-                # names` offers a name to the model only when
-                # `similar_entities` finds a near-miss among EXISTING entity
-                # rows, and the entity table has been empty for exactly the
-                # bootstrap reason this branch's first commit fixes. Opening
-                # the adjudication filter is what starts filling it — so
-                # without this entry, this branch would have CAUSED a model
-                # call every five minutes per workspace, arriving weeks later
-                # as somebody else's mystery.
-                #
-                # 08:00 UTC: after `fact-entity-resolution` at 07:00, since a
-                # note anchor resolves against names that pass has minted.
-                "note-entity-resolution": AdaptorSchedule(
-                    min_interval_seconds=86400,
-                    phase_offset_seconds=8 * 3600,
-                    batch_limit=cfg.notes.max_expired_per_tick,
-                ),
             }
             dream_adaptors = (
                 *dream_adaptors,
                 NoteCuratorAdaptor(
                     notes=note_store,
                     record=audit,
+                    media_join=media_join,
                     today=_today_hk,
-                    max_groups_per_tick=cfg.notes.max_groups_per_tick,
                     max_expired_per_tick=cfg.notes.max_expired_per_tick,
                     max_revisits_per_tick=cfg.notes.max_revisits_per_tick,
                     evidence_messages_per_note=cfg.notes.revisit_evidence_messages,
@@ -2371,31 +2424,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     events=events,
                     conclusions=memory,
                     ai_peer=cfg.memory.ai_peer,
-                ),
-            )
-            # The note tier's judgement half of entity resolution (issue
-            # #100), riding `curator_enabled` rather than a fourth flag of
-            # its own. The note tier already has three gates for three
-            # DIFFERENT risks an operator turning on `[notes]` did not
-            # thereby sign up for: the tag path only reads, this pass's own
-            # sibling above merges and retires, the create path (below)
-            # writes new notes. Attaching an alias to the shared entity
-            # registry carries none of those risks — it never touches a
-            # note's content, never creates a note, and never merges an
-            # entity row, so by itself it would not earn a gate. What makes
-            # `curator_enabled` the right one anyway is that this pass has no
-            # OTHER consumer: `note_entity` is read only by
-            # `group_on_anchor_key`, which only the curator calls. An
-            # operator who has not turned the curator on has nothing that
-            # would ever read what this pass writes — the exact "declared
-            # with no call site" shape CLAUDE.md warns against, one layer up
-            # from a metric. The entity registry it reads and writes is built
-            # unconditionally (see `fact_entities` above), so there is no
-            # second condition left to check.
-            dream_adaptors = (
-                *dream_adaptors,
-                NoteEntityResolutionAdaptor(
-                    entities=fact_entities, metrics=metrics,
                 ),
             )
         # The note tier's CREATE PATH (design/dreamer-agent-loop/33 §4, issue
@@ -2424,7 +2452,28 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 # for a different unit of work rather
                 # than one room's arrangements.
                 "note-candidates": AdaptorSchedule(
-                    min_interval_seconds=3600, batch_limit=200,
+                    min_interval_seconds=3600,
+                    # 80, DOWN FROM 200 on 2026-09-08, and the reason is the
+                    # objective's shape rather than a cost preference. v4
+                    # asks for one verdict per message before the candidate
+                    # list (design 37 / issue #118), so the OUTPUT now scales
+                    # with the batch: at ~15 tokens a verdict, 200 messages
+                    # is ~3000 of the shipped 4000-token output budget before
+                    # a single candidate is written. An output cap that binds
+                    # truncates the JSON, `parse_envelope` reads no envelope,
+                    # the run is `unavailable` and the watermark is HELD — so
+                    # the same over-long batch is re-read and re-truncated on
+                    # every fire, forever. That trap is worth more than the
+                    # latency: a room that says more than 80 things in an
+                    # hour drains over the next fires, because the watermark
+                    # advances by what was read and lag stays positive.
+                    # *The reading that would reopen this*: a per-adaptor
+                    # `[dreamer.budgets.note-candidates] output_tokens` sized
+                    # for the batch, at which point the cap can go back up.
+                    batch_limit=80,
+                    # `[notes] candidate_samples` — model calls per fire,
+                    # unioned; see `NotesConfig.candidate_samples`.
+                    samples=cfg.notes.candidate_samples,
                 ),
             }
             dream_adaptors = (
@@ -2438,6 +2487,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         if conv.primary_id and conv.workspace
                     }.get,
                     metrics=metrics,
+                    # The ROOM's zone for each rendered message's moment —
+                    # the same `[reminders] timezone` the curator's `_today`
+                    # reads, for the same reason: «this Saturday» is a
+                    # question about the room's calendar, not the process's.
+                    timezone=ZoneInfo(cfg.reminders.timezone),
                 ),
             )
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
@@ -2544,6 +2598,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
 
     return Dependencies(
         audit=audit, memory=memory, persons=persons, metrics=metrics,
+        media_join=media_join,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,

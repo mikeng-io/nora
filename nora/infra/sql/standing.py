@@ -3,7 +3,7 @@ every fold and revised in place after it
 (`design/dreamer-agent-loop/26-standing.md` §4).
 
 `__init__(self, engine: AsyncEngine)` and nothing else, matching
-`SqlTagTraceStore`/`SqlNoteStore`/`SqlFactStore`'s own contract-suite
+`SqlTagTraceStore`/`SqlNoteStore`'s own contract-suite
 affordance: no config, no clock, no metrics. `updated_at` arrives on the
 `Standing` itself, so a fixture in another session can build this class from a
 bare `AsyncEngine` and never has to guess what else it needs.

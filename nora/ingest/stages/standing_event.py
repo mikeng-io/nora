@@ -63,6 +63,7 @@ from datetime import tzinfo
 from typing import Any
 
 from nora.agent.dream_screen import screen
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import NormalizedMessage, TranscriptRow
 from nora.domain.ports import RecordStore, StandingStore
 from nora.domain.standing import Standing
@@ -122,6 +123,12 @@ class Wiring:
     store_timeout_seconds: float
     max_chars: int
     tz: tzinfo | None = None
+    # The shared media join (issue #116). The fold reads the SAME transcript
+    # rows the reply path does and renders them for a model, so it needs the
+    # same answer to «what did that photo show» — on master the description was
+    # in `messages.body` and every consumer had it. `None` is the inert state
+    # and renders the bare handles the row actually carries.
+    media_join: MediaJoin | None = None
 
 
 async def run(
@@ -257,6 +264,31 @@ async def _event_fold(*, key: Key, wiring: Wiring, metrics: Metrics) -> None:
                 break
             if not rows:
                 break  # caught up — nothing left since the watermark
+            if wiring.media_join is not None:
+                # The same join the tag path and the debrief run: this fold
+                # renders these rows for a model, so it must see what a photo
+                # showed or the position it forms is built on a bare handle.
+                #
+                # BOUNDED, like its two siblings above and for a harder reason
+                # than symmetry: this loop holds the conversation's slot until
+                # `finally: slots.release_and_dispatch(key)`, and `enrich`
+                # catches EXCEPTIONS, not hangs. A wedged `media_objects` would
+                # hold that room's rollup slot indefinitely. It was the only
+                # unbounded await on a slot-held path in the repo — the debrief
+                # got this right in the same commit because it has an AST
+                # validator deriving its receiver set from `run`'s parameters,
+                # and this module had none. It has one now
+                # (`tests/architecture/test_slot_held_awaits_are_bounded.py`).
+                try:
+                    rows = list(await asyncio.wait_for(
+                        wiring.media_join.enrich(rows, path="standing_event"),
+                        timeout=wiring.store_timeout_seconds,
+                    ))
+                except Exception:
+                    log.exception(
+                        "standing event fold: media join failed (%s); folding "
+                        "on the bare handles", key,
+                    )
             if not await _fold_batch(
                 prior=prior, rows=rows, key=key, wiring=wiring, metrics=metrics,
             ):

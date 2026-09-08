@@ -18,6 +18,7 @@ so a shared helper in the same package needs no new edge in the import graph.
 from __future__ import annotations
 
 from nora.config import Config
+from nora.domain.media_join import MediaJoin
 from nora.domain.ports import (
     MemoryStore,
     RecordStore,
@@ -42,6 +43,7 @@ def build_assembler(
     policy: Policy,
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
+    media_join: MediaJoin | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -51,4 +53,11 @@ def build_assembler(
         tagger_card_conclusions=cfg.memory.tagger_card_conclusions,
         notes=notes, policy=policy,
         standing=standing,
+        # The media join (issue #116): the transcript's `[image a3f2c1]`
+        # placeholders gain their stored comprehension here, in the assembler,
+        # so `nora/agent/prefill.py` stays a pure renderer over `TagContext`.
+        # `None` (every harness that wires no media index) renders the bare
+        # handles, which is what the row actually says. The SAME instance is
+        # handed to the five other transcript builders.
+        media_join=media_join,
     )

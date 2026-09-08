@@ -86,6 +86,35 @@ contracts.
   `Recollection.reachable`. Collapsing the two hid a dead endpoint for the life
   of the deployment.
 
+## The Dreamer, and Standing
+
+Two of the most-used words in this repo, and neither was here until 2026-09-08.
+
+- **The Dreamer** — the background tier that runs *between* turns, on its own
+  schedule, and never in the reply path. It reads what the record already holds
+  and writes derived state back; nothing it produces reaches a room directly.
+  Its units are **adaptors** (`nora/language/`, wired in the composition root
+  under `dream_adaptors`), each with an **objective** — an authored prompt file
+  under `nora/dreamer/objectives/` — and each bounded by a **DreamGuard** with
+  its own budget. The name is not a metaphor for creativity: it is the tier that
+  runs while nobody is asking, which is exactly why it is the tier that must
+  never speak. `design/dreamer-agent-loop/` is its bundle.
+
+  **The two live adaptors are `note-candidates` and the curator.** Two earlier
+  tiers — the knowledge tier (the "fact tier") and the language tier — were
+  deprecated 2026-09-07 and their code deleted; a design node numbered 20, 21,
+  23, 24, 25, 28, 31 or 32 in that bundle describes code that no longer exists.
+
+- **Standing** — Nora's held position on a topic in a room: what she currently
+  thinks, distinct from what was said. It is *derived* state, written by the
+  debrief path (`nora/engagement/stages/debrief.py`) and stored through
+  `StandingStore`, and it passes the same egress screen a reply does before it
+  is written — a screen applied before the write, not before the read, because
+  a screen a cache hit skips is not a screen. Standing is an **input** to a
+  later turn, never an output of the current one.
+
+  Do not read "standing" as status or as a queue position; it is a *stance*.
+
 ## Doctrine — what was decided
 
 **Doctrine**, not "persona". Renamed 2026-08-06 (DEC-29): "persona" names a

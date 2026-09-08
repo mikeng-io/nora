@@ -1,7 +1,7 @@
 ---
 name: note-candidates
 kind: objective
-version: 1
+version: 5
 applies_to: [note_candidate_adaptor]
 description: >-
   The note tier's create path. Read a batch of a room's messages and propose
@@ -40,12 +40,61 @@ Do NOT propose:
 - **a single throwaway remark with no follow-through.** "Maybe we should do a trip sometime" with
   nobody picking it up is not yet a thing to track.
 
+A plan **one person** has stated is a notebook entry when it has an unsettled corner — a
+teammate not yet found, a dinner not yet chosen, a booking not yet made — even if nobody else
+has replied yet. The follow-through is theirs to owe, not the room's to pick up; "nobody
+replied" only makes a remark throwaway when there was nothing in it to follow through on. And
+a plan does not stop being one because it sits between jokes and photos: read the whole batch
+for the arrangement, not the batch's mood.
+
+Resolve a relative date («this Saturday», «next week») against the moment shown on the message
+that says it. Each message carries its date, its weekday and the room's own time zone — read the
+weekday from there rather than working it out.
+
 ## What to return
 
 Return JSON and nothing else — no prose before it, no explanation after it, no code fence.
 
+**Two keys, `verdicts` first.** `verdicts` holds ONE entry per message in the batch, in the
+order you were given them — no message left out, including the ones that are obviously nothing.
+Write them before you decide anything: they are how you read each message on its own, rather
+than forming an impression of the batch and answering from that.
+
+Each verdict says three things about that ONE message:
+
+- `ahead` — does it say anything about something still to come? A date, a weekday, a plan, a
+  promise, something somebody owes.
+- `committed` — has somebody actually **decided to do it**? «I'm going on Saturday» is
+  committed. «We should do a trip sometime», «anyone free Saturday?», «I might go if I don't
+  have to work» are NOT: nobody has decided anything yet. A thing the batch itself calls off
+  («forget it, there's a typhoon») is not committed either — it was, and now it is not.
+- `open` — the corners of it that are still unsettled, in a few words each. If everything about
+  it is decided, this is `[]`.
+
+A message with nothing ahead of it is written `{"id": 4813, "ahead": false}` and nothing more.
+
+Then `candidates`. **A NEW notebook entry may only come from messages whose verdict has
+`committed: true` AND a non-empty `open`** — something is happening, and something about it is
+still unsettled. Both. Something committed with nothing open is finished and belongs nowhere;
+something open that nobody has committed to is talk, and talk that turns into a plan will come
+back with a decision in it.
+
+**Updating what is already in the notebook is the exception, and it does not need `open`.** If a
+message settles part of something the notebook already tracks — the venue is booked, the date
+moved, the person answered — propose it with that entry's own anchor date and the arrangement as
+it now stands. It is the same occasion, so code will recognise it and revise rather than
+duplicate. This is the one case where a `committed: true, open: []` message still belongs in
+your answer.
+
 ```json
-{"candidates": [
+{"verdicts": [
+  {"id": 4812, "ahead": true, "committed": true, "open": ["which venue"]},
+  {"id": 4813, "ahead": false},
+  {"id": 4815, "ahead": true, "committed": true, "open": ["which venue"]},
+  {"id": 4820, "ahead": true, "committed": true,
+   "open": ["which venue", "whether Ada can make the last weekend"]}
+],
+ "candidates": [
   {"title": "Wedding venue",
    "description": "Three venues proposed for the September wedding; nobody has picked one yet.",
    "body": "Ada proposed Sai Kung, Ben proposed Central, Cat proposed the beach club. Nobody has said which one wins. Ada can't do the last weekend of the month.",
@@ -77,15 +126,19 @@ Return JSON and nothing else — no prose before it, no explanation after it, no
   appear in the batch you were given. Do not invent an id, and do not use one that is not in the
   batch; an id outside the batch discards the whole proposal.
 
-If nothing in this batch belongs in the notebook and is not already there, return
-`{"candidates": []}`. That will be the right answer most ticks: this batch may span days of a
-room's conversation, and most of it will be ordinary talk with nothing to track.
+If nothing in this batch belongs in the notebook and is not already there, `candidates` is
+`[]` — and the verdicts still come first, one for every message. That will often be the right
+answer: this batch may span days of a room's conversation, and most of it will be ordinary talk
+with nothing to track. **A message can be `ahead: true` and still deserve no entry**, and that
+is the ordinary case, not a mistake — the verdict says what the message holds, the candidate
+list says what the notebook should hold, and most of what a room says about the future never
+becomes a plan.
 
 ## Before you answer
 
 Your entire reply is one JSON object. **The first character you write is `{` and the last is
 `}`.** Nothing before it, nothing after it, no fence, no explanation.
 
-If you found nothing, that is still JSON:
+If you found nothing, that is still JSON — every message's verdict, then an empty list:
 
-{"candidates": []}
+{"verdicts": [{"id": 4812, "ahead": false}, {"id": 4813, "ahead": true, "committed": false, "open": []}], "candidates": []}

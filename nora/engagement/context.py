@@ -23,6 +23,7 @@ import logging
 import time
 from typing import Any, Protocol
 
+from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
     NormalizedMessage,
     PersonRef,
@@ -49,11 +50,13 @@ class StandingNotesReader(Protocol):
     reason every other collaborator here is one: `TranscriptInjection` takes
     Protocol-typed collaborators only, so it never imports `nora.infra`.
 
-    Declared HERE rather than in `nora.domain.ports`
-    because today the prefill is the tier's only reader; when `note_read` /
-    `note_search` land in `nora.agent.tools` the tier's full read half belongs
-    in `ports` next to its fact-tier sibling, and this Protocol becomes an
-    alias of it.
+    Declared HERE rather than in `nora.domain.ports` because the prefill is
+    the only reader that needs THIS verb: `note_read`/`note_search` reach the
+    tier through `nora.agent.tools` and ask it different questions. The
+    condition under which this Protocol would move to `ports` and become an
+    alias — a second reader wanting `standing` itself — has not arrived. (It
+    was written against the fact tier's own read half as the precedent; that
+    tier was deleted on 2026-09-07, and the argument stands on its own.)
 
     **Never raises**, the promise every critical-path read in this module
     makes. `SqlNoteStore.standing` does not
@@ -66,28 +69,6 @@ class StandingNotesReader(Protocol):
         design (§5.1): a note missing from the index is invisible to her, and
         invisible is indistinguishable from absent."""
         ...
-
-
-def _workspace_of(policy: Policy | None, msg: NormalizedMessage) -> str:
-    """The workspace a room belongs to (`Conversation.workspace`, DEC-105).
-
-    ONE resolver for both workspace-keyed tiers. The note tier and the fact
-    tier are keyed on the same thing, and two tiers each carrying their own
-    idea of what a room's workspace is would disagree the first time a
-    deployment ran two social units — which is precisely the case the key
-    exists for.
-
-    Falls back to DEC-105's own default rather than refusing: neither tier is
-    an admission gate, and by the time a tag reaches the assembler ingest has
-    already applied the allowlist (DEC-18), so a room absent here is one the
-    ingest path already let through under the default.
-    """
-    convo = (
-        policy.conversation(msg.platform, msg.conversation_id)
-        if policy is not None
-        else None
-    )
-    return convo.workspace if convo is not None else "nora"
 
 
 class TranscriptInjection:
@@ -107,6 +88,7 @@ class TranscriptInjection:
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
         standing: StandingStore | None = None,
+        media_join: MediaJoin | None = None,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -146,6 +128,14 @@ class TranscriptInjection:
         # unlike `notes`: a position is held in a room, not shared
         # across a workspace's rooms, so there is no workspace to resolve.
         self._standing_store = standing
+        # THE MEDIA JOIN (issue #116). `messages.body` carries `[image a3f2c1]`
+        # and nothing more; the comprehension lives in `media_objects`, and the
+        # join is where the two meet — in the ASSEMBLER and not in
+        # `nora/agent/prefill.py`, which is a pure renderer over `TagContext`
+        # and must not gain a store. `None` is the inert state and renders
+        # exactly what is stored. The object itself is shared with seven other
+        # transcript builders; see `nora.domain.media_join`.
+        self._media_join = media_join
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -192,6 +182,21 @@ class TranscriptInjection:
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
         transcript = self._persons.name_transcript(transcript, platform=msg.platform)
+        # THEN the media join (issue #116), after the transcript read and
+        # before the context is frozen. It is a second round trip, so it is NOT
+        # in the gather above: it needs the rows the gather returns. ONE
+        # bounded query per `DEFAULT_QUERY_BLOBS` distinct blobs, and it
+        # degrades to the stored body — which already says `[image a3f2c1]`,
+        # so a join that does not happen claims nothing.
+        #
+        # `MediaJoin` is SHARED with the fire path, both standing folds, the
+        # Dreamer's batch, the note curator, lazy adoption and
+        # `load_transcript` — EIGHT transcript builders, one answer to «what
+        # did that photo show». The first cut of #116 put this join here and
+        # nowhere else, so seven of the eight saw a bare handle where master
+        # had baked the description into `messages.body`.
+        if self._media_join is not None:
+            transcript = await self._media_join.enrich(transcript, path="tag")
 
         return TagContext(
             tag_id=request.tag_id,
@@ -396,8 +401,10 @@ class TranscriptInjection:
         states wearing the same face:
 
         - **No store** — `[notes] enabled = false`, the dormant default. Not an
-          error, not counted; the same "not yet wired" shape as `language`/
-          `exchange`/`portrait` above.
+          error, not counted. It is the last read in this assembler that can
+          be dormant: `language`/`exchange`/`portrait` were the other three
+          and went with their tier on 2026-09-07 (see the gather's own note
+          above).
         - **No `Conversation` for this room** — a store is wired but there is
           no workspace to scope it by. That is a WIRING GAP (engagement and
           ingest disagreeing about which `Policy` they hold — see

@@ -84,11 +84,8 @@ CARRIES_A_COORDINATE = {
 }
 
 #: The Dreamer adaptors whose envelope carries FREE TEXT, and therefore the
-#: ones a leak can ride out on. `note-entity-resolution` is deliberately
-#: absent and has its own test below: its payload is two single-character
-#: handles, so it cannot express an identifier at all — parametrizing it here
-#: would mean asserting a drop on a shape it is incapable of producing, which
-#: is the exact defect this file was just repaired for.
+#: ones a leak can ride out on — which, since the note tier's
+#: entity-resolution pass went (2026-09-08), is every shipped adaptor.
 ADAPTORS = ("note-candidates", "note-curation")
 
 
@@ -262,33 +259,3 @@ def test_a_rejection_never_carries_the_offending_text():
     # `description` is where the fixture hides the number — the free-text field
     # a `web_fetch`ed page's contents would land in.
     assert rejected[0].path == "description"
-
-
-def test_the_entity_resolution_payload_cannot_express_an_identifier_at_all():
-    """**Why `note-entity-resolution` is absent from `ADAPTORS`.**
-
-    Its envelope items are `{"name": <one char>, "entity": <one char>|null}` —
-    handles into a list the runtime rendered, never free text
-    (`note_entity_adaptor._parse_resolution`). A leak has nowhere to sit, so
-    parametrizing it beside the other two would assert a drop on a shape it
-    cannot produce — which is exactly what this file did for four deleted
-    adaptors until 2026-09-07, and why it read as coverage while measuring
-    nothing.
-
-    This test pins the REASON rather than the absence: if that payload ever
-    grows a free-text field, the assertion below stops being true and this
-    adaptor has to join `ADAPTORS`.
-    """
-    metrics = Metrics()
-    item = {"name": "a", "entity": "b"}
-
-    kept, rejected = screen(
-        adaptor="note-entity-resolution", items=[item], metrics=metrics)
-
-    assert kept == (item,)
-    assert rejected == ()
-    # The structural claim, stated so a widened payload breaks it: every value
-    # is one character, so no identifier or coordinate is representable.
-    assert all(
-        isinstance(v, str) and len(v) == 1 for v in item.values()
-    ), "the payload grew a wider field — re-check whether it can now leak"

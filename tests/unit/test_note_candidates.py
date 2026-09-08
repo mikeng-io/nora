@@ -15,7 +15,6 @@ import pytest
 
 from nora.agent.dreamer import AdaptorToolError, verify_tool_subsets
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.domain.notes import anchor_key
 from nora.domain.ports import Proposal
 from nora.language.note_candidates import (
     GATE_ACTIONS,
@@ -253,31 +252,9 @@ async def test_accept_keeps_a_candidate_whose_ids_are_all_in_the_batch():
 # ---------------------------------------------------------------------------
 
 
-def test_find_anchor_match_fails_closed_on_an_empty_entity_half():
-    """`group_on_anchor_key`'s own `no_entity_anchor` refusal, one candidate
-    at a time: an anchor whose entity half is empty is NOT the same occasion,
-    it is unresolved — and unresolved must never be guessed into a match."""
-    from nora.domain.notes import Note
-
-    existing = Note(
-        id="n1", workspace=WS, title="Wedding venue", description="d",
-        uncertainty="u", closing_condition="c", established_in="conv-1",
-        created_at=NOW, head_revision_id="r1", anchor_date=20260919,
-    )
-
-    match = _find_anchor_match(
-        anchor_date=20260919, entity_ids=(), standing=(existing,),
-        resolved_entities={},
-    )
-
-    assert match is None
-
-
-def test_find_anchor_match_finds_the_note_sharing_the_resolved_anchor_key():
-    """The branch production cannot reach today (entity resolution is #100's)
-    but the gate itself must get right: injected resolved entities, exactly
-    as `group_on_anchor_key`'s own tests populate them without a real
-    `note_entity` table."""
+def test_find_anchor_match_finds_the_note_sharing_the_date():
+    """The gate compares the anchor DATE alone (module docstring: the resolved
+    entity half was removed with the entity registry on 2026-09-08)."""
     from nora.domain.notes import Note
 
     existing = Note(
@@ -288,9 +265,7 @@ def test_find_anchor_match_finds_the_note_sharing_the_resolved_anchor_key():
     other_day = replace(existing, id="n2", anchor_date=20260920)
 
     match = _find_anchor_match(
-        anchor_date=20260919, entity_ids=("ada", "ben"),
-        standing=(existing, other_day),
-        resolved_entities={"n1": ("ada", "ben")},
+        anchor_date=20260919, standing=(existing, other_day),
     )
 
     assert match is existing
@@ -298,8 +273,8 @@ def test_find_anchor_match_finds_the_note_sharing_the_resolved_anchor_key():
 
 def test_find_anchor_match_never_matches_on_title_alone():
     """M10: two notes could share a title and have nothing to do with each
-    other, or one could have several spellings — the key is
-    `(anchor_date, resolved entities)`, never `title`."""
+    other, or one could have several spellings — the key is the anchor date,
+    never `title`."""
     from nora.domain.notes import Note
 
     same_title_different_day = Note(
@@ -309,22 +284,42 @@ def test_find_anchor_match_never_matches_on_title_alone():
     )
 
     match = _find_anchor_match(
-        anchor_date=20260919, entity_ids=("ada",),
-        standing=(same_title_different_day,),
-        resolved_entities={"n1": ("ada",)},
+        anchor_date=20260919, standing=(same_title_different_day,),
     )
 
     assert match is None
 
 
-def test_anchor_key_normalisation_agrees_with_the_gate():
-    """Sanity: the gate's own key construction is `nora.domain.notes.
-    anchor_key`, so an unsorted/duplicated entity list on either side still
-    matches — the same guarantee the create-candidate store's write-time
-    normalisation depends on."""
-    assert anchor_key(20260919, ("ben", "ada", "ada")) == anchor_key(
-        20260919, ("ada", "ben"),
+def test_find_anchor_match_never_reads_the_written_entities():
+    """Two notes on one date match whatever free text their writers typed
+    for entities — the strings are not a key in either direction (three
+    spellings of one wedding; two unrelated 「wedding」s)."""
+    from nora.domain.notes import Note
+
+    existing = Note(
+        id="n1", workspace=WS, title="Wedding venue", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        created_at=NOW, head_revision_id="r1", anchor_date=20260919,
+        anchor_entity_ids=("Gabe's wedding",),
     )
+
+    assert _find_anchor_match(anchor_date=20260919, standing=(existing,)) is existing
+
+
+def test_find_anchor_match_takes_the_oldest_note_on_the_date():
+    """`standing` is oldest-first from either store, and the first match is
+    the one taken — so a re-observation lands on one stable note across
+    ticks rather than on whichever happened to be listed first."""
+    from nora.domain.notes import Note
+
+    older = Note(
+        id="n1", workspace=WS, title="Dinner", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        created_at=NOW, head_revision_id="r1", anchor_date=20260919,
+    )
+    newer = replace(older, id="n2", created_at=NOW + 1, head_revision_id="r2")
+
+    assert _find_anchor_match(anchor_date=20260919, standing=(older, newer)) is older
 
 
 # ---------------------------------------------------------------------------
@@ -430,12 +425,13 @@ async def test_commit_stages_the_candidate_row_before_deciding():
     assert row.status == "created"
 
 
-async def test_commit_never_updates_in_production_because_entities_are_unresolved():
-    """The documented limitation, made a real behavioural test: even with a
-    STANDING note on the identical anchor date, `commit` always creates a
-    SECOND note rather than updating the first — because the candidate's own
-    entity half is always `()` and the gate fails closed on that (issue
-    #100's gap, not a bug in this adaptor)."""
+async def test_commit_updates_the_standing_note_sharing_its_date():
+    """A candidate on a date a standing note already carries becomes a
+    REVISION of that note, not a second note — the gate compares the anchor
+    date alone (2026-09-08), and this body adds something the head lacks.
+    Until then this test pinned the opposite: the gate's entity half was
+    always empty, it failed closed on that, and every candidate was a
+    create."""
     adaptor, store = _adaptor()
     await store.create(
         workspace=WS, title="Wedding venue", description="d",
@@ -457,7 +453,13 @@ async def test_commit_never_updates_in_production_because_entities_are_unresolve
 
     assert written == 1
     standing = await store.standing(workspace=WS)
-    assert len(standing) == 2, "no entity resolution -> no match -> a second note"
+    assert len(standing) == 1, "same date -> a revision, never a second note"
+    [note] = standing
+    head = await store.read(workspace=WS, note_id=note.id)
+    assert head is not None
+    assert head[1].body == "a second sighting of the same date"
+    [row] = store.create_candidates.values()
+    assert row.status == "created"
 
 
 async def test_commit_raises_for_an_unresolvable_scope():
@@ -559,3 +561,51 @@ def test_gate_actions_vocabulary_matches_the_metric_help_text():
             f"nora_note_candidate_gate_total{{action={action!r}}} is emitted "
             f"and the help text does not name it"
         )
+
+
+# ---------------------------------------------------------------------------
+# the rendered moment is the ROOM's, with its weekday (issue #118)
+# ---------------------------------------------------------------------------
+
+
+def test_a_message_moment_renders_in_the_rooms_zone_with_its_weekday():
+    """Measured 2026-09-08: rendered as `2026-09-07 18:13:23 UTC`, the model
+    resolved «今個禮拜六» to the 13th in two of ten samples. The same instant
+    in the room's zone is Tuesday the 8th, and the weekday is a fact this
+    process has — so it is rendered, not derived."""
+    from zoneinfo import ZoneInfo
+
+    from nora.language.note_candidates import _render_line
+
+    row = _row(2816, "嚟緊今個禮拜六", ts=1_788_804_803_000)  # 2026-09-07T18:13:23Z
+
+    hk = _render_line(row, room="ridgeline", tz=ZoneInfo("Asia/Hong_Kong"))
+    utc = _render_line(row, room="ridgeline", tz=ZoneInfo("UTC"))
+
+    assert hk.startswith("2816 [2026-09-08 Tue 02:13 HKT] Ada (ridgeline): "), hk
+    assert utc.startswith("2816 [2026-09-07 Mon 18:13 UTC] Ada (ridgeline): "), utc
+
+
+async def test_inputs_renders_moments_in_the_adaptors_zone():
+    """The adaptor's own `timezone` collaborator reaches every rendered line —
+    two adaptors 25 hours apart (Kiritimati +14, Niue -11) render different
+    calendar days for one instant, the same property `test_composition`
+    pins for the curator's `_today`."""
+    from zoneinfo import ZoneInfo
+
+    store = InMemoryNoteStore()
+    row = _row(7, "食飯？", ts=1_788_804_803_000)
+    ahead = NoteCandidateAdaptor(
+        notes=store, candidates=store, workspace_for=lambda _: WS,
+        timezone=ZoneInfo("Pacific/Kiritimati"),
+    )
+    behind = NoteCandidateAdaptor(
+        notes=store, candidates=store, workspace_for=lambda _: WS,
+        timezone=ZoneInfo("Pacific/Niue"),
+    )
+
+    a = await ahead.inputs(key=SCOPE, batch=(row,))
+    b = await behind.inputs(key=SCOPE, batch=(row,))
+
+    assert "[2026-09-08 Tue" in a, a
+    assert "[2026-09-07 Mon" in b, b

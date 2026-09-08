@@ -73,6 +73,19 @@ from evals.judge import (
     safety_verdict,
     scope_verdict,
 )
+from evals.note_candidates import (
+    CaseTally,
+    NoteSnapshot,
+    RunResult,
+    StagedCandidate,
+    load_note_candidates_cases,
+)
+from evals.note_candidates import (
+    grade as grade_note_candidates,
+)
+from evals.note_candidates import (
+    summarise as summarise_note_candidates,
+)
 from evals.rubric import OPTIONAL_CRITERIA, Criterion
 from evals.sink import EvalSink, LangfuseEvalSink, NullEvalSink, resolve_headers_from_env
 from nora.app.eval_support import (
@@ -82,12 +95,14 @@ from nora.app.eval_support import (
     LeakGuard,
     Metrics,
     ProductionSeed,
+    build_note_candidates_runtime,
     build_production_seed,
     create_client,
     create_model_provider,
     eval_base_url,
     is_tagged,
     load_eval_config,
+    run_note_candidates_case,
 )
 from nora.testing import transcript_rows
 
@@ -120,6 +135,14 @@ SUITES = {
     # (`evals.relevance_gate.run_gate_suite`) for the same reason `journeys`
     # and `adversarial` have theirs.
     "relevance_gate": (CASES_DIR / "relevance_gate" / "gate.yaml",),
+    # The note-candidates scenario suite (design/dreamer-agent-loop/37 §7,
+    # issue #118): ten batches — five that must produce a note, five that
+    # must not — each driven N times through the REAL DreamerRuntime and
+    # NoteCandidateAdaptor over an in-memory notebook, graded structurally on
+    # the notebook afterwards (`_run_note_candidates_live`). Its job is to
+    # measure a PROMPT variant, so `--dreamer-dir` points it at a directory of
+    # doctrine/objective files and the run reports that directory's hash.
+    "note_candidates": (CASES_DIR / "note_candidates" / "note_candidates.yaml",),
 }
 
 # Evaluator class -> the Langfuse score `name` it exports under. All five verdicts
@@ -915,6 +938,94 @@ async def _run_participation_live(
         await client.close()
 
 
+async def _run_note_candidates_live(
+    paths: tuple[Path, ...], *, samples: int, effort: str | None = None,
+    dreamer_dir: str | Path | None = None, model: str | None = None,
+    samples_per_fire: int = 1,
+    sink: EvalSink | None = None, run_name: str | None = None,
+) -> tuple[bool, list[dict]]:
+    """The note-candidates suite's live drive (design/dreamer-agent-loop/37
+    §7, issue #118). Every case runs `samples` times through the REAL
+    `DreamerRuntime` + `NoteCandidateAdaptor` (`nora.app.eval_support.
+    run_note_candidates_case`) and is graded on the in-memory notebook it
+    leaves behind — a note created, a head revised, or nothing — never on the
+    envelope text and never by a judge. A case passes on a MAJORITY of its
+    graded samples; `unavailable` runs are ERROR, excluded from the majority
+    and counted apart, so an outage cannot read as a quiet model.
+
+    The gate is advisory until a prompt variant has been chosen against it
+    (37 §7's order): it prints per-case tallies, precision/recall over
+    samples, and the instruction hash the run measured, and returns whether
+    every case reached majority-pass.
+    """
+    cfg = _load_eval_config()
+    client = create_client(
+        base_url=cfg.llm.base_url, api_key=os.environ.get(cfg.llm.api_key_env, "")
+    )
+    try:
+        runtime, model_label = build_note_candidates_runtime(
+            cfg, client=client, effort=effort, dreamer_dir=dreamer_dir, model=model,
+            samples_per_fire=samples_per_fire,
+        )
+        tallies: list[CaseTally] = []
+        instruction_sha: str | None = None
+        for path in paths:
+            for case in load_note_candidates_cases(path):
+                tally = CaseTally(name=case.name, expect=case.expect)
+                for _ in range(samples):
+                    drive = await run_note_candidates_case(
+                        runtime, cfg=cfg, workspace=case.workspace,
+                        scope=f"eval:{case.name}",
+                        batch=[dataclasses.asdict(m) for m in case.batch],
+                        notebook=[dataclasses.asdict(n) for n in case.notebook],
+                        now_ms=max(m.ts_ms for m in case.batch) + 60_000,
+                    )
+                    instruction_sha = instruction_sha or drive.instruction_sha256
+                    result = RunResult(
+                        status=drive.status, stop_reason=drive.stop_reason,
+                        instruction_sha256=drive.instruction_sha256,
+                        before=tuple(NoteSnapshot(*n) for n in drive.before),
+                        after=tuple(NoteSnapshot(*n) for n in drive.after),
+                        staged=tuple(StagedCandidate(*c) for c in drive.staged),
+                    )
+                    g = grade_note_candidates(case, result)
+                    tally.verdicts.append(g.verdict)
+                    tally.reasons.append(g.reason)
+                tallies.append(tally)
+                marks = "".join({"PASS": ".", "FAIL": "x", "ERROR": "!"}[v] for v in tally.verdicts)
+                status = "PASS" if tally.majority_pass else "FAIL"
+                reasons = sorted({r for r in tally.reasons if r})
+                print(f"[{status}] note_candidates/{case.name} — expect={case.expect} "
+                      f"samples={marks}" + (f" :: {'; '.join(reasons)}" if reasons else ""))
+
+        summary = summarise_note_candidates(tallies)
+        fmt = lambda x: "n/a" if x is None else f"{x:.2f}"  # noqa: E731
+        print(f"note_candidates gate: {summary['majority_pass']}/{summary['cases']} cases "
+              f"majority-pass over {summary['samples']} samples — "
+              f"precision {fmt(summary['precision'])}, recall {fmt(summary['recall'])}, "
+              f"errors {summary['errors']}")
+        print(f"    model {model_label}; instructions "
+              f"{(instruction_sha or 'unmeasured')[:16]}; dreamer_dir "
+              f"{dreamer_dir or cfg.dreamer.dir}")
+        results = [
+            {"name": t.name, "expect": t.expect, "verdicts": list(t.verdicts),
+             "passed": t.majority_pass}
+            for t in tallies
+        ]
+        if sink is not None:
+            run_id = await sink.start_run(
+                dataset_name="note_candidates", run_name=run_name or "note_candidates",
+            )
+            for r in results:
+                await sink.record_score(
+                    run_id=run_id, item_id=r["name"], name="note_candidates_verdict",
+                    value=1.0 if r["passed"] else 0.0, data_type="BOOLEAN",
+                )
+        return all(t.majority_pass for t in tallies), results
+    finally:
+        await client.close()
+
+
 _ROUTING_CHECKS = ("PathMatchesIntent", "NoSiblingLeakage", "ConvergesInBudget")
 
 
@@ -1043,7 +1154,9 @@ def _load_production_seed(cfg: Config) -> ProductionSeed:
 
 def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
          force: bool = False, effort: str | None = None,
-         with_skills: bool = False, seed_production: bool = False) -> int:
+         with_skills: bool = False, seed_production: bool = False,
+         samples: int = 3, dreamer_dir: str | None = None,
+         model: str | None = None, samples_per_fire: int = 1) -> int:
     paths = SUITES.get(suite)
     if paths is None:
         print(f"unknown suite {suite!r}; expected one of {sorted(SUITES)}", file=sys.stderr)
@@ -1087,6 +1200,19 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
         ok, summary = asyncio.run(run_gate_suite(paths))
         print(summary)
         return 0 if ok else 1
+    elif suite == "note_candidates":
+        # Live drive of the real Dreamer runtime + note-candidates adaptor
+        # over an in-memory notebook, N samples per case, structurally graded
+        # (`_run_note_candidates_live`). `--dreamer-dir` measures a prompt
+        # variant held as files; `--effort` overrides the dreamer tier's.
+        cfg = _load_eval_config()
+        sink = _build_sink(cfg, export=export_langfuse)
+        run_name = f"gate-note-candidates-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
+        ok, _results = asyncio.run(_run_note_candidates_live(
+            paths, samples=samples, effort=effort, dreamer_dir=dreamer_dir,
+            model=model, samples_per_fire=samples_per_fire,
+            sink=sink, run_name=run_name,
+        ))
     elif suite == "adversarial":
         # B1: the verdict cache is ON by default — an unchanged re-run costs 0 model
         # calls. --no-cache disables it; --force re-runs every case (and refreshes it).
@@ -1140,8 +1266,32 @@ if __name__ == "__main__":
              "cards/conclusions, so the model's prompt starts from what "
              "production would assemble. Writes still stay in the fakes.",
     )
+    parser.add_argument(
+        "--samples", type=int, default=3,
+        help="note_candidates only: live runs per case (default 3). A case "
+             "passes on a majority of its graded samples.",
+    )
+    parser.add_argument(
+        "--samples-per-fire", type=int, default=1,
+        help="note_candidates only: model calls per fire, unioned "
+             "(`[notes] candidate_samples`; default 1).",
+    )
+    parser.add_argument(
+        "--model", default=None,
+        help="note_candidates only: the model id to drive INSTEAD of "
+             "`[dreamer] model` — name the deployed OmniRoute alias "
+             "(`nora-dreamer`) from a dev machine.",
+    )
+    parser.add_argument(
+        "--dreamer-dir", default=None,
+        help="note_candidates only: a directory holding doctrine/ and "
+             "objectives/ to measure INSTEAD of `[dreamer] dir` — a prompt "
+             "variant as files, hashed and reported like production's.",
+    )
     args = parser.parse_args()
     sys.exit(main(args.suite, export_langfuse=args.export_langfuse,
                   no_cache=args.no_cache, force=args.force,
                   effort=args.effort, with_skills=args.skills,
-                  seed_production=args.seed_production))
+                  seed_production=args.seed_production,
+                  samples=args.samples, dreamer_dir=args.dreamer_dir,
+                  model=args.model, samples_per_fire=args.samples_per_fire))

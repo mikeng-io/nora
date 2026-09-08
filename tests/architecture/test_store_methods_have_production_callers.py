@@ -42,18 +42,22 @@ like a pile of bugs:
   `defect`               — a live write path creates state that no production
       code can act on or leave. These are the ones that want fixing.
 
-THE COUNTS, so they reconcile with something: FIVE methods are pinned below.
+THE COUNTS, so they reconcile with something: FOUR methods are pinned below.
 TWO more are known to have no production caller and cannot be proven so here —
 `SqlTagTraceStore.recent` and `SqlTurnVerdictStore.read` — because their names
-are shared with other stores (see the ambiguity rule). Seven in total; the five
+are shared with other stores (see the ambiguity rule). Six in total; the four
 are what this file can check.
 
 These counts were SIX and EIGHT until 2026-09-07 and were not re-derived when
 the knowledge and language tiers were deleted — `SqlEntityStore.lookup` left
 the ambiguous set (the method went with the tools that were its only
-consumers) and `SqlRenderedClaimStore` left the module set entirely. A count
-in prose that nothing recomputes is a claim, and this file exists to refuse
-exactly that shape of claim about somebody else's code.
+consumers) and `SqlRenderedClaimStore` left the module set entirely. They
+were FIVE and SEVEN for one day after that: `SqlEntityStore.resolve_or_create`
+was pinned here as a `defect` — «the fact_entity registry now has no writer»
+— and the operator's answer on 2026-09-08 was to remove the registry store
+and the note tier's whole entity-resolution chain, so the pin went with the
+module. A count in prose that nothing recomputes is a claim, and this file
+exists to refuse exactly that shape of claim about somebody else's code.
 
 HOW A CALLER IS RESOLVED, AND WHAT THAT STILL CANNOT SEE
 --------------------------------------------------------
@@ -101,19 +105,26 @@ stops being ambiguous cannot keep its exemption.
 STILL NOT SEEN, and stated rather than left to be discovered:
   - A THIRD-PARTY namesake, and this is the real remaining hole. `_namesakes`
     only sees classes defined under `nora/`, so a store method whose name
-    matches a method on a stdlib or library object is wrongly cleared. Two
-    demonstrated, both still passing this gate today:
-      `SqlFactStore.count`  — cleared by `essence.count("/")` (`str.count`) and
-                              by `sa.func.count()`;
-      `SqlFactStore.close`  — cleared by `self.deps.client.close()`.
-    Neither name is defined on any class under `nora/`, so nothing pushes them
-    into `_AMBIGUOUS` and they read `ok` rather than `unavailable`. It takes a
-    NEW store method landing on a borrowed name to bite — every row below was
-    confirmed by a separate audit, not by this gate alone — and closing it
-    properly needs receiver type inference, which is more machinery than this
-    gate is worth. Said plainly instead of left for someone to trip over. The
-    cheap partial mitigation if it ever does bite: add the name to `_AMBIGUOUS`
-    by hand, which turns the silent clear into a loud "unchecked".
+    matches a method on a stdlib or library object is wrongly cleared. The two
+    methods that used to demonstrate it — `count` and `close` on the knowledge
+    tier's store — went with that tier on 2026-09-07, so the demonstration is
+    stated from the CLEARING side, which is what survives and is what a reader
+    can still check:
+      `count`  — `sa.func.count()` (`nora/infra/sql/audit.py`,
+                 `reminders.py`) and `str.count` in the compute package;
+      `close`  — `await client.close()` (`nora/platform/discord/adapter.py`),
+                 `h.close()` (`nora/obs/logging.py`).
+    NEITHER name is defined on any class under `nora/` today, so nothing would
+    push them into `_AMBIGUOUS`: a store method landing on either name
+    tomorrow reads `ok` rather than `unavailable`, on those call sites alone.
+    (`all` is the near miss that shows the mechanism working — every `.all()`
+    in this tree is SQLAlchemy's `Result.all`, and it stays checked only
+    because `MusicSessionStore` also declares it and pushes it into
+    `_AMBIGUOUS`.) Closing this properly needs receiver type inference, which
+    is more machinery than this gate is worth. Said plainly instead of left
+    for someone to trip over. The cheap partial mitigation if it ever does
+    bite: add the name to `_AMBIGUOUS` by hand, which turns the silent clear
+    into a loud "unchecked".
   - Dynamic dispatch — `getattr(store, name)`, a string-keyed registry. Nothing
     here would catch it.
   - REACHABILITY. A caller that is itself dead — an unimported module, a branch
@@ -123,13 +134,16 @@ STILL NOT SEEN, and stated rather than left to be discovered:
 
 PROBE (2026-08-29, production code only; each mutation asserted to have applied
 AND to still parse, because one that does not compile can redden for the wrong
-reason and one whose anchor missed measures the original code):
-  - A new uncalled `SqlFactStore.totally_new_read`:
+reason and one whose anchor missed measures the original code). It was run
+against the knowledge tier's store, which no longer exists — the mutations
+are recorded as the shape to repeat on a surviving store, not as something a
+reader can re-run verbatim:
+  - A new uncalled public store method:
     `test_every_uncalled_store_method_is_pinned` RED, naming it.
-  - `await self._facts.clear_disputed()` added to
-    `nora/engagement/recognition.py`: `test_pinned_methods_still_have_no_caller`
-    RED — wiring one up forces its row OUT rather than leaving a stale excuse.
-  - `SqlFactStore.disputed_facts` renamed: BOTH halves RED.
+  - A call to a PINNED method added to a live module:
+    `test_pinned_methods_still_have_no_caller` RED — wiring one up forces its
+    row OUT rather than leaving a stale excuse.
+  - A store method renamed: BOTH halves RED.
   - A second `forget` defined on another store: the derived-ambiguity test RED,
     and the pin independently RED as missing.
   - One row deleted from the pin table: RED, so the table is content and not
@@ -170,28 +184,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "Its own docstring: «the operator's read, and what the tests assert the "
         "ledger on». No consumer designed.",
     ),
-    ("entities.py", "resolve_or_create"): _Pin(
-        "defect",
-        "**THE `fact_entity` REGISTRY NOW HAS NO WRITER.** This is the "
-        "deterministic MINT half — normalise, look up canonical_name and "
-        "aliases, create what is missing — and its only production caller was "
-        "`SqlFactStore._resolve_subjects`, which minted an entity for the "
-        "subject of every fact written. That store was deleted with the "
-        "knowledge tier (2026-09-07). `SqlNoteStore` reads `resolve` on every "
-        "note write and DELIBERATELY never mints (nora/infra/sql/entities.py's "
-        "own module docstring: «this tier only ever links a name to an entity "
-        "that already exists»), so with nothing minting, every anchor name "
-        "resolves to nothing forever, `note_entity` stays empty, and "
-        "`NoteEntityResolutionAdaptor`'s near-miss queue is every anchor the "
-        "room has ever written with no existing row to merge into. The tier is "
-        "wired end to end and inert — this file's own named pathology. "
-        "OPERATOR DECISION, deliberately not taken inside a deletion: either "
-        "the note tier gains a minting path (`resolve_or_create` on note "
-        "write, or a create arm on the resolution adaptor), or the registry "
-        "and `note_entity` go too. Kept and pinned rather than deleted so the "
-        "choice is visible instead of arriving as an empty table nobody can "
-        "explain.",
-    ),
     ("mobility.py", "trips_for_subject"): _Pin(
         "read_back_affordance",
         "Kept correct for a future caller by explicit decision — its docstring "
@@ -219,11 +211,17 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 # a non-Protocol class elsewhere under `nora/`. Two methods KNOWN to have no
 # production caller hide in here and cannot be proven so: `tag_traces.recent`
 # and `turn_verdicts.read`.
+#
+# `lookup` joined on 2026-09-08 with `MediaObjectStore.lookup` (issue #116):
+# `nora/infra/version.py` and `nora/infra/transit/catalogue.py` each define an
+# unrelated one, so `.lookup(...)` cannot be attributed. Its real caller is
+# `nora.domain.media_join.MediaJoin`, pinned by
+# `tests/unit/test_media_join.py` and by the store's own contract suite.
 _AMBIGUOUS: frozenset[str] = frozenset(
     {
         "aclose", "append", "claim", "create", "delete",
-        "describe", "enqueue", "get", "mark", "put", "read", "recent",
-        "resolve", "rsvps_for", "save", "search",
+        "describe", "enqueue", "get", "lookup", "mark", "put", "read",
+        "recent", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "update", "watermark",
     }
 )
@@ -244,7 +242,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 _STORE_MODULES: frozenset[str] = frozenset(
     {
         "announcements.py", "audit.py", "compute_jobs.py",
-        "dream_schedule.py", "entities.py",
+        "dream_schedule.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py", "presence.py",
@@ -257,7 +255,10 @@ _STORE_MODULES: frozenset[str] = frozenset(
 # LOWERED 2026-09-07 with the knowledge and language tiers deletion, which took
 # six store modules out of the package; the walk now finds 104 names, and the
 # floor sits just under that rather than at a round number far below it.
-_MIN_METHOD_NAMES = 100
+# 97 on 2026-09-08, after `entities.py` (the `fact_entity` registry store)
+# went with the note tier's entity-resolution chain and `SqlNoteStore` lost
+# `merge`/`merge_groups`; the floor sits just under, on the same rule.
+_MIN_METHOD_NAMES = 95
 
 
 class _Method(NamedTuple):

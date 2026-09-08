@@ -1,11 +1,11 @@
 # Conventions & operational detail
 
-The long-form behind `CLAUDE.md`'s rules. `CLAUDE.md` carries the terse rules an
+The long-form behind `AGENTS.md`'s rules. `AGENTS.md` carries the terse rules an
 agent must not violate; this file carries the *reasoning*, the war-stories, and
 the specific values. Read it when a rule needs its "why" — every mistake recorded
 here cost an afternoon, and the terse rule is only safe because the story is
 preserved. Nothing here is optional context; it is the load-bearing detail moved
-out of `CLAUDE.md` so that file can stay scannable.
+out of `AGENTS.md` so that file can stay scannable.
 
 ## Gate commands — the detail
 
@@ -116,6 +116,46 @@ counting a module's responsibilities to counting its lines.
 - **Never run `alembic revision --autogenerate` and trust the result for
   `idx_messages_conv_ts`.** It is excluded from autogenerate on purpose; a
   revision that touches it must be hand-written.
+
+## Reaching the deployment — the detail
+
+The terse rule is in `AGENTS.md` («Reaching the deployment»); this is the why.
+
+**Two machines, one direction.** Until 2026-09-07 sessions ran on the host
+itself, committing as `opsuser-dev` in the checkout the container bind-mounts.
+That is the root of every «the merge deployed itself» story above: the build
+context, the doctrine mount and the editing surface were one directory. The
+fix is structural rather than procedural — the host holds a checkout that only
+a deploy moves (GitOps, Komodo owns the clone), and every session runs on the
+MacBook and reaches the host read-only over `ssh norty`.
+
+**Why a dedicated key and nothing else.** On 2026-09-07 the first attempt to
+reach the host from a session found four local keys, none authorised, and a
+host that also accepted passwords. `sshpass` was installed and the operator
+offered the password. It was declined: a password that passes through a
+session is written into the transcript and into Honcho's memory of the
+operator — and a search of that memory showed a host password from an earlier
+session already sitting there. `ssh-keygen` + `ssh-copy-id` costs one typed
+password that never touches the session; after that there is nothing to leak.
+Nothing in `.env` either: that file is the compose environment, present on
+both machines, and a shell password there is one `cat .env` from any container
+debugging session.
+
+**What a read-back actually looks like.** The 2026-09-07 note-tier read-back
+is the template: the checked-out commit, `docker compose ps`, the live
+`[notes]` block of `config.toml` (which showed `candidates_enabled` absent —
+the flag the worktree's stale copy could not have told you), the row counts,
+`dream_schedule_state`, and the `nora_dream_*` counters. That single pass
+settled in five minutes a question three design nodes had been arguing from
+the code alone: the note create path had never run, and the two
+`note_candidate` rows were `kind = 'miss'` — `note_search`'s negative cache,
+not proposals.
+
+**Two traps found on the way.** `docker ps | grep db` matched Komodo's
+FerretDB container; `docker compose exec db` from the project directory is the
+only address that cannot be wrong. And `docker compose logs nora` is empty —
+the container does not use the docker log driver — so «no dream lines in the
+log» is not evidence of anything. The metrics endpoint and the tables are.
 
 ## Instruments and spans — the war-stories
 
