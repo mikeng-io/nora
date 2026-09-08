@@ -4381,6 +4381,41 @@ Args:
         # nothing back.
         question = question.strip()
 
+        # THE OUTBOUND SCREEN on layer 2's question (operator, 2026-09-08).
+        # `nora/agent/egress.py` names an ARGUMENT to a third party as never
+        # safe, and `web_search` screens its query BEFORE the call for exactly
+        # that reason. Two egress points in one process with two different
+        # rules is how the next contributor learns the wrong precedent — so
+        # this is the same screen, at the same point, refusing the same way.
+        #
+        # **What it actually buys, stated honestly rather than overclaimed.**
+        # The media BYTES reach this provider on every read anyway, so the
+        # screen adds nothing for an identifier that is in the picture. What it
+        # protects is an identifier that is in the CONVERSATION and NOT in the
+        # media: a member posts a photo of a business card and Nora composes
+        # `question="confirm the number 90000101 on it"` — she took that number
+        # from the chat text, and unscreened it rides to a third party inside
+        # her own question.
+        #
+        # The RAW question, before `_QUERY_FRAME` wraps it: the frame is
+        # authored text and screening it would be noise.
+        #
+        # NOT SENT, and not silently stripped either — stripping would answer a
+        # question she did not ask, on bytes she cannot re-check. The value is
+        # never echoed back, for the reason `web_search`'s refusal is not:
+        # repeating it into the transcript is the leak one surface over.
+        if question:
+            kind = scan_identifiers(question)
+            if kind is not None:
+                _record_media(metrics, "nothing_found", reason="identifier")
+                metrics.inc("nora_egress_blocks_total", kind=kind)
+                return {
+                    "status": "nothing_found",
+                    "note": "I won't put something that looks like a phone "
+                            "number or ID into a question about a picture. Ask "
+                            "it in plain words and I'll look.",
+                }
+
         # Gate FIRST — the inert-by-config shape (§5). Custody off (`[media]
         # enabled=false` or no key → no blob store) or no vision client wired
         # (offline/eval compositions) means she genuinely cannot look, which is

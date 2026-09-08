@@ -6,7 +6,8 @@
     "A voice note still shows what was actually said, in full, rather than a summary of it.",
     "media_fetch serves the full reading with no wait, and takes an optional question when what you need is not in the stored reading -- that one costs a fresh look.",
     "Long videos are read in one-and-a-half-minute chunks in order, instead of only the first two minutes. When a clip is longer than she can read, her description says so.",
-    "What a photo showed reaches every place Nora reads a conversation back -- replies and reminders, her running sense of where a conversation got to, and the notes she keeps -- not just the reply she was tagged for."
+    "What a photo showed reaches every place Nora reads a conversation back -- replies and reminders, her running sense of where a conversation got to, and the notes she keeps -- not just the reply she was tagged for.",
+    "When she asks a question about a picture and the question itself contains something that looks like a phone number or an ID, she asks it a different way rather than sending it on -- the same rule her web searches already follow."
   ],
   "limitations": [
     "The read happens in the background, so a photo sent and asked about in the same breath may not be described yet; the marker is there either way and she will say she has not looked rather than guess. A voice note is the exception -- its words are recorded as it arrives.",

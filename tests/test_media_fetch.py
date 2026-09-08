@@ -1284,3 +1284,70 @@ async def test_load_transcript_with_no_join_wired_renders_the_stored_body(
 
     bodies = [m["body"] for m in out["messages"]]
     assert any(f"[image {PNG_SHA[:6]}]" == (b or "") for b in bodies)
+
+
+async def test_a_question_carrying_an_identifier_never_reaches_the_provider(
+    wiring,
+):
+    """**Layer 2's question is an ARGUMENT to a third party** (operator,
+    2026-09-08). `nora/agent/egress.py` names one as never safe, and
+    `web_search` screens its query before the call for exactly that reason; two
+    egress points in one process with two different rules is how the next
+    contributor learns the wrong precedent.
+
+    What it buys is narrow and worth stating: the media bytes reach that
+    provider on every read anyway, so the screen adds nothing for an identifier
+    that is IN the picture. It protects one that is in the CONVERSATION and not
+    in the media — a photo of a business card and a question Nora composed from
+    the chat text around it.
+
+    Asserted on the PROMPT that reached the vision seam, not on a call count.
+    A count says a call did not happen; only the prompt says the number was not
+    in it, and that distinction is what made the `_QUERY_FRAME` guard real."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
+
+    out = await _call(
+        wiring["build"](media_store=index), code=PNG_SHA[:6],
+        question="confirm the number +85290000101 on it",
+    )
+
+    assert out["status"] == "nothing_found"
+    assert wiring["vision"].prompts == [], "the question reached the provider"
+    assert "85290000101" not in repr(out), (
+        "the refusal echoed the value back — the leak one surface over"
+    )
+    assert wiring["metrics"].get("nora_egress_blocks_total", kind="phone") == 1
+
+
+async def test_an_ordinary_question_still_reaches_the_provider_whole(wiring):
+    """THE POSITIVE CONTROL, and it is the assertion that stops the screen from
+    being a refusal of everything: the question is not stripped, not rewritten,
+    and arrives inside the authored frame exactly as asked."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
+
+    out = await _call(
+        wiring["build"](media_store=index), code=PNG_SHA[:6],
+        question="what colour is the car behind the sign",
+    )
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].prompts[-1].endswith(
+        "what colour is the car behind the sign")
+
+
+async def test_a_screened_question_is_refused_rather_than_stripped(wiring):
+    """Silently dropping the identifier and calling anyway would answer a
+    question she did not ask, about bytes she cannot re-check — and she would
+    report the answer as though it were the answer to hers."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    index = FakeMediaObjectStore([_comprehended(PNG_SHA)])
+
+    out = await _call(
+        wiring["build"](media_store=index), code=PNG_SHA[:6],
+        question="is +85290000101 the number on the card",
+    )
+
+    assert out["status"] == "nothing_found"
+    assert "description" not in out, "a stripped question was answered anyway"

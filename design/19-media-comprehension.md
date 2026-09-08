@@ -418,6 +418,21 @@ answer somebody else's question, and writing one to
 future sighting of the same image — the transcript would then render one room's
 answer to one room's question as what the picture IS.
 
+**And the question is screened on the way OUT** (operator, 2026-09-08).
+`nora/agent/egress.py` names an argument to a third party as never safe, and
+`web_search` screens its query before the call for exactly that reason — two
+egress points in one process with two different rules is how the next
+contributor learns the wrong precedent. A question that trips
+`scan_identifiers` is refused `nothing_found` and never sent, never stripped
+and re-sent (which would answer a question she did not ask), and the value is
+never echoed back.
+
+What this buys is narrow and worth saying plainly rather than overclaiming:
+the media BYTES reach that provider on every read anyway, so the screen adds
+nothing for an identifier that is in the picture. It protects one that is in
+the CONVERSATION and not in the media — a photo of a business card, and a
+question Nora composed from the chat text around it.
+
 **Layer 2 breaks the authored-prompt invariant deliberately.**
 `nora/infra/vision/client.py` states that describe prompts are «AUTHORED and
 never model-supplied», because a prompt conditioned on what a room typed is
@@ -475,6 +490,7 @@ root would hold that trace open for as long as a video read takes.
 | every fix in this bundle fails on revert | the mutation sweep in the round-four commit message — 18 reverts, 18 reds |
 | a handle a sender TYPED never resolves | `tests/unit/test_media_join.py::test_a_handle_a_sender_typed_is_never_resolved` |
 | layer 2's authored frame is actually there | `tests/test_media_fetch.py::test_layer_2_wraps_the_question_in_the_authored_frame` (probed: `prompt = question` turns it red) |
+| a question carrying an identifier never leaves | `tests/test_media_fetch.py::test_a_question_carrying_an_identifier_never_reaches_the_provider` — asserted on the PROMPT that reached the seam, not on a call count |
 | the video cap is said, not just done | `tests/unit/test_vision_preprocess.py::test_the_cap_binding_is_recorded_and_said`, `tests/unit/test_media_comprehender.py::test_a_capped_video_says_so_in_the_description_and_in_provenance` |
 | a read shortened by a REFUSED window is also said | `tests/unit/test_vision_preprocess.py::test_a_read_shortened_by_a_refused_window_says_so_too`, `tests/unit/test_media_comprehender.py::test_a_model_refusal_shortens_what_the_read_may_claim` |
 | a timecode names the window it came from | `tests/unit/test_media_comprehender.py::test_a_dropped_window_does_not_shift_its_neighbours_timecodes` |
