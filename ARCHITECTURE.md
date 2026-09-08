@@ -1,9 +1,38 @@
 # Nora — Architecture
 
+This document follows [arc42](https://arc42.org/): its section numbers are
+arc42's, so a reader who knows the template knows where to look. Several
+sections are satisfied by a document that already exists and are pointers here
+rather than copies — a second copy of the constraints or the decisions would
+drift from the one that is enforced.
+
+This is the map, not the history. It is pinned to reality by
+`tests/test_architecture_doc.py`, which fails if a package under `nora/` goes
+unmentioned here.
+
+| arc42 section | where it lives |
+|---|---|
+| 1. Introduction and goals | below, and `README.md` |
+| 2. Constraints | `AGENTS.md` — the five operational constraints |
+| 3. Context and scope | below |
+| 4. Solution strategy | `AGENTS.md` — the comprehend → measure → serialize spine |
+| 5. Building block view | below |
+| 6. Runtime view | below |
+| 7. Deployment view | `README.md` deployment; `AGENTS.md` «Reaching the deployment» |
+| 8. Crosscutting concepts | below |
+| 9. Architecture decisions | `design/09-decision-index.md` (the index) and `docs/adr/` (the reasoning) |
+| 10. Quality requirements | `evals/`, and `make gate` |
+| 11. Risks and technical debt | GitHub issues on `mikeng-io/nora` |
+| 12. Glossary | `GLOSSARY.md` |
+
+## 1. Introduction and goals
 This is the map, not the history. For the decisions behind it and their enforcing
-tests, see `design/09-decision-index.md`. For the full rationale, see
-`docs/superpowers/specs/2026-08-04-nora-architecture-design.md` (the current spec)
-and `design/*.md` (the topology it amends). This file is pinned to reality by
+tests, see `design/09-decision-index.md`; for the full rationale, `design/*.md`
+and `docs/adr/`. (An earlier line here called
+`docs/superpowers/specs/2026-08-04-nora-architecture-design.md` "the current
+spec" — that tree was deleted 2026-09-08 and the path resolves only in git
+history, so it is named here as the historical citation it now is, not as a
+pointer.) This file is pinned to reality by
 `tests/test_architecture_doc.py`: it fails collection if a package under `nora/`
 goes unmentioned here.
 
@@ -32,7 +61,17 @@ built yet — that is the agent-tooling phase. This document describes the
 tree as it exists today, with target-state notes called out where they
 differ.
 
-## 1. Topology: two paths, one boundary
+
+## 2. Constraints
+
+The five operational constraints — the container build's `--network=host`,
+Honcho's `GET /health`, signal-cli's `--receive-mode=on-start` and Java 25, the
+archived legacy gateway path, and `uv add` over pip — are stated in `AGENTS.md`
+and carried in full, with the incident behind each, in `docs/CONVENTIONS.md`.
+They are not restated here: a constraint that appears twice is a constraint that
+will eventually disagree with itself.
+
+## 3. Context and scope: two paths, one boundary
 
 ```
 Signal group
@@ -64,70 +103,19 @@ Signal group
      is empty in practice. `about` reads `representation` instead.
 ```
 
-## The three memory layers
 
-Nora has one record and one interpretation of it, and they are frequently
-confused — including in this document until 2026-08-06.
+## 4. Solution strategy
 
-| layer | store | what it holds | how she reads it |
-|---|---|---|---|
-| **hot** | Postgres | the last 40 messages, verbatim | injected into every tag prompt |
-| **deeper** | **the same Postgres** | everything older, verbatim | `load_transcript` — a wider window, **not a second system** |
-| **derived** | Honcho | conclusions *about people* | `about` |
+Every path in this repo runs one loop — **comprehend → measure → serialize** —
+and it is a constraint rather than a procedure: not how to build a thing, but
+what each step must preserve. Interpret raw input once into a computable model;
+reduce that model to a decidable, fail-closed signal (this repo's signature is
+the three-state `ok` / `nothing_found` / `unavailable` tool result, where an
+error is never a pass); fix the result into canonical, typed state with
+provenance. `AGENTS.md` carries the full statement and the three rules that make
+it hold.
 
-**Postgres is the RECORD; Honcho is the INTERPRETATION.** Postgres stores what was
-literally said, is authoritative, and is the only thing R-2/A9 guarantee.
-
-**Media is part of the record, not a fourth layer** (DEC-45,
-`design/18-media-custody.md`). An attachment's BYTES live in
-`data/media/<first2>/<rest>`, content-addressed by sha256, and the row that
-mentions them carries the hash in `messages.media_json` — written by the same
-INSERT as the body. Before that they were a placeholder plus a pointer into
-signal-cli's own store, under signal-cli's own retention, which made A9 false
-for every image ever sent. The transcript shows a type and a durable handle
-(`[image a3f2c1]`); the bytes never enter a prompt. Honcho
-stores what a deriver concluded from it, is best-effort, and is allowed to be
-absent — `nora.infra`'s docstring explains why the two clients have opposite
-error contracts for exactly this reason.
-
-The consequence worth stating: `read_buffer` returning nothing means *nothing
-was said*. `about` returning nothing means *nothing was concluded*, which is a
-different and much weaker claim — hence `Recollection.reachable`, so "I could
-not ask" never collapses into "there is nothing".
-
-**Under review as of 2026-08-06.** A live `representation` was measured to be
-~88% events restated in the third person ("asked what time it was") rather than
-durable traits, i.e. the hot layer re-rendered at ~151 tokens a call. Whether
-that is the corpus (everything fed so far is the operator testing her) or the
-deriver is being settled; until it is, do not build further on Honcho.
-
-**D1 — the boundary rule.** The Agent SDK never sees ambient-only traffic. It is
-constructed, invoked, and discarded once per tag. Ambient ingest is a pure,
-deterministic write path (Postgres audit + Honcho feed) with exactly one branch:
-trigger detection. See `design/00-overview.md` D1 and `design/09-decision-index.md`.
-
-**The browser boundary (OpenCLI / social reads) is outside both paths.** The
-host runs a persistent virtual desktop — Xtigervnc on display `:2` with Openbox,
-headed Chrome on that display, and OpenCLI 1.8.7 (`localhost:19825`) driving it
-through the Browser Bridge extension, all as systemd *user* services (see
-`docs/runbook.md` §10). None of it is ambient ingest: it writes nothing to the
-record. The surface is a single constrained, read-only tool, `social_fetch`
-(DEC-151), covering X and Instagram reads (a post on X, a profile, an account's
-posts, search) — never posting, liking, following, commenting or deleting. The
-boundary is enforced at the tool's closed `(platform, what)` vocabulary AND
-re-enforced by the host-side bridge's own allowlist (`nora/infra/social/
-bridge_server.py`, bound to loopback + the docker0 gateway so the container —
-on the private `nora` network, not host networking — can reach it; see
-`deploy/social-bridge/`), so a write verb is unreachable even under prompt
-injection; the tool ships inert behind
-`[social] enabled`. Instagram post-by-URL is unsupported (OpenCLI 1.8.7 has no
-caption-by-URL command) and Threads support waits on a native OpenCLI adapter
-(1.8.7 has none). The virtual display itself is load-bearing rather than
-incidental: Browser Bridge drives Chrome window APIs, and GNOME RDP reports
-zero monitors while disconnected, which failed window creation — so RDP is
-optional administration only, never the runtime.
-
-## 2. Packages — what lives here, what it may import
+## 5. Building block view — packages, and what each may import
 
 Enforced today by five import-linter contracts (`pyproject.toml`
 `[tool.importlinter]`) plus `tests/test_boundaries.py`:
@@ -192,7 +180,7 @@ Enforced today by five import-linter contracts (`pyproject.toml`
 | `skills/` | The on-demand skill layer (design/12 §1, DEC-48) — NOT doctrine: a skill's body must not sit in the prompt on every turn, only its name and when-to-load line do (progressive disclosure), and it activates on demand. `loader.py::SkillStore` reads the AgentSkills.io SKILL.md shape (`name` + `description` frontmatter) from one operator-configured directory; `resolve(name)` is a pure name lookup that can never turn message content into a loaded skill (R-29 — a skill source is operator config only). `navigation/SKILL.md` is the first skill (wayfinding judgement). Shipped INERT: nothing in `nora.app.composition` constructs a `SkillStore` yet, because activation needs a model-facing tool with an R-7 budget in `nora.agent.tools.NATIVE_TOOLS`. | stdlib, YAML. Forbidden from importing `nora.config` (contract 3) and `strands` — framework-free so the files also load unchanged under the vended `AgentSkills` plugin when activation is wired. |
 | `instructions/` | The parse/hash/reload core shared by every instruction corpus: `frontmatter.py::parse_document` (frontmatter split, YAML load, required-key and name-charset checks, `sha256` over the BODY only — the frontmatter carries versions and descriptions that never reach a model) and `reload.py::DirectoryWatcher` (mtime+size fingerprint, generic over what a scan produces, keeping the last good value when a live edit breaks and counting the failure on the CALLER's own counter — but raising on the FIRST scan, because a process that starts with no instructions and says nothing about it is `unavailable` reported as `nothing_found`). Extracted out of `nora.doctrine.loader` rather than forked: `_FRONTMATTER_RE` was already duplicated in `nora.skills.loader`, and the reload machine was unshared, so a copy would have been its first second implementation. The doctrine's gates, its `<section>` rendering and its audience filter did NOT move. `frontmatter.py` is the package's only `.md` reader — allowlisted in `test_boundaries.py::test_doctrine_read_boundary` for that reason. | stdlib, YAML, `nora.obs.metrics`. Forbidden from importing `nora.config` — the directory arrives as a `Path` from the composition root. |
 | `obs/` | `logging.py` (`setup_logging`), `tracing.py` (`setup_tracing`, OTel), `metrics.py` (`Metrics` — the recording machinery; the `METRICS` module-level singleton was deleted in phase 6, see DEC-13), `metric_specs.py` (every declared metric name, label set and help text — append-only, enumerated by `tests/test_metrics_export.py`), `health.py` (`build_health_app` — `GET /health`, `GET /metrics`; takes `store`/`honcho` as injected dependencies, not a module import — the `/health` endpoint calls `store.stats()` and `honcho.health()`). | `aiohttp`, `opentelemetry`. Forbidden from importing `nora.config` — `logging.py::setup_logging`/`tracing.py::setup_tracing` take explicit scalar parameters instead of a duck-typed `cfg` sub-config; `health.py::build_health_app` was never an offender, it already took individually-extracted fields. |
-| `web/` | `GET /app/v1/status` and `GET /app/v1/memory` for the friend-group web portal (`app/`, a separate Next.js app — docs/superpowers/specs/2026-08-17-nora-web-design.md), registered onto the SAME aiohttp app `obs/health.py::build_health_app` builds via `api.py::register_web_routes(app, ...)` — no second port. `status.py::build_status_payload` re-projects `/health`'s store/Honcho reachability plus a reminders summary (`nora.domain.reminders.ReminderStore.all_pending`, due times and count only, never a reminder's own text). `memory.py::build_memory_payload` returns every `identity.toml` person's Honcho `representation` (observer=the AI peer, observed=that person — the same verb `engagement/context.py`'s `_recall_self`/`_recall_tagger_card` use), carrying R-27's `reachable`/`conclusions` split through rather than collapsing "Honcho is down" into "nothing known." | `nora.domain.ports` (`MemoryStore`, `RecordStore`), `nora.domain.reminders`, `nora.persons`, `aiohttp`. |
+| `web/` | `GET /app/v1/status` and `GET /app/v1/memory` for the friend-group web portal (`app/`, a separate Next.js app — designed in the 2026-08-17 web spec, since deleted; git history), registered onto the SAME aiohttp app `obs/health.py::build_health_app` builds via `api.py::register_web_routes(app, ...)` — no second port. `status.py::build_status_payload` re-projects `/health`'s store/Honcho reachability plus a reminders summary (`nora.domain.reminders.ReminderStore.all_pending`, due times and count only, never a reminder's own text). `memory.py::build_memory_payload` returns every `identity.toml` person's Honcho `representation` (observer=the AI peer, observed=that person — the same verb `engagement/context.py`'s `_recall_self`/`_recall_tagger_card` use), carrying R-27's `reachable`/`conclusions` split through rather than collapsing "Honcho is down" into "nothing known." | `nora.domain.ports` (`MemoryStore`, `RecordStore`), `nora.domain.reminders`, `nora.persons`, `aiohttp`. |
 | `ingest/` | The ambient path (spec §4.3): `pipeline.py::IngestPipeline` sequences six stages — `stages/scope.py` (the room half of the policy allowlist, deliberately ahead of the audit write so a conversation absent from `policy.toml` is never recorded — DEC-18), `stages/identity.py`, `stages/media.py` (byte custody, INLINE and ahead of the audit write — DEC-45), `stages/audit.py`, `stages/memory_feed.py`, `stages/gate.py` (the former `stages/parse.py` is gone; parsing moved into the adapter) — each with exactly one public `async def run(...)`. `policy.py::TriggerTextPolicy` is the `EngagePolicy` this phase ships (see the ports table below); it lives here, not in `engagement/`, because the gate it satisfies runs on the ingest pipeline. Replaces the ambient half of `Handler.on_event`. | `nora.domain`, `nora.tag`, `nora.persons`, `nora.obs.metrics`. Forbidden from importing `nora.config` or `strands`. |
 | `engagement/` | The tag-response path (spec §4.4): `pipeline.py::EngagementPipeline` sequences `stages/admission.py` (R-9 debounce, R-10 in-flight lock, R-12 self-tag), `slots.py::ConversationSlots` (R-10's per-conversation in-flight lock and R-30's FIFO queue as ONE collaborator, hoisted out of the pipeline so the heartbeat's fire path contends for the SAME slot — `release_and_dispatch` is one call rather than two statements so an early return cannot separate them), `context.py::TranscriptInjection` (the `ContextAssembler` this phase ships — see the ports table below), doctrine lookup, `stages/deliver.py` (`build`/`check_outcome`, wrapping `nora.agent.guards.Deliverer`/`ReplyGuard`), `stages/invoke.py` (one bounded LLM call, R-5/R-8), `stages/feedback.py` (the post-reply Honcho feed — the tagger's words only, DEC-36). Replaces the tagging half of `Handler` (`_collect_context`, `_invoke`, `_feed_exchange`, and the debounce/in-flight/self-tag checks from `on_event`). | `nora.domain`, `nora.persons`, `nora.tag`, `nora.obs.metrics`. Forbidden from importing `nora.config` or `strands` — `Deliverer`/`ReplyGuard` stay in `nora.agent` (they are `strands.HookProvider`s) rather than moving here, for exactly that reason. |
 | `presence/` | The presence collector (design/19, DEC-54/55) — a SECOND top-level composition root and a SEPARATE process, `python -m nora.presence`. `collector.py::PresenceCollector` runs the per-circle change-recorder loop (read Life360, count each member's `wire_state`, write a fix only when `ts` advances, publish a liveness heartbeat, back off on auth failures) and the canary (non-JSON / empty-circle). `composition.py::build_collector(cfg)` is the only place besides `nora.presence.__main__` allowed to read `Config`; it is inert (returns no collector) when `[presence] enabled = false`. `__main__.py` serves the daemon's own `/metrics` + `/health` and runs the loops. Shares only the `nora` database (`nora.infra.sql.presence.PresenceStore`) and the Life360 client (`nora.infra.life360`) with Nora; either can be down without the other. `whereis` (the read) is `nora.agent.whereis`, not here — it belongs beside `Room` at the assembly seam (R-21). | `nora.config` (a composition root, like `nora.app`), `nora.infra.sql`, `nora.infra.life360`, `nora.obs.metrics`, `nora.domain.presence`. Top layer in the import-linter contract, alongside `nora.app`. |
@@ -201,33 +189,9 @@ Enforced today by five import-linter contracts (`pyproject.toml`
 | `persons.py` | `Persons`, `load_persons` — `identity.toml` → reverse index by `(platform, sender_id)`, built from every id form of every account. One person may hold many accounts per platform (design/10 §3, §7.4); they all resolve to one `person_id`, hence one Honcho peer (A2). | `nora.persons_file`, `nora.domain.models`. |
 | `persons_file.py` | `identity.toml`'s on-disk shape: the pydantic models and their validators, and nothing else. Split from `persons.py` when that module reached 297 of the 300-line hard cap; the seam is real regardless — validating the file format is a separate job from building and serving the reverse index. Nothing here is public, `nora.persons` is the only import site. | pydantic, `nora.domain.identity`. |
 | `tag.py` | `is_tagged` (R-11 trigger validation), `Debounce` (R-9, plus `sweep` for `nora.app.runtime.debounce_sweep_loop`'s TTL cleanup). | stdlib only. |
-| `testing/` | `fakes.py` — `FakeRecordStore` (`RecordStore`'s second implementation, `fail_on_nora`/`fail_on_recent` switches), `FakeMemoryStore` (`MemoryStore`'s second implementation, a `fail` switch), `FakeMediaSource`/`FakeBlobStore` (`MediaSource`/`BlobStore`'s second implementations — DEC-45; the media fake keys off the attachment id signal-cli actually issued and answers `not_found` otherwise, rather than saying yes to everything), `FakeAdapter` (keeps `.parse()` public and `.listen()` a no-op rather than mirroring `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop — nothing drives it through a real SSE loop — so it is exempt from the contract-suite rule as a non-conforming double, not a second implementation). `reminders.py` — `FakeReminderStore` (`ReminderStore`'s second implementation; the three rules Postgres gives for free and a dict does not — UTC normalisation, the `id` tiebreak, insert-only `create` — are spelled out there because each was a real divergence). `scripted_agent.py` — `ScriptedTurn`/`FakeAgentRunner`/`group_event`, the scripted model double shared by `tests/` and `evals/`, satisfying `nora.engagement.stages.invoke.AgentRunner` structurally (a stage-level `Protocol`, not a `nora/domain/ports.py` port, so it is not subject to the contract-suite rule either). Load-bearing now: `tests/integration/harness.py` and `evals/harness.py` both build their pipeline from this package via `nora.app.offline.build_offline_pipeline`, closing the `evals/` → `tests/` coupling Task 10 removed. `FakeRecordStore` and `FakeMemoryStore` are each bound to a shared contract suite in `tests/contract/` that the matching production implementation also passes (CLAUDE.md's "a port never gains a second implementation without a shared contract suite"). | `nora.domain` only. Mechanically enforced: `nora.testing` shares `nora.infra`'s row in the layers contract and is listed in the config-forbidding contract, so it may import neither `nora.obs` nor `nora.config` — it ships inside the wheel, so a fake reaching into production config would ship too. |
+| `testing/` | `fakes.py` — `FakeRecordStore` (`RecordStore`'s second implementation, `fail_on_nora`/`fail_on_recent` switches), `FakeMemoryStore` (`MemoryStore`'s second implementation, a `fail` switch), `FakeMediaSource`/`FakeBlobStore` (`MediaSource`/`BlobStore`'s second implementations — DEC-45; the media fake keys off the attachment id signal-cli actually issued and answers `not_found` otherwise, rather than saying yes to everything), `FakeAdapter` (keeps `.parse()` public and `.listen()` a no-op rather than mirroring `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop — nothing drives it through a real SSE loop — so it is exempt from the contract-suite rule as a non-conforming double, not a second implementation). `reminders.py` — `FakeReminderStore` (`ReminderStore`'s second implementation; the three rules Postgres gives for free and a dict does not — UTC normalisation, the `id` tiebreak, insert-only `create` — are spelled out there because each was a real divergence). `scripted_agent.py` — `ScriptedTurn`/`FakeAgentRunner`/`group_event`, the scripted model double shared by `tests/` and `evals/`, satisfying `nora.engagement.stages.invoke.AgentRunner` structurally (a stage-level `Protocol`, not a `nora/domain/ports.py` port, so it is not subject to the contract-suite rule either). Load-bearing now: `tests/integration/harness.py` and `evals/harness.py` both build their pipeline from this package via `nora.app.offline.build_offline_pipeline`, closing the `evals/` → `tests/` coupling Task 10 removed. `FakeRecordStore` and `FakeMemoryStore` are each bound to a shared contract suite in `tests/contract/` that the matching production implementation also passes (AGENTS.md's "a port never gains a second implementation without a shared contract suite"). | `nora.domain` only. Mechanically enforced: `nora.testing` shares `nora.infra`'s row in the layers contract and is listed in the config-forbidding contract, so it may import neither `nora.obs` nor `nora.config` — it ships inside the wheel, so a fake reaching into production config would ship too. |
 
-## 3. Ports and their current implementations
-
-Ports live in `nora/domain/ports.py` (framework-free, `Protocol`, keyword-only
-after `self`). Conformance — where today's concrete classes do and do not satisfy
-their port — is asserted by `tests/contract/test_port_conformance.py` for
-`PlatformAdapter`, `MemoryStore`, and `RecordStore`; `EngagePolicy` and
-`ContextAssembler` have no test in that file yet and are checked statically by
-mypy instead (see their rows below).
-
-| Port | Concrete implementation today | Known gap |
-|---|---|---|
-| `PlatformAdapter` | `nora/platform/signal/adapter.py::SignalAdapter`, `nora/platform/discord/adapter.py::DiscordAdapter` | `DiscordAdapter` is the second implementation (DEC-102); both pass the shared `tests/contract/test_send_contract.py` and `test_reaction_contract.py` suites alongside `FakeAdapter`. `isinstance(SignalAdapter(...), PlatformAdapter)` is `True` (`tests/contract/test_port_conformance.py::test_signal_adapter_satisfies_platform_adapter`), the platforms phase's headline goal: `resolve_identity() -> PlatformIdentity`, `send(*, target, text, mentions=(), preview=None) -> SendResult`, `health() -> AdapterHealth`, `listen(*, on_message) -> None` all match, and the port's own `name: str` (the outlier — every other type on the port already said `platform`) was renamed to `platform: str` to close the fifth gap, found only after the other four closed. A static conformance proof — `isinstance` against a `runtime_checkable` `Protocol` checks names, not signatures — lives at `nora.app.composition.build_dependencies`'s `_adapter_satisfies_platform_adapter` assignment, inside mypy's strict `nora.app` override. |
-| `RosterSource` | `nora/platform/signal/roster.py::SignalRoster` (signal-cli's read-only `listGroups`), `nora/platform/discord/roster.py::DiscordRoster` (the guild members list). | Deliberately NOT on `PlatformAdapter` — membership is a directory read, and putting it there would oblige every adapter and every fake to implement a roster it may have no endpoint for. One source PER PLATFORM since DEC-102: a single `SignalRoster` served every platform until 2026-08-14, so a Discord room was looked up in signal-cli, came back `available=False`, and every room-scoped tool — `where_is` included — answered «I couldn't look» forever. Fail-closed, and therefore invisible. Discord's roster reports the GUILD's members: Discord exposes no per-channel membership, and over-reporting is the safe direction for R-21's subset check (it can only make disclosure refuse, never permit). |
-| `MemoryStore` | `nora/infra/honcho/client.py::HonchoClient` | None: method names match (`test_honcho_client_satisfies_memory_store_method_names`) and `ensure_peer`/`ensure_session` are idempotent under concurrency — each takes a per-peer `asyncio.Lock` (`HonchoClient._peer_lock`), closing the check-then-act window the port's docstring declares (spec §6). |
-| `RecordStore` | `nora/infra/sql/audit.py::SqlRecordStore`, over SQLAlchemy Core. | None: method names match the port (`test_both_implementations_satisfy_the_port`, `tests/contract/test_audit_store_contract.py`), and static conformance is checked by mypy (`nora.infra` is inside the strict override). `nora/testing/fakes.py::FakeRecordStore` is the port's second implementation, bound to the same contract suite. |
-| `MediaSource` | `nora/platform/signal/media.py::SignalMediaSource` — **Signal only; a KNOWN GAP since DEC-102.** `nora.ingest.stages.media` calls it for every message regardless of platform, so a Discord attachment is fetched from signal-cli and counted `not_found` when the honest answer is «asked the wrong platform» (R-27's distinction). Discord attachment custody is unbuilt. Original note:, over signal-cli's `getAttachment` JSON-RPC (verified to exist on 0.14.7 against a negative control — `design/18-media-custody.md` §4). | None at the name level (`test_the_media_ports_conform_in_both_implementations`); behaviour is `tests/contract/test_media_source_contract.py`. `nora.platform` is outside mypy's scoped strict override, so there is no static shape proof the way `SqlRecordStore` has one — the contract suite stands in for it. |
-| `BlobStore` | `nora/infra/blobs/filesystem.py::FilesystemBlobStore` | None: inside mypy's strict override, plus `tests/contract/test_blob_store_contract.py` over both implementations. No `delete` on the port on purpose — retention is undecided (DEC-45 §8); the concrete class has it, exactly as `SqlRecordStore.prune_all` sits off `RecordStore`. |
-| `ReminderStore` | `nora/infra/sql/reminders.py::SqlReminderStore`, over SQLAlchemy Core; `nora/testing/reminders.py::FakeReminderStore` in memory. | None: names by `test_the_reminder_stores_conform_to_the_port`, behaviour by `tests/contract/test_reminder_store_contract.py` over BOTH, shape by mypy for the SQL side. The port lives in `nora/domain/reminders.py` rather than `ports.py` because it arrived with its own value types (`Reminder`, `ReminderState`, `ReminderCaps`) and the UTC/limit rules both stores share. |
-| `ComputeJobStore` | `nora/infra/sql/compute_jobs.py::SqlComputeJobStore`, over SQLAlchemy Core; `nora/testing/fakes.py::FakeComputeJobStore` in memory. | None: behaviour by `tests/contract/test_compute_job_store_contract.py` over BOTH, shape by mypy for the SQL side. Lives in `nora/domain/compute.py` for `ReminderStore`'s own reason (it arrived with `ComputeJob`/`ComputeJobState` and its own UTC rule), and it is deliberately NOT a second `ReminderStore`: one job, one delivery, ever — no `due_at`, no recurrence, and a `sweep_pending` its sibling has no use for, because a compute job's `backend_job_id` is a handle into an IN-MEMORY backend registry that no restart survives (`nora.app.compute_poller.recover`). |
-| `ComputeBackend` | `nora/infra/compute/docker_backend.py::LocalDockerBackend` (one container per job, built only when `[compute] enabled`); `nora/testing/fakes.py::FakeComputeBackend`. | None at the name level (`tests/contract/test_compute_backend_contract.py` drives both). The gap that is RECORDED rather than closed: the job registry is per-process memory, so a restart orphans both the handle and any running container — boot recovery resolves the ROW and cannot touch the container. |
-| `LinkPreviewSource` | `nora/infra/preview.py::OpenGraphPreviewSource` (DEC-87), constructed only when `[preview].enabled`; `nora/testing/fakes.py::FakeLinkPreviewSource` is the second implementation. | None at the name level (`tests/contract/test_link_preview_contract.py` asserts the keyword-only signature and `isinstance` for both), and the SSRF guard's refusals are held to the same answers across both. The gap that is REAL and recorded rather than closed: the guard refuses a non-globally-routable destination, and a local test server is one, so the fetch-and-parse path has no end-to-end assertion — the module is split into pure seams (`card_from_html`, `next_hop`, `_safe`) that are asserted directly, plus a loopback positive control proving the guard is in the path. The byte ceiling, the mid-flight content-type refusal and the `og:image` download remain live-smoke items. |
-| `EngagePolicy` | `nora/ingest/policy.py::TriggerTextPolicy` (`tag.is_tagged` moved off `Handler.on_event`, no other behaviour change; `tag.Debounce` moved to `nora/engagement/stages/admission.py` instead — `policy.py` never references it). | No dedicated `isinstance`/contract test yet — conformance is checked statically: `nora.app.composition.Dependencies.policy: EngagePolicy` is assigned a `TriggerTextPolicy` instance inside `build_dependencies`, and `nora.app` is inside mypy's strict override. `ClassifierPolicy` (D1's A3 amendment, `CompositePolicy([TriggerTextPolicy, ClassifierPolicy])`) is still not built. |
-| `ContextAssembler` | `nora/engagement/context.py::TranscriptInjection` (replaces `Handler._collect_context`, preserving both its failure-shaped behaviours — see the module's own docstring). | Same as `EngagePolicy`: no dedicated contract test, checked statically via `Dependencies.assembler: ContextAssembler` inside mypy's strict `nora.app` override. `EpisodeContinuation` is still accepted-but-not-implemented (DEC-3). |
-
-## 4. File-by-file walk
+## 6. Runtime view — a file-by-file walk
 
 ### One ambient message
 
@@ -270,7 +234,144 @@ same shape `Handler._spawn(self.handle_tag(msg))` had.
 17. `nora/engagement/stages/feedback.py::run` — spawned as a background task if a tagger was mapped, and it feeds the TAGGER'S message body under the tagger's peer, nothing else. Not the exchange: a two-speaker transcript under one peer id made Nora's own replies evidence about the person she was answering, because Honcho's deriver reads that stream as the target peer's own messages (DEC-36). Her reply is in Postgres and reachable through `load_transcript`, which is where ADR 0001 says it belongs.
 18. `nora/engagement/pipeline.py::EngagementPipeline._run_admitted`'s `finally` — releases the in-flight key (R-10, every exit path) and records `nora_tag_latency_seconds`/`nora_overhead_seconds`/`nora_messages_per_tag` (the last one 0 for a silent turn, so every admitted tag contributes exactly one observation — DEC-31) and, for a turn that sent SOME of its messages and then stopped early, `nora_partial_replies_total{reason}` (R-25/DEC-40 — such a turn is not silent, so nothing R-23 built can see it). Its enclosing `except BaseException` is what makes R-5's silence guarantee unconditional, including on faults that are not an `Exception` at all.
 
-## 5. Where new code goes
+
+## 7. Deployment view
+
+Nora runs on the `norty` host as a compose project; development happens on the
+MacBook, and the host is a deploy target rather than a dev checkout. `README.md`
+carries the build, start, rollback and version procedures; `AGENTS.md`
+«Reaching the deployment» carries the read-back commands and the rules that
+make them safe (key-only SSH, the live untracked `config.toml`, the db reached
+through compose, and why `docker compose logs nora` is empty).
+
+
+## 8. Crosscutting concepts
+
+### The three memory layers
+
+Nora has one record and one interpretation of it, and they are frequently
+confused — including in this document until 2026-08-06.
+
+| layer | store | what it holds | how she reads it |
+|---|---|---|---|
+| **hot** | Postgres | the last 40 messages, verbatim | injected into every tag prompt |
+| **deeper** | **the same Postgres** | everything older, verbatim | `load_transcript` — a wider window, **not a second system** |
+| **derived** | Honcho | conclusions *about people* | `about` |
+
+**Postgres is the RECORD; Honcho is the INTERPRETATION.** Postgres stores what was
+literally said, is authoritative, and is the only thing R-2/A9 guarantee.
+
+**Media is part of the record, not a fourth layer** (DEC-45,
+`design/18-media-custody.md`). An attachment's BYTES live in
+`data/media/<first2>/<rest>`, content-addressed by sha256, and the row that
+mentions them carries the hash in `messages.media_json` — written by the same
+INSERT as the body. Before that they were a placeholder plus a pointer into
+signal-cli's own store, under signal-cli's own retention, which made A9 false
+for every image ever sent. The transcript shows a type and a durable handle
+(`[image a3f2c1]`); the bytes never enter a prompt. Honcho
+stores what a deriver concluded from it, is best-effort, and is allowed to be
+absent — `nora.infra`'s docstring explains why the two clients have opposite
+error contracts for exactly this reason.
+
+The consequence worth stating: `read_buffer` returning nothing means *nothing
+was said*. `about` returning nothing means *nothing was concluded*, which is a
+different and much weaker claim — hence `Recollection.reachable`, so "I could
+not ask" never collapses into "there is nothing".
+
+**Under review as of 2026-08-06.** A live `representation` was measured to be
+~88% events restated in the third person ("asked what time it was") rather than
+durable traits, i.e. the hot layer re-rendered at ~151 tokens a call. Whether
+that is the corpus (everything fed so far is the operator testing her) or the
+deriver is being settled; until it is, do not build further on Honcho.
+
+**D1 — the boundary rule.** The Agent SDK never sees ambient-only traffic. It is
+constructed, invoked, and discarded once per tag. Ambient ingest is a pure,
+deterministic write path (Postgres audit + Honcho feed) with exactly one branch:
+trigger detection. See `design/00-overview.md` D1 and `design/09-decision-index.md`.
+
+**The browser boundary (OpenCLI / social reads) is outside both paths.** The
+host runs a persistent virtual desktop — Xtigervnc on display `:2` with Openbox,
+headed Chrome on that display, and OpenCLI 1.8.7 (`localhost:19825`) driving it
+through the Browser Bridge extension, all as systemd *user* services (see
+`docs/runbook.md` §10). None of it is ambient ingest: it writes nothing to the
+record. The surface is a single constrained, read-only tool, `social_fetch`
+(DEC-151), covering X and Instagram reads (a post on X, a profile, an account's
+posts, search) — never posting, liking, following, commenting or deleting. The
+boundary is enforced at the tool's closed `(platform, what)` vocabulary AND
+re-enforced by the host-side bridge's own allowlist (`nora/infra/social/
+bridge_server.py`, bound to loopback + the docker0 gateway so the container —
+on the private `nora` network, not host networking — can reach it; see
+`deploy/social-bridge/`), so a write verb is unreachable even under prompt
+injection; the tool ships inert behind
+`[social] enabled`. Instagram post-by-URL is unsupported (OpenCLI 1.8.7 has no
+caption-by-URL command) and Threads support waits on a native OpenCLI adapter
+(1.8.7 has none). The virtual display itself is load-bearing rather than
+incidental: Browser Bridge drives Chrome window APIs, and GNOME RDP reports
+zero monitors while disconnected, which failed window creation — so RDP is
+optional administration only, never the runtime.
+
+### Ports and their current implementations
+
+Ports live in `nora/domain/ports.py` (framework-free, `Protocol`, keyword-only
+after `self`). Conformance — where today's concrete classes do and do not satisfy
+their port — is asserted by `tests/contract/test_port_conformance.py` for
+`PlatformAdapter`, `MemoryStore`, and `RecordStore`; `EngagePolicy` and
+`ContextAssembler` have no test in that file yet and are checked statically by
+mypy instead (see their rows below).
+
+| Port | Concrete implementation today | Known gap |
+|---|---|---|
+| `PlatformAdapter` | `nora/platform/signal/adapter.py::SignalAdapter`, `nora/platform/discord/adapter.py::DiscordAdapter` | `DiscordAdapter` is the second implementation (DEC-102); both pass the shared `tests/contract/test_send_contract.py` and `test_reaction_contract.py` suites alongside `FakeAdapter`. `isinstance(SignalAdapter(...), PlatformAdapter)` is `True` (`tests/contract/test_port_conformance.py::test_signal_adapter_satisfies_platform_adapter`), the platforms phase's headline goal: `resolve_identity() -> PlatformIdentity`, `send(*, target, text, mentions=(), preview=None) -> SendResult`, `health() -> AdapterHealth`, `listen(*, on_message) -> None` all match, and the port's own `name: str` (the outlier — every other type on the port already said `platform`) was renamed to `platform: str` to close the fifth gap, found only after the other four closed. A static conformance proof — `isinstance` against a `runtime_checkable` `Protocol` checks names, not signatures — lives at `nora.app.composition.build_dependencies`'s `_adapter_satisfies_platform_adapter` assignment, inside mypy's strict `nora.app` override. |
+| `RosterSource` | `nora/platform/signal/roster.py::SignalRoster` (signal-cli's read-only `listGroups`), `nora/platform/discord/roster.py::DiscordRoster` (the guild members list). | Deliberately NOT on `PlatformAdapter` — membership is a directory read, and putting it there would oblige every adapter and every fake to implement a roster it may have no endpoint for. One source PER PLATFORM since DEC-102: a single `SignalRoster` served every platform until 2026-08-14, so a Discord room was looked up in signal-cli, came back `available=False`, and every room-scoped tool — `where_is` included — answered «I couldn't look» forever. Fail-closed, and therefore invisible. Discord's roster reports the GUILD's members: Discord exposes no per-channel membership, and over-reporting is the safe direction for R-21's subset check (it can only make disclosure refuse, never permit). |
+| `MemoryStore` | `nora/infra/honcho/client.py::HonchoClient` | None: method names match (`test_honcho_client_satisfies_memory_store_method_names`) and `ensure_peer`/`ensure_session` are idempotent under concurrency — each takes a per-peer `asyncio.Lock` (`HonchoClient._peer_lock`), closing the check-then-act window the port's docstring declares (spec §6). |
+| `RecordStore` | `nora/infra/sql/audit.py::SqlRecordStore`, over SQLAlchemy Core. | None: method names match the port (`test_both_implementations_satisfy_the_port`, `tests/contract/test_audit_store_contract.py`), and static conformance is checked by mypy (`nora.infra` is inside the strict override). `nora/testing/fakes.py::FakeRecordStore` is the port's second implementation, bound to the same contract suite. |
+| `MediaSource` | `nora/platform/signal/media.py::SignalMediaSource` — **Signal only; a KNOWN GAP since DEC-102.** `nora.ingest.stages.media` calls it for every message regardless of platform, so a Discord attachment is fetched from signal-cli and counted `not_found` when the honest answer is «asked the wrong platform» (R-27's distinction). Discord attachment custody is unbuilt. Original note:, over signal-cli's `getAttachment` JSON-RPC (verified to exist on 0.14.7 against a negative control — `design/18-media-custody.md` §4). | None at the name level (`test_the_media_ports_conform_in_both_implementations`); behaviour is `tests/contract/test_media_source_contract.py`. `nora.platform` is outside mypy's scoped strict override, so there is no static shape proof the way `SqlRecordStore` has one — the contract suite stands in for it. |
+| `BlobStore` | `nora/infra/blobs/filesystem.py::FilesystemBlobStore` | None: inside mypy's strict override, plus `tests/contract/test_blob_store_contract.py` over both implementations. No `delete` on the port on purpose — retention is undecided (DEC-45 §8); the concrete class has it, exactly as `SqlRecordStore.prune_all` sits off `RecordStore`. |
+| `ReminderStore` | `nora/infra/sql/reminders.py::SqlReminderStore`, over SQLAlchemy Core; `nora/testing/reminders.py::FakeReminderStore` in memory. | None: names by `test_the_reminder_stores_conform_to_the_port`, behaviour by `tests/contract/test_reminder_store_contract.py` over BOTH, shape by mypy for the SQL side. The port lives in `nora/domain/reminders.py` rather than `ports.py` because it arrived with its own value types (`Reminder`, `ReminderState`, `ReminderCaps`) and the UTC/limit rules both stores share. |
+| `ComputeJobStore` | `nora/infra/sql/compute_jobs.py::SqlComputeJobStore`, over SQLAlchemy Core; `nora/testing/fakes.py::FakeComputeJobStore` in memory. | None: behaviour by `tests/contract/test_compute_job_store_contract.py` over BOTH, shape by mypy for the SQL side. Lives in `nora/domain/compute.py` for `ReminderStore`'s own reason (it arrived with `ComputeJob`/`ComputeJobState` and its own UTC rule), and it is deliberately NOT a second `ReminderStore`: one job, one delivery, ever — no `due_at`, no recurrence, and a `sweep_pending` its sibling has no use for, because a compute job's `backend_job_id` is a handle into an IN-MEMORY backend registry that no restart survives (`nora.app.compute_poller.recover`). |
+| `ComputeBackend` | `nora/infra/compute/docker_backend.py::LocalDockerBackend` (one container per job, built only when `[compute] enabled`); `nora/testing/fakes.py::FakeComputeBackend`. | None at the name level (`tests/contract/test_compute_backend_contract.py` drives both). The gap that is RECORDED rather than closed: the job registry is per-process memory, so a restart orphans both the handle and any running container — boot recovery resolves the ROW and cannot touch the container. |
+| `LinkPreviewSource` | `nora/infra/preview.py::OpenGraphPreviewSource` (DEC-87), constructed only when `[preview].enabled`; `nora/testing/fakes.py::FakeLinkPreviewSource` is the second implementation. | None at the name level (`tests/contract/test_link_preview_contract.py` asserts the keyword-only signature and `isinstance` for both), and the SSRF guard's refusals are held to the same answers across both. The gap that is REAL and recorded rather than closed: the guard refuses a non-globally-routable destination, and a local test server is one, so the fetch-and-parse path has no end-to-end assertion — the module is split into pure seams (`card_from_html`, `next_hop`, `_safe`) that are asserted directly, plus a loopback positive control proving the guard is in the path. The byte ceiling, the mid-flight content-type refusal and the `og:image` download remain live-smoke items. |
+| `EngagePolicy` | `nora/ingest/policy.py::TriggerTextPolicy` (`tag.is_tagged` moved off `Handler.on_event`, no other behaviour change; `tag.Debounce` moved to `nora/engagement/stages/admission.py` instead — `policy.py` never references it). | No dedicated `isinstance`/contract test yet — conformance is checked statically: `nora.app.composition.Dependencies.policy: EngagePolicy` is assigned a `TriggerTextPolicy` instance inside `build_dependencies`, and `nora.app` is inside mypy's strict override. `ClassifierPolicy` (D1's A3 amendment, `CompositePolicy([TriggerTextPolicy, ClassifierPolicy])`) is still not built. |
+| `ContextAssembler` | `nora/engagement/context.py::TranscriptInjection` (replaces `Handler._collect_context`, preserving both its failure-shaped behaviours — see the module's own docstring). | Same as `EngagePolicy`: no dedicated contract test, checked statically via `Dependencies.assembler: ContextAssembler` inside mypy's strict `nora.app` override. `EpisodeContinuation` is still accepted-but-not-implemented (DEC-3). |
+
+
+## 9. Architecture decisions
+
+Two artifacts, deliberately not merged. `design/09-decision-index.md` is the
+**index**: one line per decision across the live identifier namespaces (`D*`,
+`A*`, `R-*`, `DEC-*`), naming the document that made it and the test that
+enforces it. `docs/adr/` holds **Nygard-form ADRs** for decisions with a cost
+worth recording — an alternative rejected, a trade accepted. The index answers
+"which test guards this?"; an ADR answers "why, and what did we give up?".
+`docs/adr/README.md` explains when each is warranted; `CONTRIBUTING.md` places
+both against a GitHub issue, which records a candidate rather than a decision.
+
+## 10. Quality requirements
+
+`make gate` is the release gate — pytest, ruff, mypy (strict, scoped) and
+import-linter, run serially, and it is the final check rather than the iteration
+check (`make test-affected` is the fast loop). `evals/` is the layer above it:
+the same comprehend → measure → serialize loop applied to a real user journey —
+a typed case, a live model trajectory measured fail-closed (empty reply, wrong
+path or blown budget is a FAIL; a timeout is an ERROR and never a PASS), and a
+verdict bound to its Langfuse trace. `AGENTS.md` carries the gate commands.
+
+## 11. Risks and technical debt
+
+Tracked as GitHub issues on `mikeng-io/nora` rather than in this file, so that
+an item has one home with its scoping and status. Two standing entries worth
+naming here because they shape reading: the knowledge tier (the "fact tier") and
+the language tier were **deprecated 2026-09-07** and their code deleted (issue
+#115), and the note tier's entity-resolution chain and the curator's merge half
+were **deprecated 2026-09-08**. Their database tables are deliberately not
+dropped. Design documents describing them carry `DEPRECATED` banners, and their
+decision-index rows are marked rather than renumbered.
+
+## 12. Glossary
+
+`GLOSSARY.md`.
+
+## Appendix — where new code goes
 
 From spec §10. Rows marked **(target)** name a package that does not exist yet
 in this repo — they describe where the pipelines/agent/platforms phases will put

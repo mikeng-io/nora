@@ -11,7 +11,16 @@ dependency carries its own licence with it, and a copy does not.
 
 ## graphiti-core — entity-resolution prompt
 
-**Used in:** `nora/dreamer/objectives/fact-entity-resolution.md`
+> **REMOVED FROM THE TREE 2026-09-08.** The file below was deleted with the
+> knowledge tier (issue #115, commit `ea165f57`), so nothing in the current
+> working tree carries this material. **The notice is retained, not deleted:**
+> the obligation attached to the versions that shipped it — V4 among them — and
+> a licence record for a released artifact does not stop being true because the
+> next release drops the file. Delete this section only if every release
+> carrying it is itself withdrawn.
+
+**Used in:** `nora/dreamer/objectives/fact-entity-resolution.md` (deleted
+2026-09-08; resolves in git history only)
 
 **Source:** `graphiti_core/prompts/dedupe_nodes.py` from
 <https://github.com/getzep/graphiti>, read at `main` on 2026-08-28 (225 lines).

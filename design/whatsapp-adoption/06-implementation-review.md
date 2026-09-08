@@ -14,7 +14,7 @@ timestamp: '2026-09-04'
 **Reviewed:**
 - Design baseline: `design/whatsapp-adoption/00-overview.md`, `01-bridge-container.md`, `02-identity-and-policy.md`, `03-transport-contract.md`
 - Prior review: `reviews/whatsapp-adoption-delegate-review.md`
-- Self-report: `IMPLEMENTATION_NOTES.md`
+- Self-report: `design/whatsapp-adoption/04-transport-implementation-notes.md`
 - Bridge: `deploy/whatsapp-bridge/{bridge.js,bridge_helpers.js,Dockerfile,package.json,bridge.test.mjs,.dockerignore}`
 - Adapter: `nora/platform/whatsapp/{adapter,jid,parser,listener,send,react,self_id}.py`
 - Wiring: `nora/platform/registry.py`, `nora/config.py` (`WhatsAppPlatformConfig`/`PlatformsConfig`), `docker-compose.yml` (`whatsapp-bridge` service), `config.toml`/`config.example.toml`, `policy.example.toml`, `identity.example.toml`, `docs/runbook.md` §4b, `release-fragments/unreleased/whatsapp-transport.json`
@@ -47,13 +47,13 @@ Eight of nine needed no re-reporting. M2's documentation half is fixed; its unde
 
 ## HIGH
 
-### H-1. WhatsApp voice notes DO trigger a full engagement turn today — contradicting the transport contract, `IMPLEMENTATION_NOTES.md`, and the release fragment, all three of which state they don't
+### H-1. WhatsApp voice notes DO trigger a full engagement turn today — contradicting the transport contract, `design/whatsapp-adoption/04-transport-implementation-notes.md`, and the release fragment, all three of which state they don't
 
-**What:** `03-transport-contract.md` §Engagement, `IMPLEMENTATION_NOTES.md` ("Voice notes are carried to the ambient tier ... but cannot engage until media custody + transcription lands — stated, not silent"), and `release-fragments/unreleased/whatsapp-transport.json` ("voice-note engagement does not trigger yet") all assert that a WhatsApp voice note is audited but does not engage Nora. This is **not what the wired code does.**
+**What:** `03-transport-contract.md` §Engagement, `design/whatsapp-adoption/04-transport-implementation-notes.md` ("Voice notes are carried to the ambient tier ... but cannot engage until media custody + transcription lands — stated, not silent"), and `release-fragments/unreleased/whatsapp-transport.json` ("voice-note engagement does not trigger yet") all assert that a WhatsApp voice note is audited but does not engage Nora. This is **not what the wired code does.**
 
 `nora/ingest/policy.py::VoiceNotePolicy.should_engage` — appended unconditionally to `engage_policies` for every platform in `nora/app/composition.py:1120-1124` ("Any voice note engages her, independent of trigger text ... it fires on any note regardless") — engages on `any(ref.voice_note for ref in message.media)` **with no platform check and no dependency on whether a transcript exists**. Its own docstring is explicit that this is deliberate: "It is gated on the parser's `voice_note` flag ... NOT on the rendered body containing a transcript: a failed transcription still leaves the handle and the note is still content she should see." This is an operator directive dated 2026-08-26 (`Miles: 「總之任何 Voice Note 都會直入上 Nora 度先囉」` — "ANY voice note goes straight to Nora first") — a pre-existing, deliberately platform-agnostic policy that predates this WhatsApp bundle and that the bundle's authors evidently did not check against.
 
-`nora/platform/whatsapp/parser.py::_media_ref` sets `voice_note=bool(entry.get("voice_note"))` for any WhatsApp `ptt` audio message — exactly the flag `VoiceNotePolicy` reads. WhatsApp has no `MediaSource` registered this phase (`IMPLEMENTATION_NOTES.md`'s own "BLOCKED / not done" section confirms this), so `nora/ingest/stages/media.py`'s custody stage never fetches bytes and never transcribes (transcription requires bytes already fetched — `media.py`'s own docstring: transcription runs "when present AND a ref is a voice note" off the custody result) — the message body stays the parser's `"[voice note]"` placeholder, permanently. But nothing stops the message from reaching the gate: `gate_stage.run` calls the same shared `CompositePolicy` for every platform, and `VoiceNotePolicy` fires on the flag alone, with **zero transcript content**.
+`nora/platform/whatsapp/parser.py::_media_ref` sets `voice_note=bool(entry.get("voice_note"))` for any WhatsApp `ptt` audio message — exactly the flag `VoiceNotePolicy` reads. WhatsApp has no `MediaSource` registered this phase (`design/whatsapp-adoption/04-transport-implementation-notes.md`'s own "BLOCKED / not done" section confirms this), so `nora/ingest/stages/media.py`'s custody stage never fetches bytes and never transcribes (transcription requires bytes already fetched — `media.py`'s own docstring: transcription runs "when present AND a ref is a voice note" off the custody result) — the message body stays the parser's `"[voice note]"` placeholder, permanently. But nothing stops the message from reaching the gate: `gate_stage.run` calls the same shared `CompositePolicy` for every platform, and `VoiceNotePolicy` fires on the flag alone, with **zero transcript content**.
 
 **Net effect:** the moment `[platforms.whatsapp] enabled = true` and a WhatsApp room is admitted, the first voice note anyone sends will make Nora attempt a real reply having seen only the literal string `"[voice note]"` in her context — not "no engagement," but engagement on no information at all, which is arguably worse than the documented "does not work" state (a confusing or fabricated-sounding reply to a message she never heard, versus visibly nothing happening).
 
@@ -136,7 +136,7 @@ FAILED tests/test_factory.py::test_r29_survives_activation_only_the_operator_dir
 1 failed, 1 warning in 0.14s
   AssertionError: assert ['navigation', ...'personalization'] == ['navigation']
 ```
-Confirms `IMPLEMENTATION_NOTES.md`'s claim that this failure is pre-existing and unrelated to WhatsApp (it is about `AgentSkills`/skill-loading isolation — nothing this commit touches). The failure surfaced again identically in the full-suite run below.
+Confirms `design/whatsapp-adoption/04-transport-implementation-notes.md`'s claim that this failure is pre-existing and unrelated to WhatsApp (it is about `AgentSkills`/skill-loading isolation — nothing this commit touches). The failure surfaced again identically in the full-suite run below.
 
 ```
 $ cd deploy/whatsapp-bridge && node --test
@@ -184,7 +184,7 @@ FAILED tests/test_factory.py::test_r29_survives_activation_only_the_operator_dir
 ```
 The full suite is green except for the same pre-existing `test_r29_survives_activation_only_the_operator_dir_loads` failure, confirmed identical to the targeted run above — no other regressions anywhere in the ~6,500-test suite.
 
-**Test counts against `IMPLEMENTATION_NOTES.md`'s claims:** "73 whatsapp tests" ✅ exact match. "976 contract tests" ✅ exact match (2 skipped, consistent with pre-existing skips unrelated to this change). "25 node tests" ✅ exact match. "One pre-existing failure (test_factory R-29)" ✅ confirmed failing here (both targeted and full-suite runs), and the failure content is unrelated to any file this commit touches. "`make gate` clean" — ruff/mypy/lint-imports scoped checks all clean, and the full pytest suite is green modulo the disclosed pre-existing failure; this substantiates the self-report's claim.
+**Test counts against `design/whatsapp-adoption/04-transport-implementation-notes.md`'s claims:** "73 whatsapp tests" ✅ exact match. "976 contract tests" ✅ exact match (2 skipped, consistent with pre-existing skips unrelated to this change). "25 node tests" ✅ exact match. "One pre-existing failure (test_factory R-29)" ✅ confirmed failing here (both targeted and full-suite runs), and the failure content is unrelated to any file this commit touches. "`make gate` clean" — ruff/mypy/lint-imports scoped checks all clean, and the full pytest suite is green modulo the disclosed pre-existing failure; this substantiates the self-report's claim.
 
 ---
 
@@ -194,7 +194,7 @@ The full suite is green except for the same pre-existing `test_r29_survives_acti
 
 What must change (or be explicitly re-decided) before this is genuinely done, in priority order:
 
-1. **H-1** — `VoiceNotePolicy` fires on any WhatsApp voice note today, with zero transcript content, directly contradicting three explicit written claims (the transport contract, `IMPLEMENTATION_NOTES.md`, the release fragment) that it doesn't. Either gate it per-platform on `MediaSourceRegistry` availability, or correct the documentation to say what actually happens. Not BLOCKING — the feature ships `enabled = false` and this leaks no data — but it is a genuine, verified gap between the stated and actual contract that should not ride into master unexamined.
+1. **H-1** — `VoiceNotePolicy` fires on any WhatsApp voice note today, with zero transcript content, directly contradicting three explicit written claims (the transport contract, `design/whatsapp-adoption/04-transport-implementation-notes.md`, the release fragment) that it doesn't. Either gate it per-platform on `MediaSourceRegistry` availability, or correct the documentation to say what actually happens. Not BLOCKING — the feature ships `enabled = false` and this leaks no data — but it is a genuine, verified gap between the stated and actual contract that should not ride into master unexamined.
 2. **M-1** — add `USER node` to `deploy/whatsapp-bridge/Dockerfile`, matching every other container in this compose project.
 3. **M-2** — add the same `conversation_type != "group"` guard to `WhatsAppReactor.react()` that `WhatsAppSender.send()` already has.
 

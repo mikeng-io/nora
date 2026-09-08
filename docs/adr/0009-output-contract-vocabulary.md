@@ -4,7 +4,7 @@
 - **Date:** 2026-08-31
 - **Supersedes:** ADR 0008 §3 (the fixed three-value enum), per adr/README.md
   (accepted ADRs are immutable — superseded rather than edited)
-- **Index:** DEC-153 (pending), extends ADR 0008 (tool contract metadata),
+- **Index:** DEC-153 (accepted; the row landed 2026-08-31), extends ADR 0008 (tool contract metadata),
   R-27 (three-state results), R-31 (disclosure), DEC-152 (Step 2 fields)
 - **Source:** BLOCKED implementation report (2026-08-31) — the Step 3
   executor measured the live tool surface and the §3 enum does not fit it.

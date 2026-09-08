@@ -1,17 +1,26 @@
-# Thin wrappers around the commands CLAUDE.md/README.md already document as
+# Thin wrappers around the commands AGENTS.md/README.md already document as
 # the gate and the deploy/release workflow, plus the fast-pass targets
-# documented in docs/superpowers/specs/2026-08-21-fast-test-pass-design.md.
+# documented in CONTRIBUTING.md and AGENTS.md.
 # Nothing here is a new command in spirit — every recipe is one line (or a
 # small dispatch over one script's output) pulled from those docs, kept here
 # so it does not have to be retyped. Edit the docs first if the underlying
 # command changes; this file follows them, not the other way round.
 
 .PHONY: test test-fast test-affected lint typecheck imports gate mutate \
-        eval-participation \
+        setup schema-parity heads decision-numbers \
+        eval-participation eval-note-candidates eval-journeys eval-adversarial \
         release-check release-notes release \
-        build build-release up stop logs ps
+        build build-release up stop logs ps \
+        branches
 
-# --- gate (CLAUDE.md: run before claiming anything is done, and before every commit) ---
+# --- setup (AGENTS.md: a fresh worktree needs this once, or pytest dies at
+# COLLECTION on the eval modules — `strands-agents-evals` is an optional extra
+# and each worktree has its own venv) ---
+
+setup:
+	uv sync --extra evals
+
+# --- gate (AGENTS.md: run before claiming anything is done, and before every commit) ---
 
 test:
 	uv run pytest -q
@@ -37,7 +46,7 @@ mutate:
 	@test -n "$(TABLE)" || { echo 'usage: make mutate TABLE=scripts/mutations/<name>.json'; exit 2; }
 	uv run python scripts/mutate.py $(TABLE)
 
-# --- fast pass (docs/superpowers/specs/2026-08-21-fast-test-pass-design.md) ---
+# --- fast pass (for the edit-run-edit loop) ---
 # For the edit-run-edit loop only. `make gate` above is unchanged and stays
 # serial — these do not shrink or replace it.
 
@@ -112,3 +121,50 @@ logs:
 
 ps:
 	docker compose ps
+
+# --- branch hygiene (CONTRIBUTING.md: "Cleanup") ---
+# Reports only. Deleting is a decision, and a branch with a live worktree or an
+# uncommitted change belongs to whoever is working in it.
+
+branches:
+	@echo "== worktrees =="; git worktree list
+	@echo; echo "== local, merged into master (candidates; '+' = checked out elsewhere) =="
+	@git branch --merged master | grep -v -E '^\*|master$$' || echo "  none"
+	@echo; echo "== local, NOT merged =="
+	@git branch --no-merged master || echo "  none"
+	@echo; echo "== remote, merged into origin/master (candidates) =="
+	@git branch -r --merged origin/master | grep -v -E 'HEAD|master$$' || echo "  none"
+	@echo; echo "== remote, NOT merged =="
+	@git branch -r --no-merged origin/master || echo "  none"
+	@echo; echo "Delete with: git branch -d <b> ; git push origin --delete <b>"
+
+# --- merge-time checks (AGENTS.md "Never"; each of these has a dated incident
+# behind it, and until now each existed only as a command to retype by hand).
+# Reports, not assertions: `uniq -d` exits 0 with no output, so read the output
+# rather than trusting the exit code — that noisy-gate trap is why the real
+# duplicate (two R-29 rows) sat on master for 15 days. ---
+
+# Exactly ONE line, or the container fails at boot on `upgrade "head"`.
+heads:
+	uv run alembic heads
+
+# Empty output under both headings is what clean looks like.
+decision-numbers:
+	@echo "== duplicate DEC numbers =="
+	@grep -oE '^\| DEC-[0-9]+ \|' design/09-decision-index.md | grep -oE '[0-9]+' | sort -n | uniq -d
+	@echo "== duplicate R numbers =="
+	@grep -oE '^\| R-[0-9]+ \|' design/09-decision-index.md | grep -oE '[0-9]+' | sort -n | uniq -d
+
+# The schema gate on its own (DEC-11: `alembic check` is blind to the CHECK
+# constraint and the `ts DESC` index ordering, so this is the real one).
+schema-parity:
+	uv run pytest -q tests/infra/test_schema_parity.py
+
+# --- evals, tier 2 (docs/eval-sop.md; network-marked, so excluded from `make
+# test` by pyproject's addopts and never part of the gate) ---
+
+eval-journeys:
+	uv run python -m evals.run --suite journeys
+
+eval-adversarial:
+	uv run python -m evals.run --suite adversarial

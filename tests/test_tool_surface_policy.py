@@ -1,7 +1,7 @@
 """ADR 0007 structural enforcement: every model-facing tool description must
 match the tool-surface policy.
 
-The policy (design/adr/0007-tool-surface-policy.md, accepted 2026-08-31):
+The policy (docs/adr/0007-tool-surface-policy.md, accepted 2026-08-31):
 
 1. Opening = what + when-to-call. The first sentence(s) state what the tool
    does and when to call it. Style guidance, voice control and negative

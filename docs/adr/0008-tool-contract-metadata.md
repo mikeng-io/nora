@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-31
-- **Index:** DEC-152 (pending), extends ADR 0007 (tool-surface policy), ADR 0006
+- **Index:** DEC-152 (accepted; the row landed 2026-08-31), extends ADR 0007 (tool-surface policy), ADR 0006
   (reasoning effort), DEC-93 (recovery), DEC-95 (bursts), DEC-150 (schema is the
   single source of truth), R-27 (three-state results), R-2 (delivery latch),
   R-25 (partial-reply accounting)

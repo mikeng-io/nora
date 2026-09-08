@@ -1,11 +1,11 @@
 # Conventions & operational detail
 
-The long-form behind `CLAUDE.md`'s rules. `CLAUDE.md` carries the terse rules an
+The long-form behind `AGENTS.md`'s rules. `AGENTS.md` carries the terse rules an
 agent must not violate; this file carries the *reasoning*, the war-stories, and
 the specific values. Read it when a rule needs its "why" — every mistake recorded
 here cost an afternoon, and the terse rule is only safe because the story is
 preserved. Nothing here is optional context; it is the load-bearing detail moved
-out of `CLAUDE.md` so that file can stay scannable.
+out of `AGENTS.md` so that file can stay scannable.
 
 ## Gate commands — the detail
 
@@ -119,7 +119,7 @@ counting a module's responsibilities to counting its lines.
 
 ## Reaching the deployment — the detail
 
-The terse rule is in `CLAUDE.md` («Reaching the deployment»); this is the why.
+The terse rule is in `AGENTS.md` («Reaching the deployment»); this is the why.
 
 **Two machines, one direction.** Until 2026-09-07 sessions ran on the host
 itself, committing as `opsuser-dev` in the checkout the container bind-mounts.

@@ -1,6 +1,10 @@
 # Voice Register Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Historical plan, 2026-08-11.** It carried a directive to a plugin-driven
+> execution process that was removed from this repo on 2026-09-08; that line is
+> deleted rather than preserved, because unlike a path citation it was an
+> *instruction*, and an agent reading it would try to follow it. Read this file
+> for what was intended, not for how to proceed.
 
 **Goal:** Make Nora's Cantonese banter more independent and combative, without weakening the existing target and distress limits.
 
