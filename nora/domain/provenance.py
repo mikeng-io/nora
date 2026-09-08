@@ -10,12 +10,12 @@ video game) cannot be attributed to a revision and a later edit cannot be shown
 to have fixed it. See
 `docs/superpowers/specs/2026-08-20-dreamer-prompt-substrate-design.md` §4.3.
 
-**One function, deliberately.** The instructions are inline Python constants
-today (`nora.language.observer._PROMPT_PREAMBLE` and its siblings); under the
-instruction substrate they become an assembled doctrine body plus one
-objective body. The COLUMN is the same either way and so is this function —
-what changes is only which strings the caller passes, which is why the
-provenance column can land now instead of waiting for the substrate. A row
+**One function, deliberately.** It was written while the instructions were
+inline Python constants, to land the provenance column before the instruction
+substrate existed; under the substrate they are an assembled doctrine body
+plus one objective body, which is what every caller passes today. The COLUMN
+is the same either way and so is this function — what changes is only which
+strings the caller passes. A row
 written before the substrate is attributable to the constant that produced it;
 a row written after is attributable to the assembly. Neither is orphaned.
 

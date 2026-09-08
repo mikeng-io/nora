@@ -163,8 +163,7 @@ def _row_to_revision(r: Row[Any]) -> NoteRevision:
 #: `note.id` and `note_revision.id` are `pg.UUID`, so a string that is not
 #: UUID-shaped reaches asyncpg as a driver type error rather than as the
 #: ordinary "no such row" outcome. A malformed id is a bad tool argument, not a
-#: broken store, and a store that raises on one turns it into a dead turn —
-#: `SqlFactStore.fact_by_id` makes the same call for the same reason.
+#: broken store, and a store that raises on one turns it into a dead turn.
 def _is_uuid(value: str) -> bool:
     try:
         UUID(value)
@@ -178,9 +177,7 @@ class SqlNoteStore:
     config, no clock, no metrics. `now_ms` arrives on `create`/`append_revision`/
     `record_miss`, not on this constructor, so a contract-suite fixture in
     another session can build this class from a bare `AsyncEngine` alone and
-    never has to guess what else it needs. `SqlFactStore`'s docstring states the
-    same affordance for the same reason, and the two stores' fixtures are
-    deliberately interchangeable in shape.
+    never has to guess what else it needs.
 
     """
 
@@ -472,8 +469,8 @@ class SqlNoteStore:
 
         A blank query returns `()` rather than the whole notebook: `ilike '%%'`
         matches every body, and «everything» is not a search result. A
-        non-positive `limit` clamps to `()` the way `SqlFactStore.standing_facts`
-        does — Postgres errors outright on a negative `LIMIT`, and the in-memory
+        non-positive `limit` clamps to `()` rather than reaching the database:
+        Postgres errors outright on a negative `LIMIT`, and the in-memory
         implementation must not answer `list[:-1]` (all but the last) to the same
         input.
 
@@ -712,8 +709,8 @@ class SqlNoteStore:
     # `DreamSink` has two verbs and DELIBERATELY no third, so there is no read
     # verb on the port and the contract suite supplies a `read_row` adapter per
     # implementation instead. These two are what that adapter is built from.
-    # They are NOT a widening of the port: `SqlFactStore.fact_by_id` exists for
-    # exactly the same reason and is not on `DreamSink` either.
+    # They are NOT a widening of the port: a read-back a test harness needs is
+    # not a verb the runtime may call.
 
     async def revision_by_id(self, *, revision_id: str) -> NoteRevision | None:
         """One revision by id, or `None`. **Not workspace-scoped, and that is
@@ -930,13 +927,15 @@ class SqlNoteStore:
         never a delete. Returns rows affected.
 
         **A null `replaced_by` is LEGAL here, and that is the whole reason the
-        port is permissive.** `SqlFactStore.supersede` raises on it, because
-        `fact`'s `(superseded_by is null) = (superseded_at is null)` CHECK makes
-        a fact either standing or superseded-with-a-successor. A note is not: an
-        anchor date passed and the dinner happened, and it is replaced by
-        nothing. Copying the fact store's refusal here would force the curator
-        to mint a placeholder id to satisfy a signature — the "invent a value to
-        satisfy a schema" move this codebase forbids everywhere else.
+        port is permissive.** The port was written against a sibling that
+        REFUSED a null successor — the knowledge tier's store, deleted
+        2026-09-07, whose `fact` row was either standing or
+        superseded-with-a-successor by CHECK. A note is not: an anchor date
+        passed and the dinner happened, and it is replaced by nothing.
+        Refusing here would force the curator to mint a placeholder id to
+        satisfy a signature — the "invent a value to satisfy a schema" move
+        this codebase forbids everywhere else, and `DreamSink.supersede`
+        types `replaced_by` as `str | None` so that it never has to.
 
         **What IS refused is a successor with no retirement.** `note`'s
         `note_replacement_implies_retirement_check` is a ONE-DIRECTIONAL
@@ -955,9 +954,9 @@ class SqlNoteStore:
         A `target` that names no standing note in this workspace reports **0
         rather than raising**, including a malformed id: a background pass that
         raises on a row it does not recognise takes the whole tick down with it.
-        A malformed `replaced_by`, by contrast, RAISES — same split and same
-        reasoning as `SqlFactStore`: that is a caller bug, and reporting 0 would
-        make it indistinguishable from "already retired", an ERROR surfacing as
+        A malformed `replaced_by`, by contrast, RAISES, and the split is the
+        point: that is a caller bug, and reporting 0 would make it
+        indistinguishable from "already retired" — an ERROR surfacing as
         `nothing_found`.
         """
         if source is not None:

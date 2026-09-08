@@ -105,19 +105,26 @@ stops being ambiguous cannot keep its exemption.
 STILL NOT SEEN, and stated rather than left to be discovered:
   - A THIRD-PARTY namesake, and this is the real remaining hole. `_namesakes`
     only sees classes defined under `nora/`, so a store method whose name
-    matches a method on a stdlib or library object is wrongly cleared. Two
-    demonstrated, both still passing this gate today:
-      `SqlFactStore.count`  — cleared by `essence.count("/")` (`str.count`) and
-                              by `sa.func.count()`;
-      `SqlFactStore.close`  — cleared by `self.deps.client.close()`.
-    Neither name is defined on any class under `nora/`, so nothing pushes them
-    into `_AMBIGUOUS` and they read `ok` rather than `unavailable`. It takes a
-    NEW store method landing on a borrowed name to bite — every row below was
-    confirmed by a separate audit, not by this gate alone — and closing it
-    properly needs receiver type inference, which is more machinery than this
-    gate is worth. Said plainly instead of left for someone to trip over. The
-    cheap partial mitigation if it ever does bite: add the name to `_AMBIGUOUS`
-    by hand, which turns the silent clear into a loud "unchecked".
+    matches a method on a stdlib or library object is wrongly cleared. The two
+    methods that used to demonstrate it — `count` and `close` on the knowledge
+    tier's store — went with that tier on 2026-09-07, so the demonstration is
+    stated from the CLEARING side, which is what survives and is what a reader
+    can still check:
+      `count`  — `sa.func.count()` (`nora/infra/sql/audit.py`,
+                 `reminders.py`) and `str.count` in the compute package;
+      `close`  — `await client.close()` (`nora/platform/discord/adapter.py`),
+                 `h.close()` (`nora/obs/logging.py`).
+    NEITHER name is defined on any class under `nora/` today, so nothing would
+    push them into `_AMBIGUOUS`: a store method landing on either name
+    tomorrow reads `ok` rather than `unavailable`, on those call sites alone.
+    (`all` is the near miss that shows the mechanism working — every `.all()`
+    in this tree is SQLAlchemy's `Result.all`, and it stays checked only
+    because `MusicSessionStore` also declares it and pushes it into
+    `_AMBIGUOUS`.) Closing this properly needs receiver type inference, which
+    is more machinery than this gate is worth. Said plainly instead of left
+    for someone to trip over. The cheap partial mitigation if it ever does
+    bite: add the name to `_AMBIGUOUS` by hand, which turns the silent clear
+    into a loud "unchecked".
   - Dynamic dispatch — `getattr(store, name)`, a string-keyed registry. Nothing
     here would catch it.
   - REACHABILITY. A caller that is itself dead — an unimported module, a branch
@@ -127,13 +134,16 @@ STILL NOT SEEN, and stated rather than left to be discovered:
 
 PROBE (2026-08-29, production code only; each mutation asserted to have applied
 AND to still parse, because one that does not compile can redden for the wrong
-reason and one whose anchor missed measures the original code):
-  - A new uncalled `SqlFactStore.totally_new_read`:
+reason and one whose anchor missed measures the original code). It was run
+against the knowledge tier's store, which no longer exists — the mutations
+are recorded as the shape to repeat on a surviving store, not as something a
+reader can re-run verbatim:
+  - A new uncalled public store method:
     `test_every_uncalled_store_method_is_pinned` RED, naming it.
-  - `await self._facts.clear_disputed()` added to
-    `nora/engagement/recognition.py`: `test_pinned_methods_still_have_no_caller`
-    RED — wiring one up forces its row OUT rather than leaving a stale excuse.
-  - `SqlFactStore.disputed_facts` renamed: BOTH halves RED.
+  - A call to a PINNED method added to a live module:
+    `test_pinned_methods_still_have_no_caller` RED — wiring one up forces its
+    row OUT rather than leaving a stale excuse.
+  - A store method renamed: BOTH halves RED.
   - A second `forget` defined on another store: the derived-ambiguity test RED,
     and the pin independently RED as missing.
   - One row deleted from the pin table: RED, so the table is content and not

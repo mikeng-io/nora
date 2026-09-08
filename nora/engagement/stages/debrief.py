@@ -184,15 +184,16 @@ class ModelClient(Protocol):
     """The debrief's one collaborator that talks to a model.
 
     A documented structural type rather than a `nora.domain.ports` Protocol,
-    following `nora.language.observer._ModelClient`'s stated precedent: one
-    consumer, one verb, and promoting it would commit a production
-    implementation plus a fake to the shared contract-suite rule for a shape
-    with nothing to share it with. `nora.engagement` may not import
+    on the rule that outlived the module that first stated it (the language
+    tier's observer, deleted 2026-09-07): one consumer, one verb, and
+    promoting it would commit a production implementation plus a fake to the
+    shared contract-suite rule for a shape with nothing to share it with.
+    `nora.engagement` may not import
     `nora.config` or build an OpenAI client, so the real one is constructed in
     the composition root and injected.
 
-    It returns a `Completion` and not a `str`, which is the one place this
-    differs from `_ModelClient` — see `Completion`.
+    It returns a `Completion` and not a `str`, which is the one place it
+    differs from the shape it inherited — see `Completion`.
     """
 
     @property
@@ -204,8 +205,9 @@ class ModelClient(Protocol):
 class ObjectiveSource(Protocol):
     """One objective body by name, read fresh on every call.
 
-    A SOURCE and not a string, for `nora.language.observer._ObjectiveSource`'s
-    reason: the objective files are bind-mounted and hot-reload on mtime, so a
+    A SOURCE and not a string, for the reason the same shape was given in the
+    language tier's observer (deleted 2026-09-07): the objective files are
+    bind-mounted and hot-reload on mtime, so a
     stage handed the text at construction would keep sending whatever was on
     disk when the process started and an operator's edit would look like it did
     nothing. That argument is stronger here than anywhere else it has been made
