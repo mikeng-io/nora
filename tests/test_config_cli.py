@@ -17,18 +17,15 @@ import pytest
 from nora.__main__ import build_parser
 from nora.config import load
 
-ROOT = Path(__file__).resolve().parents[1]
-# The tracked example carries every required field and hundreds of rationale
-# comments — mutating a copy of it is the honest end-to-end test.
-EXAMPLE = ROOT / "config.example.toml"
-
 
 @pytest.fixture
-def cfg_path(tmp_path: Path) -> Path:
-    """A real, schema-complete config.toml the CLI can mutate."""
-    p = tmp_path / "config.toml"
-    p.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
-    return p
+def cfg_path(example_config_path: Path) -> Path:
+    """A real, schema-complete config.toml the CLI can mutate.
+
+    Uses the repo's `example_config_path` fixture (R-B): a copy of
+    config.example.toml in tmp_path, never the repo-root file directly.
+    """
+    return example_config_path
 
 
 def run_cli(*argv: str) -> int:
