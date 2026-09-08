@@ -223,6 +223,80 @@ the deployed model (`nora-dreamer`, reasoning none, 3 samples per case):
 No variant wrote a false note on any negative sample. Objective v2 and
 doctrine v2 are the shipped prompt. Steps 2–4 remain as written.
 
+**§7 step 1, continued — the one-person plan does not move on wording.** Two
+further experiments (a worked example of exactly that shape; the deployed
+prompt at reasoning `low`) and one code change (rendering each message's
+moment in the room's own zone with its weekday, which did remove a
+wrong-date failure) all left it at 3/10. Precision stayed 1.00 throughout.
+Five attempts at the instruction layer is enough evidence that the lever is
+not there.
+
+**Two external reviews**, given the ten scenarios and the numbers and no
+code, independently named the same two mechanisms and the same two levers:
+
+- *the mechanism* — the model's prototype of a trackable arrangement is
+  INTERACTIONAL (a question, an answer, an either/or). A solo statement with
+  no uptake reads as a status update; its open corners are expressed as
+  ignorance («don't know»), which is a weak feature next to the explicit
+  alternation a group's plan carries. And the empty list is the cheapest
+  legal completion, decided within the first tokens — which is why every
+  failure is an empty envelope rather than a wrong entry.
+- *the levers* — an intermediate per-message representation, so each message
+  is read on its own instead of the batch being judged as a whole; and
+  sampling the temperature already paid for, since per-sample invention is
+  measured at zero.
+
+Both shipped 2026-09-08 (issue #118): `AdaptorSchedule.samples` with
+`[notes] candidate_samples` (default 1, so nothing changes until an operator
+raises it), and objective v4's `verdicts` key. Six scenarios were added,
+including the adversarial negative both reviewers asked for — a plan stated
+and cancelled in the same batch — and a Cantonese-only twin, which is what a
+lexical-flagging lever (the third proposal, not taken) would have silently
+missed.
+
+**The verdict shape took two versions, and the first was a regression the
+suite caught.** v4 asked only whether a message had something *ahead* of it.
+Measured at 16 cases x 10 samples: the target case went 3/10 to 9/10 and
+precision fell from 1.00 to 0.77 — «we should do a trip sometime» became a
+note in 8 of 10 samples — while the update path collapsed from 10/10 to
+4/10, because a message that SETTLES something has no open corner and the
+model therefore proposed nothing for it. Under three unioned samples it was
+worse, not better: precision 0.63, and a hike cancelled in its own batch
+became a note in 3 of 5. **Sampling amplifies whatever the per-sample
+behaviour is**, which is precisely why the union is only safe while
+per-sample invention is near zero.
+
+The diagnosis was an under-implementation: the review had specified a verdict
+carrying *commitment* and *unfinished slots*, with the entry permitted only
+on both, and v4 shipped the detection half alone — and «mentions the future»
+is not a gate. v5 adds `committed`, requires it together with a non-empty
+`open` for a NEW entry, and makes updating something the notebook already
+tracks the explicit exception that needs no open corner. Measured the same
+way: 16/16 majority-pass, precision 1.00, recall 0.84, the target case 10/10,
+the update path restored to 10/10 and its solo twin to 8/10, all ninety
+negative samples clean.
+
+**Sampling, measured on top of v5** (three unioned samples, 16 cases x 5):
+recall 1.00 — every positive case correct in every sample, including the
+solo update that v5 alone gets 8 times in 10 — and precision 0.95, one
+negative (a settled solo plan) leaking in 2 of 5. That is the trade the
+union makes, stated rather than assumed, and it is why `candidate_samples`
+ships at 1: raising it buys the last of the recall and spends a little of
+the precision, and which of those a notebook wants is the operator's call.
+
+Both of the four new negatives that the reviews asked for did work
+immediately: n6 (stated then cancelled) and n9 (conditional) were the two
+that failed loudest under v4, and the original ten would have shown only one
+of the four leaks.
+
+**The batch cap moved as a consequence, not as a preference**:
+`note-candidates` renders at most 80 messages per fire now, down from 200.
+A verdict per message makes the OUTPUT scale with the batch, and an output
+cap that binds truncates the JSON — which reads as `unavailable`, which
+holds the watermark, so the same over-long batch would be re-read and
+re-truncated forever. The reading that would reopen it is a per-adaptor
+output budget sized for a longer batch.
+
 Design as of this node's first version: no code, no objective change, no
 schedule change. Issue #118 tracks the build, sequenced behind §7. Related: #98 (create path, shipped), #99/#102 (curator, shipped),
 #101 (discharge, shipped, off), #103 (proactive adapter, design only),

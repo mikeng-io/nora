@@ -65,7 +65,7 @@ SAMPLES ?= 3
 eval-note-candidates:
 	uv run python -m evals.run --suite note_candidates --samples $(SAMPLES) \
 		$(if $(DREAMER_DIR),--dreamer-dir $(DREAMER_DIR),) $(if $(EFFORT),--effort $(EFFORT),) \
-		$(if $(MODEL),--model $(MODEL),)
+		$(if $(MODEL),--model $(MODEL),) $(if $(PER_FIRE),--samples-per-fire $(PER_FIRE),)
 
 # --- release fragments ---
 

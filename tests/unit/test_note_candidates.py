@@ -561,3 +561,51 @@ def test_gate_actions_vocabulary_matches_the_metric_help_text():
             f"nora_note_candidate_gate_total{{action={action!r}}} is emitted "
             f"and the help text does not name it"
         )
+
+
+# ---------------------------------------------------------------------------
+# the rendered moment is the ROOM's, with its weekday (issue #118)
+# ---------------------------------------------------------------------------
+
+
+def test_a_message_moment_renders_in_the_rooms_zone_with_its_weekday():
+    """Measured 2026-09-08: rendered as `2026-09-07 18:13:23 UTC`, the model
+    resolved «今個禮拜六» to the 13th in two of ten samples. The same instant
+    in the room's zone is Tuesday the 8th, and the weekday is a fact this
+    process has — so it is rendered, not derived."""
+    from zoneinfo import ZoneInfo
+
+    from nora.language.note_candidates import _render_line
+
+    row = _row(2816, "嚟緊今個禮拜六", ts=1_788_804_803_000)  # 2026-09-07T18:13:23Z
+
+    hk = _render_line(row, room="ridgeline", tz=ZoneInfo("Asia/Hong_Kong"))
+    utc = _render_line(row, room="ridgeline", tz=ZoneInfo("UTC"))
+
+    assert hk.startswith("2816 [2026-09-08 Tue 02:13 HKT] Ada (ridgeline): "), hk
+    assert utc.startswith("2816 [2026-09-07 Mon 18:13 UTC] Ada (ridgeline): "), utc
+
+
+async def test_inputs_renders_moments_in_the_adaptors_zone():
+    """The adaptor's own `timezone` collaborator reaches every rendered line —
+    two adaptors 25 hours apart (Kiritimati +14, Niue -11) render different
+    calendar days for one instant, the same property `test_composition`
+    pins for the curator's `_today`."""
+    from zoneinfo import ZoneInfo
+
+    store = InMemoryNoteStore()
+    row = _row(7, "食飯？", ts=1_788_804_803_000)
+    ahead = NoteCandidateAdaptor(
+        notes=store, candidates=store, workspace_for=lambda _: WS,
+        timezone=ZoneInfo("Pacific/Kiritimati"),
+    )
+    behind = NoteCandidateAdaptor(
+        notes=store, candidates=store, workspace_for=lambda _: WS,
+        timezone=ZoneInfo("Pacific/Niue"),
+    )
+
+    a = await ahead.inputs(key=SCOPE, batch=(row,))
+    b = await behind.inputs(key=SCOPE, batch=(row,))
+
+    assert "[2026-09-08 Tue" in a, a
+    assert "[2026-09-07 Mon" in b, b

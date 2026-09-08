@@ -124,3 +124,61 @@
   batch:
     - {id: 1001, ts: "2026-09-09T11:00:00Z", person: ada, name: Ada, body: "19號西貢六福 7 點半記得啊"}
     - {id: 1002, ts: "2026-09-09T11:00:30Z", person: ben, name: Ben, body: "記得"}
+
+# --- added 2026-09-08 after an external brainstorm (issue #118). Both
+# reviewers, independently, named shapes the first ten could not see: an
+# adversarial negative carrying every surface feature of a positive, the solo
+# form of the update path, an invitation with no uptake, the Cantonese-only
+# twin of p2 (a lexical lever would silently re-create the miss there), a
+# settled solo plan (so "one person's plan" is not learned as "always an
+# entry"), and a conditional.
+
+- name: p6_solo_update_to_an_existing_entry
+  expect: update
+  workspace: friends
+  updates: "Dinner 19 Sept"
+  notebook:
+    - title: "Dinner 19 Sept"
+      description: "Dinner on the 19th; venue undecided between Sai Kung and Central."
+      anchor_date: 20260919
+      body: "Ada asked about the 19th; Ben and Cat can make it. Venue undecided: Sai Kung or Central."
+  batch:
+    - {id: 1101, ts: "2026-09-08T10:00:00Z", person: ada, name: Ada, body: "19號我 book 咗西貢六福 7 點半，4 位"}
+
+- name: p7_cantonese_only_solo_plan
+  expect: create
+  workspace: friends
+  anchor_date: 20260912
+  must_cite: [1201]
+  batch:
+    - {id: 1201, ts: "2026-09-07T18:13:23Z", person: ben, name: Ben, body: "今個星期六我去數碼港個 hackathon，未搵到隊友，嗰晚食咩都未諗"}
+
+- name: n6_stated_then_cancelled
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 1301, ts: "2026-09-07T14:00:00Z", person: cat, name: Cat, body: "今個禮拜六去大帽山行山，大家得唔得？"}
+    - {id: 1302, ts: "2026-09-07T14:00:40Z", person: ben, name: Ben, body: "得"}
+    - {id: 1303, ts: "2026-09-07T14:30:00Z", person: cat, name: Cat, body: "算啦，天文台話禮拜六打風，取消咗佢"}
+    - {id: 1304, ts: "2026-09-07T14:31:00Z", person: ben, name: Ben, body: "ok 下次"}
+
+- name: n7_invitation_nobody_picks_up
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 1401, ts: "2026-09-07T11:00:00Z", person: ada, name: Ada, body: "今個禮拜六邊個得閒？"}
+    - {id: 1402, ts: "2026-09-07T12:10:00Z", person: cat, name: Cat, body: null, media: true}
+    - {id: 1403, ts: "2026-09-07T12:11:00Z", person: ben, name: Ben, body: "哈哈"}
+
+- name: n8_settled_solo_plan_nothing_open
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 1501, ts: "2026-09-07T18:20:00Z", person: ben, name: Ben, body: "今個禮拜六我去數碼港個 hackathon，隊友搵齊晒，嗰晚同佢哋食咗飯先返"}
+
+- name: n9_conditional_not_a_plan
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 1601, ts: "2026-09-07T09:00:00Z", person: cat, name: Cat, body: "如果禮拜六唔使返工，我可能去睇下個 hackathon"}
+    - {id: 1602, ts: "2026-09-07T09:01:00Z", person: ada, name: Ada, body: "睇下啦"}
