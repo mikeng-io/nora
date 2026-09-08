@@ -7,10 +7,18 @@
 # command changes; this file follows them, not the other way round.
 
 .PHONY: test test-fast test-affected lint typecheck imports gate mutate \
-        eval-participation \
+        setup schema-parity heads decision-numbers \
+        eval-participation eval-note-candidates eval-journeys eval-adversarial \
         release-check release-notes release \
         build build-release up stop logs ps \
         branches
+
+# --- setup (AGENTS.md: a fresh worktree needs this once, or pytest dies at
+# COLLECTION on the eval modules — `strands-agents-evals` is an optional extra
+# and each worktree has its own venv) ---
+
+setup:
+	uv sync --extra evals
 
 # --- gate (AGENTS.md: run before claiming anything is done, and before every commit) ---
 
@@ -129,3 +137,34 @@ branches:
 	@echo; echo "== remote, NOT merged =="
 	@git branch -r --no-merged origin/master || echo "  none"
 	@echo; echo "Delete with: git branch -d <b> ; git push origin --delete <b>"
+
+# --- merge-time checks (AGENTS.md "Never"; each of these has a dated incident
+# behind it, and until now each existed only as a command to retype by hand).
+# Reports, not assertions: `uniq -d` exits 0 with no output, so read the output
+# rather than trusting the exit code — that noisy-gate trap is why the real
+# duplicate (two R-29 rows) sat on master for 15 days. ---
+
+# Exactly ONE line, or the container fails at boot on `upgrade "head"`.
+heads:
+	uv run alembic heads
+
+# Empty output under both headings is what clean looks like.
+decision-numbers:
+	@echo "== duplicate DEC numbers =="
+	@grep -oE '^\| DEC-[0-9]+ \|' design/09-decision-index.md | grep -oE '[0-9]+' | sort -n | uniq -d
+	@echo "== duplicate R numbers =="
+	@grep -oE '^\| R-[0-9]+ \|' design/09-decision-index.md | grep -oE '[0-9]+' | sort -n | uniq -d
+
+# The schema gate on its own (DEC-11: `alembic check` is blind to the CHECK
+# constraint and the `ts DESC` index ordering, so this is the real one).
+schema-parity:
+	uv run pytest -q tests/infra/test_schema_parity.py
+
+# --- evals, tier 2 (docs/eval-sop.md; network-marked, so excluded from `make
+# test` by pyproject's addopts and never part of the gate) ---
+
+eval-journeys:
+	uv run python -m evals.run --suite journeys
+
+eval-adversarial:
+	uv run python -m evals.run --suite adversarial

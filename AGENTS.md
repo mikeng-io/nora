@@ -237,9 +237,22 @@ make gate              # all four, in order — or run them individually:
 
 uv run pytest -q                                         # tests green
 uv run ruff check nora/ evals/ tests/                    # lint clean
-uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence nora/engagement   # types clean (strict, scoped)
+uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence nora/engagement   # types clean (see the scope note)
 uv run lint-imports                                      # import boundaries clean
 ```
+
+**What "types clean" actually covers.** The strict flags in `pyproject.toml`
+apply to `nora.domain`, `nora.config`, `nora.app`, `nora.infra` and
+`nora.presence` — five packages. `nora/engagement` is on the mypy command line
+but NOT in that override, so it is checked without the strict flags; measured
+2026-09-08, it carries **137 errors** under them. The rest of `nora/` is not
+type-checked at all, and the measured strict-error counts are: `web` 156,
+`ingest` 137, `agent` 133, `analytics` 110, `compute` 66, `platform` 34,
+`testing` 30, `obs` 11, `doctrine` 6, `instructions` 5, `language` 3, and
+`skills` 0. (`nora/dreamer` holds no Python at all — it is the objectives tree —
+so its absence from the scope was never a gap.) Do not read a green `make gate`
+as "this repo is type-safe"; read it as "five packages are, and the numbers
+above say what the rest would cost". Issue #121 tracks the expansion.
 
 A fresh worktree needs `uv sync --extra evals` once, or pytest dies at
 COLLECTION on the eval modules — `strands-agents-evals` is a declared optional
@@ -299,6 +312,10 @@ summary — update-in-place, separate from the Dreamer and Honcho).
   concluding from a null one.
 - **Never claim a merge, deploy or fix without reading back the state you claim**
   — `git log -1`, `docker exec … import config`, the metric endpoint. Every time.
+  Pointed at a test suite instead of a deployment, this is the mutation rule: a
+  fix is done when reverting the exact production line turns a NAMED test red,
+  not when the gate is green. `CONTRIBUTING.md` «Proving a fix» carries it, with
+  the two harness rules that otherwise turn "caught" into a lie.
 - **Never edit, commit, or merge on `master` in this checkout** — every change,
   including a one-line doc fix, starts in a worktree on its own branch and
   reaches `master` by merge, so the merge is the moment somebody decides rather

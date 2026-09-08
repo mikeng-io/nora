@@ -15,7 +15,9 @@ ground, it is cited rather than reinvented.
 - [Commit messages](#commit-messages)
 - [Merge strategy](#merge-strategy)
 - [Pull requests](#pull-requests)
+- [Proving a fix: mutation](#proving-a-fix-mutation)
 - [Issues](#issues)
+- [The flow: issue → branch → PR → merge](#the-flow-issue--branch--pr--merge)
 - [Issue → ADR → decision row](#issue--adr--decision-row)
 - [Numbering discipline](#numbering-discipline)
 - [Cleanup](#cleanup)
@@ -106,6 +108,68 @@ see `release-fragments/README.md` for the schema and the validation commands.
 multi-PR design track stays open across incremental landings — reference it as
 "issue #N" without the keyword and let the design document's own status section
 track what remains.
+
+## Proving a fix: mutation
+
+**A fix is not done when the gate is green. It is done when reverting the exact
+production line turns a named test RED.** Report that result alongside the gate
+output in the PR body.
+
+This is the "no self-attestation" principle given an instrument. It sits beside
+*never claim a merge, deploy or fix without reading back the state you claim* —
+same rule, one aimed at deployments and one at test suites: the doer does not
+get to decide that it worked.
+
+**Why it exists, because the rule reads like boilerplate without this.** On the
+media-comprehension work (#116/#117), three review rounds running found the
+fixes correct and guarded by **nothing**. In round three a reviewer reverted
+four separate production changes at once and ran the full suite: byte-identical
+to baseline. Deleting a fifth line — a store column being selected — left it
+green too. `_QUERY_FRAME`, the one deliberate break of an authored-prompt
+invariant with two test docstrings claiming to cover it, could be replaced with
+the raw string and the whole suite passed. "Gate green" was carrying no
+information about the thing under review, and the mechanical consequence was
+that each round's unguarded fix was what the next round's edit silently broke.
+
+Requiring a mutation result per fix from round four onward ended that, and did
+something better: the sweep caught **weak tests before the reviewers did**, in
+two consecutive rounds — a hardcoded metric label the test never checked, a
+`-k` selector matching nothing, an `!=` assertion any wrong value satisfies, a
+fake that failed the read as well as the write so the write path never
+executed, and an assertion at a layer that could not observe the predicate it
+was asserting. Five real gaps that four rounds of review had not found.
+
+**This is mutation testing** — mutants, killed/survived, mutation score;
+`mutmut` and `cosmic-ray` in Python, PIT in Java. Named so nobody thinks we
+invented it. **This repo does the hand-picked form, not the automated one**: an
+automated sweep over ~6000 tests is slow, and equivalent mutants (edits that do
+not change behaviour) drown the signal. A table of the lines you claim to have
+fixed answers the only question being asked, in minutes.
+
+Tooling — `scripts/mutate.py`, `scripts/mutations/README.md` and a `make mutate`
+taking a table argument — **lands separately on `mikeng-io/mutation-sweep`; it
+is not in this tree yet.** The rule above applies regardless: it describes what
+you must establish before claiming a fix, and a reverted line plus a named test
+needs no script. **It is deliberately NOT part of `make gate`** — a
+mutation table names exact source text, so it is the record of what a branch
+proved, not a gate that runs forever. A stale table failing the gate would teach
+people to delete tables rather than write them.
+
+**Two harness rules, each learned by being burned, each of which silently turns
+"caught" into a lie:**
+
+- **`pytest` exit code 5 is «nothing collected», not «failed».** A typo'd `-k`
+  selector once reported a caught mutation while testing nothing. Assert the
+  baseline is green AND collecting before mutating.
+- **A mutant must die from the reverted BEHAVIOUR**, not from a `NameError` in
+  the replacement text. One entry referenced an unimported name; the exception
+  was swallowed by the production code's own `except`, and the reverted
+  behaviour never ran at all while the entry read as caught.
+
+The failure mode in practice is not people refusing to run the sweep — it is
+people writing an entry whose selector or replacement is subtly broken and
+reporting "caught". **A `BROKEN ENTRY` line is a finding about your evidence,
+not a nuisance to route around.**
 
 ## Issues
 
