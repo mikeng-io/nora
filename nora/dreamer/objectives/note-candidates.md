@@ -1,7 +1,7 @@
 ---
 name: note-candidates
 kind: objective
-version: 4
+version: 5
 applies_to: [note_candidate_adaptor]
 description: >-
   The note tier's create path. Read a batch of a room's messages and propose
@@ -57,21 +57,42 @@ Return JSON and nothing else — no prose before it, no explanation after it, no
 
 **Two keys, `verdicts` first.** `verdicts` holds ONE entry per message in the batch, in the
 order you were given them — no message left out, including the ones that are obviously nothing.
-For each: its `id`, whether it says anything about something **still to come** (a date, a
-weekday, a plan, a promise, something somebody owes), and — only when it does — which corners of
-it are still **open**. A message with nothing ahead of it is written `{"id": 4813, "ahead":
-false}` and nothing more.
+Write them before you decide anything: they are how you read each message on its own, rather
+than forming an impression of the batch and answering from that.
 
-Write the verdicts before you decide anything. They are how you read each message on its own,
-rather than forming an impression of the batch and answering from that. Then `candidates` holds
-the notebook entries, each built only out of messages whose verdict said something was ahead.
+Each verdict says three things about that ONE message:
+
+- `ahead` — does it say anything about something still to come? A date, a weekday, a plan, a
+  promise, something somebody owes.
+- `committed` — has somebody actually **decided to do it**? «I'm going on Saturday» is
+  committed. «We should do a trip sometime», «anyone free Saturday?», «I might go if I don't
+  have to work» are NOT: nobody has decided anything yet. A thing the batch itself calls off
+  («forget it, there's a typhoon») is not committed either — it was, and now it is not.
+- `open` — the corners of it that are still unsettled, in a few words each. If everything about
+  it is decided, this is `[]`.
+
+A message with nothing ahead of it is written `{"id": 4813, "ahead": false}` and nothing more.
+
+Then `candidates`. **A NEW notebook entry may only come from messages whose verdict has
+`committed: true` AND a non-empty `open`** — something is happening, and something about it is
+still unsettled. Both. Something committed with nothing open is finished and belongs nowhere;
+something open that nobody has committed to is talk, and talk that turns into a plan will come
+back with a decision in it.
+
+**Updating what is already in the notebook is the exception, and it does not need `open`.** If a
+message settles part of something the notebook already tracks — the venue is booked, the date
+moved, the person answered — propose it with that entry's own anchor date and the arrangement as
+it now stands. It is the same occasion, so code will recognise it and revise rather than
+duplicate. This is the one case where a `committed: true, open: []` message still belongs in
+your answer.
 
 ```json
 {"verdicts": [
-  {"id": 4812, "ahead": true, "open": ["which venue"]},
+  {"id": 4812, "ahead": true, "committed": true, "open": ["which venue"]},
   {"id": 4813, "ahead": false},
-  {"id": 4815, "ahead": true, "open": ["which venue"]},
-  {"id": 4820, "ahead": true, "open": ["which venue", "whether Ada can make the last weekend"]}
+  {"id": 4815, "ahead": true, "committed": true, "open": ["which venue"]},
+  {"id": 4820, "ahead": true, "committed": true,
+   "open": ["which venue", "whether Ada can make the last weekend"]}
 ],
  "candidates": [
   {"title": "Wedding venue",
@@ -108,9 +129,10 @@ the notebook entries, each built only out of messages whose verdict said somethi
 If nothing in this batch belongs in the notebook and is not already there, `candidates` is
 `[]` — and the verdicts still come first, one for every message. That will often be the right
 answer: this batch may span days of a room's conversation, and most of it will be ordinary talk
-with nothing to track. A message can have something ahead of it and still not be worth a
-notebook entry; the verdict says what the message holds, the candidate list says what the
-notebook should hold.
+with nothing to track. **A message can be `ahead: true` and still deserve no entry**, and that
+is the ordinary case, not a mistake — the verdict says what the message holds, the candidate
+list says what the notebook should hold, and most of what a room says about the future never
+becomes a plan.
 
 ## Before you answer
 
@@ -119,4 +141,4 @@ Your entire reply is one JSON object. **The first character you write is `{` and
 
 If you found nothing, that is still JSON — every message's verdict, then an empty list:
 
-{"verdicts": [{"id": 4812, "ahead": false}, {"id": 4813, "ahead": false}], "candidates": []}
+{"verdicts": [{"id": 4812, "ahead": false}, {"id": 4813, "ahead": true, "committed": false, "open": []}], "candidates": []}
