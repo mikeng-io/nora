@@ -1,0 +1,5 @@
+{
+  "type": "fix",
+  "summary": "The Relevance Gate's Langfuse trace reports its real token cost instead of zero.",
+  "details": "The gate is exported as a GENERATION but recorded no token usage, so every gate call showed 0 input / 0 output / 0 total — the number the decision to take the gate out of shadow mode has to be priced against."
+}

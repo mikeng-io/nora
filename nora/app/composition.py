@@ -114,6 +114,7 @@ from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
+from nora.obs.tracing import annotate
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.media import DiscordMediaSource
@@ -247,6 +248,29 @@ class _RelevanceGateModelClient:
             ),
             timeout=self._timeout_seconds,
         )
+        # Token cost, onto the gate's OWN span rather than into
+        # `GateCompletion`. The gate has no use for usage — its verdict does
+        # not depend on it — and widening the port's return type to carry a
+        # number only the collector reads would be the measurement changing
+        # the thing it measures. `annotate` writes to the span that is current
+        # right now, and that is `relevance_gate`'s, because `decide` opens it
+        # around this call.
+        #
+        # WITHOUT this the gate is a GENERATION in Langfuse reporting zero
+        # tokens forever (read back live, 2026-09-08), and the cost of the
+        # flip to `shadow = false` is exactly what the soak has to price.
+        usage = response.usage
+        if usage is not None:
+            annotate(**{
+                "gen_ai.usage.input_tokens": usage.prompt_tokens,
+                "gen_ai.usage.output_tokens": usage.completion_tokens,
+                "gen_ai.usage.total_tokens": usage.total_tokens,
+                # Langfuse reads the `gen_ai.*` triple above; these two are the
+                # names its older mapping uses, and a collector that upgrades
+                # under us should not silently zero the cost again.
+                "gen_ai.usage.prompt_tokens": usage.prompt_tokens,
+                "gen_ai.usage.completion_tokens": usage.completion_tokens,
+            })
         choice = response.choices[0]
         return GateCompletion(
             content=(choice.message.content or "").strip(),
