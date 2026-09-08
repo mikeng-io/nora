@@ -503,7 +503,7 @@ neither writes to the daemon, and both work with the Nora container **stopped**
 — the 3am path is docker, an editor and these. Neither needs
 `OMNIROUTE_API_KEY`; listing group ids has nothing to do with the LLM.
 
-`nora config set/get/unset/validate --config <path>` is the WRITE surface
+`nora config set/get/unset/validate/path --config <path>` is the WRITE surface (`path` prints the resolved config location)
 (deploy convention §4.5, 2026-09-08): schema-validated, atomic
 (tmp + rename), prints the diff, and prints the restart command without
 executing it. It never touches `.env` — secrets stay there. A config edit

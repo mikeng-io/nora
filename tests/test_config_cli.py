@@ -183,3 +183,70 @@ def test_atomic_write_preserves_mode(cfg_path: Path):
     os.chmod(cfg_path, 0o640)
     run_cli("config", "set", "llm.budgets.web_fetch", "7", "--config", str(cfg_path))
     assert (cfg_path.stat().st_mode & 0o777) == 0o640
+
+# ── Codex review fixes (2026-09-08) ────────────────────────────────────────
+
+def test_unset_prints_restart(cfg_path: Path, capsys):
+    rc = run_cli("config", "unset", "llm.budgets.web_fetch", "--config", str(cfg_path))
+    assert rc == 0
+    assert "restart to apply" in capsys.readouterr().out
+
+
+def test_set_secret_env_field_rejects_secret_value(cfg_path: Path, capsys):
+    """*_env fields hold env-var NAMES, never secret values (DEC-8)."""
+    before = cfg_path.read_text(encoding="utf-8")
+    rc = run_cli(
+        "config", "set", "llm.api_key_env", "sk-very-very-secret",
+        "--config", str(cfg_path),
+    )
+    assert rc != 0
+    assert "env-var NAME field" in capsys.readouterr().err
+    assert cfg_path.read_text(encoding="utf-8") == before  # untouched
+
+
+def test_set_secret_env_field_accepts_env_name(cfg_path: Path):
+    """A valid env-var NAME is accepted; the secret value stays in .env."""
+    rc = run_cli(
+        "config", "set", "llm.api_key_env", "OMNIROUTE_API_KEY",
+        "--config", str(cfg_path),
+    )
+    assert rc == 0
+    cfg = load(cfg_path, require_secrets=False)
+    assert cfg.llm.api_key_env == "OMNIROUTE_API_KEY"
+
+
+def test_set_secret_env_redacts_output(cfg_path: Path, capsys):
+    rc = run_cli(
+        "config", "set", "llm.api_key_env", "SOME_KEY", "--config", str(cfg_path),
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "SOME_KEY" not in out
+    assert "redacted" in out
+
+
+def test_no_temp_files_left_after_success(cfg_path: Path):
+    run_cli("config", "set", "llm.budgets.web_fetch", "8", "--config", str(cfg_path))
+    leftovers = [p for p in cfg_path.parent.iterdir()
+                 if p.name.startswith(cfg_path.name + ".") and p != cfg_path]
+    assert leftovers == []
+
+
+def test_no_temp_files_left_after_failure(cfg_path: Path, capsys):
+    run_cli("config", "set", "llm.budgets.web_fetch", "hello", "--config", str(cfg_path))
+    leftovers = [p for p in cfg_path.parent.iterdir()
+                 if p.name.startswith(cfg_path.name + ".") and p != cfg_path]
+    assert leftovers == []
+
+
+def test_candidate_preserves_mode(cfg_path: Path):
+    """The pre-write validation candidate never briefly exposes a 0600/0640
+    config as 0644 (Codex audit: candidate file permission leak)."""
+    os.chmod(cfg_path, 0o640)
+    run_cli("config", "set", "llm.budgets.web_fetch", "7", "--config", str(cfg_path))
+    # No candidate/tmp leftovers at all after success, and config still 0640.
+    leftovers = [p for p in cfg_path.parent.iterdir()
+                 if p.name.startswith(cfg_path.name + ".") and p != cfg_path]
+    assert leftovers == []
+    assert (cfg_path.stat().st_mode & 0o777) == 0o640
+

@@ -183,7 +183,7 @@ deployment machine, which is the one whose drift would stop a container
 booting under `extra = "forbid"`.
 
 **Config mutation goes through the CLI, not a hand edit** (deploy convention
-§4.5, implemented 2026-09-08): `nora config set/get/unset/validate --config
+§4.5, implemented 2026-09-08): `nora config set/get/unset/validate/path --config
 <path>`. The subcommand validates against the schema, writes atomically
 (tmp + rename), prints what changed, and never touches `.env` — secrets stay
 there and are referenced by name. Hand-editing a 75KB TOML remains possible

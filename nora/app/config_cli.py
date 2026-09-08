@@ -40,6 +40,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import re
+import tempfile
 from pathlib import Path
 
 import tomlkit
@@ -164,12 +166,28 @@ def _read_doc(path: Path) -> tuple[str, tomlkit.container.Container]:
 def _atomic_write(path: Path, text: str) -> None:
     """tmp + os.replace, preserving the original mode — same pattern as
     `cli._rewrite_env` (M8). A crash between write and rename leaves the
-    old file intact."""
+    old file intact.
+
+    Security (Codex audit 2026-09-08): the temp is created by `mkstemp`
+    — O_EXCL + random name in the same directory — so a predictable
+    `.tmp` sibling cannot be pre-seeded as a symlink, and the mode is
+    applied before content is written so a 0600 config is never visible
+    as 0644 even briefly.
+    """
     mode = path.stat().st_mode & 0o777
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.chmod(tmp, mode)
-    os.replace(tmp, path)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent, prefix=path.name + ".", suffix=".tmp"
+    )
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
 
 
 def _cmd_get(args: argparse.Namespace) -> int:
@@ -190,9 +208,15 @@ def _validate_candidate(path: Path, doc: tomlkit.container.Container) -> None:
     write-then-rollback design leaves open: the on-disk config is never
     invalid, not even for a moment.
     """
-    tmp = path.with_suffix(path.suffix + ".candidate")
+    mode = path.stat().st_mode & 0o777
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent, prefix=path.name + ".", suffix=".candidate"
+    )
+    tmp = Path(tmp_name)
     try:
-        tmp.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(tomlkit.dumps(doc))
         load(tmp, require_secrets=False)
     except ConfigError as exc:
         raise _cli_error(f"change rejected: {exc}") from exc
@@ -202,6 +226,24 @@ def _validate_candidate(path: Path, doc: tomlkit.container.Container) -> None:
         tmp.unlink(missing_ok=True)
 
 
+# Field names that reference `.env` variables by name — secrets live in
+# .env, never in the config file, and the CLI must not let the operator
+# paste a secret value into them or echo one back (Codex audit 2026-09-08).
+_SECRET_ENV_SUFFIXES = ("_env",)
+
+
+def _is_secret_env_key(dotted: str) -> bool:
+    return dotted.lower().endswith(_SECRET_ENV_SUFFIXES)
+
+
+def _render_display(value: object, secret: bool = False) -> str:
+    """Render a value for operator output; redact when the key names an env
+    reference (the field must hold an env-var NAME, not a secret VALUE)."""
+    if secret:
+        return "<redacted — set in .env, not via config CLI>"
+    return _render_value(value)
+
+
 def _cmd_set(args: argparse.Namespace) -> int:
     _load_config(args)
     path = Path(args.config)
@@ -209,7 +251,20 @@ def _cmd_set(args: argparse.Namespace) -> int:
 
     container, key = _navigate(doc, args.key)
     old = container.get(key)
+    secret = _is_secret_env_key(args.key)
     value = _parse_value_expression(args.value, current=old)
+    if secret and (
+        not isinstance(value, str)
+        or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value)
+    ):
+        # `*_env` fields hold the NAME of an environment variable (DEC-8:
+        # secrets live in .env, referenced by name). Accept only a valid
+        # env-var name — never a secret-looking literal.
+        raise _cli_error(
+            f"{args.key} is an env-var NAME field — value must be a valid "
+            "environment variable name, e.g. OMNIROUTE_API_KEY (the secret "
+            "itself lives in .env)"
+        )
     container[key] = value
 
     _validate_candidate(path, doc)
@@ -224,9 +279,12 @@ def _cmd_set(args: argparse.Namespace) -> int:
         raise _cli_error(f"change rejected: invalid resulting config: {exc}") from exc
 
     if old is None:
-        print(f"set {args.key} = {_render_value(value)}")
+        print(f"set {args.key} = {_render_display(value, secret=secret)}")
     else:
-        print(f"{args.key}: {_render_value(old)} -> {_render_value(value)}")
+        print(
+            f"{args.key}: {_render_display(old, secret=secret)} -> "
+            f"{_render_display(value, secret=secret)}"
+        )
     print("restart to apply: docker compose up -d --force-recreate nora")
     return 0
 
@@ -250,7 +308,11 @@ def _cmd_unset(args: argparse.Namespace) -> int:
         _atomic_write(path, old_text)
         raise _cli_error(f"change rejected: invalid resulting config: {exc}") from exc
 
-    print(f"unset {args.key} (was {_render_value(old)})")
+    print(
+        f"unset {args.key} "
+        f"(was {_render_display(old, secret=_is_secret_env_key(args.key))})"
+    )
+    print("restart to apply: docker compose up -d --force-recreate nora")
     return 0
 
 
