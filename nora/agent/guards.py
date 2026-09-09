@@ -227,6 +227,22 @@ class Deliverer:
         return tuple(self._held_texts)
 
     @property
+    def held_count(self) -> int:
+        """How many sends the cooldown or the shadow gate HELD this turn.
+
+        The four model-facing send tools read this across one `deliver` call to
+        tell a HOLD from a REFUSAL — `deliver` answers `False` to both, and a
+        model that cannot tell them apart rewrites and calls again. Measured on
+        the deployment 2026-09-09: one participation turn called `send_reply`
+        four times, each draft shorter than the last, and each retry cost an
+        extra model call (Langfuse trace `5cb76676…` — four `send_reply` TOOL
+        spans, each followed by its own `execute_event_loop_cycle`). It also
+        left four near-identical drafts on `held_texts`, so the shadow review
+        could not tell which one she would actually have sent.
+        """
+        return len(self._held_texts)
+
+    @property
     def delivered(self) -> bool:
         return self._delivered_count > 0
 

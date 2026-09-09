@@ -35,6 +35,7 @@ silently narrowing scope. The live tool surface in `nora/agent/tools.py` uses
 | `not_an_image` | 1 | ❌ | media modality refusal |
 | `already_present` | 1 | ❌ | idempotent write outcome |
 | `no_route` | (routes client) | ❌ | Google found no way (tools.py:2987) |
+| `held_for_review` | 4 (the send tools) | ❌ | the send was complete and something outside the turn kept it — added 2026-09-09 |
 
 **Three individually disqualifying findings** (all verified against the code):
 
@@ -82,6 +83,16 @@ documented, test-pinned value.**
   - `not_an_image` — media modality refusal
   - `already_present` — idempotent write outcome
   - `no_route` — Google found no way between origin and destination
+  - `held_for_review` — the send was complete and something OUTSIDE the turn
+    kept it: a review mode, or the room's send cooldown. Neither `refused`
+    (nothing vetoed it) nor `unavailable` (nothing was broken); what separates
+    it from both is that calling again cannot help, because the hold is not
+    about the text. **Added 2026-09-09, and the reason is the strongest
+    argument in this ADR for why the core is not a ceiling:** `send_reply`
+    answered a bare bool, so a held reply reached the model as a failure, and a
+    live participation turn rewrote the same answer four times — four extra
+    model calls, and four near-identical drafts left on the shadow review with
+    no way to tell which one she meant.
 - **The semantic rule stays with the tool author.** The harness validates
   vocabulary + shape mechanically; it cannot judge whether a `refused` was
   really a disclosure veto or a lazy `unavailable`. That judgment remains with

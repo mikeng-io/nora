@@ -1257,6 +1257,42 @@ def _log_call(tool: str, status: str, **detail: object) -> None:
     )
 
 
+#: What a model-facing send tool answers. A HOLD is not a refusal: the message
+#: was complete and something outside the turn — a review mode, or the room's
+#: send cooldown — kept it. The distinction exists because `Deliverer.deliver`
+#: answers `False` to both, and on 2026-09-09 a live participation turn read
+#: that `False` as "it did not go", rewrote the reply shorter and called
+#: `send_reply` four times (Langfuse `5cb76676…`): four extra model calls, and
+#: four near-identical drafts on `held_texts` that made the shadow review
+#: unreadable. Retrying cannot help, because the hold is not about the text.
+SENT: Literal["sent"] = "sent"
+HELD: Literal["held_for_review"] = "held_for_review"
+REFUSED: Literal["refused"] = "refused"
+
+
+class _Holds(Protocol):
+    """The one thing `_send_status` needs of a `Deliverer`. A Protocol and not
+    the class itself: `nora.agent.guards` imports from here, so naming the type
+    would close a cycle for a single integer."""
+
+    @property
+    def held_count(self) -> int: ...
+
+
+def _send_status(
+    deliverer: _Holds, *, sent: bool, held_before: int,
+) -> Literal["sent", "held_for_review", "refused"]:
+    """`sent` / `held_for_review` / `refused` for ONE `deliver` call.
+
+    `held_before` is `Deliverer.held_count` read immediately before the call:
+    the hold branch is the only thing that appends to `held_texts`, so a count
+    that grew across the call IS the hold, with no new state to keep in sync.
+    """
+    if sent:
+        return SENT
+    return HELD if deliverer.held_count > held_before else REFUSED
+
+
 def _record(metrics, tool: str, status: str, **detail: object) -> None:
     """Count and log a call to a tool that had no counter before."""
     metrics.inc("nora_tool_calls_total", tool=tool, status=status)
@@ -5150,6 +5186,7 @@ Args:
                         sha256=sha256, media_type=media_type, size=len(raw),
                         filename=filename,
                     ),)
+                held_before = deliverer.held_count
                 sent = await deliverer.deliver(
                     caption, source="tool",
                     attachments=(OutboundAttachment(
@@ -5163,6 +5200,16 @@ Args:
                                                "sha256": sha256}},
                     media_blobs=media_blobs,
                 )
+                status = _send_status(
+                    deliverer, sent=sent, held_before=held_before,
+                )
+                if status == HELD:
+                    return {
+                        "status": "held_for_review",
+                        "note": "I made the image and my part is DONE — a "
+                                "review mode or this room's cooldown held the "
+                                "send. Do not make it again.",
+                    }
                 if not sent:
                     return {
                         "status": "unavailable",
@@ -5347,6 +5394,7 @@ Args:
         # `label_for`, so a future media type never silently mislabels.
         top, _, _ = media_type.partition("/")
         modality = top if top in ("image", "video", "audio") else "file"
+        held_before = deliverer.held_count
         sent = await deliverer.deliver(
             "", source="tool",
             attachments=(OutboundAttachment(
@@ -5356,6 +5404,13 @@ Args:
             record_metadata={"media": {"type": modality, "sha256": meta.sha256,
                                        "resent": True}},
         )
+        status = _send_status(deliverer, sent=sent, held_before=held_before)
+        if status == HELD:
+            return {
+                "status": "held_for_review",
+                "note": "I found it and my part is DONE — a review mode or "
+                        "this room's cooldown held the send. Do not resend.",
+            }
         if not sent:
             return {
                 "status": "unavailable",
@@ -7828,13 +7883,24 @@ Args:
             platform_message_id=platform_message_id,
         )
 
-    async def send_reply(text: str, reply_to: int | None = None) -> bool:
+    async def send_reply(text: str, reply_to: int | None = None) -> str:
         """Send a message to the group — the ONLY delivery mechanism for your reply.
         You MUST call this tool exactly once whenever you produce a reply; do not
         return the reply as the assistant's final message instead of calling it
         (that path is an emergency fallback, never a proactive choice). If you
         never call this, nothing is sent; it always goes to the conversation you
         were tagged in — you do not choose where.
+
+        RETURNS one of three words, and the middle one is the one to read
+        carefully:
+          - `sent` — it reached the group.
+          - `held_for_review` — YOUR PART IS DONE. The message was complete and
+            correct and something outside this turn held it: a review mode, or
+            a cooldown on how often this room may hear from you. It is recorded.
+            Rewriting it shorter and calling again does NOT get it through — the
+            hold is not about the text. **Do not call this tool again.**
+          - `refused` — it did not go and will not; a guard stopped it. Calling
+            again with the same text will be refused again.
 
         SHOULD — how to write it well:
           - Length. One or two sentences answers almost everything. However much
@@ -7886,17 +7952,23 @@ Args:
                 clutter. Never guess a number that is not on a line you can
                 see.
         """
+        held_before = deliverer.held_count
         sent = await deliverer.deliver(
             _strip_media_markers(text), source="tool",
             quote=_resolve_quote(reply_to),
         )
+        status = _send_status(deliverer, sent=sent, held_before=held_before)
         # A LENGTH, never the reply. `Deliverer` already logs the specific
         # reason behind every refusal (R-2 latch, R-4 empty, R-6 leak, R-18
         # egress, audit failure, send failure); this line exists so that the
         # call itself is visible in the same grep as every other tool, which is
         # what was missing.
-        _record(metrics, "send_reply", "ok" if sent else "refused", chars=len(text or ""))
-        return sent
+        _record(
+            metrics, "send_reply",
+            "ok" if sent else ("held" if status == HELD else "refused"),
+            chars=len(text or ""),
+        )
+        return status
 
     gif_candidates: dict[str, GifCandidate] = {}
 
@@ -7940,11 +8012,23 @@ Args:
         if attachment is None:
             raise RuntimeError("GIF unavailable; reply in words instead.")
         record_text = f"{caption.strip()} [GIF via {candidate.provider}]".strip()
+        held_before = deliverer.held_count
         sent = await deliverer.deliver(
             caption, source="tool", attachments=(attachment,), record_text=record_text,
             record_metadata={"media": {"provider": candidate.provider, "id": candidate.id,
                                        "type": "gif"}},
         )
+        # A HOLD must not raise. The raise below tells the model the GIF failed
+        # and to "reply in words instead" — but a hold holds the words too, so
+        # the fallback is a second held send and another model call, which is
+        # the loop this whole change exists to stop.
+        if _send_status(deliverer, sent=sent, held_before=held_before) == HELD:
+            return {
+                "status": "held_for_review",
+                "note": "The GIF is chosen and my part is DONE — a review mode "
+                        "or this room's cooldown held the send. Do not reply "
+                        "in words instead; that would be held too.",
+            }
         if not sent:
             raise RuntimeError("GIF delivery failed; reply in words instead.")
         return {"status": "ok"}
