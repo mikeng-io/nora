@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Decision index only — DEC-162 records design node 39 (the proactive adaptor) as NOT ENFORCED until built, and DEC-133 (1) is deprecated in part. No code, no behaviour change."
+}
