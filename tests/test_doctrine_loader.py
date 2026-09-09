@@ -82,14 +82,21 @@ def test_sections_are_ordered_by_order_not_filename(doctrine_dir):
 
 
 def test_applies_to_filters_the_assembly(doctrine_dir):
-    write(doctrine_dir, "future.md", name="classifier-only", order=50, applies="classifier")
+    # A REAL audience, not an invented one: `applies_to` is a closed
+    # vocabulary since 2026-09-10, so a fictional name is now a parse error
+    # rather than a file that quietly reaches nobody — which is the whole
+    # point of the gate and would make this test pass for the wrong reason.
+    write(doctrine_dir, "future.md", name="heartbeat-only", order=50, applies="heartbeat")
     names = [s.name for s in _store(doctrine_dir).get(applies_to="tag").sections]
-    assert "classifier-only" not in names
+    assert "heartbeat-only" not in names
+    assert "heartbeat-only" in [
+        s.name for s in _store(doctrine_dir).get(applies_to="heartbeat").sections
+    ]
 
 
 def test_applies_to_always_participates_in_every_assembly(doctrine_dir):
     write(doctrine_dir, "common.md", name="common", order=5, applies="always")
-    for assembly in ("tag", "classifier"):
+    for assembly in ("tag", "heartbeat"):
         names = [s.name for s in _store(doctrine_dir).get(applies_to=assembly).sections]
         assert "common" in names
 
@@ -358,3 +365,39 @@ def test_a_file_claiming_a_derived_kind_is_a_startup_failure(doctrine_dir):
         with pytest.raises(DoctrineError, match="DERIVED and has no"):
             _store(doctrine_dir).get(applies_to="tag")
         (doctrine_dir / f"{kind}.md").unlink()
+
+
+def test_an_audience_nothing_reads_is_refused_at_parse(doctrine_dir):
+    """The silent failure this gate exists for.
+
+    `get()` filters `applies_to` by string membership and returns whatever
+    survives, so a typo is indistinguishable from a deliberate exclusion:
+    `applies_to: [tagg]` on `constraints.md` parses, passes every other
+    frontmatter gate, and removes the hard rules from every tag — while
+    `nora_doctrine_reload_failures_total` stays at 0, because the SCAN
+    succeeded. On the deployment an edit to `nora/doctrine` is itself a deploy
+    (it hot-reloads on mtime), so that is an operator typing into a live
+    prompt.
+
+    The other frontmatter gates already refuse an unknown `kind` and an unknown
+    `change_policy`. This is the one whose absence was silent.
+    """
+    write(doctrine_dir, "typo.md", name="typo", order=50, applies="tagg")
+    with pytest.raises(DoctrineError, match="applies_to names"):
+        _store(doctrine_dir, strict=True).get(applies_to="tag")
+
+
+def test_every_shipped_doctrine_file_names_only_real_audiences():
+    """The property over the LIVE tree, so the vocabulary cannot drift away
+    from the files it governs — in either direction."""
+    from pathlib import Path as _Path
+
+    from nora.doctrine.loader import AUDIENCES
+
+    store = DoctrineStore(
+        _Path("nora/doctrine"), strict=True, reload="never",
+        canary="C", metrics=Metrics(),
+    )
+    for section in store.get(applies_to="tag").sections:
+        for audience in section.applies_to:
+            assert audience in AUDIENCES or audience == "always", section.name
