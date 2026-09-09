@@ -383,6 +383,12 @@ earned. They are the `measure` verb pointed at our own instruments.
   detach so it does not hold a trace open; that is not a reason to declare it
   plumbing. Conflating them hid every media read from the collector for two
   weeks while its counter recorded them.
+- **A log line is not a metric.** If the answer is "how many, how often, with
+  what outcome" it is a counter; a line that restates one every interval is a
+  third copy. 78% of the deployment's log was two such sources.
+- **Severity is a NUMBER as well as a word** — `level` sorts alphabetically, so
+  "at least a warning" is not expressible over it. `severity_number` carries
+  OTel's SeverityNumber bands; an unmapped level gets no field, never a guess.
 - **A span with only a name is worse than no span** — carry what makes the step
   re-derivable. Empty traces read as progress; an absence at least asks.
 - **Instruments measure the RESULT; something must measure the COST.** An index

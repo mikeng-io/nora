@@ -187,7 +187,21 @@ def build_health_app(
 
 
 async def serve(app: web.Application, port: int) -> web.AppRunner:
-    runner = web.AppRunner(app)
+    # `access_log=None` — NO PER-REQUEST LINE FOR THIS SERVER, and it is the
+    # single largest thing that was in the log.
+    #
+    # Measured over 37 days on the deployment: 205,099 log lines, of which
+    # 108,441 (53%) were `aiohttp.access` at INFO. This server routes exactly
+    # two paths — `/health` and `/metrics` — polled by a container healthcheck
+    # and by whatever scrapes the metrics. One line per poll is not evidence of
+    # anything: the health of this endpoint is the healthcheck's own verdict,
+    # and how often it was scraped is a question for the scraper.
+    #
+    # It is the same judgement R-76 makes for traces one signal over — a
+    # collector that is 97% plumbing cannot be read for the events that matter —
+    # applied to the log. What it costs is the ability to see WHO called
+    # `/metrics`, which is a question this file has never been asked.
+    runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     # health/metrics must be reachable from outside the container.
     site = web.TCPSite(runner, "0.0.0.0", port)  # noqa: S104
