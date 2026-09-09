@@ -1,7 +1,7 @@
 ---
 type: proposal
 title: "The Proactive Adaptor Is Nora's Other Half — One OODA Loop, Two Entry Points"
-description: "Decides what node 38 left open. The proactive adaptor is a Dreamer adaptor, workspace-keyed through a home room, with the whole tool registry to READ and exactly one act verb — an adaptor-owned `raise_later` that writes a proactive reminder row in code; its turn decides WHEN and the fire path speaks THEN. Passive (tagged) and active (clocked) Nora run the same observe–orient–decide–act loop, whose one structural brake is on the note. Every decision carries where it was checked and what would reopen it. Revised once against two reviews."
+description: "Decides what node 38 left open. The proactive adaptor is a Dreamer adaptor, workspace-keyed through a home room, with the whole tool registry to READ and exactly one act verb — her own `remind`, stamped by provenance to write a proactive reminder row; its turn decides WHEN and the fire path speaks THEN. Passive (tagged) and active (clocked) Nora run the same observe–orient–decide–act loop, whose one structural brake is on the note. Every decision carries where it was checked and what would reopen it. Revised once against two reviews."
 tags: [nora, proactive, initiative, dreamer, ooda, reminder, standing, measurement]
 timestamp: '2026-09-09'
 edges:
@@ -12,7 +12,7 @@ edges:
   - {dst: 27-note-dreamer, rel: depends_on, provenance: asserted}
   - {dst: 32-fact-dreamer-schedule, rel: extends, provenance: asserted}
   - {dst: 35-ambient-participation, rel: relates_to, provenance: asserted}
-version: 2
+version: 3
 ---
 
 # The Proactive Adaptor Is Nora's Other Half
@@ -181,34 +181,49 @@ room).
 platform, and `send_to`'s «one room per platform per workspace» rule already
 constrains it that way).
 
-### D3. Every read tool is accessible; the one act verb is `raise_later`, not `remind`.
+### D3. Every read tool is accessible; the one act verb is `remind`, stamped by provenance.
 
 The operator's position: «所有嘅 capability 都要 accessible». For reads this
 is literal — the registry's whole read set, room-scoped included, through the
-home room. For acts it is exactly one verb, and version 1 named the wrong
-one.
+home room. For acts it is exactly one verb, and it is the `remind` Nora
+already has — not a new tool. Version 1 assumed `remind` as-is would do;
+version 2 replaced it with a new verb; this version keeps the verb and fixes
+what v1 missed, because the codebase already has the pattern for it.
 
-**Why not `remind`.** Its model-facing signature is `remind(when, text,
-repeat, every_n, times, until)` (`tools.py:6138-6142`); it cannot set `kind`
-or `payload`, so its row takes the defaults `kind="reminder"`,
-`payload=None` (`reminders.py:348-349`) and fires as an ordinary «X asked you
-to remind…». Its destination is `bound_conversation_id`, the `conversation_id`
-argument of the build — which for a workspace-keyed adaptor is the *workspace
-name* (`dreamer.py:588`), so swapping the `Room` alone writes rows into a
-conversation that does not exist and every one dies `failed_policy`. And
-`text` is mandatory and defined as «THEIR OWN WORDS». `gathering` shows the
-right shape: its rows get `kind="gathering"` and a payload from *code*
-(`nora/app/gatherings.py:378-379`), never from the model.
+**What `remind` as-is cannot do.** Its model-facing signature is
+`remind(when, text, repeat, every_n, times, until)` (`tools.py:6138-6142`).
+Three fields the row needs are not the model's to set: `kind` and `payload`
+take their defaults `"reminder"` / `None` (`reminders.py:348-349`), so the
+row would fire as an ordinary «X asked you to remind…» with no note id for
+D11 to screen; and the destination is `bound_conversation_id`, the
+`conversation_id` argument of the build — which for a workspace-keyed
+adaptor is the *workspace name* (`dreamer.py:588`), so swapping the `Room`
+alone writes rows into a conversation that does not exist and every one dies
+`failed_policy`. `gathering` shows the right shape: its rows get
+`kind="gathering"` and a payload from *code* (`nora/app/gatherings.py:
+378-379`), never from the model.
 
-**The verb.** `raise_later(note_id, when, intent)`, a `NativeTool` with
-`read_only=False`, granted to this adaptor and no other. Its closure stamps
-in code: `kind="proactive"`, `payload={"note_id", "intent", "revision_id"}`,
-`requester_person_id=<ai_peer>`, `platform` and `conversation_id` from the
-home room, `text` from the intent. Before `create`, the model-authored
-`intent` passes `dream_screen.screen` — the runtime's docstring says «if the
-model writes directly there is no sink left to screen at» (`dreamer.py:
-18-23`), and this is the sink. The decision *is* the tool call (D4) —
-version 1's principle survives; its verb does not.
+**The pattern that fixes it is already in `remind`.** `fire_turn` is «this
+turn's PROVENANCE» (`tools.py:2365`), threaded from `ToolRegistry.build`, and
+`remind` reads it to behave differently inside a fire turn (`:6205`). The
+Dreamer build threads a second provenance, `dream_adaptor=<name>`, and under
+it `remind`'s closure stamps in code: `kind="proactive"`, `requester_person_id
+= <ai_peer>`, `platform` and `conversation_id` from the home room, and
+`payload={"note_id", "revision_id", "intent"}` — with `note_id` from a new
+optional parameter `note_id: str | None = None` that the tag path may also
+use (a human's reminder about a note is a useful link, and it costs nothing
+there). `text` is the intent. Before `create`, the model-authored text
+passes `dream_screen.screen` — the runtime's docstring says «if the model
+writes directly there is no sink left to screen at» (`dreamer.py:18-23`),
+and this is the sink. The decision *is* the tool call (D4). Nothing new is
+put in front of the model; one of her existing verbs learns where it is.
+
+**Tools the decide turn holds, and the ones it does not:** `remind`;
+`where_is`, `saved_places`, `route`, `group_members`; `about`, `ask_memory`,
+`search_memory_workspace`; `note_read`, `note_search`; `web_search`,
+`web_fetch`, `weather`, `now`. Not `send_reply` (the Dreamer does not speak),
+not `send_to` (no tagger to attribute a relay to), not `note_create` /
+`note_update` (D6), not `load_transcript` (§1).
 
 **What this changes in DEC-133.** DEC-133 (1) said a background process «that
 can speak to the group unprompted — or set a reminder, or write to the events
@@ -251,7 +266,7 @@ slot with `send_reply` would let her choose *whether*; it would not let her
 choose *when*. Choosing when is the capability.
 
 So the **decide turn** (Dreamer, D1) reads the workspace, uses tools, and its
-only act is `raise_later(...)`: zero or several rows. It never composes the
+only act is `remind(...)` under Dreamer provenance: zero or several rows. It never composes the
 message.
 
 The **act turn** is the fire path. `event_registry` (composition root) maps a
@@ -267,7 +282,7 @@ act turn (it attributes a relay to `room.tagger`), so the act turn speaks
 into the home room and nowhere else — which is what §3 says.
 
 **The envelope becomes bookkeeping.** 33 §8's «model proposes, code disposes»
-does not describe this adaptor: the proposal *is* the `raise_later` call,
+does not describe this adaptor: the proposal *is* the `remind` call,
 already landed when the envelope is parsed. The envelope carries the decision
 record — which notes it considered, what it scheduled or declined, why — and
 the sink writes `record_wake` (D6). A run whose `inputs()` is blank commits
@@ -281,6 +296,13 @@ composes a draft.
 
 ### D5. Nora owns her own rows — as the reserved `ai_peer` id, not as a person.
 
+The operator, on why she is not in `identity.toml`: «identity.toml 嘅存在意義，
+就係俾 Nora 去 identify 返有乜嘢 identity。佢自身已經有一個 identity.» She has
+one: `[memory].ai_peer` and `[agent].name`, which DEC-66 (5) calls «the
+agent's machine identity», reserved by the composition root so no human may
+hold it. `identity.toml` is the book of the people she identifies, and she is
+not one of them.
+
 Version 1 said «her `PersonRef` from `identity.toml`». That is a startup
 refusal: the composition root reserves the `ai_peer` id and raises
 `StartupError` if `identity.toml` gives it to anyone
@@ -291,13 +313,13 @@ silently. The heartbeat's own screen, `is_allowed(person_id=row.
 requester_person_id)` (`heartbeat.py:259-263`), admits only listed persons.
 
 **The principle stands; the mechanism is:** `requester_person_id` is the
-`ai_peer` string (`"nora"`), stamped by `raise_later` in code (D3), so the
+`ai_peer` string (`"nora"`), stamped by `remind` under Dreamer provenance (D3), so the
 per-requester cap of 20 becomes the global ceiling on unfired proactive rows.
 The `proactive` occasion is built with `person_id=None`. The fire-time screen
 for `kind="proactive"` checks a per-room policy flag `proactive = true`
 (the `participation = true` precedent, `policy.example.toml:77-84`) instead
 of persons membership; a home room without the flag refuses the row. The
-decide-turn `Room` has no tagger — `raise_later` does not need one, and
+decide-turn `Room` has no tagger — `remind` under Dreamer provenance does not read one, and
 nothing else in the decide turn does.
 
 Not the note's anchor person: «Miles: dinner at 8» and «dinner at 8» are
@@ -449,7 +471,7 @@ references are historical.
 presence via `where_is` and friends through the home room; the web.
 
 **Writes** (decide turn): reminder rows, `kind="proactive"`, owner `"nora"`,
-via `raise_later`; `record_wake` on each note it decided about. Nothing else.
+via `remind`; `record_wake` on each note it decided about. Nothing else.
 
 **Reads** (act turn): everything a fire turn reads today, plus the payload.
 
@@ -489,7 +511,7 @@ herself, and no human's model of Nora. The operator's recollection that
 **The one live note** (from 38 §2.7): «AI Hackathon dinner plan», anchor
 2026-09-12, `revisit_at` 2026-09-09 08:00 HKT — now past; the curator is off
 and nothing else reads `revisit_at`, so nothing happened. It is the first
-`raise_later` case of the decide suite.
+`remind` case of the decide suite.
 
 ## 5. Measurement
 
@@ -513,7 +535,7 @@ for its structure.
 **What the harness lacks today** (review finding), so item 9 of the build map
 is not small: the eval Dreamer tool source is `_NoDreamTools`
 (`eval_support.py:584-596`); `build_eval_tool_registry` wires no reminder
-store, so `raise_later` would answer `unavailable` and every case would be
+store, so `remind` would answer `unavailable` and every case would be
 ERROR; `InMemoryReminderStore` exists (`nora/testing/reminders.py`) and is
 unwired; `FakeMemoryStore` serves `peer_card` only, so `about` /
 `ask_memory` / `search_memory_workspace` have no canned backend; and
@@ -524,7 +546,7 @@ seeding, and a grader over the reminder store.
 
 **Numbers the corpus yields:** false-positive rate on `none`/`silent`
 (primary — an ambient agent's costly failure is being annoying, not being
-late); recall on `raise_later`/`speak`; cost per fire from
+late); recall on `remind`/`speak`; cost per fire from
 `nora_dream_run_seconds` and `nora_dream_stop_reason_total`. The corpus must
 be majority `none`/`silent`: most days there is nothing to say, and a corpus
 of only should-speak cases breeds a Nora who speaks daily. The labels are one
@@ -540,7 +562,7 @@ threshold is the operator's; it is a number.
 |---|---|---|---|
 | 1 | ceiling allowance in three places; home-room `Room` with `self_ids`; `conversation_id`/`conversation_type` from the home room; `location_trusted` threaded; `WORKSPACE_SAFE_TOOLS` exemption; module docstring rewritten | `nora/agent/dreamer.py` | a dozen lines, four tests rewritten |
 | 2 | `home_room` and `proactive = true` per room | `policy.toml`, `nora/policy.py`, `nora/config.py`, `policy.example.toml` | two fields |
-| 3 | `raise_later` NativeTool, `read_only=False`, stamps kind/payload/owner/destination in code, screens intent | `nora/agent/tools.py`, registry table | one tool |
+| 3 | `remind` reads a `dream_adaptor` provenance: stamps kind/payload/owner/destination in code, screens the text; optional `note_id` parameter | `nora/agent/tools.py`, `nora/agent/registry.py` | one closure branch, one parameter |
 | 4 | the adaptor: `inputs()` (D9), envelope → `record_wake` sink | new module under `nora/language/` | the main piece |
 | 5 | schedule entry | `nora/app/composition.py` | one entry |
 | 6 | reminder history read, joined to workspace via policy | `nora/domain/reminders.py`, both stores | one method |
@@ -565,7 +587,7 @@ Items 4 and 10 are the work. R-1b and its test do not change.
 ## Status / Checkpoint
 
 Design only. No code. Supersedes 38; revises 33 §8; deprecates DEC-133 (1) in
-half. Version 2 after two reviews: D3's verb, D5's owner mechanism, D11's
+half. Version 2 after two reviews and the operator's read of v2: D3 keeps `remind` and stamps it by provenance, D5's owner mechanism, D11's
 predicate and D12's state mapping changed; §1 now says which inputs carry her
 own words; §5 names what the harness lacks. The build is issue #103, which
 should be updated to point here and to drop its knowledge-tier language. The
