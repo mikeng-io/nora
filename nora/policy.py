@@ -105,8 +105,10 @@ class Conversation:
     # not a person in `identity.toml`, so the fire-time `is_allowed` screen
     # cannot admit it — this flag is what the heartbeat checks instead of
     # persons membership. A home room without it refuses every proactive row
-    # (`failed_policy`); a room with it that is not the home room is inert,
-    # because nothing writes proactive rows into any other room.
+    # (`failed_policy`). The screen reads the ROW's room, so a row written
+    # into a room that later stopped being the home room still fires there
+    # while this flag is on — moving a home room means clearing this on the
+    # old one, the same way withdrawing a person from `persons` is.
     proactive: bool = False
 
 

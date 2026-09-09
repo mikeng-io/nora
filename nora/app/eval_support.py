@@ -1037,6 +1037,11 @@ class EvalDreamTools:
     def __init__(self) -> None:
         self._source: RegistryToolSource | None = None
         self.builds: list[tuple[str, frozenset[str]]] = []
+        # The bound registry's metrics: `nora_reminders_created_total{status}`
+        # is where a `remind` the closure REFUSED (too_soon, screened, unknown
+        # title, …) leaves its only trace, and a quiet case must not pass on
+        # the strength of a refusal (audit 2026-09-09).
+        self.metrics: Metrics = Metrics()
 
     def bind(
         self, *, workspace: str, home: HomeRoom, notes: Any, reminders: Any,
@@ -1045,9 +1050,10 @@ class EvalDreamTools:
         registry = build_eval_tool_registry(
             notes=notes, note_workspace=workspace, reminders=reminders, clock=clock,
         )
+        self.metrics = Metrics()
         self._source = RegistryToolSource(
             registry=registry, store=FakeRecordStore(), persons=_EVAL_PERSONS,
-            honcho=memory, metrics=Metrics(), ai_peer="nora",
+            honcho=memory, metrics=self.metrics, ai_peer="nora",
             home_rooms={workspace: home},
             rosters={home.platform: FakeRosterSource(
                 groups={home.conversation_id: (frozenset({_EVAL_MEMBER}),)},
@@ -1129,6 +1135,10 @@ class ProactiveDecideDrive:
     instruction_sha256: str
     rows: tuple[tuple[str | None, str, str, str, str], ...]
     tools_built: tuple[str, ...]
+    #: Every `remind` call the model made, created OR refused — the sum of
+    #: `nora_reminders_created_total` over its statuses. A quiet case with
+    #: attempts and no rows is a false positive the store cannot show.
+    remind_attempts: int = 0
 
 
 _LOG_STATES: Mapping[str, ReminderState] = {
@@ -1280,10 +1290,14 @@ async def run_proactive_decide_case(
             row.kind, str(carried.get("intent", row.text)),
         ))
     built = tuple(sorted({name for _, names in tools.builds for name in names}))
+    attempts = sum(
+        value for (name, _labels), value in tools.metrics.snapshot().items()
+        if name == "nora_reminders_created_total"
+    )
     return ProactiveDecideDrive(
         status=outcome.status, stop_reason=outcome.stop_reason,
         instruction_sha256=outcome.instruction_sha256, rows=tuple(rows),
-        tools_built=built,
+        tools_built=built, remind_attempts=int(attempts),
     )
 
 
@@ -1300,6 +1314,10 @@ class ProactiveActDrive:
     stop_reason: str | None
     silence: int
     screened: str | None
+    #: `nora_silent_failures_total{audience="proactive"}`, summed: a send the
+    #: guards refused, a budget cut, an invocation error. A `silent` outcome
+    #: with one of these behind it is a malfunction, not a decision.
+    silent_failures: int = 0
 
 
 async def run_proactive_act_case(
@@ -1401,8 +1419,13 @@ async def run_proactive_act_case(
     stop_reason = (
         sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0] if counts else None
     )
+    silent_failures = sum(
+        value for (name, labels), value in metrics.snapshot().items()
+        if name == "nora_silent_failures_total"
+        and dict(labels).get("audience") == "proactive"
+    )
     return ProactiveActDrive(
         outcome=outcome, sent=tuple(adapter.texts), stop_reason=stop_reason,
         silence=int(metrics.get("nora_proactive_silence_total", platform="signal")),
-        screened=None,
+        screened=None, silent_failures=int(silent_failures),
     )

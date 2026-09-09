@@ -1457,3 +1457,25 @@ async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_s
         assert path._participation_runner is None
     finally:
         await deps.background.cancel_all()
+
+
+async def test_a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off(
+    cfg, tmp_path,
+):
+    """Audit 2026-09-09: a proactive row written yesterday still comes due
+    after `[dreamer] enabled` is flipped off, and the screen admits it — so
+    the act turn's runner is gated on the home room (the row's existence
+    condition), not on the adaptor being wired. Without it every such row
+    would die `failed_error`."""
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": False, "notes.enabled": True, "heartbeat.enabled": True,
+        "participation.enabled": False,
+    }))
+    try:
+        assert "proactive" not in [a.name for a in deps.dream_adaptors]
+        (loop,) = _spawned(deps, "HeartbeatLoop.run")
+        path = loop._fire.__self__
+        assert path._proactive_runner is not None
+    finally:
+        await deps.background.cancel_all()

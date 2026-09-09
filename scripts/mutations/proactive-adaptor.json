@@ -114,8 +114,8 @@
  {
   "name": "D11 a retired note cancels the row",
   "file": "nora/app/proactive_screen.py",
-  "old": "        if current is None or current[0].retired_at is not None:",
-  "new": "        if current is None:",
+  "old": "        if current[0].retired_at is not None:\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
+  "new": "        if False:\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
   "target": "tests/unit/test_heartbeat_loop.py -k a_retired_note_cancels_the_row"
  },
  {
@@ -207,7 +207,7 @@
   "file": "nora/language/proactive.py",
   "old": "            if decision.note_id is None or decision.note_id in seen:",
   "new": "            if decision.note_id is None:",
-  "target": "tests/unit/test_proactive_adaptor.py -k commit_records_one_wake_per_note_decided_about"
+  "target": "tests/unit/test_proactive_adaptor.py -k commit_records_one_wake_per_note_it_decided_to_raise"
  },
  {
   "name": "D2 no home room, no pass",
@@ -242,6 +242,34 @@
   "file": "nora/language/proactive.py",
   "old": "            if decision.action != \"remind\":\n                continue\n",
   "new": "",
-  "target": "tests/unit/test_proactive_adaptor.py -k commit_records_one_wake_per_note_decided_about"
+  "target": "tests/unit/test_proactive_adaptor.py -k commit_records_one_wake_per_note_it_decided_to_raise"
+ },
+ {
+  "name": "audit: an unreachable note is a wiring gap, not a retirement",
+  "file": "nora/app/proactive_screen.py",
+  "old": "                row.id, note_id, convo.workspace,\n            )\n            return ReminderState.FAILED, FAILED_ERROR",
+  "new": "                row.id, note_id, convo.workspace,\n            )\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
+  "target": "tests/unit/test_heartbeat_loop.py -k a_note_the_rows_workspace_cannot_reach_fails_closed"
+ },
+ {
+  "name": "audit: the act runner is gated on the home room, not the adaptor",
+  "file": "nora/app/composition.py",
+  "old": "            proactive_runner=participation_runner if proactive_homes else None,",
+  "new": "            proactive_runner=participation_runner if proactive_wired else None,",
+  "target": "tests/test_composition.py -k a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off"
+ },
+ {
+  "name": "audit: a refused remind attempt fails a quiet decide case",
+  "file": "evals/proactive.py",
+  "old": "        if result.remind_attempts:",
+  "new": "        if False:",
+  "target": "tests/unit/test_proactive_evals.py -k a_refused_remind_attempt_fails_a_quiet_decide_case"
+ },
+ {
+  "name": "audit: a silent failure behind a silent act turn is ERROR",
+  "file": "evals/proactive.py",
+  "old": "    if result.silent_failures:",
+  "new": "    if False:",
+  "target": "tests/unit/test_proactive_evals.py -k a_silent_failure_behind_a_silent_act_turn_is_an_error"
  }
 ]

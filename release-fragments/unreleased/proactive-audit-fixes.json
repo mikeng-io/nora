@@ -1,0 +1,15 @@
+{
+  "type": "fix",
+  "summary": "The proactive pass and its act turn fail closed in four more places the independent audit found, and the two eval suites stop passing quiet cases for the wrong reason.",
+  "details": [
+    "A proactive reminder whose note the room's workspace can no longer reach is not fired and not reported as retired; it fails as a wiring gap.",
+    "A proactive reminder written before the Dreamer was switched off still fires or declines properly: the act turn's runner exists whenever a home room does.",
+    "A proactive pass that cannot read its own decision log refuses to run rather than deciding over a placeholder.",
+    "The decide suite counts a refused `remind` attempt on a quiet day as a false positive; the act suite reports a guard-refused send as an error, never as a healthy silence.",
+    "A workspace with no home room no longer costs a tool-registry build and an error line every morning.",
+    "The strikes line a pass reads says «decided to raise Nx» rather than «raised Nx»; a decline charges no strike."
+  ],
+  "limitations": [
+    "A room that stops being the home room keeps firing already-written proactive reminders while its `proactive` flag stays on; clear the flag on the old room when moving one."
+  ]
+}

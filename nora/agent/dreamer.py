@@ -919,26 +919,14 @@ class DreamerRuntime:
                     adaptor, "unavailable", 0, sha, None, started,
                 )
 
-            tools = self._tools.build(
-                key=key, names=frozenset(adaptor.tools),
-                # A workspace-keyed adaptor's key IS the workspace (32 §3.4):
-                # supply it so the workspace-scoped verbs resolve it directly
-                # instead of asking `workspace_for` to name a room that does
-                # not exist. A scope-keyed adaptor supplies nothing and its
-                # tools resolve through the room, unchanged.
-                workspace=key if adaptor.key_kind == "workspace" else None,
-                adaptor=adaptor.name, grant=grant,
-            )
-            # The BUDGETS, not the guard. A `DreamGuard` owns a
-            # `CallLedger`, and a ledger is SPENT STATE — build one per run
-            # and the second sample starts with the first's tool calls
-            # already counted against it, so an adaptor with N samples would
-            # silently get a fraction of its declared budget per sample.
-            # Inert for the two adaptors that ship (both tool-free) and
-            # exactly the shape that stays inert until it does not, so the
-            # guard is built inside `_sample` instead.
-            tool_budgets = _tool_budgets(
-                tools, adaptor, self._tool_budget_overrides)
+            # `inputs` BEFORE `build` (audit 2026-09-09): a blank prompt is
+            # the fire condition, and building a whole tool registry — with
+            # its roster source and, for a home-room grant on a workspace
+            # that names none, a daily ERROR line — for a run that is about
+            # to be skipped is cost with nothing to show for it. Nothing
+            # below the blank check reads `tools`, and nothing in `inputs`
+            # reads them either: an adaptor's inputs are its stores, never
+            # its tools.
             prompt = await adaptor.inputs(key=key, batch=batch)
             if not prompt.strip():
                 # **THE FIRE CONDITION, and it is general rather than the fact
@@ -969,6 +957,26 @@ class DreamerRuntime:
                 return self._finish(
                     adaptor, "nothing_found", written, sha, None, started,
                 )
+            tools = self._tools.build(
+                key=key, names=frozenset(adaptor.tools),
+                # A workspace-keyed adaptor's key IS the workspace (32 §3.4):
+                # supply it so the workspace-scoped verbs resolve it directly
+                # instead of asking `workspace_for` to name a room that does
+                # not exist. A scope-keyed adaptor supplies nothing and its
+                # tools resolve through the room, unchanged.
+                workspace=key if adaptor.key_kind == "workspace" else None,
+                adaptor=adaptor.name, grant=grant,
+            )
+            # The BUDGETS, not the guard. A `DreamGuard` owns a
+            # `CallLedger`, and a ledger is SPENT STATE — build one per run
+            # and the second sample starts with the first's tool calls
+            # already counted against it, so an adaptor with N samples would
+            # silently get a fraction of its declared budget per sample.
+            # Inert for the two adaptors that ship (both tool-free) and
+            # exactly the shape that stays inert until it does not, so the
+            # guard is built inside `_sample` instead.
+            tool_budgets = _tool_budgets(
+                tools, adaptor, self._tool_budget_overrides)
         except Exception:
             log.exception(
                 "dream run failed (adaptor=%s key=%s)", adaptor.name, key,

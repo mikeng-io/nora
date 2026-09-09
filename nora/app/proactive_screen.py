@@ -31,11 +31,11 @@ No model is called for a refused row; the heartbeat resolves it and moves
 on. A row with no note in its payload is screened on the flag alone.
 
 FAIL-CLOSED, and the three states are kept apart. A note store that is not
-wired, a note that cannot be read, or a policy that cannot name the room's
-workspace is «I could not check», and a row that cannot be screened does
-not fire: `FAILED` / `failed_error`, logged, never `cancelled` (which would
-claim the note moved) and never admitted (which would speak on a premise
-nobody verified).
+wired, a note that cannot be read, a note the row's workspace cannot reach,
+or a policy that cannot name the room's workspace is «I could not check»,
+and a row that cannot be screened does not fire: `FAILED` / `failed_error`,
+logged, never `cancelled` (which would claim the note moved or was retired)
+and never admitted (which would speak on a premise nobody verified).
 """
 
 from __future__ import annotations
@@ -131,7 +131,20 @@ class ProactiveScreen:
                 "on an unverified premise", row.id, note_id,
             )
             return ReminderState.FAILED, FAILED_ERROR
-        if current is None or current[0].retired_at is not None:
+        if current is None:
+            # `read` answers None for absent, for another workspace, and for
+            # an id that is not UUID-shaped — «not reachable from here», which
+            # is not «retired». A workspace renamed in policy.toml between
+            # decide and fire lands here; claiming the note was retired would
+            # be a fact about the note nobody checked. Not fired, not
+            # cancelled: `failed_error`, the wiring-gap outcome.
+            log.error(
+                "proactive reminder %s names note %s, which workspace %r cannot "
+                "reach; not firing on an unverified premise",
+                row.id, note_id, convo.workspace,
+            )
+            return ReminderState.FAILED, FAILED_ERROR
+        if current[0].retired_at is not None:
             return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED
         moved = tag_path_progressed_since_wake(
             head_revision_id=current[0].head_revision_id,
