@@ -732,6 +732,72 @@ services:
       start_period: 240s
       retries: 3
 
+  # --- the metrics reader, and the path an alert takes to a human -----------
+  #
+  # Added 2026-09-09. Until then NOTHING scraped the 94 `nora_*` series: they
+  # were exposed on :9100 and read only when a human curled them, while
+  # `nora-egress.service` sat in `failed` for sixteen days with nothing to say
+  # so. Three stores and no reader — `docs/observability.md`.
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    container_name: nora-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 30 days. At this deployment's volume (94 series, 30s scrape) that is
+      # well under a gigabyte, and it is the window in which "when did this
+      # start" is still a useful question.
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    networks: [nora]
+    ports:
+      # 127.0.0.1 like every other admin surface here: reachable over the
+      # Tailscale host, never published to the LAN.
+      - "127.0.0.1:9190:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: nora-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    networks: [nora]
+    ports:
+      - "127.0.0.1:9193:9093"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  alert-bridge:
+    build: ./deploy/alert-bridge
+    image: nora-alert-bridge:latest
+    container_name: nora-alert-bridge
+    restart: unless-stopped
+    environment:
+      - SIGNAL_RPC_URL=http://signal-cli:18080/api/v1/rpc
+      # WHO gets told. Empty means alerts are rendered, logged and dropped —
+      # the bridge says so at ERROR rather than pretending to deliver.
+      - ALERT_SIGNAL_RECIPIENT=${ALERT_SIGNAL_RECIPIENT:-}
+    networks: [nora]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:9110/health',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
 networks:
   nora:
   # SearXNG + Firecrawl network joins REMOVED (DEC-73, 2026-08-08): web_search is
@@ -757,6 +823,8 @@ networks:
   # way it would if it joined `nora` itself.
 
 volumes:
+  prometheus-data:
+  alertmanager-data:
   db-data:
   # slug -> URL data (valkey) and artifact bytes (rustfs) for the `drop`
   # service (docs/superpowers/specs/2026-08-12-nora-drop-design.md).
