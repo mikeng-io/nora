@@ -63,6 +63,55 @@ def looks_like_coordinate(text: str) -> bool:
     return _COORD_RE.search(text) is not None
 
 
+#: What lands on a span in place of text the egress floor refuses. It NAMES the
+#: pattern that fired, because «the trace shows nothing» and «the trace refused
+#: to show it» are different readings and only one of them is a bug.
+TRACE_WITHHELD = "(withheld from the trace: {reason})"
+
+
+def trace_safe(text: str) -> tuple[str, str]:
+    """`(what may go on a span, why the rest did not)`.
+
+    **A trace is an egress.** The collector is a third party over the network,
+    and `nora.agent.egress`'s own docstring says an identifier is «never safe to emit
+    **or transmit**, whatever the destination». A prompt carries a turn's raw
+    tool results — a `where_is` result is a live coordinate — so the two floor
+    predicates that guard every other write of that class run here too.
+
+    **Reused, not reinvented**, and deliberately the same pair
+    `nora.agent.dream_screen` calls rather than `screen` itself: `screen` counts
+    `nora_dream_screened_total{adaptor}`, and a trace decision incrementing a
+    Dreamer series would make that counter answer two questions at once.
+    `scan_identifiers` and not `scan_reply`, for `dream_screen`'s stated reason
+    — `scan_reply`'s model-name pattern matches nine ordinary English words and
+    is only ever right for text addressed to the group.
+
+    **Fails closed at whole-text granularity**, which is the known cost: one
+    coordinate anywhere in a prompt withholds the whole prompt. The provenance
+    survives it — a caller stamps a `*_sha256` either way and the turn's own
+    row is retained in Postgres — so the text is re-derivable by reference
+    exactly when it is not readable inline. Splitting the render into per-block
+    redaction is the better answer and is a larger change than this carries.
+
+    **It lives HERE rather than in `nora.obs.tracing`**, and that placement is
+    forced rather than chosen: `nora.obs` sits BELOW `nora.agent` in the import
+    contract, so the tracing helper cannot reach these predicates. The screen is
+    therefore the CALLER's obligation at every generation span — stated in
+    `docs/observability.md`, and the reason `generation`'s `prompt`/`completion`
+    parameters document that they take already-screened text.
+
+    It was `_trace_safe` in `nora/engagement/stages/debrief.py` until 2026-09-09,
+    private to the one stage that had thought about it, while the relevance gate
+    put a prompt digest on its span and no prompt at all.
+    """
+    offence = scan_identifiers(text)
+    if offence is not None:
+        return TRACE_WITHHELD.format(reason=offence), offence
+    if looks_like_coordinate(text):
+        return TRACE_WITHHELD.format(reason="coordinate"), "coordinate"
+    return text, ""
+
+
 def _names_a_person(text: str, names: frozenset[str]) -> bool:
     """Whether a venue/route argument names a known person. Substring,
     because a home address is phrased AROUND a name (「陳生屋企」), not as

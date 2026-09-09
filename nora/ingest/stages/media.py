@@ -215,6 +215,16 @@ async def run(
                 # the way re-reading the store could, so a voice note that
                 # was JUST written always reaches the transcriber.
                 blob, plaintext = taken
+                # NO SPAN HERE, and that is a decision rather than an omission
+                # (`docs/observability.md`, "what counts as a generation").
+                # SenseVoice is a local ASR service on Nora's own private
+                # network, not an LLM, and Langfuse is an LLM-observability
+                # tool — R-76's whole lesson is what happens when everything
+                # that runs gets a trace. Its outcome ships on
+                # `nora_speech_transcriptions_total` with R-27's three states,
+                # which is the Prometheus question it actually is. The WORDS
+                # still reach a trace: the summary pass over this transcript is
+                # a real model call and runs under `comprehend`.
                 stt_outcome = await transcriber.transcribe(
                     data=plaintext, media_type=blob.media_type, language=language,
                 )

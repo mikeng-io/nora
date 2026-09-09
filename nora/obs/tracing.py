@@ -228,6 +228,154 @@ def span(name: str, **attributes: object) -> Iterator[None]:
             log.debug("span %s did not close cleanly", name, exc_info=True)
 
 
+#: The two spellings of "this span is a model call", emitted TOGETHER by
+#: `generation` and nowhere else. PUBLIC so the architecture test DERIVES the
+#: vocabulary it forbids elsewhere rather than hand-copying it (AGENTS.md).
+#:
+#: `gen_ai.*` is the OTel GenAI semantic convention — what a future collector,
+#: and Jaeger's own attribute search, read. `langfuse.observation.*` is what
+#: TODAY'S collector renders a generation from: without it Langfuse shows the
+#: span as a plain span with no model, no latency attribution and no place to
+#: put input/output, which is the difference between a trace of a model call
+#: and a rectangle that happens to be named after one.
+#:
+#: They are two spellings of one fact and neither is guessed. Both were verified
+#: against a live trace (`relevance_gate`, 2026-09-08) before this constant
+#: existed to hold them: it is the block that trace proved, lifted out of the
+#: one call site that had it.
+GENERATION_ATTRIBUTES = ("langfuse.observation.type", "gen_ai.operation.name")
+
+
+@contextmanager
+def generation(
+    name: str,
+    *,
+    model: str = "",
+    root: bool = False,
+    prompt: str = "",
+    completion: str = "",
+    attributes: dict[str, object] | None = None,
+) -> Iterator[None]:
+    """One MODEL CALL, spelled the one way Langfuse renders as a generation.
+
+    **This exists because the spelling was copied, and copies drift.** Two call
+    sites hand-rolled the attribute block — `nora/ingest/relevance_gate.py` and
+    `nora/engagement/stages/debrief.py` — and by the time there were two they
+    had already diverged: the debrief carried `langfuse.observation.input` and
+    `output`, the gate carried neither, so one generation was readable in the
+    collector and the other was a name with a latency. Everything else that
+    calls a model carried no spelling at all and rendered as a bare span. Four
+    dialects for one fact (measured against 1041 live traces, 2026-09-09).
+
+    **`root=True` is the R-76 declaration, and it is not the default.** A
+    generation that hangs under a turn's root inherits that root's sampling
+    decision and must NOT re-declare anything — `ParentBased` gives a child its
+    parent's decision, so `nora.trace_kind` on a non-root is inert (and reads,
+    to the next person, as though it were doing something). Pass `root=True`
+    only where this span genuinely opens its own trace: work reached off an
+    ingest path that is itself plumbing, or spawned work that has detached with
+    `attached(None)`.
+
+    **`prompt`/`completion` must ALREADY BE SCREENED** — `nora.agent.egress`'s
+    `trace_safe` is the screen, and it cannot be applied here: `nora.obs` sits
+    BELOW `nora.agent` in the import contract (`pyproject.toml`, "layered
+    architecture"), so this module cannot reach the egress predicates and must
+    not pretend to. A trace is an egress — the collector is a third party over
+    the network — so a caller that passes raw model text past this parameter
+    has moved an identifier onto the wire. `tests/architecture/
+    test_generation_spans_use_the_helper.py` is what keeps the dialect here;
+    the screen is the caller's, stated in `docs/observability.md`.
+
+    **`attributes` is a DICT, not `**kwargs`**, unlike `span`'s. `span` has no
+    keyword parameters of its own, so a caller's `**{...}` cannot collide with
+    one; this function has four, and a `dict[str, str]` splatted past them is
+    a type error mypy reports at the CALL SITE (`root` expects a `bool`) rather
+    than a name the caller can see. One explicit parameter costs a `attributes=`
+    at three call sites and removes the collision entirely.
+
+    Both halves are OPTIONAL and omitted rather than blanked when empty: an
+    absent `langfuse.observation.input` reads as "this span does not carry the
+    prompt", where an empty string reads as "the prompt was empty", and those
+    are different claims about the same turn.
+    """
+    attrs: dict[str, object] = {
+        "langfuse.observation.type": "generation",
+        "gen_ai.operation.name": "chat",
+    }
+    # OMITTED, not blanked, when the model is not known yet. `""` renders in
+    # Langfuse as a generation whose model is the empty string — a positive
+    # claim that is false — where an absent attribute reads as "not stated".
+    # It is genuinely not always known at span start: the media comprehension
+    # learns which describer answered FROM the result (a voice note's title is
+    # written by the text model, not the audio one), so it opens the span
+    # without a model and calls `annotate_generation(model=...)` on the way out.
+    if model:
+        attrs["langfuse.observation.model.name"] = model
+        attrs["gen_ai.request.model"] = model
+    if root:
+        attrs[TRACE_KIND] = "generation"
+    if prompt:
+        attrs["langfuse.observation.input"] = prompt
+    if completion:
+        attrs["langfuse.observation.output"] = completion
+    attrs.update(attributes or {})
+    with span(name, **attrs):
+        yield
+
+
+def annotate_generation(
+    *,
+    model: str = "",
+    completion: str = "",
+    finish_reason: str = "",
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    total_tokens: int | None = None,
+    attributes: dict[str, object] | None = None,
+) -> None:
+    """The half of a generation only known on the way OUT, in the same spelling.
+
+    `span` takes its attributes at entry (it has to — the sampler reads them),
+    and a completion does not exist yet at that point. This is `annotate` with
+    the two names that matter pre-filled, so a call site does not re-derive
+    them and cannot spell them a third way.
+
+    Same screening contract as `generation`: `completion` is text a model wrote
+    and reaches a third party over the network. Screen it first.
+
+    **The token counts belong here rather than in a caller's return type.**
+    Usage is the provider's fact and no caller's verdict depends on it; widening
+    a port to carry a number only the collector reads would be the measurement
+    changing the thing it measures. Strands emits `gen_ai.usage.*` itself, so
+    only the raw `chat.completions.create` paths need this — and every one of
+    them exported as a generation costing zero until 2026-09-08.
+    """
+    out: dict[str, object] = {}
+    if model:
+        out["langfuse.observation.model.name"] = model
+        out["gen_ai.request.model"] = model
+    if completion:
+        out["langfuse.observation.output"] = completion
+    if finish_reason:
+        out["gen_ai.response.finish_reasons"] = finish_reason
+    if input_tokens is not None and output_tokens is not None and total_tokens is not None:
+        # FIVE NAMES FOR THREE NUMBERS, deliberately. Langfuse reads the
+        # `input`/`output`/`total` triple; `prompt_tokens`/`completion_tokens`
+        # are the names its older mapping uses, and a collector upgrading (or
+        # downgrading) under us must not silently price every call at zero
+        # again. Written only when ALL THREE arrived: a provider that omits
+        # usage records NOTHING rather than zero, because writing 0 asserts the
+        # call was free — the same argument `finish_reason=... or ""` makes one
+        # field over.
+        out["gen_ai.usage.input_tokens"] = input_tokens
+        out["gen_ai.usage.output_tokens"] = output_tokens
+        out["gen_ai.usage.total_tokens"] = total_tokens
+        out["gen_ai.usage.prompt_tokens"] = input_tokens
+        out["gen_ai.usage.completion_tokens"] = output_tokens
+    out.update(attributes or {})
+    annotate(**out)
+
+
 def _safe_attributes(attributes: dict[str, object]) -> dict[str, str | bool | int | float]:
     """Coerce to what OTel accepts, PER KEY, and never raise.
 

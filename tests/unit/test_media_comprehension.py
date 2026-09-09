@@ -16,13 +16,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from opentelemetry import trace
-
 from nora.domain.media import MediaBlob, MediaObject
 from nora.domain.models import PersonRef
 from nora.ingest.comprehension import MediaComprehension, Subject
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import TRACE_KIND, attached, span
+from nora.obs.tracing import TRACE_KIND, span
 from nora.testing import (
     FakeBlobStore,
     FakeMediaInterpreter,
@@ -519,32 +517,40 @@ async def test_a_videos_chunk_record_travels_with_its_result():
 # --- the trace root ---------------------------------------------------------
 
 
-async def test_the_read_opens_its_own_root_rather_than_hanging_off_the_ingest_trace(
+async def test_the_read_is_its_own_trace_and_reaches_the_collector(
     exported_spans,
 ):
-    """`asyncio.create_task` COPIES the caller's contextvars (measured
-    2026-08-28, `nora/obs/tracing.py`), so a span opened inside a spawned job is
-    a CHILD of whatever was current when `schedule` was called — here
-    `ingest.media`. That made the `plumbing` declaration inert (`ParentBased`
-    takes a child's decision from its parent, so declaring `trace_kind` on a
-    non-root does nothing) and held the ingest trace open for as long as a
-    chunked video read takes. `attached(None)` detaches first, the same
-    one-liner `nora/engagement/pipeline.py` already uses for spawned work.
+    """DETACHING AND DROPPING ARE TWO DECISIONS, and this test used to conflate
+    them exactly as the code did.
 
-    **What a PASS looks like, stated before reading the result** (CLAUDE.md:
+    `asyncio.create_task` COPIES the caller's contextvars (measured 2026-08-28,
+    `nora/obs/tracing.py`), so a span opened inside a spawned job is a CHILD of
+    whatever was current when `schedule` was called — here `ingest.media`. That
+    held the ingest trace open for as long as a chunked video read takes.
+    `attached(None)` detaches first, and that half was always right.
+
+    The half that was wrong: the span also declared `plumbing`, so the sampler
+    dropped it, and **the previous version of this test asserted the drop as
+    its pass condition** (`assert "comprehend" not in names`). It therefore
+    passed for two weeks while the media read was the one modality with no
+    trace at all — 1041 live traces held zero `comprehend` roots (read back
+    from Langfuse, 2026-09-09) while `nora_media_comprehension_total` counted
+    the reads happening. Every branch under this span is a model call, so R-76
+    keeps it.
+
+    **What a PASS looks like, stated before reading the result** (AGENTS.md:
     never read an instrument without first checking it can measure the thing).
-    The fixture is built with production's own sampler, whose root rule DROPS a
-    root declaring `plumbing` — which is exactly what this span declares. So:
+    The fixture is built with production's own sampler, and `comprehend` now
+    declares `generation` via `generation(root=True)`. So:
 
-      * detached and declaring plumbing → it is a ROOT → the sampler drops it →
-        it is ABSENT from the export;
-      * attached to `ingest.media` → it is a CHILD → `ParentBased` inherits the
-        parent's sampled decision → it is PRESENT.
+      * it is EXPORTED — a root declaring `generation` is kept; and
+      * its TRACE ID DIFFERS from `ingest.media`'s — which is what detachment
+        means and is a question only the exported ids can answer.
 
-    Absence is therefore the pass, and that is only readable because the
-    positive control below fires: `ingest.media` is a root with no `trace_kind`
-    at all, so it IS exported, which proves the exporter was capturing and the
-    job really ran inside the block.
+    Both assertions are needed and neither implies the other: re-attaching to
+    the ingest span would still export it (as a child, one trace), and going
+    back to `plumbing` would still detach it (as a dropped root). The old test
+    could only see the second failure.
     """
     job, spawn = _job()
 
@@ -552,58 +558,28 @@ async def test_the_read_opens_its_own_root_rather_than_hanging_off_the_ingest_tr
         _schedule(job, _subject())
         await spawn.drain()
 
-    names = [s.name for s in exported_spans.get_finished_spans()]
-    # CONTROL 1 — the exporter was capturing.
-    assert "ingest.media" in names, "the exporter captured nothing"
-    # CONTROL 2 — a span was actually OPENED. Absence is the pass condition
-    # above, so without this, DELETING the `span(...)` block entirely would
-    # pass exactly as readily as detaching it does, and the test would be
-    # guarding nothing. `_inflight` proves the coroutine ran; only a tracer
-    # that saw the span proves the span exists.
-    seen: list[str] = []
-    with span("probe"), attached(None), span("comprehend", **{TRACE_KIND: "generation"}):
-        seen.append(trace.get_current_span().name)
-    assert seen == ["comprehend"], (
-        "the harness cannot observe a span at all; the assertion below would "
-        "pass against a build that opened none"
+    spans = {s.name: s for s in exported_spans.get_finished_spans()}
+    # CONTROL — the exporter was capturing at all. Without it every assertion
+    # below is also true of a run in which nothing was traced.
+    assert "ingest.media" in spans, "the exporter captured nothing"
+
+    assert "comprehend" in spans, (
+        "the comprehension span never reached the collector — it is either "
+        "declaring `plumbing` again (the sampler drops such a root) or no "
+        "longer opened at all"
     )
-    assert "comprehend" not in names, (
-        "the comprehension span was exported, which means it was a CHILD of "
-        "the ingest span — a plumbing declaration on a non-root does nothing "
-        "under ParentBased, so `attached(None)` is missing"
+    assert (
+        spans["comprehend"].context.trace_id != spans["ingest.media"].context.trace_id
+    ), (
+        "the comprehension span is in the SAME trace as the ingest span, so it "
+        "is a CHILD of it: `attached(None)` is missing and the ingest trace is "
+        "held open for as long as a video read takes"
     )
-    # And the span the JOB opened is the one named `comprehend`: a build that
-    # renamed it would satisfy the absence assertion for the wrong reason.
-    assert "comprehend" in _span_names_opened_by(job), (
-        "the job no longer opens a span called `comprehend`"
-    )
-
-
-def _span_names_opened_by(job) -> set[str]:
-    """The span names `MediaComprehension._run` opens, read off its source.
-
-    A static read, and deliberately so: the span is DROPPED at the sampler
-    (that is the pass condition above), so no exporter can name it, and a
-    runtime probe would have to disable the very sampler the rest of the test
-    depends on. What this guards is narrow and worth guarding — that the
-    absence asserted above is the absence of THIS span rather than of a span
-    somebody renamed or deleted.
-    """
-    import ast
-    import inspect
-
-    from nora.ingest import comprehension as _mod
-
-    tree = ast.parse(inspect.getsource(_mod))
-    return {
-        node.args[0].value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "span"
-        and node.args
-        and isinstance(node.args[0], ast.Constant)
-    }
+    assert spans["comprehend"].parent is None, "the comprehension span is not a root"
+    # And it is spelled the one way Langfuse renders a generation from — the
+    # whole point of routing it through `nora.obs.tracing.generation`.
+    assert spans["comprehend"].attributes["langfuse.observation.type"] == "generation"
+    assert spans["comprehend"].attributes[TRACE_KIND] == "generation"
 
 
 async def test_the_caveat_reaches_memory_with_the_reading():

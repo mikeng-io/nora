@@ -357,7 +357,10 @@ summary — update-in-place, separate from the Dreamer and Honcho).
 
 ## Instruments and spans (one line each — war-stories in `docs/CONVENTIONS.md`)
 
-The catalogue of instances is
+**`docs/observability.md` is the map**: what the three signals are for, how a
+span physically reaches a collector (there are TWO filters, and only the first
+is visible from this repo), how to instrument a model call, and how to read any
+of it back. Read it before adding an instrument. The catalogue of instances is
 `design/dreamer-agent-loop/02-instrument-blindness.md`; these are the rules it
 earned. They are the `measure` verb pointed at our own instruments.
 
@@ -371,6 +374,15 @@ earned. They are the `measure` verb pointed at our own instruments.
 - **Spawned work does not inherit the caller's span.** `create_task` copies the
   context of the task that CALLS it, so work handed to a worker starts its own
   trace unless the intended context is captured and attached explicitly.
+- **One spelling for "this span is a model call".** `nora.obs.tracing.
+  generation` / `annotate_generation` own the `gen_ai.*` and
+  `langfuse.observation.*` vocabulary; a call site never writes those names. The
+  spelling was hand-rolled twice, diverged, and left every raw call priced at
+  zero tokens.
+- **Detaching a span and dropping it are two decisions.** Spawned work should
+  detach so it does not hold a trace open; that is not a reason to declare it
+  plumbing. Conflating them hid every media read from the collector for two
+  weeks while its counter recorded them.
 - **A span with only a name is worse than no span** — carry what makes the step
   re-derivable. Empty traces read as progress; an absence at least asks.
 - **Instruments measure the RESULT; something must measure the COST.** An index
