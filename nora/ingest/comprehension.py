@@ -66,7 +66,7 @@ from nora.domain.ports import (
     MediaObjectStore,
     MemoryStore,
 )
-from nora.obs.tracing import TRACE_KIND, attached, span
+from nora.obs.tracing import annotate, annotate_generation, attached, generation
 
 log = logging.getLogger("nora.ingest.comprehension")
 
@@ -221,10 +221,22 @@ class MediaComprehension:
             # under `ParentBased` and held the ingest trace open for as long as
             # a chunked video read takes. The same one-liner
             # `nora/engagement/pipeline.py` already uses for spawned work.
-            with attached(None), span(
+            #
+            # DETACHING AND DROPPING ARE TWO DECISIONS, and until 2026-09-09
+            # this declared `plumbing` and conflated them. Detaching is right;
+            # dropping was not. R-76 keeps the traces whose work CAN contain a
+            # generation, and every branch below this line is a model call —
+            # `MediaInterpreter.describe` for a photo or a clip,
+            # `.summarize` for a voice note's transcript. Declaring it plumbing
+            # made the media read the one modality with no trace at all: 1041
+            # live traces held zero `comprehend` roots (read back from Langfuse
+            # 2026-09-09) while `nora_media_comprehension_total{status="ok"}`
+            # counted the reads happening. `root=True` keeps it its OWN trace —
+            # it still does not hold `ingest.media` open.
+            with attached(None), generation(
                 "comprehend",
-                **{TRACE_KIND: "plumbing",
-                   "nora.platform": platform,
+                root=True,
+                attributes={"nora.platform": platform,
                    "nora.conversation_id": conversation_id,
                    "nora.media_label": subject.label,
                    "nora.media_handle": subject.blob.handle},
@@ -330,6 +342,14 @@ class MediaComprehension:
         # author.
         model = result.model
         provenance = dict(result.provenance or {})
+        # THE MODEL THAT ANSWERED, onto the span that was opened without one.
+        # Same value that goes in `media_objects.describe_model`, so the trace
+        # and the row cannot disagree about which describer produced the text.
+        # The description itself does NOT go on the wire: it is model prose
+        # ABOUT somebody's photo, and the row plus `nora.media_handle` already
+        # re-derives it — the same reasoning `nora/ingest/relevance_gate.py`
+        # gives for keeping a room's own words off its span.
+        annotate_generation(model=model)
         stored = await self._store.comprehend(
             sha256=blob.sha256, title=result.title, description=result.text,
             content=content, model=model,
@@ -470,3 +490,15 @@ class MediaComprehension:
             "nora_media_comprehension_total",
             platform=platform, label=label, status=status, reason=reason,
         )
+        # THE SAME R-27 ANSWER ONTO THE SPAN. The counter says how many reads
+        # ended which way across the deployment; the span says how THIS one
+        # did, which is the question an operator holding a handle actually has.
+        # A `comprehend` trace that carried only a name would make every
+        # outcome — read, already-read, unreadable, blob gone — look identical
+        # ("a span with only a name is worse than no span"). Safe on every
+        # path: `annotate` is a no-op when no span is current, which is what
+        # `_run`'s own error branch is.
+        annotate(**{
+            "nora.outcome": status,
+            "nora.media_comprehension.reason": reason,
+        })
