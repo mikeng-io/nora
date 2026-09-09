@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Documentation only — AGENTS.md's Measure verb gains the rule that a model's input has to explain itself, with the war-story in docs/CONVENTIONS.md. No code, no behaviour, nothing a user sees."
+}
