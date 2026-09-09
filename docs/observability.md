@@ -398,7 +398,7 @@ Sentry rather than instead of it — see "what counts as an error" below.
 |---|---|---|
 | `TargetDown` | `up == 0` for 3m | `nora-egress.service` sat `failed` for sixteen days |
 | `HeartbeatStalled` | tick age > 300s | a stalled loop in a process that still answers HTTP |
-| `PlatformSilent` | adapter event age > 900s | what `deploy/watchdog.sh` checked and never ran to check |
+| `PlatformSilent` | adapter event age > 900s | the one condition the old shell watchdog checked — on no timer, into no channel |
 | `UnavailableOutcomes` | any `*_total{status="unavailable"}` increasing | R-27's third state — the thing this codebase produces *instead of* raising |
 | `MediaCustodyNotConfigured` | attachments arriving with custody off | the silent degrade `media.py` counts rather than raises |
 | `PrometheusNotIngesting` | it stops scraping itself | a monitoring stack's own failure mode is to go quiet and leave everything green |
@@ -438,10 +438,6 @@ Tracing stays with `nora.obs.tracing` and lands in Langfuse.
 
 Recorded here so they are findings rather than surprises.
 
-- **`deploy/watchdog.sh` is now redundant and still present.** Everything it
-  checked is a Prometheus rule with a real delivery path; the script's own
-  alert channel was `echo >&2`. It should be deleted rather than left as a
-  second, weaker answer to a question already answered.
 - **No release is attached to a Sentry issue.** `scripts/build-image.sh` builds
   UNSTAMPED on purpose ("deployments are not releases"), so the container has
   neither `NORA_VERSION` nor `version.json` and "is this new since the last

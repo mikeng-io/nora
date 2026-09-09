@@ -90,8 +90,11 @@ is correct. To tell "quiet" from "broken":
    answered recently.
 
    **Check `platforms` first, not `sse`.** `sse` is Signal's block and only Signal's;
-   it is kept top-level because `deploy/watchdog.sh` parses it and `/health` is
-   additive-only. `platforms` has one entry per ENABLED platform, and **every one of
+   it is kept top-level because `/health` is additive-only — removing a key is a
+   breaking change for anything reading it. (Until 2026-09-09 the stated reason was
+   that `deploy/watchdog.sh` parsed it; that script is deleted, and the
+   additive-only rule is the one that still holds. `nora_last_event_age_seconds`
+   stays unlabelled and Signal's for the same reason — DEC-102.) `platforms` has one entry per ENABLED platform, and **every one of
    them counts toward the status code** — so a 503 with a perfectly green `sse` means a
    non-Signal platform is down, and reading only the four keys above would leave you
    concluding nothing explains it. A platform that is not enabled is ABSENT from
@@ -319,13 +322,16 @@ docker compose exec db psql -U nora -d nora -c 'DROP TABLE alembic_version'
 > still on disk, untouched by the cutover, but everything recorded AFTER the cutover
 > lives only in Postgres.
 
-## 4. "The watchdog alerted"
+## 4. "An alert arrived in the Discord review channel"
 
-`deploy/watchdog.sh` polls `/health` and alerts if the SSE listener has been silent for more
-than 300 seconds (no ingest event in that window). This same script also ships with the
-bare-metal/systemd deployment path documented in `deploy/README.md`, but the live instance
-runs as a **Docker container**, not under systemd — the commands below are for that
-container.
+Prometheus evaluates the rules in `deploy/prometheus/rules/`, Alertmanager groups and
+throttles them, and `deploy/alert-bridge/` posts the result into the review channel.
+`PlatformSilent` is the SSE-silence one — no adapter event for 900 seconds — and the
+rest are in `docs/observability.md`'s table with the incident behind each.
+
+Until 2026-09-09 this section described a shell script polling `/health` on a timer
+that was never created, whose alert channel was `echo >&2`. It was deleted; the
+commands below are unchanged and still the right first moves.
 
 1. Check signal-cli first — it's the more common cause:
 
@@ -390,7 +396,8 @@ The container healthcheck only proves the HTTP layer serves (curl exists in
 the image precisely because node:20-slim ships none). The real detector is
 Nora `/health`'s per-platform `last_event_age_seconds` — the bridge emits
 SSE heartbeats so a dead WhatsApp socket ages that value in a quiet room,
-and `deploy/watchdog.sh` alerts on it. `dropped_events` on the bridge's
+and Prometheus's `PlatformSilent` rule alerts on it (`deploy/prometheus/rules/`,
+delivered to the Discord review channel; the old `watchdog.sh` was deleted 2026-09-09). `dropped_events` on the bridge's
 `/health` (and a WARNING in Nora's log) means inbound events were discarded
 while Nora was disconnected — audit rows were lost; that is counted, never
 silent.
