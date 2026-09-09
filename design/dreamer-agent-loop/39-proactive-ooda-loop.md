@@ -570,7 +570,7 @@ threshold is the operator's; it is a number.
 | 8 | `SILENT` reachable for `proactive`; `_state_for` third mapping | `nora/app/fire.py`, `nora/app/heartbeat.py` | small |
 | 9 | decide objective | Dreamer corpus | one file |
 | 10 | two eval suites plus the harness pieces §5 lists | `evals/`, `nora/app/eval_support.py` | the other main piece |
-| 11 | DEC-133 (1) deprecated in half, (2) annotated; new DEC for D3–D5; 33 §8 banner; #103 updated | `design/09-decision-index.md`, 33, GitHub | governance |
+| 11 | DEC-133 (1) deprecated in part, DEC-162 added (NOT ENFORCED until built), 33 §8 banner, #103 updated — **done 2026-09-09** | `design/09-decision-index.md`, 33, GitHub | governance |
 
 Items 4 and 10 are the work. R-1b and its test do not change.
 
@@ -586,7 +586,7 @@ Items 4 and 10 are the work. R-1b and its test do not change.
 
 ## Status / Checkpoint
 
-Design only. No code. Supersedes 38; revises 33 §8; deprecates DEC-133 (1) in
+Design only. No code. Supersedes 38; revises 33 §8; DEC-162 records it; DEC-133 (1) is deprecated in
 half. Version 2 after two reviews and the operator's read of v2: D3 keeps `remind` and stamps it by provenance, D5's owner mechanism, D11's
 predicate and D12's state mapping changed; §1 now says which inputs carry her
 own words; §5 names what the harness lacks. The build is issue #103, which
