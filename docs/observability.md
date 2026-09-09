@@ -35,6 +35,7 @@ matter.
 | **metrics** | Prometheus (`:9100/metrics`) | how many, how often, with what outcome | *aggregate*, over the deployment |
 | **traces** | Langfuse (+ Jaeger) | what happened in THIS turn, in what order, at what cost | *one instance*, re-derivable |
 | **logs** | stdout, JSON lines | what a specific line of code saw | *forensic*, after the fact |
+| **errors** | Sentry | which stack trace, how often, and is it new | *grouped*, per exception |
 
 **The rule that keeps them apart:** Langfuse is an LLM-observability tool, so a
 trace reaches it when the work under it *can contain a model call*. Everything
@@ -355,17 +356,82 @@ What to log at WARNING versus ERROR, and which fields a given event must carry,
 is still per-author. The transport, the field set and the two rules above are
 conventioned; the editorial judgement is not.
 
+## Alerting
+
+Three stores and no reader was the state until 2026-09-09. `deploy/prometheus/`
+and `deploy/alertmanager/` are the reader; `deploy/alert-bridge/` is how an
+alert reaches a person.
+
+```
+nora:9100 ─┐
+presence  ─┼─▶ Prometheus ──▶ Alertmanager ──▶ alert-bridge ──▶ signal-cli ──▶ 📱
+analytics ─┘   (scrape 30s,     (group,           (webhook →
+                rules)           throttle)         JSON-RPC)
+```
+
+**The bridge is a separate container and does not go through Nora.** Nora
+already talks to signal-cli, so an `/alerts` endpoint on its aiohttp app would
+have been three lines — and it would have made the most important alert this
+stack can send, "Nora is down", depend on Nora being up. An alerting path that
+shares a failure domain with the thing it watches is decoration. It is stdlib
+only for the same reason: every dependency it does not have is one that cannot
+fail during an incident.
+
+**Every rule is an ABSENCE**, which is the whole reason this exists alongside
+Sentry rather than instead of it — see "what counts as an error" below.
+
+| alert | fires on | the incident behind it |
+|---|---|---|
+| `TargetDown` | `up == 0` for 3m | `nora-egress.service` sat `failed` for sixteen days |
+| `HeartbeatStalled` | tick age > 300s | a stalled loop in a process that still answers HTTP |
+| `PlatformSilent` | adapter event age > 900s | what `deploy/watchdog.sh` checked and never ran to check |
+| `UnavailableOutcomes` | any `*_total{status="unavailable"}` increasing | R-27's third state — the thing this codebase produces *instead of* raising |
+| `MediaCustodyNotConfigured` | attachments arriving with custody off | the silent degrade `media.py` counts rather than raises |
+| `PrometheusNotIngesting` | it stops scraping itself | a monitoring stack's own failure mode is to go quiet and leave everything green |
+
+`UnavailableOutcomes` is written generically over every `*_total` carrying the
+label, so a counter added next month is covered the day it ships — the same
+derive-don't-hand-copy rule AGENTS.md holds for label vocabularies.
+
+**Thresholds are deliberately slack** (900s for platform silence, not the old
+script's 300s; a 12h repeat interval). A rule that cries wolf is a rule
+somebody mutes, and a muted channel is the state we started from.
+
+### What counts as an error
+
+Sentry (`nora/obs/errors.py`, `[obs.errors]`) holds the other half, and the
+split is not about tooling preference:
+
+|  | Sentry | Prometheus |
+|---|---|---|
+| answers | "what threw?" | "what stopped?" |
+| detects | a bad event **appearing** | a good event **disappearing** |
+| sees | the 223 `log.exception` sites, plus anything escaping to the top | a counter label, a gauge that stopped moving, a target that went away |
+
+**Neither substitutes for the other here, and the asymmetry is architectural.**
+This codebase is built not to raise — 210 docstrings promise it, 45 metric specs
+declare an `unavailable` state — so its characteristic failure is a counter
+label rather than a traceback. Nothing threw when the media read exported zero
+traces for two weeks; nothing threw when `nora-egress.service` was dead for
+sixteen days. Sentry would have shown green through both.
+
+Sentry is errors **only** — `traces_sample_rate` is 0. A second tracing
+pipeline would write a second, incompatible trace id for the same turn, and a
+trace that exists twice differently cannot be re-derived from either copy.
+Tracing stays with `nora.obs.tracing` and lands in Langfuse.
+
 ## Known gaps
 
 Recorded here so they are findings rather than surprises.
 
-- **Nothing scrapes the metrics, and nothing alerts.** Measured 2026-09-09:
-  no Prometheus, no Alertmanager, no scraper of any kind, and no established
-  connection to `:9100`. The 94 `nora_*` series exist only while a human is
-  curling them. `deploy/watchdog.sh` is present but on no timer and no cron.
-  `nora-egress.service` had been in `failed` state for sixteen days and nothing
-  said so. **This is the largest gap in this document**: three stores and no
-  reader.
+- **`deploy/watchdog.sh` is now redundant and still present.** Everything it
+  checked is a Prometheus rule with a real delivery path; the script's own
+  alert channel was `echo >&2`. It should be deleted rather than left as a
+  second, weaker answer to a question already answered.
+- **No release is attached to a Sentry issue.** `scripts/build-image.sh` builds
+  UNSTAMPED on purpose ("deployments are not releases"), so the container has
+  neither `NORA_VERSION` nor `version.json` and "is this new since the last
+  deploy" is not answerable from an issue.
 - **WARNING-versus-ERROR is still per-author**, as is which fields an event
   must carry. The transport and the field set are conventioned now; the
   editorial judgement is not.
