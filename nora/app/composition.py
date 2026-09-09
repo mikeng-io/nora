@@ -185,6 +185,40 @@ def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
     return cast(ReasoningEffort, value)
 
 
+def _annotate_usage(response: Any) -> None:
+    """Put a raw completion's token counts on the span that is current.
+
+    Strands emits `gen_ai.usage.*` itself; a raw `chat.completions.create`
+    emits nothing, so every raw client has to do this or its call exports to
+    Langfuse as a generation that cost zero. Measured 2026-09-08: the gate and
+    the debrief both did exactly that, and the debrief has since it shipped.
+
+    ON THE SPAN, never in the return type. Usage is the provider's fact and no
+    caller's verdict depends on it; widening a port to carry a number only the
+    collector reads would be the measurement changing the thing it measures.
+
+    A provider that omits usage records NOTHING rather than zero — writing 0
+    would assert the call was free, the same argument `finish_reason=... or ""`
+    makes one field over.
+
+    `tests/architecture/test_raw_model_calls_carry_their_own_machinery.py` is
+    what keeps a fifth raw client from forgetting this.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+    annotate(**{
+        "gen_ai.usage.input_tokens": usage.prompt_tokens,
+        "gen_ai.usage.output_tokens": usage.completion_tokens,
+        "gen_ai.usage.total_tokens": usage.total_tokens,
+        # Langfuse reads the triple above; these two are the names its older
+        # mapping uses, and a collector upgrading under us must not silently
+        # zero the cost again.
+        "gen_ai.usage.prompt_tokens": usage.prompt_tokens,
+        "gen_ai.usage.completion_tokens": usage.completion_tokens,
+    })
+
+
 class _RelevanceGateModelClient:
     """Satisfies `nora.ingest.relevance_gate.ModelClient`
     (design/dreamer-agent-loop/36 §2.3).
@@ -259,18 +293,7 @@ class _RelevanceGateModelClient:
         # WITHOUT this the gate is a GENERATION in Langfuse reporting zero
         # tokens forever (read back live, 2026-09-08), and the cost of the
         # flip to `shadow = false` is exactly what the soak has to price.
-        usage = response.usage
-        if usage is not None:
-            annotate(**{
-                "gen_ai.usage.input_tokens": usage.prompt_tokens,
-                "gen_ai.usage.output_tokens": usage.completion_tokens,
-                "gen_ai.usage.total_tokens": usage.total_tokens,
-                # Langfuse reads the `gen_ai.*` triple above; these two are the
-                # names its older mapping uses, and a collector that upgrades
-                # under us should not silently zero the cost again.
-                "gen_ai.usage.prompt_tokens": usage.prompt_tokens,
-                "gen_ai.usage.completion_tokens": usage.completion_tokens,
-            })
+        _annotate_usage(response)
         choice = response.choices[0]
         return GateCompletion(
             content=(choice.message.content or "").strip(),
@@ -342,6 +365,12 @@ class _DebriefModelClient:
             ),
             timeout=self._timeout_seconds,
         )
+        # The same annotation the gate client makes, for the same reason and
+        # the same measured gap: this client serves the debrief AND the
+        # standing fold, and both exported to Langfuse costing zero tokens.
+        # It goes on the span rather than into `DebriefCompletion` — usage is
+        # the provider's fact, and neither caller's verdict depends on it.
+        _annotate_usage(response)
         choice = response.choices[0]
         return DebriefCompletion(
             content=(choice.message.content or "").strip(),

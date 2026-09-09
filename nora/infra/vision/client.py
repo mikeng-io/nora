@@ -117,6 +117,31 @@ _AUDIO_FORMATS = {
 }
 
 
+def _checked(response: object, *, what: str) -> str:
+    """The completion's text, or a raise — never a silently truncated body.
+
+    A raw `chat.completions.create` does not raise on a cut-off the way a
+    Strands agent's `MaxTokensReachedException` does: it returns
+    `finish_reason="length"` with a body that stops mid-sentence. Here that
+    body is a description of somebody's photo or video, and a partial one reads
+    exactly like a complete one — an ERROR reported as a PASS (R-27), with no
+    parser to fail on it the way the debrief's JSON would.
+
+    `MediaComprehender` already owns a `MediaDescription` to degrade into and
+    wraps these calls, so raising is the shape that reaches `unavailable`
+    rather than a confident half-read.
+    """
+    choice = response.choices[0]                              # type: ignore[attr-defined]
+    if choice.finish_reason == "length":
+        raise ValueError(
+            f"{what} was cut off at max_tokens — a truncated description "
+            f"reads exactly like a complete one, so it is unavailable, not short"
+        )
+    return (choice.message.content or "").strip()
+
+
+
+
 class UnsupportedPayloadError(Exception):
     """This modality's bytes cannot be put in a content block we can name.
 
@@ -327,7 +352,7 @@ class VisionClient:
             ),
             timeout=self._timeout,
         )
-        return (response.choices[0].message.content or "").strip()
+        return _checked(response, what="the text-only vision call")
 
     async def _describe_with_retry(
         self, *, block: dict[str, object], prompt: str, model: str = "",
@@ -386,5 +411,4 @@ class VisionClient:
             # signature — the gateway reads the JSON, not the Python stub.
             extra_body={"reasoning_effort": self._reasoning_effort},
         )
-        choice = response.choices[0]
-        return (choice.message.content or "").strip()
+        return _checked(response, what="the vision read")
