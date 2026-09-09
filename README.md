@@ -1,10 +1,17 @@
 # Nora
 
-A private ambient AI agent for a friend group's chat — Signal today, Discord
-alongside it. She reads every message silently and
-replies only when tagged. Nora v2 is a two-layer, [Strands Agents SDK](https://github.com/strands-agents/sdk-python)-based
-rebuild of the original hand-rolled v1 — see `design/00-overview.md` for the architecture
-and `ARCHITECTURE.md` (arc42) for the map.
+A private ambient AI agent for a friend group's chat — Signal, Discord and
+WhatsApp. She reads every message silently, answers when tagged, and — in
+rooms the operator has opted in — may speak once on her own: when a room goes
+quiet (participation), or when a pass over what the group has left open
+decides something is worth raising at a chosen hour (proactive). Nora v2 is a
+two-layer, [Strands Agents SDK](https://github.com/strands-agents/sdk-python)-based
+rebuild of the original hand-rolled v1 — see `design/00-overview.md` for the
+architecture and `ARCHITECTURE.md` (arc42) for the map.
+
+**Reading order for a newcomer:** this file, then `GLOSSARY.md` (the words
+that mean something specific here), then `ARCHITECTURE.md`. Everything else
+is detail those three point at.
 
 ## Prerequisites
 
@@ -45,14 +52,15 @@ connects to the signal-cli SSE stream, and starts serving `GET /health` and `GET
 on `obs.metrics.port` (default `9100`).
 
 To get a reply, send a message containing the trigger text (`engagement.trigger.text` in
-`config.toml`, default `nora.000`) in any Signal group her number is a member of. Everything
-else she reads and stores, but never replies to.
+`config.toml`, default `nora.000`) in any group her account is a member of and
+`policy.toml` allows. Everything else she reads and stores; whether she may ever
+speak in a room uncalled is a separate, per-room grant in `policy.toml` (below).
 
-## Architecture: two layers
+## Architecture: two paths, and a background tier
 
 ```
-Signal group
-   │  SSE push (every message)
+Signal / Discord / WhatsApp room
+   │  the platform adapter pushes every message
    ▼
 ① AMBIENT PATH (always, no Agent SDK)
    event → parser → NormalizedMessage → Postgres audit + Honcho feed (mapped senders only)
@@ -60,37 +68,68 @@ Signal group
    └─ trigger text present? ── no ──▶ done, ambient only
                               └─ yes ──▶
 ② TAGGING PATH (trigger only, via the Strands Agents SDK)
-   collect context (recent buffer rows, tagger's Honcho peer card, doctrine)
+   collect context (transcript window, standing, open notes, self card,
+                    tagger's peer history, doctrine)
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
-   → tools: now / load_transcript / send_reply
-            + room-scoped: group_members / lookup_person / about
-            + reminders: remind / list_reminders / cancel_reminder
+   → ~50 native tools, generated into the doctrine's capability section:
+       transcript & memory   load_transcript / who_said / search_memory / about / ask_memory / remember
+       people & places       group_members / lookup_person / where_is / saved_places / route / transit / weather / parking
+       what the group holds  note_read / note_search / note_create / note_update / list_events / create_event / rsvp_event
+       later                 remind / list_reminders / cancel_reminder / make_artifact
+       the world             web_search / web_fetch / social_fetch / media_fetch / generate_image
+       speaking              send_reply / send_gif / send_to (relay to a sibling room)
    → reply → audit row (delivery_status=pending → sent/failed) → Honcho feed
 
 ③ FIRE PATH (no trigger, no tag — the heartbeat, [heartbeat] enabled)
    tick → due rows → re-check policy → take the conversation's slot
    → same context/prefill/guards as ②, with its own header and timeout
    → reply → audit row → Honcho feed
+
+④ THE DREAMER (background, [dreamer] enabled — never speaks, writes derived state)
+   hourly/daily adaptors over the record and the notes: note-candidates,
+   note-curation, proactive (writes a reminder row for ③ to speak)
 ```
 
-Path ③ is the only way Nora ever speaks without being asked. It ships
-disabled; the set of senders is closed and enumerated at two (R-1b). Its
-occasions are enumerated too: a reminder coming due, a version announcement,
-a compute job, a relay — and **participation** (design/dreamer-agent-loop/35),
-the one occasion triggered by the room itself: an untagged message in a room
-the operator opted in (`participation = true` in `policy.toml`) is noted, and
-once the room goes quiet for `[participation] settle_seconds` a single
-determination runs with the right to stay silent. It also ships disabled, and
-a send is capped to at most one per room per `[participation] cooldown_minutes`.
+Path ③ is the only way Nora ever speaks without being asked; the set of
+senders is closed and enumerated at two (R-1b). Its occasions are enumerated
+too: a reminder coming due, a gathering's notify, a version announcement, a
+compute job, a relay, and two that the operator grants per room:
+
+- **participation** (design/dreamer-agent-loop/35): an untagged message in a
+  room with `participation = true` in `policy.toml` is noted, and once the
+  room goes quiet for `[participation] settle_seconds` ONE determination runs
+  with the right to stay silent, at most one send per room per
+  `[participation] cooldown_minutes`. Optionally in front of it, the
+  **Relevance Gate** (design 36, `[relevance_gate]`) — a cheap model that
+  decides whether the room is asking before a full turn is spent.
+- **proactive** (design/dreamer-agent-loop/39, DEC-162): the Dreamer's
+  proactive adaptor reads a workspace's open notes, each room's standing and
+  its own past decisions, and may set ITSELF a reminder for a chosen hour; at
+  that hour a fire turn reads the room again and speaks — or declines, which
+  is recorded as `silent`, a success. Two per-room flags in `policy.toml`:
+  `home_room = true` names the one room of a workspace she stands in (her
+  roster-gated reads resolve through it), `proactive = true` lets such a row
+  fire there. No home room, no proactive pass.
+
+Everything in ③ and ④ ships off. Turning a room on is a `policy.toml` edit
+plus the matching `[section] enabled = true` in `config.toml`.
 
 Ambient traffic otherwise never touches the Strands Agent SDK — it is a pure,
 deterministic write path (Postgres + Honcho). The Agent SDK is constructed,
-invoked, and discarded **once per
-tag** (or once per fire-path occasion): there is no session carry-over between
-tags. Continuity comes from the two stores
-(Postgres for transcript, Honcho for durable memory), pre-filled into each fresh agent's
-context. See `design/01-ambient-ingest.md`, `design/02-tagging-path.md`, and
-`design/03-strands-reuse.md` for the detail behind each layer.
+invoked, and discarded **once per tag** (or once per fire-path occasion, or
+once per Dreamer run): there is no session carry-over. Continuity comes from
+the stores, pre-filled into each fresh agent's context:
+
+| what she carries between turns | where | tier |
+|---|---|---|
+| the words, verbatim | Postgres `messages` | the record (`load_transcript`, `search_memory`) |
+| conclusions about each person, and about herself | Honcho | memory (`about`, `ask_memory`, `<self_card>`) |
+| the group's open questions — a dinner not yet placed, a trip not yet booked | Postgres `note` | the note tier (`<notes>`, `note_read`; written by people on a tag and by the `note-candidates` adaptor) |
+| her own position on where each room's conversation stands | Postgres `standing` | Standing (design 26; folded after each tag turn) |
+
+See `design/01-ambient-ingest.md`, `design/02-tagging-path.md`,
+`design/03-strands-reuse.md`, and the `design/dreamer-agent-loop/` bundle for
+the background tier.
 
 ## Configuration
 
@@ -115,6 +154,21 @@ Notable knobs:
 - `doctrine.strict` (`true`) — a bad doctrine file at startup is fatal (fail loud), not
   silently skipped.
 - `obs.metrics.port` (9100) — serves both `/metrics` (Prometheus text) and `/health`.
+- The unprompted paths are each a section that ships `enabled = false`:
+  `[heartbeat]` (reminders fire), `[participation]`, `[relevance_gate]`,
+  `[notes]` (the index and the read tools; `candidates_enabled` for the
+  background writer, `curator_enabled` for retirement), `[standing]`,
+  `[dreamer]` (the background runtime all adaptors run on). The proactive
+  adaptor has no flag of its own: a `home_room = true` in `policy.toml` is
+  the opt-in, and it needs `[dreamer]` and `[notes]` on.
+
+Who may talk to her, and where, lives in `policy.toml` (see
+`policy.example.toml`): deny-by-default, one `[[conversations]]` block per room,
+each with its `persons`, its `workspace` (the social unit a room belongs to —
+rooms sharing one are the same people reachable in more than one place, and
+notes and relays are scoped to it), and the per-room grants: `location` (may
+`where_is` disclose here), `relevance_gate`, `participation`, `home_room` and
+`proactive`. `nora groups` prints every group's id beside its name.
 
 Peer identity mapping lives in a separate file, `identity.toml` (see
 `identity.example.toml`): one `[[persons.<person_id>.<platform>]]` block per **account**,
@@ -133,10 +187,24 @@ Nora's character is content, not code, and lives entirely in the Markdown files 
 |---|---|
 | `identity.md` | `kind: identity` — who Nora is, why she's in the group, where she comes from |
 | `voice.md` | `kind: identity` — register, language policy, the sound to hit and avoid |
-| `silence.md` | `kind: conduct` — why this turn is happening at all: she was called, or she is silent. The one file that is `applies_to: [tag]` alone |
+| `silence.md` | `kind: conduct` — when she speaks at all: called means must-speak, offered means may-speak. Reaches the `tag`, `participation` and `proactive` audiences, not `heartbeat` (a reminder turn is owed to whoever asked) |
 | `conduct.md` | `kind: conduct` — how she behaves once a turn is under way: when and how she replies |
+| `participation-conduct.md` | `kind: conduct` — the one thing an offered floor has that a tag never does: several things worth answering at once. `participation` audience only |
+| `participation.md` | `kind: instrument` — NOT hers: the Relevance Gate's whole instruction, on the `relevance_gate` audience no turn of hers reads |
 | `constraints.md` | `kind: constraint` — hard rules that override everything else, including anything a message asks for |
 | *(no file)* | `kind: capability` — what she can find out and when to reach for it, GENERATED from the tool registry |
+
+Every file declares its **audiences** (`applies_to`): `tag`, `heartbeat`
+(a reminder or announcement coming due), `participation`, `proactive`. A turn
+assembles only the files that name its audience, so a fire turn still gets
+identity, voice, conduct and constraints, and only the occasions that may
+decline the floor get `silence.md`'s may-speak half.
+
+The Dreamer has its own corpus under `nora/dreamer/` — `doctrine/dreamer.md`
+(who it is on every run) and `objectives/*.md`, one per adaptor
+(`note-candidates`, `note-curation`, `proactive`, plus the tag path's
+`standing-debrief`/`standing-verdict`). Same hot-reload, same bind mount;
+none of the doctrine loader's gates run on it.
 
 Each file has YAML frontmatter (`name`, `description`, `order`, `applies_to`, `version`,
 `kind`, `authority_above`, `authority_below`, `not_here`, `change_policy`) in roughly the
@@ -148,7 +216,8 @@ not hypothetical: `identity.md` (then `soul.md`) told Nora she knew two things f
 weeks after she knew five.
 
 `not_here` says what a file must NOT contain and where that lives instead; `change_policy`
-marks `voice.md`, `identity.md` and `constraints.md` as the operator's alone.
+marks `voice.md`, `identity.md`, `constraints.md` and every Dreamer objective as
+the operator's alone.
 
 ### Editing the doctrine — no restart required
 
@@ -172,12 +241,16 @@ operator playbook when a doctrine edit misbehaves.
 - `GET /health` — JSON with `sse`, `store`, `honcho`, `omniroute` status, error counts
   since restart, uptime, `doctrine_sha256`, and `strands_version`. Returns `200` when
   healthy, `503` when degraded.
-- `GET /metrics` — Prometheus text format: `nora_messages_total`, `nora_tags_total`,
-  `nora_tags_debounced_total`, `nora_tags_dropped_total`, `nora_replies_total`,
-  `nora_errors_total`, `nora_silent_failures_total`, `nora_guard_vetoes_total`,
-  `nora_leak_blocks_total`, `nora_doctrine_reload_failures_total`,
-  `honcho_feed_success`/`honcho_feed_failure`, and latency histograms
-  (`nora_tag_latency_seconds`, `nora_llm_latency_seconds`, `nora_overhead_seconds`).
+- `GET /metrics` — Prometheus text format. The catalogue is
+  `nora/obs/metric_specs.py` (every name, label set and help text — append-only);
+  the ones an operator reads first are `nora_silent_failures_total{audience}`,
+  `nora_tags_total`, `nora_replies_total`, `nora_errors_total{stage}`,
+  `nora_dream_run_total{adaptor,status}`, `nora_reminders_fired_total{outcome}`,
+  `nora_participation_*` and `nora_proactive_*`, and the latency histograms.
+- **Something watches** (2026-09-09): Prometheus scrapes every process,
+  Alertmanager routes, and alerts land in a Discord review channel through the
+  alert bridge; exceptions go to Sentry. `docs/observability.md` is the map and
+  `docs/runbook.md` the response.
 - Structured JSON logs (`obs.logging.format = "json"`) at `obs.logging.path`, one object per
   line, carrying `tag_id`, `conversation_id`, `sender_id`, `person_id`, `doctrine_sha256`,
   `stage`, `latency_ms`, and `trace_id`.
@@ -194,6 +267,9 @@ operator playbook when a doctrine edit misbehaves.
 - **SSE reconnects automatically** with exponential backoff.
 - **Honcho is best-effort** — if it's down, Nora still replies, just without durable recall.
 - Groups only. DMs and sync messages from Nora's own device are ignored on ingest.
+- **She may speak uncalled only where a room is granted it.** Reminders,
+  participation and proactive rows are all re-screened against `policy.toml` at
+  the moment they would fire, so trust withdrawn after the fact still bites.
 
 ## Unattended browser/OpenCLI runtime
 

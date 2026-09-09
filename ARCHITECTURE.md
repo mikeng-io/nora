@@ -32,9 +32,19 @@ and `docs/adr/`. (An earlier line here called
 `docs/superpowers/specs/2026-08-04-nora-architecture-design.md` "the current
 spec" — that tree was deleted 2026-09-08 and the path resolves only in git
 history, so it is named here as the historical citation it now is, not as a
-pointer.) This file is pinned to reality by
+pointer. Every «spec §n» below is the same kind of citation.) This file is pinned to reality by
 `tests/test_architecture_doc.py`: it fails collection if a package under `nora/`
 goes unmentioned here.
+
+**Status as of 2026-09-09.** Every package below exists and is wired; the
+three shipped-off paths that speak uncalled — the heartbeat's reminders, the
+participation occasion (design/dreamer-agent-loop/35) and the proactive
+adaptor (design/dreamer-agent-loop/39, DEC-162) — are granted per room in
+`policy.toml` and per section in `config.toml`, and the Dreamer runs three
+adaptors (`note-candidates`, `note-curation`, `proactive`) over the note tier
+and Standing. The paragraph that follows is the Phase 4 status this file was
+first written at, kept because its «not built yet» claims were later closed
+one by one and the closings are recorded where they happened.
 
 **Status as of Phase 4 (platforms):** `nora/ingest/` (four ambient stages now —
 audit, identity, memory_feed, gate; parsing moved onto the adapter, see below)
@@ -93,15 +103,32 @@ Signal group
                               │       silent. Off by default.
                               └─ yes ──▶
 ② ENGAGEMENT / TAGGING PATH (trigger only, via the Strands Agents SDK)
-   collect context (recent buffer rows, tagger's peer card†, doctrine)
+   collect context (transcript window, <standing>, <notes>, <self_card>,
+                    the tagger's <peer_history>†, doctrine)
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
-   → tools: now / calculate / transit / read_buffer / send_reply
-            + room-scoped: group_members / lookup_person / about
+   → the native tools (`ToolRegistry.tool_names()`, ~50, rendered into the
+     doctrine's generated capability section) — `load_transcript`/`who_said`/
+     `search_memory`, `about`/`ask_memory`/`remember`, the room-scoped
+     `group_members`/`lookup_person`/`where_is`/`route`…, the note verbs, the
+     event verbs, `remind`, the web/media/social reads, and the terminal
+     `send_reply`/`send_gif` plus `send_to` (a relay to a sibling room)
    → reply → audit row (delivery_status=pending → sent/failed) → Honcho feed
 
-   † the peer-card endpoint returns null in this deployment (DEC-27); the block
-     is empty in practice. `about` reads `representation` instead.
+   † `<peer_history>` is Honcho's `representation` (nora → person), not the
+     peer-card endpoint, which returned null here (DEC-27).
+
+④ THE DREAMER (background, never speaks — `nora/app/runtime.py::dream_loop`)
+   per adaptor, on its own schedule: a deterministic `inputs()` read, and a
+   bounded research loop ONLY when that read rendered something.
+   note-candidates (hourly, per room) → stages notes from new messages
+   note-curation   (daily, per workspace, off by default) → retires notes
+   proactive       (hourly tick, renders on change or a daily floor) → may
+                    write ONE kind of row: a `kind="proactive"` reminder for ③
 ```
+
+The boundary is still two senders (R-1b): ① never speaks, ④ never speaks, and
+③'s occasions are enumerated — a reminder, a gathering, an announcement, a
+compute job, a relay, participation and proactive.
 
 
 ## 4. Solution strategy
@@ -224,9 +251,9 @@ same shape `Handler._spawn(self.handle_tag(msg))` had.
 
 8. `nora/engagement/stages/admission.py::run` — R-12 (self-tag: `message.sender_id in identity.aliases`, where `identity` is resolved via `adapter.resolve_identity()`, memoized), R-9 (`nora/tag.py::Debounce.allow`), R-10 (in-flight set check + add). Any rejection returns `False` and `EngagementPipeline.run` stops without running the tag.
 9. `nora/engagement/context.py::TranscriptInjection.assemble` — `nora/infra/sql/audit.py::SqlRecordStore.recent` (transcript) + `nora/infra/honcho/client.py::HonchoClient.peer_card` → a `TagContext` (`nora/domain/models.py`).
-10. `nora/doctrine/loader.py::DoctrineStore.get(applies_to="tag")` — hot-reloaded doctrine (mtime-checked). Six sections on a tag: five authored files ordered by frontmatter `order`, plus the GENERATED `kind: capability` section at order 35 (`nora/agent/registry.py::ToolRegistry.capability()`, handed to the store by the composition root) — DEC-29. **The audience is a filter, not a constant**: `silence.md` (order 25) is `applies_to: [tag]` alone because "you're only reading this because someone called you" is FALSE on a turn nobody called; every other authored file is `[tag, heartbeat]`, so a non-tag turn still gets identity, voice, conduct and constraints rather than the capability block by itself — which would also have gutted `LeakGuard`'s verbatim-leak corpus (R-6) on the one path that speaks unprompted. DEC-40's multi-message rule lived inside `# Silence is the default` and is true on any turn, so it stayed in `conduct.md` under its own heading: the extraction is smaller than the section.
+10. `nora/doctrine/loader.py::DoctrineStore.get(applies_to="tag")` — hot-reloaded doctrine (mtime-checked). Six sections on a tag: five authored files ordered by frontmatter `order`, plus the GENERATED `kind: capability` section at order 35 (`nora/agent/registry.py::ToolRegistry.capability()`, handed to the store by the composition root) — DEC-29. **The audience is a filter, not a constant**: the four occasion-neutral files (`identity`, `voice`, `conduct`, `constraints`) are `applies_to: [tag, heartbeat, participation, proactive]`, so a turn nobody called still gets identity, voice, conduct and constraints rather than the capability block by itself — which would also have gutted `LeakGuard`'s verbatim-leak corpus (R-6) on the paths that speak unprompted; `silence.md` (order 25) is `[tag, participation, proactive]` because its may-speak half is true of an offered floor and false of a reminder owed to whoever asked; `participation-conduct.md` is `[participation]` alone; and `participation.md` is the Relevance Gate's instruction on `[relevance_gate]`, an audience no turn of hers reads. `tests/test_doctrine_content.py` pins the table. DEC-40's multi-message rule lived inside `# Silence is the default` and is true on any turn, so it stayed in `conduct.md` under its own heading: the extraction is smaller than the section.
 11. `nora/engagement/stages/deliver.py::build` — constructs `nora/agent/guards.py::Deliverer` and `nora/agent/guards.py::ReplyGuard`, fresh, one per tag; `ReplyGuard` is constructed with `budgets=tool_registry.budgets()` (DEC-10) and `terminal=tool_registry.terminal_tools()` (DEC-32), and `Deliverer`'s `message_cap` is read out of that same `budgets` mapping — `send_reply`'s budget IS the message cap and there is only one of it (DEC-32, DEC-40).
-12. `nora/agent/registry.py::ToolRegistry.build` — the native tools (`now`, `calculate`, `read_buffer`, `send_reply`, plus the room-scoped `group_members`, `lookup_person`, `about`), closures over this tag's dependencies, built as `nora/agent/ports.py::ToolSpec`s (`nora/agent/tools.py::build_tool_specs`) and adapted to Strands tool objects (`nora/agent/ports.py::adapt`). The three room-scoped ones close over one `nora/agent/room.py::Room`, which reads `listGroups` LAZILY — nothing touches the daemon unless one of them is actually called, and the read is cached for the tag (DEC-27).
+12. `nora/agent/registry.py::ToolRegistry.build` — the native tools (`now`, `calculate`, `load_transcript`, `send_reply`, the room-scoped `group_members`, `lookup_person`, `about`, `where_is`, and the rest of `NATIVE_TOOLS`), closures over this tag's dependencies, built as `nora/agent/ports.py::ToolSpec`s (`nora/agent/tools.py::build_tool_specs`) and adapted to Strands tool objects (`nora/agent/ports.py::adapt`). The three room-scoped ones close over one `nora/agent/room.py::Room`, which reads `listGroups` LAZILY — nothing touches the daemon unless one of them is actually called, and the read is cached for the tag (DEC-27).
 13. `nora/agent/prefill.py::build_prefill` / `build_tag_message` — R-13 (XML-escape all group-derived text into an untrusted block), R-15 (header states what context is already present).
 14. `nora/engagement/stages/invoke.py::run` → `nora/app/agent_runner.py::LiveAgentRunner.invoke` → `nora/agent/factory.py::create_agent` / `invoke` — the Strands `Agent` loop runs, bounded by `asyncio.wait_for(..., timeout=...)` (R-8/R-10's invocation timeout). `factory.create_client` is called once at process start (`nora/app/composition.py::build_dependencies`), never per tag — that is audit T2's guarantee and it is what pools connections. The `OpenAIModel` **is** built per tag, by `factory.ModelSource.create()`, because `tool_choice` is per-turn state: `required` until she has spoken, `auto` after, flipped by `ReplyGuard._before_model` via `nora/agent/tool_choice.py::relax` (DEC-40). One shared model would apply one tag's relaxation to a concurrent tag's first call, which sends nothing.
 15. A `send_reply` tool call → `nora/agent/guards.py::Deliverer.deliver` — audit-first: `SqlRecordStore.append(..., is_nora=True, delivery_status=DeliveryStatus.PENDING)`, then `adapter.send(...)` (`SendResult`, keyword-only — `Deliverer` reads `.ok`, not truthiness), then `SqlRecordStore.set_delivery_status`.
@@ -281,16 +308,29 @@ stores what a deriver concluded from it, is best-effort, and is allowed to be
 absent — `nora.infra`'s docstring explains why the two clients have opposite
 error contracts for exactly this reason.
 
-The consequence worth stating: `read_buffer` returning nothing means *nothing
+The consequence worth stating: `load_transcript` returning nothing means *nothing
 was said*. `about` returning nothing means *nothing was concluded*, which is a
 different and much weaker claim — hence `Recollection.reachable`, so "I could
 not ask" never collapses into "there is nothing".
 
-**Under review as of 2026-08-06.** A live `representation` was measured to be
-~88% events restated in the third person ("asked what time it was") rather than
-durable traits, i.e. the hot layer re-rendered at ~151 tokens a call. Whether
-that is the corpus (everything fed so far is the operator testing her) or the
-deriver is being settled; until it is, do not build further on Honcho.
+**Two more layers arrived after that table was written, and neither is
+memory in its sense.** The **note tier** (`design/dreamer-agent-loop/27`, `33`;
+tables `note`/`note_revision`/`note_candidate`) holds the group's OPEN
+QUESTIONS per workspace — written by people on a tag and by the
+`note-candidates` adaptor, retired by the curator, and never by anything Nora
+herself says (her rows are excluded from what the tier reads: the one
+structural brake on her talking to herself, 39 §1). **Standing** (`design/
+dreamer-agent-loop/26`; table `standing`) is her own one-paragraph position
+per room, folded after each tag turn, rewritten in place, and injected as
+`<standing>` — a stance, not a record. The **proactive adaptor** (`39`) reads
+both, plus its own decision log (her `kind="proactive"` reminder rows) and
+`<self_card>`, standing in a `home_room` `policy.toml` names per workspace.
+
+The 2026-08-06 measurement of `representation` (~88% events, not traits) was
+recorded here as «do not build further on Honcho»; DEC-66 and DEC-96 then
+built on it deliberately — `(observer, observed)`-keyed reads, and a self
+card framed as a record she may contradict — and the measurement stands as
+the reason for that framing.
 
 **D1 — the boundary rule.** The Agent SDK never sees ambient-only traffic. It is
 constructed, invoked, and discarded once per tag. Ambient ingest is a pure,
@@ -388,8 +428,10 @@ that kind of code, not a path you can use today.
 | I want to… | Touch only |
 |---|---|
 | add a platform | `platform/<name>/` following `platform/signal/`'s shape (a `PlatformAdapter` implementation), one `[platforms.<name>]` config block, and one more `if platforms.<name>.enabled:` block in `nora/platform/registry.py::AdapterRegistry.from_config`. Discord (DEC-102) is the worked example. Four things are easy to forget because they are NOT on `PlatformAdapter`: a `RosterSource` (room-scoped tools go blind without one, honestly but silently), a `MediaSource` (attachment custody), the per-platform entry in `/health`'s `platforms` block, and `identity.toml`'s id-kind vocabulary in `nora.domain.identity`. |
-| add a native tool | `nora/agent/tools.py`: write the closure (docstring is the model-facing schema) and add a `ToolSpec` for it — with a `budget` — to `build_tool_specs`'s return tuple, keeping `NATIVE_TOOL_BUDGETS` in sync. The `NativeTool` entry carries `budget`, `when`, `terminal` and `time_shiftable` (DEC-40) — `_spec()` copies all four, so a new tool cannot silently take the dataclass default for any of them. `nora/agent/registry.py::ToolRegistry` picks it up automatically: `budgets()` and `build()` both derive from `build_tool_specs`, so `ReplyGuard` gets the new tool's budget without any change to `nora/agent/guards.py` (DEC-10 — this is the defect that motivated the tool-registry phase). |
-| add an MCP server | **(target)** `[tools.mcp.<name>]` — no Python. Not built yet (DEC-2). |
+| add a native tool | `nora/agent/tools.py`: write the closure (docstring is the model-facing schema), add its `NATIVE_TOOLS` row (`budget`, `read_only`, `when`, `terminal`, `time_shiftable`, side-effect fields — `_spec()` copies them, so a new tool cannot silently take a default) and a `_spec()` line in `build_tool_specs`'s return tuple. `nora/agent/registry.py::ToolRegistry` picks it up automatically: `budgets()`, `build()`, `read_only_tools()` and `capability()` all derive from the table, so `ReplyGuard` gets the budget and the Dreamer's ceiling learns whether it may hold the tool without any change elsewhere (DEC-10, DEC-133). Then classify it in `tests/unit/test_dreamer_runtime.py::test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped`, which goes red by name until you do. |
+| add an MCP server | `[tools.mcp.<name>]` in `config.toml` (`nora/agent/mcp.py::McpMount`), and list the server under a room's `tools = [...]` in `policy.toml` — per-conversation scope is the enforcement point (DEC-71). |
+| add a Dreamer adaptor | `nora/language/<name>.py` implementing `nora.domain.ports.DreamAdaptor` (declare `tools` by NAME; the runtime refuses anything outside the read-only ceiling unless an `AdaptorGrant` names it), an objective file under `nora/dreamer/objectives/` (declared native in `tests/unit/test_dreamer_instructions.py`), an `AdaptorSchedule` and the append to `dream_adaptors` in `nora/app/composition.py`, and an `IMPLEMENTATIONS` entry in `tests/contract/test_dream_adaptor_contract.py`. Make `inputs()` return `""` when there is nothing to reason about — that is the fire condition, and it is what keeps the tier cheap. |
+| let her speak on a new occasion | an `Event` factory in `nora/app/fire.py` and — if a stored row drives it — a `kind` in `event_registry`. NEVER a new caller of `deliver.build` (R-1b): every occasion is a fifth thing on the second path, not a third path. |
 | change engagement decisions | `nora/ingest/policy.py::TriggerTextPolicy` (wraps `nora/tag.py::is_tagged`). A future classifier composes in as `CompositePolicy([TriggerTextPolicy, ClassifierPolicy])`, not a replacement — see A3. |
 | change what version she reports | nothing in `nora/` — `scripts/gen_version_manifest.py` stamps it and the Dockerfile gate refuses a build whose stamp and `--build-arg NORA_VERSION` disagree. Build with `scripts/build-image.sh V3` (DEC-97). |
 | add a persisted column | `nora/infra/sql/schema.py` (the `MetaData`/`Table` source of truth) + `uv run alembic revision --autogenerate`. **Caveat:** a revision touching `idx_messages_conv_ts` must be hand-written — it is excluded from autogenerate on purpose (see DEC-11), so autogenerate's output for it cannot be trusted. |

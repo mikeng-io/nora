@@ -5,7 +5,9 @@ Words in this repo that mean something specific, and words that have collided.
 Written 2026-08-06, after a naming discussion surfaced three terms doing double
 duty and two tools whose names describe something they are not. **A tool's name
 is the model-facing schema** (Strands derives it from the callable), so a
-misleading name misleads the agent, not only the reader.
+misleading name misleads the agent, not only the reader. Brought back in step
+2026-09-09, when the note tier, Standing, participation, the Relevance Gate
+and the proactive adaptor had all landed without a word here.
 
 Ordered by how much confusion each has actually caused.
 
@@ -49,8 +51,12 @@ Three layers, two stores, and the distinction that matters most:
 | layer | store | holds | tool |
 |---|---|---|---|
 | **hot** | PostgreSQL | last 40 messages, verbatim | *(injected, no tool)* |
-| **deeper** | **same PostgreSQL** | everything older, verbatim | `read_buffer` |
-| **derived** | Honcho | conclusions *about people* | `about` |
+| **deeper** | **same PostgreSQL** | everything older, verbatim | `load_transcript`, `who_said`, `search_memory` (this room), `search_memory_workspace` (every room of the workspace) |
+| **derived** | Honcho | conclusions *about people*, and about herself | `about` (retrieve), `ask_memory` (reason — Honcho's dialectic, 14–19 s, budget 1), `remember` (write one conclusion) |
+
+Two more things she carries between turns are NOT memory in this sense and
+have their own sections below: **notes** (the group's open questions) and
+**Standing** (her own position per room).
 
 **The record store is the RECORD. Honcho is the INTERPRETATION.** The record
 store is authoritative and is what R-2/A9 guarantee; Honcho is best-effort and
@@ -66,44 +72,123 @@ contracts.
   migration; the store is now one `nora` PostgreSQL database that presence
   (design/19) will share.
 
-- **`read_buffer` was misnamed** — nothing is buffered; it reads durable rows
-  from disk. **Renamed to `chat_earlier` 2026-08-07 (DEC-58), then to `load_transcript` 2026-08-08**, the honest name,
-  after the MEASURED selection harness confirmed no regression (16/16 on its own
-  question, no collision onto other tools). The `nora_tool_calls_total{tool}`
-  label moves with it (it must agree with the `_log_call` grep); the metric NAME
-  is unchanged (append-only).
+- **`load_transcript`** was `read_buffer`, which was misnamed — nothing is
+  buffered; it reads durable rows from disk. **Renamed to `chat_earlier`
+  2026-08-07 (DEC-58), then to `load_transcript` 2026-08-08**, the honest name,
+  after the MEASURED selection harness confirmed no regression. The
+  `nora_tool_calls_total{tool}` label moved with it; the metric NAME is
+  unchanged (append-only).
 - **`recall` was misnamed** — it fetched an accumulated *profile*, not
   memories. **Renamed to `about` 2026-08-06 (DEC-39).** The metric
   `nora_recall_total` keeps the old word: metric names are append-only.
-- **representation** — Honcho's derived profile of a peer. Measured 2026-08-06
-  as ~88% *events* ("asked what time it was") rather than *traits*. Under
-  review; do not build on it until settled.
-- **peer card** — a Honcho endpoint that **returns null in this deployment**
-  (DEC-27). Not to be confused with the transcript's `<peer_card>` block, which
-  is populated from elsewhere.
-- **nothing found ≠ could not ask.** `read_buffer` empty means *nothing was
-  said*. `about` empty means *nothing was concluded* — weaker. Hence
-  `Recollection.reachable`. Collapsing the two hid a dead endpoint for the life
-  of the deployment.
+- **representation** — Honcho's derived model of one peer AS SEEN BY another:
+  every read is keyed `(observer, observed)` (DEC-66), so `about` reads
+  `(nora → person)` — her model of them — and the **self card** reads
+  `(nora → nora)`, distilled from her own replies. Measured 2026-08-06 as
+  ~88% *events* rather than *traits*; built on anyway, deliberately, and
+  framed as a record she may contradict rather than a description.
+- **self card** — the `<self_card>` block: things she said or did before,
+  from her own memory (DEC-96). Injected on every tag, and into the proactive
+  pass. Undated on purpose, and never an instruction.
+- **peer card** — a Honcho endpoint that returned null in this deployment
+  (DEC-27). The `<peer_history>` block a tag gets is `representation`, not
+  the card.
+- **nothing found ≠ could not ask.** `load_transcript` empty means *nothing
+  was said*. `about` empty means *nothing was concluded* — weaker. Hence
+  `Recollection.reachable`. Collapsing the two hid a dead endpoint for the
+  life of the deployment.
 
-## The Dreamer, and Standing
+## The Dreamer, notes, Standing, and the proactive half
 
-Two of the most-used words in this repo, and neither was here until 2026-09-08.
+The most-used words in this repo, and none of them was here until 2026-09-08.
 
 - **The Dreamer** — the background tier that runs *between* turns, on its own
-  schedule, and never in the reply path. It reads what the record already holds
-  and writes derived state back; nothing it produces reaches a room directly.
-  Its units are **adaptors** (`nora/language/`, wired in the composition root
-  under `dream_adaptors`), each with an **objective** — an authored prompt file
-  under `nora/dreamer/objectives/` — and each bounded by a **DreamGuard** with
-  its own budget. The name is not a metaphor for creativity: it is the tier that
-  runs while nobody is asking, which is exactly why it is the tier that must
-  never speak. `design/dreamer-agent-loop/` is its bundle.
+  clock (`[dreamer] tick_seconds`, every adaptor on its own
+  `AdaptorSchedule`), and never in the reply path. It reads what the record
+  already holds and writes derived state back; nothing it produces reaches a
+  room directly. Its units are **adaptors** (`nora/language/`, wired in the
+  composition root under `dream_adaptors`), each with an **objective** — an
+  authored prompt file under `nora/dreamer/objectives/` — and each bounded by
+  a **DreamGuard** with its own budget. The name is not a metaphor for
+  creativity: it is the tier that runs while nobody is asking, which is
+  exactly why it never speaks. `design/dreamer-agent-loop/` is its bundle.
 
-  **The two live adaptors are `note-candidates` and the curator.** Two earlier
-  tiers — the knowledge tier (the "fact tier") and the language tier — were
-  deprecated 2026-09-07 and their code deleted; a design node numbered 20, 21,
-  23, 24, 25, 28, 31 or 32 in that bundle describes code that no longer exists.
+  **The three live adaptors** are `note-candidates` (hourly, per room, reads
+  the new messages and stages notes), `note-curation` (daily, per workspace,
+  retires notes that closed or expired — off by default) and `proactive`
+  (below). Two earlier tiers — the knowledge tier (the "fact tier") and the
+  language tier — were deprecated 2026-09-07 and their code deleted; a design
+  node numbered 20, 21, 23, 24, 25, 28, 31 or 32 in that bundle describes code
+  that no longer exists.
+
+  **The deterministic check comes first.** Every adaptor's `inputs()` is a
+  store read that returns `""` when there is nothing to reason about — no new
+  messages for a watermark-bearing adaptor, no due note for the curator, no
+  change in a quiet workspace for proactive — and the runtime makes no model
+  call on a blank prompt. An unchanged hour costs one query and zero tokens.
+
+- **note** — one tracked uncertainty of a group: «dinner on the 12th, venue
+  open», with a **title**, a **description**, a **body** (the arrangement as
+  it stands), an **anchor** (the date it is about) and a **closing
+  condition**. Scoped to a **workspace**, not a room. Written by people on
+  the tag path (`note_create`/`note_update`) and by `note-candidates`; read
+  everywhere as the `<notes>` index plus `note_read`. A note has a
+  `revisit_at` and **strikes** — how many times it was raised with nobody
+  answering — and the curator retires it when the room settles it or its
+  moment passes. **Nothing Nora says can create, revise or close a note**:
+  her own rows are excluded from what the note tier reads. That is the one
+  structural brake on her talking to herself (39 §1).
+
+- **workspace** — the SOCIAL UNIT a room belongs to (DEC-105): the same
+  people reachable in more than one place (a Signal group and its Discord
+  channel). Rooms sharing one share notes, memory search and relays
+  (`send_to`); rooms in different ones never do, however trusted each is.
+  Set per room in `policy.toml`; defaults to one workspace.
+
+- **Standing** — Nora's held position on where a room's conversation stands:
+  one paragraph per room, what she currently thinks, distinct from what was
+  said. It is *derived* state, written by the debrief path
+  (`nora/engagement/stages/debrief.py`) after each tag turn and stored
+  through `StandingStore`, and it passes the same egress screen a reply does
+  before it is written. Standing is an **input** to a later turn, never an
+  output of the current one — and it is rewritten each time and keeps
+  nothing, so anything that must survive belongs in a note.
+
+  Do not read "standing" as status or as a queue position; it is a *stance*.
+  And do not read `NoteStore.standing()` — the query for not-retired notes —
+  as this tier; the two collided once (39 D8).
+
+- **proactive** — Nora's other half (design/dreamer-agent-loop/39, DEC-162).
+  The passive half answers when tagged; the active half acts when nobody
+  asked. Both run one **OODA loop** — observe (human rows), orient (notes,
+  Standing), decide, act — closed through a human. The active half is a
+  Dreamer adaptor whose **decide turn** reads a workspace's open notes, each
+  room's Standing with its age, its own **decision log** (what it scheduled
+  before and how each went) and its self card, asks memory about the people
+  involved, and may set ITSELF a reminder for a chosen hour with `remind` —
+  its one act verb, and the only act any Dreamer adaptor holds. The **act
+  turn** is that reminder coming due: a fire turn (`kind="proactive"`) that
+  reads the room again and speaks or declines. Choosing *when* is the
+  capability; a fixed daily slot would only be scheduling.
+
+- **home room** — the one room of a workspace the proactive adaptor stands
+  in (`home_room = true` in `policy.toml`, 39 D2): its roster is what
+  `where_is`, `about`, `ask_memory` and `group_members` resolve through, its
+  `location` flag applies, and the rows she writes fire into it. A workspace
+  has no conversation of its own, so a room-scoped read needs one room, and
+  that room is a disclosure decision the operator makes — exactly once per
+  workspace. No home room, no proactive pass.
+
+- **pass** — one tick of the proactive adaptor. It ticks hourly and RENDERS
+  (calls the model) only on the daily floor (07:00 HK, once) or on a change
+  since the last rendered pass — a note created, revised by a person, or
+  newly due, or a room's Standing rewritten — once every room of the
+  workspace has been quiet for `[dreamer] quiet_seconds`.
+  `nora_proactive_pass_total{reason}` says which.
+
+- **decision log** — Nora's own reminder rows (`requester = "nora"`) over
+  the last days, with outcomes: `sent`, `silent`, `cancelled_note_moved`,
+  `pending`. Injected into every pass so she does not repeat herself.
 
 - **Standing** — Nora's held position on a topic in a room: what she currently
   thinks, distinct from what was said. It is *derived* state, written by the
@@ -149,19 +234,32 @@ A capability claim in an authored file now **fails to load**.
   where she speaks, on whose authority, the words put to her, and the header
   that explains the moment. The factories on `nora.app.fire` enumerate them —
   a reminder coming due, a gathering, a version announcement (DEC-97), a
-  compute job, a relay, and participation (below). A reminder names its
-  requester; an announcement names NOBODY, which is what stops the turn being
-  refused under a rule about a grant it never held.
+  compute job, a relay, participation (below) and proactive (above). A
+  reminder names its requester; an announcement, a participation turn and a
+  proactive turn name NOBODY, which is what stops the turn being refused
+  under a rule about a grant it never held.
+- **audience** — which occasion a doctrine file speaks to (`applies_to`):
+  `tag`, `heartbeat`, `participation`, `proactive`, and `relevance_gate` for
+  the gate's own instruction. The same word labels every failure counter
+  (`nora_silent_failures_total{audience}`), so a fire turn's failures are
+  never charged to the tag budget.
 - **participation** — the occasion triggered by the room itself
   (design/dreamer-agent-loop/35): an untagged message in an operator-opted-in
   room closes a quiescence window once the room goes quiet, and ONE
   determination runs with the right to stay silent. NOT "ambient" — ambient
   means recorded, never answered; participation is the governed exception to
   it. Ships disabled (`[participation] enabled = false` plus a per-room
-  `participation = true` in `policy.toml`).
-- **terminal verb** — a tool that ends the turn. Today only `send_reply`, on
-  both paths. A participation turn is the one turn that may choose silence:
-  it composes `tool_choice="auto"`, so ending in prose IS declining the floor.
+  `participation = true` in `policy.toml`). **Shadow mode** mirrors every
+  determination to a review channel and holds the live send, for reading
+  before the flip.
+- **Relevance Gate** — a cheap, separate model call in front of participation
+  (design 36, `[relevance_gate]`): reads only the transcript and Standing and
+  answers whether the room is ASKING; only a `go` spends a full turn. Its
+  instruction is `doctrine/participation.md`, on an audience she never reads.
+- **terminal verb** — a tool that ends the turn: `send_reply` and `send_gif`,
+  on both paths. A participation turn and a proactive act turn are the turns
+  that may choose silence: they compose `tool_choice="auto"`, so ending in
+  prose IS declining the floor — and `silent` is recorded as a success.
 - **prefill** — the three messages built before the tag message.
 - **context header** — the block explaining how the turn works. Its opening
   paragraph is the one thing that differs between a tag and a fire turn:
@@ -173,7 +271,10 @@ A capability claim in an authored file now **fails to load**.
 - **reminder** — a *deferred request*: a row holding what someone asked for and
   when it comes due. Not a stored message to replay — at fire time it is put to
   her as a request and she answers it, so anything she can do now she can be
-  reminded to do later.
+  reminded to do later. A row has a **kind** — `reminder` (a person's), `gathering`
+  (an event's notify), `proactive` (her own, owner `nora`) — and each kind fires
+  through its own occasion. A `note` link on a reminder cancels it before it
+  fires if the note is retired or a person revises it (39 D11).
 - **heartbeat** — the tick that wakes on an interval, finds due rows and runs
   their turns. Knows that time passed; knows nothing about why it matters.
   (Not `nora.obs.logging.heartbeat`, which is a 60s counters log line.)
@@ -222,7 +323,10 @@ A capability claim in an authored file now **fails to load**.
 
 - **R-n** — a behavioural rule. Registered in `design/09-decision-index.md`
   and named in `tests/test_acceptance_rules.py::RULE_TESTS`.
-- **DEC-n** — a decision, with its rationale.
+- **DEC-n** — a decision, with its rationale; `DEPRECATED` rows are marked,
+  never renumbered.
 - **A-n** — an architectural invariant from the original spec.
 
-R-19 is **reserved but never assigned** (design/11). Next free: R-25.
+R-19 is **reserved but never assigned** (design/11). Never take the next free
+number from memory or from chat: re-read the index at merge time
+(`CONTRIBUTING.md` «Numbering discipline»).
