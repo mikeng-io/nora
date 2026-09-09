@@ -1418,7 +1418,7 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
          with_skills: bool = False, seed_production: bool = False,
          samples: int = 3, dreamer_dir: str | None = None,
          model: str | None = None, samples_per_fire: int = 1,
-         via_sdk: bool = False) -> int:
+         via_sdk: bool = False, capabilities: bool = False) -> int:
     paths = SUITES.get(suite)
     if paths is None:
         print(f"unknown suite {suite!r}; expected one of {sorted(SUITES)}", file=sys.stderr)
@@ -1459,7 +1459,9 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
         # The gate's own four measurements — determinism first, because it is
         # the control on the other three (see `evals.relevance_gate`).
         from evals.relevance_gate import run_gate_suite
-        ok, summary = asyncio.run(run_gate_suite(paths, via_sdk=via_sdk))
+        ok, summary = asyncio.run(run_gate_suite(
+            paths, via_sdk=via_sdk, capabilities=capabilities,
+        ))
         print(summary)
         return 0 if ok else 1
     elif suite == "note_candidates":
@@ -1517,6 +1519,15 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the Nora deterministic eval gate.")
     parser.add_argument("--suite", choices=sorted(SUITES), default="all")
+    parser.add_argument(
+        "--capabilities", action="store_true",
+        help=(
+            "relevance_gate only: also give the gate her read-only tool "
+            "surface, derived from the registry (issue #144). OFF by default, "
+            "because every number this suite has ever produced was measured "
+            "without it — run both and the difference is one variable."
+        ),
+    )
     parser.add_argument(
         "--via-sdk", action="store_true",
         help=(
@@ -1588,4 +1599,5 @@ if __name__ == "__main__":
                   seed_production=args.seed_production,
                   samples=args.samples, dreamer_dir=args.dreamer_dir,
                   model=args.model, samples_per_fire=args.samples_per_fire,
-                  via_sdk=args.via_sdk))
+                  via_sdk=args.via_sdk,
+                  capabilities=args.capabilities))

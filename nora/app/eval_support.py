@@ -893,6 +893,12 @@ class GateProbe:
     #: True is the same gate through the Agent SDK's structured output.
     via_sdk: bool = False
     _api_key_env: str = ""
+    #: `ToolRegistry.capability_digest()`, or empty. The suite could not see
+    #: this at all until 2026-09-10, so a run measured the INSTRUCTION while
+    #: production measured the instruction plus a digest — two different
+    #: prompts wearing one verdict. Empty is the historical baseline and stays
+    #: the default, so an existing run's numbers keep meaning what they meant.
+    capabilities: str = ""
 
     async def run(
         self, *, transcript: tuple[str, ...], standing: str | None, label: str,
@@ -913,6 +919,7 @@ class GateProbe:
             records=await _gate_records(transcript), metrics=Metrics(),
             standing=_GateStanding(standing),
             transcript_limit=self._cfg.transcript_rows,
+            capabilities=self.capabilities,
         )
         got = await gate.decide(
             platform="discord", conversation_id=GATE_PROBE_CONVERSATION,
@@ -925,7 +932,9 @@ class GateProbe:
         )
 
 
-def build_gate_probe(cfg: Config, *, via_sdk: bool = False) -> GateProbe:
+def build_gate_probe(
+    cfg: Config, *, via_sdk: bool = False, capabilities: bool = False,
+) -> GateProbe:
     """The real `RelevanceGate`, on the real `participation.md`, no turn.
 
     Reports the base url it used (see `eval_base_url`) so a misconfigured run
@@ -951,6 +960,10 @@ def build_gate_probe(cfg: Config, *, via_sdk: bool = False) -> GateProbe:
         instruction_sha256=assembled.sha256,
         via_sdk=via_sdk,
         _api_key_env=cfg.llm.api_key_env,
+        # Built HERE and not by the caller: `evals` may only reach `nora.app`
+        # and `nora.testing` (the import contract), so the registry has to be
+        # read on this side of that line.
+        capabilities=ToolRegistry().capability_digest() if capabilities else "",
     )
 
 

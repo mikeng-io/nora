@@ -77,6 +77,28 @@ from .whereis import Circle, PresenceReader
 log = logging.getLogger("nora.agent.registry")
 
 
+def _first_sentence(description: str) -> str:
+    """The first SENTENCE of a tool description, however it happens to wrap.
+
+    The obvious version — first line, then first sentence — is wrong, and was
+    wrong in production: a docstring whose opening sentence runs past the
+    column takes its line break mid-clause, so `search_memory` rendered as
+    «Find where something was actually SAID in this group's history — the» and
+    `search_memory_workspace` as «…across EVERY room of this». Five of
+    thirty-four lines were amputated that way, and two of them are the record
+    verbs the gate's «something settled here that nobody can now produce»
+    judgement depends on.
+
+    So: unwrap first, then cut. A sentence is what ends the description or ends
+    at `. ` — the wrap is a typographic accident and must not be a boundary.
+    """
+    unwrapped = " ".join(description.split())
+    if not unwrapped:
+        return ""
+    head, sep, _ = unwrapped.partition(". ")
+    return (head if sep else unwrapped).strip().rstrip(".")
+
+
 class ToolRegistry:
     """Owns which native tools exist and what each costs (DEC-10).
 
@@ -524,8 +546,7 @@ class ToolRegistry:
         }
         lines = []
         for name in sorted(self.read_only_tools()):
-            first = described.get(name, "").strip().split("\n")[0]
-            first = first.split(". ")[0].strip().rstrip(".")
+            first = _first_sentence(described.get(name, ""))
             lines.append(f"- {name} — {first}" if first else f"- {name}")
         return "\n".join(lines)
 

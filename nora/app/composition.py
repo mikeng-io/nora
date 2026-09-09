@@ -2314,17 +2314,19 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # least able to see — a systematic under-admission exactly where
             # the room is most likely to be asking something.
             media_join=media_join,
-            # What she can actually call, DERIVED from the registry on every
-            # start (issue #144). The gate's question is «is there something
-            # here she can serve?» and until 2026-09-10 the only answer it had
-            # was a five-item list hand-written in `participation.md` against
-            # 53 registered tools — DEC-150's forbidden capability cache, past
-            # the loader's guard because the file declares `kind: instrument`.
+            # NO `capabilities` (issue #144, reversed 2026-09-10 on the eval
+            # suite's own numbers). Giving the gate her derived read-only tool
+            # surface was shipped on the theory that it decides a capability
+            # question blind. Measured over the suite's 40 labelled windows it
+            # made the gate STRICTER and worse: false NO_GO 3 -> 5, no
+            # capability improved, `settled_and_forgotten` 3/3 -> 2/3,
+            # `whereabouts` 8/9 -> 7/9, and +707 prompt tokens on every quiet
+            # window in every opted-in room. PASS -> FAIL.
             #
-            # Rendered HERE, once, rather than per window: the digest is a
-            # function of the build, not of the room, and the gate must not
-            # hold the thing that builds tools.
-            capabilities=tool_registry.capability_digest(),
+            # `ToolRegistry.capability_digest()` and `--capabilities` on the
+            # suite are kept: the instrument that produced that number is worth
+            # more than the change it refused, and the next attempt at #144
+            # starts by re-running it.
         )
         participation_trigger = ParticipationTrigger(
             speak=fire_path.speak,

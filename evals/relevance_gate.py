@@ -324,6 +324,7 @@ class GateReport:
 
 async def run_gate_suite(
     paths: tuple[Path, ...], *, via_sdk: bool = False,
+    capabilities: bool = False,
 ) -> tuple[bool, str]:
     """Drive every case through the REAL gate and report the four.
 
@@ -335,12 +336,20 @@ async def run_gate_suite(
     """
     from evals.run import _load_eval_config
 
-    probe = build_gate_probe(_load_eval_config(), via_sdk=via_sdk)
+    # `capabilities` is the SECOND input the gate can be given (issue #144):
+    # her read-only tool surface, derived from the registry. Off by default so
+    # a run measures what the suite has always measured — the instruction
+    # alone — and a comparison between the two is one changed variable.
+    probe = build_gate_probe(
+        _load_eval_config(), via_sdk=via_sdk, capabilities=capabilities,
+    )
     header = (
         f"transport: {'strands structured_output' if via_sdk else 'raw json_object'}\n"
         f"base_url: {probe.base_url}\n"
         f"instruction: participation.md v{probe.instruction_version} "
-        f"sha={probe.instruction_sha256[:12]}"
+        f"sha={probe.instruction_sha256[:12]}\n"
+        f"capabilities: "
+        f"{f'{len(probe.capabilities.splitlines())} verbs' if probe.capabilities else 'none'}"
     )
 
     report = GateReport()

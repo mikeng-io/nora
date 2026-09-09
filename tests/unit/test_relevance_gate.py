@@ -707,9 +707,13 @@ def test_no_digest_leaves_the_prompt_exactly_as_it_was():
 
 
 async def test_the_digest_reaches_the_model_and_the_room_blocks_do_not_change():
-    """The capability digest is CODE-owned, so it belongs in the system prompt
-    beside the instruction — never in the user message, which is the closed set
-    of room content the test above pins."""
+    """The gate can still be GIVEN a digest — the eval suite's `--capabilities`
+    is how #144's next attempt gets measured — even though production no longer
+    passes one (it made the gate worse: false NO_GO 3 -> 5 over 40 windows).
+
+    Where it lands is the part worth pinning: the system prompt beside the
+    instruction, never the user message, which is the closed set of room
+    content the test above pins."""
     client = _Client('{"verdict": "go", "relevance_score": 1.0}')
     rows = ["知唔知聽朝會唔會落雨？"]
     gate = _gate(client, records=_Records(rows), capabilities=_DIGEST)
@@ -745,3 +749,51 @@ def test_the_digest_is_derived_from_the_registry_and_read_only():
     # Acting verbs are absent by construction, not by an authored exclusion.
     assert "send_reply" not in named
     assert "remind" not in named
+
+
+def test_the_first_sentence_survives_a_line_wrap():
+    """The renderer's own bug, 2026-09-10. Taking the first LINE and then the
+    first sentence amputates any description whose opening sentence runs past
+    the column — `search_memory` shipped as «…in this group's history — the»,
+    five of thirty-four lines cut mid-clause, and two of them were the record
+    verbs the gate's «settled here, nobody can now produce» judgement needs.
+
+    A wrap is a typographic accident. Only `. ` or the end of the description
+    is a sentence boundary.
+    """
+    from nora.agent.registry import _first_sentence
+
+    wrapped = (
+        "Find where something was actually SAID in this group's\n"
+        "history — the exact words. Use it when load_transcript is too shallow."
+    )
+    assert _first_sentence(wrapped) == (
+        "Find where something was actually SAID in this group's history — "
+        "the exact words"
+    )
+    assert _first_sentence("One sentence, no full stop") == (
+        "One sentence, no full stop"
+    )
+    assert _first_sentence("") == ""
+
+
+def test_no_digest_line_is_cut_mid_sentence():
+    """The property over the LIVE registry, so a future description that wraps
+    cannot reintroduce it. A rendered line that neither ends its description
+    nor ends at a sentence boundary is an amputation."""
+    from nora.agent.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    described = {
+        entry["name"]: " ".join(str(entry.get("description") or "").split())
+        for entry in registry.catalog()
+    }
+    for line in registry.capability_digest().splitlines():
+        name, _, rendered = line.removeprefix("- ").partition(" — ")
+        full = described.get(name, "")
+        if not rendered or not full:
+            continue
+        rest = full[len(rendered):]
+        assert rest == "" or rest.startswith(("." , "?", "!")), (
+            f"{name} is cut mid-sentence: ...{rendered[-40:]!r}"
+        )

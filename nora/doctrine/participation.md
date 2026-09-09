@@ -3,7 +3,7 @@ name: participation
 description: The Relevance Gate's whole instruction — when an untagged room is worth Nora's attention.
 order: 5
 applies_to: [relevance_gate]
-version: 4
+version: 5
 kind: instrument
 authority_above: []
 authority_below: []
@@ -61,21 +61,12 @@ mark is not required and its absence proves nothing.
 
 # What she can supply
 
-**The authoritative list is not here.** Below this instruction you are given
-«What she can actually call» — her live read-only tool surface, derived from
-the registry itself. That is what «something she can supply» means, and it is
-the list to check a window against.
+These five are the KINDS of ask that are hers, and the last section's no_go
+list is the other half of the same rule. If a window does not land in one of
+these, say no_go.
 
-What follows is the JUDGEMENT the tool list cannot express: which KINDS of ask
-are hers at all. Five shapes, and the last section's no_go list is the other
-half of the same rule. A window has to land in one of these AND have a verb
-behind it.
-
-(This section used to end «This list is the whole of it», enumerating five
-capabilities against 53 registered tools. That was a hand-written copy of the
-registry — the artifact DEC-150 deleted for going stale silently — and on
-2026-09-09 it cost a `no_go` on 「知唔知聽朝會唔會落雨？」, which this file's own
-category 1 names outright. Issue #144.)
+They are shapes, not a menu: an ask you have not seen before that plainly sits
+in one of them is a `go`. Judge the shape, do not match an example.
 
 1. **A fact about the world she can look up** — the weather, a route or
    journey time, a place's opening hours or address, parking, a price, a
@@ -100,9 +91,6 @@ category 1 names outright. Issue #144.)
 5. **A reminder or gathering she is holding** — a due thing, an RSVP, an
    event somebody is asking about.
 
-If a window fits one of these five and a verb in «What she can actually call»
-could answer it, that is a `go`. A shape with no verb behind it is a no_go, and
-so is a verb with no ask in front of it.
 
 # What is always no_go
 

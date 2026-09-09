@@ -49,12 +49,14 @@ PINNED: dict[str, tuple[int, str]] = {
     "conduct": (24, "a304ae577f27a9fc547896185f13b4ac382f77b5643af03868a97af235e4136a"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
-    # v4 (2026-09-10, issue #144): §"What she can supply" stopped claiming to
-    # BE the capability list. It now points at the derived digest the gate is
-    # given below the instruction and keeps only the judgement a tool registry
-    # cannot express — which KINDS of ask are hers at all.
+    # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
+    # measured over the suite's 40 windows it made the gate worse — so the
+    # pointer is gone and the five shapes stand on their own again, with one
+    # line saying they are shapes to judge and not a menu to match. Same
+    # accuracy as v3 and v4 (3 false NO_GO, safety 6/6, no dead capability),
+    # 189 fewer prompt tokens, and it no longer names a block that is absent.
     "participation": (
-        4, "c079c3a68d74f339b1f59a4dd2adadf1c45d02a273d46a4635cb97bbfa774996",
+        5, "461d4b663b1b213b52c77ac0b549ba6b039883ff13b64f2d2963072b4969fb48",
     ),
     "participation-conduct": (
         1, "21512fb426ba2ac017b550d52f21d5ee40f58cb4e73e9d309389113db149458b",
