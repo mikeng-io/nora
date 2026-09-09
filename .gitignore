@@ -92,3 +92,4 @@ deploy/shortener/*.tfvars
 # source checkout is why `version` answers `unavailable` outside a built image.
 nora/version.json
 RELEVANCE_GATE_TASK.md
+.venv
