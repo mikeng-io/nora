@@ -37,9 +37,17 @@ entitled to make it.
 **The spawned work does not inherit the ingest span.** `create_task` copies the
 context of the task that CALLS it, so a job scheduled here would otherwise
 attach to the ingest root and hold that trace open for as long as a video read
-takes. It opens its own root instead, declared plumbing (R-76): every call
-under it is a model call, but they are describers rather than Nora's own
-reasoning, and the volume is one root per attachment.
+takes. It opens its own root instead, declared `generation` (R-76): every call
+under it is a model call — a describer for a photo or a clip, a summarizer for
+a voice note's transcript — and the volume is one root per attachment.
+
+That declaration read `plumbing` until 2026-09-09, and this paragraph argued
+for it in the same breath as admitting "every call under it is a model call",
+which is the exact condition R-76 keeps a trace FOR. The cost was measured
+rather than reasoned about: 1041 live traces held zero `comprehend` roots while
+`nora_media_comprehension_total{status="ok"}` counted the reads happening.
+DETACHING AND DROPPING ARE TWO DECISIONS — the detach above is right and stays;
+the drop was not.
 """
 
 from __future__ import annotations
