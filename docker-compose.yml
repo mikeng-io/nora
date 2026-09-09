@@ -787,11 +787,19 @@ services:
     container_name: nora-alert-bridge
     restart: unless-stopped
     environment:
-      - SIGNAL_RPC_URL=http://signal-cli:18080/api/v1/rpc
-      # WHO gets told. Empty means alerts are rendered, logged and dropped —
-      # the bridge says so at ERROR rather than pretending to deliver.
-      - ALERT_SIGNAL_RECIPIENT=${ALERT_SIGNAL_RECIPIENT:-}
-    networks: [nora]
+      # WHERE alerts go: the same Discord channel the participation mirror uses
+      # for operator review. Empty means alerts are rendered, logged and
+      # dropped — the bridge says so at ERROR rather than pretending.
+      - ALERT_DISCORD_CHANNEL=${ALERT_DISCORD_CHANNEL:-}
+      # The SAME bot credential Nora holds. Reused rather than a second
+      # webhook: a webhook would have to be created by hand in the Discord UI,
+      # while this variable is already in `.env`. The REST call does not care
+      # whether Nora's Gateway session is alive, which is the whole point of
+      # this container being separate.
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+    # NOT on the `nora` network only: this one needs the public internet to
+    # reach discord.com, and it no longer needs to reach signal-cli at all.
+    networks: [nora, default]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:9110/health',timeout=3)"]
       interval: 30s
