@@ -118,8 +118,13 @@ def test_a_silent_act_case_has_no_must_cite_and_a_speak_case_is_never_screened()
 # ---- the graders -------------------------------------------------------------
 
 
-def _result(*rows: WrittenRow, status="ok") -> DecideResult:
-    return DecideResult(status=status, stop_reason=None, instruction_sha256="a" * 64, rows=rows)
+def _result(*rows: WrittenRow, status="ok", memory_calls: int = 1) -> DecideResult:
+    """A result that ASKED memory once by default, so the window and owner
+    graders below measure their own clause and not objective v2's."""
+    return DecideResult(
+        status=status, stop_reason=None, instruction_sha256="a" * 64, rows=rows,
+        memory_calls=memory_calls,
+    )
 
 
 def test_decide_grades_none_and_unavailable():
@@ -383,3 +388,34 @@ def test_a_silent_failure_behind_a_silent_act_turn_is_an_error():
     ))
     assert quiet.verdict == "PASS"
     assert broken.verdict == "ERROR"
+
+
+def test_a_reminder_set_without_a_memory_read_fails_the_case():
+    """Objective version 2: the first live run set its reminder from the note
+    body alone. A well-timed row with `memory_calls == 0` FAILS; the same row
+    with one read passes."""
+    case = DecideCase.from_dict(_decide(expect="remind", rows=[{
+        "note": "Dinner",
+        "due_between": ["2026-09-11T12:00:00+08:00", "2026-09-11T18:00:00+08:00"],
+    }]))
+    blind = grade_decide(case, _result(_row(), memory_calls=0))
+    asked = grade_decide(case, _result(_row(), memory_calls=1))
+    assert blind.verdict == "FAIL" and "memory" in blind.reason
+    assert asked.verdict == "PASS"
+
+
+def test_memory_calls_are_read_off_the_tools_own_counters():
+    """`about`/`ask_memory` count on the room-lookup series and
+    `search_memory_workspace` on the tool-call series; every status counts,
+    and no other tool does."""
+    from nora.app.eval_support import Metrics as _Metrics
+    from nora.app.eval_support import memory_calls_from
+
+    m = _Metrics()
+    m.inc("nora_room_lookups_total", tool="about", status="ok")
+    m.inc("nora_room_lookups_total", tool="ask_memory", status="unavailable")
+    m.inc("nora_tool_calls_total", tool="search_memory_workspace", status="nothing_found")
+    m.inc("nora_tool_calls_total", tool="note_read", status="ok")
+    m.inc("nora_room_lookups_total", tool="where_is", status="ok")
+
+    assert memory_calls_from(m) == 3
