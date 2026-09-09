@@ -89,6 +89,14 @@ def test_the_declared_shape_is_the_designs():
     assert adaptor.tools == frozenset({
         "remind",
         "where_is", "saved_places", "route", "group_members",
+        # `lookup_person` since 2026-09-10 (issue #145). Without it nothing
+        # here answers «who is this handle?»: `group_members` returns real
+        # names with no aliases beside them, so a note written in the group's
+        # own nicknames had only free-text memory search to resolve against.
+        # Measured on `friends` (Langfuse d63f40f2): six of ten tool calls
+        # were `search_memory_workspace`, five asking who `@熱咖啡☕少奶多糖`
+        # and `@隨風而去` are, until R-7 stopped the turn.
+        "lookup_person",
         "about", "ask_memory", "search_memory_workspace",
         "note_read", "note_search",
         "web_search", "web_fetch", "weather", "now",
@@ -97,6 +105,21 @@ def test_the_declared_shape_is_the_designs():
     assert "remind" in adaptor.tools
     for forbidden in ("send_reply", "send_to", "note_create", "note_update", "load_transcript"):
         assert forbidden not in adaptor.tools, forbidden
+
+
+def test_the_adaptor_can_resolve_a_nickname_without_searching_memory_for_it():
+    """Issue #145, as the property rather than the list above.
+
+    `group_members` answers WHO IS HERE with real names; nothing in it maps the
+    `@handle` a note is actually written in. `lookup_person` is the verb that
+    does, and its absence is what turned one decide turn into six searches for
+    the same answer — depth where an index belongs.
+
+    Asserted as a pair so removing `lookup_person` and leaving the roster verb
+    cannot pass: the point is that BOTH exist, at their two altitudes.
+    """
+    assert "group_members" in PROACTIVE_TOOLS, "the roster is the index"
+    assert "lookup_person" in PROACTIVE_TOOLS, "and this is the depth under it"
 
 
 async def test_a_workspace_with_no_home_room_renders_nothing():

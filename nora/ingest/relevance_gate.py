@@ -275,14 +275,43 @@ def build_user_message(context: str) -> str:
     return _CONTEXT.format(context=context)
 
 
-def build_system_prompt(instruction: str) -> str:
-    """`participation.md`, as the system prompt it always should have been.
+#: The header the derived capability digest arrives under, so the instruction
+#: can name it and the two never contradict each other.
+CAPABILITY_HEADER = "# What she can actually call"
+
+_CAPABILITY_BLOCK = """{header}
+
+Derived from her live tool registry — this is the whole read-only surface, and
+it is what «something she can supply» means. Read-only verbs only: a tool that
+ACTS is never the reason a window is worth her turn.
+
+{digest}"""
+
+
+def build_system_prompt(instruction: str, capabilities: str = "") -> str:
+    """`participation.md`, as the system prompt it always should have been —
+    plus the capability digest it cannot write down without going stale.
 
     A system message is not merely «first»: it is a different role, one the
     group's own words can never occupy, so an instruction here cannot be
     imitated by anything a member types into the transcript below it.
+
+    `capabilities` is `ToolRegistry.capability_digest()` (issue #144). It is
+    APPENDED rather than interpolated so an operator editing the instruction
+    cannot accidentally delete it, and it is derived on every start so a tool
+    added on master is a capability the gate knows about on the next deploy.
+
+    Empty is allowed and changes nothing: the gate ran without it until
+    2026-09-10, and a composition that cannot build a registry should degrade
+    to the old behaviour rather than fail closed on every window.
     """
-    return instruction.rstrip()
+    text = instruction.rstrip()
+    if not capabilities.strip():
+        return text
+    block = _CAPABILITY_BLOCK.format(
+        header=CAPABILITY_HEADER, digest=capabilities.strip(),
+    )
+    return f"{text}\n\n{block}"
 
 
 _WHITESPACE_RUN = re.compile(r"\s*[\r\n\u2028\u2029]+\s*")
@@ -387,8 +416,14 @@ class RelevanceGate:
         transcript_limit: int = 40,
         standing_timeout_seconds: float = 2.0,
         media_join: MediaJoin | None = None,
+        capabilities: str = "",
     ) -> None:
         self._client = client
+        # `ToolRegistry.capability_digest()`, rendered once by the composition
+        # root (issue #144). A STRING and not the registry: this class's whole
+        # contract is that it never constructs an agent, and holding the thing
+        # that builds tools would be the first step away from that.
+        self._capabilities = capabilities
         self._prompts = prompts
         self._records = records
         self._metrics = metrics
@@ -459,7 +494,7 @@ class RelevanceGate:
                 self._count(verdict, platform)
                 return verdict
             standing_body = await self._read_standing(platform, conversation_id)
-            system = build_system_prompt(instruction.text)
+            system = build_system_prompt(instruction.text, self._capabilities)
             prompt = build_user_message(render_context(transcript, standing_body))
             # The prompt is a room's own words, so it is NOT put on the wire.
             # The digest plus the retained transcript re-derives it exactly —
@@ -472,6 +507,11 @@ class RelevanceGate:
                 "nora.relevance_gate.instruction_sha256": instruction.sha256,
                 "nora.relevance_gate.prompt_sha256": instruction_sha256(system + prompt),
                 "nora.relevance_gate.transcript_rows": len(transcript),
+                # Whether the gate was told what she can call, on the trace
+                # that carries the verdict: a run of no_go verdicts read very
+                # differently depending on this, and #144's whole finding was
+                # that nothing recorded it.
+                "nora.relevance_gate.capabilities": bool(self._capabilities),
                 "nora.relevance_gate.standing": standing_body is not None,
             })
             verdict = await self._ask(system, prompt)
