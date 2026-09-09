@@ -41,6 +41,53 @@ def _production_modules() -> list[Path]:
     )
 
 
+#: Constructors whose result is per-process STATE rather than a value.
+#: Constant lookup tables are not here on purpose: a `dict` literal that is
+#: only ever read is a constant, and flagging every one of them buries the
+#: rule in ~80 false positives (measured). `re.compile`, `Path` and frozen
+#: dataclasses are values too.
+_STATEFUL_CONSTRUCTORS = frozenset({
+    "defaultdict", "Counter", "deque", "OrderedDict",
+    "Lock", "RLock", "Semaphore", "Event", "Condition", "Queue",
+    "Formatter", "Handler", "TTLCache", "LRUCache",
+})
+
+#: Module-level names this rule deliberately allows, with the reason.
+_ALLOWED = frozenset({
+    # A logger IS the module-level object the stdlib intends; `getLogger` is
+    # idempotent and returns the same instance to every caller.
+    "log", "logger",
+})
+
+
+def _mutated_names(tree: ast.Module) -> set[str]:
+    """Module-level names this file writes to after binding them — a subscript
+    assignment, or a call to a mutating method on them."""
+    writes = {"append", "add", "extend", "update", "setdefault", "pop", "clear"}
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name):
+                    out.add(t.value.id)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in writes
+            and isinstance(node.func.value, ast.Name)
+        ):
+            out.add(node.func.value.id)
+    return out
+
+
+def _is_mutable_construction(value: ast.Call) -> bool:
+    """Whether this call builds per-process mutable state, whatever module the
+    callable came from — `dict()`, `collections.defaultdict(...)`,
+    `logging.Formatter(...)`."""
+    name = getattr(value.func, "attr", None) or getattr(value.func, "id", None)
+    return name in _STATEFUL_CONSTRUCTORS
+
+
 def test_no_module_level_instantiation_of_a_locally_defined_class() -> None:
     offenders: list[str] = []
     for path in _production_modules():
@@ -53,16 +100,37 @@ def test_no_module_level_instantiation_of_a_locally_defined_class() -> None:
                 targets, value = node.targets, node.value
             elif isinstance(node, ast.AnnAssign) and node.value is not None:
                 targets, value = [node.target], node.value
-            if not (
-                isinstance(value, ast.Call)
-                and isinstance(value.func, ast.Name)
-                and value.func.id in local_classes
+            # A LOCALLY-DEFINED class was the only shape this caught, so both
+            # of DEC-13's other forms walked straight through: a bare mutable
+            # container (`_HANDLER_CACHE: dict = {}`) and an instance of an
+            # IMPORTED class (`_SHARED_FORMATTER = logging.Formatter(...)`).
+            # Both were added to `nora/obs/logging.py` and this file stayed
+            # green (verified 2026-09-09). What the rule is about is
+            # module-level state that outlives a request, not where the class
+            # happens to be written.
+            kind: str | None = None
+            if isinstance(value, ast.Call) and (
+                (isinstance(value.func, ast.Name) and value.func.id in local_classes)
+                or _is_mutable_construction(value)
             ):
+                kind = ast.unparse(value.func) + "(...)"
+            elif (
+                isinstance(value, ast.Dict | ast.List | ast.Set)
+                and any(
+                    isinstance(t, ast.Name) and t.id in _mutated_names(tree)
+                    for t in targets
+                )
+            ):
+                # A container that is WRITTEN somewhere in this module. A
+                # read-only table is a constant and is left alone; the shape
+                # DEC-13 forbids is state that accumulates across requests.
+                kind = type(value).__name__.lower() + " literal, mutated in this module"
+            if kind is None:
                 continue
             for target in targets:
-                if isinstance(target, ast.Name):
+                if isinstance(target, ast.Name) and target.id not in _ALLOWED:
                     rel = path.relative_to(ROOT)
-                    offenders.append(f"{rel}:{node.lineno}: {target.id} = {value.func.id}(...)")
+                    offenders.append(f"{rel}:{node.lineno}: {target.id} = {kind}")
     assert not offenders, (
         "module-level singleton(s) — a class instantiated and bound to a "
         f"module-level name in its own module (DEC-13): {offenders}"

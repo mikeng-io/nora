@@ -15,6 +15,7 @@ itself is allowed to reach.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -145,6 +146,9 @@ BUDGET_STOP_REASONS = _BUDGET_STOP_REASONS
 NO_CACHE_HEADERS = {"x-omniroute-no-cache": "true"}
 
 
+log = logging.getLogger("nora.app.eval_support")
+
+
 def eval_base_url(configured: str) -> str:
     """The LLM base url a live eval should use.
 
@@ -173,9 +177,25 @@ def load_eval_config(candidates: tuple[Path, ...]) -> Config:
     last_error: ConfigError | None = None
     for candidate in candidates:
         try:
-            return load_config(candidate)
+            cfg = load_config(candidate)
         except ConfigError as exc:
             last_error = exc
+            continue
+        # SAY WHICH ONE. The fallback is silent, and a worktree has no
+        # `config.toml` — so a suite run from one measured the TEMPLATE while
+        # reporting numbers as if they were the deployment's. Measured
+        # divergence on eval-relevant keys alone: `judge_samples` 1 vs 3,
+        # `journey_samples` 3 vs 9, a different judge model
+        # (`docs/eval-sop.md`: "a run without it measures a different model
+        # than production and its verdict is about nothing anyone deploys").
+        if candidate.name != "config.toml":
+            log.warning(
+                "eval config: %s has no config.toml; measuring %s instead. "
+                "Its model and sample counts are the TEMPLATE's, not the "
+                "deployment's — see docs/eval-sop.md.",
+                candidate.parent, candidate.name,
+            )
+        return cfg
     if last_error is None:
         raise ValueError("no config candidates provided")
     raise last_error

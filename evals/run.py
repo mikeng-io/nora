@@ -5,10 +5,19 @@ Runs every case in the named suite through `evals.harness.run_case`, grades the
 resulting `Trajectory` with the deterministic hard-gate evaluators appropriate to the
 case (spec E.4), prints a pass/fail summary, and exits 0 only if everything passed.
 
-Scope note: the `trigger`/`no_trigger`/`all` suites run the offline/scripted code
-path (`run_case(case, script=None)` — no model is invoked, so no-trigger cases
-pass trivially while trigger cases legitimately fail; that is the honest
-reflection of "no live model is wired for THESE suites", not a bug). The
+Scope note: the `trigger`/`no_trigger`/`all` suites run the offline path with a
+SCRIPTED reply (`_ALWAYS_SENDS`), so what they measure is the pipeline's
+engagement decision end to end: tagged in, delivered out. They do not measure
+what the model would say — that is `journeys`, `adversarial` and
+`participation`, which are live.
+
+They used to run `script=None`, and the docstring called the result honest: no
+model invoked, so no-trigger cases "pass trivially" and trigger cases fail. The
+first half of that was the defect. With nothing able to send, `NoSendWithoutTrigger`
+asserted «send_reply called 0 times» about a turn that never had the chance —
+mutating `nora.tag.is_tagged` to tag EVERY message left `--suite no_trigger`
+green and exiting 0 (verified 2026-09-09), and the A8 silent-failure ratio was a
+constant 1.0 by construction. A suite that cannot fail is not passing. The
 `journeys` suite and the `adversarial` suite run LIVE model paths (`run_case(
 ..., live=True)`; see `_run_journeys_live` and `_run_adversarial_live`), and
 `--suite journeys` additionally accepts `--effort`/`--skills`/
@@ -48,6 +57,7 @@ import os
 import sys
 from collections import Counter
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -106,6 +116,7 @@ from nora.app.eval_support import (
     run_note_candidates_case,
 )
 from nora.testing import transcript_rows
+from nora.testing.scripted_agent import ScriptedTurn
 
 CASES_DIR = Path(__file__).resolve().parent / "cases"
 ADVERSARIAL_DIR = Path("evals") / "adversarial"
@@ -269,10 +280,35 @@ def _cache_key(case: dict, *, doctrine_sha256: str, reply_model: str,
             "case": case, "doctrine": doctrine_sha256, "reply_model": reply_model,
             "judge_model": judge_model, "judge_samples": judge_samples,
             "harness": HARNESS_VERSION,
+            # THE GRADER ITSELF, hashed from source. It was not in here, so
+            # «a pure function of everything that determines the verdict» was
+            # false in the one direction that matters: editing a rubric
+            # criterion or the judge prompt changed what the judge is asked
+            # and left every cached verdict valid, under a hand-bumped
+            # `HARNESS_VERSION` nobody remembers to bump. Verified: inverting
+            # a criterion's description changed the prompt and not the key.
+            "grader": _grader_sha256(),
         },
         sort_keys=True, ensure_ascii=False,
     )
     return hashlib.sha256(material.encode()).hexdigest()
+
+
+@lru_cache(maxsize=1)
+def _grader_sha256() -> str:
+    """A digest of the files that decide what the judge is ASKED.
+
+    Source text rather than the built prompt: the prompt needs a case to
+    build, and what must invalidate the cache is a change to the grader, not
+    to the case (the case is hashed separately).
+    """
+    here = Path(__file__).resolve().parent
+    material = b"".join(
+        (here / name).read_bytes()
+        for name in sorted(("rubric.py", "judge.py"))
+        if (here / name).exists()
+    )
+    return hashlib.sha256(material).hexdigest()
 
 
 def _load_verdict_cache(path: Path | None) -> dict[str, dict] | None:
@@ -602,6 +638,14 @@ def _build_sink(cfg: Config, *, export: bool) -> EvalSink:
     return LangfuseEvalSink(host=cfg.evals.langfuse.host, headers=headers)
 
 
+#: One scripted turn that calls `send_reply`. `_run_suite` hands this to every
+#: offline case so that "did anything reach the room" is decided by the
+#: pipeline's engagement decision rather than by the absence of a model.
+_ALWAYS_SENDS = ScriptedTurn(
+    tool_calls=[("send_reply", {"text": "scripted reply"})], final_text="",
+)
+
+
 async def _run_suite(paths: tuple[Path, ...], *, sink: EvalSink, run_name: str) -> bool:
     all_passed = True
     run_ids: dict[str, str] = {}  # dataset name -> this sink's run_id for it
@@ -609,7 +653,14 @@ async def _run_suite(paths: tuple[Path, ...], *, sink: EvalSink, run_name: str) 
         corpus = path.stem
         dataset_name = CORPUS_DATASETS[corpus]
         for case in load_cases(path):
-            trajectory = await run_case(case)
+            # A script that ALWAYS sends, so the trigger boundary is what the
+            # verdict turns on. With `script=None` no model ran at all, so
+            # `NoSendWithoutTrigger` reported «send_reply called 0 times» about
+            # a turn that never had the chance — and mutating `is_tagged` to
+            # tag EVERY message left the suite green and exiting 0 (verified
+            # 2026-09-09). Now an untagged case passes because the pipeline
+            # declined to engage, and a tagged one sends and fails.
+            trajectory = await run_case(case, script=[_ALWAYS_SENDS])
             iid = item_id(corpus, case.name)
             run_id = run_ids.get(dataset_name)
             if run_id is None:

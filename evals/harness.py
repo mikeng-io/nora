@@ -645,8 +645,18 @@ async def run_case(
         stop_reason = _stop_reason_from_metrics(metrics)
         silent_failures = _silent_failures_from_metrics(metrics)
         participation_silence = _participation_silence_from_metrics(metrics)
-        if live:
-            tool_calls = _tool_calls_from_metrics(metrics)
+        # WHAT ACTUALLY RAN, on both paths. This was live-only, and offline it
+        # fell back to the names in the SCRIPT — so every offline evaluator was
+        # grading the script rather than the run. `NoSendWithoutTrigger` then
+        # asserted «send_reply called 0 times» about a list the harness had
+        # been handed: mutating `nora.tag.is_tagged` to return True for every
+        # message left `--suite no_trigger` green and exiting 0 (verified
+        # 2026-09-09), and the same vacuity made three of the four trigger
+        # evaluators constants.
+        #
+        # A scripted turn drives the REAL tool registry, so the counters move
+        # for it too — the same thing that made `stop_reason` readable offline.
+        tool_calls = _tool_calls_from_metrics(metrics)
         return Trajectory(
             tool_calls=tool_calls,
             sent=sent,

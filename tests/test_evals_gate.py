@@ -175,7 +175,16 @@ async def test_a8_silent_failure_score_reflects_zero_send_reply_calls(monkeypatc
 
     a8_scores = [s for s in sink.scores if s["name"] == "a8_silent_failure"]
     assert len(a8_scores) == 12
-    assert all(s["value"] == 1.0 for s in a8_scores)
+    # 0.0 is «no silent failure». This asserted 1.0 on all twelve, which was
+    # the CONSTANT the vacuity produced: `_run_suite` passed `script=None`, so
+    # no model ran, so every tagged case was a silent failure by construction
+    # and the A8 ratio the docstring calls a measurement was always 1.0. The
+    # offline suites drive a scripted reply now, so this reads the plumbing:
+    # tagged in, delivered out.
+    assert all(s["value"] == 0.0 for s in a8_scores), (
+        "a tagged case that the pipeline engaged and delivered is not a silent "
+        "failure; a 1.0 here means the send never happened"
+    )
 
 
 async def test_a8_silent_failure_score_is_not_recorded_for_no_trigger_cases(monkeypatch):
@@ -247,7 +256,10 @@ async def test_gate_verdict_is_unaffected_by_an_unreachable_langfuse_when_failin
     unreachable = LangfuseEvalSink(host="http://127.0.0.1:1", headers={}, timeout=0.3)
     with_export = await _run_suite((TRIGGER_PATH,), sink=unreachable, run_name="probe-run")
 
-    assert baseline is False  # documented: trigger cases fail offline with no live model
+    # The property is that the SINK cannot change the verdict, whatever the
+    # verdict is. It used to pin `baseline is False` — true only because the
+    # offline suite invoked no model and every trigger case failed. That is
+    # the vacuity, not the property, and the suite drives a scripted reply now.
     assert with_export == baseline
 
 

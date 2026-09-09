@@ -287,7 +287,19 @@ class _FakeRecord:
     async def since(
         self, *, conversation_id: str, after_id: int, limit: int
     ) -> list[TranscriptRow]:
-        return list(self._batches.get(conversation_id, []))[:limit]
+        """`id > after_id`, ascending, at most `limit` — the real one's
+        contract, HONOURED rather than ignored.
+
+        This returned the whole batch whatever `after_id` was, so the
+        consolidation cursor was invisible here: setting
+        `nora/app/runtime.py`'s `after_id=watermark` to `after_id=0` — every
+        dream tick re-reading the conversation from the beginning and
+        re-feeding what it already consolidated — left the entire suite green
+        (6142 passed, verified 2026-09-09). That line is the only `.since(`
+        call site in `nora/`, so nothing else could have caught it.
+        """
+        rows = [r for r in self._batches.get(conversation_id, []) if r.id > after_id]
+        return sorted(rows, key=lambda r: r.id)[:limit]
 
 
 class _FakeLanguage:
@@ -1316,3 +1328,53 @@ async def test_a_nothing_found_run_is_a_success_and_does_not_back_off():
     ), ticks=0.08)
 
     assert len(runner.calls) > 1, "a healthy nothing_found run was backed off"
+
+
+async def test_the_dream_batch_starts_above_the_consolidation_watermark():
+    """**The cursor, asserted rather than assumed.**
+
+    `_dream_once` reads `after_id=watermark`, and nothing checked it: the fake
+    store returned its whole batch whatever `after_id` was, so changing that
+    line to `after_id=0` — every tick re-reading the conversation from the
+    start and re-feeding rows already consolidated — left all 6142 tests green
+    (2026-09-09). It is the only `.since(` call site in `nora/`, so no other
+    test could have caught it.
+
+    Five rows, watermark at 3: the Dreamer must be handed the two above it.
+    """
+    class _BacklogPastTheWatermark(_KeyedLanguage):
+        """`_KeyedLanguage` reports `lag = 0` for any non-zero `after_id` — it
+        models «watermark set means caught up», which is right for the tests it
+        was written for and makes this one unfireable. Backlog is the premise
+        here, so `lag` is constant."""
+
+        async def lag(self, *, scope_id: str, after_id: int) -> int:
+            return 1000
+
+    language = _BacklogPastTheWatermark()
+    language.watermarks[("note-curation", "g1")] = 3
+    runner = _RecordingRunner()
+    task = asyncio.create_task(dream_loop(
+        _FakeRecord({"g1": [_row(i) for i in range(1, 6)]}), language,
+        Metrics(), scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=10,
+        quiet_seconds=999_999, max_age_seconds=999_999, batch_limit=10,
+        instructions=_FakeInstructions({"note-curation": 1}),
+        adaptors=[_StubAdaptor("note-curation")], runtime=runner,
+    ))
+    await asyncio.sleep(0.15)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert runner.calls, "the Dreamer never ran"
+    sizes = [n for _adaptor, _key, n in runner.calls]
+    assert sizes[0] == 2, (
+        f"the first batch should be rows 4 and 5, the two above the watermark "
+        f"at 3; got {sizes[0]}. A batch of 5 means the cursor was ignored."
+    )
+    # Later ticks legitimately see 0 — the fold advanced the watermark past
+    # them. What must never reappear is the whole conversation.
+    assert 5 not in sizes, (
+        f"a batch of 5 came back after the watermark advanced ({sizes}) — "
+        f"already-consolidated rows are being re-fed every tick"
+    )
