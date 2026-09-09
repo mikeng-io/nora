@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "A reply held for review no longer reads to Nora as a failed send, so she stops rewriting it and trying again.",
+  "details": [
+    "`send_reply` now answers `sent`, `held_for_review` or `refused` instead of a bare true/false, and says plainly that a hold is not hers to fix and must not be retried.",
+    "Measured on the deployment: one participation turn called `send_reply` four times, each draft shorter than the last, because every held send came back indistinguishable from a refusal — four wasted model calls per turn.",
+    "It also made the shadow review unreadable: four near-identical drafts were kept as 'what she would have said', with no way to tell which one she meant.",
+    "`send_gif`, `media_send` and `generate_image` carried the same confusion and are fixed with it. A held GIF no longer raises 'reply in words instead' — those words would have been held too."
+  ],
+  "limitations": [
+    "This changes what the send tools answer, not when a send is held; the cooldown and review-mode rules are unchanged."
+  ]
+}

@@ -122,7 +122,7 @@ async def wiring(pg_url, tmp_path):
     try:
         yield {"tools": {t.tool_name: t for t in tools}, "sink": sink,
                "honcho": honcho, "deliverer": deliverer, "store": store, "metrics": metrics,
-               "persons": persons, "room": room}
+               "persons": persons, "room": room, "doctrine": doctrine}
     finally:
         await store.aclose()
 
@@ -483,7 +483,7 @@ async def test_load_transcript_defaults_to_less_than_the_ceiling(wiring, monkeyp
 
 
 async def test_send_reply_delegates_to_the_deliverer(wiring):
-    assert await _call(wiring["tools"]["send_reply"], text="hello") is True
+    assert await _call(wiring["tools"]["send_reply"], text="hello") == "sent"
     assert wiring["sink"].texts == ["hello"]
     assert wiring["deliverer"].delivered is True
 
@@ -515,9 +515,9 @@ def test_strip_media_markers_covers_all_marker_shapes():
 async def test_send_reply_strips_media_markers_before_delivery(wiring):
     """Integration: the stripped text (not the model's raw text) reaches the
     deliverer. Two sends stay under the R-2 6-message turn latch."""
-    assert await _call(wiring["tools"]["send_reply"], text="改完 [image c6a9cd]") is True
+    assert await _call(wiring["tools"]["send_reply"], text="改完 [image c6a9cd]") == "sent"
     assert wiring["sink"].texts[-1] == "改完 "
-    assert await _call(wiring["tools"]["send_reply"], text="[image] 佔位") is True
+    assert await _call(wiring["tools"]["send_reply"], text="[image] 佔位") == "sent"
     assert wiring["sink"].texts[-1] == " 佔位"
 
 
@@ -675,8 +675,8 @@ async def test_a_refused_send_is_not_counted_as_a_sent_one(wiring):
     cap = ToolRegistry().budgets()["send_reply"]
     sent = [f"msg{i}" for i in range(cap)]
     for text in sent:
-        assert await _call(tools["send_reply"], text=text) is True
-    assert await _call(tools["send_reply"], text="one too many") is False
+        assert await _call(tools["send_reply"], text=text) == "sent"
+    assert await _call(tools["send_reply"], text="one too many") == "refused"
     assert metrics.get("nora_tool_calls_total", tool="send_reply", status="ok") == cap
     assert metrics.get("nora_tool_calls_total", tool="send_reply", status="refused") == 1
     assert wiring["sink"].texts == sent
@@ -827,7 +827,7 @@ async def test_gif_send_failure_raises_so_the_agent_can_send_a_text_reply(wiring
     await _call(tools["search_gifs"], query="happy dance")
     with pytest.raises(RuntimeError, match="GIF unavailable"):
         await _call(tools["send_gif"], candidate_id="happy-1")
-    assert await _call(tools["send_reply"], text="搵唔到張啱嘅 GIF，不過笑死") is True
+    assert await _call(tools["send_reply"], text="搵唔到張啱嘅 GIF，不過笑死") == "sent"
 
 
 # ---- generate_image (DEC-137, design/proposed/29) -------------------------
@@ -1165,3 +1165,71 @@ async def test_find_parking_unavailable_without_route_source(wiring):
     assert "find_parking" in tools
     out = await tools["find_parking"](place="銅鑼灣")
     assert out["status"] == "unavailable"
+
+
+# ---- a HOLD is not a REFUSAL (2026-09-09) -----------------------------------
+#
+# `Deliverer.deliver` answers False both when a guard refuses a send and when
+# the participation cooldown or the shadow gate HOLDS one. `send_reply`
+# returned that bool straight to the model, so a held reply read as "it did not
+# go" — and the model did the sensible thing and rewrote it shorter.
+#
+# Measured on the deployment: one participation turn called `send_reply` four
+# times, each draft shorter than the last (Langfuse trace 5cb76676…, four
+# `send_reply` TOOL spans each followed by its own `execute_event_loop_cycle`).
+# Four extra model calls, and four near-identical drafts on `held_texts` that
+# made the shadow review unreadable — you could not tell which one she meant.
+
+
+def _held_tools(wiring):
+    """The same tool set, over a Deliverer that holds every send."""
+    store, doctrine = wiring["store"], wiring["doctrine"]
+    held = Deliverer(
+        store=store, adapter=SinkSender(), target=TARGET, doctrine=doctrine,
+        canary="C", tag_id="t-held", nora_sender_id="nora",
+        message_cap=NATIVE_TOOL_BUDGETS["send_reply"], audience="participation",
+        metrics=Metrics(), send_permitted=False,
+    )
+    tools = build_tools(
+        store=store, conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=held,
+        metrics=Metrics(), room=wiring["room"],
+        transit_source=UNREACHABLE_TRANSIT, question="who is here",
+        context_window=40, workspace_for=lambda *_a: "ws-main",
+    )
+    return {t.tool_name: t for t in tools}, held
+
+
+async def test_send_reply_tells_a_held_message_apart_from_a_refused_one(wiring):
+    tools, held = _held_tools(wiring)
+
+    answer = await _call(tools["send_reply"], text="天水圍而家 28 度。")
+
+    assert answer == "held_for_review", (
+        "a held reply that reads as a failure is what makes the model rewrite "
+        "it and call again"
+    )
+    assert held.held_texts == ("天水圍而家 28 度。",)
+
+
+async def test_send_reply_still_says_refused_when_a_guard_stops_it(wiring):
+    """The contrast that keeps the fix honest: a REAL refusal must not read as
+    a hold, or the model would stop retrying things it should retry."""
+    sink = SinkSender()
+    capped = Deliverer(
+        store=wiring["store"], adapter=sink, target=TARGET,
+        doctrine=wiring["doctrine"],
+        canary="C", tag_id="t-capped", nora_sender_id="nora",
+        message_cap=1, audience="tag", metrics=Metrics(),
+    )
+    tools = {t.tool_name: t for t in build_tools(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=capped,
+        metrics=Metrics(), room=wiring["room"],
+        transit_source=UNREACHABLE_TRANSIT, question="who is here",
+        context_window=40, workspace_for=lambda *_a: "ws-main",
+    )}
+
+    assert await _call(tools["send_reply"], text="first") == "sent"
+    assert await _call(tools["send_reply"], text="second") == "refused"
+    assert capped.held_count == 0

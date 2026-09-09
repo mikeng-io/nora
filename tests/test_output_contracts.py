@@ -72,6 +72,11 @@ def test_every_declared_extension_is_named_and_documented() -> None:
     assert set(DECLARED_STATUS_EXTENSIONS) == {
         "refused", "withheld", "ambiguous", "not_found",
         "nothing_known", "not_an_image", "already_present", "no_route",
+        # A HOLD is not a refusal and not a fault: nothing vetoed the send and
+        # nothing was broken. What separates it from both is that calling again
+        # cannot help, because the hold is not about the text — which is the
+        # whole reason it needed a word of its own (2026-09-09).
+        "held_for_review",
     }
     undocumented = sorted(k for k, v in DECLARED_STATUS_EXTENSIONS.items() if not v.strip())
     assert undocumented == [], f"declared with no meaning: {undocumented}"

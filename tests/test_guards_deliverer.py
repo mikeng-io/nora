@@ -57,12 +57,31 @@ MESSAGE_CAP = NATIVE_TOOL_BUDGETS["send_reply"]
 
 
 def _deliverer(store, doctrine, sink, metrics=None, *, message_cap=MESSAGE_CAP,
-               on_delivered=None, links=None) -> Deliverer:
+               on_delivered=None, links=None, send_permitted=True) -> Deliverer:
     return Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                      canary="CANARY-1", tag_id="tag-1", nora_sender_id="nora",
                      message_cap=message_cap, audience="tag",
                      metrics=metrics or Metrics(), on_delivered=on_delivered,
-                     links=links)
+                     links=links, send_permitted=send_permitted)
+
+
+async def test_held_count_separates_a_hold_from_a_refusal(store, doctrine):
+    """`deliver` answers False to both, so `held_count` is the only thing that
+    tells them apart — and the four model-facing send tools read it to stop a
+    model rewriting a reply that was never rejected."""
+    sink, held = SinkSender(), _deliverer(store, doctrine, SinkSender(),
+                                          send_permitted=False)
+    assert await held.deliver("what she would have said") is False
+    assert held.held_count == 1
+    assert held.held_texts == ("what she would have said",)
+
+    # A REFUSAL for contrast: the R-2 latch, past its cap. `deliver` answers
+    # False here too, and `held_count` must NOT move — otherwise every refusal
+    # would read as a hold and the model would stop retrying things it should.
+    refused = _deliverer(store, doctrine, sink, message_cap=1)
+    assert await refused.deliver("first") is True
+    assert await refused.deliver("second") is False
+    assert refused.held_count == 0
 
 
 class _RecordingObserver:

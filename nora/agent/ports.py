@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 R27_CORE_STATES: frozenset[str] = frozenset({"ok", "nothing_found", "unavailable"})
 
 #: The DECLARED EXTENSIONS (ADR 0009 §1). The core is a core, not a ceiling: the
-#: live tool surface carries these eight beside it, each one a distinction the
+#: live tool surface carries these nine beside it, each one a distinction the
 #: guards and the recall ladder already depend on, and each named here with its
 #: meaning so an extension cannot be added silently. ADR 0008 §3's fixed
 #: three-value enum is SUPERSEDED by this table — collapsing `refused` into
@@ -47,6 +47,14 @@ DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
     "not_an_image": "media modality refusal",
     "already_present": "the idempotent write had nothing left to do",
     "no_route": "the routing provider found no way between origin and destination",
+    "held_for_review": "the send was complete and something OUTSIDE the turn "
+                       "kept it — a review mode, or the room's send cooldown. "
+                       "Not `refused` (nothing vetoed it) and not "
+                       "`unavailable` (nothing was broken): the difference is "
+                       "whether calling again could help, and here it cannot, "
+                       "because the hold is not about the text. Added "
+                       "2026-09-09 after a live participation turn read a hold "
+                       "as a failure and rewrote the same reply four times.",
 }
 
 #: The whole vocabulary, DERIVED from the two above rather than hand-listed —
