@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "A doctrine file can no longer disappear from every prompt because of a typo, and Nora can tell how old her own position is.",
+  "details": [
+    "applies_to is now a closed vocabulary checked when a doctrine file is parsed. It was the one frontmatter field with no gate, and the only one whose failure was silent: a mistyped audience removed the file from every turn while the reload counter stayed at zero — and on the deployment an edit to a doctrine file is itself a deploy, because it hot-reloads.",
+    "Her standing block now carries how long ago she wrote it. The note above it claimed the position was 'as of last turn', which is true in a busy room and false in one that went quiet for days, with nothing letting her tell which she was in.",
+    "There is now one implementation of 'how long ago', in the layer both the tag path and the language tier can reach, instead of the tag path's copy being unreachable from the renderers that needed it."
+  ],
+  "limitations": [
+    "A third age vocabulary still exists in the proactive adaptor, which renders '2 h' where these render '2h ago'. Merging them changes a prompt the proactive suite grades, so it is a measured change and was left alone.",
+    "Nothing measures whether the standing age improves her replies; the tag path has no labelled suite for prefill comprehension."
+  ]
+}

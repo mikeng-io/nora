@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from datetime import datetime
 
 from ..domain.models import TagContext, TranscriptRow
-from ..domain.prompt import escape
+from ..domain.prompt import age, escape
 from ..domain.prompt import escape_attr as _escape_attr
 from ..language.note_render import render_notes
 from ..language.standing_render import render_standing
@@ -204,25 +204,11 @@ def _context_header(context_window: int, header: str = TAG_HEADER) -> str:
 
 
 def _age(ts_ms: int, now: datetime) -> str:
-    """`ts` as an age, not a wall-clock time.
-
-    `TranscriptRow.ts` was carried all along and never rendered, so every
-    message looked equally recent: she could not tell a five-minute-old line
-    from a five-day-old one, which is what made 今晚 and 琴日 unanswerable even
-    with a clock in the header.
-
-    An age rather than a timestamp because it is what the question actually
-    needs — «is this still current?» — and it costs a few characters per line
-    instead of a full datetime on a 40-message window.
-    """
-    seconds = max(0, int(now.timestamp() - ts_ms / 1000))
-    if seconds < 90:
-        return "just now"
-    if seconds < 5400:
-        return f"{seconds // 60}m ago"
-    if seconds < 172800:
-        return f"{seconds // 3600}h ago"
-    return f"{seconds // 86400}d ago"
+    """`nora.domain.prompt.age`. Kept as a name here because this module's
+    call sites and its tests read it, and moved to `domain` because
+    `nora.language` renders prompt blocks too and cannot import `nora.agent`
+    — one implementation, two layers that need it."""
+    return age(ts_ms, now)
 
 
 def _label(row: TranscriptRow, display_name: str) -> str:

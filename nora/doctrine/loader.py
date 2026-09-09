@@ -81,6 +81,25 @@ KINDS = (*AUTHORED_KINDS, *DERIVED_KINDS)
 # tail of design/17 §7b's tier order, which runs past doctrine and terminates at
 # tool output. These have no file, so they are never checked for symmetry — and
 # they are sinks, so no cycle can run through them.
+# Every audience a file may name in `applies_to`, plus `always`. A CLOSED
+# vocabulary, and the reason is that nothing downstream could tell a typo from
+# a deliberate exclusion: `get()` filters by string membership and returns
+# whatever survives, so `applies_to: [tagg]` on `constraints.md` parses, passes
+# every other gate, and removes the hard rules from every tag while
+# `nora_doctrine_reload_failures_total` stays at 0. On `norty` an edit to
+# `nora/doctrine` IS a deploy (it hot-reloads on mtime), so that is an operator
+# typing into a live prompt, not a hypothetical.
+#
+# Each name is a real consumer: `tag` and `heartbeat` are `Doctrine.get`'s two
+# call sites in the engagement and fire paths, `participation` and `proactive`
+# are the two occasions that may decline the floor, `relevance_gate` is the
+# gate's own instrument file, and `dreamer` is the background tier's. Adding an
+# occasion means adding it here — which is the point.
+AUDIENCES = (
+    "tag", "heartbeat", "participation", "proactive",
+    "relevance_gate", "dreamer",
+)
+
 AUTHORITY_TERMINALS = ("situation", "message-content", "tool-output")
 
 # Who may edit a file without asking. `voice.md` is the operator's — her
@@ -194,7 +213,7 @@ def parse_section(path: Path) -> DoctrineSection:
         name=doc.name,
         description=str(meta.pop("description")),
         order=int(meta.pop("order")),
-        applies_to=tuple(str(a) for a in applies),
+        applies_to=_audiences(path, applies),
         version=int(meta.pop("version")),
         kind=kind,
         authority_above=_name_list(path, "authority_above", meta.pop("authority_above")),
@@ -206,6 +225,29 @@ def parse_section(path: Path) -> DoctrineSection:
         sha256=doc.sha256,
         metadata=dict(meta),
     )
+
+
+def _audiences(path: Path, applies: Any) -> tuple[str, ...]:
+    """`applies_to`, checked against the closed vocabulary.
+
+    The other frontmatter gates in this module refuse an unknown `kind` and an
+    unknown `change_policy`; this one was missing, and it is the one whose
+    failure is silent. A name outside `AUDIENCES` cannot be distinguished from
+    a deliberate exclusion by anything downstream — `get()` filters on string
+    membership — so the check has to be here, at parse, where a bad file can
+    still be refused.
+    """
+    names = tuple(str(a) for a in applies)
+    if not names:
+        raise DoctrineError(f"{path.name}: applies_to is empty")
+    unknown = [n for n in names if n not in AUDIENCES and n != "always"]
+    if unknown:
+        raise DoctrineError(
+            f"{path.name}: applies_to names {unknown!r}, which no turn asks "
+            f"for — known audiences are {sorted((*AUDIENCES, 'always'))}. A "
+            f"name nothing reads removes this file from every prompt silently."
+        )
+    return names
 
 
 def _name_list(path: Path, key: str, value: Any) -> tuple[str, ...]:
