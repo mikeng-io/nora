@@ -174,19 +174,22 @@ carries the eight rules and the measurement behind each.
 ### One root span per entry point
 
 `nora/ingest/pipeline.py` is the pattern. `run()` opens `span("ingest")` around
-`await self._run(...)` (:146), and the six stage spans — `ingest.scope` (:163),
-`ingest.identity` (:177), `ingest.media` (:186), `ingest.audit` (:193),
-`ingest.memory_feed` (:200), `ingest.gate` (:206) — nest inside it. Splitting
-the body out of `run` is what makes the root wrap EVERY exit including the
-early returns, which is why `_outcome()` (:60) can stamp `nora.outcome` on a
-refusal instead of leaving a trace that simply stops.
+`await self._run(...)`, and the stage spans — `ingest.scope`, `ingest.identity`,
+`ingest.media`, `ingest.audit`, `ingest.memory_feed`, `ingest.standing_event`,
+`ingest.gate` — nest inside it (cited by name: the line numbers this paragraph
+once carried went stale within a week). Splitting the body out of `run` is
+what makes the root wrap EVERY exit including the early returns, which is why
+`_outcome()` can stamp `nora.outcome` on a refusal instead of leaving a trace
+that simply stops.
 
-`nora/engagement/pipeline.py` does the opposite. `engagement.admission` (:315),
-`engagement.debrief` (:409) and `engagement.invoke` (:617) are three siblings
-with nothing above them, so one tagged message produced three separate traces
-plus the one from ingest. The operator's first reading of the new skeleton was
-«10+ separate trace but its empty», and both halves of that sentence are a
-different rule below.
+`nora/engagement/pipeline.py` did the opposite until 2026-08-28:
+`engagement.admission`, `engagement.debrief` and `engagement.invoke` were three
+siblings with nothing above them, so one tagged message produced three separate
+traces plus the one from ingest. The operator's first reading of the new
+skeleton was «10+ separate trace but its empty», and both halves of that
+sentence are a different rule below. The root landed as
+`span("engagement", TRACE_KIND="generation", …)` in `EngagementPipeline.run`,
+with `engagement.turn` the second declared root for the queued-tag half.
 
 A rootless span is not a span with a missing parent. It IS a trace.
 
@@ -255,8 +258,8 @@ widen it back to «export everything and sample».
 ### Spawned work does not inherit the caller's span
 
 `asyncio.create_task` **does** copy the current context — the repo already says
-so about `tag_id` at `nora/agent/tools.py:929`, and a three-case probe
-reproduces it. What it copies is the context of the task that CALLS
+so about `tag_id` in `nora/agent/tools.py` (the `bind_tag_id` comment), and a
+three-case probe reproduces it. What it copies is the context of the task that CALLS
 `create_task`, at the moment it calls it, and that is not always the logical
 parent:
 
@@ -267,11 +270,10 @@ parent:
 | a task created before the context was set | none |
 
 The queued-tag path is row two, exactly. `EngagementPipeline.run` stores a
-zero-argument factory (`nora/engagement/pipeline.py:334`);
-`ConversationSlots.release_and_dispatch` calls `self._spawn(factory())`
-(`nora/engagement/slots.py:74-84`) from the PREVIOUS turn's task, in its
-`finally`; and `BackgroundTasks.spawn` is `asyncio.create_task`
-(`nora/app/runtime.py:64`). So a QUEUED tag's `invoke` and `debrief` run under
+zero-argument factory; `ConversationSlots.release_and_dispatch` calls
+`self._spawn(factory())` (`nora/engagement/slots.py`) from the PREVIOUS turn's
+task, in its `finally`; and `BackgroundTasks.spawn` (`nora/app/runtime.py`) is
+`asyncio.create_task`. So a QUEUED tag's `invoke` and `debrief` run under
 the releasing turn's context, never under the dispatch call where its own
 `admission` ran — and the two halves of one tag land in two traces even once
 the root above exists.
@@ -281,11 +283,12 @@ by accident is not the same as propagating one on purpose.
 
 ### A span with only a name is worse than no span
 
-Ten spans on master — seven in ingest, three in engagement — of which exactly
-ONE, the ingest root, passes attributes of its own (`nora.platform`,
-`nora.conversation_id`); `_outcome` adds a second on the early returns. Every
-other span carries a name and nothing else. That is what shipped on 2026-08-27
-(`d673a7a`), and the operator's report was that the traces were empty.
+As of 2026-08-27 (`d673a7a`): ten spans on master — seven in ingest, three in
+engagement — of which exactly ONE, the ingest root, passed attributes of its
+own (`nora.platform`, `nora.conversation_id`); `_outcome` added a second on the
+early returns. Every other span carried a name and nothing else, and the
+operator's report was that the traces were empty. (The roots and their
+attributes landed the next day; the count is the war-story, not the tree.)
 
 Prefill sizes and which blocks were built, store-read counts on the critical
 path, the model's stop reason, the delivery outcome — none of it is on a span,
@@ -339,7 +342,8 @@ instances landed in one night, each inside code written to honour it:
   candidate incremented two states and the tick reported 2 for 1. Fixed by
   carrying `evidence_state` as ONE value; the module's own comment records that
   the defect was «committed inside its own instrument»
-  (`nora/language/note_revisitor.py`, `_Candidate.evidence_state`, `92eccc7`).
+  (`92eccc7`, then in `nora/language/note_revisitor.py`; that module merged
+  into `nora/language/note_curator.py::_gather_evidence` on 2026-09-06).
 - **A tick that wrote nothing reporting `ok`.** `dream_screen` matches any
   hyphenated UUID (R-18/R-28) and note ids are `uuid4`, so every curator item
   was rejected: the tick fired, spent a model call, `accept` received nothing,
@@ -360,15 +364,14 @@ with no increment renders its `# HELP`/`# TYPE` header and nothing else, which
 on a dashboard is a series that is genuinely always zero: the reading «this
 never happens», not «this is not wired».
 
-Two on master today — `nora_fact_candidates_total`
-(`nora/obs/metric_specs.py:963`) and `nora_fact_entity_unresolved_total`
-(:987). *(Both went with the knowledge tier when it was deprecated and deleted on
-2026-09-07, issue #115 — the instance stands as the war-story, and the rule it
-earned is unchanged.)* The second is named twenty lines away in the note tier's own block as
-«the exact defect this block was written to close» (:1236) — the argument for
-shipping three note counters instead of the ten that tier's spec names — while
-it sits unwired itself. `nora_store_busy_total` (:121) scans the same way and
-is NOT an instance: its call site was deliberately deleted with the SQLite WAL
+Two on master then — `nora_fact_candidates_total` and
+`nora_fact_entity_unresolved_total` in `nora/obs/metric_specs.py`. *(Both went
+with the knowledge tier when it was deprecated and deleted on 2026-09-07, issue
+#115 — the instance stands as the war-story, and the rule it earned is
+unchanged.)* The second was named in the note tier's own block as «the exact
+defect this block was written to close» — the argument for shipping three note
+counters instead of the ten that tier's spec names — while it sat unwired
+itself. `nora_store_busy_total` scans the same way and is NOT an instance: its call site was deliberately deleted with the SQLite WAL
 apparatus (DEC-51), and the name is retained because names are append-only.
 
 Issue #56 is the gate, and it is the ONE family from 2026-08-27 with a cheap,
@@ -388,15 +391,17 @@ the documentation described three, for two review rounds. The fix for a
 silent-failure finding had the silent failure's shape.
 
 It is now `EvidenceState = Literal[...]` with `EVIDENCE_STATES =
-get_args(EvidenceState)`, enforced TWICE — statically, and in
-`_Candidate.__post_init__` — because `nora/language/` is outside `make gate`'s
-mypy scope (issue #61) and **a static-only guard in an unchecked package is a
+get_args(EvidenceState)`, enforced TWICE — statically, and at runtime by
+`NoteCuratorAdaptor._inc`'s `_VOCABULARIES` check (every increment's label is
+checked against the derived set before the counter is touched) — because
+`nora/language/` is outside `make gate`'s mypy scope (issue #61) and **a static-only guard in an unchecked package is a
 claim rather than a check** (`443bbca` F3).
 
-Where mypy does reach, the derivation alone is enough: `nora/domain/facts.py:
-52-56` builds five frozensets with `get_args` off five `Literal`s *(that file was
-deleted with the knowledge tier on 2026-09-07, issue #115; the pattern is still
-the rule, and `nora/language/note_curator.py` still carries it)*. Where it
+Where mypy does reach, the derivation alone is enough: `nora/domain/facts.py`
+built five frozensets with `get_args` off five `Literal`s *(the five went with
+the knowledge tier on 2026-09-07, issue #115; the file survives as the two DDL
+ceilings the not-dropped `fact` tables read; the pattern is still the rule, and
+`nora/language/note_curator.py` still carries it)*. Where it
 does not, the vocabulary is a frozenset the code increments AGAINST and a value
 outside it raises — a label typo forks a NEW series rather than erroring, and
 the old one silently goes flat (`nora/language/note_curator.py`,
@@ -631,10 +636,11 @@ green", and it was right:**
   `model` it was handed, because a test needed it and the inline copy had
   been written instead of teaching the shared one.
 
-**Not done, and pinned rather than hidden:** 24 inline stand-ins remain in
-`_ALLOWED`, most for ports with no shared fake yet (the room-language readers,
-`SearchProvider`/`GifSource`/`SocialProvider`, `TrackSource`/`MusicToolBridge`,
-`DreamAdaptor`/`DreamSink`) and seven that steer `dream_loop`'s supervision
+**Not done, and pinned rather than hidden:** 10 inline stand-ins remain in
+`_ALLOWED` (`tests/architecture/test_port_fakes_live_in_nora_testing.py`, the
+list only shrinks), most for ports with no shared fake yet
+(`SearchProvider`/`GifSource`/`SocialProvider`, `TrackSource`/`MusicToolBridge`,
+`DreamAdaptor`/`DreamSink`) and four that steer `dream_loop`'s supervision
 rather than model a port. Each is a candidate; promoting one means a
 `nora/testing/` fake plus a contract suite against the production
 implementation, which is the work the rule exists to force.

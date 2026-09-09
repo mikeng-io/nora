@@ -3,7 +3,7 @@
 The standard the operator asked for: how a change is proven against Nora's real
 behaviour *before* it reaches the two live groups. The eval suite is the
 interceptor. It is built as the same **comprehend → measure → serialize** spine
-the rest of the repo runs on (`CLAUDE.md`), applied one layer up: comprehend a
+the rest of the repo runs on (`AGENTS.md`), applied one layer up: comprehend a
 user *journey*, measure the *trajectory* she produces, serialize a *verdict*.
 
 ## The two tiers
@@ -39,7 +39,7 @@ and grades what she *actually did*. Excluded from CI by `addopts = "-m 'not
 network'"`; run it against a reachable gateway with the LLM key set.
 
 ```bash
-# routing gate — the four real-incident journeys through the live model
+# routing gate — the six seed journeys and their six paraphrases, live
 OMNIROUTE_API_KEY=… uv run python -m evals.run --suite journeys
 
 # production-shape effort comparison — same journeys, per-run effort override
@@ -61,6 +61,18 @@ OMNIROUTE_API_KEY=… uv run python -m evals.run --suite adversarial
 OMNIROUTE_API_KEY=… uv run python -m evals.run --suite note_candidates --samples 5
 OMNIROUTE_API_KEY=… uv run python -m evals.run --suite note_candidates \
     --dreamer-dir /path/to/variant   # holds doctrine/ and objectives/
+
+# the Relevance Gate's four measurements (design 36): determinism first
+OMNIROUTE_API_KEY=… uv run python -m evals.run --suite relevance_gate
+
+# the proactive adaptor's two suites (design 39 §5, DEC-162): DECIDE grades
+# which rows the real DreamerRuntime + real tool source wrote and in which
+# due windows (a quiet case FAILS on a refused `remind` attempt, and a remind
+# without a memory read FAILS); ACT grades whether the fire turn spoke, with
+# `must_cite`, or stayed silent. Both majority-quiet; the false-positive rate
+# is the primary number. `--model` names the deployed alias from a dev box.
+OMNIROUTE_API_KEY=… uv run python -m evals.run --suite proactive_decide --samples 3
+OMNIROUTE_API_KEY=… uv run python -m evals.run --suite proactive_act
 ```
 
 ### Running a live suite from a dev machine
@@ -81,7 +93,7 @@ provider id and the deployment routes through an alias (`nora`,
 `nora-dreamer`), so a run without it measures a different model than
 production and its verdict is about nothing anyone deploys. The key is read
 from the deployment's `.env` through ssh rather than stored anywhere local —
-same rule as every other secret (`CLAUDE.md`, "Reaching the deployment").
+same rule as every other secret (`AGENTS.md`, "Reaching the deployment").
 
 Output is block-buffered under a redirect: a backgrounded run prints nothing
 until it exits, so wait on a sentinel (`until grep -q GATE "$log"`) rather
@@ -179,8 +191,10 @@ again. Add the journey.
 
 ## The participation suite — the flip gate (design/dreamer-agent-loop/35 §9)
 
-`make eval-participation` runs the 15-case participation suite: 5 relevance-Yes
-(S1a-S5a), their 5 knowledge-cut twins (S1b-S5b), and 5 pure-No (S6-S10). Each
+`make eval-participation` runs the 11-case participation suite: 3 relevance-Yes,
+their 3 knowledge-cut twins, and 5 pure-No (S6-S10) — the S1 and S4 pairs were
+deleted with the knowledge tier, since their `-known` half had nothing left to
+ground on. Each
 case is `transcript + standing seed + incoming -> expected verdict (speak /
 silence)`, driven through the REAL participation path (real
 `ParticipationTrigger`, real `FirePath.speak`, real policy opt-in, real model).

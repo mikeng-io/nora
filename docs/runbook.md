@@ -145,7 +145,7 @@ is correct. To tell "quiet" from "broken":
    they are invisible in `/health`:
 
    ```bash
-   docker compose logs nora | grep 'nora.discord.roster'
+   grep 'nora.discord.roster' data/nora.log     # the log is a file, not the docker driver
    ```
 
    - `roster read forbidden for guild …` → the **GUILD_MEMBERS privileged
@@ -345,7 +345,7 @@ commands below are unchanged and still the right first moves.
 2. If signal-cli looks fine, check Nora's own logs:
 
    ```bash
-   docker logs nora --tail 100 -f
+   tail -n 100 -f data/nora.log                 # `docker logs nora` is empty here
    ```
 
    Look for reconnect-backoff messages, unhandled exceptions in the SSE listen loop, or a
@@ -439,10 +439,15 @@ alerting specifically.
 
 ## 6. Langfuse tracing
 
-**Status as of 2026-08-05: ENABLED and verified end-to-end.** `config.toml` has
-`exporter = "otlp_http"` pointed at `http://127.0.0.1:3100/api/public/otel/v1/traces`,
-with `headers_env = "LANGFUSE_OTLP_HEADERS"`. The credential lives in the gitignored
-`.env` and is passed to the container by `docker-compose.yml`.
+**Status as of 2026-08-05: ENABLED and verified end-to-end** — against Langfuse
+directly. **Superseded 2026-09-04:** the container now exports to an
+OpenTelemetry collector (`http://host.docker.internal:4318/v1/traces`), which
+fans out to Langfuse (`:3100`) and Jaeger (`:16686`); `docs/observability.md`
+«How a span reaches a collector» carries the live read-back and the two
+filters on that path. `headers_env = "LANGFUSE_OTLP_HEADERS"` still names the
+credential, which lives in the gitignored `.env` and is passed to the container
+by `docker-compose.yml`. The verification steps below are the 2026-08-05 ones
+and still work against Langfuse's own endpoint.
 
 **How it was verified** (do the same after any change here — do not assume):
 1. `POST /api/public/otel/v1/traces` with the auth header → **200** (it is **401** without).
@@ -475,7 +480,8 @@ no schema change.
 stays the *runner*; Langfuse is the *store* for datasets, dataset runs and scores.
 
 **Datasets** (one per corpus, seeded from the YAML in `evals/`):
-`nora-trigger`, `nora-no-trigger`, `nora-adversarial` — 12 items each, keyed
+`nora-trigger`, `nora-no-trigger` (12 items each), `nora-adversarial` (10:
+the union of the three adversarial corpora) — keyed
 `<corpus>/<case-name>`. Langfuse item IDs are unique **per project across all
 datasets**, which is why the ids are namespaced; a bare case name would let one
 corpus silently overwrite another's item.
@@ -490,7 +496,7 @@ uv run python -m evals.run --suite all --export-langfuse   # CLI flag
 not assume a Langfuse exists.
 
 **Reading results:** each run becomes a dataset run; each evaluator contributes a
-BOOLEAN score (`exactly_once_send_reply`, `no_send_without_trigger`, `tool_budget`,
+BOOLEAN score (`replies_at_least_once`, `no_send_without_trigger`, `tool_budget`,
 `no_redundant_read`, `honcho_fed_once_per_reply`), plus `a8_silent_failure` for the
 A8 SLO. Langfuse's mean-of-run aggregation turns that last one into the
 `<1% silent failure` ratio directly. Re-running with the same run name **updates in
@@ -504,7 +510,7 @@ is deliberate — an observability store must not be able to break CI.
 
 **Known: `--suite all` currently reports GATE FAILED, and has since before this
 work.** The `trigger` suite's live-model path is deferred (see `evals/run.py`'s
-module docstring), so `ExactlyOnceSendReply` sees zero `send_reply` calls and
+module docstring), so `RepliesAtLeastOnce` sees zero `send_reply` calls and
 scores `false`. Confirmed identical on the pre-Phase-7 commit. The export is
 working correctly — it is faithfully recording a real failing verdict.
 
@@ -632,7 +638,9 @@ One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
 
 ```
 ~/workspace/nora/
-  docker-compose.yml        both services: nora + signal-cli
+  docker-compose.yml        every service: nora, db, signal-cli, whatsapp-bridge,
+                            presence, analytics, drop/rustfs/valkey, stt,
+                            prometheus, alertmanager, alert-bridge
   deploy/signal-cli/        Dockerfile + fetch.sh (16K; the 115MB tarball is
                             fetched on demand, never committed)
   config.toml               deploy cadence: ports, models, timeouts
