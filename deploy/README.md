@@ -58,7 +58,21 @@ The old BARE-METAL floor (iptables `uid-owner nora` OUTPUT rules for the pre-con
 systemd deployment) is preserved in git history; it did not constrain containers and is
 superseded here.
 
-## Watchdog
+## Watchdog — retired 2026-09-09
 
-`deploy/watchdog.sh` polls `/health` and alerts if the SSE listener has been silent for
-more than 300 seconds. Wire it into cron or a systemd timer, e.g. every 60 seconds.
+`deploy/watchdog.sh` polled `/health` and alerted if the SSE listener had been silent
+for more than 300 seconds. It is **deleted**, and what replaced it is
+`deploy/prometheus/` + `deploy/alertmanager/` + `deploy/alert-bridge/`.
+
+Two reasons, and the second is why it was never worth keeping as a fallback:
+
+* **Its condition is now a rule.** `PlatformSilent` in
+  `deploy/prometheus/rules/nora.yml` watches the same silence per platform, at a
+  threshold chosen not to cry wolf on a quiet night — plus five more absences the
+  script never looked at.
+* **It had no delivery path.** Its alert channel was `echo >&2` and a non-zero exit,
+  so even scheduled it would have produced a failed systemd unit — which is exactly
+  what nobody noticed for the sixteen days `nora-egress.service` sat in `failed`.
+  Alerts now reach the Discord review channel, and a delivered one says so.
+
+Kept in git history. See `docs/observability.md` for the whole path an alert takes.

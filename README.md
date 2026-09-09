@@ -304,11 +304,15 @@ curl -s http://127.0.0.1:9100/metrics
 
 ### Watchdog
 
-The SSE-silence watchdog is already implemented as data, not a process to containerize:
+The SSE-silence watchdog is implemented as data, not a process to containerize:
 `/health` reports `sse.last_event_age_seconds`, and `nora_last_event_age_seconds` is a
-live gauge in `/metrics`. `deploy/watchdog.sh` (unchanged) still works against the
-containerized instance since `/health` is exposed on the host via `network_mode: host`
-— point cron or a systemd timer at it exactly as before.
+live gauge in `/metrics`.
+
+**Nothing polls those by hand any more.** Prometheus scrapes the gauge and
+`PlatformSilent` alerts on it, delivered to the Discord review channel — see
+`docs/observability.md`. The old shell watchdog was deleted on 2026-09-09: its one
+condition is a rule now, and its alert channel was `echo >&2`, which even scheduled
+would only have produced a failed systemd unit for nobody to read.
 
 ### Rollback
 

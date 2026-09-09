@@ -43,10 +43,13 @@ def test_the_unit_restricts_egress_to_localhost():
 # searches from its own servers, so there is no self-hosted fetcher to cage.
 
 
-def test_the_watchdog_uses_the_300_second_threshold():
-    text = (DEPLOY / "watchdog.sh").read_text()
-    assert "300" in text
-    assert "/health" in text
+# test_the_watchdog_uses_the_300_second_threshold REMOVED (2026-09-09): the
+# shell watchdog is deleted. Its one condition — SSE silence — is the
+# `PlatformSilent` rule in `deploy/prometheus/rules/nora.yml`, at 900s rather
+# than 300s so a quiet night does not cry wolf, and with a delivery path the
+# script never had (its alert channel was `echo >&2`). What now guards the
+# threshold is `promtool check rules` plus the rule file itself; what guards
+# the delivery is `tests/unit/test_alert_bridge.py`.
 
 
 def test_the_install_script_creates_a_shell_less_system_user():

@@ -1,7 +1,8 @@
 # Where an alert GOES, which is the half that decides whether any of this is
-# real. `deploy/watchdog.sh` has existed since August and its alert channel is
+# real. `deploy/watchdog.sh` existed since August with an alert channel of
 # `echo >&2` plus a non-zero exit — so even scheduled it would have produced a
 # failed systemd unit, which is precisely what nobody noticed for sixteen days.
+# It was deleted once these rules covered its one condition.
 #
 # The sink is the Discord review channel the participation mirror already posts
 # to — the operator is reading it anyway, so an alert lands beside the

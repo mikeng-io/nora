@@ -37,6 +37,7 @@ groups:
           summary: "Nora's heartbeat has not ticked for {{ $value | humanizeDuration }}"
 
       # SSE silence — what `deploy/watchdog.sh` checked, and never ran to check.
+      # That script is deleted; this rule is what replaced it.
       # 900s, not the script's 300s: a genuinely quiet night in one room is
       # normal and a threshold that cries wolf is a threshold somebody mutes.
       - alert: PlatformSilent
