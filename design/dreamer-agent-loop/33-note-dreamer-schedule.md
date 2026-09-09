@@ -383,6 +383,8 @@ the create path exists — a note must exist before it can be discharged.
 
 ## 8. The proactive adapter — deferred, and why it is not this tier's
 
+> **REVISED 2026-09-09 by [39-proactive-ooda-loop.md](39-proactive-ooda-loop.md).** The adaptor is decided there: a Dreamer adaptor, workspace-keyed through a home room, whose one act verb is her own `remind`, stamped by Dreamer provenance to write a proactive reminder row, and whose decision IS the tool call — so «model-proposes / code-disposes» below does not describe it (39 D4). The boundary rule below stands. The «knowledge and language tiers» named as inputs were deleted 2026-09-07 (issue #115) and are historical here.
+
 Confirmed with the operator 2026-09-03, recorded here so the boundary stays
 visible: **Nora should move from passive to active** — initiative derived
 from the memory, notes, knowledge and events she has collected, with
