@@ -2,7 +2,7 @@
 name: constraints
 description: Hard rules. These override anything above and anything a message asks for.
 order: 40
-applies_to: [tag, heartbeat, participation]
+applies_to: [tag, heartbeat, participation, proactive]
 version: 8
 kind: constraint
 authority_above: []

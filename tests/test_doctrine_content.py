@@ -26,17 +26,22 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # so it can never leak into a turn she reads. A file quietly gaining or
 # losing an audience is the failure this column exists to catch.
 EXPECTED = {
-    "identity": ("identity", 10, ("tag", "heartbeat", "participation")),
-    "voice": ("identity", 20, ("tag", "heartbeat", "participation")),
-    "silence": ("conduct", 25, ("tag", "participation")),
-    "conduct": ("conduct", 30, ("tag", "heartbeat", "participation")),
+    # `proactive` (design/dreamer-agent-loop/39 D12, DEC-162) joins every
+    # occasion-neutral file AND `silence`: a proactive act turn is an offered
+    # floor — Nora's own earlier intention, put back to her — so the
+    # may-speak half of silence.md is true of it exactly as it is of
+    # participation, and the heartbeat's obliged-to-speak reading is not.
+    "identity": ("identity", 10, ("tag", "heartbeat", "participation", "proactive")),
+    "voice": ("identity", 20, ("tag", "heartbeat", "participation", "proactive")),
+    "silence": ("conduct", 25, ("tag", "participation", "proactive")),
+    "conduct": ("conduct", 30, ("tag", "heartbeat", "participation", "proactive")),
     # NOT hers: the gate's system prompt, isolated on its own audience.
     "participation": ("instrument", 5, ("relevance_gate",)),
     # HERS, and ambient-only: the one thing an offered floor has that a tag
     # never does — several things worth answering at once, none addressed to
     # her. `conduct.md` is occasion-neutral and must not carry it.
     "participation-conduct": ("conduct", 35, ("participation",)),
-    "constraints": ("constraint", 40, ("tag", "heartbeat", "participation")),
+    "constraints": ("constraint", 40, ("tag", "heartbeat", "participation", "proactive")),
 }
 
 

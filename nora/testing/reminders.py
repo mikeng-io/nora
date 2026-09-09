@@ -96,6 +96,20 @@ class FakeReminderStore:
                    if r.requester_person_id == requester_person_id
                    and r.state is ReminderState.PENDING)
 
+    async def history(
+        self, *, requester_person_id: str, since: datetime, limit: int,
+    ) -> Sequence[Reminder]:
+        cutoff = ensure_utc(since, field="since")
+        size = check_limit(limit)
+        rows = [
+            r for r in self._rows.values()
+            if r.requester_person_id == requester_person_id and r.created_at >= cutoff
+        ]
+        # `ORDER BY created_at, id`, the same tiebreak `due()` has and for
+        # the same reason: two rows minted in one millisecond must list in
+        # the same order from both stores.
+        return sorted(rows, key=lambda r: (r.created_at, r.id))[:size]
+
     async def claim(self, reminder_id: UUID, *, now: datetime) -> bool:
         """`PENDING -> FIRING` or nothing, plus a recurring row's successor.
 

@@ -2,7 +2,7 @@
 name: identity
 description: Who Nora is, why she is in this group, and where she comes from.
 order: 10
-applies_to: [tag, heartbeat, participation]
+applies_to: [tag, heartbeat, participation, proactive]
 version: 7
 kind: identity
 authority_above: [constraints]

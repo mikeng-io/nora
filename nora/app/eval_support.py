@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Sequence
+import uuid
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from zoneinfo import ZoneInfo
@@ -26,7 +28,15 @@ import sqlalchemy as sa
 
 from nora.agent import factory
 from nora.agent import tool_choice as tool_choice_module
-from nora.agent.dreamer import AdaptorBudget, AdaptorSchedule, DreamerRuntime
+from nora.agent.dreamer import (
+    AdaptorBudget,
+    AdaptorGrant,
+    AdaptorSchedule,
+    DreamerRuntime,
+    HomeRoom,
+    RegistryToolSource,
+    proactive_grant,
+)
 from nora.agent.factory import create_client, create_model_provider
 from nora.agent.guards import LeakGuard
 from nora.agent.registry import ToolRegistry
@@ -34,8 +44,9 @@ from nora.agent.whereis import Circle
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
-from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
+from nora.domain.models import DeliveryStatus, NormalizedMessage, PersonRef, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
+from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
 from nora.domain.standing import Standing
 from nora.engagement.stages.deliver import BUDGET_STOP_REASONS as _BUDGET_STOP_REASONS
 from nora.infra.honcho import HonchoClient
@@ -44,8 +55,10 @@ from nora.ingest.relevance_gate import GATE_AUDIENCE, RelevanceGate
 from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.instructions.dreamer import DreamerInstructions
 from nora.language.note_candidates import NoteCandidateAdaptor
+from nora.language.proactive import ProactiveAdaptor, WorkspaceRoom
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
+from nora.policy import permissive_policy
 from nora.tag import is_tagged
 from nora.testing import (
     BACKED_TOOLS,
@@ -57,12 +70,18 @@ from nora.testing import (
     CannedStreetParkingProvider,
     CannedTransitSource,
     CannedWeatherProvider,
+    FakeAdapter,
+    FakeRosterSource,
     InMemoryNoteStore,
+    InMemoryStandingStore,
     transcript_rows,
 )
-from nora.testing.fakes import FakeRecordStore
+from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
+from nora.testing.reminders import FakeReminderStore
 
 from .agent_runner import LiveAgentRunner
+from .fire import FirePath, proactive_occasion
+from .proactive_screen import ProactiveScreen
 
 #: The single person the eval harness identity (`_IDENTITY_TOML`) maps — the
 #: harness's `+852111` sender resolves to this person_id (kept as the REAL
@@ -113,6 +132,7 @@ __all__ = [
     "build_eval_tool_registry",
     "build_live_participation_runner",
     "build_live_runner",
+    "build_proactive_runtime",
     "build_production_seed",
     "create_client",
     "create_model_provider",
@@ -120,6 +140,8 @@ __all__ = [
     "load_config",
     "load_persons",
     "run_note_candidates_case",
+    "run_proactive_act_case",
+    "run_proactive_decide_case",
     "seed_from_dict",
 ]
 
@@ -274,6 +296,7 @@ def build_live_participation_runner(
 
 def build_eval_tool_registry(
     *, notes: Any | None = None, note_workspace: str = _EVAL_WORKSPACE,
+    reminders: Any | None = None, clock: Any | None = None,
 ) -> ToolRegistry:
     """A `ToolRegistry` wired with the canned eval backends (F4): `weather`,
     `web_search`, `place_info`, `route`, `transit`, `where_is` and `saved_places`
@@ -304,7 +327,16 @@ def build_eval_tool_registry(
     `note_workspace` is a constant here rather than a resolver: every seeded
     row lands in the eval workspace by construction (`seed_from_dict`), and a
     row keyed anywhere else silently never renders.
+
+    `reminders`/`clock` are the proactive suites' pair (design/dreamer-agent-
+    loop/39 §5): without a store `remind` answers `unavailable` and every
+    decide case is ERROR, and the clock must be the CASE's `now`, not the
+    wall clock, or `remind`'s past/too-soon checks measure the day the suite
+    happened to run. `None` keeps every other caller exactly as it was.
     """
+    extra: dict[str, Any] = {}
+    if clock is not None:
+        extra["clock"] = clock
     return ToolRegistry(
         weather=CannedWeatherProvider(),
         parking=CannedParkingProvider(),
@@ -316,6 +348,9 @@ def build_eval_tool_registry(
         circles=(Circle(circle_id=EVAL_CIRCLE_ID, person_ids=frozenset({_EVAL_PERSON_ID})),),
         notes=notes,
         note_workspace=(lambda _platform, _conv: note_workspace) if notes else None,
+        reminders=reminders,
+        reminder_caps=ReminderCaps() if reminders is not None else None,
+        **extra,
     )
 
 
@@ -832,6 +867,7 @@ class _NoDreamTools:
 
     def build(
         self, *, key: str, names: frozenset[str], workspace: str | None = None,
+        adaptor: str = "", grant: Any = None,
     ) -> list[Any]:
         return []
 
@@ -959,4 +995,414 @@ async def run_note_candidates_case(
         status=outcome.status, stop_reason=outcome.stop_reason,
         instruction_sha256=outcome.instruction_sha256,
         before=before, after=after, staged=staged,
+    )
+
+
+# ---------------------------------------------------------------------------
+# The proactive adaptor's two suites (design/dreamer-agent-loop/39 §5, DEC-162
+# (10)): the DECIDE suite drives the REAL DreamerRuntime + REAL
+# ProactiveAdaptor through the REAL RegistryToolSource — home room, grant,
+# `remind` under Dreamer provenance — over in-memory stores with only the
+# model live, and is graded on the reminder rows left behind (WHEN). The ACT
+# suite drives the REAL FirePath over one proactive row with the REAL
+# ProactiveScreen in front of it, graded on what the room heard (speak with
+# must_cite, or silent). Everything the harness lacked that 39 §5 named is
+# here: a Dreamer tool source with the reminder store wired, a canned memory
+# backend, per-room Standing seeding, and a reader over the reminder store.
+# ---------------------------------------------------------------------------
+
+#: The eval person, as `Persons` — the same `miles_novak`/`+852111` the harness
+#: identity maps, built in memory so the decide drive needs no temp file.
+_EVAL_PERSONS = Persons(
+    by_person={"miles_novak": PersonRef(person_id="miles_novak", name="Miles", honcho_peer_id="miles_novak")},
+    index={("signal", "+852111"): "miles_novak"},
+)
+_EVAL_MEMBER = "+852111"
+
+
+class EvalDreamTools:
+    """`DreamToolSource` for the decide suite: the REAL `RegistryToolSource`
+    over the canned eval registry, re-bound per case.
+
+    Re-bound because a case owns its notebook, its reminder store and its
+    clock, while `DreamerRuntime` holds ONE tool source for the run of a
+    suite (the note-candidates drive has the same shape, with a source that
+    builds nothing). `bind` swaps the inner source; `build` before any `bind`
+    is a harness fault and raises rather than building an empty room. The
+    filter, the home room, the grant and the `dream_adaptor` provenance are
+    all the production code path's — nothing is reimplemented here, which is
+    what makes the suite a measurement of the thing that ships.
+    """
+
+    def __init__(self) -> None:
+        self._source: RegistryToolSource | None = None
+        self.builds: list[tuple[str, frozenset[str]]] = []
+
+    def bind(
+        self, *, workspace: str, home: HomeRoom, notes: Any, reminders: Any,
+        memory: Any, clock: Callable[[], datetime],
+    ) -> None:
+        registry = build_eval_tool_registry(
+            notes=notes, note_workspace=workspace, reminders=reminders, clock=clock,
+        )
+        self._source = RegistryToolSource(
+            registry=registry, store=FakeRecordStore(), persons=_EVAL_PERSONS,
+            honcho=memory, metrics=Metrics(), ai_peer="nora",
+            home_rooms={workspace: home},
+            rosters={home.platform: FakeRosterSource(
+                groups={home.conversation_id: (frozenset({_EVAL_MEMBER}),)},
+            )},
+            self_ids=frozenset(),
+        )
+
+    def read_only(self) -> frozenset[str]:
+        return ToolRegistry().read_only_tools()
+
+    def build(
+        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+        adaptor: str = "", grant: AdaptorGrant | None = None,
+    ) -> list[Any]:
+        if self._source is None:
+            raise RuntimeError("EvalDreamTools.build before bind: a case must bind its stores")
+        built = self._source.build(
+            key=key, names=names, workspace=workspace, adaptor=adaptor, grant=grant,
+        )
+        self.builds.append((adaptor, frozenset(
+            str(getattr(t, "tool_name", None) or getattr(t, "__name__", "")) for t in built
+        )))
+        return built
+
+
+def build_proactive_runtime(
+    cfg: Config, *, client: Any, tools: EvalDreamTools, effort: str | None = None,
+    dreamer_dir: str | Path | None = None, model: str | None = None,
+) -> tuple[DreamerRuntime, str]:
+    """The Dreamer runtime as `composition.build_dependencies` wires it for
+    the proactive adaptor — same model id, tier scalars, retry policy,
+    budget (`[dreamer.budgets.proactive]` or the default) and the proactive
+    GRANT — with the eval tool source in place of the production one and
+    no clock-driven schedule (a drive fires on demand). `dreamer_dir` and
+    `model` mean what they mean for `build_note_candidates_runtime`."""
+    model = model or cfg.dreamer_model()
+    reasoning = effort or cfg.dreamer.reasoning_effort or cfg.llm.reasoning_effort
+    models = factory.ModelSource(
+        client=client,
+        spec=factory.ModelSpec(
+            model=model, max_tokens=cfg.llm.max_tokens,
+            temperature=cfg.llm.temperature, reasoning_effort=reasoning,
+            tool_choice=tool_choice_module.AFTER_SPEAKING,
+        ),
+    )
+    instructions = DreamerInstructions(
+        Path(dreamer_dir) if dreamer_dir is not None else cfg.dreamer.dir,
+        reload="startup", strict=cfg.dreamer.strict, metrics=Metrics(),
+    )
+    budget = cfg.dreamer.budget_for("proactive")
+    runtime = DreamerRuntime(
+        models=models, instructions=instructions, tools=tools,
+        budgets={"proactive": AdaptorBudget(
+            turns=budget.turns, total_tokens=budget.total_tokens,
+            output_tokens=budget.output_tokens, timeout_seconds=budget.timeout_seconds,
+        )},
+        default_budget=AdaptorBudget(
+            turns=budget.turns, total_tokens=budget.total_tokens,
+            output_tokens=budget.output_tokens, timeout_seconds=budget.timeout_seconds,
+        ),
+        retry=factory.build_retry_policy(timeout_seconds=cfg.llm.timeout_seconds),
+        metrics=Metrics(), model_name=model,
+        schedules={"proactive": AdaptorSchedule(min_interval_seconds=86400, batch_limit=1)},
+        tool_budget_overrides=cfg.llm.budgets,
+        grants={"proactive": proactive_grant()},
+    )
+    return runtime, f"{model}/{reasoning}"
+
+
+@dataclass(frozen=True)
+class ProactiveDecideDrive:
+    """What one decide run left behind: the runtime's outcome and every row
+    in the reminder store afterwards as `(note_title, due_at_iso,
+    requester, kind, intent)` — plain tuples, so `evals/` grades without
+    importing the domain."""
+
+    status: str
+    stop_reason: str | None
+    instruction_sha256: str
+    rows: tuple[tuple[str | None, str, str, str, str], ...]
+    tools_built: tuple[str, ...]
+
+
+_LOG_STATES: Mapping[str, ReminderState] = {
+    "sent": ReminderState.DONE,
+    "silent": ReminderState.DONE,
+    "pending": ReminderState.PENDING,
+    "cancelled_note_moved": ReminderState.CANCELLED,
+    "cancelled_note_retired": ReminderState.CANCELLED,
+    "failed_policy": ReminderState.FAILED,
+    "failed_timeout": ReminderState.FAILED,
+    "failed_error": ReminderState.FAILED,
+}
+
+
+async def _seed_notes(
+    store: InMemoryNoteStore, *, workspace: str, scope: str, notes: Sequence[Mapping[str, Any]],
+    now_ms: int,
+) -> dict[str, Note]:
+    """Case notes through the tag path's own `create` shape, keyed by title.
+    `strikes` is reproduced through `record_wake` — the first wake on a
+    fresh note is progress (the creation revision is tag-path), each further
+    wake without progress is one strike — so the row carries a REAL strike
+    count rather than a smuggled column."""
+    by_title: dict[str, Note] = {}
+    for n, entry in enumerate(notes):
+        anchor = entry.get("anchor_date")
+        note = await store.create(
+            workspace=workspace, title=str(entry["title"]),
+            description=str(entry["description"]),
+            uncertainty=str(entry.get("uncertainty", entry["description"])),
+            closing_condition=str(entry.get("closing_condition", "the room settles it")),
+            established_in=scope, body=str(entry["body"]), established_by="tag:eval",
+            now_ms=now_ms - 86_400_000 * 3 + n,
+            anchor_date=int(anchor) if anchor is not None else None,
+            # A dateless note needs a referent of some kind; the store refuses
+            # one with neither a date nor an entity, so a case that says
+            # «no anchor» gets an entity handle, which is the other legal shape.
+            anchor_entity_ids=() if anchor is not None else ("eval-entity",),
+        )
+        for _ in range(1 + int(entry.get("strikes", 0))) if entry.get("strikes") else ():
+            await store.record_wake(
+                workspace=workspace, note_id=note.id,
+                next_revisit_at=now_ms - 1, now_ms=now_ms - 3_600_000,
+            )
+        by_title[note.title] = note
+    return by_title
+
+
+async def run_proactive_decide_case(
+    runtime: DreamerRuntime, *, tools: EvalDreamTools, workspace: str, now: datetime,
+    rooms: Sequence[Mapping[str, Any]], notes: Sequence[Mapping[str, Any]],
+    standing: Sequence[Mapping[str, Any]], log: Sequence[Mapping[str, Any]],
+    memory: Mapping[str, Any] | None = None,
+) -> ProactiveDecideDrive:
+    """One decide case: seed the workspace's orient state, run the real
+    adaptor through the real runtime with the real tool source bound to
+    these stores, and read the reminder store back.
+
+    `rooms` are `{platform, conversation_id, label, home}`; `notes` are
+    `{title, description, body, anchor_date|None, strikes?}`; `standing`
+    entries are `{room: <label>, body, age_hours}`; `log` entries are
+    `{about?, intent, decided_hours_ago, due_hours_ago, outcome}` written as
+    Nora's own rows; `memory` seeds the canned Honcho with `conclusions`
+    (served by `about`/`ask_memory`/the self card) and `messages` (served by
+    `search_memory_workspace`). `now` must be aware.
+    """
+    now_ms = int(now.timestamp() * 1000)
+    ws_rooms = tuple(
+        WorkspaceRoom(
+            platform=str(r["platform"]), conversation_id=str(r["conversation_id"]),
+            label=str(r["label"]), home=bool(r.get("home", False)),
+        )
+        for r in rooms
+    )
+    home_room = next(r for r in ws_rooms if r.home)
+    home = HomeRoom(
+        workspace=workspace, platform=home_room.platform,
+        conversation_id=home_room.conversation_id, location_trusted=True,
+    )
+    note_store = InMemoryNoteStore()
+    by_title = await _seed_notes(
+        note_store, workspace=workspace, scope=home_room.conversation_id, notes=notes,
+        now_ms=now_ms,
+    )
+    standing_store = InMemoryStandingStore()
+    by_label = {r.label: r for r in ws_rooms}
+    for entry in standing:
+        room = by_label[str(entry["room"])]
+        await standing_store.write(standing=Standing(
+            platform=room.platform, conversation_id=room.conversation_id,
+            body=str(entry["body"]), fold_count=1,
+            updated_at=now_ms - int(float(entry.get("age_hours", 1)) * 3_600_000),
+        ))
+    reminders = FakeReminderStore()
+    for entry in log:
+        about = entry.get("about")
+        linked = by_title.get(str(about)) if about else None
+        payload: dict[str, str] = {"intent": str(entry["intent"])}
+        if linked is not None:
+            payload.update({
+                "note_id": linked.id, "revision_id": linked.head_revision_id,
+                "note_title": linked.title,
+            })
+        elif about:
+            payload["note_title"] = str(about)
+        how = str(entry.get("outcome", "pending"))
+        state = _LOG_STATES.get(how, ReminderState.FAILED)
+        due = now - timedelta(hours=float(entry.get("due_hours_ago", 0)))
+        await reminders.create(Reminder(
+            id=uuid.uuid4(), requester_person_id="nora", platform=home_room.platform,
+            conversation_id=home_room.conversation_id, conversation_type="group",
+            text=str(entry["intent"]),
+            created_at=now - timedelta(hours=float(entry.get("decided_hours_ago", 24))),
+            due_at=due, state=state,
+            fired_at=None if state is ReminderState.PENDING else due,
+            outcome=None if how == "pending" else how,
+            kind="proactive", payload=payload,
+        ))
+    seed = memory or {}
+    canned = FakeMemoryStore(
+        conclusions={"nora": list(seed.get("conclusions") or [])},
+    )
+    for body in seed.get("messages") or []:
+        canned.messages.append(("miles_novak", str(body)))
+    tools.bind(
+        workspace=workspace, home=home, notes=note_store, reminders=reminders,
+        memory=canned, clock=lambda: now,
+    )
+    adaptor = ProactiveAdaptor(
+        notes=note_store, standing=standing_store, reminders=reminders, memory=canned,
+        rooms_of=lambda ws: ws_rooms if ws == workspace else (),
+        ai_peer="nora", clock=lambda: now, timezone=ZoneInfo("Asia/Hong_Kong"),
+        metrics=Metrics(),
+    )
+    before = {r.id for r in await reminders.history(
+        requester_person_id="nora", since=now - timedelta(days=365), limit=1000,
+    )}
+    tools.builds.clear()
+    outcome = await runtime.run(adaptor=adaptor, key=workspace, batch=())
+    rows = []
+    for row in await reminders.history(
+        requester_person_id="nora", since=now - timedelta(days=365), limit=1000,
+    ):
+        if row.id in before:
+            continue
+        carried: Mapping[str, str] = row.payload if isinstance(row.payload, Mapping) else {}
+        rows.append((
+            carried.get("note_title"), row.due_at.isoformat(), row.requester_person_id,
+            row.kind, str(carried.get("intent", row.text)),
+        ))
+    built = tuple(sorted({name for _, names in tools.builds for name in names}))
+    return ProactiveDecideDrive(
+        status=outcome.status, stop_reason=outcome.stop_reason,
+        instruction_sha256=outcome.instruction_sha256, rows=tuple(rows),
+        tools_built=built,
+    )
+
+
+@dataclass(frozen=True)
+class ProactiveActDrive:
+    """What one act run did: the fire path's outcome string (`sent`,
+    `silent`, `failed_*`, or the screen's `cancelled_*`), what the room
+    heard, how the loop ended, and whether the silence counter moved.
+    `screened` is the `ProactiveScreen` verdict — `None` when the row was
+    admitted and a model was called."""
+
+    outcome: str
+    sent: tuple[str, ...]
+    stop_reason: str | None
+    silence: int
+    screened: str | None
+
+
+async def run_proactive_act_case(
+    cfg: Config, *, runner: Any, now: datetime, row: Mapping[str, Any],
+    transcript: Sequence[Any], standing: str | None, notes: Sequence[Mapping[str, Any]],
+    note_moved: bool = False,
+) -> ProactiveActDrive:
+    """One act case: seed the eval room, build the row the decide turn would
+    have written, put it through the REAL `ProactiveScreen` and — if admitted
+    — the REAL `FirePath.run` with the proactive runner (`tool_choice=auto`),
+    and read back what the room heard.
+
+    `row` is `{note: <title>, intent, decided_hours_ago}`; `transcript`,
+    `standing` and `notes` take `seed_from_dict`'s shapes; `note_moved`
+    appends a TAG-PATH revision after the row was linked, which is exactly
+    what the screen cancels on (39 D11) — no model is called for it.
+    """
+    seed = seed_from_dict({
+        "transcript": list(transcript), "standing": standing or "",
+        "notes": [dict(n) for n in notes],
+    })
+    note_store = InMemoryNoteStore()
+    for note, revision in seed.notes:
+        note_store.notes[note.id] = note
+        note_store.revisions[revision.id] = revision
+    linked = next((n for n, _ in seed.notes if n.title == row["note"]), None)
+    if linked is None:
+        raise ValueError(f"act case names note {row['note']!r} that its notes do not seed")
+    reminder = Reminder(
+        id=uuid.uuid4(), requester_person_id="nora", platform="signal",
+        conversation_id="g1", conversation_type="group", text=str(row["intent"]),
+        created_at=now - timedelta(hours=float(row.get("decided_hours_ago", 6))),
+        due_at=now, state=ReminderState.FIRING, fired_at=None, outcome=None,
+        kind="proactive",
+        payload={
+            "note_id": linked.id, "revision_id": linked.head_revision_id,
+            "note_title": linked.title, "intent": str(row["intent"]),
+        },
+    )
+    if note_moved:
+        await note_store.append_revision(
+            workspace=_EVAL_WORKSPACE, note_id=linked.id,
+            body=f"{seed.notes[0][1].body}\nSettled by the room.",
+            parent_revision_id=linked.head_revision_id, established_by="tag:eval",
+            now_ms=int(now.timestamp() * 1000) - 60_000,
+        )
+    refusal = await ProactiveScreen(policy=permissive_policy(), notes=note_store).refusal(reminder)
+    if refusal is not None:
+        _state, why = refusal
+        return ProactiveActDrive(outcome=why, sent=(), stop_reason=None, silence=0, screened=why)
+
+    metrics = Metrics()
+    records = FakeRecordStore()
+    for r in seed.recents:
+        records.rows.append({
+            "id": r.id, "platform": "signal", "conversation_id": "g1",
+            "sender_id": r.sender_id, "sender_name": r.sender_name,
+            "person_id": r.person_id, "ts": r.ts, "body": r.body, "is_nora": r.is_nora,
+            "delivery_status": r.delivery_status, "quoted_ts": r.quoted_ts,
+            "raw_json": r.raw_json, "media_json": r.media_json,
+        })
+    standing_store = InMemoryStandingStore()
+    if seed.standing is not None:
+        await standing_store.write(standing=Standing(
+            platform="signal", conversation_id="g1", body=seed.standing.body,
+            fold_count=1, updated_at=int(now.timestamp() * 1000) - 3_600_000,
+        ))
+    doctrine = DoctrineStore(
+        cfg.doctrine.dir, strict=cfg.doctrine.strict, reload="never",
+        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
+        trigger=cfg.engagement.trigger.text, language_hint=cfg.doctrine.language_hint,
+        tool_names=TOOL_NAMES, metrics=metrics,
+    )
+    adapter = FakeAdapter()
+    path = FirePath(
+        persons=_EVAL_PERSONS, records=records, memory=FakeMemoryStore(),
+        doctrine_store=doctrine, metrics=metrics, runner=runner,
+        adapters={"signal": cast(Any, adapter)},
+        registry=build_eval_tool_registry(notes=note_store),
+        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
+        ai_peer="nora", context_window=cfg.store.context_window,
+        limits=factory.build_limits(
+            output_tokens=cfg.llm.limits.output_tokens, turns=cfg.llm.limits.turns,
+            total_tokens=cfg.llm.limits.total_tokens,
+        ),
+        timeout_seconds=cfg.heartbeat.timeout_seconds, clock=lambda: now,
+        rosters={"signal": FakeRosterSource(groups={"g1": (frozenset({_EVAL_MEMBER}),)})},
+        event_registry={"proactive": proactive_occasion},
+        standing=standing_store, notes=note_store, policy=permissive_policy(),
+        proactive_runner=runner,
+    )
+    outcome = await path.run([reminder])
+    counts: dict[str, float] = {}
+    for (name, labels), value in metrics.snapshot().items():
+        if name == "nora_llm_stop_reason_total" and value:
+            reason = dict(labels).get("reason", "")
+            if reason:
+                counts[reason] = counts.get(reason, 0.0) + value
+    stop_reason = (
+        sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0] if counts else None
+    )
+    return ProactiveActDrive(
+        outcome=outcome, sent=tuple(adapter.texts), stop_reason=stop_reason,
+        silence=int(metrics.get("nora_proactive_silence_total", platform="signal")),
+        screened=None,
     )

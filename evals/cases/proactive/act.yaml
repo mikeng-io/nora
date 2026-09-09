@@ -1,0 +1,159 @@
+# The proactive ACT suite (design/dreamer-agent-loop/39 §5, DEC-162 (10)).
+#
+# Each case is ONE proactive row coming due — what the decide turn wrote to
+# its later self — plus the room as it is at fire time: the recent
+# transcript, the room's Standing, and the note the row is about. The row
+# goes through the REAL ProactiveScreen first (39 D11 — a note the tag path
+# revised since the row was linked is cancelled with no model call), then
+# the REAL FirePath with the proactive runner (tool_choice auto), and the
+# grade is what the room HEARD (`evals.proactive.grade_act`):
+#
+#   silent  — nothing was sent. A screened-out row counts as silent.
+#   speak   — something was sent, and every `must_cite` substring is in it.
+#
+# `failed_*` (timeout, error) is ERROR, never PASS. Majority `silent` on
+# purpose, for the decide corpus's reason.
+#
+# `transcript` entries are the eval room's member ("Miles") as a plain
+# string, or `{name, body}` for another member. Timestamps carry +08:00.
+
+- name: a01_dinner_nobody_said_where
+  expect: speak
+  now: "2026-09-11T16:00:00+08:00"
+  must_cite: ["數碼港"]
+  row:
+    note: AI Hackathon dinner plan
+    intent: "Dinner after Saturday's hackathon at 數碼港 — nobody has said where to eat or who is coming. Ask now, the evening before, so people can answer tonight."
+    decided_hours_ago: 9
+  notes:
+    - title: AI Hackathon dinner plan
+      description: dinner after Saturday's AI Thinking hackathon at 數碼港 — who and where are open
+      body: "Miles is at the AI Thinking hackathon at 數碼港 on Saturday 12 Sep. Teammates unknown; dinner venue undecided."
+      anchor_date: 20260912
+  standing: "Miles is going to the 數碼港 hackathon Saturday; nobody has said where dinner is."
+  transcript:
+    - "聽日 hackathon 我八點幾出門"
+    - {name: Grant, body: "加油 🔥"}
+
+- name: a02_note_moved_on_the_tag_path
+  expect: silent
+  now: "2026-09-11T16:00:00+08:00"
+  note_moved: true
+  row:
+    note: AI Hackathon dinner plan
+    intent: "Ask where dinner is after the hackathon."
+    decided_hours_ago: 9
+  notes:
+    - title: AI Hackathon dinner plan
+      description: dinner after Saturday's hackathon — where is open
+      body: "Dinner Saturday after the hackathon; venue open."
+      anchor_date: 20260912
+  standing: "Dinner Saturday; venue open."
+  transcript:
+    - "聽日 hackathon 我八點幾出門"
+
+- name: a03_standing_says_settled
+  expect: silent
+  now: "2026-09-11T16:00:00+08:00"
+  row:
+    note: Friday drinks
+    intent: "Ask whether drinks tonight are Central or K-Town."
+    decided_hours_ago: 9
+  notes:
+    - title: Friday drinks
+      description: drinks tonight — Central or Kennedy Town undecided
+      body: "Drinks tonight after work. Central or K-Town — nobody has picked."
+      anchor_date: 20260911
+  standing: "Drinks tonight are settled: Kennedy Town, 7pm at the usual bar, everyone has said yes."
+  transcript:
+    - {name: Ada, body: "好 7點 K-Town 見"}
+    - {name: Ben, body: "ok"}
+    - "見！"
+
+- name: a04_someone_already_said_it
+  expect: silent
+  now: "2026-09-11T16:00:00+08:00"
+  row:
+    note: Ben's flat for the 25th
+    intent: "Ben promised the landlord's answer by today; nudge him if it has not come."
+    decided_hours_ago: 9
+  notes:
+    - title: Ben's flat for the 25th
+      description: whether Ben's landlord allows the party on the 25th
+      body: "Ben asked his landlord about ten people on Sat 25 Sep; answer promised by Fri 11 Sep."
+      anchor_date: 20260925
+  standing: "Party on the 25th hinges on Ben's landlord."
+  transcript:
+    - {name: Ada, body: "Ben 業主覆咗未？"}
+    - {name: Ben, body: "覆咗 可以 十個人冇問題"}
+    - {name: Cat, body: "yeah！"}
+
+- name: a05_room_said_decide_later
+  expect: silent
+  now: "2026-09-11T16:00:00+08:00"
+  row:
+    note: October hike
+    intent: "Ask which trail for the October hike."
+    decided_hours_ago: 9
+  notes:
+    - title: October hike
+      description: a hike on 3 Oct — trail undecided
+      body: "Hike Sat 3 Oct. Trail to be decided nearer the time."
+      anchor_date: 20261003
+  standing: "October hike is on; the trail gets picked the week before, the group said not to fuss about it yet."
+  transcript:
+    - {name: Cat, body: "行山條路線到時先講啦 仲有成個月"}
+    - {name: Ada, body: "係 唔急"}
+
+- name: a06_plan_cancelled_in_the_room
+  expect: silent
+  now: "2026-09-11T16:00:00+08:00"
+  row:
+    note: Saturday dim sum
+    intent: "Ask what time dim sum is on Saturday."
+    decided_hours_ago: 9
+  notes:
+    - title: Saturday dim sum
+      description: dim sum Saturday — place and time open
+      body: "Dim sum this Saturday. Place and time open."
+      anchor_date: 20260912
+  standing: "Dim sum Saturday was floated; time and place open."
+  transcript:
+    - {name: Ada, body: "星期六飲茶要取消 我要返工 😭"}
+    - {name: Ben, body: "冇問題 下次啦"}
+    - "下次先"
+
+- name: a07_follow_up_still_owed
+  expect: speak
+  now: "2026-09-11T16:00:00+08:00"
+  must_cite: ["業主"]
+  row:
+    note: Ben's flat for the 25th
+    intent: "Ben promised the 業主's answer about the 25th by today and nothing has come; ask him gently."
+    decided_hours_ago: 9
+  notes:
+    - title: Ben's flat for the 25th
+      description: whether Ben's 業主 allows ten people on the 25th — Ben said Friday
+      body: "Ben asked his 業主 about ten people on Sat 25 Sep and promised an answer by Fri 11 Sep. Ada and Cat are waiting."
+      anchor_date: 20260925
+  standing: "Party on the 25th hinges on Ben's 業主; Ben said Friday. Nothing since."
+  transcript:
+    - {name: Ada, body: "今晚食咩好"}
+    - {name: Cat, body: "隨便"}
+
+- name: a08_nothing_new_since_she_last_asked
+  expect: silent
+  now: "2026-09-11T16:00:00+08:00"
+  row:
+    note: Mahjong night
+    intent: "Ask if mahjong is still happening."
+    decided_hours_ago: 9
+  notes:
+    - title: Mahjong night
+      description: a mahjong night — no date, no host, asked several times
+      body: "Cat floated mahjong in August. No date, no host. Nora has asked about it three times and nobody answered."
+      anchor_date: 20260913
+  standing: "Mahjong keeps being mentioned and going nowhere; Nora asked yesterday and nobody replied."
+  transcript:
+    - {name: Ada, body: "今晚睇波"}
+    - {name: Ben, body: "🍺"}

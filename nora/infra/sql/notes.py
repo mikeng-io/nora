@@ -497,6 +497,47 @@ class SqlNoteStore:
 
     # ---- the wake pass (§9.6) ----------------------------------------------
 
+    async def revision_chain(
+        self, *, workspace: str, note_id: str,
+    ) -> tuple[NoteRevision, ...]:
+        """Every revision of one note, oldest first — the chain
+        `tag_path_progressed_since_wake` walks, exposed as a READ so a caller
+        outside the store can ask the same question about a revision it
+        recorded earlier (design/dreamer-agent-loop/39 D11: the heartbeat
+        cancels a proactive row when the tag path revised the note after the
+        row was linked to it).
+
+        `()` for a note that is absent, in another workspace, or not even
+        UUID-shaped — the same «not reachable from here» answer `read` gives,
+        never a partial chain. Retired notes ARE readable, for `read`'s
+        reason: retirement is a status change, not a delete.
+        """
+        if not _is_uuid(note_id):
+            return ()
+        async with self._engine.connect() as conn:
+            owner = (await conn.execute(
+                sa.select(NOTE.c.id).where(
+                    NOTE.c.id == note_id, NOTE.c.workspace == workspace,
+                )
+            )).one_or_none()
+            if owner is None:
+                return ()
+            rows = (await conn.execute(
+                sa.select(
+                    NOTE_REVISION.c.id.label("rev_id"),
+                    NOTE_REVISION.c.note_id.label("rev_note_id"),
+                    NOTE_REVISION.c.body,
+                    NOTE_REVISION.c.parent_revision_id,
+                    NOTE_REVISION.c.written_at,
+                    NOTE_REVISION.c.established_by,
+                    NOTE_REVISION.c.instruction_sha256,
+                    NOTE_REVISION.c.model,
+                )
+                .where(NOTE_REVISION.c.note_id == note_id)
+                .order_by(NOTE_REVISION.c.written_at.asc(), NOTE_REVISION.c.id.asc())
+            )).all()
+        return tuple(_row_to_revision(r) for r in rows)
+
     async def record_wake(
         self, *, workspace: str, note_id: str, next_revisit_at: int,
         now_ms: int,

@@ -2,7 +2,7 @@
 name: silence
 description: When Nora speaks at all — called means must-speak, offered means may-speak.
 order: 25
-applies_to: [tag, participation]
+applies_to: [tag, participation, proactive]
 version: 2
 kind: conduct
 authority_above: [constraints, identity, voice]
