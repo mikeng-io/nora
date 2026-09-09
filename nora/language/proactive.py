@@ -111,6 +111,17 @@ PROACTIVE_ADAPTOR_NAME = "proactive"
 PROACTIVE_TOOLS: frozenset[str] = frozenset({
     "remind",
     "where_is", "saved_places", "route", "group_members",
+    # `lookup_person` GRANTED 2026-09-10 (issue #145). Without it the adaptor
+    # held no verb that answers «who is this handle?», and `group_members`
+    # returns real names with no aliases beside them — so a note written in the
+    # group's own nicknames had nothing to resolve against. Measured on the
+    # `friends` workspace (Langfuse d63f40f2, 2026-09-09): ten tool calls, six
+    # of them `search_memory_workspace`, five asking the same question — who
+    # `@熱咖啡☕少奶多糖`, `@隨風而去`, `@山田花子.하나` and `@國婷永琪` are — until
+    # R-7 stopped it. The searches returned only more occurrences of the same
+    # handles; the mapping exists in memory as scattered chat lines, which is
+    # depth, and the turn needed an index.
+    "lookup_person",
     "about", "ask_memory", "search_memory_workspace",
     "note_read", "note_search",
     "web_search", "web_fetch", "weather", "now",

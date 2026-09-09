@@ -18,6 +18,7 @@ import pytest
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.standing import Standing
 from nora.ingest.relevance_gate import (
+    CAPABILITY_HEADER,
     GATE_AUDIENCE,
     GATE_ERROR_KINDS,
     Completion,
@@ -669,3 +670,78 @@ async def test_without_a_join_the_gate_still_runs_on_the_bare_rows():
 
     assert got.verdict == "go"
     assert "邊間嚟㗎?" in client.prompts[-1]
+
+
+# --- what she can actually call (issue #144) ---------------------------------
+#
+# The gate decides «is there something in this room she can serve?» — a question
+# about her capabilities — and until 2026-09-10 it was told nothing about them.
+# Its whole knowledge was a hand-written five-item list in `participation.md`
+# against 53 registered tools: DEC-150's forbidden capability cache, past the
+# loader's guard because the file declares `kind: instrument`.
+#
+# Measured cost, gate trace 5c5d1d25 (2026-09-09 16:36Z, signal/Friends):
+# a plain "will it rain tomorrow morning" in Cantonese answered
+# {"verdict": "no_go", "relevance_score": 0}
+# while that same file's category 1 reads "the weather".
+
+_DIGEST = "- weather — The weather in Hong Kong — current conditions, the outlook"
+
+
+def test_the_digest_is_appended_to_the_instruction_not_woven_into_it():
+    """APPENDED, so an operator editing `participation.md` cannot delete it by
+    accident — the instruction hot-reloads and the digest does not."""
+    system = build_system_prompt("THE INSTRUCTION", _DIGEST)
+    assert system.startswith("THE INSTRUCTION")
+    assert _DIGEST in system
+    assert CAPABILITY_HEADER in system
+
+
+def test_no_digest_leaves_the_prompt_exactly_as_it_was():
+    """The gate ran without one until 2026-09-10, and a composition that cannot
+    build a registry must degrade to that rather than fail closed on every
+    window."""
+    assert build_system_prompt("THE INSTRUCTION", "") == "THE INSTRUCTION"
+    assert build_system_prompt("THE INSTRUCTION", "   \n ") == "THE INSTRUCTION"
+    assert build_system_prompt("THE INSTRUCTION") == "THE INSTRUCTION"
+
+
+async def test_the_digest_reaches_the_model_and_the_room_blocks_do_not_change():
+    """The capability digest is CODE-owned, so it belongs in the system prompt
+    beside the instruction — never in the user message, which is the closed set
+    of room content the test above pins."""
+    client = _Client('{"verdict": "go", "relevance_score": 1.0}')
+    rows = ["知唔知聽朝會唔會落雨？"]
+    gate = _gate(client, records=_Records(rows), capabilities=_DIGEST)
+
+    await gate.decide(platform="signal", conversation_id="g/1")
+
+    assert _DIGEST in client.systems[0]
+    # The room half is untouched: still exactly transcript + standing.
+    assert client.prompts[0] == build_user_message(
+        render_context((_row(rows[0], rid=1),), None),
+    )
+
+
+def test_the_digest_is_derived_from_the_registry_and_read_only():
+    """DERIVED, so it cannot go stale — that is the whole reason this is a
+    method and not a paragraph. A rendered copy pasted into a doctrine file
+    would reintroduce exactly the bug it closes.
+
+    Read-only only: the gate asks whether an ANSWER exists, and a verb that
+    ACTS is never the reason a window is worth her turn.
+    """
+    from nora.agent.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    digest = registry.capability_digest()
+    named = {line.split(" — ")[0].removeprefix("- ").strip()
+             for line in digest.splitlines() if line.strip()}
+
+    assert named == set(registry.read_only_tools())
+    # The two the live miss turned on, and the one #145 grants the Dreamer.
+    assert "weather" in named
+    assert "lookup_person" in named
+    # Acting verbs are absent by construction, not by an authored exclusion.
+    assert "send_reply" not in named
+    assert "remind" not in named

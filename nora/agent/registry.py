@@ -489,6 +489,46 @@ class ToolRegistry:
         gate's list either."""
         return tuple(name for name, spec in NATIVE_TOOLS.items() if not spec.plugin)
 
+    def capability_digest(self) -> str:
+        """The read-only tool surface as one line each, for a reader that has
+        to judge what Nora can answer WITHOUT being able to call anything.
+
+        Today that reader is the Relevance Gate (design/dreamer-agent-loop/36).
+        It decides «is there something in this room she can actually serve?» —
+        a question about her capabilities — and until 2026-09-10 it was told
+        nothing about them: its whole knowledge was a hand-written five-item
+        list in `nora/doctrine/participation.md`, against 53 registered tools.
+        Issue #144. DEC-150 deleted `kind: capability` for exactly this failure
+        («tools are the source of truth, an authored copy is a cache that goes
+        stale silently»); the gate's list was the same artifact, wearing
+        `kind: instrument` so the loader's guard never reached it.
+
+        DERIVED, so it cannot go stale: a tool added to `NATIVE_TOOLS` appears
+        here on the next start with nothing to edit. That is the whole point of
+        the method — a rendered copy pasted into a doctrine file would
+        reintroduce the bug it exists to close.
+
+        READ-ONLY tools only (`read_only_tools`). The gate is asking whether an
+        ANSWER exists, and a verb that acts — `send_reply`, `remind`,
+        `play_music` — is never the reason a window is worth a turn. Measured
+        2026-09-10: 34 of 53 tools, ~2.5k characters.
+
+        FIRST SENTENCE only. The full descriptions are written for a model that
+        is about to CALL the tool and carry hundreds of lines of when-to-use
+        guidance; a reader deciding whether an answer could exist needs the
+        verb and its subject, not its usage rules.
+        """
+        described = {
+            entry["name"]: str(entry.get("description") or "")
+            for entry in self.catalog()
+        }
+        lines = []
+        for name in sorted(self.read_only_tools()):
+            first = described.get(name, "").strip().split("\n")[0]
+            first = first.split(". ")[0].strip().rstrip(".")
+            lines.append(f"- {name} — {first}" if first else f"- {name}")
+        return "\n".join(lines)
+
     def catalog(self) -> tuple[dict, ...]:
         """Every built tool's public metadata — name, model-facing
         description, and declared registry fields — for the web portal's

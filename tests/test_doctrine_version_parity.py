@@ -49,8 +49,12 @@ PINNED: dict[str, tuple[int, str]] = {
     "conduct": (24, "a304ae577f27a9fc547896185f13b4ac382f77b5643af03868a97af235e4136a"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
+    # v4 (2026-09-10, issue #144): §"What she can supply" stopped claiming to
+    # BE the capability list. It now points at the derived digest the gate is
+    # given below the instruction and keeps only the judgement a tool registry
+    # cannot express — which KINDS of ask are hers at all.
     "participation": (
-        3, "896cbf8f45020453fdf42eb4c8c5281f2c49a28d7891f674c423fb34f1fee7e0",
+        4, "c079c3a68d74f339b1f59a4dd2adadf1c45d02a273d46a4635cb97bbfa774996",
     ),
     "participation-conduct": (
         1, "21512fb426ba2ac017b550d52f21d5ee40f58cb4e73e9d309389113db149458b",

@@ -2314,6 +2314,17 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # least able to see — a systematic under-admission exactly where
             # the room is most likely to be asking something.
             media_join=media_join,
+            # What she can actually call, DERIVED from the registry on every
+            # start (issue #144). The gate's question is «is there something
+            # here she can serve?» and until 2026-09-10 the only answer it had
+            # was a five-item list hand-written in `participation.md` against
+            # 53 registered tools — DEC-150's forbidden capability cache, past
+            # the loader's guard because the file declares `kind: instrument`.
+            #
+            # Rendered HERE, once, rather than per window: the digest is a
+            # function of the build, not of the room, and the gate must not
+            # hold the thing that builds tools.
+            capabilities=tool_registry.capability_digest(),
         )
         participation_trigger = ParticipationTrigger(
             speak=fire_path.speak,
