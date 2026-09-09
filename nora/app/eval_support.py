@@ -20,7 +20,7 @@ import os
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo
@@ -736,12 +736,25 @@ async def _gate_records(bodies: tuple[str, ...]) -> FakeRecordStore:
     """
     store = FakeRecordStore()
     names = ("Kit", "Sam", "Aaron")
+    # REAL-LOOKING TIMES, not `timestamp=i`. The renderer prints an age per row
+    # (`(2h ago)`) since 2026-09-10, and `i` milliseconds after the epoch would
+    # print «20000d ago» on every line of every case — a fixture artefact the
+    # model would have to reason around, in the one suite that exists to grade
+    # its reasoning.
+    #
+    # The shape mirrors a closed quiescence window: the last line just landed
+    # and the ones before it walk back a few minutes each, which is what makes
+    # a case's «has the room moved past this?» answerable at all.
+    now_ms = int(datetime.now(UTC).timestamp() * 1000)
+    step_ms = 3 * 60_000
+    total = len(bodies)
     for i, body in enumerate(bodies, 1):
         await store.append(
             message=NormalizedMessage(
                 platform="discord", conversation_id=GATE_PROBE_CONVERSATION,
                 conversation_type="group", sender_id=f"p{i % 3}",
-                sender_name=names[i % 3], timestamp=i, body=body, raw={},
+                sender_name=names[i % 3],
+                timestamp=now_ms - (total - i) * step_ms, body=body, raw={},
             ),
         )
     return store
