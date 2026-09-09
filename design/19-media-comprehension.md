@@ -467,9 +467,15 @@ A cache hit is deliberately **not** counted `ok`: nothing was comprehended on
 that pass, and counting it would make the ok rate say the describer is working
 when it might not have run for days.
 
-The comprehension job opens its **own root span**, declared plumbing (R-76).
-Spawned work does not inherit the caller's context, and attaching to the ingest
-root would hold that trace open for as long as a video read takes.
+The comprehension job opens its **own root span**, declared `generation`
+(R-76). Spawned work does not inherit the caller's context, and attaching to
+the ingest root would hold that trace open for as long as a video read takes —
+so it detaches. It does not follow that it should also be DROPPED, and the two
+were one decision until 2026-09-09: the root declared `plumbing`, whose own
+definition is "no model call anywhere under it", over a job whose every branch
+is a describer or a summarizer. Measured rather than argued: 1041 live traces
+held zero `comprehend` roots while `nora_media_comprehension_total` counted the
+reads happening. See `docs/observability.md`.
 
 ## 9. What is verified against what
 
