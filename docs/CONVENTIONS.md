@@ -153,9 +153,20 @@ not proposals.
 
 **Two traps found on the way.** `docker ps | grep db` matched Komodo's
 FerretDB container; `docker compose exec db` from the project directory is the
-only address that cannot be wrong. And `docker compose logs nora` is empty —
-the container does not use the docker log driver — so «no dream lines in the
-log» is not evidence of anything. The metrics endpoint and the tables are.
+only address that cannot be wrong. And `docker compose logs nora` was empty —
+the container did not use the docker log driver — so «no dream lines in the
+log» was not evidence of anything. The metrics endpoint and the tables were.
+
+**This is the trap that eventually got fixed rather than documented again.**
+The log was a file because `nora/obs/logging.py` landed on 2026-08-03 and the
+Dockerfile on 2026-08-04: a host process's sink, never revisited when the
+process moved into a container, and never covered by a decision row. The
+response at the time was to write «container logs are not on the docker log
+driver» into three files. It was still costing readers a year-of-the-repo
+later — a session in September read it, then reached for `docker logs nora`
+anyway. On 2026-09-09 the handler moved to stdout and the `path` setting was
+removed. The lesson is not about logging: **a surprise documented in three
+places is a surprise that should have been deleted.**
 
 ## Instruments and spans — the war-stories
 

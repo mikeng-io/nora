@@ -2310,16 +2310,18 @@ class DreamerConfig(BaseModel):
 
 
 class LoggingConfig(BaseModel):
+    """Where the log goes is no longer a setting: it goes to stdout.
+
+    `path` was REMOVED 2026-09-09 rather than accepted and ignored. Under
+    `extra="forbid"` a leftover `path =` line is a loud startup failure, which
+    is the honest outcome — an operator who set a path and silently kept
+    getting stdout is the bug shape `format` below already refuses.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     level: str
-    path: Path
     format: str
-
-    @model_validator(mode="after")
-    def _resolve_paths(self, info: ValidationInfo) -> LoggingConfig:
-        _resolve_context_field(self, "path", info)
-        return self
 
 
 class MetricsConfig(BaseModel):

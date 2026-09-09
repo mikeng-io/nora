@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
+import sys
 from typing import Any
 
 import structlog
@@ -179,7 +179,7 @@ def _shared_processors(secrets: list[str]) -> list[_Processor]:
     ]
 
 
-def setup_logging(*, level: str, path: Path | str, format: str, secrets: list[str]) -> None:
+def setup_logging(*, level: str, format: str, secrets: list[str]) -> None:
     # `format` mirrors LoggingConfig.format (spec C.9's config shape). Only one
     # on-disk format exists today (JSON, now rendered by structlog's
     # JSONRenderer), so there is nothing to switch on yet — but an
@@ -212,7 +212,27 @@ def setup_logging(*, level: str, path: Path | str, format: str, secrets: list[st
     for h in root.handlers[:]:
         root.removeHandler(h)
         h.close()
-    handler = logging.FileHandler(Path(path).expanduser())
+    # STDOUT, not a file (2026-09-09). The `FileHandler` this replaces predated
+    # the container by ONE DAY — `nora/obs/logging.py` landed 2026-08-03 and the
+    # Dockerfile 2026-08-04 — so a host process's natural sink was never
+    # revisited once the process moved into a container. No decision row ever
+    # covered it.
+    #
+    # What it cost, twice. `docker compose logs nora` was empty, which a session
+    # investigating the dream tier read as «no dream lines, so nothing ran»; it
+    # had run (docs/CONVENTIONS.md keeps that trap). The repo's answer was to
+    # document the surprise in three files rather than remove it. And the file
+    # was a plain `FileHandler` — no rotation anywhere, no logrotate rule — so
+    # it reached 66 MB in five weeks beside the media and database volumes.
+    #
+    # The unprompted paths are what this hurt most: a tag has a human waiting on
+    # it, so a lost line is noticed. A participation determination and a
+    # proactive decline have nobody waiting, and the instrument IS the evidence.
+    #
+    # `sys.stdout` explicitly, not the `StreamHandler` default of stderr: these
+    # are events, not diagnostics, and the compose default `json-file` driver
+    # captures both the same way only if you never want to tell them apart.
+    handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
     root.addHandler(handler)
 

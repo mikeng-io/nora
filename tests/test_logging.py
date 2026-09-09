@@ -1,32 +1,56 @@
 """structlog-backed logging: JSON shape, redaction (R-16), and the tag_id
 contextvar. Integration-style throughout — `setup_logging` wires structlog
 onto the root stdlib logger, so the realistic way to exercise it is a real
-`logging.getLogger(...)` call followed by reading the file back, not
+`logging.getLogger(...)` call followed by reading the stream back, not
 constructing processors in isolation.
+
+The sink is STDOUT (2026-09-09), so `_configure` hands back a buffer standing
+in for it rather than a path. `setup_logging` binds `sys.stdout` at call time,
+so the redirect has to be in place BEFORE it runs — which is why the fixture
+patches first and configures second.
 """
 
+import io
 import json
 import logging
+from contextlib import ExitStack
+from unittest.mock import patch
 
 from nora.obs.logging import bind_tag_id, clear_tag_id, setup_logging
+
+
+class _Stdout:
+    """The captured stream, and the lines written to it."""
+
+    def __init__(self) -> None:
+        self.buffer = io.StringIO()
+
+    def read_text(self) -> str:
+        logging.shutdown()
+        return self.buffer.getvalue()
+
+    def splitlines(self) -> list[str]:
+        return self.read_text().splitlines()
 
 
 def _configure(tmp_path):
     from tests.builders import make_logging_config
 
-    path = tmp_path / "nora.log"
-    cfg = make_logging_config(path=path)
-    setup_logging(level=cfg.level, path=cfg.path, format=cfg.format, secrets=["sk-live-x"])
-    return path
+    out = _Stdout()
+    cfg = make_logging_config()
+    stack = ExitStack()
+    stack.enter_context(patch("sys.stdout", out.buffer))
+    setup_logging(level=cfg.level, format=cfg.format, secrets=["sk-live-x"])
+    stack.close()
+    return out
 
 
 def _last_line(path) -> dict:
-    logging.shutdown()
     lines = path.read_text().splitlines()
     return json.loads(lines[-1])
 
 
-def test_setup_logging_writes_to_the_configured_path(tmp_path):
+def test_setup_logging_writes_json_lines_to_stdout(tmp_path):
     path = _configure(tmp_path)
     logging.getLogger("nora.test").info("hello %s", "sk-live-x")
     text = path.read_text()
@@ -123,13 +147,17 @@ def test_secret_never_logged_in_extras(tmp_path):
 
 
 def test_an_empty_secret_list_is_a_no_op(tmp_path):
+    """The redactor with nothing to redact still lets the line through — the
+    failure this guards is a processor that swallows every record when the
+    secret list is empty."""
     from tests.builders import make_logging_config
 
-    path = tmp_path / "nora.log"
-    cfg = make_logging_config(path=path)
-    setup_logging(level=cfg.level, path=cfg.path, format=cfg.format, secrets=[])
+    out = _Stdout()
+    cfg = make_logging_config()
+    with patch("sys.stdout", out.buffer):
+        setup_logging(level=cfg.level, format=cfg.format, secrets=[])
     logging.getLogger("nora.test").info("nothing secret")
-    assert "nothing secret" in path.read_text()
+    assert "nothing secret" in out.read_text()
 
 
 def test_tag_id_rides_the_contextvar_without_being_threaded_through(tmp_path):

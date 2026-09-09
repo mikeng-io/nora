@@ -12,7 +12,7 @@ turn or never is not evidence.
 
 Integration-style on purpose, through `setup_logging` and the real structlog
 pipeline rather than `caplog`: the claim being made is about what an operator
-finds in `data/nora.log`, which is JSON lines produced by a chain of processors
+finds in the log — JSON lines on stdout — produced by a chain of processors
 — including the redactor and the `tag_id` contextvar merge — that a caplog
 assertion does not exercise at all.
 """
@@ -20,8 +20,10 @@ assertion does not exercise at all.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
+from unittest.mock import patch
 
 import pytest
 
@@ -108,11 +110,29 @@ def restore_logging():
     root.setLevel(level)
 
 
+class _Stdout:
+    """Stands in for the stream `setup_logging` writes to (stdout since
+    2026-09-09). It keeps `read_text()` so the assertions below read the same
+    way they did when the sink was a file — what changed is where the lines
+    go, not what has to be true of them."""
+
+    def __init__(self) -> None:
+        self.buffer = io.StringIO()
+
+    def read_text(self) -> str:
+        logging.shutdown()
+        return self.buffer.getvalue()
+
+
 @pytest.fixture
 def wiring(tmp_path, restore_logging):
-    path = tmp_path / "nora.log"
-    cfg = make_logging_config(path=path)
-    setup_logging(level=cfg.level, path=cfg.path, format=cfg.format, secrets=[])
+    log = _Stdout()
+    cfg = make_logging_config()
+    # `setup_logging` binds `sys.stdout` at call time, so the patch has to be
+    # in place before it runs — and only for that call, since the handler holds
+    # the stream afterwards.
+    with patch("sys.stdout", log.buffer):
+        setup_logging(level=cfg.level, format=cfg.format, secrets=[])
 
     identity = tmp_path / "identity.toml"
     identity.write_text(IDENTITY)
@@ -143,7 +163,7 @@ def wiring(tmp_path, restore_logging):
         deliverer=deliverer, metrics=metrics, room=room, question="邊個係阿豹",
         transit_source=_UNREACHABLE_TRANSIT, context_window=40,
     )
-    return {"tools": {t.tool_name: t for t in tools}, "path": path, "metrics": metrics,
+    return {"tools": {t.tool_name: t for t in tools}, "log": log, "metrics": metrics,
             "sink": sink}
 
 
@@ -159,14 +179,14 @@ async def _call(tool, **kwargs):
     return await tool._tool_func(**kwargs)
 
 
-def _lines(path) -> list[dict]:
+def _lines(log) -> list[dict]:
     for handler in logging.getLogger().handlers:
         handler.flush()
-    return [json.loads(line) for line in path.read_text().splitlines()]
+    return [json.loads(line) for line in log.read_text().splitlines()]
 
 
-def _tool_lines(path) -> list[dict]:
-    return [record for record in _lines(path) if record.get("tool")]
+def _tool_lines(log) -> list[dict]:
+    return [record for record in _lines(log) if record.get("tool")]
 
 
 # ---- the probe ---------------------------------------------------------------
@@ -179,8 +199,8 @@ async def test_a_turn_that_calls_lookup_person_says_so_in_the_log(wiring):
     the original `grep lookup_person data/nora.log` could not do.
     """
     await _call(wiring["tools"]["lookup_person"], name="阿豹")
-    assert "lookup_person" in wiring["path"].read_text()
-    line = _tool_lines(wiring["path"])[-1]
+    assert "lookup_person" in wiring["log"].read_text()
+    line = _tool_lines(wiring["log"])[-1]
     assert line["tool"] == "lookup_person"
     assert line["status"] == "ok"
     assert "lookup_person" in line["message"]
@@ -199,7 +219,7 @@ async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
     await _call(tools["about"], person="俊爺")
     await _call(tools["calculate"], expression="1485/7")
     await _call(tools["send_reply"], text="七點半")
-    named = [record["tool"] for record in _tool_lines(wiring["path"])]
+    named = [record["tool"] for record in _tool_lines(wiring["log"])]
     assert sorted(named) == sorted([
         "now", "load_transcript", "group_members",
         "lookup_person", "about", "calculate", "send_reply",
@@ -211,14 +231,14 @@ async def test_no_calculate_line_carries_the_expression_the_model_wrote(wiring):
     and `calculate`'s argument is no different from `lookup_person`'s `name`.
 
     `+85290000101 + 0` is valid arithmetic, so a model can put a phone number
-    in this parameter as easily as in that one — and `data/nora.log` is a
+    in this parameter as easily as in that one — and the log is a
     worse place for one than a tool result is, because nothing scans it on the
     way out. The expression reaches the TRACE through the tool result, which is
     where DEC-31 wanted it; it does not reach the log.
     """
     await _call(wiring["tools"]["calculate"], expression="+85290000101 + 0")
     await _call(wiring["tools"]["calculate"], expression="1485/7")
-    lines = [record for record in _tool_lines(wiring["path"])
+    lines = [record for record in _tool_lines(wiring["log"])
              if record["tool"] == "calculate"]
     assert len(lines) == 2
     for line in lines:
@@ -237,7 +257,7 @@ async def test_a_line_says_how_the_tool_answered_not_just_that_it_ran(wiring):
     tools = wiring["tools"]
     await _call(tools["lookup_person"], name="阿豹")
     await _call(tools["lookup_person"], name="Nobody At All")
-    statuses = [record["status"] for record in _tool_lines(wiring["path"])]
+    statuses = [record["status"] for record in _tool_lines(wiring["log"])]
     assert statuses == ["ok", "not_found"]
 
 
@@ -245,7 +265,7 @@ async def test_the_counts_in_a_line_are_the_real_ones(wiring):
     """A line reporting a constant would be as useless as no line. The fixture's
     store holds two rows, exactly one of which is a reply."""
     await _call(wiring["tools"]["load_transcript"], limit=40)
-    line = _tool_lines(wiring["path"])[-1]
+    line = _tool_lines(wiring["log"])[-1]
     assert (line["rows"], line["threaded"], line["limit"]) == (2, 1, 40)
 
 
@@ -254,14 +274,15 @@ async def test_a_clamped_limit_is_reported_as_the_clamped_value(wiring):
     the only bound on it — a line reporting what the model ASKED for rather
     than what was served would hide the clamp working."""
     await _call(wiring["tools"]["load_transcript"], limit=10_000)
-    assert _tool_lines(wiring["path"])[-1]["limit"] == 60
+    assert _tool_lines(wiring["log"])[-1]["limit"] == 60
 
 
 # ---- what must never be in the file -----------------------------------------
 
 
 async def test_no_tool_line_carries_a_phone_number_or_an_aci(wiring):
-    """`data/nora.log` is a file on disk and nothing scans it on the way out.
+    """The log leaves the process unscanned — nothing redacts identifiers on
+    the way out.
     `lookup_person` and `about` take a model-supplied string that has arrived
     as a phone number or an ACI before (`_asked_about` exists for that) — so
     both are called here with one."""
@@ -277,7 +298,7 @@ async def test_no_tool_line_carries_a_phone_number_or_an_aci(wiring):
     await _call(tools["now"])
     await _call(tools["load_transcript"], limit=40)
     await _call(tools["group_members"])
-    text = wiring["path"].read_text()
+    text = wiring["log"].read_text()
     assert scan_identifiers(text) is None, text
     assert "+8529" not in text and "+8526" not in text
 
@@ -290,12 +311,12 @@ async def test_no_tool_line_carries_a_conclusion_or_a_transcript_body(wiring):
     await _call(tools["about"], person="俊爺")
     await _call(tools["load_transcript"], limit=40)
     await _call(tools["send_reply"], text="今晚七點半得")
-    text = wiring["path"].read_text()
+    text = wiring["log"].read_text()
     for secret in ("Miles is from Ridgeline", "likes espresso", "去邊食", "你屋企",
                    "今晚七點半得"):
         assert secret not in text, secret
     # ...and the reply's LENGTH is there, which is the thing that is safe.
-    assert _tool_lines(wiring["path"])[-1]["chars"] == 6
+    assert _tool_lines(wiring["log"])[-1]["chars"] == 6
 
 
 # ---- the tag_id bridge -------------------------------------------------------
@@ -312,7 +333,7 @@ async def test_a_tool_line_carries_the_tag_id_without_the_tool_knowing_it(wiring
         await _call(wiring["tools"]["group_members"])
     finally:
         clear_tag_id()
-    assert _tool_lines(wiring["path"])[-1]["tag_id"] == "tag-42"
+    assert _tool_lines(wiring["log"])[-1]["tag_id"] == "tag-42"
 
 
 async def test_the_tag_id_survives_the_task_hop_strands_makes_per_tool_call(wiring):
@@ -328,11 +349,11 @@ async def test_the_tag_id_survives_the_task_hop_strands_makes_per_tool_call(wiri
         await asyncio.create_task(_call(wiring["tools"]["now"]))
     finally:
         clear_tag_id()
-    assert _tool_lines(wiring["path"])[-1]["tag_id"] == "tag-77"
+    assert _tool_lines(wiring["log"])[-1]["tag_id"] == "tag-77"
 
 
 async def test_a_line_emitted_outside_a_tag_carries_no_tag_id(wiring):
     """The other direction — otherwise a hardcoded default would pass the test
     above while attributing every line to the same phantom tag."""
     await _call(wiring["tools"]["now"])
-    assert "tag_id" not in _tool_lines(wiring["path"])[-1]
+    assert "tag_id" not in _tool_lines(wiring["log"])[-1]

@@ -112,7 +112,6 @@ async def _run(config_path: Path) -> None:
     cfg = config.load(config_path, require_secrets=False)
     setup_logging(
         level=cfg.obs.logging.level,
-        path=cfg.obs.logging.path,
         format=cfg.obs.logging.format,
         # The collector's own credentials, redacted the way `nora.__main__`
         # redacts the LLM key. The username is included on purpose: it is an

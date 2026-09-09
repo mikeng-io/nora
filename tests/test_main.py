@@ -36,7 +36,6 @@ async def env(tmp_path, monkeypatch, aiohttp_server, pg_url, example_config_path
     cfg["platforms"]["signal"]["base_url"] = base
     cfg["memory"]["base_url"] = base
     cfg["store"]["data_dir"] = str(tmp_path)
-    cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
     cfg["doctrine"]["dir"] = str(ROOT / "nora" / "doctrine")
     # Same reason as the doctrine line above: the config file lives in tmp_path,
     # which has no `nora/dreamer`, and the corpus is validated at startup.

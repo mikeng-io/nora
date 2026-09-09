@@ -50,10 +50,11 @@ def make_limits(**kw: Any) -> LimitsConfig:
 
 
 def make_logging_config(**kw: Any) -> LoggingConfig:
-    # LoggingConfig resolves `path` against a base-directory context (nora/config.py);
-    # constructing it with no context is a startup-safety error by design (FIX 3), so
-    # this builder — like `load_example_config` below — must supply one.
-    data = {"level": "INFO", "path": "nora.log", "format": "json", **kw}
+    # No `path` since 2026-09-09: the log goes to stdout and the key was removed
+    # from the model, so there is nothing left to resolve against a base
+    # directory. The context argument stays because `model_validate` is how the
+    # rest of these builders construct config models.
+    data = {"level": "INFO", "format": "json", **kw}
     return LoggingConfig.model_validate(data, context={"base": REPO_ROOT})
 
 
