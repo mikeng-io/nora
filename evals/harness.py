@@ -44,6 +44,7 @@ import asyncio
 import dataclasses
 import logging
 import tempfile
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -85,9 +86,35 @@ _IDENTITY_TOML = (
     '[[persons.miles_novak.signal]]\nphone = "+852111"\n'
 )
 
-# Kept in sync with config.example.toml's engagement.trigger.text — the single real
-# trigger string every case file and the harness itself must agree on.
-TRIGGER_TEXT = "nora.000"
+def _configured_trigger() -> str:
+    """`[engagement.trigger] text`, read straight out of the config FILE.
+
+    `tomllib`, not `load_eval_config`: the full loader refuses to build without
+    the provider API key, so a harness that went through it would raise at
+    IMPORT time in the offline gate — and a fallback swallowing that would put
+    the hand-copied literal back, just spelled differently.
+
+    Deployment config first, template second: the trigger the running system
+    answers to is the one a near-miss corpus has to miss.
+    """
+    for name in ("config.toml", "config.example.toml"):
+        path = REPO_ROOT / name
+        if not path.exists():
+            continue
+        conf = tomllib.loads(path.read_text(encoding="utf-8"))
+        text = (conf.get("engagement", {}).get("trigger", {}) or {}).get("text")
+        if text:
+            return str(text)
+    raise RuntimeError("no config declares [engagement.trigger] text")
+
+
+# DERIVED from the config, not transcribed from it. The comment here used to
+# say «kept in sync with config.example.toml's engagement.trigger.text» above
+# the value `"nora.000"`, while that file — and the deployment — both say
+# `"nora"`. So `evals/cases/no_trigger.yaml` was a corpus of near-misses for a
+# trigger no deployment runs, and four of its twelve cases actually TAGGED
+# under the real one (2026-09-09). A hand-copied vocabulary is what drifts.
+TRIGGER_TEXT = _configured_trigger()
 
 # The harness drives `group_event(body=...)` with its DEFAULTS — conversation "g1",
 # sender "+852111" — and `_IDENTITY_TOML` maps that sender to person "miles_novak",
@@ -597,7 +624,13 @@ async def run_case(
         finally:
             await audit.aclose()
 
-        feeds = len([f for f in memory.fed if "[Nora]" in f[1]])
+        # HER feeds, counted by PEER rather than by a text prefix. This read
+        # `"[Nora]" in f[1]` — a prefix DEC-36 deleted when Honcho moved to
+        # one-speaker-per-peer streams, so no such string exists anywhere in
+        # `nora/` and the count was structurally 0. Vacuously passing today
+        # (nothing delivers on this path); a guaranteed FAIL pointing at Honcho
+        # instead of at the harness the moment it does.
+        feeds = len([f for f in memory.fed if f[0] == cfg.memory.ai_peer])
         sent = list(adapter.texts)
         # Live mode has no script to read tool intent from — reconstruct it from
         # what the tools actually recorded this run (see the helper's caveat).

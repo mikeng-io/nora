@@ -11,7 +11,7 @@
     trigger: false
 
 - name: trailing_word_char_glued
-  input: "nora.000x 聽日見"
+  input: "norax 聽日見"
   metadata:
     trigger: false
 
@@ -21,7 +21,7 @@
     trigger: false
 
 - name: trailing_digit_glued
-  input: "check nora.0001 later"
+  input: "check nora1 later"
   metadata:
     trigger: false
 
@@ -30,8 +30,8 @@
   metadata:
     trigger: false
 
-- name: space_inside_token_before_dot
-  input: "nora .520 而家得閒未"
+- name: inside_a_code_span
+  input: "`nora` 呢個字點解嚟㗎"
   metadata:
     trigger: false
 
@@ -50,8 +50,8 @@
   metadata:
     trigger: false
 
-- name: name_without_token
-  input: "just talking about nora earlier, not calling her"
+- name: name_inside_a_longer_word
+  input: "we drove through Sonora last year"
   metadata:
     trigger: false
 

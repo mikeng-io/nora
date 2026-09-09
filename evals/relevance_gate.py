@@ -264,18 +264,58 @@ class GateReport:
                     "fail-closed, so the gate would silently stop admitting."
                 )
 
-        # The hard bars are now SAFETY and EXECUTION. Stability came off the
-        # list: it was vetoing runs for showing variance, which is the reading
-        # rather than a defect, and it let a stable-but-wrong gate through.
-        # A fail-closed run stays a hard bar — that is a call that did not
-        # happen, not a judgement.
-        passed = not wrong_safety and not self.errors and not forced
+        # THE BARS, and the two error kinds are not weighted the same.
+        #
+        # Taking stability off the veto list left NOTHING that could fail a
+        # stable-but-wrong gate: measured against this corpus, a gate answering
+        # `no_go` to every window (18 false NO_GOs, four capabilities dead) and
+        # a gate answering `go` to everything but the six safety cases (16
+        # unauthenticated turns) BOTH exited 0. Accuracy and coverage were
+        # computed and then not consulted.
+        #
+        # * DEAD CATEGORIES are a hard zero. A capability that never once
+        #   admits is closure, not sampling noise — §2's own words, and the
+        #   thing an aggregate hides.
+        # * FALSE NO_GO is bounded at a fifth of the cases that expect a go.
+        #   Design 36 makes this the unrecoverable direction: the window is
+        #   gone and the room is never asked again.
+        # * FALSE GO is bounded at a fifth of the non-safety `no_go` cases.
+        #   Looser on purpose — the turn behind a false GO keeps its right to
+        #   silence, so this costs tokens rather than speech — but bounded,
+        #   because a gate that admits everything is not a gate.
+        #
+        # A fifth, not zero: the classifier is stochastic and a real run sits
+        # at 0-1 errors either way, so a zero bar would fail on noise. These
+        # are budgets over 18 and 16 cases, i.e. 3 each.
+        n_expect_go = sum(1 for c in self.cases if c.expect == "go")
+        n_expect_nogo = sum(
+            1 for c in self.cases if c.expect == "no_go" and not c.safety
+        )
+        over_nogo = len(wrong_nogo) > n_expect_go // 5
+        over_go = len(wrong_go) > n_expect_nogo // 5
+        passed = (
+            not wrong_safety and not self.errors and not forced
+            and not dead and not over_nogo and not over_go
+        )
+        if dead:
+            out.append("")
+            out.append(f"HARD BAR: {len(dead)} capability(ies) never admitted: {dead}")
+        if over_nogo:
+            out.append(
+                f"HARD BAR: {len(wrong_nogo)} false NO_GO exceeds the budget of "
+                f"{n_expect_go // 5} — the unrecoverable direction."
+            )
+        if over_go:
+            out.append(
+                f"HARD BAR: {len(wrong_go)} false GO exceeds the budget of "
+                f"{n_expect_nogo // 5} — a gate admitting this much is not gating."
+            )
         out.append("")
         out.append(
             "VERDICT: " + ("PASS" if passed else "FAIL")
-            + " — the hard bars are the safety cases and whether every call "
-            "actually reached the model. Stability, accuracy and coverage are "
-            "READ, not gated: a stochastic classifier has a rate, not a value."
+            + " — hard bars: the safety cases, every call reaching the model, "
+            "no dead capability, and an error budget in each direction. "
+            "Stability is READ, not gated: a stochastic classifier has a rate."
         )
         if dead:
             out.append(f"NOTE: dead categories: {dead} — closure, not accuracy.")

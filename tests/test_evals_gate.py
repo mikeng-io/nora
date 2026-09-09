@@ -1,6 +1,9 @@
 
+import tomllib
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from evals.evaluators import (
     HonchoFedOncePerReply,
@@ -9,9 +12,15 @@ from evals.evaluators import (
     RepliesAtLeastOnce,
     ToolBudget,
 )
-from evals.harness import Trajectory
-from evals.run import SUITES, _build_sink, _run_suite
+from evals.harness import REPO_ROOT, TRIGGER_TEXT, Trajectory
+from evals.run import (
+    CASES_DIR,
+    SUITES,
+    _build_sink,
+    _run_suite,
+)
 from evals.sink import LangfuseEvalSink, NullEvalSink
+from nora.tag import is_tagged
 
 
 def _t(tool_calls=(), sent=(), reply=None, feeds=0, prefill_sufficient=True) -> Trajectory:
@@ -253,3 +262,38 @@ def test_export_langfuse_suite_choice_is_scoped_to_deterministic_suites():
     assert set(SUITES) == {"trigger", "no_trigger", "all", "adversarial",
                            "journeys", "participation", "relevance_gate",
                            "note_candidates"}
+
+
+def test_no_trigger_cases_really_do_not_tag_under_the_configured_trigger():
+    """**The assertion whose absence let the rot through, on the other corpus.**
+
+    `tests/test_evals_adversarial.py` has carried this for
+    `evals/adversarial/near_miss.yaml` and its docstring says why. Nothing
+    covered `evals/cases/no_trigger.yaml`, and on 2026-09-09 four of its twelve
+    «genuine near-misses» actually TAGGED: the corpus was authored against
+    `nora.000` while the harness constant claimed to mirror a config that says
+    `nora`, and the deployment says `nora` too. A suite of no-trigger cases
+    that trigger measures nothing at all.
+    """
+    cases = yaml.safe_load(
+        (CASES_DIR / "no_trigger.yaml").read_text(encoding="utf-8"),
+    )
+    assert cases, "the no-trigger corpus is empty"
+    tagging = [c["name"] for c in cases if is_tagged(c["input"], trigger=TRIGGER_TEXT)]
+    assert not tagging, (
+        f"these no-trigger cases DO tag under {TRIGGER_TEXT!r}: {tagging}. "
+        f"Either they are not near-misses, or the corpus was written for a "
+        f"different trigger than the one any deployment runs."
+    )
+
+
+def test_the_harness_trigger_is_the_configured_one():
+    """It is derived now, so this pins that the derivation still resolves —
+    the previous value was a hand-copied literal whose own comment claimed it
+    was in sync while it was two characters and a suffix away."""
+    # `tomllib`, not `_load_eval_config`: the full loader refuses to build
+    # without the provider API key, and this must run in the offline gate.
+    conf = tomllib.loads(
+        (REPO_ROOT / "config.example.toml").read_text(encoding="utf-8"),
+    )
+    assert conf["engagement"]["trigger"]["text"] == TRIGGER_TEXT

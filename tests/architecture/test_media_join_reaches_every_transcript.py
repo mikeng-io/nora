@@ -159,6 +159,27 @@ def test_every_transcript_builder_awaits_the_shared_join(rel: str) -> None:
     )
     assert calls_enrich, f"{rel} imports MediaJoin but never calls enrich()"
 
+    # And the result must go somewhere. `await join.enrich([])` — awaiting the
+    # call and discarding both its input and its output — satisfied the check
+    # above, which is verbatim the regression this file's docstring exists to
+    # prevent (verified against `nora/app/adoption.py`, 2026-09-09).
+    used = any(
+        isinstance(node, ast.Assign | ast.AnnAssign | ast.Return)
+        and "enrich" in ast.dump(node)
+        for node in ast.walk(tree)
+    ) or any(
+        # `rows = list(await ...enrich(...))` and friends: the await is nested
+        # inside a call whose result is bound.
+        isinstance(node, ast.Assign | ast.AnnAssign) and "enrich" in ast.dump(node.value)
+        for node in ast.walk(tree)
+        if getattr(node, "value", None) is not None
+    )
+    assert used, (
+        f"{rel} awaits enrich() and throws the result away — the rows that "
+        f"reach the model are the ones the store returned, not the ones the "
+        f"join rendered"
+    )
+
 
 def test_the_builder_set_is_not_hand_maintained() -> None:
     """**The gate that would have caught `load_transcript`.**
@@ -235,9 +256,25 @@ def test_the_screen_is_injected_rather_than_imported_by_the_join() -> None:
                 "cannot reach that layer, so the screen must stay injected"
             )
     assert "MediaJoin(" in _source("nora/app/composition.py")
-    assert "screen=scan_identifiers" in _source("nora/app/composition.py"), (
-        "the composition root must hand the join the REAL screen; a join built "
-        "without one would render model prose into eight prompts unscreened"
+    # By AST, not substring. `"screen=scan_identifiers" in source` is satisfied
+    # by the words appearing ANYWHERE — including in a comment — so replacing
+    # the screen with `lambda text: text` and mentioning the old name in the
+    # line above kept this green while every model-authored description reached
+    # all eight prompts unscreened (verified 2026-09-09).
+    tree = ast.parse(_source("nora/app/composition.py"))
+    screened = any(
+        isinstance(node, ast.Call)
+        and getattr(node.func, "id", None) == "MediaJoin"
+        and any(
+            kw.arg == "screen" and getattr(kw.value, "id", None) == "scan_identifiers"
+            for kw in node.keywords
+        )
+        for node in ast.walk(tree)
+    )
+    assert screened, (
+        "the composition root must hand `MediaJoin` the REAL `scan_identifiers` "
+        "screen as its `screen=` argument; a join built without one renders "
+        "model prose into eight prompts unscreened"
     )
 
 

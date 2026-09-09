@@ -49,7 +49,7 @@ import sys
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 
@@ -89,6 +89,7 @@ from evals.note_candidates import (
 from evals.rubric import OPTIONAL_CRITERIA, Criterion
 from evals.sink import EvalSink, LangfuseEvalSink, NullEvalSink, resolve_headers_from_env
 from nora.app.eval_support import (
+    NO_CACHE_HEADERS,
     TOOL_NAMES,
     Config,
     DoctrineStore,
@@ -338,6 +339,31 @@ def _load_adversarial_cases(paths: tuple[Path, ...], trigger: str | None = None)
     return cases
 
 
+def _eval_client(cfg: Config) -> Any:
+    """The OpenAI client every live suite drives, WITH THE CACHE OFF.
+
+    OmniRoute serves cached completions keyed on exact request bytes, and a
+    measurement that reads the cache is a recall rather than an exam. The
+    relevance-gate probe learned this the hard way — `sample: 5` was returning
+    one verdict five times by construction — and the JUDGE loops had the same
+    defect for the same reason, one file over: `majority_verdict` over
+    `judge_samples` was three replays of one answer, because the judge is
+    built at `temperature=0.0` and temperature zero is precisely what makes
+    the request bytes repeat.
+
+    Measured 2026-09-09: judge sample 1 took 7558ms, samples 2 and 3 took 35ms
+    and 66ms, and all three were byte-identical including their usage. With
+    this header the same three came back distinct.
+
+    Note the gateway honours neither `Cache-Control: no-cache` nor its own
+    documented `x-omniroute-cache: bypass`; only this header works.
+    """
+    return create_client(
+        base_url=eval_base_url(cfg.llm.base_url),
+        api_key=os.environ.get(cfg.llm.api_key_env, ""),
+    ).with_options(default_headers=NO_CACHE_HEADERS)
+
+
 def _load_eval_config():
     """`config.toml` (tracked in git, per-deployment) is preferred; `config.example.toml`
     (committed) is the fallback for a local `config.toml` predating the schema. The
@@ -415,10 +441,7 @@ async def _run_adversarial_live(
     # themselves are re-exported through `nora.app.eval_support` — Task 10's boundary
     # (`evals/` may import `nora.app` and `nora.testing`, nothing else from `nora/`) —
     # not imported from `nora.agent.factory` directly.
-    client = create_client(
-        base_url=eval_base_url(cfg.llm.base_url),
-        api_key=os.environ.get(cfg.llm.api_key_env, ""),
-    )
+    client = _eval_client(cfg)
     try:
         reply_model = create_model_provider(
             model=cfg.llm.model,
@@ -671,10 +694,7 @@ async def _run_participation_live(
     one the design makes load-bearing.
     """
     cfg = _load_eval_config()
-    client = create_client(
-        base_url=eval_base_url(cfg.llm.base_url),
-        api_key=os.environ.get(cfg.llm.api_key_env, ""),
-    )
+    client = _eval_client(cfg)
     try:
         judge_model = create_model_provider(
             model=_resolve_judge_model_id(cfg),
@@ -959,9 +979,11 @@ async def _run_note_candidates_live(
     every case reached majority-pass.
     """
     cfg = _load_eval_config()
-    client = create_client(
-        base_url=cfg.llm.base_url, api_key=os.environ.get(cfg.llm.api_key_env, "")
-    )
+    # `eval_base_url`, like every other suite: this one reached for
+    # `cfg.llm.base_url` directly, so `NORA_EVAL_BASE_URL` was silently ignored
+    # for the one suite `docs/eval-sop.md` documents running from a dev machine
+    # — where `host.docker.internal` does not resolve.
+    client = _eval_client(cfg)
     try:
         runtime, model_label = build_note_candidates_runtime(
             cfg, client=client, effort=effort, dreamer_dir=dreamer_dir, model=model,

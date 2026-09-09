@@ -175,6 +175,16 @@ def _code_of(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
         and isinstance(stripped.body[0].value.value, str)
     ):
         del stripped.body[0]
+
+    # EVERY string constant goes, not only the docstring. Stripping the
+    # docstring alone was one class too narrow: deleting the real truncation
+    # check and leaving `log.debug("... finish_reason not checked", ...)` kept
+    # this green while a cut-off image description was returned as complete
+    # (verified 2026-09-09). A facet has to be USED, and a mention inside a log
+    # line is not a use.
+    for sub in ast.walk(stripped):
+        if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+            sub.value = ""
     return ast.dump(stripped)
 
 
@@ -268,6 +278,23 @@ def test_a_raw_call_reads_finish_reason(rel: str) -> None:
             f"{rel}::{fn.name} never reads `finish_reason`, so a truncated "
             f"body is indistinguishable from a complete one"
         )
+
+
+def test_the_facet_lists_are_not_silently_empty() -> None:
+    """A parametrized test over an empty set is SKIPPED, not passed — and
+    pytest says so in a line nobody reads. `test_a_raw_call_records_its_token_usage`
+    spent a day in that state after the commit that moved the last
+    usage-carrying entry out of `REQUIRED` (2026-09-09), so the test named for
+    the facet had never run at all."""
+    for facet in FACETS:
+        covered = [r for r, facets in REQUIRED.items() if facet in facets]
+        if facet == "usage":
+            # The only raw caller left is in `nora/infra`, which cannot import
+            # `nora.obs` to annotate a span. Stated here so an empty list is a
+            # RECORDED exemption rather than an invisible skip.
+            assert not covered, "a usage-carrying entry returned; re-enable its test"
+            continue
+        assert covered, f"no REQUIRED entry carries {facet!r} — its test cannot run"
 
 
 @pytest.mark.parametrize(
