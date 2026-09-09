@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "Her hard rules no longer forbid two of the four occasions they are read on, and she is no longer told she belongs to one room while standing in another.",
+  "details": [
+    "The constraints file said she replies only where she was called, with exactly one exception for a room offering her the floor. It is read on four occasions. A proactive turn is neither — its own header tells her nobody called her and that she decided this herself — and so is a reminder coming due. The highest-authority file in her prompt forbade the turn it was being read on.",
+    "That failure was invisible: proactive and participation both count silence as the healthy outcome, so a model obeying the wrong file looks exactly like one exercising restraint. The rule is now about the room a turn opened in rather than about who summoned her, and every way a turn opens is named.",
+    "Her identity and voice files named one room by name. The same doctrine serves six rooms across three workspaces and the prompt never renders a room label — so that name was the only group identity she had, and it was the wrong one in five of the six. She is now told the group is whichever one is in front of her.",
+    "Found by an audit of the doctrine prose against the repo's own comprehend-measure-serialize rule. The design note for the participation occasion had recorded that this clause must be revised rather than inherited; it was revised then, and adding the proactive occasion later changed no prose."
+  ],
+  "limitations": [
+    "Nothing measures whether she now speaks more readily on a proactive turn. The proactive act suite exists and has not been run live.",
+    "Other findings from the same audit are not fixed here: the gate's standing block still carries no age, and the participation instrument promises a distance figure the location tool does not return."
+  ]
+}

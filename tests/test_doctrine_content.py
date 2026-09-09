@@ -779,3 +779,47 @@ def test_pushback_is_split_by_kind_across_voice_and_conduct():
     # this test exists to catch.
     assert "企硬" in voice and "企硬" not in conduct
     assert "another claim" in conduct and "another claim" not in voice
+
+
+def test_constraints_covers_every_occasion_it_is_served_to():
+    """R-14 is about WHERE she speaks, not about who summoned her.
+
+    `constraints.md` is served to four occasions and used to name two ways a
+    turn can open — being called, and a room offering the floor — with
+    «Never anywhere else, with exactly one exception». A proactive turn is
+    neither: its own header says «Nobody has called you — not just now, and
+    not earlier. YOU decided». So the highest-authority file in the prompt
+    forbade the turn it was being read on, and a heartbeat (a reminder coming
+    due) was in the same position.
+
+    Invisible by construction: proactive and participation both count silence
+    as the HEALTHY outcome, so a model obeying the wrong file looks exactly
+    like one exercising restraint.
+
+    Design 35 recorded that this clause «must be revised, not inherited» when
+    participation arrived. It was revised for participation; adding proactive
+    to `applies_to` (6f413c6e) changed no prose.
+    """
+    text = (DOCTRINE_DIR / "constraints.md").read_text()
+    # The rule survives — it is about the room, not the summons.
+    assert "reply only where you were called" in text.lower()
+    assert "this room, this turn, and nowhere else" in text
+    # And every way a turn opens is named, so none of them reads as forbidden.
+    assert "come due" in text          # heartbeat
+    assert "offer you the floor" in text  # participation
+    assert "on your own pass" in text     # proactive
+
+
+def test_no_doctrine_file_names_one_room():
+    """The same doctrine directory serves six rooms across three workspaces
+    (`policy.toml`), and the prompt never renders a room label — R-18 keeps
+    ids off the wire and `_platform_line` gives her the PLATFORM only. So a
+    room name written into doctrine was the only group identity she had, and
+    it was the wrong one in five of the six.
+
+    `test_no_config_values_leak_into_doctrine_files` checks the trigger, hosts
+    and ports. A room label is a config value it does not look for.
+    """
+    for path in sorted(DOCTRINE_DIR.glob("*.md")):
+        body = path.read_text(encoding="utf-8")
+        assert "Zone 42" not in body, path.name
