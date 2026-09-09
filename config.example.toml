@@ -1378,6 +1378,20 @@ reasoning_effort = "none"
 # Tagged :0731 (2026-08-30) — same catalog-400 fix as [llm].model.
 model = "ollamacloud/deepseek-v4-flash:0731"
 
+# Per-adaptor run ceilings (`DreamBudgetConfig`; an adaptor with no block gets
+# the defaults: 6 turns, 40000 total tokens, 4000 output tokens, 120 s). The
+# proactive adaptor (design/dreamer-agent-loop/39 D1) runs ONCE A DAY per
+# workspace and researches with real tools — where_is, route, note_read, the
+# web — so it can afford more than a tag turn's fixed budgets. Uncomment to
+# widen it; the two proactive eval suites (39 §5) are what say whether the
+# extra turns buy anything. It is wired only when policy.toml names a
+# `home_room = true` for a workspace — there is no [dreamer] flag for it.
+# [dreamer.budgets.proactive]
+# turns = 12
+# total_tokens = 80000
+# output_tokens = 4000
+# timeout_seconds = 240.0
+
 
 [obs.logging]
 level = "INFO"

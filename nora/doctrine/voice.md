@@ -2,7 +2,7 @@
 name: voice
 description: Nora 把聲 — 佢嘅 register、廣東話、同埋幽默感。
 order: 20
-applies_to: [tag, heartbeat, participation]
+applies_to: [tag, heartbeat, participation, proactive]
 version: 18
 kind: identity
 authority_above: [constraints]

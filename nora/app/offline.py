@@ -46,7 +46,7 @@ from nora.tag import Debounce
 
 from .assembler import build_assembler
 from .dispatch import Dispatcher
-from .fire import FirePath, gathering_occasion, reminder_occasion
+from .fire import FirePath, gathering_occasion, proactive_occasion, reminder_occasion
 from .participation import ParticipationTrigger
 from .runtime import BackgroundTasks
 
@@ -238,6 +238,9 @@ def build_offline_pipeline(
             event_registry={
                 "reminder": reminder_occasion,
                 "gathering": gathering_occasion,
+                # The proactive act turn (design/dreamer-agent-loop/39 D4),
+                # registered as production registers it.
+                "proactive": proactive_occasion,
             },
             standing=standing,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
@@ -249,6 +252,12 @@ def build_offline_pipeline(
             notes=notes,
             policy=permissive_policy(),
             participation_runner=participation_runner,
+            # The proactive act turn's runner (39 D12): the SAME auto-runner
+            # under its own name, exactly as the composition root hands one
+            # object to both parameters. The act suite drives `FirePath.run`
+            # through `nora.app.eval_support` rather than this seam, so this
+            # is parity with production's kwarg names, not a second drive.
+            proactive_runner=participation_runner,
             # The §10.6 shadow mirror, mirrored from the composition root's
             # gating (the parity test pins these kwarg NAMES to production's):
             # an offline/eval run can review determinations on the mirror

@@ -27,6 +27,15 @@ from tests.conftest import RUSTFS_TEST_PASSWORD, RUSTFS_TEST_USER
 
 ROOT = Path(__file__).resolve().parents[1]
 
+_HOME_POLICY = (
+    'default = "deny"\n'
+    '[[conversations]]\nplatform = "signal"\nid = "g1"\npersons = "*"\n'
+    'workspace = "friends"\nlabel = "Friends"\nhome_room = true\nproactive = true\n'
+    'location = true\n'
+    '[[conversations]]\nplatform = "signal"\nid = "g2"\npersons = "*"\n'
+    'workspace = "wedding"\nlabel = "Wedding"\n'
+)
+
 
 @pytest.fixture
 def cfg(tmp_path, monkeypatch, pg_url, example_config_path):
@@ -930,22 +939,36 @@ async def test_the_curators_adaptors_are_appended_not_assigned(cfg):
     assert [a.name for a in deps.dream_adaptors] == ["note-curation"]
 
 
-async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg):
+async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg, tmp_path):
     """`verify_tool_subsets` runs at startup in R-5's refuse-to-start shape, so
     reaching this line at all is the assertion — a subset naming an act verb
-    would have raised inside `build_dependencies`. Restated here against the
-    registry so the property is checked rather than merely implied by the
-    absence of an exception."""
+    with no grant behind it would have raised inside `build_dependencies`.
+
+    REWRITTEN ON PURPOSE (design/dreamer-agent-loop/39 D3, DEC-162): the
+    ceiling is the read-only set PLUS exactly the adaptor's own grant's
+    acts, which for every adaptor but the proactive one is the bare
+    ceiling. Restated here against the registry AND the runtime's grants so
+    the property is checked rather than merely implied by the absence of
+    an exception — and the one act verb that clears it is named, so a
+    second one joining silently is red."""
     from nora.agent.registry import ToolRegistry
 
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True, "notes.enabled": True,
         "notes.curator_enabled": True, "notes.candidates_enabled": True,
     }))
 
     ceiling = ToolRegistry().read_only_tools()
+    assert deps.dreamer_runtime is not None
+    names = [a.name for a in deps.dream_adaptors]
+    assert names == ["note-curation", "note-candidates", "proactive"]
     for adaptor in deps.dream_adaptors:
-        assert adaptor.tools <= ceiling, adaptor.name
+        acts = deps.dreamer_runtime.grant_for(adaptor.name).acts
+        assert adaptor.tools <= ceiling | acts, adaptor.name
+        assert (adaptor.tools - ceiling) == (
+            frozenset({"remind"}) if adaptor.name == "proactive" else frozenset()
+        ), adaptor.name
 
 
 async def test_workspace_scopes_are_the_allowlists_workspaces_deduplicated(cfg):
@@ -1366,3 +1389,71 @@ async def test_note_candidates_renders_moments_in_the_operators_timezone(cfg):
     assert await _zone("Pacific/Kiritimati") == ZoneInfo("Pacific/Kiritimati")
     assert await _zone("Pacific/Niue") == ZoneInfo("Pacific/Niue")
     assert await _zone("Pacific/Kiritimati") != await _zone("Pacific/Niue")
+
+
+# --- the proactive adaptor (design/dreamer-agent-loop/39, DEC-162) -----------
+
+
+
+
+async def test_a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_grant(
+    cfg, tmp_path,
+):
+    """39 D2: the home room IS the opt-in. With one named, the Dreamer holds
+    the proactive adaptor on a daily HK-morning slot, the runtime holds its
+    grant, and the tool source holds the room — the same room, read once."""
+    from nora.agent.dreamer import proactive_grant
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True, "heartbeat.enabled": True,
+    }))
+
+    assert [a.name for a in deps.dream_adaptors] == ["proactive"]
+    sched = deps.dream_schedules["proactive"]
+    assert sched.min_interval_seconds == 86400
+    assert sched.phase_offset_seconds == 23 * 3600          # 07:00 Asia/Hong_Kong
+    assert deps.dreamer_runtime is not None
+    assert deps.dreamer_runtime.grant_for("proactive") == proactive_grant()
+    assert deps.dreamer_runtime.grant_for("note-curation").acts == frozenset()
+    source = deps.dreamer_runtime._tools
+    assert set(source._home_rooms) == {"friends"}
+    home = source._home_rooms["friends"]
+    assert (home.platform, home.conversation_id, home.location_trusted) == ("signal", "g1", True)
+
+
+async def test_no_home_room_wires_no_proactive_adaptor(cfg):
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True,
+    }))
+
+    assert "proactive" not in [a.name for a in deps.dream_adaptors]
+    assert "proactive" not in deps.dream_schedules
+
+
+async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_silent(
+    cfg, tmp_path,
+):
+    """39 D5/D11/D12 at the root: the heartbeat holds a `ProactiveScreen` over
+    the SAME allowlist and note store, `event_registry` maps the kind, and
+    the fire path holds an auto-runner under `proactive_runner` even with
+    participation off. Reached the way the heartbeat wiring test reaches
+    it: `Dependencies` deliberately exposes neither loop."""
+    from nora.app.proactive_screen import ProactiveScreen
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True, "heartbeat.enabled": True,
+        "participation.enabled": False,
+    }))
+    try:
+        (loop,) = _spawned(deps, "HeartbeatLoop.run")
+        assert isinstance(loop._proactive, ProactiveScreen)
+        assert loop._proactive._policy is loop._policy
+        path = loop._fire.__self__
+        assert isinstance(path, FirePath)
+        assert "proactive" in path._event_registry
+        assert path._proactive_runner is not None
+        assert path._participation_runner is None
+    finally:
+        await deps.background.cancel_all()

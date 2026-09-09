@@ -294,6 +294,26 @@ class SqlReminderStore:
             total = (await conn.execute(stmt)).scalar_one()
         return int(total)
 
+    async def history(
+        self, *, requester_person_id: str, since: datetime, limit: int,
+    ) -> Sequence[Reminder]:
+        """One requester's rows since `since`, every state, oldest first —
+        the decision log (design/dreamer-agent-loop/39 D7). Same per-row
+        decode discipline as `due()`: one undecodable row is skipped and
+        named, never a dead read."""
+        stmt = (
+            sa.select(REMINDERS)
+            .where(
+                REMINDERS.c.requester_person_id == requester_person_id,
+                REMINDERS.c.created_at >= ensure_utc(since, field="since"),
+            )
+            .order_by(REMINDERS.c.created_at.asc(), REMINDERS.c.id.asc())
+            .limit(check_limit(limit))
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return self._decode_due(rows)
+
     async def claim(self, reminder_id: UUID, *, now: datetime) -> bool:
         """`PENDING -> FIRING`, decided by the statement itself — and, for a
         recurring row, the successor written in the SAME TRANSACTION.

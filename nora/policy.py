@@ -88,6 +88,26 @@ class Conversation:
     # traffic" — and it still does nothing while `[relevance_gate] enabled =
     # false` in config.toml (the shipped default).
     relevance_gate: bool = False
+    # THE WORKSPACE'S HOME ROOM (design/dreamer-agent-loop/39 D2, DEC-162).
+    # Default False. A workspace has no conversation of its own, and every
+    # room-scoped read — `where_is`, `about`, `ask_memory`, `group_members` —
+    # resolves through ONE room's roster. `home_room = true` is the operator
+    # saying "when Nora acts for this workspace with nobody asking, THIS is
+    # the room she stands in": the proactive adaptor's `Room` is built from
+    # it (with this room's `location` flag threaded exactly as on a tag), and
+    # the rows it writes fire into it. That is the R-31 disclosure decision
+    # `WORKSPACE_SAFE_TOOLS` said «nobody has made», made here, per
+    # workspace, in the file where room trust already lives. At most one per
+    # workspace; a second is a startup error, not a guess.
+    home_room: bool = False
+    # PROACTIVE-SPEECH TRUST (39 D5). Default False: a `kind="proactive"`
+    # reminder row is owned by Nora's own `ai_peer` id, which is deliberately
+    # not a person in `identity.toml`, so the fire-time `is_allowed` screen
+    # cannot admit it — this flag is what the heartbeat checks instead of
+    # persons membership. A home room without it refuses every proactive row
+    # (`failed_policy`); a room with it that is not the home room is inert,
+    # because nothing writes proactive rows into any other room.
+    proactive: bool = False
 
 
 @dataclass(frozen=True)
@@ -100,6 +120,27 @@ class Policy:
 
     def conversation(self, platform: str, conversation_id: str) -> Conversation | None:
         return self._by_id.get((platform, conversation_id))
+
+    def home_rooms(self) -> dict[str, Conversation]:
+        """Workspace -> its home room (39 D2), for every workspace that named
+        one. A workspace with none is absent, never guessed: the proactive
+        adaptor does not run there, and its tool source builds nothing
+        room-scoped for it. `load_policy` has already refused two."""
+        return {
+            convo.workspace: convo
+            for convo in self.conversations
+            if convo.home_room
+        }
+
+    def proactive_allowed(self, *, platform: str, conversation_id: str) -> bool:
+        """The fire-time screen for a `kind="proactive"` row (39 D5): the ROOM
+        must be listed AND flagged `proactive = true`. No person is checked,
+        because the row's owner is Nora's `ai_peer` id and that id is, by
+        construction, nobody in `identity.toml`. Deny by default, like
+        `is_allowed`: an unlisted room and an unflagged room answer the same
+        `False`."""
+        convo = self.conversation(platform, conversation_id)
+        return convo is not None and convo.proactive
 
     def is_allowed(self, *, platform: str, conversation_id: str, person_id: str | None) -> bool:
         """§4.3's grant predicate, in full.
@@ -160,6 +201,13 @@ class _PermissivePolicy(Policy):
     def is_allowed(self, *, platform: str, conversation_id: str, person_id: str | None) -> bool:
         return True
 
+    def proactive_allowed(self, *, platform: str, conversation_id: str) -> bool:
+        """Every room, for the harnesses' reason: the act suite drives
+        proactive rows through a heartbeat over synthetic ids. `home_rooms`
+        stays empty — allowing a row to FIRE anywhere is not the same as
+        inventing a room to DECIDE in."""
+        return True
+
 
 class _ConversationEntry(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -185,6 +233,12 @@ class _ConversationEntry(BaseModel):
     # traffic. Default False — the right to speak uncalled is granted per
     # room, never inherited from being answerable.
     relevance_gate: bool = False
+    # See `Conversation.home_room` (design/dreamer-agent-loop/39 D2): the ONE
+    # room of this workspace the proactive adaptor stands in. Default False.
+    home_room: bool = False
+    # See `Conversation.proactive` (39 D5): may a proactive row fire HERE.
+    # Default False — unprompted speech is granted per room, never inherited.
+    proactive: bool = False
 
     @field_validator("persons")
     @classmethod
@@ -244,6 +298,7 @@ def load_policy(path: Path) -> Policy:
             tools=frozenset(entry.tools), location=entry.location,
             primary_id=entry.id, workspace=entry.workspace,
             relevance_gate=entry.relevance_gate,
+            home_room=entry.home_room, proactive=entry.proactive,
         )
         conversations.append(convo)
         for cid in ids:
@@ -255,6 +310,25 @@ def load_policy(path: Path) -> Policy:
                     "the two allowlists you think you wrote is doing nothing"
                 )
             by_id[key] = convo
+
+    # ONE home room per workspace (39 D2). Two would make «which room does the
+    # workspace-keyed adaptor stand in» a guess, and a guessed room is a
+    # disclosure decision nobody made — the exact thing `home_room` exists to
+    # have the operator make. Refused at startup, in `policy.toml`'s own
+    # refuse-to-start shape (R-5), never resolved by picking the first.
+    homes: dict[str, Conversation] = {}
+    for convo in conversations:
+        if not convo.home_room:
+            continue
+        other = homes.get(convo.workspace)
+        if other is not None:
+            raise PolicyError(
+                f"workspace {convo.workspace!r} names two home rooms "
+                f"({other.label or other.primary_id!r} and "
+                f"{convo.label or convo.primary_id!r}). A workspace has exactly "
+                "one room its proactive adaptor stands in; mark one."
+            )
+        homes[convo.workspace] = convo
 
     if not conversations:
         raise PolicyError(

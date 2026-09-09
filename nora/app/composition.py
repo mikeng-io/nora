@@ -34,9 +34,12 @@ from openai.types.shared.reasoning_effort import ReasoningEffort
 from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
     AdaptorBudget,
+    AdaptorGrant,
     AdaptorSchedule,
     DreamerRuntime,
+    HomeRoom,
     RegistryToolSource,
+    proactive_grant,
     verify_tool_subsets,
 )
 from nora.agent.egress import scan_identifiers
@@ -112,6 +115,11 @@ from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
+from nora.language.proactive import (
+    PROACTIVE_ADAPTOR_NAME,
+    ProactiveAdaptor,
+    WorkspaceRoom,
+)
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import annotate_generation
@@ -138,12 +146,14 @@ from .fire import (
     FirePath,
     gathering_occasion,
     lost_job_occasion,
+    proactive_occasion,
     relay_occasion,
     reminder_occasion,
 )
 from .gatherings import GatheringService
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .participation import ParticipationTrigger
+from .proactive_screen import ProactiveScreen
 from .runtime import BackgroundTasks
 
 log = logging.getLogger("nora.app.composition")
@@ -1128,8 +1138,29 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # BACK to auto (`tool_choice.require`'s initial-value release), never to
     # required. None while the occasion is disabled; `FirePath` refuses a
     # participation turn that arrives with no runner composed.
+    #
+    # The proactive occasion (design/dreamer-agent-loop/39 D12, DEC-162)
+    # needs the SAME runner shape for the same reason — its act turn may end
+    # in silence — so the one auto-runner is built when EITHER occasion is
+    # wired and handed to `FirePath` under both names. Proactive is wired
+    # when the Dreamer and the note tier are on and `policy.toml` names a
+    # home room (39 D2): no home room, no decide turn, no act turn.
+    proactive_homes = allowlist.home_rooms()
+    proactive_wired = bool(
+        cfg.dreamer.enabled and cfg.notes.enabled and proactive_homes
+    )
+    if proactive_homes and not proactive_wired:
+        # LOUD: the operator named a home room, which is the opt-in, and the
+        # tier it needs is off. Silent here is the subsystem-that-does-nothing
+        # shape — she would look wired and never decide anything.
+        log.warning(
+            "policy.toml names a home_room for %s but the proactive adaptor "
+            "is not wired: it needs [dreamer] enabled = true and [notes] "
+            "enabled = true (dreamer=%s, notes=%s)",
+            sorted(proactive_homes), cfg.dreamer.enabled, cfg.notes.enabled,
+        )
     participation_runner: LiveAgentRunner | None = None
-    if cfg.participation.enabled:
+    if cfg.participation.enabled or proactive_wired:
         participation_runner = LiveAgentRunner(
             models=factory.ModelSource(
                 client=client,
@@ -2081,6 +2112,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             event_registry={
                 "reminder": reminder_occasion,
                 "gathering": gathering_occasion,
+                # The proactive act turn (39 D4): a row the decide turn wrote
+                # under Dreamer provenance, built `person_id=None`. Registered
+                # unconditionally — a row of this kind can only exist if the
+                # adaptor was once wired, and an unregistered kind fails the
+                # row `failed_error` with no way to say why.
+                "proactive": proactive_occasion,
             },
             # S5 (15-roadmap §6.3) — `<standing>` renders on the fire path
             # too. NOT "D5": that number is taken twice already (the identity
@@ -2108,7 +2145,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # The participation occasion's own runner (§4) — None whenever the
             # occasion is disabled, which is also exactly when no participation
             # Event can reach `speak` (no policy marks one, no trigger exists).
-            participation_runner=participation_runner,
+            participation_runner=participation_runner if cfg.participation.enabled else None,
+            # The proactive act turn's runner (39 D12): the same auto-runner,
+            # under its own name, present exactly when a proactive row can
+            # exist. `FirePath` raises on a proactive occasion with none.
+            proactive_runner=participation_runner if proactive_wired else None,
             # The §10.6 shadow mirror: wired only when the operator turned BOTH
             # the occasion AND the review surface on — a mirrored determination
             # always cleared the room opt-in and the enabled gate first. The
@@ -2162,6 +2203,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             metrics=metrics,
             tick_seconds=cfg.heartbeat.tick_seconds,
             fire=fire_path.run,
+            # The `kind="proactive"` screen (39 D5/D11): the room's flag and
+            # the note's state, read through the SAME allowlist and the SAME
+            # note store every other reader holds. Wired whenever the
+            # heartbeat is, not only when the adaptor is: a proactive row
+            # written yesterday must be screened today even if the adaptor
+            # was switched off in between — and with no screen the loop
+            # fails such a row rather than firing it unscreened.
+            proactive=ProactiveScreen(policy=allowlist, notes=note_store),
         )
         background.spawn(heartbeat.run())
     if announcing and fire_path is not None:
@@ -2547,6 +2596,70 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     timezone=ZoneInfo(cfg.reminders.timezone),
                 ),
             )
+        # THE PROACTIVE ADAPTOR — Nora's other half (design/dreamer-agent-
+        # loop/39, DEC-162). Gated on the note tier being on (its inputs are
+        # the notes) and on `policy.toml` naming at least one home room
+        # (39 D2): the home room IS the operator's opt-in, so there is no
+        # config flag — a workspace without one is simply a workspace she
+        # does not act for. Its rows fire through the heartbeat; wiring it
+        # with the heartbeat off is legal and loud, because the rows would
+        # sit PENDING forever.
+        if proactive_wired and note_store is not None:
+            if not cfg.heartbeat.enabled:
+                log.warning(
+                    "proactive adaptor wired with [heartbeat] enabled = false: "
+                    "its rows will be written and never fired"
+                )
+            # Workspace -> its rooms, with the home room marked. ONE read of
+            # the allowlist, here, so the adaptor and the tool source name
+            # the same room (39 D2: two readers with two ideas of a
+            # workspace's home would put the decide turn in one room and the
+            # act turn in another).
+            rooms_by_workspace: dict[str, tuple[WorkspaceRoom, ...]] = {}
+            for conv in allowlist.conversations:
+                rooms_by_workspace[conv.workspace] = (
+                    *rooms_by_workspace.get(conv.workspace, ()),
+                    WorkspaceRoom(
+                        platform=conv.platform, conversation_id=conv.primary_id,
+                        label=conv.label or conv.primary_id, home=conv.home_room,
+                    ),
+                )
+            dream_schedules = {
+                **dream_schedules,
+                # Daily, on the Dreamer's existing clock (39 D10), phased to
+                # 07:00 Asia/Hong_Kong: 23:00 UTC of the previous calendar
+                # day, so the slot rolls over an hour before the group is
+                # awake and a row for «this afternoon» is written the same
+                # morning it is about. The curator's 16:00 UTC (HK midnight)
+                # is the template; this one is deliberately NOT 00:00 UTC
+                # (08:00 HK), because that is `phase_offset_seconds`'s
+                # default and a chosen value must not be indistinguishable
+                # from an unset one. The reading that would move it is the
+                # decide suite (39 §5) showing rows scheduled too close to
+                # their moment to matter.
+                PROACTIVE_ADAPTOR_NAME: AdaptorSchedule(
+                    min_interval_seconds=86400,
+                    phase_offset_seconds=23 * 3600,
+                    # Inert for a watermark-free adaptor (the curator's own
+                    # comment): no `record.since` read ever happens for it.
+                    batch_limit=1,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                ProactiveAdaptor(
+                    notes=note_store,
+                    standing=standing_store if cfg.standing.enabled else None,
+                    reminders=reminders,
+                    memory=memory,
+                    rooms_of=lambda ws: rooms_by_workspace.get(ws, ()),
+                    ai_peer=cfg.memory.ai_peer,
+                    clock=lambda: datetime.now(UTC),
+                    timezone=ZoneInfo(cfg.reminders.timezone),
+                    self_card_conclusions=cfg.memory.self_card_conclusions,
+                    metrics=metrics,
+                ),
+            )
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
         # `ModelSpec`, and the Dreamer needs `"auto"`: under `"required"` the
         # model must call something on every pass, and the only thing that ends
@@ -2600,7 +2713,35 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         dream_tools = RegistryToolSource(
             registry=tool_registry, store=audit, persons=persons,
             honcho=memory, metrics=metrics, ai_peer=cfg.memory.ai_peer,
+            # The home rooms (39 D2), from the SAME allowlist read the
+            # adaptor's room map came from, with each room's `location`
+            # flag threaded as DEC-74 threads it on a tag. Passed whether or
+            # not the proactive adaptor is wired: the map is inert for an
+            # adaptor with no home-room grant, and a grant with no map fails
+            # closed inside `build`.
+            home_rooms={
+                ws: HomeRoom(
+                    workspace=ws, platform=conv.platform,
+                    conversation_id=conv.primary_id, conversation_type="group",
+                    location_trusted=conv.location,
+                )
+                for ws, conv in proactive_homes.items()
+            },
+            rosters=rosters,
+            # EVERY platform's aliases, for `_presence_preflight`'s reason: a
+            # home room's roster must skip Nora's own account rather than
+            # count it as one unnamed stranger — which alone makes `where_is`
+            # refuse in a location-trusted room (39 D2, review finding).
+            self_ids=registry.self_aliases(),
         )
+        # The ONE allowance past the read-only ceiling (39 D3), by NAME: the
+        # proactive adaptor's `remind`, and its home-room build. Handed to
+        # the runtime AND to the startup check below, so the two measure the
+        # same grant. Every other adaptor's entry is absent, which is the
+        # whole pre-DEC-162 ceiling by omission.
+        dream_grants: dict[str, AdaptorGrant] = {
+            PROACTIVE_ADAPTOR_NAME: proactive_grant(),
+        }
         # `DreamBudgetConfig` -> `AdaptorBudget`: the same four numbers, across
         # the `nora.agent` may-not-import-`nora.config` boundary. This file is
         # one of only two allowed to read config, so THIS is the conversion
@@ -2641,13 +2782,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # loop asked — and the Dreamer's was the lower one, on the loop
             # that does the research.
             tool_budget_overrides=cfg.llm.budgets,
+            grants=dream_grants,
         )
         # R-5's refuse-to-start shape, and the one check that must run at
         # STARTUP rather than at the first tick: an adaptor holding an act verb
-        # is not a condition to discover at 3am from a metric. Empty today, so
-        # it refuses nothing — which is exactly why it has to be wired now,
-        # while adding the first adaptor is the moment it starts mattering.
-        verify_tool_subsets(dream_adaptors, tools=dream_tools)
+        # is not a condition to discover at 3am from a metric. Since DEC-162
+        # it refuses everything but the one grant it is handed.
+        verify_tool_subsets(dream_adaptors, tools=dream_tools, grants=dream_grants)
 
     return Dependencies(
         audit=audit, memory=memory, persons=persons, metrics=metrics,

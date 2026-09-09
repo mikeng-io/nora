@@ -34,6 +34,19 @@ is correct. To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="participation"} / (nora_participation_silence_total + nora_participation_spoke_total)`,
    NOT a share of the tag budget.
 
+   The proactive occasion (design/dreamer-agent-loop/39, DEC-162 — wired
+   when `policy.toml` names a `home_room`) is the fourth audience and has
+   participation's exact shape: a `kind="proactive"` row's act turn that
+   says nothing is the healthy outcome and counts on
+   `nora_proactive_silence_total` (the row is DONE with `outcome="silent"`),
+   a spoke turn on `nora_proactive_spoke_total`, and only a malfunction lands
+   here under `audience="proactive"`. Its budget expression is the same
+   ratio over its own two series. The heartbeat's own fired counter gains
+   three outcomes for this kind — `silent`, and the fire-time screen's
+   `cancelled_note_retired` / `cancelled_note_moved` — and the decide turn's
+   own reading is `nora_proactive_decisions_total{action}` beside the
+   Dreamer's `nora_dream_run_total{adaptor="proactive"}`.
+
    **A reminder can also be hours late with all three of those reading healthy.**
    A tick that finds the conversation's slot held by a tag leaves the rows
    `pending` and moves on: nothing fired, nothing failed, and the tick itself

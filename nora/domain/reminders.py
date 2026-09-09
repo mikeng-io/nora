@@ -641,6 +641,28 @@ class ReminderStore(Protocol):
 
     async def count_pending(self, requester_person_id: str) -> int: ...
 
+    async def history(
+        self, *, requester_person_id: str, since: datetime, limit: int,
+    ) -> Sequence[Reminder]:
+        """One requester's rows CREATED at or after `since`, in EVERY state,
+        oldest first (`created_at`, then `id`) — the decision log
+        (design/dreamer-agent-loop/39 D7).
+
+        The one read the port lacked: `pending_for` and `all_pending` see
+        PENDING rows only, and the proactive adaptor's self-observation is
+        about what it decided and how it went — `state`, `outcome`,
+        `fired_at` — which only a read that keeps the finished rows can
+        answer. Keyed by requester because a proactive row's owner is the
+        reserved `ai_peer` id (39 D5), so «Nora's own decisions» is one
+        predicate; the caller joins rows to a workspace through policy's
+        room map, since `Reminder` has no workspace column and adding one is
+        a schema decision this read does not make.
+
+        `since` must be timezone-aware; `limit` obeys `check_limit`, for the
+        reason `due()` does.
+        """
+        ...
+
     async def claim(self, reminder_id: UUID, *, now: datetime) -> bool:
         """`PENDING -> FIRING`, as a COMPARE-AND-SET, AND — for a recurring row
         — the successor, minted in the same transaction. True iff this caller
