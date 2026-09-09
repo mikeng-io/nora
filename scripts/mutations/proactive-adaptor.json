@@ -313,5 +313,12 @@
   "old": "                    clock_store=dream_schedule_clock,",
   "new": "                    clock_store=None,",
   "target": "tests/test_composition.py -k a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_grant"
+ },
+ {
+  "name": "objective v2: a reminder without a memory read fails a decide case",
+  "file": "evals/proactive.py",
+  "old": "    if result.rows and not result.memory_calls:",
+  "new": "    if False:",
+  "target": "tests/unit/test_proactive_evals.py -k a_reminder_set_without_a_memory_read_fails_the_case"
  }
 ]

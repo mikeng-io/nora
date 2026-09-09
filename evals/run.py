@@ -1139,6 +1139,7 @@ async def _run_proactive_decide_live(
                             for note, due, who, kind, intent in drive.rows
                         ),
                         remind_attempts=drive.remind_attempts,
+                        memory_calls=drive.memory_calls,
                     )
                     g = grade_decide(case, result)
                     tally.verdicts.append(g.verdict)

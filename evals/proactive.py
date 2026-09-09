@@ -148,6 +148,11 @@ class DecideResult:
     #: only the created ones; a quiet case must not pass because the closure
     #: refused what the model tried to write.
     remind_attempts: int = 0
+    #: Memory reads the turn made (`about`, `ask_memory`,
+    #: `search_memory_workspace`), any status. Objective version 2 requires
+    #: one before any reminder; a `remind` case without one FAILS however
+    #: well-timed the row, because the timing was not hers to know.
+    memory_calls: int = 0
 
 
 @dataclass(frozen=True)
@@ -179,6 +184,12 @@ def grade_decide(case: DecideCase, result: DecideResult) -> Grade:
                 "a quiet day she tried to break",
             )
         return Grade("PASS")
+    if result.rows and not result.memory_calls:
+        return Grade(
+            "FAIL",
+            "a reminder was set without a single memory read — the objective "
+            "requires about/ask_memory/search_memory_workspace before remind",
+        )
     remaining = list(result.rows)
     for expected in case.rows:
         match = next((r for r in remaining if r.note == expected.note), None)

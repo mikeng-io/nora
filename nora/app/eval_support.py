@@ -1139,6 +1139,11 @@ class ProactiveDecideDrive:
     #: `nora_reminders_created_total` over its statuses. A quiet case with
     #: attempts and no rows is a false positive the store cannot show.
     remind_attempts: int = 0
+    #: Memory reads the turn made — `about` and `ask_memory` (counted on
+    #: `nora_room_lookups_total`) plus `search_memory_workspace` (on
+    #: `nora_tool_calls_total`), every status. Objective version 2 requires
+    #: one before any `remind`; the grader reads this.
+    memory_calls: int = 0
 
 
 _LOG_STATES: Mapping[str, ReminderState] = {
@@ -1298,7 +1303,29 @@ async def run_proactive_decide_case(
         status=outcome.status, stop_reason=outcome.stop_reason,
         instruction_sha256=outcome.instruction_sha256, rows=tuple(rows),
         tools_built=built, remind_attempts=int(attempts),
+        memory_calls=memory_calls_from(tools.metrics),
     )
+
+
+#: The memory verbs the decide turn holds (39 D3) and the series each counts
+#: on — the two room-scoped ones on the room-lookup series (`_record_room`),
+#: the workspace one on the tool-call series (`_record`).
+_MEMORY_VERB_SERIES: Mapping[str, frozenset[str]] = {
+    "nora_room_lookups_total": frozenset({"about", "ask_memory"}),
+    "nora_tool_calls_total": frozenset({"search_memory_workspace"}),
+}
+
+
+def memory_calls_from(metrics: Metrics) -> int:
+    """How many memory reads a run made, whatever they answered, read off
+    the tools' own counters. Every status counts — the rule is that she
+    ASKED, and an `unavailable` answer is still an ask."""
+    total = 0.0
+    for (name, labels), value in metrics.snapshot().items():
+        verbs = _MEMORY_VERB_SERIES.get(name)
+        if verbs and dict(labels).get("tool") in verbs:
+            total += value
+    return int(total)
 
 
 @dataclass(frozen=True)
