@@ -29,12 +29,17 @@ scrape_configs:
   - job_name: nora
     static_configs:
       - targets: ["nora:9100"]
+  # 9101 and 9103, NOT 9100. Both images inherit an `EXPOSE 9100` from the
+  # shared base and neither listens on it — `docker inspect` shows the port and
+  # a scrape against it is refused. Caught by the deploy read-back: both
+  # targets came up `down` with `connection refused`, which is exactly the
+  # failure this stack exists to surface, arriving first about itself.
   - job_name: presence
     static_configs:
-      - targets: ["presence:9100"]
+      - targets: ["presence:9101"]
   - job_name: analytics
     static_configs:
-      - targets: ["analytics:9100"]
+      - targets: ["analytics:9103"]
 
   # Prometheus watching itself. Cheap, and it is what makes "the rule engine
   # stopped evaluating" visible rather than silent — the failure mode of a
