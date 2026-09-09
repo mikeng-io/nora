@@ -1,0 +1,13 @@
+{
+  "type": "change",
+  "summary": "Nora's proactive pass now runs when something in a group has changed and the rooms have gone quiet — with a once-a-day floor — instead of once a day at a fixed hour; an unchanged hour costs nothing.",
+  "details": [
+    "The pass ticks hourly, but a tick renders (and calls the model) only on the daily floor at 07:00 Hong Kong, or when a note was created, revised by a person, or came due, or a room's standing moved, and every room of the group has been quiet for the configured quiet window. Otherwise it is one store read.",
+    "A note born mid-morning about tonight is now seen at the next quiet hour rather than the next morning.",
+    "A note is charged at most one strike per day by the proactive pass, however many times it is decided about.",
+    "A new counter, nora_proactive_pass_total{reason}, says why each tick rendered or did not."
+  ],
+  "limitations": [
+    "The check reads notes and standing, not the raw message rate; a group that talks without producing a note or a tag turn will only be seen at the daily floor."
+  ]
+}

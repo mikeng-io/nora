@@ -1411,8 +1411,15 @@ async def test_a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_gran
 
     assert [a.name for a in deps.dream_adaptors] == ["proactive"]
     sched = deps.dream_schedules["proactive"]
-    assert sched.min_interval_seconds == 86400
-    assert sched.phase_offset_seconds == 23 * 3600          # 07:00 Asia/Hong_Kong
+    # Hourly (issue #136): the tick is the ceiling on how soon a change is
+    # seen; the adaptor's own check decides whether a tick renders, and the
+    # daily floor lives there (07:00 HK), not in a phase offset.
+    assert sched.min_interval_seconds == 3600
+    assert sched.phase_offset_seconds == 0
+    proactive = next(a for a in deps.dream_adaptors if a.name == "proactive")
+    assert proactive._clock_store is deps.dream_schedule_clock
+    assert proactive._records is not None
+    assert proactive._quiet_ms == 1800 * 1000        # [dreamer] quiet_seconds, the template's
     assert deps.dreamer_runtime is not None
     assert deps.dreamer_runtime.grant_for("proactive") == proactive_grant()
     assert deps.dreamer_runtime.grant_for("note-curation").acts == frozenset()

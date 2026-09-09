@@ -41,6 +41,33 @@ open notes and no Standing — the runtime's fire condition, the curator's
 precedent, and what keeps a silent workspace from costing a research loop a
 day.
 
+WHEN A PASS RUNS AT ALL — THE DETERMINISTIC CHECK (issue #136, revising 39 D10)
+------------------------------------------------------------------------------
+The adaptor ticks hourly (`AdaptorSchedule`), and every tick is a store read
+and nothing else unless one of two things is true: the DAILY FLOOR — no pass
+has rendered yet on this Hong Kong calendar day and it is past
+`daily_hour` — or a CHANGE since the last rendered pass: a note of the
+workspace was created, revised on the tag path, or crossed its `revisit_at`,
+or a room's Standing moved — AND every room of the workspace has been quiet
+for `quiet_seconds`. Anything else renders `""`, and `DreamerRuntime.run`
+makes no model call on a blank prompt. That is the same shape the note
+tier already has (a watermark that fires on lag, a curator that renders
+nothing on a tidy notebook), so a workspace where nothing moved costs one
+SQL read an hour and zero tokens, and a note born at 10:00 about tonight
+is seen at the next quiet hour rather than tomorrow morning.
+
+«Last rendered pass» is DURABLE — `dream_schedule_state`, under the name
+`proactive:pass`, through the `DreamScheduleClock` port the runtime's own
+slots use. A process-local dict is the exact defect that table was built to
+remove (`nora/app/runtime.py`): a restart would render an extra pass every
+deploy. With no clock wired (`clock_store=None`, the contract fake and the
+eval drive) every tick renders and the pass is counted `unclocked`, so a
+wiring gap is a series that climbs rather than a silence.
+
+The WAKE (39 D6) is charged at most once per note per Hong Kong day, in the
+same table under `proactive:wake`, so several passes a day cannot strike a
+note to `MAX_DATELESS_STRIKES` in two days.
+
 Ordinal HANDLES, never ids, for the curator's reason: the Dreamer's screen
 drops any envelope item carrying a uuid, so an adaptor that asked the model
 about ids would have every decision silently rejected. The handle -> id map
@@ -59,7 +86,13 @@ from typing import Literal, Protocol, get_args
 from zoneinfo import ZoneInfo
 
 from nora.domain.models import TranscriptRow
-from nora.domain.notes import Note, WakeOutcome, default_revisit_at
+from nora.domain.notes import (
+    Note,
+    NoteRevision,
+    WakeOutcome,
+    default_revisit_at,
+    is_tag_path_revision,
+)
 from nora.domain.ports import Proposal, Recollection
 from nora.domain.prompt import escape
 from nora.domain.reminders import Reminder
@@ -82,6 +115,22 @@ PROACTIVE_TOOLS: frozenset[str] = frozenset({
     "note_read", "note_search",
     "web_search", "web_fetch", "weather", "now",
 })
+
+#: The two `dream_schedule_state` names this adaptor keeps beside the
+#: runtime's own slot row: when a pass last RENDERED for a workspace, and when
+#: a note was last woken by it (key `<workspace>/<note_id>`).
+PASS_CLOCK_NAME = "proactive:pass"  # noqa: S105 — a table row name, not a secret
+WAKE_CLOCK_NAME = "proactive:wake"
+
+PassReason = Literal["daily", "changed", "held_quiet", "unchanged", "unclocked"]
+PASS_REASONS: frozenset[str] = frozenset(get_args(PassReason))
+
+#: Local hour (in `timezone`) after which the daily floor may render.
+DEFAULT_DAILY_HOUR = 7
+#: How long every room of the workspace must have been silent before a
+#: change is acted on — `[dreamer] quiet_seconds`' meaning, threaded as a
+#: value.
+DEFAULT_QUIET_SECONDS = 1800.0
 
 DecisionAction = Literal["remind", "decline"]
 DECISION_ACTIONS: frozenset[str] = frozenset(get_args(DecisionAction))
@@ -125,18 +174,42 @@ class _Decision:
 
 @dataclass(frozen=True)
 class _Shown:
-    """What `inputs` rendered for one key, kept for `commit`."""
+    """What `inputs` rendered for one key, kept for `commit`. `rendered`
+    says whether a prompt was produced at all — `commit` records the pass
+    clock only then, so a blank tick never counts as a pass."""
 
     by_handle: Mapping[str, str]
     anchor_date: Mapping[str, int | None]
+    rendered: bool = False
 
 
 class _NoteStore(Protocol):
     async def standing(self, *, workspace: str) -> tuple[Note, ...]: ...
 
+    async def read(
+        self, *, workspace: str, note_id: str,
+    ) -> tuple[Note, NoteRevision] | None: ...
+
     async def record_wake(
         self, *, workspace: str, note_id: str, next_revisit_at: int, now_ms: int,
     ) -> WakeOutcome | None: ...
+
+
+class _PassClock(Protocol):
+    """`nora.domain.ports.DreamScheduleClock`, the two verbs."""
+
+    async def last_fired(self, *, adaptor_name: str, key: str) -> int | None: ...
+
+    async def record_fire(self, *, adaptor_name: str, key: str, at_ms: int) -> None: ...
+
+
+class _TranscriptSource(Protocol):
+    """One `RecordStore` read — the newest row of a room, for the quiet
+    check. Narrowed to the one method for the curator's reason."""
+
+    async def recent(
+        self, *, conversation_id: str, limit: int,
+    ) -> Sequence[TranscriptRow]: ...
 
 
 class _StandingReader(Protocol):
@@ -183,6 +256,10 @@ class ProactiveAdaptor:
         history_shown: int = DEFAULT_HISTORY_SHOWN,
         self_card_conclusions: int = DEFAULT_SELF_CARD_CONCLUSIONS,
         metrics: Metrics | None = None,
+        clock_store: _PassClock | None = None,
+        records: _TranscriptSource | None = None,
+        quiet_seconds: float = DEFAULT_QUIET_SECONDS,
+        daily_hour: int = DEFAULT_DAILY_HOUR,
     ) -> None:
         self._notes = notes
         # `None` is `[standing] enabled = false`: no paragraph to read, and
@@ -206,6 +283,14 @@ class ProactiveAdaptor:
         self._history_shown = history_shown
         self._self_card_conclusions = self_card_conclusions
         self._metrics = metrics
+        # The durable pass/wake clock (module docstring). `None` renders every
+        # tick and counts `unclocked` — the contract fake and the eval drive;
+        # composition passes the SQL clock the runtime's slots use.
+        self._clock_store = clock_store
+        # The quiet check's one read; `None` treats every room as quiet.
+        self._records = records
+        self._quiet_ms = int(quiet_seconds * 1000)
+        self._daily_hour = daily_hour
         self._shown: dict[str, _Shown] = {}
 
     def _inc(self, name: str, **labels: str) -> None:
@@ -236,6 +321,16 @@ class ProactiveAdaptor:
         now_ms = int(now.timestamp() * 1000)
 
         open_notes = tuple(await self._notes.standing(workspace=key))
+        # THE DETERMINISTIC CHECK, before anything is rendered and before any
+        # model is near (issue #136): daily floor, or a change since the last
+        # rendered pass in a quiet workspace. Counted by reason, because the
+        # reversal condition is a ratio over this series.
+        reason = await self._pass_reason(key, rooms, open_notes, now=now, now_ms=now_ms)
+        self._inc("nora_proactive_pass_total", reason=reason)
+        if reason in ("unchanged", "held_quiet"):
+            self._shown[key] = _Shown({}, {})
+            return ""
+
         by_handle: dict[str, str] = {}
         anchor_date: dict[str, int | None] = {}
         note_lines: list[str] = []
@@ -245,10 +340,13 @@ class ProactiveAdaptor:
             by_handle[handle] = note.id
             anchor_date[note.id] = note.anchor_date
             note_lines.append(_note_line(handle, note, now=now, tz=self._tz))
-        self._shown[key] = _Shown(by_handle=by_handle, anchor_date=anchor_date)
+        self._shown[key] = _Shown(
+            by_handle=by_handle, anchor_date=anchor_date, rendered=True,
+        )
 
         standing_lines = await self._standing_lines(rooms, now_ms=now_ms)
         if not open_notes and not standing_lines:
+            self._shown[key] = _Shown({}, {})
             return ""
 
         parts = [f"<now>{now.astimezone(self._tz):%Y-%m-%d %a %H:%M} ({self._tz.key})</now>"]
@@ -279,6 +377,79 @@ class ProactiveAdaptor:
         if self_card:
             parts.append(self_card)
         return "\n\n".join(parts)
+
+    async def _pass_reason(
+        self, key: str, rooms: Sequence[WorkspaceRoom], open_notes: Sequence[Note],
+        *, now: datetime, now_ms: int,
+    ) -> PassReason:
+        """Why this tick renders, or why it does not (module docstring)."""
+        if self._clock_store is None:
+            return "unclocked"
+        last = await self._clock_store.last_fired(adaptor_name=PASS_CLOCK_NAME, key=key)
+        if last is None:
+            # Never rendered for this workspace: the first pass is the floor.
+            return "daily"
+        local_now = now.astimezone(self._tz)
+        local_last = datetime.fromtimestamp(last / 1000, tz=self._tz)
+        if local_now.date() > local_last.date() and local_now.hour >= self._daily_hour:
+            return "daily"
+        if not await self._changed_since(key, rooms, open_notes, last_ms=last, now_ms=now_ms):
+            return "unchanged"
+        if not await self._quiet(rooms, now_ms=now_ms):
+            return "held_quiet"
+        return "changed"
+
+    async def _changed_since(
+        self, key: str, rooms: Sequence[WorkspaceRoom], open_notes: Sequence[Note],
+        *, last_ms: int, now_ms: int,
+    ) -> bool:
+        """Whether the ORIENT state moved since `last_ms`: a note created,
+        revised on the TAG PATH (a background revision — the debrief's
+        append, the curator's own write — is not a change, for D11's reason),
+        or newly past its `revisit_at`; or a room's Standing rewritten."""
+        for note in open_notes:
+            if note.created_at > last_ms:
+                return True
+            if note.revisit_at is not None and last_ms < note.revisit_at <= now_ms:
+                return True
+            head = await self._notes.read(workspace=key, note_id=note.id)
+            if head is None:
+                continue
+            revision = head[1]
+            if revision.written_at > last_ms and is_tag_path_revision(revision.established_by):
+                return True
+        if self._standing is not None:
+            for room in rooms:
+                try:
+                    position = await self._standing.read(
+                        platform=room.platform, conversation_id=room.conversation_id,
+                    )
+                except Exception:  # noqa: BLE001, S112 — the render path logs and counts it
+                    # A room whose position cannot be read is not evidence
+                    # that it moved.
+                    continue
+                if position is not None and position.updated_at > last_ms:
+                    return True
+        return False
+
+    async def _quiet(self, rooms: Sequence[WorkspaceRoom], *, now_ms: int) -> bool:
+        """Every room silent for `quiet_seconds` — the newest row of each,
+        whoever wrote it. No record store wired treats the workspace as
+        quiet; a failed read treats THAT room as not quiet (held, retried
+        next tick), never as silent."""
+        if self._records is None:
+            return True
+        for room in rooms:
+            try:
+                rows = await self._records.recent(
+                    conversation_id=room.conversation_id, limit=1,
+                )
+            except Exception:
+                log.exception("proactive: quiet read failed for %s", room.label)
+                return False
+            if rows and now_ms - rows[-1].ts < self._quiet_ms:
+                return False
+        return True
 
     async def _standing_lines(
         self, rooms: Sequence[WorkspaceRoom], *, now_ms: int,
@@ -439,6 +610,15 @@ class ProactiveAdaptor:
         about, so no note was woken.
         """
         shown = self._shown.get(key) or _Shown({}, {})
+        if shown.rendered and self._clock_store is not None:
+            # This pass RENDERED (a model was called, whatever it answered):
+            # stamp it, so the next tick measures change against now. A
+            # blank tick never reaches here with `rendered`, and a run the
+            # runtime reported `unavailable` never reaches `commit` at all —
+            # so it is retried at the next tick rather than counted as seen.
+            await self._clock_store.record_fire(
+                adaptor_name=PASS_CLOCK_NAME, key=key, at_ms=now_ms,
+            )
         seen: set[str] = set()
         wakes = 0
         for proposal in proposals:
@@ -451,6 +631,8 @@ class ProactiveAdaptor:
             if decision.note_id is None or decision.note_id in seen:
                 continue
             seen.add(decision.note_id)
+            if not await self._may_wake_today(key, decision.note_id, now_ms=now_ms):
+                continue
             next_at = default_revisit_at(
                 anchor_date=shown.anchor_date.get(decision.note_id), now_ms=now_ms,
             )
@@ -467,7 +649,27 @@ class ProactiveAdaptor:
                 continue
             if outcome is not None:
                 wakes += 1
+                if self._clock_store is not None:
+                    await self._clock_store.record_fire(
+                        adaptor_name=WAKE_CLOCK_NAME, key=f"{key}/{decision.note_id}",
+                        at_ms=now_ms,
+                    )
         return wakes
+
+    async def _may_wake_today(self, key: str, note_id: str, *, now_ms: int) -> bool:
+        """At most one wake per note per Hong Kong day (39 D6 as amended by
+        issue #136): a change-driven pass may decide the same note several
+        times a day, and each of those is one decision the room has not yet
+        had a chance to answer."""
+        if self._clock_store is None:
+            return True
+        last = await self._clock_store.last_fired(
+            adaptor_name=WAKE_CLOCK_NAME, key=f"{key}/{note_id}",
+        )
+        if last is None:
+            return True
+        today = datetime.fromtimestamp(now_ms / 1000, tz=self._tz).date()
+        return datetime.fromtimestamp(last / 1000, tz=self._tz).date() < today
 
 
 # -- rendering ----------------------------------------------------------------
@@ -537,8 +739,11 @@ def _age(ms: int) -> str:
 
 __all__ = [
     "DECISION_ACTIONS",
+    "PASS_CLOCK_NAME",
+    "PASS_REASONS",
     "PROACTIVE_ADAPTOR_NAME",
     "PROACTIVE_TOOLS",
+    "WAKE_CLOCK_NAME",
     "ProactiveAdaptor",
     "WorkspaceRoom",
 ]

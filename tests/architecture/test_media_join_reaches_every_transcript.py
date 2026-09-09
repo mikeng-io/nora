@@ -55,6 +55,12 @@ _NOT_A_BUILDER = {
     # human reading `[image a3f2c1]` in a CLI table is not being told a photo
     # was never looked at; a model reading it in a prompt is.
     "nora/app/cli.py": "renders unattributed rows for an operator on the CLI",
+    # The proactive adaptor's QUIET check (issue #136): `recent(limit=1)` per
+    # room, and the only field read is `ts` — is the room still talking. No
+    # body reaches a prompt from this read; the pass renders notes, Standing
+    # and its own log, never transcript rows (39 §1 keeps `load_transcript`
+    # out of it on purpose).
+    "nora/language/proactive.py": "reads one row's ts per room for the quiet check",
 }
 
 

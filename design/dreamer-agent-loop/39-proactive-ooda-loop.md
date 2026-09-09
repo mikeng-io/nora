@@ -331,6 +331,14 @@ be a person and the flag could go.
 
 ### D6. Note content is read-only to proactive. Bookkeeping is not.
 
+> **AMENDED 2026-09-09 (issue #136), with D10's revision.** «One wake per
+> note per decision» becomes one wake per note per Hong Kong day, recorded
+> in `dream_schedule_state` (`proactive:wake`), because a change-driven
+> pass may decide the same note several times a day and each is one
+> decision the room has not yet had a chance to answer; and, as the audit
+> of the build recorded, a `decline` charges no strike — the number is
+> «raised and nobody replied».
+
 The self-refine edge in §1 runs through `note_update`. The proactive
 adaptor's declared tool set therefore holds `note_read` and `note_search` and
 not `note_create` / `note_update`. Notes are written from human rows
@@ -411,6 +419,25 @@ started, and it can never ask for more, ask differently, or ask again».
 `load_transcript` is deliberately absent (§1).
 
 ### D10. Trigger: a daily slot on the Dreamer's existing clock.
+
+> **REVISED 2026-09-09 by the operator (issue #136), on the evidence of the
+> first live day.** The slot is now HOURLY and the adaptor's own
+> deterministic check decides whether a tick renders: the daily floor
+> (07:00 HK, no rendered pass yet that day), or a change since the last
+> rendered pass — a note created, revised on the tag path, or newly past
+> its `revisit_at`, or a room's Standing rewritten — once every room of the
+> workspace has been quiet for `[dreamer] quiet_seconds`. A tick that does
+> not render is one store read and no model call, which is the same shape
+> the note tier's watermark and the curator's blank render already have.
+> «Last rendered pass» is durable in `dream_schedule_state`
+> (`proactive:pass`). The reason the daily slot was wrong: a note
+> `note-candidates` creates at 10:00 about tonight was first seen the next
+> morning, and a workspace where nothing moved still paid a full tool loop
+> daily. The message-time distribution is not estimated — the note tier's
+> watermarks and Standing's `updated_at` already compress conversation
+> rhythm into state. **Reopens if** `nora_proactive_pass_total{reason=
+> "changed"}` runs far outnumber `remind` decisions over a week: the
+> detector fires on noise, and a slot is the honest cadence.
 
 `dream_loop` (`runtime.py:758`) is the Dreamer's one trigger and the sole
 caller of `DreamerRuntime.run`; `AdaptorSchedule(min_interval_seconds,
@@ -588,6 +615,10 @@ Items 4 and 10 are the work. R-1b and its test do not change.
   a Ridgeline Discord channel not in `policy.toml`). Harmless; noted.
 
 ## Status / Checkpoint
+
+**Revised 2026-09-09, after the first live day (issue #136):** D10 is
+change-driven with a daily floor and D6's wake is per note per day; the
+banners on both decisions carry the evidence and the reversal condition.
 
 **Built 2026-09-09**, in the order §6 numbers, on branch
 `mikeng-io/feat-proactive-ooda-adaptor`; DEC-162's test column names the
