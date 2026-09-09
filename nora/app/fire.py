@@ -114,6 +114,13 @@ from nora.engagement.context import StandingNotesReader
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
+from nora.obs.determination import (
+    Determination,
+    Verdict,
+    log_determination,
+    render_mirror,
+    window_from,
+)
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, annotate, span, trace_attributes
@@ -1375,7 +1382,7 @@ class FirePath:
                     # its message — `_invoke` has already filed the turn under
                     # `nora_participation_silence_total`, or as an ordinary
                     # silent failure if a budget cap cut it off.
-                    await self._mirror(
+                    await self._determined(
                         occasion, ctx, doctrine, verdict="silent",
                         texts=handle.deliverer.held_texts or (
                             (final_text,) if final_text.strip() else ()
@@ -1399,6 +1406,16 @@ class FirePath:
                             "proactive turn declined holding %d chars of "
                             "unrouted prose (tag=%s)", len(final_text), ctx.tag_id,
                         )
+                    # Proactive has no send cooldown and no mirror, so `held`
+                    # is False and `_determined` reaches the log alone — which
+                    # is the whole reason this call exists: before it, the act
+                    # turn's restraint (39 D12) left a counter and a row with
+                    # `outcome="silent"` and nothing that said what it declined.
+                    await self._determined(
+                        occasion, ctx, doctrine, verdict="silent",
+                        texts=(final_text,) if final_text.strip() else (),
+                        held=False, stop_reason=stop_reason,
+                    )
                     return SILENT
                 return FAILED_ERROR
 
@@ -1412,11 +1429,16 @@ class FirePath:
                 self._metrics.inc(
                     "nora_proactive_spoke_total", platform=occasion.platform,
                 )
+                await self._determined(
+                    occasion, ctx, doctrine, verdict="spoke",
+                    texts=handle.deliverer.sent_texts, held=False,
+                    stop_reason=stop_reason,
+                )
             if participation:
                 self._metrics.inc(
                     "nora_participation_spoke_total", platform=occasion.platform,
                 )
-                await self._mirror(
+                await self._determined(
                     occasion, ctx, doctrine, verdict="spoke",
                     texts=handle.deliverer.sent_texts, held=False,
                     stop_reason=stop_reason,
@@ -1652,10 +1674,51 @@ class FirePath:
                 )
         return failure, stop_reason, final_text
 
-    async def _mirror(
+    async def _determined(
         self, occasion: Event, ctx: TagContext, doctrine: Any, *,
-        verdict: str, texts: Sequence[str], held: bool,
+        verdict: Verdict, texts: Sequence[str], held: bool,
         stop_reason: str | None,
+    ) -> None:
+        """Record ONE determination — a turn that could have spoken, and what
+        it decided — on every sink that is wired for it.
+
+        Two sinks, and the difference between them is the point. The log takes
+        every determination, participation's and proactive's alike, needs no
+        channel and costs no send; the §10.6 shadow mirror takes participation's
+        only, and only where the operator wired a channel to review them in.
+        Before this method the mirror was the ONLY sink, so a proactive
+        decision — the adaptor's act turn declining its own earlier intention
+        (39 D12) — was readable nowhere but as a counter and a database row,
+        and a participation decision in a room with no mirror was readable
+        nowhere at all.
+
+        Called at four sites in `_turn`: participation and proactive, silent
+        and spoke. `held` is only ever true for participation — proactive has
+        no send cooldown — which is why `shadow_hold` is conjoined with the
+        occasion rather than read off the channel alone: a proactive
+        determination is never held by anything, and a field that says
+        otherwise would be a fact nothing produced.
+        """
+        d = Determination(
+            occasion=occasion.kind,
+            platform=occasion.platform,
+            conversation_id=occasion.conversation_id,
+            verdict=verdict,
+            texts=tuple(texts),
+            held=held,
+            shadow_hold=(
+                occasion.kind == "participation" and self._shadow_channel is not None
+            ),
+            stop_reason=stop_reason,
+            window=window_from(ctx.transcript),
+        )
+        log_determination(log, d)
+        if occasion.kind == "participation":
+            await self._mirror(occasion, ctx, doctrine, d)
+
+    async def _mirror(
+        self, occasion: Event, ctx: TagContext, doctrine: Any,
+        d: Determination,
     ) -> None:
         """The §10.6 shadow mirror: post one participation determination —
         speak AND silence — to the shadow channel, for operator review before
@@ -1714,17 +1777,14 @@ class FirePath:
                 # all, so holding the mirror too would hide exactly that case.
                 send_permitted=True,
             )
+            # `d.shadow_hold` is true here by construction: this method returns
+            # early without a channel, and `_determined` conjoins the channel
+            # with the participation occasion. That is the true-shadow reading
+            # (Miles decision 2026-09-05) — a held text is held by the shadow
+            # gate, never by the cooldown, because the mirror exists to review
+            # cooldown-held messages and so is never cooldown-gated.
             mirrored = await handle.deliverer.deliver(
-                _mirror_text(
-                    occasion, ctx, verdict=verdict, texts=texts, held=held,
-                    stop_reason=stop_reason,
-                    # The mirror is wired, so a held text is held by the
-                    # shadow gate (true shadow, Miles decision 2026-09-05),
-                    # never by the cooldown — the mirror exists to review
-                    # cooldown-held messages, so it is never cooldown-gated.
-                    shadow_hold=True,
-                ),
-                source="shadow",
+                render_mirror(d), source="shadow",
             )
             if not mirrored:
                 # Pre-existing hole, same shape as the gate mirror's below and
@@ -1925,59 +1985,6 @@ class FirePath:
             self._metrics.inc(
                 "nora_errors_total", stage="fire_feedback", platform=platform,
             )
-
-
-def _mirror_text(
-    occasion: Event, ctx: TagContext, *, verdict: str,
-    texts: Sequence[str], held: bool, stop_reason: str | None,
-    shadow_hold: bool = False,
-) -> str:
-    """The shadow mirror post (§10.6): the source room, the verdict, the text
-    and the window that closed.
-
-    `texts` is the sent messages for a spoke verdict; for a silent one it is
-    the held text (the cooldown kept it — what she WOULD have said) or the
-    decline draft (the prose she wrote instead of calling `send_reply`, which
-    doubles as her reasoning for declining). The window tail is the last few
-    transcript rows the determination saw, so the review reads the trigger in
-    context rather than as an orphaned quote.
-
-    `shadow_hold` (Miles decision 2026-09-05): TRUE SHADOW — the mirror is
-    wired, so a concluded-speak is held by the shadow gate, not the cooldown.
-    The wording must say so: an operator reviewing the mirror needs to know
-    the room heard nothing because shadow is on, not because the cooldown
-    happened to hold it.
-    """
-    lines = [
-        f"[shadow] {occasion.platform}/{occasion.conversation_id}",
-    ]
-    if verdict == "spoke":
-        lines.append("verdict: SPOKE — the room heard:")
-    elif held:
-        if shadow_hold:
-            lines.append(
-                "verdict: SILENT — she concluded speak; SHADOW MODE held it "
-                "(the room hears nothing until the flip). She would have said:"
-            )
-        else:
-            lines.append(
-                "verdict: SILENT — she concluded speak; the send cooldown held "
-                "it. She would have said:"
-            )
-    else:
-        lines.append("verdict: SILENT — she declined the floor.")
-        if texts:
-            lines.append("her draft (never sent; doubles as her reasoning):")
-    lines.extend(texts)
-    if stop_reason:
-        lines.append(f"(stop: {stop_reason})")
-    window = list(ctx.transcript)[-5:]
-    if window:
-        lines.append("window that closed:")
-        lines.extend(
-            f"- {row.sender_name}: {(row.body or '')[:120]}" for row in window
-        )
-    return "\n".join(lines)
 
 
 def _synthetic_message(

@@ -12,6 +12,7 @@ off by the real `limits`.
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -1963,6 +1964,105 @@ async def test_a_proactive_turn_that_speaks_is_sent_and_counted(
     assert adapter.texts == ["星期六食飯，大家幾點到？"]
     assert metrics.get("nora_proactive_spoke_total", platform="signal") == 1
     assert metrics.get("nora_proactive_silence_total") == 0
+
+
+def _determinations(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if r.message == "determination"]
+
+
+async def test_a_proactive_decline_is_readable_as_a_determination(
+    persons: Persons, doctrine_store, metrics: Metrics,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """39 D12's restraint, in words rather than as a counter.
+
+    The proactive act turn has no shadow mirror and no cooldown, so before the
+    determination sink its decline left `nora_proactive_silence_total`, a row
+    with `outcome="silent"`, and NOTHING that said what it declined or what it
+    would have said. The counter answers how many; only this answers what.
+    """
+    path = FirePath(
+        persons=persons, records=FakeRecordStore(), memory=FakeMemoryStore(),
+        doctrine_store=doctrine_store, metrics=metrics,
+        runner=FakeAgentRunner([]), adapters={"signal": _FireAdapter()},
+        registry=ToolRegistry(), canary="test-canary", display_name="Nora",
+        ai_peer="nora", context_window=40, limits=LIMITS,
+        timeout_seconds=5.0, clock=lambda: T0,
+        proactive_runner=FakeAgentRunner([
+            ScriptedTurn(final_text="she already said it herself"),
+        ]),
+        event_registry={"proactive": fire_module.proactive_occasion},
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="nora.app.fire"):
+        outcome = await path.run([_proactive_row()])
+
+    assert outcome == fire_module.SILENT
+    shape = _determinations(caplog)
+    assert len(shape) == 1, "a proactive decline files exactly one determination"
+    assert shape[0].occasion == "proactive"
+    assert shape[0].disposition == "declined"
+    # Never `held_*`: proactive has no send cooldown and no mirror to hold it.
+    assert shape[0].verdict == "silent"
+    content = [r for r in caplog.records if r.message == "determination.content"]
+    assert content[0].texts == ["she already said it herself"]
+
+
+async def test_a_proactive_send_is_readable_as_a_determination(
+    persons: Persons, doctrine_store, metrics: Metrics,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The other half: a spoke determination reaches the same sink, so the two
+    outcomes are counted AND read in one place rather than one each."""
+    path = FirePath(
+        persons=persons, records=FakeRecordStore(), memory=FakeMemoryStore(),
+        doctrine_store=doctrine_store, metrics=metrics,
+        runner=FakeAgentRunner([]), adapters={"signal": _FireAdapter()},
+        registry=ToolRegistry(), canary="test-canary", display_name="Nora",
+        ai_peer="nora", context_window=40, limits=LIMITS,
+        timeout_seconds=5.0, clock=lambda: T0,
+        proactive_runner=FakeAgentRunner(_send_turns("星期六幾點到？")),
+        event_registry={"proactive": fire_module.proactive_occasion},
+    )
+
+    with caplog.at_level(logging.INFO, logger="nora.app.fire"):
+        outcome = await path.run([_proactive_row()])
+
+    assert outcome == fire_module.SENT
+    shape = _determinations(caplog)
+    assert len(shape) == 1
+    assert (shape[0].occasion, shape[0].disposition) == ("proactive", "spoke")
+    # The INFO record carries no speech: `_turn` already decided group speech
+    # does not go to INFO, and a determination carries her words too.
+    assert "星期六幾點到？" not in str(shape[0].__dict__)
+
+
+async def test_a_participation_determination_is_logged_without_a_mirror(
+    persons: Persons, doctrine_store, metrics: Metrics,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The gap the sink closes for participation: with no `shadow_channel` the
+    mirror returns early, so before this a room without an operator-wired
+    review channel produced no readable determination at all."""
+    room = _FireAdapter()
+    path = _shadow_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=None, shadow_channel=None,
+        participation_runner=FakeAgentRunner([
+            ScriptedTurn(final_text="nothing here needs me"),
+        ]),
+    )
+
+    with caplog.at_level(logging.INFO, logger="nora.app.fire"):
+        outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SILENT
+    assert room.sent == []
+    shape = _determinations(caplog)
+    assert len(shape) == 1
+    assert (shape[0].occasion, shape[0].disposition) == (
+        "participation", "declined",
+    )
 
 
 async def test_a_proactive_turn_with_no_runner_is_a_counted_wiring_fault(

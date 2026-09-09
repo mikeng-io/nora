@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Every turn that could have spoken now files a readable determination — including the ones nobody had a way to read.",
+  "details": [
+    "A determination — the occasion, the room, the verdict, what she would have said and the window she read it against — is now a value with two sinks: the shadow mirror it always had, and the process log, which needs no channel and costs no send.",
+    "The proactive act turn's restraint (design 39 D12) is readable for the first time: it had a counter and a row saying silent, and nothing that said what it declined.",
+    "A participation determination in a room with no operator-wired mirror is now readable too; previously it was readable nowhere at all.",
+    "The shape goes to INFO and the speech to DEBUG, as two fixed-shape events — the same split the fire path already made for unrouted prose, so group speech does not enter the log at INFO."
+  ],
+  "limitations": [
+    "The shadow mirror's own output is unchanged, and it remains participation-only: this adds a second reader, not a second mirror.",
+    "Reading a determination's draft or the window it closed on requires the deployment to be at DEBUG."
+  ]
+}
