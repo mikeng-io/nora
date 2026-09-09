@@ -127,12 +127,24 @@ def _wired(bridge, monkeypatch) -> list[object]:
     return seen
 
 
-def test_a_clean_post_is_a_delivery(bridge, monkeypatch):
+def test_a_clean_post_is_a_delivery_and_says_so(bridge, monkeypatch, caplog):
     """The POSITIVE CONTROL. Every assertion in this file is satisfied by a
     `send` that always returns False; this is the one that proves it can
-    succeed."""
+    succeed.
+
+    It also asserts the success LINE. Until the deploy read-back, only failures
+    logged — so an empty log meant both "delivered" and "the webhook never
+    arrived", and the one question worth asking of this container could not be
+    answered from its own output. The probe alert reached Discord and the log
+    said nothing about it.
+    """
     _wired(bridge, monkeypatch)
-    assert bridge.send("anything") is True
+    with caplog.at_level("INFO"):
+        assert bridge.send("anything") is True
+    assert any("delivered" in r.getMessage() for r in caplog.records), (
+        "a successful delivery is silent, so the log cannot distinguish it "
+        "from an alert that never arrived"
+    )
 
 
 def test_it_posts_to_the_configured_channel_as_the_bot(bridge, monkeypatch):
