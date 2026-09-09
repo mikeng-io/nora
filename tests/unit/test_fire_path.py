@@ -206,10 +206,17 @@ class _FireAdapter:
 
     platform = "signal"
 
-    def __init__(self, *, identity_raises: Exception | None = None) -> None:
+    def __init__(
+        self, *, identity_raises: Exception | None = None, send_ok: bool = True,
+    ) -> None:
         self.sent: list[tuple[ConversationTarget, str]] = []
         self.sent_mentions: list[tuple] = []
         self._identity_raises = identity_raises
+        # A send that REACHES the platform and is rejected there — the real
+        # adapters' `SendResult(ok=False)`, not an exception. `Deliverer.deliver`
+        # returns False for that exactly as it does for a guard refusal, which
+        # is the confusion the shadow callers used to report wrongly.
+        self._send_ok = send_ok
 
     async def resolve_identity(self) -> PlatformIdentity:
         if self._identity_raises is not None:
@@ -224,7 +231,7 @@ class _FireAdapter:
     ) -> SendResult:
         self.sent.append((target, text))
         self.sent_mentions.append(tuple(mentions))
-        return SendResult(ok=True)
+        return SendResult(ok=self._send_ok)
 
     @property
     def texts(self) -> list[str]:
@@ -1830,6 +1837,68 @@ async def test_a_guard_refused_review_post_is_counted_not_silently_dropped(
     assert metrics.get(
         "nora_errors_total", stage="relevance_gate_shadow", platform="signal",
     ) == 1
+
+
+async def test_a_review_post_the_platform_rejected_is_not_reported_as_a_guard_refusal(
+    persons: Persons, doctrine_store, metrics: Metrics,
+    record_store: FakeRecordStore, caplog,
+) -> None:
+    """The NORA-3 mislabel. `deliver` returns False for BOTH a guard refusal
+    and a send the platform rejected, and this line asserted the first one.
+
+    Live, the second was true: `shadow_channel` was missing its guild half, so
+    every GO went to `/channels//messages` and Discord answered 405. The
+    operator read "REFUSED by a guard" and went looking at the egress screen —
+    the one place the fault was not. The counters were right the whole time;
+    the sentence was not.
+    """
+    room = _FireAdapter()
+    shadow = _DiscordFireAdapter(send_ok=False)
+    await record_store.append(message=_inbound("conv-1", "邊度有好嘢食"))
+    path = _gate_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow, records=record_store,
+    )
+
+    with caplog.at_level(logging.ERROR, logger="nora.app.fire"):
+        await path.post_gate_verdict(
+            platform="signal", conversation_id="conv-1", score=0.81,
+        )
+
+    assert len(shadow.sent) == 1, "the post reached the platform and was rejected there"
+    line = "\n".join(r.getMessage() for r in caplog.records)
+    assert "send_failed" in line
+    assert "REFUSED by a guard" not in line
+    # Still counted — naming the cause correctly must not cost the error.
+    assert metrics.get(
+        "nora_errors_total", stage="relevance_gate_shadow", platform="signal",
+    ) == 1
+
+
+async def test_a_guard_refusal_is_still_named_as_one(
+    persons: Persons, doctrine_store, metrics: Metrics,
+    record_store: FakeRecordStore, caplog,
+) -> None:
+    """The other half of the same discrimination: a post R-18 refused says so.
+
+    Without this, "stop claiming a guard refused it" is satisfied by a line
+    that never names a guard again — which would lose the reading that made
+    the original message worth having.
+    """
+    room, shadow = _FireAdapter(), _DiscordFireAdapter()
+    await record_store.append(message=_inbound("conv-1", "call me on +85298765432"))
+    path = _gate_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        room=room, shadow=shadow, records=record_store,
+    )
+
+    with caplog.at_level(logging.ERROR, logger="nora.app.fire"):
+        await path.post_gate_verdict(
+            platform="signal", conversation_id="conv-1", score=0.9,
+        )
+
+    assert shadow.sent == []
+    assert "egress_block" in "\n".join(r.getMessage() for r in caplog.records)
 
 
 async def test_no_review_channel_wired_posts_nothing_and_raises_nothing(

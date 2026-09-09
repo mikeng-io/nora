@@ -1052,6 +1052,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Rows written through an adaptor's sink, by adaptor.",
         ("adaptor",),
     ),
+    # The fail-closed branch in `DreamerToolSource.build` (39 D2/D3): the
+    # adaptor's grant names a home room, the workspace declares none in
+    # policy.toml, and the acts are withheld along with the room. This is a
+    # CONFIG state, true on every pass until somebody edits a file, so the log
+    # line beside it is emitted once per (adaptor, workspace) — that is what
+    # this counter is for. Without it, deduplicating the log would have traded
+    # a stream of identical errors for no signal at all, and «the proactive
+    # adaptor has been inert in this workspace for a week» is exactly the
+    # reading an operator needs and cannot get from a single startup line.
+    _CounterSpec(
+        "nora_dream_home_room_missing_total",
+        "Dreamer builds that wanted a home room and found none declared for "
+        "the workspace: the adaptor ran with no acts and no room. A standing "
+        "config gap, counted every pass; the log says it once.",
+        ("adaptor", "workspace"),
+    ),
     # Screening is the second path into the prompt, and it must never be
     # silent: a proposal dropped for carrying a phone number or a coordinate
     # is a real event about a model reading attacker-influenceable pages, and

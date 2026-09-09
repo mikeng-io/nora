@@ -282,7 +282,12 @@ cooldown_minutes = 10
 # Deliverer and guards as any send, under its own audience label — and never
 # counted in nora_participation_spoke_total.
 shadow = false
-# shadow_channel = "1234567890123456789"   # required when shadow = true
+# The mirror's destination, in shadow_platform's OWN id shape — on discord
+# that is "<guild_id>/<channel_id>", the same form policy.toml uses for a
+# Discord room, NOT a bare channel id. A bare id addresses
+# /channels//messages and Discord answers 405; the config schema now
+# refuses it at boot rather than letting the mirror fail soft forever.
+# shadow_channel = "1234567890123456789/9876543210987654321"  # required when shadow = true
 # shadow_platform = "discord"              # the mirror's platform
 
 [relevance_gate]
@@ -326,7 +331,10 @@ transcript_rows = 40
 # `no_go` verdicts are not delivered anywhere; they are visible only as
 # nora_relevance_gate_total{verdict="no_go"}. The flip is `shadow = false`.
 shadow = true
-# shadow_channel = "1234567890123456789"   # required when enabled AND shadow
+# The review channel, in shadow_platform's OWN id shape — on discord that is
+# "<guild_id>/<channel_id>", never a bare channel id (see [participation]
+# shadow_channel above for what a bare one does).
+# shadow_channel = "1234567890123456789/9876543210987654321"  # required when enabled AND shadow
 # shadow_platform = "discord"
 
 [engagement]

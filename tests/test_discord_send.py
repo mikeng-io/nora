@@ -238,3 +238,61 @@ async def test_an_attachment_is_sent_as_multipart(aiohttp_server):
     assert "payload_json" in names
     assert "files[0]" in names
     assert any(b"GIF89a" in data for _, data in calls)
+
+
+@pytest.fixture
+async def rest_server_405(aiohttp_server):
+    """Discord's OWN answer to a malformed channel route, and the reason this
+    fixture is not `rest_server`: a server that simply has no matching route
+    returns 404 and records nothing, so a test written against it passes
+    whether or not the sender guards the request. It has to answer the way
+    the real API does — **405 Method Not Allowed** on `/channels//messages`,
+    which is what the deployment actually received — and it has to record the
+    attempt, because "no request was made" is the whole assertion.
+    """
+    attempts: list[str] = []
+
+    async def catch_all(request: web.Request) -> web.Response:
+        attempts.append(request.path)
+        return web.json_response({"message": "405: Method Not Allowed"}, status=405)
+
+    app = web.Application()
+    app.router.add_route("*", "/{tail:.*}", catch_all)
+    server = await aiohttp_server(app)
+    server.attempts = attempts
+    return server
+
+
+async def test_send_refuses_a_conversation_id_that_names_no_channel(rest_server_405):
+    """A bare channel snowflake — no guild half — is REFUSED before the wire.
+
+    `partition("/")` puts the whole id in `guild_id` and leaves `channel_id`
+    empty, so the POST would go to `/channels//messages`: a route that does
+    not exist, which Discord answers **405**. That is what happened on the
+    deployment (NORA-4) — `config.toml` held `shadow_channel = "<channel id>"`
+    with no guild, and the Relevance Gate's review posts 405'd for a fortnight
+    while the log upstream called it a guard refusal.
+
+    Refusing here is worth more than the 405: the status says «this route
+    rejects POST», the log line says which value is wrong. The assertion is
+    that NO request is made — with the guard removed this same fixture records
+    the `/channels//messages` attempt and the test goes red.
+    """
+    bare = ConversationTarget("discord", "2", "group")
+    sender = DiscordSender("tok", base_url=str(rest_server_405.make_url("")).rstrip("/"))
+
+    result = await sender.send(bare, "hello")
+
+    assert result.ok is False
+    assert rest_server_405.attempts == [], "a malformed target must not reach the wire"
+
+
+async def test_a_well_formed_target_still_reaches_the_wire(rest_server_405):
+    """The guard's other side: it must refuse the missing channel and nothing
+    else. Without this, `return SendResult(ok=False)` at the top of `send`
+    satisfies the test above."""
+    sender = DiscordSender("tok", base_url=str(rest_server_405.make_url("")).rstrip("/"))
+
+    await sender.send(TARGET, "hello")
+
+    assert rest_server_405.attempts == ["/channels/2/messages"]

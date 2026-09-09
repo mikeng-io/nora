@@ -701,6 +701,14 @@ class RegistryToolSource:
         # honest state, never an empty room.
         self._rosters = dict(rosters or {})
         self._self_ids = frozenset(self_ids)
+        # (adaptor, workspace) pairs already reported for the missing-home-room
+        # branch below. The condition is a CONFIG state — true on every pass
+        # until policy.toml changes — so an error per pass is a stream of
+        # identical lines that says nothing the first one didn't, and on this
+        # deployment it filed the same Sentry issue every dream (NORA-2, two
+        # workspaces). The COUNTER carries the ongoing reading; the log carries
+        # the news.
+        self._home_room_reported: set[tuple[str, str]] = set()
 
     def read_only(self) -> frozenset[str]:
         return self._registry.read_only_tools()
@@ -720,11 +728,22 @@ class RegistryToolSource:
             # False`) and `remind` would write into a conversation that does
             # not exist, so neither is built — the acts are withheld along
             # with the room.
-            log.error(
-                "dream adaptor %r is granted a home room but workspace %r "
-                "names none in policy.toml; building without acts or a room",
-                adaptor, workspace,
+            self._metrics.inc(
+                "nora_dream_home_room_missing_total",
+                adaptor=adaptor, workspace=workspace or "",
             )
+            # Once per (adaptor, workspace), not once per pass: the counter
+            # above is the continuous reading, and repeating an unchanging
+            # config fault at `error` on every dream buries the passes that
+            # DID change something.
+            seen = (adaptor, workspace or "")
+            if seen not in self._home_room_reported:
+                self._home_room_reported.add(seen)
+                log.error(
+                    "dream adaptor %r is granted a home room but workspace %r "
+                    "names none in policy.toml; building without acts or a room",
+                    adaptor, workspace,
+                )
         acts = allowance.acts if home is not None else frozenset()
         wanted = frozenset(names) & (self.read_only() | acts)
         if not wanted:

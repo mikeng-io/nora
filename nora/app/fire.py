@@ -1791,9 +1791,17 @@ class FirePath:
                 # fixed in the same commit: a guard REFUSAL returns False
                 # rather than raising, so this stage counted zero errors while
                 # dropping determinations the operator was waiting to review.
+                #
+                # And the same correction: False also covers a send that
+                # reached the wire and failed, so the line names
+                # `last_outcome` rather than asserting a guard. This mirror
+                # carries the SAME `shadow_channel` the gate does, so the 405
+                # that emptied the review channel was latent here too — it
+                # simply never fired, because a gate in shadow mode means no
+                # participation turn runs to be mirrored.
                 log.error(
-                    "participation shadow mirror REFUSED by a guard (tag=%s)",
-                    ctx.tag_id,
+                    "participation shadow mirror not delivered: %s (tag=%s)",
+                    handle.deliverer.last_outcome or "unknown", ctx.tag_id,
                 )
                 self._metrics.inc(
                     "nora_errors_total", stage="participation_shadow",
@@ -1883,9 +1891,20 @@ class FirePath:
                 # already counted it. The operator then tunes the flip on a
                 # GO stream with invisible holes in it, which is the one
                 # reading shadow mode exists to provide.
+                #
+                # It also returns False for a send that reached the wire and
+                # FAILED there, which this line used to report as a guard
+                # refusal — and did, for every GO from 2026-09-09, while the
+                # real fault was a `shadow_channel` missing its guild half and
+                # Discord answering 405 (NORA-3/NORA-4). `last_outcome` is what
+                # separates the two; the counters already did (a refusal moves
+                # `nora_silent_failures_total`, a wire failure moves
+                # `nora_replies_total{status="failed"}`), so what was wrong here
+                # was the sentence an operator reads first, not the measurement.
                 log.error(
-                    "relevance gate shadow post REFUSED by a guard (%s/%s) — "
+                    "relevance gate shadow post not delivered: %s (%s/%s) — "
                     "the review channel is missing this GO",
+                    handle.deliverer.last_outcome or "unknown",
                     platform, conversation_id,
                 )
                 self._metrics.inc(

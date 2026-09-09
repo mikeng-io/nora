@@ -430,10 +430,13 @@ async def test_the_participation_trigger_is_wired_to_the_real_fire_path(cfg):
     # and `_shadow_needs_a_channel` refuses that combination without one.
     # `override_config` uses `model_copy`, which does NOT re-run validators,
     # so a test can silently assert against a config that would refuse to
-    # start — this one deliberately does not.
+    # start — this one deliberately does not. Which is why it carries the
+    # GUILD half too: the bare `"999"` this used to pass is a value the
+    # schema now refuses, and model_copy is exactly the door through which a
+    # test keeps asserting against a config the deployment could not load.
     on = override_config(cfg, {
         "participation.enabled": True, "relevance_gate.enabled": True,
-        "relevance_gate.shadow_channel": "999",
+        "relevance_gate.shadow_channel": "888/999",
     })
     deps = await build_dependencies(on)
     try:

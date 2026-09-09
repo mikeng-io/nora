@@ -85,6 +85,27 @@ class DiscordSender:
         # is only needed below, for the member lookup a '@Name' in the text
         # requires.
         guild_id, _, channel_id = target.conversation_id.partition("/")
+        if not channel_id:
+            # A conversation_id with no `/` partitions to an EMPTY channel, and
+            # the POST below would address `/channels//messages` — a URL whose
+            # own route does not exist, which Discord answers 405. That is a
+            # rejection about a malformed request, not about this message, and
+            # reading it as one cost a fortnight of Relevance Gate verdicts:
+            # `config.toml` held a bare channel snowflake, every GO 405'd, and
+            # the log upstream reported it as a guard refusal (NORA-4).
+            #
+            # Refused HERE, before the request, for the reason the
+            # `conversation_type` guard above is: a send that cannot be
+            # addressed is a wiring fault, and one named on its own terms is
+            # worth more than an HTTP status an operator has to decode. The
+            # config schema now refuses this at boot too — this is the floor
+            # under a target that reaches the adapter from anywhere else.
+            log.error(
+                "refusing to send to conversation_id=%r — discord needs "
+                "\"<guild_id>/<channel_id>\" and this names no channel",
+                target.conversation_id,
+            )
+            return SendResult(ok=False)
 
         resolved_text = text
         allowed_users: tuple[str, ...] = ()

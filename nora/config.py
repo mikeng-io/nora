@@ -43,6 +43,43 @@ def _resolve_path(value: Path, base: Path) -> Path:
     return expanded.resolve() if expanded.is_absolute() else (base / expanded).resolve()
 
 
+def _shadow_channel_shape_error(*, section: str, platform: str, channel: str) -> str | None:
+    """The shape a shadow channel must have ON ITS PLATFORM, or `None`.
+
+    Discord addresses a room as `"<guild_id>/<channel_id>"` — one id names the
+    server, the other the channel — and `policy.toml` has always spelled its
+    `[[conversations]]` ids that way. The shadow channels did NOT: both this
+    file's field docs and `config.example.toml` said "a channel id", the
+    operator wrote exactly that, and `DiscordSender.send` partitioned the bare
+    snowflake into `guild_id="<the id>"`, `channel_id=""`. The POST went to
+    `/channels//messages` and Discord answered **405**, so every Relevance Gate
+    GO verdict was dropped on the floor while the gate counted it delivered
+    (NORA-3/NORA-4, 2026-09-09).
+
+    A wrong-shaped channel is a CONFIG error and belongs here, at boot, beside
+    the emptiness check it sits next to — not in a fail-soft review path whose
+    whole posture is to swallow its own failures so it cannot break the path it
+    reviews. That posture is right and is exactly why this cannot be caught
+    there: the mirror is DESIGNED not to shout, so the only loud place left is
+    the one that reads the value.
+
+    Only Discord is checked, because only Discord's adapter carries a
+    two-part id. Signal's conversation id is one opaque base64 string and a
+    `/` in it means nothing, so there is no shape here to assert.
+    """
+    if platform != "discord":
+        return None
+    guild, sep, channel_id = channel.partition("/")
+    if sep and guild and channel_id and "/" not in channel_id:
+        return None
+    return (
+        f"[{section}] shadow_channel must be \"<guild_id>/<channel_id>\" on "
+        f"discord (the same shape policy.toml uses for a Discord room), not "
+        f"{channel!r} — a bare channel id sends to /channels//messages, which "
+        f"Discord refuses with HTTP 405"
+    )
+
+
 def _resolve_context_field(instance: BaseModel, field: str, info: ValidationInfo) -> None:
     """Resolve a Path field against the config file's directory, in place.
 
@@ -415,9 +452,11 @@ class ParticipationConfig(BaseModel):
     reasoning_effort: str = "none"
     cooldown_minutes: float = Field(default=10.0, gt=0)
     shadow: bool = False
-    # The mirror's destination: a channel id on `shadow_platform`. Required
-    # when `shadow = true` — a mirror with nowhere to post would fail soft on
-    # every determination, which is a config error, not a runtime condition.
+    # The mirror's destination on `shadow_platform`, in THAT platform's own id
+    # shape — `"<guild_id>/<channel_id>"` on discord, the same form policy.toml
+    # uses for a Discord room. Required when `shadow = true` — a mirror with
+    # nowhere to post would fail soft on every determination, which is a config
+    # error, not a runtime condition.
     shadow_channel: str = ""
     shadow_platform: str = "discord"
 
@@ -428,6 +467,16 @@ class ParticipationConfig(BaseModel):
                 "[participation] shadow = true requires shadow_channel — the "
                 "mirror's destination channel id on shadow_platform"
             )
+        # Shape, not just presence: a set-but-unsendable channel fails soft on
+        # every determination exactly as an unset one does, so the two are one
+        # config error and are refused in one place.
+        if self.shadow:
+            problem = _shadow_channel_shape_error(
+                section="participation", platform=self.shadow_platform,
+                channel=self.shadow_channel,
+            )
+            if problem is not None:
+                raise ValueError(problem)
         return self
 
 
@@ -494,9 +543,11 @@ class RelevanceGateConfig(BaseModel):
     # changing what the gate is (design 36 §2).
     transcript_rows: int = Field(default=40, gt=0)
     shadow: bool = True
-    # The review channel: a channel id on `shadow_platform`. Required when
-    # `shadow = true` — a review surface with nowhere to post would fail soft
-    # on every GO, which is a config error, not a runtime condition.
+    # The review channel on `shadow_platform`, in THAT platform's own id shape
+    # — `"<guild_id>/<channel_id>"` on discord, the same form policy.toml uses
+    # for a Discord room. Required when `shadow = true` — a review surface with
+    # nowhere to post would fail soft on every GO, which is a config error, not
+    # a runtime condition.
     shadow_channel: str = ""
     shadow_platform: str = "discord"
 
@@ -518,6 +569,16 @@ class RelevanceGateConfig(BaseModel):
                 "[relevance_gate] shadow = true requires shadow_channel — the "
                 "review channel id on shadow_platform"
             )
+        # Shape, not just presence — see the participation twin. Gated on
+        # `enabled` for the reason above: a disabled gate posts nowhere, so its
+        # unset (and therefore unshaped) channel is not yet a contradiction.
+        if self.enabled and self.shadow:
+            problem = _shadow_channel_shape_error(
+                section="relevance_gate", platform=self.shadow_platform,
+                channel=self.shadow_channel,
+            )
+            if problem is not None:
+                raise ValueError(problem)
         return self
 
 
