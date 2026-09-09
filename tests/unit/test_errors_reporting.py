@@ -112,6 +112,12 @@ def test_it_reports_errors_without_starting_a_second_tracing_pipeline(monkeypatc
         "third-party wire — the same class R-18 keeps off every other exit"
     )
     assert captured["environment"] == "test-env"
+    assert captured["auto_enabling_integrations"] is False, (
+        "the SDK will scan for installed packages and wire a framework "
+        "integration for each — one of which raised ImportError during init "
+        "on the deployment (starlette/jinja2), taking the whole reporter with "
+        "it and leaving error reporting silently off"
+    )
     # The logging integration is what turns this codebase's `log.exception`
     # sites into issues; without it Sentry would only see what escapes to the
     # top, which in a codebase that catches 223 times is almost nothing.

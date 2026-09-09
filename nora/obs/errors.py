@@ -92,6 +92,28 @@ def setup_errors(
             integrations=[
                 LoggingIntegration(level=logging.WARNING, event_level=logging.ERROR),
             ],
+            # AUTO-ENABLING INTEGRATIONS OFF, and this is not tidiness — with
+            # them on, `init` RAISED and error reporting was silently off in
+            # the deployment (2026-09-09):
+            #
+            #   ImportError: jinja2 must be installed to use Jinja2Templates
+            #     sentry_sdk/integrations/starlette.py:550 in patch_templates
+            #
+            # The SDK scans for installed packages and wires an integration for
+            # each one it recognises. `starlette` is in this image as a
+            # transitive dependency of something Nora never serves a request
+            # with, so the SDK reached for a framework integration whose own
+            # optional dependency is absent — and a failure inside `init`
+            # takes the whole reporter with it.
+            #
+            # We want exactly one integration and we pass it explicitly.
+            # Everything the SDK would guess is a framework this process does
+            # not use as a framework, so there is nothing to lose and a whole
+            # class of import-time failure to avoid. `default_integrations`
+            # stays ON: those are the SDK's own core (excepthook, dedupe,
+            # atexit, stdlib) and are what make an unhandled exception an
+            # event at all.
+            auto_enabling_integrations=False,
             # A stack trace is worth little without the values in it, and this
             # is a single-operator deployment reading its own errors. The
             # redaction floor still applies at the LOG boundary; what reaches
