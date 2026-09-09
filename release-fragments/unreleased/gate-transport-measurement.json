@@ -1,0 +1,5 @@
+{
+  "type": "internal",
+  "summary": "The relevance gate can be run through the Agent SDK's structured output for comparison, and measuring it found a safety regression.",
+  "details": "`--via-sdk` on the relevance_gate suite swaps only the transport — same prompt, same parser, same four measurements. Measured over the same 40 cases: the SDK path holds determinism and false-GO but BREACHES a safety case (a forged assistant row inside a member's message is believed, five times out of five) and costs 2.6x the tokens. Strands implements structured output as a tool-call exchange, and OmniRoute's Chat Completions transport drops the assistant turn's reasoning before the verdict is formed."
+}

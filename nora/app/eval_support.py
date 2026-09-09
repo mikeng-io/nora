@@ -19,10 +19,11 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
+from pydantic import BaseModel, Field
 
 from nora.agent import factory
 from nora.agent import tool_choice as tool_choice_module
@@ -30,6 +31,7 @@ from nora.agent.dreamer import AdaptorBudget, AdaptorSchedule, DreamerRuntime
 from nora.agent.factory import create_client, create_model_provider
 from nora.agent.guards import LeakGuard
 from nora.agent.registry import ToolRegistry
+from nora.agent.structured import ask_structured, build_structured_model
 from nora.agent.whereis import Circle
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
@@ -749,6 +751,64 @@ class _MeasuringGateClient:
         )
 
 
+class GateVerdictSchema(BaseModel):
+    """The gate's verdict, as a schema the SDK can enforce.
+
+    The SAME two fields `participation.md` asks for in prose and
+    `parse_verdict` reads back, declared once so the comparison below is about
+    the CALL and not about two different questions. `relevance_score` is
+    optional exactly as it is today — the gate's own parser treats a missing
+    score as absent rather than as zero.
+    """
+
+    verdict: Literal["go", "no_go"] = Field(
+        description="whether this window is worth a participation turn",
+    )
+    relevance_score: float = Field(
+        default=-1.0,
+        description="0.0-1.0 confidence that the room wants Nora; omit if unsure",
+    )
+
+
+class _StrandsGateClient:
+    """The gate's model call through the Agent SDK instead of a raw completion.
+
+    Satisfies the SAME `nora.ingest.relevance_gate.ModelClient` and returns a
+    `Completion` whose `content` is the verdict JSON, so the gate's own
+    parsing, fail-closed rules and metrics are byte-for-byte the path they are
+    today. The only variable is how the bytes were obtained — a comparison
+    that also changed the parser would measure two things and attribute the
+    difference to one.
+
+    The SDK call itself lives in `nora.agent.structured`, because `strands`
+    may only be imported from `nora/agent/` (`tests/test_boundaries.py`) —
+    a rule this class tripped on its first cut, and correctly: the SDK belongs
+    behind the agent boundary whoever is calling it.
+    """
+
+    def __init__(self, *, base_url: str, api_key: str, gate_cfg: Any) -> None:
+        self._cfg = gate_cfg
+        self._model = build_structured_model(
+            base_url=base_url, api_key=api_key, model_id=str(gate_cfg.model),
+            max_tokens=gate_cfg.max_tokens, temperature=gate_cfg.temperature,
+        )
+        self.usage: tuple[int, int, int] | None = None
+
+    @property
+    def model(self) -> str:
+        return str(self._cfg.model)
+
+    async def complete(self, *, prompt: str) -> GateCompletion:
+        got = await ask_structured(
+            model=self._model, prompt=prompt, schema=GateVerdictSchema,
+            timeout_seconds=self._cfg.timeout_seconds,
+        )
+        self.usage = got.usage
+        return GateCompletion(
+            content=got.content, finish_reason=got.finish_reason,
+        )
+
+
 @dataclass(frozen=True)
 class GateProbe:
     """A built gate, plus the instruction provenance a run is read against."""
@@ -760,12 +820,24 @@ class GateProbe:
     base_url: str
     instruction_version: int | None
     instruction_sha256: str
+    #: Which client the probe drives. False is production's raw completion;
+    #: True is the same gate through the Agent SDK's structured output.
+    via_sdk: bool = False
+    _api_key_env: str = ""
 
     async def run(
         self, *, transcript: tuple[str, ...], standing: str | None, label: str,
     ) -> GateProbeResult:
-        model = _MeasuringGateClient(
-            client=self._client, gate_cfg=self._cfg, reasoning_effort=self._effort,
+        model: Any = (
+            _StrandsGateClient(
+                base_url=self.base_url,
+                api_key=os.environ.get(self._api_key_env, ""),
+                gate_cfg=self._cfg,
+            )
+            if self.via_sdk else
+            _MeasuringGateClient(
+                client=self._client, gate_cfg=self._cfg, reasoning_effort=self._effort,
+            )
         )
         gate = RelevanceGate(
             client=model, prompts=self._doctrine,
@@ -784,7 +856,7 @@ class GateProbe:
         )
 
 
-def build_gate_probe(cfg: Config) -> GateProbe:
+def build_gate_probe(cfg: Config, *, via_sdk: bool = False) -> GateProbe:
     """The real `RelevanceGate`, on the real `participation.md`, no turn.
 
     Reports the base url it used (see `eval_base_url`) so a misconfigured run
@@ -808,6 +880,8 @@ def build_gate_probe(cfg: Config) -> GateProbe:
             assembled.sections[0].version if assembled.sections else None
         ),
         instruction_sha256=assembled.sha256,
+        via_sdk=via_sdk,
+        _api_key_env=cfg.llm.api_key_env,
     )
 
 

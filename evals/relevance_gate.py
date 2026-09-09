@@ -204,12 +204,22 @@ class GateReport:
         return passed, "\n".join(out)
 
 
-async def run_gate_suite(paths: tuple[Path, ...]) -> tuple[bool, str]:
-    """Drive every case through the REAL gate and report the four."""
+async def run_gate_suite(
+    paths: tuple[Path, ...], *, via_sdk: bool = False,
+) -> tuple[bool, str]:
+    """Drive every case through the REAL gate and report the four.
+
+    `via_sdk` swaps ONLY how the model call is made — raw
+    `chat.completions.create` with JSON mode, or the Agent SDK's structured
+    output. Everything else (the prompt, the parser, the fail-closed rules,
+    the four measurements) is the same code, so a difference between the two
+    runs is a difference in the call and not in the question.
+    """
     from evals.run import _load_eval_config
 
-    probe = build_gate_probe(_load_eval_config())
+    probe = build_gate_probe(_load_eval_config(), via_sdk=via_sdk)
     header = (
+        f"transport: {'strands structured_output' if via_sdk else 'raw json_object'}\n"
         f"base_url: {probe.base_url}\n"
         f"instruction: participation.md v{probe.instruction_version} "
         f"sha={probe.instruction_sha256[:12]}"
