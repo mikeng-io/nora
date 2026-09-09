@@ -128,6 +128,16 @@ def send(message: str) -> bool:
     except (urllib.error.URLError, OSError) as exc:
         log.error("discord unreachable: %s", exc)
         return False
+    # A SUCCESS LINE, and it is not noise. Every other path here logs, so
+    # silence meant both "delivered" and "the webhook never arrived" — which
+    # made the one question worth asking of this container, «did the alert get
+    # out», unanswerable from its own log. Found by the deploy read-back: the
+    # probe alert reached Discord and the log had nothing to say about it.
+    #
+    # It is not the heartbeat mistake one service over: Alertmanager already
+    # groups and throttles, so this is one line per delivered notification —
+    # single digits a day on a bad day, zero on a good one.
+    log.info("delivered %d chars to channel %s", len(message), CHANNEL)
     return True
 
 
