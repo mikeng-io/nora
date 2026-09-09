@@ -1863,3 +1863,137 @@ async def test_a_missing_review_adapter_fails_soft_and_is_counted(
     assert metrics.get(
         "nora_errors_total", stage="relevance_gate_shadow", platform="signal",
     ) == 1
+
+
+# ---- design/dreamer-agent-loop/39 D4/D12: the proactive occasion --------------
+
+
+def _proactive_row(**kw: object) -> Reminder:
+    base = {
+        "requester_person_id": "nora", "kind": "proactive",
+        "text": "ask where everyone is coming from before dinner",
+        "payload": {
+            "note_id": "00000000-0000-4000-8000-000000000001",
+            "revision_id": "00000000-0000-4000-8000-000000000002",
+            "note_title": "AI Hackathon dinner plan",
+            "intent": "ask where everyone is coming from before dinner",
+        },
+    }
+    base.update(kw)
+    return _reminder(**base)
+
+
+def test_the_proactive_occasion_is_owed_to_nobody_and_names_the_note() -> None:
+    """39 D4/D5: `person_id=None` — participation's shape — because the row's
+    owner is the ai_peer id, which no `PersonRef` resolves; the body is the
+    decide turn's own intent; the header says she decided it, when, and
+    about which note, and states the right to decline."""
+    row = _proactive_row()
+
+    ev = fire_module.proactive_occasion([row])
+
+    assert ev.kind == "proactive"
+    assert ev.person_id is None
+    assert ev.body == "ask where everyone is coming from before dinner"
+    assert ev.platform == "signal" and ev.conversation_id == "conv-1"
+    header = ev.header(None, T0)
+    assert "YOU decided" in header
+    assert "«AI Hackathon dinner plan»" in header
+    assert "silence is a complete answer" in header
+    assert "never as «I set myself a reminder»" in header
+
+
+def test_a_proactive_occasion_without_a_note_renders_no_note_clause() -> None:
+    header = fire_module.proactive_occasion(
+        [_proactive_row(payload={"intent": "hi"})]
+    ).header(None, T0)
+    assert "about the note" not in header
+
+
+async def test_a_quiet_proactive_turn_is_silent_not_a_failure(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """39 D12: the act turn read the room again and declined its own earlier
+    intention. `silent`, its own counter, NOTHING in `nora_silent_failures_total`
+    under any audience — and it ran on the proactive runner (tool_choice
+    auto), never the tag/heartbeat one."""
+    adapter = _FireAdapter()
+    runner = FakeAgentRunner(_send_turns("the tag runner must not run"))
+    proactive_runner = FakeAgentRunner([ScriptedTurn(final_text="nothing to add")])
+    path = FirePath(
+        persons=persons, records=FakeRecordStore(), memory=FakeMemoryStore(),
+        doctrine_store=doctrine_store, metrics=metrics, runner=runner,
+        adapters={"signal": adapter}, registry=ToolRegistry(),
+        canary="test-canary", display_name="Nora", ai_peer="nora",
+        context_window=40, limits=LIMITS, timeout_seconds=5.0, clock=lambda: T0,
+        proactive_runner=proactive_runner,
+        event_registry={"proactive": fire_module.proactive_occasion},
+    )
+
+    outcome = await path.run([_proactive_row()])
+
+    assert outcome == fire_module.SILENT
+    assert adapter.sent == []
+    assert proactive_runner.invocations == 1
+    assert runner.invocations == 0
+    assert metrics.get("nora_proactive_silence_total", platform="signal") == 1
+    # Prose under `auto` is the decline: never recovered as a reply (DEC-93).
+    assert metrics.get("nora_recovered_replies_total") == 0
+    for audience in ("tag", "heartbeat", "participation", "proactive"):
+        assert metrics.get("nora_silent_failures_total", audience=audience) == 0
+
+
+async def test_a_proactive_turn_that_speaks_is_sent_and_counted(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    adapter = _FireAdapter()
+    path = FirePath(
+        persons=persons, records=FakeRecordStore(), memory=FakeMemoryStore(),
+        doctrine_store=doctrine_store, metrics=metrics, runner=FakeAgentRunner([]),
+        adapters={"signal": adapter}, registry=ToolRegistry(),
+        canary="test-canary", display_name="Nora", ai_peer="nora",
+        context_window=40, limits=LIMITS, timeout_seconds=5.0, clock=lambda: T0,
+        proactive_runner=FakeAgentRunner(_send_turns("星期六食飯，大家幾點到？")),
+        event_registry={"proactive": fire_module.proactive_occasion},
+    )
+
+    outcome = await path.run([_proactive_row()])
+
+    assert outcome == fire_module.SENT
+    assert adapter.texts == ["星期六食飯，大家幾點到？"]
+    assert metrics.get("nora_proactive_spoke_total", platform="signal") == 1
+    assert metrics.get("nora_proactive_silence_total") == 0
+
+
+async def test_a_proactive_turn_with_no_runner_is_a_counted_wiring_fault(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """A proactive row reaching a `FirePath` with no proactive runner is a
+    wiring fault, never a turn quietly run on the tag runner (which could
+    not stay silent)."""
+    adapter = _FireAdapter()
+    runner = FakeAgentRunner(_send_turns("must not run"))
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=runner,
+        event_registry={"proactive": fire_module.proactive_occasion},
+    )
+
+    outcome = await path.run([_proactive_row()])
+
+    assert outcome == fire_module.FAILED_ERROR
+    assert runner.invocations == 0
+    assert adapter.sent == []
+    assert metrics.get(
+        "nora_silent_failures_total", reason="handler_error", audience="proactive",
+    ) == 1
+
+
+def test_the_proactive_doctrine_audience_carries_the_may_speak_rule(doctrine_store) -> None:
+    """39 D12: silence.md reaches the proactive audience (an offered floor),
+    and the occasion-neutral files do too — an audience missing any of them
+    would deliver with no persona and no constraints."""
+    text = doctrine_store.get(applies_to="proactive").text
+    for name in ("identity", "voice", "silence", "conduct", "constraints"):
+        assert f'name="{name}"' in text, name
+    assert 'name="participation-conduct"' not in text

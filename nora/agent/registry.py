@@ -584,6 +584,7 @@ class ToolRegistry:
         location_trusted: bool = False,
         links: LinkCarry | None = None,
         supplied_workspace: str | None = None,
+        dream_adaptor: str = "",
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
@@ -628,7 +629,13 @@ class ToolRegistry:
         become a registry field either: a workspace fixed for the life of the
         process is the cross-workspace read `note_workspace`'s own comment
         (above, in `__init__`) exists to prevent. Every tag-path caller leaves
-        it None and the resolver answers as before."""
+        it None and the resolver answers as before.
+
+        `dream_adaptor` is the second per-turn PROVENANCE beside `fire_turn`
+        (design/dreamer-agent-loop/39 D3): the Dreamer adaptor's NAME when
+        `nora.agent.dreamer.RegistryToolSource` built this set, `""` for
+        every tag and every fire turn. `remind` reads it to stamp a proactive
+        row in code rather than from a tagger it does not have."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -652,7 +659,7 @@ class ToolRegistry:
             shortener=self._shortener,
             question=question, context_window=context_window,
             transcript=transcript,
-            ai_peer=self._ai_peer, fire_turn=fire_turn,
+            ai_peer=self._ai_peer, fire_turn=fire_turn, dream_adaptor=dream_adaptor,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             events=self._events,
             notes=self._notes, note_workspace=self._note_workspace,
@@ -689,6 +696,7 @@ class ToolRegistry:
         location_trusted: bool = False,
         links: LinkCarry | None = None,
         supplied_workspace: str | None = None,
+        dream_adaptor: str = "",
     ) -> list[Any]:
         """The registered tools, adapted to what `Agent(tools=...)` wants —
         what `nora.engagement.pipeline.EngagementPipeline` calls in place of
@@ -715,7 +723,7 @@ class ToolRegistry:
             room=room, question=question, context_window=context_window,
             transcript=transcript,
             fire_turn=fire_turn, location_trusted=location_trusted, links=links,
-            supplied_workspace=supplied_workspace,
+            supplied_workspace=supplied_workspace, dream_adaptor=dream_adaptor,
         )
         tools = [adapt(spec) for spec in specs]
         for name in allowed_mcp:

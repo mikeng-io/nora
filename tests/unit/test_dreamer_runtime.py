@@ -33,11 +33,15 @@ from nora.agent.dreamer import (
     MAX_ITEMS,
     WORKSPACE_SAFE_TOOLS,
     AdaptorBudget,
+    AdaptorGrant,
     AdaptorSchedule,
     AdaptorToolError,
     DreamerRuntime,
+    HomeRoom,
     RegistryToolSource,
     parse_envelope,
+    proactive_grant,
+    tool_subset_faults,
     verify_tool_subsets,
 )
 from nora.domain.models import DeliveryStatus, TranscriptRow
@@ -92,14 +96,18 @@ class _ToolSource:
             {"load_transcript", "now", "web_search"}
         )
         self.built: list[tuple[str, frozenset[str], str | None]] = []
+        self.grants: list[tuple[str, Any]] = []
 
     def read_only(self) -> frozenset[str]:
         return self._ceiling
 
     def build(
         self, *, key: str, names: frozenset[str], workspace: str | None = None,
+        adaptor: str = "", grant: Any = None,
     ) -> list[Any]:
         self.built.append((key, names, workspace))
+        if grant is not None and (grant.acts or grant.home_room):
+            self.grants.append((adaptor, grant))
         return []
 
 
@@ -161,6 +169,7 @@ def _runtime(
     budgets: dict[str, AdaptorBudget] | None = None,
     replies: list[str] | None = None,
     schedules: dict[str, AdaptorSchedule] | None = None,
+    grants: dict[str, AdaptorGrant] | None = None,
 ) -> tuple[DreamerRuntime, Metrics]:
     """Wires the runtime with the Strands boundary replaced.
 
@@ -197,6 +206,7 @@ def _runtime(
         metrics=metrics,
         model_name="deepseek-v4-flash",
         schedules=schedules,
+        grants=grants,
     )
     return runtime, metrics
 
@@ -660,19 +670,143 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
 
 
 def test_the_tool_source_never_builds_a_tool_outside_the_ceiling():
-    """The name-level guard. Asserted against the REAL registry rather than a
-    stub, because the thing under test is the intersection with a set the
-    registry derives."""
+    """The name-level guard, and — since DEC-162 — its ONE named exception.
+
+    REWRITTEN ON PURPOSE (design/dreamer-agent-loop/39 D3): the original pin
+    said no act verb is ever built. What is true now is that no act verb is
+    built WITHOUT A GRANT, and that a grant admits exactly the verbs it
+    names — `remind` for the proactive adaptor — and nothing beside them.
+    Asserted against the REAL registry rather than a stub, because the
+    thing under test is the intersection with a set the registry derives.
+    """
     from nora.agent.registry import ToolRegistry
 
     source = RegistryToolSource(
         registry=ToolRegistry(), store=None, persons=None, honcho=None,
         metrics=Metrics(),
+        home_rooms={"friends": HomeRoom(
+            workspace="friends", platform="signal", conversation_id="g1",
+        )},
+    )
+    asked = frozenset({"send_reply", "make_artifact", "remind", "now"})
+
+    # No grant: the whole pre-DEC-162 ceiling. `now` is read-only and builds;
+    # the three act verbs do not, `remind` included.
+    ungranted = _names(source.build(key="friends", names=asked, workspace="friends"))
+    assert ungranted == {"now"}
+
+    # The proactive grant: `remind` and only `remind` joins the read set.
+    granted = _names(source.build(
+        key="friends", names=asked, workspace="friends", adaptor="proactive",
+        grant=proactive_grant(),
+    ))
+    assert granted == {"now", "remind"}
+    assert "send_reply" not in granted and "make_artifact" not in granted
+
+
+def _names(built: list[Any]) -> set[str]:
+    return {
+        getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built
+    }
+
+
+class _RecordingRegistry:
+    """`ToolRegistry`'s two verbs the tool source calls, with every keyword
+    `build` was handed kept — the home-room arguments (39 D2) are VALUES on
+    that call and nothing else observes them."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def read_only_tools(self) -> frozenset[str]:
+        return frozenset({"where_is", "now"})
+
+    def build(self, **kw: Any) -> list[Any]:
+        self.calls.append(kw)
+        return []
+
+
+def test_a_home_room_grant_builds_the_room_the_operator_named():
+    """39 D2's two review findings, pinned: `self_ids` so Nora's own account
+    is skipped rather than counted `unnamed`, and `location_trusted` from
+    the home room's `location` flag — both of which the pre-DEC-162 build
+    left at their defaults, so `where_is` refused in every configuration.
+    Plus the destination: the home room's conversation, never the workspace
+    NAME the key carries (39 D3)."""
+    registry = _RecordingRegistry()
+    roster = object()
+    source = RegistryToolSource(
+        registry=registry, store=None, persons=None, honcho=None,
+        metrics=Metrics(),
+        home_rooms={"friends": HomeRoom(
+            workspace="friends", platform="signal", conversation_id="g1",
+            location_trusted=True,
+        )},
+        rosters={"signal": roster},
+        self_ids=frozenset({"+85200000000"}),
     )
 
-    built = source.build(key="g1", names=frozenset({"send_reply", "make_artifact"}))
+    source.build(
+        key="friends", names=frozenset({"where_is"}), workspace="friends",
+        adaptor="proactive", grant=proactive_grant(),
+    )
 
-    assert built == []
+    (call,) = registry.calls
+    assert call["conversation_id"] == "g1"
+    assert call["conversation_type"] == "group"
+    assert call["location_trusted"] is True
+    assert call["supplied_workspace"] == "friends"
+    assert call["dream_adaptor"] == "proactive"
+    assert call["deliverer"] is None
+    room = call["room"]
+    assert room.platform == "signal"
+    assert room._roster_source is roster
+    assert room._self_ids == frozenset({"+85200000000"})
+    assert room.tagger is None
+
+
+def test_a_home_room_grant_with_no_home_room_falls_back_closed():
+    """The grant said «stand in the home room» and the workspace names none:
+    no acts, the synthetic empty room, the key as the conversation — exactly
+    the pre-DEC-162 build — and never a guessed room."""
+    registry = _RecordingRegistry()
+    source = RegistryToolSource(
+        registry=registry, store=None, persons=None, honcho=None,
+        metrics=Metrics(), home_rooms={},
+    )
+
+    source.build(
+        key="wedding", names=frozenset({"where_is", "remind"}), workspace="wedding",
+        adaptor="proactive", grant=proactive_grant(),
+    )
+
+    (call,) = registry.calls
+    assert call["conversation_id"] == "wedding"
+    assert call["location_trusted"] is False
+    assert call["room"].platform == ""
+    assert call["room"]._roster_source is None
+
+
+def test_without_a_grant_the_build_is_byte_for_byte_the_old_one():
+    """Every other adaptor: the key as the conversation, the empty room, the
+    strict gate — a home room in the map is inert for an adaptor not
+    granted it."""
+    registry = _RecordingRegistry()
+    source = RegistryToolSource(
+        registry=registry, store=None, persons=None, honcho=None,
+        metrics=Metrics(),
+        home_rooms={"friends": HomeRoom(
+            workspace="friends", platform="signal", conversation_id="g1",
+            location_trusted=True,
+        )},
+    )
+
+    source.build(key="friends", names=frozenset({"now"}), workspace="friends")
+
+    (call,) = registry.calls
+    assert call["conversation_id"] == "friends"
+    assert call["location_trusted"] is False
+    assert call["room"].platform == ""
 
 
 def test_the_tool_source_builds_the_workspace_safe_tools():
@@ -709,7 +843,8 @@ def test_asking_for_nothing_builds_nothing_and_touches_no_collaborator():
 
 
 def test_a_workspace_keyed_adaptor_is_refused_a_room_scoped_tool():
-    """The protection three documents claimed and nothing applied.
+    """The protection three documents claimed and nothing applied — and,
+    since DEC-162, the one adaptor it does not bind.
 
     `RegistryToolSource`'s docstring, `verify_tool_subsets`' docstring, DEC-133
     and the release fragment all asserted that a workspace-keyed adaptor is
@@ -722,21 +857,89 @@ def test_a_workspace_keyed_adaptor_is_refused_a_room_scoped_tool():
     does not raise — it returns `{"messages": []}`. That is «I could not
     check» reported as «there was nothing», the one substitution R-27 exists to
     forbid, arriving in the tier whose whole purpose is to keep those two
-    apart."""
+    apart.
+
+    REWRITTEN ON PURPOSE (design/dreamer-agent-loop/39 D2): the refusal
+    stands for every workspace-keyed adaptor WITHOUT a home-room grant, and
+    is lifted for the one with it — the home room is the disclosure
+    decision `WORKSPACE_SAFE_TOOLS`' own comment said nobody had made,
+    made by the operator in `policy.toml`."""
     adaptor = _Adaptor(
         sink=_Sink(), tools=frozenset({"web_search", "load_transcript"}),
     )
     adaptor.key_kind = "workspace"
+    source = _ToolSource(ceiling=frozenset({"web_search", "load_transcript", "now"}))
 
     with pytest.raises(AdaptorToolError) as exc:
-        verify_tool_subsets([adaptor], tools=_ToolSource(
-            ceiling=frozenset({"web_search", "load_transcript", "now"})
-        ))
+        verify_tool_subsets([adaptor], tools=source)
 
     # The safe one is not BLAMED — it still appears further down, in the
     # message's list of what IS allowed, which is the useful half of a refusal.
     assert "declares room-scoped tools: load_transcript." in str(exc.value)
     assert "Workspace-safe tools are:" in str(exc.value)
+
+    # The SAME adaptor, granted a home room: not refused. `verify_tool_subsets`
+    # and `tool_subset_faults` read one grant, so the exemption is measured
+    # at the function the per-run check calls too.
+    verify_tool_subsets(
+        [adaptor], tools=source,
+        grants={adaptor.name: AdaptorGrant(home_room=True)},
+    )
+    assert tool_subset_faults(
+        adaptor, ceiling=source.read_only(), grant=AdaptorGrant(home_room=True),
+    ) == ()
+
+
+def test_a_grant_admits_exactly_the_act_verbs_it_names():
+    """Axis 1 with the allowance (39 D3): an act verb in `grant.acts` clears
+    the ceiling for THIS adaptor; any other act verb — and the same verb on
+    an adaptor with no grant — is still refused."""
+    adaptor = _Adaptor(sink=_Sink(), tools=frozenset({"now", "remind"}))
+    source = _ToolSource(ceiling=frozenset({"now"}))
+
+    with pytest.raises(AdaptorToolError, match="outside the read-only ceiling: remind"):
+        verify_tool_subsets([adaptor], tools=source)
+
+    verify_tool_subsets(
+        [adaptor], tools=source, grants={adaptor.name: proactive_grant()},
+    )
+
+    greedy = _Adaptor(sink=_Sink(), tools=frozenset({"now", "remind", "send_reply"}))
+    with pytest.raises(AdaptorToolError, match="ceiling: send_reply"):
+        verify_tool_subsets(
+            [greedy], tools=source, grants={greedy.name: proactive_grant()},
+        )
+
+
+async def test_the_per_run_check_honours_the_same_grant_the_startup_check_does(
+    monkeypatch,
+):
+    """One rule, two call sites, one grant (39 D3's three places). A runtime
+    handed the grant runs the granted adaptor; the same runtime without it
+    refuses the run `unavailable` — and the grant reaches `build`, which is
+    the third place."""
+    sink = _Sink()
+    adaptor = _Adaptor(sink=sink, tools=frozenset({"remind", "load_transcript"}))
+    adaptor.key_kind = "workspace"
+    tools = _ToolSource(ceiling=frozenset({"load_transcript", "now"}))
+    granted, _ = _runtime(
+        monkeypatch, raw='{"observations": []}', tools=tools,
+        grants={adaptor.name: proactive_grant()},
+    )
+
+    outcome = await granted.run(adaptor=adaptor, key="friends", batch=())
+
+    assert outcome.status == "nothing_found"
+    assert tools.built == [("friends", adaptor.tools, "friends")]
+    assert tools.grants == [(adaptor.name, proactive_grant())]
+
+    tools = _ToolSource(ceiling=frozenset({"load_transcript", "now"}))
+    ungranted, _ = _runtime(monkeypatch, raw='{"observations": []}', tools=tools)
+
+    outcome = await ungranted.run(adaptor=adaptor, key="friends", batch=())
+
+    assert outcome.status == "unavailable"
+    assert tools.built == []
 
 
 def test_a_scope_keyed_adaptor_may_hold_a_room_scoped_tool():

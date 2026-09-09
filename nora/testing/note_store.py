@@ -279,6 +279,19 @@ class InMemoryNoteStore:
                 hits.append((note, body))
         return tuple(hits[:limit])
 
+    async def revision_chain(
+        self, *, workspace: str, note_id: str,
+    ) -> tuple[NoteRevision, ...]:
+        """`SqlNoteStore.revision_chain`: every revision of one note, oldest
+        first (`written_at`, then `id`); `()` when the note is not reachable
+        from `workspace`."""
+        note = self.notes.get(note_id)
+        if note is None or note.workspace != workspace:
+            return ()
+        chain = [r for r in self.revisions.values() if r.note_id == note_id]
+        chain.sort(key=lambda r: (r.written_at, r.id))
+        return tuple(chain)
+
     async def record_wake(
         self, *, workspace: str, note_id: str, next_revisit_at: int,
         now_ms: int,

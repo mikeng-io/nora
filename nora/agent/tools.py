@@ -130,6 +130,7 @@ from ..infra.vision.preprocess import (
 )
 from ..obs.tracing import annotate, span
 from .arithmetic import evaluate as evaluate_expression
+from .dream_screen import screen as _dream_screen
 from .egress import scan_reply
 from .links import LinkCarry
 from .ports import ToolSpec, adapt
@@ -1655,7 +1656,15 @@ def _resolve_count(
 _UNKNOWN_OWNER = "someone I can no longer name"
 
 
-def _owner_name(persons, person_id: str) -> str:
+#: What `list_reminders` calls a row Nora set for herself (design/
+#: dreamer-agent-loop/39 D5): the owner is her reserved `ai_peer` id, which
+#: `persons.by_person` can never resolve — and «someone I can no longer name»
+#: would be the one wrong answer, since she is the one person here she CAN
+#: name.
+_SELF_OWNER = "you — a reminder you set for yourself"
+
+
+def _owner_name(persons, person_id: str, *, ai_peer: str = "") -> str:
     """The display name for a reminder's requester — `PersonRef.name`.
 
     The SAME source and the same lookup the fire turn uses
@@ -1663,9 +1672,15 @@ def _owner_name(persons, person_id: str) -> str:
     so what `list_reminders` calls a person and what she is called when the
     reminder actually goes out cannot drift apart.
 
+    `ai_peer` names the one owner that is not a person: a proactive row's
+    (39 D5). Checked FIRST, because the persons lookup answers «nobody» for
+    it and «nobody» is false.
+
     `getattr(..., {})` for `_known_names`'s reason: `persons` arrives here
     duck-typed.
     """
+    if ai_peer and person_id == ai_peer:
+        return _SELF_OWNER
     ref = getattr(persons, "by_person", {}).get(person_id)
     name = getattr(ref, "name", "") if ref is not None else ""
     return name or _UNKNOWN_OWNER
@@ -2341,6 +2356,7 @@ def build_tool_specs(
     transcript: tuple[TranscriptRow, ...] | None = None,
     ai_peer: str = "nora",
     fire_turn: bool = False,
+    dream_adaptor: str = "",
     reminders: ReminderStore | None = None,
     reminder_caps: ReminderCaps | None = None,
     clock: Callable[[], datetime] | None = None,
@@ -2374,6 +2390,15 @@ def build_tool_specs(
     from `ToolRegistry.build`. The consumer is `remind`, which refuses inside a
     fire turn — a reminder that can set a reminder is a loop with no bound, and
     the turn it would fire into is the one it is already in.
+
+    `dream_adaptor` is the SECOND provenance, the same shape (design/
+    dreamer-agent-loop/39 D3, DEC-162): the Dreamer adaptor's NAME when
+    `nora.agent.dreamer.RegistryToolSource` built this set, `""` otherwise.
+    `remind` is again the consumer, and under it the closure stamps what the
+    model cannot: `kind="proactive"`, the `ai_peer` as owner, the home room
+    as destination, and a payload naming the note the row is about — with
+    the model's text screened by `dream_screen` before `create`, because the
+    tool call is the one sink a Dreamer write has.
 
     `reminders`/`reminder_caps`/`clock` come from `ToolRegistry`, which owns all
     three for the life of the process. `reminders=None` is the honest
@@ -6140,6 +6165,7 @@ when somebody asks what song is on.
         when: str, text: str, repeat: str = "none",
         every_n: int | None = None,
         times: int | None = None, until: str | None = None,
+        note: str | None = None,
     ) -> dict:
         """Hold something for later and say it back into this conversation when the
         time comes — once, or on a repeat as fine as every few minutes.
@@ -6195,6 +6221,11 @@ when somebody asks what song is on.
                 ten minutes. Default 1. Repeats only.
             times: how many times in total, including the first. Repeats only.
             until: the last date/moment it may go off, ISO-8601. Repeats only.
+            note: the TITLE of the note this is about, exactly as listed in
+                <notes> (or in <open_notes> on your own morning pass), when the
+                reminder is about one of them. Optional. It
+                records the link; a reminder you set for yourself on your own
+                pass is dropped if the note is settled before it fires.
         """
         # THE FIRE-TURN REFUSAL, first and before anything else (§7.1). A fire
         # turn is a well-formed turn in the same conversation — nothing else in
@@ -6218,17 +6249,58 @@ when somebody asks what song is on.
                 "note": "I can't hold anything for later — reminders aren't set up "
                         "here. Say so plainly rather than promising.",
             }
+        # THE DREAMER'S OWN PROVENANCE (design/dreamer-agent-loop/39 D3/D5,
+        # DEC-162). Under it there is no tagger and there must not be one:
+        # the row is OWNED by Nora's reserved `ai_peer` id — never a person,
+        # because `identity.toml` is the book of the people she identifies
+        # and she is not one of them — and its DESTINATION is the home room
+        # `RegistryToolSource` bound this closure to. Both are stamped here,
+        # in code, exactly as `gathering` stamps its kind and payload
+        # (`nora/app/gatherings.py`). Everything below that reads `tagger`
+        # branches on `proactive` for the same reason.
+        proactive = bool(dream_adaptor)
+        if proactive and not room.platform:
+            # Built with no home room: nothing to write INTO. The tool
+            # source already withholds the verb in that case; this is the
+            # data-level refusal behind the name-level one.
+            _record_created(metrics, "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "There is no room for this workspace to hold a "
+                        "reminder in. Decline rather than promise.",
+            }
         # §12: only a MAPPED person may own a row. `requester_person_id` is what
         # the fire-time policy re-check runs against (§5.1), so there is nothing
         # to write for a sender identity.toml does not know — and inventing an
         # owner would put a reminder into a room under nobody's name.
         tagger = room.tagger
-        if tagger is None:
+        if tagger is None and not proactive:
             _record_created(metrics, "unmapped")
             return {
                 "status": "refused",
                 "note": "I don't know who you are well enough to hold something for "
                         "you. Say you can't set it — do not guess.",
+            }
+        # D5 by PREDICATE, not by construction: under Dreamer provenance the
+        # owner is the ai_peer whatever the room carries, so a Room that one
+        # day arrived with a tagger could not write a person-owned row into
+        # the home room. `tagger` is non-None on the other branch (refused
+        # above otherwise).
+        # The ignore is read: `mypy nora/app` follows this import, and the
+        # refusal above is what makes `tagger` non-None on this branch.
+        owner = ai_peer if proactive else tagger.person_id  # type: ignore[union-attr]
+        if proactive and repeat != "none":
+            # A proactive decision is ONE moment (39 D4): tomorrow's decide
+            # turn reads the world again and decides again. A repeating row
+            # would let one morning's judgement re-fire for weeks past the
+            # loop that is supposed to re-judge it. Not a cap the design
+            # names — a gap it did not close, closed on the fail-closed side.
+            _record_created(metrics, "bad_repeat")
+            return {
+                "status": "refused",
+                "note": "A proactive reminder is a single moment; there is no "
+                        "repeat here. Decide again next time if it still "
+                        "matters.",
             }
         due_at = _parse_when(when)
         if due_at is None:
@@ -6281,15 +6353,73 @@ when somebody asks what song is on.
                 "note": f"I only hold things for {horizon.days} days. Say "
                         "that, and let them ask again nearer the time.",
             }
+        # THE NOTE LINK, resolved in CODE from a title (39 D3, D11). The
+        # model never sees a note id — `<notes>` renders titles and
+        # `note_read` resolves them (`_resolve` below; «no id ever enters
+        # the prompt») — so the parameter is the title and the payload
+        # carries the id and the HEAD revision it was linked at. That
+        # revision is what the heartbeat's screen compares against: a
+        # tag-path revision after it cancels the row before it fires.
+        payload: dict[str, str] | None = None
+        if note is not None and note.strip():
+            book = _notebook()
+            if book is None:
+                _record_created(metrics, "unavailable")
+                return dict(notes_off)
+            try:
+                matches = await _resolve(book, note)
+            except Exception:
+                log.exception("remind: note lookup failed")
+                _record_created(metrics, "unavailable")
+                return dict(notes_off)
+            if len(matches) != 1:
+                _record_created(metrics, "unparseable")
+                return {
+                    "status": "refused",
+                    "note": (
+                        "More than one note answers to that title — say which."
+                        if matches else
+                        "No note in <notes> has that title. Give it exactly as "
+                        "listed, or leave `note` out."
+                    ),
+                }
+            linked = matches[0]
+            payload = {
+                "note_id": linked.id,
+                "revision_id": linked.head_revision_id,
+                "note_title": linked.title,
+            }
+        if proactive:
+            # THE SINK (39 D3): «if the model writes directly there is no
+            # sink left to screen at» — this is where the Dreamer's one
+            # write is screened, with the runtime's own screen, before it
+            # can land. An identifier or a coordinate in the intent refuses
+            # the row; `nora_dream_screened_total{adaptor}` counts it.
+            _kept, rejected = _dream_screen(
+                adaptor=dream_adaptor, items=({"text": text},), metrics=metrics,
+            )
+            if rejected:
+                _record_created(metrics, "screened")
+                return {
+                    "status": "refused",
+                    "note": "That text carries an identifier or a position and "
+                            "cannot be held. Say what you mean without it.",
+                }
+            payload = {**(payload or {}), "intent": text}
         try:
-            pending = await reminders.count_pending(tagger.person_id)
+            pending = await reminders.count_pending(owner)
             if pending >= caps.max_pending_per_requester:
                 _record_created(metrics, "too_many")
                 return {
                     "status": "refused",
-                    "note": f"They already have {pending} waiting, which is my limit. "
-                            "Say so — list_reminders shows what is there, and one can "
-                            "be cancelled to make room.",
+                    "note": (
+                        f"You already have {pending} of your own waiting, which is "
+                        "the ceiling. Let some fire before deciding more."
+                        if proactive else
+                        f"They already have {pending} waiting, which is my limit. "
+                        "Say so — list_reminders shows what is there, and one can "
+                        "be cancelled to make room."
+                    ),
                 }
             # The series id is minted first and the ROW's id is derived from it
             # (`uuid5(series_id, "0")`), so every occurrence in a series —
@@ -6304,11 +6434,13 @@ when somebody asks what song is on.
             )
             row = Reminder(
                 id=uuid.uuid4() if series is None else uuid.uuid5(series_id, "0"),
-                requester_person_id=tagger.person_id,
+                requester_person_id=owner,
                 # The DESTINATION, from the closure and never from the model
                 # (§7.2, DEC-24): a reminder fires into the conversation it was
                 # set in. A `target` parameter here would be an unprompted-speech
-                # lever into a room the requester may not even be in.
+                # lever into a room the requester may not even be in. Under
+                # Dreamer provenance «the conversation it was set in» is the
+                # home room the tool source bound (39 D2).
                 platform=room.platform,
                 conversation_id=bound_conversation_id,
                 conversation_type=conversation_type,
@@ -6319,6 +6451,12 @@ when somebody asks what song is on.
                 fired_at=None,
                 outcome=None,
                 series=series,
+                # `kind` from CODE, never from the model — `gathering`'s
+                # precedent. A proactive row fires through its own occasion
+                # factory (`nora.app.fire.proactive_occasion`), owed to
+                # nobody and free to stay silent (39 D4/D12).
+                kind="proactive" if proactive else "reminder",
+                payload=payload,
             )
             await reminders.create(row)
         except Exception:
@@ -6332,11 +6470,14 @@ when somebody asks what song is on.
         _record_created(
             metrics, "created", ahead_seconds=int((due_at - now).total_seconds()),
             repeat=Recurrence.NONE.value if rule is None else rule.every.value,
+            kind=row.kind,
         )
         result: dict[str, object] = {
             "status": "ok", "id": str(row.id),
             "due_at": due_at.astimezone(_HKT).isoformat(),
         }
+        if payload is not None and "note_title" in payload:
+            result["note"] = payload["note_title"]
         # Added only when it repeats, so a one-shot's answer is byte-identical
         # to the pre-DEC-85 one. `repeat_left` is the bound she has to SAY —
         # they asked for «every day», I clamped it to a number, and a limit
@@ -6436,7 +6577,7 @@ when somebody asks what song is on.
                     # `set_by`, not `owner`: the group owns it, this person asked
                     # for it, and a field called `owner` would tell the model the
                     # opposite of the rule cancel actually enforces.
-                    "set_by": _owner_name(persons, r.requester_person_id),
+                    "set_by": _owner_name(persons, r.requester_person_id, ai_peer=ai_peer),
                     # Rendered in Nora's own zone rather than UTC: the model
                     # reasons about 「聽日七點」 against the local clock the prefill
                     # stated, and a UTC stamp is one silent subtraction away from

@@ -1,0 +1,11 @@
+{
+  "type": "change",
+  "summary": "Nora's proactive pass must ask her memory about the people involved before setting herself a reminder; the decide suite fails a reminder made without a memory read.",
+  "details": [
+    "The proactive objective (version 2) requires `about` for each person a note involves, and `ask_memory` for the one question that decides the moment, before any `remind` — the first live run set its reminder from the note body alone.",
+    "The decide eval suite reads the memory verbs' own counters and fails a remind case that made none, however well-timed the row."
+  ],
+  "limitations": [
+    "The suite checks that memory was asked during the run, not that it was asked before the reminder call; ordering is not visible in the counters."
+  ]
+}

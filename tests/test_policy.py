@@ -232,3 +232,89 @@ def test_permissive_policy_opts_every_room_into_the_relevance_gate():
     `RelevanceGatePolicy`; and even in a harness it does nothing unless one is
     wired."""
     assert permissive_policy().conversation("signal", "g1").relevance_gate is True
+
+
+# ── the home room and the proactive flag (design/dreamer-agent-loop/39 D2/D5) ─
+
+
+HOME_TOML = f"""
+default = "deny"
+
+[[conversations]]
+platform  = "signal"
+id        = "{GROUP}"
+workspace = "friends"
+label     = "Friends"
+persons   = ["miles", "ada"]
+home_room = true
+proactive = true
+location  = true
+
+[[conversations]]
+platform  = "discord"
+id        = "1/2"
+workspace = "friends"
+label     = "Friends discord"
+persons   = ["miles", "ada"]
+
+[[conversations]]
+platform  = "signal"
+id        = "wedding-room"
+workspace = "wedding"
+label     = "Wedding"
+persons   = ["miles"]
+"""
+
+
+def test_both_flags_default_false(policy):
+    """Unprompted speech is granted per room, never inherited from being
+    answerable — the `relevance_gate` precedent, applied to both new flags."""
+    convo = policy.conversation("signal", GROUP)
+    assert convo is not None
+    assert convo.home_room is False
+    assert convo.proactive is False
+    assert policy.home_rooms() == {}
+    assert policy.proactive_allowed(platform="signal", conversation_id=GROUP) is False
+
+
+def test_the_home_room_is_keyed_by_workspace(tmp_path):
+    policy = load_policy(_write(tmp_path, HOME_TOML))
+
+    homes = policy.home_rooms()
+
+    assert set(homes) == {"friends"}
+    assert homes["friends"].primary_id == GROUP
+    assert homes["friends"].platform == "signal"
+    assert homes["friends"].location is True
+
+
+def test_proactive_is_checked_on_the_room_not_on_a_person(tmp_path):
+    """39 D5: the owner of a proactive row is the reserved ai_peer id, which
+    `is_allowed` would refuse in every explicit-persons room. The flag is the
+    grant, and it is deny-by-default in both directions: an unflagged room and
+    an unlisted room both answer False."""
+    policy = load_policy(_write(tmp_path, HOME_TOML))
+
+    assert policy.proactive_allowed(platform="signal", conversation_id=GROUP) is True
+    assert policy.proactive_allowed(platform="discord", conversation_id="1/2") is False
+    assert policy.proactive_allowed(platform="signal", conversation_id="nope") is False
+    # The persons list still does not know Nora — the flag is a DIFFERENT grant.
+    assert _allowed(policy, GROUP, "nora") is False
+
+
+def test_two_home_rooms_in_one_workspace_refuse_to_start(tmp_path):
+    """Two would make the room the adaptor stands in a guess, and a guessed
+    room is an R-31 disclosure decision nobody made."""
+    body = HOME_TOML.replace(
+        'label     = "Friends discord"\n',
+        'label     = "Friends discord"\nhome_room = true\n',
+    )
+    with pytest.raises(PolicyError, match="two home rooms"):
+        load_policy(_write(tmp_path, body))
+
+
+def test_the_permissive_policy_names_no_home_room():
+    """The offline/eval harness policy allows every room; it must not thereby
+    invent a home room, or a workspace-keyed harness run would stand in a
+    room that does not exist."""
+    assert permissive_policy().home_rooms() == {}

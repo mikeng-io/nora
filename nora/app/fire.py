@@ -154,6 +154,16 @@ FAILED_ERROR = "failed_error"
 PARTICIPATION_AUDIENCE = "participation"
 SILENT = "silent"
 
+# The proactive occasion's audience (design/dreamer-agent-loop/39 D4/D12,
+# DEC-162): a `kind="proactive"` reminder row — written by Nora's own decide
+# turn, owed to nobody — coming due. Its doctrine is read at this audience
+# (silence.md's may-speak rule reaches it; the heartbeat's obliged-to-speak
+# reading does not), its failures are labelled apart from the heartbeat's
+# and participation's, and a turn that ends without speaking answers
+# `SILENT`, the same healthy default participation has and the heartbeat
+# cannot.
+PROACTIVE_AUDIENCE = "proactive"
+
 # The §10.6 shadow mirror's audience label: the mirror IS a send (it goes
 # through `deliver.build` and every guard that carries), but it is operator
 # review traffic, never room speech — its failures must not pollute the tag,
@@ -278,6 +288,90 @@ def _gathering_header(
         "happening, and it is the only reason.\n"
         f"Bring the gathering up to {who} and the room now, in your own words. "
         "Do not read the time back at them unless they asked in those terms."
+    )
+
+
+def proactive_occasion(rows: Sequence[Reminder]) -> Event:
+    """A `kind="proactive"` row — Nora's own earlier decision — coming due
+    (design/dreamer-agent-loop/39 D4, DEC-162): the ACT turn of the OODA
+    loop whose DECIDE turn ran in the Dreamer and wrote this row.
+
+    `person_id=None`, participation's shape: the row's owner is the reserved
+    `ai_peer` id (39 D5), which is nobody in `identity.toml` by construction,
+    so this turn runs on nobody's authority and `build_context` accepts every
+    consequence of a `None` tagger. `speak` skips §12's refusal for it
+    exactly as it does for a version announcement.
+
+    `body` is the INTENT the decide turn wrote — «raise the dinner plan now
+    that people know where they are coming from» — put to her the way a
+    reminder puts the requester's own sentence: as what was asked, in the
+    asker's words, and the asker is her earlier self. The header carries
+    when she decided it and for when, and names the note it is about
+    (`payload["note_title"]`, stamped in code by `remind` at decision
+    time). The note's CURRENT body is not here: the fire turn renders the
+    `<notes>` index like every fire turn and she reads it with `note_read`,
+    which is the point of splitting decide from act — research at 08:00 is
+    what to raise, research at 14:00 is where everybody is.
+
+    The heartbeat has already screened the row (`ProactiveScreen`, 39 D5/
+    D11) — the flag, and whether the note moved on the tag path since the
+    row was linked — so a row reaching this factory is one still worth a
+    turn. She may still decline: `SILENT` is reachable for this kind (D12).
+    """
+    row = rows[0]
+    return Event(
+        platform=row.platform,
+        conversation_id=row.conversation_id,
+        conversation_type=row.conversation_type,
+        person_id=None,
+        body="\n".join(r.text for r in rows),
+        header=lambda tagger, now: _proactive_header(rows, now),
+        kind="proactive",
+    )
+
+
+def _proactive_header(rows: Sequence[Reminder], now: datetime) -> str:
+    """The situation paragraph for a proactive act turn.
+
+    Same opening shape as every fire header — nobody called her, and that is
+    not why this turn is happening — with the reason clause that is true
+    here and nowhere else: SHE decided, earlier, that this was worth raising
+    at about this time. The right to decline is stated here as well as in
+    `silence.md`, for `_participation_header`'s reason: the header is the
+    sentence she reads first.
+
+    Times are stamped the way `_fire_header` stamps them — the reader's own
+    zone, never UTC. The note title is escaped like every other value this
+    module puts in a prompt (R-13); it was model-chosen and code-resolved.
+    """
+    decided = "".join(
+        f"- decided {_stamp(row.created_at)}, for {_stamp(row.due_at)}"
+        + (
+            f", about the note «{escape(str(row.payload['note_title']))}»"
+            if isinstance(row.payload, Mapping)
+            and isinstance(row.payload.get("note_title"), str)
+            else ""
+        )
+        + "\n"
+        for row in rows
+    )
+    return (
+        "You are in a group chat you have been reading all along. Nobody has "
+        "called you — not just now, and not earlier. YOU decided, on your own "
+        "pass over what this group has left open, that something here was "
+        "worth raising at about this time, and wrote yourself the note below "
+        "so you would come back to it. That time has come — that is why this "
+        "turn is happening, and it is the only reason.\n"
+        f"{decided}"
+        "The tag_message below is what you wrote to yourself then: an "
+        "intention, not a script, and not a fact about the room. Read what "
+        "is in front of you NOW — the transcript, the standing, the notes "
+        "(note_read gives you a note's current body; where_is and route are "
+        "worth asking now, not earlier) — and decide again. If the thing has "
+        "since been settled, or somebody already said it, or it would not "
+        "help, stay silent: silence is a complete answer here, not a failure. "
+        "If it is still worth saying, say it once, briefly, in your own words, "
+        "and never as «I set myself a reminder»."
     )
 
 
@@ -530,6 +624,7 @@ class FirePath:
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
         participation_runner: AgentRunner | None = None,
+        proactive_runner: AgentRunner | None = None,
         shadow_channel: str | None = None,
         shadow_platform: str = "discord",
         gate_shadow_channel: str | None = None,
@@ -664,6 +759,14 @@ class FirePath:
         # kind, and a participation turn arriving with no runner composed is
         # a wiring fault, not a turn to run on the tag runner.
         self._participation_runner = participation_runner
+        # The proactive occasion's runner (design/dreamer-agent-loop/39 D12):
+        # the SAME `tool_choice="auto"` shape participation needs, for the
+        # same reason — the act turn may end in silence, and the tag runner's
+        # `required` pin makes that inexpressible. The composition root hands
+        # the one auto-runner object to both parameters when both occasions
+        # are wired; `None` whenever no proactive adaptor is composed, and a
+        # proactive row arriving then is a wiring fault `_invoke` raises on.
+        self._proactive_runner = proactive_runner
         # The §10.6 shadow mirror. `shadow_channel` None means shadow mode is
         # OFF (the shipped default — `[participation] shadow = false`), and
         # `_mirror` returns without doing anything; set, every participation
@@ -1081,7 +1184,16 @@ class FirePath:
         # its failures are never charged to the heartbeat's budget, and its
         # quiet turn is a success (`SILENT`), never a `failed_*`.
         participation = occasion.kind == "participation"
-        audience = PARTICIPATION_AUDIENCE if participation else AUDIENCE
+        # The proactive occasion (39 D12) shares participation's two
+        # properties — its own audience, and silence as a healthy outcome —
+        # and none of its others: no shadow mirror, no cooldown, and the
+        # heartbeat (not a trigger) is what brought it here.
+        proactive = occasion.kind == "proactive"
+        audience = (
+            PARTICIPATION_AUDIENCE if participation
+            else PROACTIVE_AUDIENCE if proactive
+            else AUDIENCE
+        )
         try:
             tagger = ctx.tagger
             if tagger is None and occasion.person_id is not None:
@@ -1223,7 +1335,8 @@ class FirePath:
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
                 tag_message=tag_message, ctx=ctx,
                 platform=occasion.platform, deliverer=handle.deliverer,
-                participation=participation, audience=audience,
+                participation=participation, proactive=proactive,
+                audience=audience,
             )
             # `truncation_reason`'s "the turn reached the end of its try block",
             # decided HERE rather than at the end of it. The tag path can leave
@@ -1271,6 +1384,22 @@ class FirePath:
                         stop_reason=stop_reason,
                     )
                     return SILENT
+                if proactive:
+                    # SILENT, for participation's reason (39 D12): she was
+                    # offered her own earlier intention and declined it —
+                    # the note moved, somebody already said it, it would not
+                    # help. The heartbeat maps this to DONE with
+                    # outcome="silent", so the decision log (39 D7) reads a
+                    # restraint as a restraint and not as a failure.
+                    # `_invoke` has already counted it on
+                    # `nora_proactive_silence_total`, or as a silent failure
+                    # if a budget cap cut the turn off before it decided.
+                    if final_text.strip():
+                        log.info(
+                            "proactive turn declined holding %d chars of "
+                            "unrouted prose (tag=%s)", len(final_text), ctx.tag_id,
+                        )
+                    return SILENT
                 return FAILED_ERROR
 
             # A delivered reply implies a successful invocation — the touch
@@ -1279,6 +1408,10 @@ class FirePath:
             # a reminder reports a stale LLM on `GET /health`.
             if self._llm_state is not None:
                 self._llm_state.last_success_at = time.time()
+            if proactive:
+                self._metrics.inc(
+                    "nora_proactive_spoke_total", platform=occasion.platform,
+                )
             if participation:
                 self._metrics.inc(
                     "nora_participation_spoke_total", platform=occasion.platform,
@@ -1340,6 +1473,7 @@ class FirePath:
         platform: str,
         deliverer: Any,
         participation: bool = False,
+        proactive: bool = False,
         audience: str = AUDIENCE,
     ) -> tuple[str | None, str | None, str]:
         """The model call, with the heartbeat's own timeout and its own
@@ -1389,6 +1523,17 @@ class FirePath:
                     "composition root to build one"
                 )
             runner = self._participation_runner
+        if proactive:
+            # Same shape, same reason, its own parameter (39 D12): a
+            # proactive act turn must be able to end in silence, and the tag
+            # runner's `required` pin would demand a send.
+            if self._proactive_runner is None:
+                raise RuntimeError(
+                    "a proactive occasion arrived but no proactive_runner is "
+                    "composed — a home room in policy.toml requires the "
+                    "composition root to build one"
+                )
+            runner = self._proactive_runner
         try:
             # `AgentRunner.invoke` also hands back a `TagTrace` (Task 4), but
             # this path builds no debrief record of its own — §7.4/Task 6
@@ -1445,6 +1590,9 @@ class FirePath:
         # would deliver exactly the turn the determination declined.
         if (
             not participation
+            # NEVER on the proactive occasion either, for the same reason:
+            # prose under `tool_choice="auto"` IS the decline (39 D12).
+            and not proactive
             and failure is None
             and stop_reason == "end_turn"
             # See the tag path: a cancelled model call ends with the GUARD's
@@ -1479,6 +1627,13 @@ class FirePath:
                 # success.
                 self._metrics.inc(
                     "nora_participation_silence_total", platform=platform,
+                )
+            elif proactive and stop_reason not in deliver.BUDGET_STOP_REASONS:
+                # The same healthy default for the proactive act turn (39
+                # D12): she read the room again and declined her own earlier
+                # intention. Its own series, same budget-cut exclusion.
+                self._metrics.inc(
+                    "nora_proactive_silence_total", platform=platform,
                 )
             else:
                 # The loop finished and she never called `send_reply`, or one of

@@ -45,7 +45,12 @@ COPY config.example.toml identity.example.toml alembic.ini ./
 ARG NORA_VERSION=""
 RUN python scripts/check_version_stamp.py "$NORA_VERSION"
 
-RUN uv sync --frozen --no-dev
+# `--extra sentry` so the deployment image CAN report errors; whether it DOES
+# is `[obs.errors] enabled` plus a DSN in the environment, both off by default.
+# Installing it unconditionally and leaving it inert is the right way round: an
+# operator turning Sentry on should not need a rebuild, and `nora/obs/errors.py`
+# is a no-op without a DSN.
+RUN uv sync --frozen --no-dev --extra sentry
 
 RUN mkdir -p /app/data && chown -R nora:nora /app
 

@@ -34,6 +34,19 @@ is correct. To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="participation"} / (nora_participation_silence_total + nora_participation_spoke_total)`,
    NOT a share of the tag budget.
 
+   The proactive occasion (design/dreamer-agent-loop/39, DEC-162 — wired
+   when `policy.toml` names a `home_room`) is the fourth audience and has
+   participation's exact shape: a `kind="proactive"` row's act turn that
+   says nothing is the healthy outcome and counts on
+   `nora_proactive_silence_total` (the row is DONE with `outcome="silent"`),
+   a spoke turn on `nora_proactive_spoke_total`, and only a malfunction lands
+   here under `audience="proactive"`. Its budget expression is the same
+   ratio over its own two series. The heartbeat's own fired counter gains
+   three outcomes for this kind — `silent`, and the fire-time screen's
+   `cancelled_note_retired` / `cancelled_note_moved` — and the decide turn's
+   own reading is `nora_proactive_decisions_total{action}` beside the
+   Dreamer's `nora_dream_run_total{adaptor="proactive"}`.
+
    **A reminder can also be hours late with all three of those reading healthy.**
    A tick that finds the conversation's slot held by a tag leaves the rows
    `pending` and moves on: nothing fired, nothing failed, and the tick itself
@@ -77,8 +90,11 @@ is correct. To tell "quiet" from "broken":
    answered recently.
 
    **Check `platforms` first, not `sse`.** `sse` is Signal's block and only Signal's;
-   it is kept top-level because `deploy/watchdog.sh` parses it and `/health` is
-   additive-only. `platforms` has one entry per ENABLED platform, and **every one of
+   it is kept top-level because `/health` is additive-only — removing a key is a
+   breaking change for anything reading it. (Until 2026-09-09 the stated reason was
+   that `deploy/watchdog.sh` parsed it; that script is deleted, and the
+   additive-only rule is the one that still holds. `nora_last_event_age_seconds`
+   stays unlabelled and Signal's for the same reason — DEC-102.) `platforms` has one entry per ENABLED platform, and **every one of
    them counts toward the status code** — so a 503 with a perfectly green `sse` means a
    non-Signal platform is down, and reading only the four keys above would leave you
    concluding nothing explains it. A platform that is not enabled is ABSENT from
@@ -306,13 +322,16 @@ docker compose exec db psql -U nora -d nora -c 'DROP TABLE alembic_version'
 > still on disk, untouched by the cutover, but everything recorded AFTER the cutover
 > lives only in Postgres.
 
-## 4. "The watchdog alerted"
+## 4. "An alert arrived in the Discord review channel"
 
-`deploy/watchdog.sh` polls `/health` and alerts if the SSE listener has been silent for more
-than 300 seconds (no ingest event in that window). This same script also ships with the
-bare-metal/systemd deployment path documented in `deploy/README.md`, but the live instance
-runs as a **Docker container**, not under systemd — the commands below are for that
-container.
+Prometheus evaluates the rules in `deploy/prometheus/rules/`, Alertmanager groups and
+throttles them, and `deploy/alert-bridge/` posts the result into the review channel.
+`PlatformSilent` is the SSE-silence one — no adapter event for 900 seconds — and the
+rest are in `docs/observability.md`'s table with the incident behind each.
+
+Until 2026-09-09 this section described a shell script polling `/health` on a timer
+that was never created, whose alert channel was `echo >&2`. It was deleted; the
+commands below are unchanged and still the right first moves.
 
 1. Check signal-cli first — it's the more common cause:
 
@@ -377,7 +396,8 @@ The container healthcheck only proves the HTTP layer serves (curl exists in
 the image precisely because node:20-slim ships none). The real detector is
 Nora `/health`'s per-platform `last_event_age_seconds` — the bridge emits
 SSE heartbeats so a dead WhatsApp socket ages that value in a quiet room,
-and `deploy/watchdog.sh` alerts on it. `dropped_events` on the bridge's
+and Prometheus's `PlatformSilent` rule alerts on it (`deploy/prometheus/rules/`,
+delivered to the Discord review channel; the old `watchdog.sh` was deleted 2026-09-09). `dropped_events` on the bridge's
 `/health` (and a WARNING in Nora's log) means inbound events were discarded
 while Nora was disconnected — audit rows were lost; that is counted, never
 silent.
@@ -498,10 +518,16 @@ working correctly — it is faithfully recording a real failing verdict.
 
 ## 8. "Who is this, and which group is that?" — the control plane
 
-Two read-only commands. Neither writes a file, neither writes to the daemon,
-and both work with the Nora container **stopped** — the 3am path is docker, an
-editor and these. Neither needs `OMNIROUTE_API_KEY`; listing group ids has
-nothing to do with the LLM.
+`nora groups` and `nora persons pending` are read-only. Neither writes a file,
+neither writes to the daemon, and both work with the Nora container **stopped**
+— the 3am path is docker, an editor and these. Neither needs
+`OMNIROUTE_API_KEY`; listing group ids has nothing to do with the LLM.
+
+`nora config set/get/unset/validate/path --config <path>` is the WRITE surface (`path` prints the resolved config location)
+(deploy convention §4.5, 2026-09-08): schema-validated, atomic
+(tmp + rename), prints the diff, and prints the restart command without
+executing it. It never touches `.env` — secrets stay there. A config edit
+still takes effect only on restart.
 
 ```bash
 uv run nora groups              # every group, its id, and whether policy allows it

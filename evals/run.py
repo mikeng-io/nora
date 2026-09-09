@@ -96,6 +96,21 @@ from evals.note_candidates import (
 from evals.note_candidates import (
     summarise as summarise_note_candidates,
 )
+from evals.proactive import (
+    ActResult,
+    DecideResult,
+    WrittenRow,
+    grade_act,
+    grade_decide,
+    load_act_cases,
+    load_decide_cases,
+)
+from evals.proactive import (
+    CaseTally as ProactiveTally,
+)
+from evals.proactive import (
+    summarise as summarise_proactive,
+)
 from evals.rubric import OPTIONAL_CRITERIA, Criterion
 from evals.sink import EvalSink, LangfuseEvalSink, NullEvalSink, resolve_headers_from_env
 from nora.app.eval_support import (
@@ -103,10 +118,13 @@ from nora.app.eval_support import (
     TOOL_NAMES,
     Config,
     DoctrineStore,
+    EvalDreamTools,
     LeakGuard,
     Metrics,
     ProductionSeed,
+    build_live_participation_runner,
     build_note_candidates_runtime,
+    build_proactive_runtime,
     build_production_seed,
     create_client,
     create_model_provider,
@@ -114,6 +132,8 @@ from nora.app.eval_support import (
     is_tagged,
     load_eval_config,
     run_note_candidates_case,
+    run_proactive_act_case,
+    run_proactive_decide_case,
 )
 from nora.testing import transcript_rows
 from nora.testing.scripted_agent import ScriptedTurn
@@ -155,6 +175,16 @@ SUITES = {
     # measure a PROMPT variant, so `--dreamer-dir` points it at a directory of
     # doctrine/objective files and the run reports that directory's hash.
     "note_candidates": (CASES_DIR / "note_candidates" / "note_candidates.yaml",),
+    # The proactive adaptor's two suites (design/dreamer-agent-loop/39 §5,
+    # DEC-162 (10)). DECIDE drives the REAL DreamerRuntime + ProactiveAdaptor
+    # through the REAL tool source (home room, grant, `remind` under Dreamer
+    # provenance) over in-memory stores and grades the reminder rows left
+    # behind — WHEN, which is what makes it proactive. ACT drives one row
+    # through the REAL ProactiveScreen and FirePath and grades what the room
+    # heard. Both majority-quiet; the false-positive rate on the quiet cases
+    # is the primary number.
+    "proactive_decide": (CASES_DIR / "proactive" / "decide.yaml",),
+    "proactive_act": (CASES_DIR / "proactive" / "act.yaml",),
 }
 
 # Evaluator class -> the Langfuse score `name` it exports under. All five verdicts
@@ -1099,6 +1129,164 @@ async def _run_note_candidates_live(
         await client.close()
 
 
+def _print_proactive_gate(
+    suite: str, tallies: list[ProactiveTally], *, label: str, instructions: str | None,
+) -> dict:
+    """The gate line both proactive suites print: the false-positive rate on
+    the quiet cases FIRST (39 §5's primary number), then recall, then errors
+    apart — so an outage during a run cannot read as a quiet model."""
+    summary = summarise_proactive(tallies)
+    fmt = lambda x: "n/a" if x is None else f"{x:.2f}"  # noqa: E731
+    print(f"{suite} gate: false-positive rate {fmt(summary['false_positive_rate'])} on "
+          f"{summary['quiet_cases']} quiet case(s); recall {fmt(summary['recall'])}; "
+          f"{summary['majority_pass']}/{summary['cases']} cases majority-pass over "
+          f"{summary['samples']} samples; errors {summary['errors']}")
+    print(f"    model {label}; instructions {(instructions or 'unmeasured')[:16]}")
+    return summary
+
+
+def _tally_line(suite: str, tally: ProactiveTally) -> None:
+    marks = "".join({"PASS": ".", "FAIL": "x", "ERROR": "!"}[v] for v in tally.verdicts)
+    status = "PASS" if tally.majority_pass else "FAIL"
+    reasons = sorted({r for r in tally.reasons if r})
+    print(f"[{status}] {suite}/{tally.name} — expect={tally.expect} samples={marks}"
+          + (f" :: {'; '.join(reasons)}" if reasons else ""))
+
+
+async def _score_proactive(
+    sink: EvalSink | None, *, dataset: str, run_name: str | None,
+    tallies: list[ProactiveTally],
+) -> None:
+    if sink is None:
+        return
+    run_id = await sink.start_run(dataset_name=dataset, run_name=run_name or dataset)
+    for t in tallies:
+        await sink.record_score(
+            run_id=run_id, item_id=t.name, name=f"{dataset}_verdict",
+            value=1.0 if t.majority_pass else 0.0, data_type="BOOLEAN",
+        )
+
+
+async def _run_proactive_decide_live(
+    paths: tuple[Path, ...], *, samples: int, effort: str | None = None,
+    dreamer_dir: str | Path | None = None, model: str | None = None,
+    sink: EvalSink | None = None, run_name: str | None = None,
+) -> tuple[bool, list[dict]]:
+    """The decide suite's live drive (design/dreamer-agent-loop/39 §5). Every
+    case runs `samples` times through the REAL DreamerRuntime +
+    ProactiveAdaptor + RegistryToolSource (`nora.app.eval_support.
+    run_proactive_decide_case`) and is graded on the reminder rows left
+    behind — exactly the expected rows, in their windows, or none. A case
+    passes on a MAJORITY of its graded samples; `unavailable` is ERROR."""
+    cfg = _load_eval_config()
+    client = create_client(
+        base_url=eval_base_url(cfg.llm.base_url),
+        api_key=os.environ.get(cfg.llm.api_key_env, ""),
+    )
+    try:
+        tools = EvalDreamTools()
+        runtime, label = build_proactive_runtime(
+            cfg, client=client, tools=tools, effort=effort, dreamer_dir=dreamer_dir,
+            model=model,
+        )
+        tallies: list[ProactiveTally] = []
+        instruction_sha: str | None = None
+        for path in paths:
+            for case in load_decide_cases(path):
+                tally = ProactiveTally(name=case.name, expect=case.expect)
+                for _ in range(samples):
+                    drive = await run_proactive_decide_case(
+                        runtime, tools=tools, workspace=case.workspace, now=case.now,
+                        rooms=case.rooms, notes=case.notes, standing=case.standing,
+                        log=case.log, memory=case.memory,
+                    )
+                    instruction_sha = instruction_sha or drive.instruction_sha256
+                    result = DecideResult(
+                        status=drive.status, stop_reason=drive.stop_reason,
+                        instruction_sha256=drive.instruction_sha256,
+                        rows=tuple(
+                            WrittenRow(
+                                note=note, due_at=datetime.fromisoformat(due),
+                                requester=who, kind=kind, intent=intent,
+                            )
+                            for note, due, who, kind, intent in drive.rows
+                        ),
+                        remind_attempts=drive.remind_attempts,
+                        memory_calls=drive.memory_calls,
+                    )
+                    g = grade_decide(case, result)
+                    tally.verdicts.append(g.verdict)
+                    tally.reasons.append(g.reason)
+                tallies.append(tally)
+                _tally_line("proactive_decide", tally)
+        _print_proactive_gate(
+            "proactive_decide", tallies, label=label, instructions=instruction_sha,
+        )
+        print(f"    dreamer_dir {dreamer_dir or cfg.dreamer.dir}")
+        results = [
+            {"name": t.name, "expect": t.expect, "verdicts": list(t.verdicts),
+             "passed": t.majority_pass}
+            for t in tallies
+        ]
+        await _score_proactive(
+            sink, dataset="proactive_decide", run_name=run_name, tallies=tallies,
+        )
+        return all(t.majority_pass for t in tallies), results
+    finally:
+        await client.close()
+
+
+async def _run_proactive_act_live(
+    paths: tuple[Path, ...], *, samples: int, effort: str | None = None,
+    sink: EvalSink | None = None, run_name: str | None = None,
+) -> tuple[bool, list[dict]]:
+    """The act suite's live drive (39 §5): one proactive row through the REAL
+    ProactiveScreen and FirePath with the auto-runner (`nora.app.
+    eval_support.run_proactive_act_case`), graded on what the room heard.
+    ASYMMETRIC like the participation suite: a `silent` case fails on ONE
+    speak in `samples` (the room heard it); a `speak` case binds on a strict
+    majority. `failed_*` is ERROR."""
+    cfg = _load_eval_config()
+    runner = build_live_participation_runner(cfg, effort=effort)
+    tallies: list[ProactiveTally] = []
+    for path in paths:
+        for case in load_act_cases(path):
+            tally = ProactiveTally(name=case.name, expect=case.expect)
+            for _ in range(samples):
+                drive = await run_proactive_act_case(
+                    cfg, runner=runner, now=case.now, row=case.row,
+                    transcript=case.transcript, standing=case.standing,
+                    notes=case.notes, note_moved=case.note_moved,
+                )
+                g = grade_act(case, ActResult(
+                    outcome=drive.outcome, sent=drive.sent,
+                    stop_reason=drive.stop_reason, screened=drive.screened,
+                    silent_failures=drive.silent_failures,
+                ))
+                tally.verdicts.append(g.verdict)
+                tally.reasons.append(g.reason)
+            tallies.append(tally)
+            _tally_line("proactive_act", tally)
+    _print_proactive_gate(
+        "proactive_act", tallies, label=f"{cfg.llm.model}/{effort or cfg.llm.reasoning_effort}",
+        instructions=None,
+    )
+    results = [
+        {"name": t.name, "expect": t.expect, "verdicts": list(t.verdicts),
+         "passed": t.majority_pass}
+        for t in tallies
+    ]
+    await _score_proactive(sink, dataset="proactive_act", run_name=run_name, tallies=tallies)
+    # A quiet case is graded on EVERY sample: one speak is a room that heard
+    # it. A speak case binds on the majority.
+    ok = all(
+        (t.majority_pass and "FAIL" not in t.verdicts) if t.expect == "silent"
+        else t.majority_pass
+        for t in tallies
+    )
+    return ok, results
+
+
 _ROUTING_CHECKS = ("PathMatchesIntent", "NoSiblingLeakage", "ConvergesInBudget")
 
 
@@ -1287,6 +1475,28 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
             model=model, samples_per_fire=samples_per_fire,
             sink=sink, run_name=run_name,
         ))
+    elif suite == "proactive_decide":
+        # Live drive of the real Dreamer runtime + proactive adaptor through
+        # the real tool source, N samples per case, graded on the reminder
+        # rows left behind (`_run_proactive_decide_live`). `--dreamer-dir`,
+        # `--effort` and `--model` mean what they mean for note_candidates.
+        cfg = _load_eval_config()
+        sink = _build_sink(cfg, export=export_langfuse)
+        run_name = f"gate-proactive-decide-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
+        ok, _results = asyncio.run(_run_proactive_decide_live(
+            paths, samples=samples, effort=effort, dreamer_dir=dreamer_dir,
+            model=model, sink=sink, run_name=run_name,
+        ))
+    elif suite == "proactive_act":
+        # Live drive of one proactive row through the real screen and fire
+        # path, N samples per case, graded on what the room heard
+        # (`_run_proactive_act_live`).
+        cfg = _load_eval_config()
+        sink = _build_sink(cfg, export=export_langfuse)
+        run_name = f"gate-proactive-act-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
+        ok, _results = asyncio.run(_run_proactive_act_live(
+            paths, samples=samples, effort=effort, sink=sink, run_name=run_name,
+        ))
     elif suite == "adversarial":
         # B1: the verdict cache is ON by default — an unchanged re-run costs 0 model
         # calls. --no-cache disables it; --force re-runs every case (and refreshes it).
@@ -1351,8 +1561,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--samples", type=int, default=3,
-        help="note_candidates only: live runs per case (default 3). A case "
-             "passes on a majority of its graded samples.",
+        help="note_candidates / proactive_decide / proactive_act: live runs per "
+             "case (default 3). A case passes on a majority of its graded samples.",
     )
     parser.add_argument(
         "--samples-per-fire", type=int, default=1,
@@ -1361,13 +1571,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model", default=None,
-        help="note_candidates only: the model id to drive INSTEAD of "
+        help="note_candidates / proactive_decide: the model id to drive INSTEAD of "
              "`[dreamer] model` — name the deployed OmniRoute alias "
              "(`nora-dreamer`) from a dev machine.",
     )
     parser.add_argument(
         "--dreamer-dir", default=None,
-        help="note_candidates only: a directory holding doctrine/ and "
+        help="note_candidates / proactive_decide: a directory holding doctrine/ and "
              "objectives/ to measure INSTEAD of `[dreamer] dir` — a prompt "
              "variant as files, hashed and reported like production's.",
     )

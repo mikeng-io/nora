@@ -54,6 +54,7 @@ from tests.fakes import SinkSender
 
 CONVERSATION = "conv-1"
 TARGET = ConversationTarget("signal", CONVERSATION, "group")
+WORKSPACE = "friends"
 
 # A Wednesday, 19:00 HKT — the clock every test in this file runs against, so
 # «two hours from now» is a literal rather than a computation.
@@ -110,6 +111,9 @@ def _tools(
     presence_source=None,
     presence_circles=(),
     location_trusted: bool = False,
+    dream_adaptor: str = "",
+    notes=None,
+    room: Room | None = None,
 ) -> dict:
     """Every native tool, closed over one turn — keyed by name.
 
@@ -125,13 +129,16 @@ def _tools(
         compute_backend=compute_backend, compute_jobs=compute_jobs,
         tool_call_log_store=tool_call_log_store,
         presence=presence_source, circles=presence_circles,
+        notes=notes,
+        note_workspace=(lambda _p, _c: WORKSPACE) if notes is not None else None,
     )
     specs = registry.specs(
         store=_FakeStore(), conversation_id=conversation_id, conversation_type="group",
         persons=persons if persons is not None else _FakePersons(MILES, TYLER),
         honcho=FakeMemoryStore(), deliverer=SinkSender(),
-        metrics=metrics or Metrics(), room=_room(tagger=tagger),
+        metrics=metrics or Metrics(), room=room if room is not None else _room(tagger=tagger),
         fire_turn=fire_turn, location_trusted=location_trusted,
+        dream_adaptor=dream_adaptor,
     )
     return {spec.name: spec.call for spec in specs}
 
@@ -170,6 +177,9 @@ def test_no_reminder_tool_asks_the_model_where_to_put_it():
     assert set(inspect.signature(tools["remind"]).parameters) == {
         # `every_n` (#109) joins them: HOW OFTEN, still never WHERE.
         "when", "text", "repeat", "every_n", "times", "until",
+        # `note` (design/dreamer-agent-loop/39 D3) is WHAT it is about — a
+        # note TITLE, resolved to an id in the closure — still never WHERE.
+        "note",
     }
     assert set(inspect.signature(tools["list_reminders"]).parameters) == set()
     assert set(inspect.signature(tools["cancel_reminder"]).parameters) == {"reminder_id"}
@@ -1324,3 +1334,157 @@ async def test_the_repeat_floor_refusal_is_counted():
     await tools["remind"](when=SOON, text="起身", repeat="minutely", times=30)
 
     assert m.get("nora_reminders_created_total", status="too_often") == 1
+
+
+# ---- design/dreamer-agent-loop/39 D3/D5: `remind` under Dreamer provenance ---
+
+
+async def _seeded_notes():
+    """One open note in the workspace `_tools` resolves every room to."""
+    from nora.testing import InMemoryNoteStore
+
+    store = InMemoryNoteStore()
+    note = await store.create(
+        workspace=WORKSPACE, title="AI Hackathon dinner plan",
+        description="where to eat on Saturday night is open",
+        uncertainty="where", closing_condition="a place is picked",
+        established_in=CONVERSATION, body="Cyberport, Saturday; venue open.",
+        established_by="tag:miles", now_ms=int(T0.timestamp() * 1000),
+        anchor_date=20260912,
+    )
+    return store, note
+
+
+async def test_a_dreamer_provenance_stamps_the_row_in_code():
+    """39 D3: under `dream_adaptor` the model cannot set what it never sees.
+    The row's kind, owner, destination and payload all come from the closure
+    — `gathering`'s precedent — and the owner is the reserved ai_peer, not a
+    person (39 D5). The tagger is None and that is NOT a refusal here."""
+    store = FakeReminderStore()
+    notes, note = await _seeded_notes()
+    metrics = Metrics()
+    tools = _tools(
+        reminders=store, metrics=metrics, tagger=None, notes=notes,
+        dream_adaptor="proactive",
+    )
+
+    result = await tools["remind"](
+        when=SOON, text="ask where everyone is coming from before dinner",
+        note="AI Hackathon dinner plan",
+    )
+
+    assert result["status"] == "ok", result
+    assert result["note"] == "AI Hackathon dinner plan"
+    (row,) = await store.pending_for(CONVERSATION)
+    assert row.kind == "proactive"
+    assert row.requester_person_id == "nora"
+    assert row.platform == "signal" and row.conversation_id == CONVERSATION
+    assert row.payload == {
+        "note_id": note.id, "revision_id": note.head_revision_id,
+        "note_title": "AI Hackathon dinner plan",
+        "intent": "ask where everyone is coming from before dinner",
+    }
+    assert await store.count_pending("nora") == 1
+    assert await store.count_pending("miles") == 0
+    assert metrics.get("nora_reminders_created_total", status="created") == 1
+
+
+async def test_a_dreamer_row_is_screened_before_it_is_written():
+    """The sink (39 D3): «if the model writes directly there is no sink left
+    to screen at» — so the text passes the Dreamer's own identifier screen
+    before `create`, and a phone number in the intent refuses the row with
+    the store untouched."""
+    store = FakeReminderStore()
+    metrics = Metrics()
+    tools = _tools(reminders=store, metrics=metrics, tagger=None, dream_adaptor="proactive")
+
+    result = await tools["remind"](when=SOON, text="call +85212345678 about dinner")
+
+    assert result["status"] == "refused"
+    assert await store.count_pending("nora") == 0
+    assert metrics.get("nora_reminders_created_total", status="screened") == 1
+    assert metrics.get("nora_dream_screened_total", adaptor="proactive", reason="identifier") == 1
+
+
+async def test_a_dreamer_row_never_repeats():
+    """A proactive decision is one moment (39 D4): tomorrow's decide turn
+    judges again. A repeat would let one morning re-fire for weeks past the
+    loop meant to re-judge it — refused, store untouched."""
+    store = FakeReminderStore()
+    tools = _tools(reminders=store, tagger=None, dream_adaptor="proactive")
+
+    result = await tools["remind"](when=SOON, text="nudge", repeat="daily", times=3)
+
+    assert result["status"] == "refused"
+    assert await store.count_pending("nora") == 0
+
+
+async def test_a_dreamer_row_without_a_home_room_is_unavailable():
+    """The data-level refusal behind the tool source's name-level one: built
+    with no room to write into (the synthetic empty room), `remind` under
+    Dreamer provenance answers `unavailable`, never a row bound to nowhere."""
+    store = FakeReminderStore()
+    empty = Room(
+        platform="", conversation_id=WORKSPACE, roster_source=None,
+        persons=_FakePersons(MILES), tagger=None,
+    )
+    tools = _tools(reminders=store, tagger=None, dream_adaptor="proactive", room=empty)
+
+    result = await tools["remind"](when=SOON, text="nudge")
+
+    assert result["status"] == "unavailable"
+    assert await store.count_pending("nora") == 0
+
+
+async def test_a_dreamer_row_shares_the_per_requester_cap_as_a_global_ceiling():
+    """39 D5: `max_pending_per_requester`, counted against the ai_peer id,
+    is the ceiling on unfired proactive rows across the deployment."""
+    store = FakeReminderStore()
+    tools = _tools(
+        reminders=store, tagger=None, dream_adaptor="proactive",
+        caps=ReminderCaps(max_pending_per_requester=1),
+    )
+
+    first = await tools["remind"](when=SOON, text="one")
+    second = await tools["remind"](when=SOON, text="two")
+
+    assert first["status"] == "ok"
+    assert second["status"] == "refused"
+    assert await store.count_pending("nora") == 1
+
+
+async def test_the_note_link_resolves_a_title_and_refuses_an_unknown_one():
+    """`note` is a TITLE, resolved in code to the id and head revision the
+    heartbeat's screen compares against (39 D3/D11) — no id ever enters the
+    prompt. A title nothing answers to refuses rather than guessing, and the
+    tag path may link a note too, keeping `kind="reminder"`."""
+    store = FakeReminderStore()
+    notes, note = await _seeded_notes()
+    tools = _tools(reminders=store, notes=notes)
+
+    unknown = await tools["remind"](when=SOON, text="提我", note="no such note")
+    linked = await tools["remind"](when=SOON, text="提我訂枱", note="AI Hackathon dinner plan")
+
+    assert unknown["status"] == "refused"
+    assert linked["status"] == "ok"
+    (row,) = await store.pending_for(CONVERSATION)
+    assert row.kind == "reminder"
+    assert row.requester_person_id == "miles"
+    assert row.payload == {
+        "note_id": note.id, "revision_id": note.head_revision_id,
+        "note_title": "AI Hackathon dinner plan",
+    }
+
+
+async def test_list_reminders_names_a_row_nora_set_herself():
+    """The owner of a proactive row is the ai_peer id, which `persons` cannot
+    name — and «someone I can no longer name» would be the one wrong answer
+    for the one person here she CAN name."""
+    store = FakeReminderStore()
+    tools = _tools(reminders=store, tagger=None, dream_adaptor="proactive")
+    await tools["remind"](when=SOON, text="nudge about dinner")
+
+    listing = await _tools(reminders=store)["list_reminders"]()
+
+    assert listing["status"] == "ok"
+    assert listing["reminders"][0]["set_by"] == tools_module._SELF_OWNER

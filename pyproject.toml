@@ -37,10 +37,21 @@ dependencies = [
     # The container is Linux and never saw it; declared so the suite runs where
     # the operator edits.
     "greenlet>=3.5.4",
+    # `nora config` reads AND writes TOML — tomlkit preserves comments
+    # and formatting; tomli_w would strip every rationale comment in a
+    # 75KB config. Runtime dependency: the CLI ships in the image.
+    "tomlkit>=0.13",
 ]
 
 [project.optional-dependencies]
 evals = ["strands-agents-evals==1.0.3"]
+# Error reporting is OPTIONAL and off by default: `nora/obs/errors.py` degrades
+# to "off" when the SDK is absent, so a laptop, the test suite and a deployment
+# that does not want Sentry all run without it. Pinned like every other
+# dependency here; the deployment image installs it via this extra.
+sentry = [
+    "sentry-sdk==2.44.0",
+]
 
 # Makes `nora groups` and `nora persons pending` — the commands design/10 §6,
 # policy.example.toml and `nora.policy`'s own error messages all name — real

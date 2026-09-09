@@ -353,6 +353,10 @@ NATIVELY_AUTHORED = {
     # `note-curation`: a new adaptor has no prior prompt to have moved and no
     # fixture that could pin one.
     "note-candidates",
+    # The proactive adaptor's decide turn (design/dreamer-agent-loop/39,
+    # DEC-162). Written for it; version 1 is the starting text the two
+    # proactive eval suites tune (39 §5), and nothing was lifted.
+    "proactive",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

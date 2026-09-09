@@ -94,6 +94,9 @@ class _NoteStore(Protocol):
     async def search(
         self, *, workspace: str, query: str, limit: int,
     ) -> tuple[tuple[Note, str], ...]: ...
+    async def revision_chain(
+        self, *, workspace: str, note_id: str,
+    ) -> tuple[NoteRevision, ...]: ...
     async def record_miss(
         self, *, workspace: str, probe: str, conversation_id: str, now_ms: int,
     ) -> int: ...
@@ -1595,6 +1598,36 @@ async def test_a_tag_path_revision_resets_the_strike_and_reschedules(
     assert after is not None
     assert after[0].last_wake_revision_id == moved.id
     assert after[0].revisit_at == NOW + 5000
+
+
+async def test_the_revision_chain_is_readable_oldest_first_and_workspace_scoped(
+    notes: _Harness,
+) -> None:
+    """The chain `record_wake` walks, as a READ (design/dreamer-agent-loop/39
+    D11): a caller that linked something to a revision earlier can ask
+    whether the tag path has moved the note since. Oldest first, so the
+    walk from a known revision forward is a slice, and `()` — never a
+    partial chain — across a workspace boundary."""
+    note = await _make(notes.store)
+    second = await notes.store.append_revision(
+        workspace=WS, note_id=note.id, body="Two venues, one call made.",
+        parent_revision_id=note.head_revision_id,
+        established_by="dream:note-curation:ws:1", now_ms=NOW + 1,
+    )
+    third = await notes.store.append_revision(
+        workspace=WS, note_id=note.id, body="Ada booked Sai Kung.",
+        parent_revision_id=second.id, established_by="tag:miles", now_ms=NOW + 2,
+    )
+
+    chain = await notes.store.revision_chain(workspace=WS, note_id=note.id)
+
+    assert [r.id for r in chain] == [note.head_revision_id, second.id, third.id]
+    assert [r.established_by for r in chain][1:] == [
+        "dream:note-curation:ws:1", "tag:miles",
+    ]
+    assert chain[1].parent_revision_id == note.head_revision_id
+    assert await notes.store.revision_chain(workspace=OTHER_WS, note_id=note.id) == ()
+    assert await notes.store.revision_chain(workspace=WS, note_id="not-a-uuid") == ()
 
 
 async def test_a_background_passes_own_write_does_not_reset_the_strike(

@@ -2351,12 +2351,33 @@ class TracingConfig(BaseModel):
         return self
 
 
+class ErrorsConfig(BaseModel):
+    """Sentry — error capture only, never tracing (`nora/obs/errors.py`).
+
+    OFF by default and off without a DSN, because the shipped default must run
+    on a laptop with no Sentry account. `dsn_env` NAMES the variable (DEC-8);
+    the DSN itself never appears in `config.toml`.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    dsn_env: str = "SENTRY_DSN"
+    # Which deployment this is, so a laptop's errors and the box's do not group
+    # into one issue. Free-form; `""` records `unknown` rather than nothing,
+    # since an unlabelled issue is worse than a wrongly labelled one.
+    environment: str = ""
+
+
 class ObsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     logging: LoggingConfig
     metrics: MetricsConfig
     tracing: TracingConfig
+    # Defaulted rather than required: every existing config.toml predates it,
+    # and a section nobody wrote must mean "off", not "refuse to start".
+    errors: ErrorsConfig = ErrorsConfig()
 
 
 class LangfuseEvalConfig(BaseModel):

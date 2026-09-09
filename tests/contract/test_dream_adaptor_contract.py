@@ -54,13 +54,19 @@ from collections.abc import (
     Sequence,
 )
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
+from nora.agent.dreamer import AdaptorGrant, proactive_grant
 from nora.agent.registry import ToolRegistry
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.ports import DreamAdaptor, Proposal
+from nora.language.proactive import ProactiveAdaptor, WorkspaceRoom
+from nora.testing import InMemoryNoteStore
+from nora.testing.reminders import FakeReminderStore
 
 DREAMER_DIR = Path(__file__).resolve().parents[2] / "nora" / "dreamer"
 
@@ -199,6 +205,65 @@ class _Impl:
     #: assigned the handles (the deleted entity-resolution adaptors were the
     #: case).
     prepare: Callable[[object], Awaitable[None]] | None = None
+    #: The adaptor's `AdaptorGrant` (design/dreamer-agent-loop/39 D3) — the
+    #: SAME object the composition root hands the runtime, never a copy. The
+    #: default is no grant, which is every adaptor but one.
+    grant: AdaptorGrant = field(default_factory=AdaptorGrant)
+
+
+# -- the proactive adaptor (design/dreamer-agent-loop/39, DEC-162) ------------
+#
+# The first PRODUCTION adaptor in this map. Its backing is the in-memory note
+# store its sink writes wakes to; `written` counts notes woken, which is what
+# `commit` returns for it — its rows are written by `remind` inside the loop,
+# not by the sink. `prepare` seeds two open notes and renders `inputs` once,
+# because `accept` is HANDLE-based and a handle is meaningless before the
+# render that assigned it (the same reason the field exists).
+
+_PROACTIVE_WS = KEY
+
+
+def _build_proactive() -> tuple[ProactiveAdaptor, InMemoryNoteStore]:
+    notes = InMemoryNoteStore()
+    adaptor = ProactiveAdaptor(
+        notes=notes, standing=None, reminders=FakeReminderStore(), memory=None,
+        rooms_of=lambda ws: (
+            WorkspaceRoom(platform="signal", conversation_id="g1", label="G1", home=True),
+        ) if ws == _PROACTIVE_WS else (),
+        ai_peer="nora", clock=lambda: datetime(2026, 9, 9, 0, 0, tzinfo=UTC),
+        timezone=ZoneInfo("Asia/Hong_Kong"),
+    )
+    return adaptor, notes
+
+
+async def _prepare_proactive(adaptor: object) -> None:
+    assert isinstance(adaptor, ProactiveAdaptor)
+    notes = adaptor._notes
+    assert isinstance(notes, InMemoryNoteStore)
+    for n, title in enumerate(("Dinner venue", "Taipei trip")):
+        await notes.create(
+            workspace=_PROACTIVE_WS, title=title, description="open",
+            uncertainty="where", closing_condition="settled", established_in="g1",
+            body="open corner", established_by="tag:miles", now_ms=1_000 + n,
+            anchor_date=20260912,
+        )
+    await adaptor.inputs(key=_PROACTIVE_WS, batch=())
+
+
+def _proactive_items() -> tuple[Mapping[str, object], ...]:
+    return (
+        {"note": "1", "action": "remind", "why": "Saturday is near"},
+        {"note": "2", "action": "decline", "why": "nothing to raise"},
+    )
+
+
+def _proactive_malformed_item() -> Mapping[str, object]:
+    return {"note": "9", "action": "maybe", "why": 7}
+
+
+def _proactive_written(_adaptor: object, notes: object) -> int:
+    assert isinstance(notes, InMemoryNoteStore)
+    return sum(1 for n in notes.notes.values() if n.last_wake_revision_id is not None)
 
 
 IMPLEMENTATIONS: dict[str, _Impl] = {
@@ -208,6 +273,17 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
         make_malformed_item=_fake_malformed_item,
         written=_fake_written,
         empty_commits=_fake_empty_commits,
+    ),
+    "proactive": _Impl(
+        build=_build_proactive,
+        make_items=_proactive_items,
+        make_malformed_item=_proactive_malformed_item,
+        written=_proactive_written,
+        # No `DreamSink` behind it: the empty commit is legal and records
+        # nothing, and there is no counter to reach.
+        empty_commits=None,
+        prepare=_prepare_proactive,
+        grant=proactive_grant(),
     ),
 }
 
@@ -274,20 +350,33 @@ def test_the_key_kind_is_one_the_loop_can_enumerate(adaptor):
     assert adaptor.key_kind in {"scope", "workspace"}
 
 
-def test_the_tool_subset_narrows_the_read_only_ceiling(adaptor):
-    """The hard line, asserted at the port rather than trusted.
+def test_the_tool_subset_narrows_the_read_only_ceiling(adaptor, impl):
+    """The hard line, asserted at the port rather than trusted — and, since
+    DEC-162, its one named allowance.
 
     An adaptor declares tool NAMES because `nora.language` may not import
     `nora.agent`; the consequence is that nothing about the declaration itself
     stops it naming `send_reply`. `read_only_tools()` is the ceiling and this
     is where an adaptor is measured against it — a subset naming an act verb,
     or a tool that does not exist at all, fails HERE rather than handing a
-    background loop a write."""
-    ceiling = ToolRegistry().read_only_tools()
+    background loop a write.
+
+    REWRITTEN ON PURPOSE (design/dreamer-agent-loop/39 D3): the ceiling is
+    the read-only set PLUS the act verbs this implementation's `AdaptorGrant`
+    names, and nothing else. The fake has no grant and is measured exactly
+    as before; the proactive adaptor's `remind` clears it only through
+    `proactive_grant()`, the same object the composition root hands the
+    runtime — so a verb added to `PROACTIVE_TOOLS` without a grant behind it
+    is red here."""
+    ceiling = ToolRegistry().read_only_tools() | impl.grant.acts
     assert adaptor.tools <= ceiling, (
-        f"{adaptor.name} asks for tools outside the read-only ceiling: "
-        f"{sorted(adaptor.tools - ceiling)}"
+        f"{adaptor.name} asks for tools outside the read-only ceiling and its "
+        f"grant: {sorted(adaptor.tools - ceiling)}"
     )
+    # The allowance is measured too: nothing in the registry's ACT set is in
+    # the subset unless the grant names it by name.
+    acts = adaptor.tools - ToolRegistry().read_only_tools()
+    assert acts == (adaptor.tools & impl.grant.acts)
 
 
 def test_the_objective_names_a_file_that_exists(adaptor):

@@ -232,6 +232,15 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    ("design/discord-integration/00-overview.md", "deploy/watchdog.sh"): (
+        "the shell watchdog was deleted 2026-09-09 once Prometheus covered its one "
+        "condition with a real delivery path; this design records the reasoning as it "
+        "stood, and rewriting a decision record to match later code is what this "
+        "repo's design docs deliberately do not do"
+    ),
+    ("design/whatsapp-adoption/01-bridge-container.md", "deploy/watchdog.sh"): (
+        "same deletion, same reason — a historical decision record, not a broken link"
+    ),
     ("deploy/README.md", "deploy/egress.sh"): (
         "documented as the versioned egress governance script; not tracked in this checkout"
     ),

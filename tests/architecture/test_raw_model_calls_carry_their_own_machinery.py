@@ -105,17 +105,25 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     # NOT `usage`, and the reason is structural rather than an oversight:
     # `nora.infra` may not import `nora.obs` (the layered-architecture
     # contract, enforced by `lint-imports`), so a raw client in this layer
-    # cannot annotate a span at all. Threading the counts out through an
-    # injected callback would satisfy the letter of it, and would record them
-    # into a trace that is DISCARDED anyway — the vision read runs under
-    # `comprehend`, whose root declares `TRACE_KIND: "plumbing"`, so the
-    # sampler drops the whole trace before it reaches Langfuse.
+    # cannot annotate a span at all.
     #
-    # Both of those are findings, not excuses, and neither is fixable from
-    # here: a model generation running under a `plumbing` root contradicts
-    # that vocabulary's own definition ("`generation` — a model call can
-    # happen under this root"), and deciding that image descriptions should
-    # reach Langfuse is a cost and privacy call, not a refactor.
+    # **The SECOND half of this exemption was retired on 2026-09-09 and the
+    # reason is kept here because it changed rather than went away.** It used
+    # to read: threading the counts out would record them into a trace that is
+    # DISCARDED anyway, because `comprehend`'s root declared
+    # `TRACE_KIND: "plumbing"`. That contradiction — a model generation under
+    # a root whose own vocabulary means "no model call anywhere under it" —
+    # was the finding, and it is now fixed: the root declares `generation`,
+    # and the media read reaches Langfuse.
+    #
+    # So what remains is one live gap, not two, and it is smaller: a vision
+    # read now exports as a generation costing zero tokens, which is exactly
+    # the defect the gate and the debrief were fixed for one commit earlier.
+    # Closing it means carrying the counts out of `nora.infra` to a caller
+    # that CAN annotate — `MediaDescription.provenance` already travels that
+    # way for `media_caveat` — and that is a port-shape decision, weighed
+    # against this file's own rule that usage belongs on the span and never in
+    # a return type. Left for the operator to call rather than settled here.
     "nora/infra/vision/client.py": ("timeout", "finish_reason"),
 }
 

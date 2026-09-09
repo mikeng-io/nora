@@ -139,8 +139,7 @@ from datetime import tzinfo
 from typing import Any, NamedTuple, Protocol
 
 from nora.agent.dream_screen import screen
-from nora.agent.egress import scan_identifiers
-from nora.agent.security import looks_like_coordinate
+from nora.agent.security import trace_safe
 from nora.agent.tools import note_handle
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
@@ -157,7 +156,7 @@ from nora.domain.standing import STANDING_STORE_CALLS_PER_FOLD, Standing
 from nora.domain.tag_trace import TagTrace
 from nora.domain.turn_verdict import TurnVerdict
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import annotate, span
+from nora.obs.tracing import annotate, annotate_generation, generation
 
 from ..debrief_render import render_debrief_input, render_verdict_input
 
@@ -258,46 +257,6 @@ VERDICT_OBJECTIVE = "standing-verdict"
 STORE_CALLS_PER_FOLD = STANDING_STORE_CALLS_PER_FOLD
 
 
-#: What lands on the span in place of text the egress floor refuses. It NAMES
-#: the pattern that fired, because «the trace shows nothing» and «the trace
-#: refused to show it» are different readings and only one of them is a bug.
-_WITHHELD = "(withheld from the trace: {reason})"
-
-
-def _trace_safe(text: str) -> tuple[str, str]:
-    """`(what may go on the span, why the rest did not)`.
-
-    **A trace is an egress.** The collector is a third party over the network,
-    and `nora.agent.egress`'s own docstring says an identifier is «never safe to
-    emit **or transmit**, whatever the destination». The debrief's prompt
-    carries the turn's raw tool results — a `where_is` result is a live
-    coordinate — so the two floor predicates that already guard every other
-    write of that class run here too.
-
-    **Reused, not reinvented**, and deliberately the same pair
-    `nora.agent.dream_screen` calls rather than `screen` itself: `screen` counts
-    `nora_dream_screened_total{adaptor}`, and a trace decision incrementing a
-    Dreamer series would make that counter answer two questions at once.
-    `scan_identifiers` and not `scan_reply`, for `dream_screen`'s stated reason
-    — `scan_reply`'s model-name pattern matches nine ordinary English words and
-    is only ever right for text addressed to the group.
-
-    **Fails closed at whole-text granularity**, which is the known cost: one
-    coordinate anywhere in a fold's prompt withholds the whole prompt. The
-    provenance survives it — `nora.debrief.prompt_sha256` and `nora.tag_id` are
-    stamped either way, and the turn's own `TagTrace` is retained in Postgres,
-    so the fold is re-derivable by reference exactly when it is not readable
-    inline. Splitting the render into per-block redaction is the better answer
-    and is a larger change than this fix carries.
-    """
-    offence = scan_identifiers(text)
-    if offence is not None:
-        return _WITHHELD.format(reason=offence), offence
-    if looks_like_coordinate(text):
-        return _WITHHELD.format(reason="coordinate"), "coordinate"
-    return text, ""
-
-
 async def _complete(
     client: ModelClient, *, prompt: tuple[str, str], call: str, trace: TagTrace,
 ) -> Completion:
@@ -330,15 +289,15 @@ async def _complete(
     # Both halves on the trace, joined, so the digest still reconstructs the
     # WHOLE input. Hashing only the user half would make two folds with
     # different objectives collide.
-    body, withheld = _trace_safe(f"{system}\n\n{user}")
-    with span(
+    body, withheld = trace_safe(f"{system}\n\n{user}")
+    with generation(
         f"engagement.debrief.{call}",
-        **{
-            "langfuse.observation.type": "generation",
-            "langfuse.observation.model.name": client.model,
-            "langfuse.observation.input": body,
-            "gen_ai.operation.name": "chat",
-            "gen_ai.request.model": client.model,
+        model=client.model,
+        # NOT `root=True`: this hangs under `engagement.debrief`, which hangs
+        # under the turn's own root, and a `nora.trace_kind` on a non-root is
+        # inert under `ParentBased`. The turn's root already declared it.
+        prompt=body,
+        attributes={
             "nora.tag_id": trace.tag_id,
             "nora.conversation_id": trace.conversation_id,
             # The reference the withheld case still re-derives from: this digest
@@ -349,17 +308,19 @@ async def _complete(
         },
     ):
         reply = await client.complete(system=system, prompt=user)
-        out, out_withheld = _trace_safe(reply.content)
+        out, out_withheld = trace_safe(reply.content)
         # `finish_reason` on the span rather than only in `_check`'s branch: a
         # `"length"` finish is the R-27 substitution this stage exists to
         # refuse, and reading it off the trace is how an operator tells «the
         # model answered badly» from «the answer was cut off» without a log.
-        annotate(**{
-            "langfuse.observation.output": out,
-            "gen_ai.response.finish_reasons": reply.finish_reason,
-            "nora.debrief.output_sha256": instruction_sha256(reply.content),
-            "nora.debrief.output_withheld": out_withheld,
-        })
+        annotate_generation(
+            completion=out,
+            finish_reason=reply.finish_reason,
+            attributes={
+                "nora.debrief.output_sha256": instruction_sha256(reply.content),
+                "nora.debrief.output_withheld": out_withheld,
+            },
+        )
         return reply
 
 

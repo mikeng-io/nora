@@ -1,0 +1,16 @@
+{
+  "type": "feature",
+  "summary": "Nora can now act on her own: once a day she reads what a group has left open and decides whether, and when, to raise something — in the room the operator names as that group's home.",
+  "details": [
+    "A daily Dreamer pass (the proactive adaptor, design/dreamer-agent-loop/39, DEC-162) reads a workspace's open notes, each room's standing, its own past decisions and its self card, and may set itself a reminder for a chosen moment. It composes no message; at that moment a separate turn reads the room again and speaks — or stays silent, which is recorded as a success, not a failure.",
+    "policy.toml gains two per-room flags: `home_room = true` names the one room a workspace's proactive pass stands in (its roster gates where_is, about, ask_memory and group_members exactly as on a tag, and the room's `location` flag applies); `proactive = true` lets such a reminder fire there. No home room, no proactive pass. Two home rooms in one workspace refuse to start.",
+    "Her `remind` learns a `note` argument — the title of an open note — on the tag path too, recording the link; a reminder she set for herself on her own pass is cancelled before it fires if the note is retired or a person revises it in the meantime.",
+    "Reminders Nora set for herself list as her own in list_reminders, and `nora reminders list` shows them under the ai_peer id.",
+    "Two eval suites (`evals.run --suite proactive_decide` and `--suite proactive_act`) measure when she decides to speak and whether the act turn should, with the false-positive rate on silence as the primary number."
+  ],
+  "limitations": [
+    "The decide turn's instructions (nora/dreamer/objectives/proactive.md) are a version-1 starting text; the two suites are what tune it, and no live measurement has been taken yet.",
+    "The Dreamer doctrine file still says «you look; you do not act»; the objective overrides it for this one pass, and the doctrine text itself is operator-only to change.",
+    "A proactive reminder never repeats and never relays: it fires once, into the home room only."
+  ]
+}

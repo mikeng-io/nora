@@ -58,6 +58,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Protocol
 
+from nora.app.proactive_screen import PROACTIVE_KIND, ProactiveScreen
 from nora.domain.reminders import Reminder, ReminderState, ReminderStore
 from nora.engagement.slots import ConversationSlots, Key
 from nora.obs.metrics import Metrics
@@ -74,6 +75,15 @@ TurnKey = tuple[str, str, str, str]
 # path can answer (§8.1: `failed_policy`, `failed_timeout`, `failed_error`) is a
 # reminder that did NOT arrive, and the row must say so.
 SENT = "sent"
+
+# The ONE outcome that means the turn ran, said nothing, and that was RIGHT
+# (design/dreamer-agent-loop/39 D12): a `kind="proactive"` act turn reading
+# its own earlier intention against the room now and declining it. DONE, not
+# FAILED — the decision log (39 D7) reads every row of Nora's own, and a
+# restraint recorded as a failure teaches the next decide turn that
+# restraint fails. The same string `nora.app.fire.SILENT` answers with; a
+# spelling drift here would turn every restraint back into a failure.
+SILENT = "silent"
 
 # What the liveness gauge reads when there is no loop to be live. Negative
 # because no real tick age can be: `0.0` is what an unbound gauge exports and
@@ -126,6 +136,7 @@ class HeartbeatLoop:
         metrics: Metrics,
         tick_seconds: float,
         fire: Callable[[Sequence[Reminder]], Awaitable[str]],
+        proactive: ProactiveScreen | None = None,
     ) -> None:
         self._store = store
         self._slots = slots
@@ -134,6 +145,12 @@ class HeartbeatLoop:
         self._metrics = metrics
         self._tick_seconds = tick_seconds
         self._fire = fire
+        # The `kind="proactive"` screen (39 D5/D11): the room's `proactive`
+        # flag instead of persons membership, and the note the row is about
+        # — retired, or revised on the tag path since the row was linked,
+        # cancels it. `None` (no proactive adaptor composed) FAILS every
+        # proactive row `failed_policy` rather than firing it unscreened.
+        self._proactive = proactive
         # Seeded at construction, not left None: before the first tick the
         # honest reading is "this long since we started", which climbs like any
         # other stall. A None-guarded gauge that publishes 0 until the first
@@ -256,6 +273,32 @@ class HeartbeatLoop:
         """
         allowed: list[Reminder] = []
         for row in rows:
+            if row.kind == PROACTIVE_KIND:
+                # A DIFFERENT grant (39 D5): the owner is Nora's own ai_peer
+                # id, which `is_allowed` can never admit, so the screen is
+                # the room's flag plus the note's state (D11). Fail-closed
+                # with no screen wired: an unscreened proactive row must not
+                # fire on the strength of nothing.
+                if self._proactive is None:
+                    log.error(
+                        "proactive reminder %s not fired: no ProactiveScreen is "
+                        "wired for this heartbeat", row.id,
+                    )
+                    await self._resolve_all(
+                        [row], ReminderState.FAILED, outcome="failed_policy",
+                        now=now,
+                    )
+                    continue
+                refusal = await self._proactive.refusal(row)
+                if refusal is None:
+                    allowed.append(row)
+                    continue
+                state, outcome = refusal
+                log.info(
+                    "proactive reminder %s not fired: %s", row.id, outcome,
+                )
+                await self._resolve_all([row], state, outcome=outcome, now=now)
+                continue
             if self._policy.is_allowed(
                 platform=row.platform,
                 conversation_id=row.conversation_id,
@@ -376,8 +419,14 @@ def _state_for(outcome: str) -> ReminderState:
     `failed_error` and the `not_wired` stub all wrote `state=done`. The row then
     reads "delivered" to every query that filters on state, with the truth
     surviving only in a free-text column nothing joins on.
+
+    THE THIRD MAPPING (39 D12): `silent` is DONE too. Only a proactive act
+    turn can answer it (`nora.app.fire`), and for that turn saying nothing
+    is the healthy default, not a delivery that never happened. Mapped to
+    FAILED it would read as one in every query, in the metric, and in the
+    decision log the next decide turn learns from.
     """
-    return ReminderState.DONE if outcome == SENT else ReminderState.FAILED
+    return ReminderState.DONE if outcome in (SENT, SILENT) else ReminderState.FAILED
 
 
 def _by_turn(rows: Sequence[Reminder]) -> dict[TurnKey, list[Reminder]]:

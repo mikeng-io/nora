@@ -73,6 +73,18 @@ tools    = []                # MCP servers this room may use, e.g. ["pulse"].
                              # The one thing it never relaxes: if Nora cannot READ the
                              # roster, she still refuses. Trust overrules what a roster
                              # says, never the absence of one.
+# home_room = true             # (default false) THIS room is where Nora stands when she acts
+                             # for the workspace with nobody asking (design/dreamer-agent-loop/
+                             # 39 D2): the proactive adaptor's roster-gated reads (`where_is`,
+                             # `about`, `ask_memory`, `group_members`) resolve through this
+                             # room, its `location` flag applies exactly as on a tag, and the
+                             # rows it writes fire into this room. Exactly one per workspace;
+                             # a second is a startup error. No home room, no proactive pass.
+# proactive = true             # (default false) a `kind="proactive"` row may FIRE here (39
+                             # D5). Those rows are owned by Nora's own ai_peer id, which is
+                             # nobody in identity.toml, so the persons list cannot admit them;
+                             # this flag is what the heartbeat checks instead. Meaningful only
+                             # on the home room, because nothing writes such rows elsewhere.
 # relevance_gate = true        # (default false) opt THIS room into the Relevance Gate
                              # (design/dreamer-agent-loop/36): an untagged message here
                              # may be judged, once per quiet-closed window, on whether it

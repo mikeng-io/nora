@@ -22,6 +22,7 @@ from . import config
 from .app import adoption, cli, runtime
 from .app.composition import Dependencies, StartupError, build_dependencies
 from .config import ConfigError
+from .obs.errors import setup_errors
 from .obs.health import build_health_app, serve
 from .obs.logging import heartbeat, setup_logging
 from .obs.tracing import setup_tracing
@@ -55,6 +56,23 @@ async def build_app(config_path: Path) -> App:
         path=cfg.obs.logging.path,
         format=cfg.obs.logging.format,
         secrets=[key] if key else [],
+    )
+    # BEFORE `setup_tracing` and before anything that can fail: the whole point
+    # is to capture a startup crash, and a reporter wired after the code that
+    # crashes reports nothing. It is wired AFTER `setup_logging` because it
+    # rides that logger's records.
+    setup_errors(
+        enabled=cfg.obs.errors.enabled,
+        dsn_env=cfg.obs.errors.dsn_env,
+        environment=cfg.obs.errors.environment,
+        # NO RELEASE, and that is a fact about this deployment rather than an
+        # omission: `scripts/build-image.sh` deliberately builds UNSTAMPED
+        # (`--build-arg NORA_VERSION=`) because "deployments are not releases",
+        # so the running container has neither the env var nor `version.json`.
+        # Sentry therefore groups by environment alone, and "is this new since
+        # the last deploy" is not answerable from an issue. An explicit release
+        # (`scripts/release.py`) does stamp the image, and wiring that value
+        # through is the follow-up that makes regression tracking real.
     )
     setup_tracing(
         enabled=cfg.obs.tracing.enabled,

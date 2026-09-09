@@ -1,0 +1,175 @@
+# The proactive DECIDE suite (design/dreamer-agent-loop/39 §5, DEC-162 (10)).
+#
+# Each case is ONE morning pass over ONE workspace: the open notes, where
+# each room stood (with the age of that reading), what Nora decided on
+# earlier mornings and how it went, a little memory, and `now`. The REAL
+# DreamerRuntime + REAL ProactiveAdaptor run through the REAL tool source
+# (home room, grant, `remind` under Dreamer provenance) and the grade is
+# read off the reminder store afterwards (`evals.proactive.grade_decide`):
+#
+#   none    — no row was written. The common, correct answer.
+#   remind  — EXACTLY the listed rows, each matched by note title, each
+#             `due_at` inside its `due_between`, owner nora, kind proactive.
+#
+# `unavailable` is ERROR, never PASS and never a correct `none` (R-27). The
+# corpus is majority `none` on purpose: most days there is nothing to say,
+# and a corpus of only should-speak cases breeds a Nora who speaks daily.
+# The windows are one rater's threshold — the operator's.
+#
+# Timestamps carry +08:00 (Asia/Hong_Kong). 2026-09-11 is a Friday.
+
+# 39 §4's first real case: the one live note. Dinner Saturday at Cyberport,
+# venue open, revisit already past. The day before, in the afternoon or
+# evening, is when a word from her helps; not at breakfast Friday, and not
+# after people have already eaten.
+- name: d01_dinner_note_the_day_before
+  expect: remind
+  workspace: ridgeline
+  now: "2026-09-11T07:00:00+08:00"
+  rooms:
+    - {platform: signal, conversation_id: ridgeline-sig, label: Ridgeline, home: true}
+    - {platform: discord, conversation_id: "100000000000000203/100000000000000204", label: Ridgeline discord}
+  notes:
+    - title: AI Hackathon dinner plan
+      description: dinner after Saturday's AI Thinking hackathon at Cyberport — who and where are open
+      body: "Miles is at the AI Thinking hackathon at Cyberport on Saturday 12 Sep. He does not know his teammates yet and has not decided where to eat that night."
+      anchor_date: 20260912
+  standing:
+    - {room: Ridgeline, body: "Miles is going to the Cyberport hackathon on Saturday; nobody has said where dinner is or who is coming.", age_hours: 30}
+  rows:
+    - note: AI Hackathon dinner plan
+      due_between: ["2026-09-11T12:00:00+08:00", "2026-09-11T23:00:00+08:00"]
+
+- name: d02_anchored_today_open_corner
+  expect: remind
+  workspace: friends
+  now: "2026-09-11T07:00:00+08:00"
+  rooms:
+    - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
+  notes:
+    - title: Friday drinks
+      description: drinks tonight — Central or Kennedy Town still undecided
+      body: "Ada, Ben and Cat are meeting for drinks tonight (Fri 11 Sep) after work. Central or Kennedy Town — nobody has picked."
+      anchor_date: 20260911
+  standing:
+    - {room: Friends, body: "Drinks tonight are on; the area is still a coin toss between Central and K-Town.", age_hours: 14}
+  rows:
+    - note: Friday drinks
+      due_between: ["2026-09-11T11:00:00+08:00", "2026-09-11T19:30:00+08:00"]
+
+- name: d03_follow_up_owed_today
+  expect: remind
+  workspace: friends
+  now: "2026-09-11T07:00:00+08:00"
+  rooms:
+    - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
+  notes:
+    - title: Ben's flat for the 25th
+      description: whether Ben's landlord allows the party on the 25th — Ben said he would answer by Friday
+      body: "Ben asked his landlord whether ten people can come to his flat on Sat 25 Sep and promised the group an answer by Friday 11 Sep. Ada and Cat are waiting on it before booking anything else."
+      anchor_date: 20260925
+  standing:
+    - {room: Friends, body: "Party on the 25th hinges on Ben's landlord; Ben said Friday for an answer. Nothing since.", age_hours: 40}
+  rows:
+    - note: Ben's flat for the 25th
+      due_between: ["2026-09-11T12:00:00+08:00", "2026-09-11T22:00:00+08:00"]
+
+- name: d04_already_raised_four_times
+  expect: none
+  workspace: friends
+  now: "2026-09-11T07:00:00+08:00"
+  rooms:
+    - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
+  notes:
+    - title: Mahjong night
+      description: a mahjong night somebody floated — nobody has picked a date
+      body: "Cat floated a mahjong night back in August. No date, no host, nobody has answered the last few times it came up."
+      anchor_date: 20260913
+      strikes: 4
+  standing:
+    - {room: Friends, body: "Mahjong keeps being mentioned and keeps going nowhere.", age_hours: 60}
+  log:
+    - {about: Mahjong night, intent: "ask if mahjong is still on", decided_hours_ago: 72, due_hours_ago: 60, outcome: sent}
+    - {about: Mahjong night, intent: "ask about a mahjong date", decided_hours_ago: 48, due_hours_ago: 36, outcome: silent}
+
+- name: d05_standing_says_settled
+  expect: none
+  workspace: friends
+  now: "2026-09-11T07:00:00+08:00"
+  rooms:
+    - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
+  notes:
+    - title: Saturday dim sum
+      description: dim sum on Saturday — place and time were open
+      body: "Dim sum this Saturday 12 Sep. Ada suggested Lin Heung or Sun Tung Lok; time undecided."
+      anchor_date: 20260912
+  standing:
+    - {room: Friends, body: "Dim sum Saturday is booked: Sun Tung Lok, 11:30, Ada has the table for five. Everyone has confirmed.", age_hours: 9}
+
+- name: d06_dateless_note
+  expect: none
+  workspace: friends
+  now: "2026-09-11T07:00:00+08:00"
+  rooms:
+    - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
+  notes:
+    - title: Japan trip someday
+      description: a Japan trip everyone wants and nobody has dated
+      body: "Everyone wants to do Japan together — Kyoto in autumn was mentioned. No year, no month, no budget. Purely a wish for now."
+      anchor_date: null
+  standing:
+    - {room: Friends, body: "Japan comes up now and then as a someday plan.", age_hours: 50}
+
+- name: d07_three_weeks_out
+  expect: none
+  workspace: friends
+  now: "2026-09-11T07:00:00+08:00"
+  rooms:
+    - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
+  notes:
+    - title: October hike
+      description: a hike on 3 Oct — trail undecided
+      body: "Hike on Sat 3 Oct. Dragon's Back or Lion Rock, to be decided nearer the time. Everyone is in."
+      anchor_date: 20261003
+  standing:
+    - {room: Friends, body: "October hike is on; trail to be chosen the week before.", age_hours: 20}
+
+- name: d08_empty_workspace
+  expect: none
+  workspace: wedding
+  now: "2026-09-11T07:00:00+08:00"
+  rooms:
+    - {platform: signal, conversation_id: wedding-sig, label: Wedding, home: true}
+  notes: []
+  standing:
+    - {room: Wedding, body: "Quiet since the invitations went out.", age_hours: 120}
+
+- name: d09_all_corners_closed_tomorrow
+  expect: none
+  workspace: ridgeline
+  now: "2026-09-11T07:00:00+08:00"
+  rooms:
+    - {platform: signal, conversation_id: ridgeline-sig, label: Ridgeline, home: true}
+  notes:
+    - title: Saturday hackathon logistics
+      description: Miles's Saturday hackathon — arrival time and badge were the open bits
+      body: "Miles is at the Cyberport hackathon Saturday 12 Sep. Registration confirmed, badge emailed, he is taking the 8:15 bus with Grant. Nothing left to arrange."
+      anchor_date: 20260912
+  standing:
+    - {room: Ridgeline, body: "Hackathon Saturday: everything is sorted — badge, bus, Grant is going too.", age_hours: 12}
+
+- name: d10_reminded_yesterday_and_it_landed
+  expect: none
+  workspace: friends
+  now: "2026-09-11T07:00:00+08:00"
+  rooms:
+    - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
+  notes:
+    - title: Cat's birthday gift
+      description: a group gift for Cat's birthday on the 14th — who buys it is open
+      body: "Cat's birthday is Mon 14 Sep. Ada and Ben want to chip in for a gift; nobody has volunteered to buy it."
+      anchor_date: 20260914
+  standing:
+    - {room: Friends, body: "Nora asked yesterday who is buying Cat's gift; Ben said he will sort it over the weekend.", age_hours: 16}
+  log:
+    - {about: Cat's birthday gift, intent: "ask who is buying Cat's gift", decided_hours_ago: 30, due_hours_ago: 18, outcome: sent}

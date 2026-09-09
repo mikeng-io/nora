@@ -1378,6 +1378,20 @@ reasoning_effort = "none"
 # Tagged :0731 (2026-08-30) — same catalog-400 fix as [llm].model.
 model = "ollamacloud/deepseek-v4-flash:0731"
 
+# Per-adaptor run ceilings (`DreamBudgetConfig`; an adaptor with no block gets
+# the defaults: 6 turns, 40000 total tokens, 4000 output tokens, 120 s). The
+# proactive adaptor (design/dreamer-agent-loop/39 D1) runs ONCE A DAY per
+# workspace and researches with real tools — where_is, route, note_read, the
+# web — so it can afford more than a tag turn's fixed budgets. Uncomment to
+# widen it; the two proactive eval suites (39 §5) are what say whether the
+# extra turns buy anything. It is wired only when policy.toml names a
+# `home_room = true` for a workspace — there is no [dreamer] flag for it.
+# [dreamer.budgets.proactive]
+# turns = 12
+# total_tokens = 80000
+# output_tokens = 4000
+# timeout_seconds = 240.0
+
 
 [obs.logging]
 level = "INFO"
@@ -1393,6 +1407,28 @@ exporter = "file"                     # console | otlp_http | file
 endpoint = ""
 headers_env = ""                      # env var NAME holding OTLP auth headers, never the
                                        # value (DEC-8); only read when exporter = "otlp_http"
+
+[obs.errors]
+# Sentry — ERROR CAPTURE ONLY, never tracing (`nora/obs/errors.py`).
+#
+# It answers the one question the other three instruments cannot: «this stack
+# trace has happened 200 times, it is new since the last deploy, and here is
+# the frame». Prometheus answers "how many, how often, with what outcome" and
+# Langfuse holds the traces with a model call in them — see
+# `docs/observability.md` for the boundary.
+#
+# WHAT IT WILL NOT SEE, stated here so nobody assumes otherwise: an R-27
+# `unavailable`. This codebase is built not to raise, so its characteristic
+# failure is a counter label rather than a traceback — a media read that
+# exported no trace for two weeks threw nothing, and neither did a systemd unit
+# that was dead for sixteen days. Those are `deploy/prometheus/`'s to catch.
+enabled = false
+dsn_env = "SENTRY_DSN"                     # names the env var (DEC-8); the DSN
+                                           # itself never appears in this file.
+                                           # Unset or empty = off, not an error.
+environment = ""                           # "norty", "laptop" — so two
+                                           # deployments do not group into one
+                                           # issue. "" records `unknown`.
 
 [evals]
 # The model that GRADES the adversarial live run (DEC-75). MUST differ from

@@ -273,7 +273,12 @@ def test_export_langfuse_suite_choice_is_scoped_to_deterministic_suites():
     the full suite set."""
     assert set(SUITES) == {"trigger", "no_trigger", "all", "adversarial",
                            "journeys", "participation", "relevance_gate",
-                           "note_candidates"}
+                           "note_candidates",
+                           # The proactive adaptor's two live suites
+                           # (design/dreamer-agent-loop/39 §5): their own
+                           # drivers, sink-scored like note_candidates.
+                           "proactive_decide", "proactive_act"}
+
 
 
 def test_no_trigger_cases_really_do_not_tag_under_the_configured_trigger():
