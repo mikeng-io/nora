@@ -63,6 +63,30 @@ OMNIROUTE_API_KEY=… uv run python -m evals.run --suite note_candidates \
     --dreamer-dir /path/to/variant   # holds doctrine/ and objectives/
 ```
 
+### Running a live suite from a dev machine
+
+The gateway listens on the deployment's localhost only, so a run from the
+MacBook needs a tunnel and the deployed model's ALIAS:
+
+```bash
+ssh -f -N -L 20128:127.0.0.1:20128 norty
+export OMNIROUTE_API_KEY="$(ssh norty 'grep ^OMNIROUTE_API_KEY= ~/workspace/nora/.env | cut -d= -f2- | tr -d "\""')"
+uv run python -m evals.run --suite note_candidates --samples 10 \
+    --model nora-dreamer --effort none
+pkill -f 'ssh -f -N -L 20128'
+```
+
+`--model` is not optional in this shape. `config.example.toml` names the
+provider id and the deployment routes through an alias (`nora`,
+`nora-dreamer`), so a run without it measures a different model than
+production and its verdict is about nothing anyone deploys. The key is read
+from the deployment's `.env` through ssh rather than stored anywhere local —
+same rule as every other secret (`CLAUDE.md`, "Reaching the deployment").
+
+Output is block-buffered under a redirect: a backgrounded run prints nothing
+until it exits, so wait on a sentinel (`until grep -q GATE "$log"`) rather
+than tailing.
+
 The `journeys` suite live-runs each journey (`evals/journeys.py`) and grades its
 routing (`evals/run.py::_run_journeys_live`). `journeys_gate` hard-fails on
 `HARD_ROUTING_CHECKS`; the rest is printed and advisory (see limitations).
