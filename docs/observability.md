@@ -363,19 +363,33 @@ and `deploy/alertmanager/` are the reader; `deploy/alert-bridge/` is how an
 alert reaches a person.
 
 ```
-nora:9100 ─┐
-presence  ─┼─▶ Prometheus ──▶ Alertmanager ──▶ alert-bridge ──▶ signal-cli ──▶ 📱
-analytics ─┘   (scrape 30s,     (group,           (webhook →
-                rules)           throttle)         JSON-RPC)
+nora:9100  ─┐
+presence:  ─┼─▶ Prometheus ──▶ Alertmanager ──▶ alert-bridge ──▶ Discord
+  9101      │   (scrape 30s,     (group,          (webhook →      review
+analytics: ─┘    rules)           throttle)        REST POST)     channel
+  9103
 ```
 
+**It lands in the same Discord channel the participation mirror posts to**, so
+an alert arrives beside the determinations it is about rather than in a second
+place to remember.
+
 **The bridge is a separate container and does not go through Nora.** Nora
-already talks to signal-cli, so an `/alerts` endpoint on its aiohttp app would
-have been three lines — and it would have made the most important alert this
-stack can send, "Nora is down", depend on Nora being up. An alerting path that
-shares a failure domain with the thing it watches is decoration. It is stdlib
-only for the same reason: every dependency it does not have is one that cannot
-fail during an incident.
+already holds a Discord connection, so an `/alerts` endpoint on its aiohttp app
+would have been three lines — and it would have made the most important alert
+this stack can send, "Nora is down", depend on Nora being up. An alerting path
+that shares a failure domain with the thing it watches is decoration. It is
+stdlib only for the same reason: every dependency it does not have is one that
+cannot fail during an incident.
+
+**Discord's REST API, not the Gateway and not a webhook.** The Gateway is a
+persistent connection with a reconnect state machine — a lot of moving parts
+for one POST an hour at most. A webhook would work and would avoid handling a
+token, but it must be created by hand in the Discord UI and kept as a second
+credential, where `DISCORD_BOT_TOKEN` is already in `.env`. Alertmanager's own
+`discord_configs` receiver is the same trade and posts a fixed template we
+would then work around. The REST call does not care whether Nora's Gateway
+session is alive, which is the whole point of this container being separate.
 
 **Every rule is an ABSENCE**, which is the whole reason this exists alongside
 Sentry rather than instead of it — see "what counts as an error" below.

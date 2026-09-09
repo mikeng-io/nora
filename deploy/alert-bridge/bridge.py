@@ -1,10 +1,19 @@
-"""Alertmanager webhook -> signal-cli JSON-RPC. Nothing else.
+"""Alertmanager webhook -> a Discord channel. Nothing else.
 
 **Why it is its own container rather than an endpoint on Nora.** Nora already
-talks to signal-cli and already runs an aiohttp app, so adding `/alerts` there
-would have been three lines. It would also have made the single most important
-alert this stack can send — "Nora is down" — depend on Nora being up. An alerting
-path that shares a failure domain with the thing it watches is decoration.
+holds a Discord connection and already runs an aiohttp app, so adding `/alerts`
+there would have been three lines. It would also have made the single most
+important alert this stack can send — "Nora is down" — depend on Nora being up.
+An alerting path that shares a failure domain with the thing it watches is
+decoration.
+
+**Discord's REST API, not the Gateway and not a webhook.** The Gateway is a
+persistent connection with a reconnect state machine, which is a lot of moving
+parts for one POST an hour at most. A webhook would work too and would avoid
+handling a token — but it has to be created by hand in the Discord UI and
+pasted somewhere, where the bot token this already needs is in `.env`
+already. One credential, no manual step, and the REST call does not care
+whether Nora's Gateway session is alive.
 
 **Stdlib only, no dependencies.** This process exists to work on the worst day
 the deployment has. Every dependency it does not have is a dependency that
@@ -18,6 +27,7 @@ here would mean two components disagreeing about whether you have been told.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -25,18 +35,24 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-logging.basicConfig(
-    level=logging.INFO, format='{"ts":"%(asctime)s","level":"%(levelname)s","message":"%(message)s"}',
-)
+# JSON lines, matching Nora's own log shape (`nora/obs/logging.py`) so one
+# `docker logs` habit works on both.
+_FORMAT = '{"ts":"%(asctime)s","level":"%(levelname)s","message":"%(message)s"}'
+logging.basicConfig(level=logging.INFO, format=_FORMAT)
 log = logging.getLogger("alert-bridge")
 
-SIGNAL_RPC = os.environ.get("SIGNAL_RPC_URL", "http://signal-cli:18080/api/v1/rpc")
-RECIPIENT = os.environ.get("ALERT_SIGNAL_RECIPIENT", "")
+API = os.environ.get("DISCORD_API_BASE", "https://discord.com/api/v10")
+CHANNEL = os.environ.get("ALERT_DISCORD_CHANNEL", "")
+TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
 PORT = int(os.environ.get("ALERT_BRIDGE_PORT", "9110"))
-#: How long to wait on signal-cli. Short: a bridge blocked on a wedged
-#: transport stops accepting the NEXT alert, which is how one broken
-#: notification silences the rest.
-TIMEOUT = float(os.environ.get("ALERT_SIGNAL_TIMEOUT", "10"))
+#: How long to wait on Discord. Short: a bridge blocked on a wedged transport
+#: stops accepting the NEXT alert, which is how one broken notification
+#: silences the rest.
+TIMEOUT = float(os.environ.get("ALERT_DISCORD_TIMEOUT", "10"))
+#: Discord rejects a message body over 2000 characters outright. A burst of
+#: alerts can exceed it, and a 400 from Discord would turn "many things broke"
+#: into "you were told nothing" — the worst possible time to lose the message.
+MAX_CONTENT = 1900
 
 
 def render(payload: dict) -> str:
@@ -72,41 +88,51 @@ def render(payload: dict) -> str:
 
 
 def send(message: str) -> bool:
-    """POST to signal-cli's JSON-RPC. Never raises — a bridge that dies on a
+    """POST one message to the channel. Never raises — a bridge that dies on a
     bad response stops delivering every LATER alert too."""
-    if not RECIPIENT:
-        log.error("ALERT_SIGNAL_RECIPIENT is unset; alert not delivered")
+    if not CHANNEL or not TOKEN:
+        missing = " and ".join(
+            n for n, v in (("ALERT_DISCORD_CHANNEL", CHANNEL), ("DISCORD_BOT_TOKEN", TOKEN))
+            if not v
+        )
+        log.error("%s is unset; alert not delivered", missing)
         return False
-    body = json.dumps({
-        "jsonrpc": "2.0",
-        "id": "alert",
-        "method": "send",
-        "params": {"recipient": [RECIPIENT], "message": message},
-    }).encode()
-    request = urllib.request.Request(  # noqa: S310 — fixed http scheme from env
-        SIGNAL_RPC, data=body, headers={"Content-Type": "application/json"},
+    if len(message) > MAX_CONTENT:
+        # TRUNCATED, and it says so — for `render`'s reason one level down: a
+        # silently clipped message understates the incident.
+        message = message[:MAX_CONTENT] + "\n… truncated"
+    body = json.dumps({"content": message}).encode()
+    request = urllib.request.Request(  # noqa: S310 — fixed https base
+        f"{API}/channels/{CHANNEL}/messages",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bot {TOKEN}",
+            # Discord asks for one and blocks the default urllib agent.
+            "User-Agent": "NoraAlertBridge (https://github.com/mikeng-io/nora, 1.0)",
+        },
     )
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310
-            raw = response.read().decode("utf-8", "replace")
+            response.read()
+    except urllib.error.HTTPError as exc:
+        # The body carries Discord's own reason — a bad channel id, a bot
+        # without permission to post there, a 429. Logging the status alone
+        # would leave every one of those looking identical.
+        detail = ""
+        with contextlib.suppress(Exception):
+            # A failed read must not mask the HTTP error that is the point.
+            detail = exc.read().decode("utf-8", "replace")[:200]
+        log.error("discord refused the send: %s %s", exc.code, detail)
+        return False
     except (urllib.error.URLError, OSError) as exc:
-        log.error("signal-cli unreachable: %s", exc)
-        return False
-    # A JSON-RPC 200 can still carry an error object. Reading it is the
-    # difference between "delivered" and "the transport accepted the bytes".
-    try:
-        answer = json.loads(raw)
-    except ValueError:
-        log.error("signal-cli returned non-JSON: %s", raw[:200])
-        return False
-    if isinstance(answer, dict) and answer.get("error"):
-        log.error("signal-cli refused the send: %s", answer["error"])
+        log.error("discord unreachable: %s", exc)
         return False
     return True
 
 
 class Handler(BaseHTTPRequestHandler):
-    def do_POST(self) -> None:  # noqa: N802 — BaseHTTPRequestHandler's contract
+    def do_POST(self) -> None:  # BaseHTTPRequestHandler's contract
         if self.path.rstrip("/") != "/alert":
             self.send_response(404)
             self.end_headers()
@@ -122,17 +148,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         delivered = send(render(payload))
         # 200 EVEN WHEN THE SEND FAILED, and on purpose: a non-2xx makes
-        # Alertmanager retry, and a retry against a wedged signal-cli produces
-        # a queue of duplicate messages that all arrive at once when it
-        # recovers. The failure is logged and visible as a gap; the loop is
-        # worse than the gap.
+        # Alertmanager retry, and a retry against a rate-limited Discord
+        # produces a queue of duplicate messages that all arrive at once when
+        # the limit clears. The failure is logged and visible as a gap; the
+        # loop is worse than the gap.
         self.send_response(200 if delivered else 202)
         self.end_headers()
         self.wfile.write(b"ok" if delivered else b"logged")
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         # For the container healthcheck. It answers whether the BRIDGE is up,
-        # never whether signal-cli is — conflating the two would make a Signal
+        # never whether Discord is — conflating the two would make a Discord
         # outage restart this container pointlessly.
         self.send_response(200 if self.path.rstrip("/") in ("", "/health") else 404)
         self.end_headers()
@@ -144,5 +170,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    log.info("alert-bridge listening on :%d -> %s", PORT, SIGNAL_RPC)
+    log.info(
+        "alert-bridge listening on :%d -> %s/channels/%s",
+        PORT, API, CHANNEL or "<unset>",
+    )
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()  # noqa: S104
