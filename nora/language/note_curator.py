@@ -138,6 +138,7 @@ from nora.domain.notes import (
     default_revisit_at,
 )
 from nora.domain.ports import Proposal
+from nora.domain.prompt import escape, escape_attr
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.curator")
@@ -1351,7 +1352,7 @@ def _render_evidence(
     lines = ["evidence, newest last:"]
     for row in evidence:
         speaker = row.person_name or row.sender_name or row.sender_id
-        lines.append(f"[{row.id}] {speaker}: {row.body or ''}")
+        lines.append(f"[{row.id}] {escape(speaker)}: {escape(row.body or '')}")
     return "\n".join(lines)
 
 
@@ -1370,11 +1371,26 @@ def _note_block(
     """
     anchor_attr = f' anchor="{note.anchor_date}"' if note.anchor_date is not None else ""
     evidence_line = f"\n  {evidence_text}" if evidence_text is not None else ""
+    # ESCAPED, per R-13, and added 2026-09-10 after a CMS audit found this
+    # renderer was the one place in the tier that skipped it. Every value here
+    # is group-derived: `title`, `body`, `uncertainty` and `closing_condition`
+    # are model-authored FROM a transcript the group wrote (two hops, the same
+    # shape `standing_render` and `note_render` already escape for), and the
+    # evidence rows are members' own typed messages.
+    #
+    # It matters most HERE: the curator is the only destructive writer in the
+    # background tier — it retires notes and discharges claims into memory —
+    # and it is the only renderer whose output frames its subject in an XML
+    # tag the text is interpolated into. A member typing a closing tag could
+    # end a note block early; one typing an opening tag could add a note that
+    # nothing wrote. `_ground` catches a forged citation id, and catches
+    # nothing about a forged block boundary.
     return (
-        f'<note id="{handle}" title="{note.title}"{anchor_attr}>\n'
-        f"  uncertainty: {note.uncertainty}\n"
-        f"  closing condition: {note.closing_condition}\n"
-        f"  body: {body}{evidence_line}\n"
+        f'<note id="{escape_attr(handle)}" title="{escape_attr(note.title)}"'
+        f'{anchor_attr}>\n'
+        f"  uncertainty: {escape(note.uncertainty)}\n"
+        f"  closing condition: {escape(note.closing_condition)}\n"
+        f"  body: {escape(body)}{evidence_line}\n"
         f"</note>"
     )
 

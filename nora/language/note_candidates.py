@@ -125,6 +125,7 @@ from nora.domain.notes import (
     default_revisit_at,
 )
 from nora.domain.ports import DreamSink, Proposal
+from nora.domain.prompt import escape
 from nora.language.note_render import render_notes
 from nora.obs.metrics import Metrics
 
@@ -324,7 +325,11 @@ def _render_line(row: TranscriptRow, *, room: str, tz: _dt.tzinfo) -> str:
     name = row.person_name or row.sender_name or row.sender_id
     body = row.body or _media_placeholder(row)
     ts = _dt.datetime.fromtimestamp(row.ts / 1000, tz=tz).strftime(_LINE_TIME_FORMAT)
-    line = f"{row.id} [{ts}] {name} ({room}): {body}"
+    # ESCAPED, per R-13 (added 2026-09-10). These lines are members' own typed
+    # messages, and the `<notes>` index is appended to the SAME prompt below
+    # them — so an unescaped body could forge that block's tags even though
+    # this line is not itself inside one.
+    line = f"{row.id} [{ts}] {escape(name)} ({escape(room)}): {escape(body)}"
     if row.quoted_ts is not None:
         quoted = _dt.datetime.fromtimestamp(
             row.quoted_ts / 1000, tz=tz,
