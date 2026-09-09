@@ -2397,6 +2397,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     dream_adaptors: tuple[DreamAdaptor, ...] = ()
     dreamer_runtime: DreamerRuntime | None = None
     dream_schedules: Mapping[str, AdaptorSchedule] = {}
+    # ONE schedule-state store, shared by the loop's slots and the proactive
+    # adaptor's pass/wake clocks (issue #136): two instances would be two
+    # engines over one table for no reason.
+    dream_schedule_clock = SqlDreamScheduleClock(engine)
     if cfg.dreamer.enabled:
         # The note tier's curator, on its OWN gate and behind the tier's.
         # `[notes] enabled` decides whether the index is injected and the four
@@ -2641,9 +2645,17 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 # from an unset one. The reading that would move it is the
                 # decide suite (39 §5) showing rows scheduled too close to
                 # their moment to matter.
+                # HOURLY since issue #136 (operator, 2026-09-09), not the
+                # daily 07:00 HK slot 39 D10 first chose: the adaptor's own
+                # deterministic check decides whether a tick RENDERS — a
+                # daily floor at 07:00 HK, or a change in the workspace's
+                # notes/Standing once its rooms are quiet — and a tick that
+                # does not render is one SQL read and no model call. The
+                # slot is therefore the ceiling on how soon a change is seen,
+                # and the reversal condition is on
+                # `nora_proactive_pass_total{reason}`, not on this number.
                 PROACTIVE_ADAPTOR_NAME: AdaptorSchedule(
-                    min_interval_seconds=86400,
-                    phase_offset_seconds=23 * 3600,
+                    min_interval_seconds=3600,
                     # Inert for a watermark-free adaptor (the curator's own
                     # comment): no `record.since` read ever happens for it.
                     batch_limit=1,
@@ -2662,6 +2674,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     timezone=ZoneInfo(cfg.reminders.timezone),
                     self_card_conclusions=cfg.memory.self_card_conclusions,
                     metrics=metrics,
+                    # The SAME schedule-state store the runtime's slots use,
+                    # for the pass and wake clocks (issue #136); the audit
+                    # store for the quiet check; `[dreamer] quiet_seconds`
+                    # with its existing meaning.
+                    clock_store=dream_schedule_clock,
+                    records=audit,
+                    quiet_seconds=cfg.dreamer.quiet_seconds,
                 ),
             )
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
@@ -2813,7 +2832,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         dreamer_runtime=dreamer_runtime,
         dream_adaptors=dream_adaptors,
         dream_schedules=dream_schedules,
-        dream_schedule_clock=SqlDreamScheduleClock(engine),
+        dream_schedule_clock=dream_schedule_clock,
         workspace_scopes=workspace_scopes,
         events=events,
     )

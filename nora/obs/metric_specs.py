@@ -1632,6 +1632,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # tool call this item records) or `decline` (considered and left). The
     # rows themselves are counted by `nora_reminders_created_total`; this is
     # the decision record beside them.
+    # The deterministic check before the decide turn (issue #136): why an
+    # hourly tick rendered a prompt, or why it did not. `daily` and `changed`
+    # are the ticks that cost a model call; `unchanged` and `held_quiet` cost
+    # one store read; `unclocked` is a wiring gap (no pass clock) that
+    # renders every tick. The reversal condition on the change-driven shape
+    # is `changed` runs far outnumbering remind decisions.
+    _CounterSpec(
+        "nora_proactive_pass_total",
+        "Proactive adaptor ticks, by why they rendered or did not: daily "
+        "(the floor), changed (notes/Standing moved and the rooms are quiet), "
+        "held_quiet (moved but a room is still talking), unchanged, or "
+        "unclocked (no pass clock wired — every tick renders).",
+        ("reason",),
+    ),
     _CounterSpec(
         "nora_proactive_decisions_total",
         "Proactive decide-turn decisions, by action: remind or decline.",
