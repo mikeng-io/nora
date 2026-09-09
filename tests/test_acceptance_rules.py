@@ -924,8 +924,8 @@ async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
         def model(self) -> str:
             return "test-model"
 
-        async def complete(self, *, prompt: str) -> debrief.Completion:
-            self.prompts.append(prompt)
+        async def complete(self, *, system: str, prompt: str) -> debrief.Completion:
+            self.prompts.append(f"{system}\n\n{prompt}")
             return debrief.Completion(
                 json.dumps({"standing": "the revised position"}), "stop")
 

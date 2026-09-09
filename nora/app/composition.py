@@ -44,6 +44,11 @@ from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
+from nora.agent.structured import (
+    ask_structured,
+    ask_text,
+    build_structured_model,
+)
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
@@ -105,7 +110,7 @@ from nora.ingest.policy import (
     VoiceNotePolicy,
 )
 from nora.ingest.relevance_gate import Completion as GateCompletion
-from nora.ingest.relevance_gate import RelevanceGate
+from nora.ingest.relevance_gate import GateVerdictSchema, RelevanceGate
 from nora.ingest.stages import standing_event
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
@@ -185,6 +190,26 @@ def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
     return cast(ReasoningEffort, value)
 
 
+def _annotate_usage_triple(usage: tuple[int, int, int] | None) -> None:
+    """`_annotate_usage`, for a caller that already has the counts.
+
+    The SDK reports usage as an accumulated triple rather than on a response
+    object, and it is ACCUMULATED across the exchange's turns — which is the
+    honest number for a structured call, since the tool round-trip is what it
+    cost to get one verdict.
+    """
+    if usage is None:
+        return
+    prompt, completion, total = usage
+    annotate(**{
+        "gen_ai.usage.input_tokens": prompt,
+        "gen_ai.usage.output_tokens": completion,
+        "gen_ai.usage.total_tokens": total,
+        "gen_ai.usage.prompt_tokens": prompt,
+        "gen_ai.usage.completion_tokens": completion,
+    })
+
+
 def _annotate_usage(response: Any) -> None:
     """Put a raw completion's token counts on the span that is current.
 
@@ -220,96 +245,54 @@ def _annotate_usage(response: Any) -> None:
 
 
 class _RelevanceGateModelClient:
-    """Satisfies `nora.ingest.relevance_gate.ModelClient`
-    (design/dreamer-agent-loop/36 §2.3).
+    """Satisfies `nora.ingest.relevance_gate.ModelClient` — one structured
+    call THROUGH THE AGENT SDK (design/dreamer-agent-loop/36 §2.3).
 
-    A sibling of `_DebriefModelClient` and not a reuse of it, for two reasons
-    that are both about the gate being a MEASUREMENT and not a stage:
+    Not a raw `chat.completions.create` any more. The SDK is how this repo
+    talks to a model; four call sites had grown their own raw clients with
+    four different subsets of the machinery the SDK provides for free — no
+    retry on two of them, no `finish_reason` check on one, no token usage on
+    any — because nothing said what a raw client owed. This one goes back
+    through `nora.agent.structured`, which is the single place `strands` may
+    be imported from at all.
 
-    * It passes `max_tokens` and `temperature`, which that class does not.
-      The gate's ceiling is small on purpose — a gate with room to write
-      paragraphs has room to start drafting the reply it must never draft —
-      and its temperature is near zero because an instrument that answers
-      differently on the same input is not one.
-    * Its model is its OWN combo (`nora-gate`), never the tag lane's.
+    Still no loop and no tools: `ask_structured` builds an agent with
+    `tools=[]` and one turn. «No agent loop» (`03-no-agent-loop.md`) is about
+    the LOOP, and a schema-constrained single call is not one — the gate's
+    whole input set is knowable before the call, so there is nothing for a
+    loop to discover.
 
-    Everything else is that class's, for its stated reasons:
-    `response_format={"type": "json_object"}` because prompt-only JSON
-    enforcement was proven insufficient in this repo once already, and an
-    explicit `asyncio.wait_for` because the bare `AsyncOpenAI` default is 600s
-    x retries — and this call runs while the conversation's slot is HELD, so
-    an unbounded one is not a slow background job, it is a room that stops
-    answering.
-
-    `reasoning_effort` IS passed, and the first version of this class did not
-    pass it at all — `_DebriefModelClient` above carries the identical note
-    for the identical omission, and the argument is the same: a setting left
-    to the route is a setting nobody chose.
-
-    It PINS rather than saves. Measured both ways on `nora-gate` (n=4): with
-    the flag and without it the combo returned identical numbers, so its
-    members already reason none today — and "today" is a property of the
-    combo's membership, which an operator can change without touching this
-    class. Shipped `none` because the gate is one classification with a fixed
-    two-value output.
+    `tool_choice` is DECLARED rather than left to the SDK. Unset, Strands
+    sends `tool_choice: None` and a provider applying its thinking-mode
+    default refuses outright — «Thinking mode does not support this
+    tool_choice», measured against the `nora-gate` combo, which fans out and
+    failed on one member while succeeding on another.
     """
 
     def __init__(
-        self, *, client: AsyncOpenAI, model: str, max_tokens: int,
+        self, *, base_url: str, api_key: str, model: str, max_tokens: int,
         temperature: float, timeout_seconds: float,
         reasoning_effort: ReasoningEffort,
     ) -> None:
-        self._client = client
-        self._model = model
-        self._max_tokens = max_tokens
-        self._temperature = temperature
+        self._model_id = model
         self._timeout_seconds = timeout_seconds
-        self._reasoning_effort = reasoning_effort
+        self._provider = build_structured_model(
+            base_url=base_url, api_key=api_key, model_id=model,
+            max_tokens=max_tokens, temperature=temperature,
+            reasoning_effort=str(reasoning_effort),
+        )
 
     @property
     def model(self) -> str:
-        return self._model
+        return self._model_id
 
     async def complete(self, *, system: str, prompt: str) -> GateCompletion:
-        response = await asyncio.wait_for(
-            self._client.chat.completions.create(
-                model=self._model,
-                messages=[
-                    # The instruction in the SYSTEM role, the room in the USER
-                    # role. Concatenated into one user string — which is what
-                    # this was — a member typing `[assistant]:` is
-                    # indistinguishable from a turn Nora took, because both are
-                    # characters in the same block under the same role.
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=self._max_tokens,
-                temperature=self._temperature,
-                reasoning_effort=self._reasoning_effort,
-            ),
-            timeout=self._timeout_seconds,
+        got = await ask_structured(
+            model=self._provider, prompt=prompt, schema=GateVerdictSchema,
+            timeout_seconds=self._timeout_seconds, system_prompt=system,
         )
-        # Token cost, onto the gate's OWN span rather than into
-        # `GateCompletion`. The gate has no use for usage — its verdict does
-        # not depend on it — and widening the port's return type to carry a
-        # number only the collector reads would be the measurement changing
-        # the thing it measures. `annotate` writes to the span that is current
-        # right now, and that is `relevance_gate`'s, because `decide` opens it
-        # around this call.
-        #
-        # WITHOUT this the gate is a GENERATION in Langfuse reporting zero
-        # tokens forever (read back live, 2026-09-08), and the cost of the
-        # flip to `shadow = false` is exactly what the soak has to price.
-        _annotate_usage(response)
-        choice = response.choices[0]
-        return GateCompletion(
-            content=(choice.message.content or "").strip(),
-            # `or ""` and not a `"stop"` default: a provider that omits the
-            # field has told us nothing, and inventing `"stop"` would assert
-            # the call completed. `_DebriefModelClient`'s argument, unchanged.
-            finish_reason=choice.finish_reason or "",
-        )
+        _annotate_usage_triple(got.usage)
+        return GateCompletion(content=got.content, finish_reason=got.finish_reason)
 
 
 class _DebriefModelClient:
@@ -344,51 +327,29 @@ class _DebriefModelClient:
     """
 
     def __init__(
-        self, *, client: AsyncOpenAI, model: str, timeout_seconds: float,
-        reasoning_effort: ReasoningEffort,
+        self, *, base_url: str, api_key: str, model: str, timeout_seconds: float,
+        reasoning_effort: ReasoningEffort, max_tokens: int, temperature: float,
     ) -> None:
-        self._client = client
-        self._model = model
+        self._model_id = model
         self._timeout_seconds = timeout_seconds
-        # DECLARED, not inherited from the provider's default. This class did
-        # not pass it at all, so the fold ran at whatever the route happened to
-        # do — an unchosen setting on a call that spends the conversation's
-        # slot, while the tag path passes `[llm] reasoning_effort` explicitly.
-        # The VALUE is not argued anywhere: `18-flows.md` calls the fold's
-        # effort "a measurement, not a setting" and specifies a spike over the
-        # retained traces. This makes that spike runnable.
-        self._reasoning_effort = reasoning_effort
+        self._provider = build_structured_model(
+            base_url=base_url, api_key=api_key, model_id=model,
+            max_tokens=max_tokens, temperature=temperature,
+            reasoning_effort=str(reasoning_effort),
+        )
 
     @property
     def model(self) -> str:
-        return self._model
+        return self._model_id
 
-    async def complete(self, *, prompt: str) -> DebriefCompletion:
-        response = await asyncio.wait_for(
-            self._client.chat.completions.create(
-                model=self._model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-                reasoning_effort=self._reasoning_effort,
-            ),
-            timeout=self._timeout_seconds,
+    async def complete(self, *, system: str, prompt: str) -> DebriefCompletion:
+        got = await ask_text(
+            model=self._provider, prompt=prompt,
+            timeout_seconds=self._timeout_seconds, system_prompt=system,
         )
-        # The same annotation the gate client makes, for the same reason and
-        # the same measured gap: this client serves the debrief AND the
-        # standing fold, and both exported to Langfuse costing zero tokens.
-        # It goes on the span rather than into `DebriefCompletion` — usage is
-        # the provider's fact, and neither caller's verdict depends on it.
-        _annotate_usage(response)
-        choice = response.choices[0]
+        _annotate_usage_triple(got.usage)
         return DebriefCompletion(
-            content=(choice.message.content or "").strip(),
-            # `or ""` rather than a default of `"stop"`: a provider that omits
-            # the field has told us nothing, and inventing `"stop"` would be
-            # asserting the call completed. An empty string is not `"length"`,
-            # so the body is parsed — which is the right call, because the
-            # parse itself is the second gate and a well-formed body is
-            # evidence the generation finished.
-            finish_reason=choice.finish_reason or "",
+            content=got.content, finish_reason=got.finish_reason,
         )
 
 
@@ -1370,7 +1331,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             record_store=audit,
             media_join=media_join,
             client=_DebriefModelClient(
-                client=client,
+                base_url=cfg.llm.base_url,
+                api_key=os.environ.get(cfg.llm.api_key_env, ""),
+                max_tokens=cfg.llm.max_tokens,
+                temperature=cfg.llm.temperature,
                 model=cfg.standing.model or cfg.llm.model,
                 timeout_seconds=cfg.standing.timeout_seconds,
                 reasoning_effort=_reasoning_effort(
@@ -1946,7 +1910,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # which workspace a room belongs to.
             workspace_of=_note_workspace_of(allowlist),
             client=_DebriefModelClient(
-                client=client,
+                base_url=cfg.llm.base_url,
+                api_key=os.environ.get(cfg.llm.api_key_env, ""),
+                max_tokens=cfg.llm.max_tokens,
+                temperature=cfg.llm.temperature,
                 model=cfg.standing.model or cfg.llm.model,
                 timeout_seconds=cfg.standing.timeout_seconds,
                 # Empty means inherit `[llm] reasoning_effort` — the same
@@ -2256,7 +2223,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # two cannot come apart.
         gate = RelevanceGate(
             client=_RelevanceGateModelClient(
-                client=client,
+                base_url=cfg.llm.base_url,
+                api_key=os.environ.get(cfg.llm.api_key_env, ""),
                 model=cfg.relevance_gate.model,
                 max_tokens=cfg.relevance_gate.max_tokens,
                 temperature=cfg.relevance_gate.temperature,

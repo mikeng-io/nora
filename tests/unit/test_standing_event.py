@@ -48,11 +48,11 @@ class _Client:
     def model(self) -> str:
         return "test-model"
 
-    async def complete(self, *, prompt: str) -> standing_event.Completion:
+    async def complete(self, *, system: str, prompt: str) -> standing_event.Completion:
         self.calls += 1
-        self.prompts.append(prompt)
+        self.prompts.append(f"{system}\n\n{prompt}")
         self._n += 1
-        if "The position you write must be at most" in prompt:
+        if "The position you write must be at most" in system:
             # The STANDING call's prompt carries the max_chars sentence.
             if self._malformed:
                 return standing_event.Completion("not json", "stop")

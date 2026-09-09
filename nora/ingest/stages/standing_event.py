@@ -330,17 +330,19 @@ async def _fold_batch(
     )
 
     async def _standing() -> tuple[str | None, str]:
-        reply = await wiring.client.complete(prompt=_debrief_prompt(
+        system, user = _debrief_prompt(
             instructions=instructions, rendered=rendered, max_chars=wiring.max_chars,
-        ))
+        )
+        reply = await wiring.client.complete(system=system, prompt=user)
         # `conversation_id` stands in for the tag id in the refusal logs: a
         # rollup fold has no tag, and the parse rules are the tag path's.
         return _debrief_check(reply, conversation_id)
 
     async def _judge() -> Completion:
-        return await wiring.client.complete(prompt=_debrief_verdict_prompt(
+        system, user = _debrief_verdict_prompt(
             instructions=verdict_instructions, rendered=rendered_verdict,
-        ))
+        )
+        return await wiring.client.complete(system=system, prompt=user)
 
     try:
         (body, refusal), _verdict = await asyncio.wait_for(

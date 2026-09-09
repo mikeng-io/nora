@@ -57,6 +57,8 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 from xml.sax.saxutils import escape
 
+from pydantic import BaseModel, Field
+
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import RecordStore
@@ -101,6 +103,28 @@ class Completion:
 
     content: str
     finish_reason: str
+
+
+class GateVerdictSchema(BaseModel):
+    """The verdict, as a schema the SDK constrains the model to.
+
+    The SAME two fields `participation.md` asks for in prose and
+    `parse_verdict` reads back — declared once so the structured path and the
+    raw path answer the same question rather than two similar ones.
+
+    `relevance_score` defaults to the `-1.0` sentinel `parse_verdict` already
+    uses for absent, because the score is optional by design: a gate that must
+    invent a number to answer at all is a gate reporting confidence it does
+    not have.
+    """
+
+    verdict: Literal["go", "no_go"] = Field(
+        description="whether this window is worth a participation turn",
+    )
+    relevance_score: float = Field(
+        default=-1.0,
+        description="0.0-1.0 that the room wants Nora; omit rather than guess",
+    )
 
 
 class StandingReader(Protocol):

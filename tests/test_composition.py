@@ -1027,6 +1027,12 @@ async def test_the_debrief_reads_its_objective_from_the_instruction_substrate(cf
     assert "revise ONE short paragraph" in body
 
 
+def _effort_of(client: object) -> str:
+    """The `reasoning_effort` actually on the model provider's params."""
+    provider = client._provider
+    return str((provider.config.get("params") or {}).get("reasoning_effort", ""))
+
+
 async def test_the_debrief_declares_a_reasoning_effort_rather_than_inheriting_silently(cfg):
     """It passed none at all, so the fold ran at the provider's default — an
     unchosen setting on a call that spends the conversation's slot, while the
@@ -1043,11 +1049,15 @@ async def test_the_debrief_declares_a_reasoning_effort_rather_than_inheriting_si
     # test pinning today's config rather than the rule.
     explicit = await build_dependencies(override_config(
         cfg, {"standing.enabled": True, "standing.reasoning_effort": "none"}))
-    assert explicit.engagement._debrief_wiring.client._reasoning_effort == "none"
+    # Read off the PROVIDER the client built, not a field it stored. Since the
+    # fold moved onto the Agent SDK the effort's whole job is to reach the
+    # request; an attribute nobody sends would satisfy a stored-field check and
+    # change nothing about the call.
+    assert _effort_of(explicit.engagement._debrief_wiring.client) == "none"
 
     inherited = await build_dependencies(override_config(
         cfg, {"standing.enabled": True, "standing.reasoning_effort": ""}))
-    assert (inherited.engagement._debrief_wiring.client._reasoning_effort
+    assert (_effort_of(inherited.engagement._debrief_wiring.client)
             == cfg.llm.reasoning_effort)
 
 

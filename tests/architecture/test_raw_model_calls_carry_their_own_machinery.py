@@ -97,10 +97,11 @@ def _enclosing_functions_with_raw_calls(
 #: the reason is written next to it — never omitted to make the gate green.
 #: Reducing a requirement here is a design change and reads as one in review.
 REQUIRED: dict[str, tuple[str, ...]] = {
-    # The gate: one structured call per closed window, the highest-frequency
-    # model call in the system once a room is opted in.
-    "nora/ingest/relevance_gate.py": (),          # the Protocol, not a caller
-    "nora/app/composition.py": FACETS,
+    # `nora/app/composition.py` is GONE from this list, and that is the point
+    # of the whole convention: the relevance gate, the debrief and the
+    # standing fold now call the model through `nora.agent.structured`, so
+    # they inherit the SDK's machinery instead of each hand-rolling a
+    # different subset of it. Two raw call sites remain, both below.
     # NOT `usage`, and the reason is structural rather than an oversight:
     # `nora.infra` may not import `nora.obs` (the layered-architecture
     # contract, enforced by `lint-imports`), so a raw client in this layer

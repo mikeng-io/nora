@@ -199,7 +199,7 @@ class ModelClient(Protocol):
     @property
     def model(self) -> str: ...
 
-    async def complete(self, *, prompt: str) -> Completion: ...
+    async def complete(self, *, system: str, prompt: str) -> Completion: ...
 
 
 class ObjectiveSource(Protocol):
@@ -299,7 +299,7 @@ def _trace_safe(text: str) -> tuple[str, str]:
 
 
 async def _complete(
-    client: ModelClient, *, prompt: str, call: str, trace: TagTrace,
+    client: ModelClient, *, prompt: tuple[str, str], call: str, trace: TagTrace,
 ) -> Completion:
     """The fold's model call, as a GENERATION span (issue #64).
 
@@ -326,7 +326,11 @@ async def _complete(
     pipeline opens that span around `debrief.run`, and `asyncio.wait_for` keeps
     the context whether it awaits in place or wraps a task.
     """
-    body, withheld = _trace_safe(prompt)
+    system, user = prompt
+    # Both halves on the trace, joined, so the digest still reconstructs the
+    # WHOLE input. Hashing only the user half would make two folds with
+    # different objectives collide.
+    body, withheld = _trace_safe(f"{system}\n\n{user}")
     with span(
         f"engagement.debrief.{call}",
         **{
@@ -340,11 +344,11 @@ async def _complete(
             # The reference the withheld case still re-derives from: this digest
             # plus the retained `TagTrace` for `nora.tag_id` reconstructs the
             # exact prompt without the trace ever having carried it.
-            "nora.debrief.prompt_sha256": instruction_sha256(prompt),
+            "nora.debrief.prompt_sha256": instruction_sha256(f"{system}\n\n{user}"),
             "nora.debrief.prompt_withheld": withheld,
         },
     ):
-        reply = await client.complete(prompt=prompt)
+        reply = await client.complete(system=system, prompt=user)
         out, out_withheld = _trace_safe(reply.content)
         # `finish_reason` on the span rather than only in `_check`'s branch: a
         # `"length"` finish is the R-27 substitution this stage exists to
@@ -359,15 +363,25 @@ async def _complete(
         return reply
 
 
-def _prompt(*, instructions: str, rendered: str, max_chars: int) -> str:
+def _prompt(
+    *, instructions: str, rendered: str, max_chars: int,
+) -> tuple[str, str]:
+    """`(system, user)` — the objective and its length rule in the SYSTEM
+    role, the turn being folded in the USER role.
+
+    They were one concatenated string. That is not merely untidy: the rendered
+    half is a transcript of what people typed, so with both in one user
+    message an instruction written by a member sits in the same role as the
+    operator's, and nothing downstream can tell which is which.
+    """
     return (
         f"{instructions}\n\n"
-        f"The position you write must be at most {max_chars} characters.\n\n"
-        f"{rendered}"
+        f"The position you write must be at most {max_chars} characters.",
+        rendered,
     )
 
 
-def _verdict_prompt(*, instructions: str, rendered: str) -> str:
+def _verdict_prompt(*, instructions: str, rendered: str) -> tuple[str, str]:
     """Call B's prompt: the judge's objective plus the whole turn, no cap.
 
     No `{max_chars}` sentence — that limit exists because the standing row is
@@ -376,12 +390,12 @@ def _verdict_prompt(*, instructions: str, rendered: str) -> str:
     written for the position into the judge's prompt would be one more way the
     two jobs bleed into each other.
     """
-    return f"{instructions}\n\n{rendered}"
+    return instructions, rendered
 
 
 def _consolidate_prompt(
     *, instructions: str, rendered: str, max_chars: int, over: str
-) -> str:
+) -> tuple[str, str]:
     """The retry, and it is a RETRY rather than a truncation.
 
     The model is shown its own over-long answer and the number it missed, which
@@ -404,9 +418,12 @@ def _consolidate_prompt(
     the clauses that made it a recap (the falsifier and the flip condition live
     in `design/standing-split-fold/20-ratchet-and-tiebreak.md`).
     """
+    # `(system, user)`: the objective, the length rule and the consolidation
+    # rules are the OPERATOR's and go in the system role; the turn and the
+    # model's own over-long answer are the material being worked on.
     return (
         f"{instructions}\n\n"
-        f"The position you write must be at most {max_chars} characters.\n\n"
+        f"The position you write must be at most {max_chars} characters.",
         f"{rendered}\n\n"
         f"Your previous answer was {len(over)} characters, which is over the "
         f"{max_chars}-character limit, so it was NOT saved. Consolidate it now "

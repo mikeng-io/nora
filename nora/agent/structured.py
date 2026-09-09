@@ -139,3 +139,37 @@ async def ask_structured(
         finish_reason="length" if stop == "max_tokens" else stop,
         usage=usage,
     )
+
+
+async def ask_text(
+    *, model: OpenAIModel, prompt: str, timeout_seconds: float,
+    system_prompt: str | None = None,
+) -> StructuredResult:
+    """One call returning TEXT, through the SDK, with no loop and no tools.
+
+    The debrief and the standing fold want prose-or-JSON in the body rather
+    than a validated object, so they get this instead of `ask_structured` —
+    same agent construction, same system/user split, no tool specification in
+    the request at all. `content` is the model's text; `finish_reason` is
+    translated into the raw-completion vocabulary its callers already check.
+    """
+    agent = Agent(model=model, tools=[], callback_handler=None,
+                  system_prompt=system_prompt)
+    result = await asyncio.wait_for(
+        agent.invoke_async(prompt), timeout=timeout_seconds,
+    )
+    accumulated = getattr(getattr(result, "metrics", None), "accumulated_usage", None)
+    usage = (
+        (
+            int(accumulated.get("inputTokens", 0)),
+            int(accumulated.get("outputTokens", 0)),
+            int(accumulated.get("totalTokens", 0)),
+        )
+        if accumulated else None
+    )
+    stop = str(getattr(result, "stop_reason", "") or "")
+    return StructuredResult(
+        content=str(result).strip(),
+        finish_reason="length" if stop == "max_tokens" else stop,
+        usage=usage,
+    )

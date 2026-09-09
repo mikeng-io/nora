@@ -45,8 +45,8 @@ class _Client:
     def model(self) -> str:
         return "test-model"
 
-    async def complete(self, *, prompt: str) -> debrief.Completion:
-        self.prompts.append(prompt)
+    async def complete(self, *, system: str, prompt: str) -> debrief.Completion:
+        self.prompts.append(f"{system}\n\n{prompt}")
         item = self._script.pop(0) if self._script else debrief.Completion("{}", "stop")
         if isinstance(item, BaseException):
             raise item
@@ -507,7 +507,7 @@ async def test_a_slow_fold_is_cut_at_its_own_timeout():
     background job — it is a room that stops answering. Its own label, because
     this is the reading `[standing] timeout_seconds` is tuned against."""
     class _Slow(_Client):
-        async def complete(self, *, prompt: str):
+        async def complete(self, *, system: str, prompt: str):
             await asyncio.sleep(5)
             raise AssertionError("should have been cut off")
 
@@ -533,8 +533,8 @@ async def test_the_two_calls_share_one_budget():
     implementations disagree — which is the whole point of the test.
     """
     class _SlowFirst(_Client):
-        async def complete(self, *, prompt: str):
-            self.prompts.append(prompt)
+        async def complete(self, *, system: str, prompt: str):
+            self.prompts.append(f"{system}\n\n{prompt}")
             await asyncio.sleep(0.06)          # under a 0.10s per-call bound...
             # Keyed on the prompt's SHAPE, not the call count: the two calls
             # now interleave (issue #78 Phase 2), so `len(self.prompts)` at
@@ -720,7 +720,7 @@ async def test_the_two_calls_start_before_either_finishes():
     events: list[str] = []
 
     class _Stagger(_Client):
-        async def complete(self, *, prompt: str):
+        async def complete(self, *, system: str, prompt: str):
             events.append("start")
             await asyncio.sleep(0.10)
             events.append("end")
