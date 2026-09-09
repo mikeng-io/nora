@@ -280,21 +280,95 @@ Every call site uses plain stdlib `logging.getLogger`; there is no
 `foreign_pre_chain` into the same JSON stream.
 
 **Container logs are not on the docker log driver** — `docker compose logs nora`
-is empty. Use the metrics endpoint and the tables.
+is empty. The file is `data/nora.log`.
 
-**What is NOT settled: what to log, at which level, with which fields.** The
-transport is conventioned; the content is not. That is a live gap and is listed
-below rather than described as though it were a rule.
+### The fields
 
----
+| field | on | what it is |
+|---|---|---|
+| `ts` | every line | RFC 3339, UTC, `…Z`. Never naive — a store windows and sorts on it |
+| `level` | every line | `INFO`/`WARNING`/… — what a HUMAN greps, and what `docs/runbook.md`'s saved queries were written against |
+| `severity_number` | every mapped level | OTel SeverityNumber — what a MACHINE compares |
+| `logger` | every line | dotted module name |
+| `message` | every line | the event |
+| `tag_id` | inside a turn | bound by the engagement pipeline and the fire path |
+| `exception`, `exception.type`, `exception.message`, `exception.stacktrace` | on an exception | the blob, plus OTel's three parts |
+
+### Severity is a number, not just a word
+
+`level` sorts alphabetically — ERROR before INFO before WARNING — so "at least
+a warning" cannot be expressed as a comparison over it. The [OTel Logs Data
+Model](https://opentelemetry.io/docs/specs/otel/logs/data-model/) exists for
+that, and defines the answer as a number in **bands**: TRACE 1-4, DEBUG 5-8,
+INFO 9-12, WARN 13-16, ERROR 17-20, FATAL 21-24. `severity_number` carries it,
+and `SEVERITY_NUMBERS` in `nora/obs/logging.py` is the mapping.
+
+We emit the BASE of each band, because nothing here distinguishes "a slightly
+worse ERROR". **An unmapped level gets no field rather than a guessed one** —
+the same three-state discipline R-27 imposes on every other instrument: absent
+means "not stated", never "zero".
+
+### An exception is three fields, not one blob
+
+`format_exc_info` renders the whole traceback into one `exception` string with
+the type and message buried in its last line, which makes "how many
+`TimeoutError`s since the deploy" a substring search over multi-line blobs. The
+[OTel exception semantic
+conventions](https://opentelemetry.io/docs/specs/semconv/exceptions/exceptions-logs/)
+name the three parts and `_exception_fields` writes them; the blob stays, so
+saved greps keep working. Those conventions also say an unhandled exception
+SHOULD be recorded at ERROR (severity 17), which is what `log.exception` does.
+
+**A traceback we cannot parse sets neither derived field** rather than half of
+one — the last line of a Python traceback is `Type: message`, or a bare `Type`,
+and anything else is left alone.
+
+### A log line is not a metric
+
+This is R-76's judgement, one signal over. It was learned the same way and cost
+the same thing: measured over 37 days on the deployment, **78% of 205,099 log
+lines said that nothing had happened**.
+
+- `aiohttp.access` — 108,441 lines (53%), one INFO per poll of a server that
+  routes `/health` and `/metrics`. Silenced at the source (`access_log=None` in
+  `nora/obs/health.py`). How often something scraped is a question for the
+  scraper; whether the endpoint is healthy is the healthcheck's own verdict.
+- `nora.heartbeat` — 51,964 lines (25%), two counters restated every minute
+  whether or not they moved. Now **INFO when they moved, DEBUG when they did
+  not**, with the first beat always INFO because it records where the counters
+  started.
+
+The rule that generalises: **if the answer is "how many, how often, with what
+outcome", it is a counter, and a log line that restates it every interval is a
+third copy of a number two other systems already hold.** Log an EVENT — a
+decision, a refusal, a failure, a state change — not a reading.
+
+**The known cost, stated rather than discovered later:** an idle-but-alive
+deployment now emits nothing at the default level, so the log alone no longer
+distinguishes idle from dead. That was always better served by `/health` and by
+the `nora_*` gauges, and it comes back the moment anything scrapes them — see
+the gap below.
+
+### Not settled
+
+What to log at WARNING versus ERROR, and which fields a given event must carry,
+is still per-author. The transport, the field set and the two rules above are
+conventioned; the editorial judgement is not.
 
 ## Known gaps
 
 Recorded here so they are findings rather than surprises.
 
-- **The log content convention does not exist.** Levels, message shape, and
-  which fields a line must carry are per-author. The format underneath them is
-  already uniform, so this is a smaller job than it looks.
+- **Nothing scrapes the metrics, and nothing alerts.** Measured 2026-09-09:
+  no Prometheus, no Alertmanager, no scraper of any kind, and no established
+  connection to `:9100`. The 94 `nora_*` series exist only while a human is
+  curling them. `deploy/watchdog.sh` is present but on no timer and no cron.
+  `nora-egress.service` had been in `failed` state for sixteen days and nothing
+  said so. **This is the largest gap in this document**: three stores and no
+  reader.
+- **WARNING-versus-ERROR is still per-author**, as is which fields an event
+  must carry. The transport and the field set are conventioned now; the
+  editorial judgement is not.
 - **A vision read exports as a generation costing zero tokens.** `nora.infra`
   may not import `nora.obs`, so the vision client cannot annotate its own span;
   the counts would have to travel out to a caller that can — `MediaDescription.

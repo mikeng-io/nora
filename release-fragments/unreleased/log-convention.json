@@ -1,0 +1,5 @@
+{
+  "type": "fix",
+  "summary": "78% of the log said nothing had happened; and severity, exceptions and the field set get a convention.",
+  "details": "Measured over 37 days on the deployment: 205,099 log lines, of which 108,441 (53%) were one aiohttp access line per poll of the health/metrics endpoint and 51,964 (25%) were a heartbeat restating two unchanged counters every minute. The access log is silenced at the source and the heartbeat now logs INFO only when the counters moved. Alongside that, every line gains `severity_number` — the OpenTelemetry SeverityNumber, because `level` is a string that sorts ERROR before INFO before WARNING and cannot answer \"at least a warning\" — and an exception is split into OTel's `exception.type`, `exception.message` and `exception.stacktrace` while keeping the original blob so saved greps still work. An unmapped level and an unparsable traceback record nothing rather than a guess."
+}

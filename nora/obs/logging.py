@@ -51,6 +51,82 @@ def _make_redactor(secrets: list[str]) -> _Processor:
     return redact
 
 
+#: OpenTelemetry's SeverityNumber, by stdlib level name.
+#:
+#: **A severity you can compare.** `level` is a STRING, so "is this at least a
+#: warning" is a set-membership test against a vocabulary the reader has to
+#: know, and it sorts alphabetically — ERROR before INFO before WARNING. The
+#: OTel Logs Data Model exists because every backend needs that comparison, and
+#: it defines the answer as a NUMBER in fixed bands: TRACE 1-4, DEBUG 5-8,
+#: INFO 9-12, WARN 13-16, ERROR 17-20, FATAL 21-24. The band is what carries
+#: the meaning, so a level sitting between two of ours still lands in the right
+#: half of a `>= 17` query.
+#:
+#: We emit the BASE of each band rather than the middle: nothing here
+#: distinguishes "a slightly worse ERROR", and picking 17 says exactly that,
+#: where 18 would imply a scale we do not have.
+#:
+#: `level` stays, unchanged and uppercase. It is what a human greps and what
+#: `docs/runbook.md`'s saved queries were written against; this is the field a
+#: MACHINE filters on, and the two are not in competition.
+SEVERITY_NUMBERS: dict[str, int] = {
+    "DEBUG": 5,
+    "INFO": 9,
+    "WARNING": 13,
+    "ERROR": 17,
+    "CRITICAL": 21,
+}
+
+
+def _severity_number(_logger: Any, _method_name: str, event_dict: dict[str, Any]) -> dict:
+    """`severity_number` beside `level`, when the level is one we map.
+
+    An UNMAPPED level gets no field rather than a guessed one — a custom level
+    somebody adds is genuinely outside this vocabulary, and inventing a number
+    for it would put it in a band nobody chose. Same three-state discipline the
+    instruments use: absent means "not stated", never "zero".
+    """
+    number = SEVERITY_NUMBERS.get(str(event_dict.get("level", "")).upper())
+    if number is not None:
+        event_dict["severity_number"] = number
+    return event_dict
+
+
+def _exception_fields(_logger: Any, _method_name: str, event_dict: dict[str, Any]) -> dict:
+    """Split the formatted traceback into OTel's three exception fields.
+
+    `format_exc_info` renders one `exception` string — the whole traceback,
+    type and message buried in its last line. That is readable by a human and
+    opaque to everything else: "how many `TimeoutError`s since the deploy" is a
+    substring search over multi-line blobs.
+
+    The OTel exception semantic conventions name the three parts —
+    `exception.type`, `exception.message`, `exception.stacktrace` — and say an
+    unhandled exception SHOULD be recorded at ERROR. The stacktrace is kept
+    WHOLE and the other two are derived from its last line, so nothing is lost
+    and the two cheap questions become field lookups.
+
+    The original `exception` key is left in place. Removing it would break
+    `docs/runbook.md`'s saved greps and every operator reflex built on them,
+    for a duplication that costs bytes in a 1.7 MB/day stream.
+    """
+    blob = event_dict.get("exception")
+    if not isinstance(blob, str) or not blob:
+        return event_dict
+    event_dict["exception.stacktrace"] = blob
+    # The last non-empty line of a traceback is `Type: message`, or a bare
+    # `Type` for an exception raised with no arguments. Anything else — a
+    # traceback whose formatting we do not recognise — sets neither field
+    # rather than half-parsing one.
+    last = next((ln for ln in reversed(blob.splitlines()) if ln.strip()), "")
+    head, sep, tail = last.partition(":")
+    if head and not head.startswith((" ", "\t")):
+        event_dict["exception.type"] = head.strip()
+        if sep:
+            event_dict["exception.message"] = tail.strip()
+    return event_dict
+
+
 def _uppercase_level(_logger: Any, _method_name: str, event_dict: dict[str, Any]) -> dict:
     # structlog.stdlib.add_log_level renders "info"/"error"/...; the old
     # JSONFormatter emitted `record.levelname` ("INFO"/"ERROR"/...) and
@@ -85,6 +161,20 @@ def _shared_processors(secrets: list[str]) -> list[_Processor]:
         structlog.processors.TimeStamper(fmt="%Y-%m-%dT%H:%M:%SZ", utc=True, key="ts"),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
+        # AFTER `format_exc_info`, which is what CREATES the `exception` blob
+        # this splits — ordered before it, the key does not exist yet and the
+        # three fields are silently never written. That is the ordering with
+        # teeth, and `test_the_split_runs_after_the_traceback_is_formatted`
+        # holds it.
+        #
+        # Its position relative to the redactor does NOT matter, and the first
+        # version of this comment claimed it did: before, the derived fields
+        # carry the secret and the redactor then rewrites them (it walks every
+        # key); after, they are copied from an already-redacted blob. Both are
+        # safe. The claim was checked by moving it and watching the test stay
+        # green, which is how a comment gets to be wrong for a whole review.
+        _exception_fields,
+        _severity_number,
         _make_redactor(secrets),
     ]
 
@@ -128,14 +218,38 @@ def setup_logging(*, level: str, path: Path | str, format: str, secrets: list[st
 
 
 async def heartbeat(metrics: Any, *, interval: float = 60.0) -> None:
-    """Logs ingest counters every `interval` seconds until cancelled."""
+    """Ingest counters every `interval` seconds until cancelled — **INFO when
+    they MOVED, DEBUG when they did not.**
+
+    It was INFO unconditionally, and that made it 51,964 lines of the
+    deployment's 205,099 (25%, measured over 37 days) whose entire content was
+    two numbers that had not changed since the previous minute. Together with
+    the access log this file's sibling change silences, 78% of the log was
+    saying that nothing had happened.
+
+    **The split is between two different claims.** "The process is alive" is
+    answered by `/health`, which the container healthcheck already polls and
+    `deploy/watchdog.sh` is written against; restating it once a minute in the
+    log is a third copy. "Work happened, and here is how much" is a real event,
+    and it stays at INFO.
+
+    The known cost, stated rather than discovered later: an idle-but-alive
+    deployment now emits nothing at the default level, so the log alone no
+    longer distinguishes idle from dead. That distinction was always better
+    served by `/health` and by the `nora_*` gauges, and it comes back the
+    moment anything scrapes them.
+    """
     log = logging.getLogger("nora.heartbeat")
+    previous: tuple[Any, ...] | None = None
     while True:
         await asyncio.sleep(interval)
-        log.info(
-            "heartbeat",
-            extra={
-                "messages_total": metrics.get("nora_messages_total"),
-                "tags_total": metrics.get("nora_tags_total"),
-            },
-        )
+        counters = {
+            "messages_total": metrics.get("nora_messages_total"),
+            "tags_total": metrics.get("nora_tags_total"),
+        }
+        current = tuple(counters.values())
+        # First beat is INFO whatever it says: it is the one that records where
+        # the counters STARTED, which is what makes every later delta readable.
+        moved = previous is None or current != previous
+        previous = current
+        log.log(logging.INFO if moved else logging.DEBUG, "heartbeat", extra=counters)
