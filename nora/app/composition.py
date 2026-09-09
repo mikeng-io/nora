@@ -1160,7 +1160,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             sorted(proactive_homes), cfg.dreamer.enabled, cfg.notes.enabled,
         )
     participation_runner: LiveAgentRunner | None = None
-    if cfg.participation.enabled or proactive_wired:
+    if cfg.participation.enabled or proactive_homes:
         participation_runner = LiveAgentRunner(
             models=factory.ModelSource(
                 client=client,
@@ -2147,9 +2147,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # Event can reach `speak` (no policy marks one, no trigger exists).
             participation_runner=participation_runner if cfg.participation.enabled else None,
             # The proactive act turn's runner (39 D12): the same auto-runner,
-            # under its own name, present exactly when a proactive row can
-            # exist. `FirePath` raises on a proactive occasion with none.
-            proactive_runner=participation_runner if proactive_wired else None,
+            # under its own name. Gated on a HOME ROOM existing, not on the
+            # adaptor being wired (audit 2026-09-09): a proactive row written
+            # yesterday still comes due after `[dreamer] enabled` is flipped
+            # off, the screen below admits it, and a fire path with no runner
+            # would fail every such row `failed_error`. The row's existence
+            # condition is the home room; so is the runner's.
+            proactive_runner=participation_runner if proactive_homes else None,
             # The §10.6 shadow mirror: wired only when the operator turned BOTH
             # the occasion AND the review surface on — a mirrored determination
             # always cleared the room opt-in and the enabled gate first. The

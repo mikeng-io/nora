@@ -35,9 +35,7 @@ from typing import Any, Literal
 
 import yaml
 
-DecideExpect = Literal["none", "remind"]
 DECIDE_EXPECTS: tuple[str, ...] = ("none", "remind")
-ActExpect = Literal["silent", "speak"]
 ACT_EXPECTS: tuple[str, ...] = ("silent", "speak")
 
 Verdict = Literal["PASS", "FAIL", "ERROR"]
@@ -146,6 +144,10 @@ class DecideResult:
     stop_reason: str | None
     instruction_sha256: str
     rows: tuple[WrittenRow, ...]
+    #: `remind` calls the model made, created or refused. The store shows
+    #: only the created ones; a quiet case must not pass because the closure
+    #: refused what the model tried to write.
+    remind_attempts: int = 0
 
 
 @dataclass(frozen=True)
@@ -170,6 +172,12 @@ def grade_decide(case: DecideCase, result: DecideResult) -> Grade:
     if case.expect == "none":
         if result.rows:
             return Grade("FAIL", f"a row was written: {[r.note for r in result.rows]}")
+        if result.remind_attempts:
+            return Grade(
+                "FAIL",
+                f"remind was attempted {result.remind_attempts}x and refused — "
+                "a quiet day she tried to break",
+            )
         return Grade("PASS")
     remaining = list(result.rows)
     for expected in case.rows:
@@ -247,6 +255,9 @@ class ActResult:
     sent: tuple[str, ...]
     stop_reason: str | None
     screened: str | None = None
+    #: `nora_silent_failures_total{audience="proactive"}` — a guard-refused
+    #: send, a budget cut, an invocation error. Not a decision.
+    silent_failures: int = 0
 
 
 def grade_act(case: ActCase, result: ActResult) -> Grade:
@@ -256,6 +267,12 @@ def grade_act(case: ActCase, result: ActResult) -> Grade:
     screen. `failed_*` is ERROR: a turn that timed out is not a decision."""
     if result.outcome.startswith("failed_"):
         return Grade("ERROR", f"fire path {result.outcome} (stop_reason={result.stop_reason})")
+    if result.silent_failures:
+        return Grade(
+            "ERROR",
+            f"{result.silent_failures} silent failure(s) under the proactive audience — "
+            "a refused send or a budget cut is not a decision",
+        )
     heard = bool(result.sent)
     if case.expect == "silent":
         if heard:

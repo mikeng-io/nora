@@ -72,7 +72,16 @@ def test_the_declared_shape_is_the_designs():
     assert adaptor.key_kind == "workspace"
     assert adaptor.uses_watermark is False
     assert adaptor.envelope_key == "decisions"
-    # 39 D3's list, exactly: every read through the home room, one act.
+    # 39 D3's list, exactly, spelled out here rather than compared to the
+    # module's own constant (which would compare it to itself): every read
+    # through the home room, one act.
+    assert adaptor.tools == frozenset({
+        "remind",
+        "where_is", "saved_places", "route", "group_members",
+        "about", "ask_memory", "search_memory_workspace",
+        "note_read", "note_search",
+        "web_search", "web_fetch", "weather", "now",
+    })
     assert adaptor.tools == PROACTIVE_TOOLS
     assert "remind" in adaptor.tools
     for forbidden in ("send_reply", "send_to", "note_create", "note_update", "load_transcript"):
@@ -157,7 +166,7 @@ async def test_strikes_and_a_due_revisit_are_said_on_the_line():
     text = await adaptor.inputs(key=WS, batch=())
 
     assert "revisit due" in text
-    assert "raised 1x with no reply" in text
+    assert "you decided to raise this 1x before, no reply since" in text
 
 
 async def test_a_failed_standing_read_is_rendered_as_unread_not_as_no_position():
@@ -200,7 +209,7 @@ async def test_accept_maps_handles_and_drops_what_it_cannot_read():
     ]
 
 
-async def test_commit_records_one_wake_per_note_decided_about():
+async def test_commit_records_one_wake_per_note_it_decided_to_raise():
     """39 D6: bookkeeping is not read-only — a wake per note RAISED, once
     even when two items name it; a decline is not a raise and wakes nothing
     (a strike is «raised and nobody replied», not «looked at»); a
@@ -255,3 +264,20 @@ async def test_inputs_ignores_the_batch(body):
         delivery_status=DeliveryStatus.SENT, raw_json=None,
     )
     assert await _adaptor().inputs(key=WS, batch=(row,)) == ""
+
+
+async def test_a_failed_decision_log_read_refuses_the_pass():
+    """R-27 at the input (audit 2026-09-09): the decision log is the record of
+    what she already scheduled, so a pass that cannot read it must not go on
+    to write rows on the strength of nothing. `inputs` raises, and the
+    runtime maps that to `unavailable` — never a prompt with a placeholder."""
+    class _Down:
+        async def history(self, **_kw: object):
+            raise RuntimeError("reminder store down")
+
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    adaptor = _adaptor(notes=notes, reminders=_Down())
+
+    with pytest.raises(RuntimeError, match="reminder store down"):
+        await adaptor.inputs(key=WS, batch=())

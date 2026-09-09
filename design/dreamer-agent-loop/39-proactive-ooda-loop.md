@@ -598,8 +598,18 @@ is `note` — a TITLE — rather than `note_id`, because `<notes>` renders no
 ids and `note_read` resolves titles («no id ever enters the prompt»,
 `nora/agent/tools.py`), and the Dreamer's screen drops any envelope item
 carrying a uuid (the curator's handle scheme); the id and the head revision
-are resolved in code into the payload exactly as D3 intends. Two things
-the build did not decide for the operator: the Dreamer doctrine file
+are resolved in code into the payload exactly as D3 intends. A second,
+found by the same day's independent audit and stated here rather than
+left implicit: D6's «one wake per note per decision» is one wake per note
+the pass decided to RAISE — a `decline` charges no strike — because D6's
+own number is «raised three times and nobody replied» and the curator
+already wakes every due note daily, so waking on every look would strike a
+quiet dateless note past the ceiling in two days. Two additions the node
+did not name: `remind` under Dreamer provenance refuses a repeat (one
+decision is one moment; tomorrow's pass decides again), and the act turn's
+header names the note but does not carry its body — the fire prefill
+renders the `<notes>` index and she reads the body with `note_read`. Two
+things the build did not decide for the operator: the Dreamer doctrine file
 (`nora/dreamer/doctrine/dreamer.md`, operator-only) still says «you look;
 you do not act», which the objective overrides in text for this one pass;
 and no live measurement has been taken — §5's two suites exist and are what

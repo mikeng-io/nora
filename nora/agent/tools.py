@@ -6221,8 +6221,9 @@ when somebody asks what song is on.
                 ten minutes. Default 1. Repeats only.
             times: how many times in total, including the first. Repeats only.
             until: the last date/moment it may go off, ISO-8601. Repeats only.
-            note: the TITLE of the note in <notes> this is about, exactly as
-                listed, when the reminder is about one of them. Optional. It
+            note: the TITLE of the note this is about, exactly as listed in
+                <notes> (or in <open_notes> on your own morning pass), when the
+                reminder is about one of them. Optional. It
                 records the link; a reminder you set for yourself on your own
                 pass is dropped if the note is settled before it fires.
         """
@@ -6285,6 +6286,8 @@ when somebody asks what song is on.
         # day arrived with a tagger could not write a person-owned row into
         # the home room. `tagger` is non-None on the other branch (refused
         # above otherwise).
+        # The ignore is read: `mypy nora/app` follows this import, and the
+        # refusal above is what makes `tagger` non-None on this branch.
         owner = ai_peer if proactive else tagger.person_id  # type: ignore[union-attr]
         if proactive and repeat != "none":
             # A proactive decision is ONE moment (39 D4): tomorrow's decide

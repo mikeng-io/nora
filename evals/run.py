@@ -1138,6 +1138,7 @@ async def _run_proactive_decide_live(
                             )
                             for note, due, who, kind, intent in drive.rows
                         ),
+                        remind_attempts=drive.remind_attempts,
                     )
                     g = grade_decide(case, result)
                     tally.verdicts.append(g.verdict)
@@ -1186,6 +1187,7 @@ async def _run_proactive_act_live(
                 g = grade_act(case, ActResult(
                     outcome=drive.outcome, sent=drive.sent,
                     stop_reason=drive.stop_reason, screened=drive.screened,
+                    silent_failures=drive.silent_failures,
                 ))
                 tally.verdicts.append(g.verdict)
                 tally.reasons.append(g.reason)

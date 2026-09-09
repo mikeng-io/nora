@@ -816,3 +816,25 @@ async def test_a_proactive_row_with_no_note_is_screened_on_the_flag_alone():
 
     assert len(fired) == 1
     assert (await store.get(row.id)).state is ReminderState.DONE
+
+
+async def test_a_note_the_rows_workspace_cannot_reach_fails_closed():
+    """Audit 2026-09-09: `NoteStore.read` answers None for absent, for another
+    workspace and for a malformed id — «not reachable», which is not
+    «retired». The policy's workspace for the room moved between decide and
+    fire; the row is FAILED as a wiring gap, never CANCELLED with an outcome
+    claiming the note was retired, and never fired."""
+    store = FakeReminderStore()
+    notes, note = await _note_store(workspace="friends")
+    row = _proactive_row(note)
+    await store.create(row)
+    policy = _RoomPolicy(allow=True, proactive=True, workspace="renamed")
+    loop, fired = _build(store=store, policy=policy)
+    loop._proactive = ProactiveScreen(policy=policy, notes=notes)
+
+    await loop.tick()
+
+    assert fired == []
+    resolved = await store.get(row.id)
+    assert resolved.state is ReminderState.FAILED
+    assert resolved.outcome == "failed_error"

@@ -223,6 +223,10 @@ class ProactiveAdaptor:
         open notes AND no Standing. The runtime skips the model on a blank
         prompt and still calls `commit(key, ())`, which records nothing
         here because nothing was shown.
+
+        **Raises** when the notes or the decision log cannot be read: both
+        are inputs the decision rests on, and the runtime maps the raise to
+        `unavailable`, never to a pass over a guessed world.
         """
         rooms = tuple(self._rooms_of(key))
         if not any(room.home for room in rooms):
@@ -271,7 +275,7 @@ class ProactiveAdaptor:
             + "\n</rooms>"
         )
         parts.append(await self._decision_log(rooms, now=now))
-        self_card = await self._self_card(key)
+        self_card = await self._self_card(key, platform=home.platform)
         if self_card:
             parts.append(self_card)
         return "\n\n".join(parts)
@@ -292,7 +296,10 @@ class ProactiveAdaptor:
                 # whose position could not be read is rendered as unread,
                 # never as «no position».
                 log.exception("proactive: standing read failed for %s", room.label)
-                self._inc("nora_errors_total", stage="proactive_standing")
+                self._inc(
+                    "nora_errors_total", stage="proactive_standing",
+                    platform=room.platform,
+                )
                 lines.append(
                     f"- {escape(room.label)} ({escape(room.platform)}): "
                     "(could not read the position)"
@@ -317,18 +324,18 @@ class ProactiveAdaptor:
         (39 D7): `Reminder` has no workspace column, so the join is the
         room map the composition root built from policy."""
         mine = {(room.platform, room.conversation_id) for room in rooms}
-        try:
-            rows = await self._reminders.history(
-                requester_person_id=self._ai_peer, since=now - self._history,
-                limit=self._history_limit,
-            )
-        except Exception:
-            log.exception("proactive: decision log read failed")
-            self._inc("nora_errors_total", stage="proactive_log")
-            return (
-                '<decisions note="could not read what you decided before; '
-                'decide without it, and do not assume you have said nothing."/>'
-            )
+        # NOT fail-soft (audit 2026-09-09). The log is the one input that
+        # says what she has already scheduled; a pass that could not read it
+        # and went on to write rows would repeat yesterday on the strength of
+        # nothing. R-27's shape is «I could not check» → refuse: the read
+        # raises, `inputs` raises, and the runtime reports the run
+        # `unavailable` — exactly what the unguarded `notes.standing` read
+        # above already does. Standing and the self card stay fail-soft
+        # because neither is a record of her own commitments.
+        rows = await self._reminders.history(
+            requester_person_id=self._ai_peer, since=now - self._history,
+            limit=self._history_limit,
+        )
         # The NEWEST of this workspace's rows: the store's bound is over every
         # workspace, so the cut is taken after the join, from the end.
         lines = [
@@ -346,7 +353,7 @@ class ProactiveAdaptor:
             + "\n</decisions>"
         )
 
-    async def _self_card(self, key: str) -> str:
+    async def _self_card(self, key: str, *, platform: str) -> str:
         """`<self_card>`, DEC-96's own framing: Honcho's `(nora -> nora)`
         distillation of her own replies — a record she may contradict, never
         a description of who she is. Fail-open and silent, like the tag path's."""
@@ -360,7 +367,9 @@ class ProactiveAdaptor:
             )
         except Exception:
             log.exception("proactive: self-card recall failed")
-            self._inc("nora_errors_total", stage="proactive_self_card")
+            self._inc(
+                "nora_errors_total", stage="proactive_self_card", platform=platform,
+            )
             return ""
         if not recall.reachable or not recall.conclusions:
             return ""
@@ -472,7 +481,13 @@ def _note_line(handle: str, note: Note, *, now: datetime, tz: ZoneInfo) -> str:
     if note.revisit_at is not None:
         due_in = note.revisit_at - int(now.timestamp() * 1000)
         revisit = "; revisit due" if due_in <= 0 else f"; revisit in {_age(due_in)}"
-    strikes = f"; raised {note.strikes}x with no reply" if note.strikes else ""
+    # «decided to raise», not «raised»: a wake is charged when the decide
+    # turn writes the row (`commit`), before the act turn speaks or declines,
+    # so the number counts decisions the room did not answer, not messages.
+    strikes = (
+        f"; you decided to raise this {note.strikes}x before, no reply since"
+        if note.strikes else ""
+    )
     return (
         f"[{handle}] «{escape(note.title)}» — {escape(note.description)}"
         f"{anchor}{revisit}{strikes}"

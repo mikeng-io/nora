@@ -351,3 +351,35 @@ async def test_the_decide_drive_seeds_every_case_shape_and_binds_the_real_tools(
             status=drive.status, stop_reason=drive.stop_reason,
             instruction_sha256=drive.instruction_sha256, rows=(),
         )).verdict == ("PASS" if case.expect == "none" else "FAIL")
+
+
+def test_a_refused_remind_attempt_fails_a_quiet_decide_case():
+    """Audit 2026-09-09: the store shows only the rows the closure CREATED. A
+    `none` case where the model called `remind` and was refused (too_soon,
+    screened, unknown title) is a false positive the primary number must
+    count, not a pass."""
+    case = DecideCase.from_dict(_decide(expect="none"))
+    quiet = grade_decide(case, _result())
+    tried = grade_decide(case, DecideResult(
+        status="ok", stop_reason=None, instruction_sha256="a" * 64, rows=(),
+        remind_attempts=2,
+    ))
+    assert quiet.verdict == "PASS"
+    assert tried.verdict == "FAIL" and "attempted" in tried.reason
+
+
+def test_a_silent_failure_behind_a_silent_act_turn_is_an_error():
+    """Audit 2026-09-09: `silent` with a guard-refused send or a budget cut
+    behind it is a malfunction, and a malfunction is ERROR — never a PASS on
+    a silent case (R-27 one layer up)."""
+    case = ActCase.from_dict({
+        "name": "q", "expect": "silent", "now": "2026-09-11T16:00:00+08:00",
+        "row": {"note": "Dinner", "intent": "i"},
+        "notes": [{"title": "Dinner", "description": "d", "body": "b"}],
+    })
+    quiet = grade_act(case, ActResult(outcome="silent", sent=(), stop_reason="end_turn"))
+    broken = grade_act(case, ActResult(
+        outcome="silent", sent=(), stop_reason="end_turn", silent_failures=1,
+    ))
+    assert quiet.verdict == "PASS"
+    assert broken.verdict == "ERROR"
