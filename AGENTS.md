@@ -35,6 +35,28 @@ are the same everywhere the codebase reasons, decides, or commits state.)
   subset (R-31 fails closed on any unknown in the room). **Bind to the real
   property** — a `where_is` fix is a live GPS read, a `weather` reading is HKO's
   own — never a proxy, and never assert what you cannot ground.
+
+  **When the measurer is a MODEL, its input has to explain itself.** A block
+  handed to a model is not evidence because it is present; it is evidence when
+  the model can tell what it is, how old it is, and which way it reads. Every
+  question you ask the model, ask of the block first: if the judgement turns on
+  *when*, the block carries a time; on *who*, it carries an index; on *whether
+  this is still open*, it carries the thing that would close it. A judgement
+  whose input cannot ground it does not fail loudly — the model answers anyway,
+  and it answers wrong at a rate nothing reports.
+
+  **So when a model judges badly, read its input before you rewrite its
+  instruction.** Measured three times over on 2026-09-09/10 and it went the
+  same way each time: the Relevance Gate was asked whether a room had moved on,
+  was still waiting, or had been answered — three questions about time — from a
+  transcript with no timestamps and no statement of which end was newest. Three
+  rewrites of its instruction changed nothing or made it worse, one of them
+  breaching a safety bar. Rendering an age per row cut its error rate by two
+  thirds over 40 labelled cases. The same omission was then found in
+  `<standing>`, which asserted it was current while carrying no time, and in the
+  note curator, which is asked whether an anchor has passed and is given no
+  clock at all. The instruction is the first thing blamed and usually the wrong
+  one.
 - **Serialize** — fix the result into **canonical, typed state with provenance**.
   Her reply is the one authored surface (strict-silence: only a `send_reply` tool
   call delivers; the never-silent fallback is delivered but explicitly kept out
@@ -319,6 +341,11 @@ summary — update-in-place, separate from the Dreamer and Honcho).
 - **Never reference the archived legacy path** (`~/.hermes/profiles/nora/`).
 - **Never assert a per-tag object was cleaned up by checking an attribute was
   deleted** — count live `gc`-tracked objects instead.
+- **Never rewrite a model's instruction before reading its input** — if the
+  judgement turns on *when*, check the block carries a time; on *who*, an
+  index; on *still open*, the thing that would close it. Three instruction
+  rewrites in one night changed nothing or made it worse; rendering an age per
+  transcript row cut the same gate's error rate by two thirds.
 - **Never read an instrument's output as evidence without first checking it can
   measure the thing** — state what a positive result would look like before
   concluding from a null one.

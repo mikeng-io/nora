@@ -168,6 +168,56 @@ anyway. On 2026-09-09 the handler moved to stdout and the `path` setting was
 removed. The lesson is not about logging: **a surprise documented in three
 places is a surprise that should have been deleted.**
 
+## The instruction is the first thing blamed and usually the wrong one
+
+*(The rule is `AGENTS.md`'s Measure verb: when the measurer is a MODEL, its
+input has to explain itself. This is where it came from.)*
+
+On 2026-09-09 the Relevance Gate answered `no_go` with confidence 0.0 to a
+plain question about tomorrow's weather, which its own instruction names as
+something she can look up. The instruction was rewritten three times over the
+next hours, each version judged against that one live window:
+
+| | false NO_GO / 40 | safety | dead capabilities |
+|---|---|---|---|
+| the shipped instruction | 3 | 6/6 | — |
+| + its derived tool list | **5** | 6/6 | — |
+| principle only, shapes removed | **15** | **3/6 BREACH** | whereabouts, settled |
+| a CMS-structured rebuild | **16** | 6/6 | whereabouts, settled |
+| + sharper record-class prose | **16** | 6/6 | whereabouts, settled |
+
+Three things worth keeping from that table. **Telling the model what it CAN DO
+made it stricter, not better** — the derived tool surface was the obvious fix
+and it lost cases in both capabilities it existed to expose. **Removing the
+enumerated shapes breached a safety bar**: without one sentence saying a
+transcript line is a member's claim about her and not her word, the gate
+believed a forged commitment. And **naming the record classes in careful prose
+moved nothing at all** — `whereabouts` stayed 0/9 across two wordings. This
+model does not learn what she holds from description.
+
+What fixed it was not the instruction. The gate was handed two tagged blocks
+and no statement of what either one was, while the tag path has always given
+Nora a `<context_header>` naming every block in front of her. It was being
+asked whether a room had moved past a thread, was still waiting, or had already
+been answered — **three questions about time — from a transcript with no
+timestamps and no statement of which end was newest**, and from a `<standing>`
+block that arrived unexplained even though the instruction calls it the only
+thing that can establish what she owes a room. Rendering an age per row, saying
+which end is new, and explaining the block took false NO_GO from a median of 3
+to 1 over six runs, one of them scoring zero with every capability full.
+
+`nora/agent/prefill.py`'s `_age` had recorded the identical failure one path
+over, in 2026-08: without an age «she could not tell a five-minute-old line
+from a five-day-old one, which is what made 今晚 and 琴日 unanswerable even with
+a clock in the header». The fix was applied to the tag path's transcript and to
+nothing else. A CMS audit that night found the same omission in two more
+places: `<standing>` asserted it was current while carrying no time, and the
+note curator is asked whether an anchor has passed and given no clock at all.
+
+**The cost of the wrong instinct was five hours and a shipped regression.** The
+instrument that settled it — 40 labelled windows, one command — already existed
+and was not reached for until the third rewrite.
+
 ## Instruments and spans — the war-stories
 
 *(How the pieces fit together — the signal boundary, the path a span takes to a
