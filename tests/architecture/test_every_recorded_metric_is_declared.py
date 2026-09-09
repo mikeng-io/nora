@@ -163,6 +163,10 @@ _UNRESOLVABLE: frozenset[tuple[str, str, str, str]] = frozenset(
         ("nora/language/note_candidates.py", "_inc", "inc", "name"),
         ("nora/language/note_curator.py", "_gauge", "gauge", "name"),
         ("nora/language/note_curator.py", "_inc", "inc", "name"),
+        # The proactive adaptor's forwarding wrapper (design/dreamer-agent-
+        # loop/39): every caller passes a literal, the same shape as the two
+        # note adaptors' `_inc` above.
+        ("nora/language/proactive.py", "_inc", "inc", "name"),
         ("nora/obs/metrics.py", "inc", "inc", "value"),
         ("nora/obs/metrics.py", "observe", "observe", "value"),
         ("nora/presence/collector.py", "_count", "inc", "name"),

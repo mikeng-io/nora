@@ -576,18 +576,35 @@ Items 4 and 10 are the work. R-1b and its test do not change.
 
 ## 7. Open
 
-- The phase offset's time of day. Morning HK is the intent; the number is
-  chosen when item 5 is written, with the curator's HK-midnight reasoning as
-  the template.
+- ~~The phase offset's time of day.~~ Chosen with item 5 (2026-09-09):
+  07:00 Asia/Hong_Kong, `phase_offset_seconds = 23 * 3600` — deliberately
+  not 08:00 HK, which is the field's default (00:00 UTC) and would be
+  indistinguishable from an unset value. `nora/app/composition.py` carries
+  the reasoning and the reading that would move it.
 - Naming. «Proactive adaptor» is still provisional; nothing here depends on
-  it.
+  it. The code calls it `proactive` everywhere (`nora/language/proactive.py`,
+  the objective, the schedule and grant keys, the `dream_adaptor` provenance).
 - One stale Honcho session (`nora-conv-100000000000000203_100000000000000206`,
   a Ridgeline Discord channel not in `policy.toml`). Harmless; noted.
 
 ## Status / Checkpoint
 
-Design only. No code. Supersedes 38; revises 33 §8; DEC-162 records it; DEC-133 (1) is deprecated in
-half. Version 2 after two reviews and the operator's read of v2: D3 keeps `remind` and stamps it by provenance, D5's owner mechanism, D11's
+**Built 2026-09-09**, in the order §6 numbers, on branch
+`mikeng-io/feat-proactive-ooda-adaptor`; DEC-162's test column names the
+tests, `scripts/mutations/proactive-adaptor.json` is the mutation record,
+and `release-fragments/unreleased/proactive-adaptor.json` is the product
+note. One deviation from §2, on evidence: D3's optional `remind` parameter
+is `note` — a TITLE — rather than `note_id`, because `<notes>` renders no
+ids and `note_read` resolves titles («no id ever enters the prompt»,
+`nora/agent/tools.py`), and the Dreamer's screen drops any envelope item
+carrying a uuid (the curator's handle scheme); the id and the head revision
+are resolved in code into the payload exactly as D3 intends. Two things
+the build did not decide for the operator: the Dreamer doctrine file
+(`nora/dreamer/doctrine/dreamer.md`, operator-only) still says «you look;
+you do not act», which the objective overrides in text for this one pass;
+and no live measurement has been taken — §5's two suites exist and are what
+tune the objective's version 1. Supersedes 38; revises 33 §8; DEC-162
+records it; DEC-133 (1) is deprecated in half. Version 2 after two reviews and the operator's read of v2: D3 keeps `remind` and stamps it by provenance, D5's owner mechanism, D11's
 predicate and D12's state mapping changed; §1 now says which inputs carry her
 own words; §5 names what the harness lacks. The build is issue #103, which
 should be updated to point here and to drop its knowledge-tier language. The

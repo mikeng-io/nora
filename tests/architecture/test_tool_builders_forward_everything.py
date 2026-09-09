@@ -77,6 +77,10 @@ _SPECS_ONLY = frozenset({
     "clock", "compute_backend", "compute_jobs", "events", "fire_turn",
     "music", "relay", "reminder_caps", "reminders", "tool_call_log_store",
     "versions",
+    # The second per-turn PROVENANCE beside `fire_turn` (design/dreamer-agent-
+    # loop/39 D3): only `ToolRegistry.specs` passes it, from the Dreamer's
+    # `RegistryToolSource`; `build_tools` has no caller that is a Dreamer.
+    "dream_adaptor",
 })
 
 

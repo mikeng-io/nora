@@ -84,6 +84,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_silent_failures_total",
         "Failures kept silent from the group, by reason and by which path was "
         "speaking (audience=\"tag\" | \"heartbeat\" | \"participation\" | "
+        "\"proactive\" — a kind=proactive row's act turn, design 39 D12 — | "
         "\"participation-shadow\" — the §10.6 mirror — | "
         "\"relevance-gate-shadow\" — the Relevance Gate's review post, which "
         "has no turn behind it at all. Both shadow audiences are "
@@ -698,7 +699,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_reminders_created_total",
         "Reminder creation attempts, by status: created; the caps' refusals "
         "(too_soon / too_far / too_many); the turn-provenance refusal "
-        "(fire_turn); the input refusals (unmapped / unparseable / past); the "
+        "(fire_turn); the input refusals (unmapped / unparseable / past); "
+        "screened, a proactive row whose text failed the Dreamer's "
+        "identifier/coordinate screen (design/dreamer-agent-loop/39 D3); the "
         "recurrence refusals (bad_repeat, a repeat unit or every_n I do not "
         "accept; bad_bound, a times/until that cannot be honoured or was "
         "given with no repeat at all; too_often, a sub-day repeat faster than "
@@ -718,7 +721,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_reminders_fired_total",
         "Reminders resolved by the heartbeat, by outcome (the fire path's own "
-        "status, or failed_policy / failed_error).",
+        "status, or failed_policy / failed_error; a kind=proactive row adds "
+        "silent — DONE, the act turn declined — and the fire-time screen's "
+        "cancelled_note_retired / cancelled_note_moved, design 39 D11/D12).",
         ("outcome",),
     ),
     # DEFERRALS are the third reading, and the one neither of the two above can
@@ -1603,6 +1608,34 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "by platform. Read against nora_participation_silence_total: the "
         "ratio is how often the occasion finds grounded value.",
         ("platform",),
+    ),
+    # The proactive occasion (design/dreamer-agent-loop/39 D12, DEC-162) —
+    # participation's pair, one occasion later: a `kind="proactive"` row's
+    # act turn that concluded «say nothing» (the healthy default, and the
+    # row is DONE with outcome="silent") and one that spoke. Budget-cut
+    # turns are silent failures under audience="proactive", never here.
+    _CounterSpec(
+        "nora_proactive_silence_total",
+        "Proactive act turns that read the room again and declined their "
+        "own earlier intention (the healthy default — design/dreamer-agent-"
+        "loop/39 D12), by platform. Budget-cut turns are NOT here.",
+        ("platform",),
+    ),
+    _CounterSpec(
+        "nora_proactive_spoke_total",
+        "Proactive act turns that spoke and delivered, by platform. Read "
+        "against nora_proactive_silence_total.",
+        ("platform",),
+    ),
+    # The decide turn's own reading (39 D4): what the proactive adaptor's
+    # envelope said it did, per item — `remind` (a row was written by the
+    # tool call this item records) or `decline` (considered and left). The
+    # rows themselves are counted by `nora_reminders_created_total`; this is
+    # the decision record beside them.
+    _CounterSpec(
+        "nora_proactive_decisions_total",
+        "Proactive decide-turn decisions, by action: remind or decline.",
+        ("action",),
     ),
     # The Relevance Gate (design/dreamer-agent-loop/36). TWO series, and the
     # split is the point: this one moves only when the gate actually decided,

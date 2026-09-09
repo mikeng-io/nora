@@ -12,6 +12,7 @@ import pytest
 from nora.app.heartbeat import (
     HEARTBEAT_NOT_RUNNING,
     HeartbeatLoop,
+    _state_for,
     publish_idle_gauge,
     recover,
 )
@@ -577,3 +578,241 @@ async def test_rows_of_two_kinds_same_requester_are_two_turns():
     # Per-row counter: two reminders resolved, one per row, whatever the
     # turn split.
     assert metrics.get("nora_reminders_fired_total", outcome="sent") == 2
+
+
+# ---- design/dreamer-agent-loop/39 D5/D11/D12: the proactive kind -------------
+
+
+from nora.app.proactive_screen import ProactiveScreen  # noqa: E402
+from nora.domain.notes import NoteSupersedeReason  # noqa: E402
+from nora.testing import InMemoryNoteStore  # noqa: E402
+
+
+class _RoomPolicy(_RecordingAllowlist):
+    """`_RecordingAllowlist` plus the two reads `ProactiveScreen` makes: the
+    per-room `proactive` flag and the room's workspace."""
+
+    def __init__(self, *, allow: bool, proactive: bool, workspace: str = "friends") -> None:
+        super().__init__(allow=allow)
+        self._proactive = proactive
+        self._workspace = workspace
+
+    def proactive_allowed(self, *, platform: str, conversation_id: str) -> bool:
+        return self._proactive
+
+    def conversation(self, platform: str, conversation_id: str):
+        from nora.policy import Conversation
+        return Conversation(
+            platform=platform, ids=frozenset({conversation_id}), persons=None,
+            workspace=self._workspace, primary_id=conversation_id,
+        )
+
+
+async def _note_store(*, workspace: str = "friends"):
+    store = InMemoryNoteStore()
+    note = await store.create(
+        workspace=workspace, title="Dinner", description="venue open",
+        uncertainty="where", closing_condition="a place is picked",
+        established_in="conv-1", body="Saturday; venue open.",
+        established_by="tag:miles", now_ms=1_000, anchor_date=20260912,
+    )
+    return store, note
+
+
+def _proactive_row(note, **kw) -> Reminder:
+    base = {
+        "requester_person_id": "nora", "kind": "proactive",
+        "payload": {
+            "note_id": note.id, "revision_id": note.head_revision_id,
+            "note_title": note.title, "intent": "ask where they are",
+        },
+    }
+    base.update(kw)
+    return _row(**base)
+
+
+def test_silent_is_done_not_failed():
+    """39 D12's third mapping. Only a proactive act turn can answer `silent`,
+    and for it saying nothing is the healthy default — mapped to FAILED it
+    reads as a delivery that never happened in every query, in the metric,
+    and in the decision log the next decide turn learns from."""
+    assert _state_for("silent") is ReminderState.DONE
+    assert _state_for("sent") is ReminderState.DONE
+    assert _state_for("failed_timeout") is ReminderState.FAILED
+
+
+async def test_a_silent_proactive_turn_resolves_done_with_outcome_silent():
+    store = FakeReminderStore()
+    notes, note = await _note_store()
+    row = _proactive_row(note)
+    await store.create(row)
+    metrics = Metrics()
+
+    async def _fire(rows):
+        return "silent"
+
+    loop = HeartbeatLoop(
+        store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
+        policy=_RoomPolicy(allow=False, proactive=True), clock=lambda: T0,
+        metrics=metrics, tick_seconds=60.0, fire=_fire,
+        proactive=ProactiveScreen(policy=_RoomPolicy(allow=False, proactive=True), notes=notes),
+    )
+
+    await loop.tick()
+
+    resolved = await store.get(row.id)
+    assert resolved.state is ReminderState.DONE
+    assert resolved.outcome == "silent"
+    assert metrics.get("nora_reminders_fired_total", outcome="silent") == 1
+
+
+async def test_a_proactive_row_is_screened_on_the_flag_not_on_a_person():
+    """39 D5: the owner is the ai_peer id, which `is_allowed` can never admit
+    — a policy that REFUSES every person still fires the row when the room's
+    flag is on, and one that ALLOWS every person still refuses it when the
+    flag is off. `is_allowed` is never even asked."""
+    async def _run(*, allow: bool, proactive: bool):
+        store = FakeReminderStore()
+        notes, note = await _note_store()
+        row = _proactive_row(note)
+        await store.create(row)
+        policy = _RoomPolicy(allow=allow, proactive=proactive)
+        fired: list[list[Reminder]] = []
+
+        async def _fire(rows):
+            fired.append(list(rows))
+            return "sent"
+
+        loop = HeartbeatLoop(
+            store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
+            policy=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
+            fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes),
+        )
+        await loop.tick()
+        return fired, await store.get(row.id), policy.calls
+
+    fired, resolved, calls = await _run(allow=False, proactive=True)
+    assert len(fired) == 1 and resolved.state is ReminderState.DONE
+    assert calls == []
+
+    fired, resolved, calls = await _run(allow=True, proactive=False)
+    assert fired == []
+    assert resolved.state is ReminderState.FAILED
+    assert resolved.outcome == "failed_policy"
+    assert calls == []
+
+
+async def test_a_proactive_row_with_no_screen_wired_fails_closed():
+    store = FakeReminderStore()
+    _notes, note = await _note_store()
+    row = _proactive_row(note)
+    await store.create(row)
+    loop, fired = _build(store=store, policy=_RoomPolicy(allow=True, proactive=True))
+
+    await loop.tick()
+
+    assert fired == []
+    assert (await store.get(row.id)).state is ReminderState.FAILED
+    assert (await store.get(row.id)).outcome == "failed_policy"
+
+
+async def test_a_tag_path_revision_since_the_link_cancels_the_row():
+    """39 D11: a human settling the thing at 11:00 means Nora does not raise
+    it at 14:00. A TAG-PATH revision after the row's `revision_id` cancels
+    it; a background revision (a debrief append, a curator write) does not,
+    or a paraphrase would cancel a row on every tag."""
+    store = FakeReminderStore()
+    notes, note = await _note_store()
+    row = _proactive_row(note)
+    await store.create(row)
+    policy = _RoomPolicy(allow=True, proactive=True)
+    background = await notes.append_revision(
+        workspace="friends", note_id=note.id, body="Saturday; still open.",
+        parent_revision_id=note.head_revision_id,
+        established_by="dream:note-curation:friends:2", now_ms=2_000,
+    )
+    fired: list[list[Reminder]] = []
+
+    async def _fire(rows):
+        fired.append(list(rows))
+        return "sent"
+
+    def _loop():
+        return HeartbeatLoop(
+            store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
+            policy=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
+            fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes),
+        )
+
+    # Background move only: the row fires.
+    await _loop().tick()
+    assert len(fired) == 1
+
+    # A tag-path move after the link: the next such row is cancelled.
+    again = _proactive_row(note)
+    await store.create(again)
+    await notes.append_revision(
+        workspace="friends", note_id=note.id, body="Ada booked Sai Kung.",
+        parent_revision_id=background.id, established_by="tag:ada", now_ms=3_000,
+    )
+    await _loop().tick()
+
+    assert len(fired) == 1
+    resolved = await store.get(again.id)
+    assert resolved.state is ReminderState.CANCELLED
+    assert resolved.outcome == "cancelled_note_moved"
+
+
+async def test_a_retired_note_cancels_the_row():
+    store = FakeReminderStore()
+    notes, note = await _note_store()
+    row = _proactive_row(note)
+    await store.create(row)
+    await notes.supersede(
+        key="friends", target=note.id, replaced_by=None,
+        because=NoteSupersedeReason.RETIRED_CLOSED, source=None, now_ms=2_000,
+    )
+    policy = _RoomPolicy(allow=True, proactive=True)
+    loop, fired = _build(store=store, policy=policy)
+    loop._proactive = ProactiveScreen(policy=policy, notes=notes)
+
+    await loop.tick()
+
+    assert fired == []
+    resolved = await store.get(row.id)
+    assert resolved.state is ReminderState.CANCELLED
+    assert resolved.outcome == "cancelled_note_retired"
+
+
+async def test_a_linked_row_with_no_note_store_does_not_fire_unverified():
+    """R-27 at the screen: a note store that is not wired is «I could not
+    check», and a row whose premise cannot be checked does not fire —
+    `failed_error`, never `cancelled` (a claim the note moved) and never
+    admitted."""
+    store = FakeReminderStore()
+    _notes, note = await _note_store()
+    row = _proactive_row(note)
+    await store.create(row)
+    policy = _RoomPolicy(allow=True, proactive=True)
+    loop, fired = _build(store=store, policy=policy)
+    loop._proactive = ProactiveScreen(policy=policy, notes=None)
+
+    await loop.tick()
+
+    assert fired == []
+    assert (await store.get(row.id)).state is ReminderState.FAILED
+    assert (await store.get(row.id)).outcome == "failed_error"
+
+
+async def test_a_proactive_row_with_no_note_is_screened_on_the_flag_alone():
+    store = FakeReminderStore()
+    row = _row(requester_person_id="nora", kind="proactive", payload={"intent": "hi"})
+    await store.create(row)
+    policy = _RoomPolicy(allow=False, proactive=True)
+    loop, fired = _build(store=store, policy=policy)
+    loop._proactive = ProactiveScreen(policy=policy, notes=None)
+
+    await loop.tick()
+
+    assert len(fired) == 1
+    assert (await store.get(row.id)).state is ReminderState.DONE

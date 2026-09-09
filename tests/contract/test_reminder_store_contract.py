@@ -188,6 +188,53 @@ async def test_count_pending_is_per_requester(store):
     assert await store.count_pending("tyler") == 1
 
 
+async def test_history_is_one_requesters_rows_in_every_state_oldest_first(store):
+    """The decision log (design/dreamer-agent-loop/39 D7): what one owner
+    decided and how it went. Unlike `pending_for`/`all_pending` it KEEPS the
+    finished rows — a log that forgot its outcomes would read every restraint
+    and every failure as «never happened»."""
+    done = _row(requester_person_id="nora", created_at=T0,
+                state=ReminderState.DONE, outcome="silent")
+    later = _row(requester_person_id="nora", created_at=T0 + timedelta(hours=1))
+    theirs = _row(requester_person_id="miles", created_at=T0 + timedelta(minutes=30))
+    for r in (later, theirs, done):
+        await store.create(r)
+
+    rows = await store.history(
+        requester_person_id="nora", since=T0 - timedelta(days=1), limit=10,
+    )
+
+    assert [r.id for r in rows] == [done.id, later.id]
+    assert rows[0].outcome == "silent"
+    assert rows[0].state is ReminderState.DONE
+
+
+async def test_history_honours_since_and_limit(store):
+    old = _row(requester_person_id="nora", created_at=T0 - timedelta(days=30))
+    recent = [
+        _row(requester_person_id="nora", created_at=T0 + timedelta(minutes=i))
+        for i in range(3)
+    ]
+    for r in (old, *recent):
+        await store.create(r)
+
+    rows = await store.history(requester_person_id="nora", since=T0, limit=2)
+
+    assert [r.id for r in rows] == [recent[0].id, recent[1].id]
+
+
+async def test_history_refuses_a_non_positive_limit(store):
+    with pytest.raises(ValueError):
+        await store.history(requester_person_id="nora", since=T0, limit=0)
+
+
+async def test_history_refuses_a_naive_since(store):
+    with pytest.raises(NaiveDatetimeError):
+        await store.history(
+            requester_person_id="nora", since=T0.replace(tzinfo=None), limit=5,
+        )
+
+
 async def test_sweep_resolves_firing_rows_to_failed(store):
     """§8.2: at-most-once. A crash mid-fire loses that reminder, visibly. It is
     NEVER re-queued — re-queueing double-sends anything that crashed after

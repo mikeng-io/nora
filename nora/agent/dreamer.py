@@ -15,12 +15,25 @@ arrives through `DreamAdaptor`. The path is fixed and the ORDER is the design:
       -> runtime STAMPS provenance
       -> adaptor COMMITS through its own sink
 
-**There is no write tool and there must not be one.** A `write_fact` tool is an
-act verb pointed at the database instead of at the group, and it would defeat
-the screen: if the model writes directly there is no sink left to screen at.
-The model proposes; code disposes — the same asymmetry every adaptor has,
-where the model's envelope is parsed into typed proposals and a SINK decides
-what actually lands.
+**The Dreamer holds no write tool by default, and the one exception is
+named.** A `write_fact` tool is an act verb pointed at the database instead of
+at the group, and it would defeat the screen: if the model writes directly
+there is no sink left to screen at. The model proposes; code disposes — the
+same asymmetry every adaptor has, where the model's envelope is parsed into
+typed proposals and a SINK decides what actually lands.
+
+The exception (design/dreamer-agent-loop/39 D3, DEC-162; DEC-133 (1)
+deprecated in part) is the proactive adaptor's `remind`: ONE act verb, for
+ONE adaptor, admitted past the read-only ceiling by an `AdaptorGrant` the
+composition root hands to the runtime BY NAME. It is not a write tool in the
+sense above — the model's text is screened by `dream_screen` inside the
+closure before `create`, and every other field of the row (kind, owner,
+destination, payload) is stamped by CODE under a `dream_adaptor` provenance
+the tool layer reads exactly as it reads `fire_turn`. The decision IS the
+tool call; the envelope becomes bookkeeping (39 D4). The Dreamer still
+cannot speak: `deliverer=None` is unchanged, and R-1b's two send paths are
+untouched, because a row-driven occasion is a fifth occasion on the second
+path, not a third path.
 
 **Why the runtime cannot use `create_agent`, which no spec says.**
 `create_agent` requires a `ReplyGuard` — a deliverer, a set of terminal verbs,
@@ -72,7 +85,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 from ..domain.models import TranscriptRow
-from ..domain.ports import DreamAdaptor, Proposal
+from ..domain.ports import DreamAdaptor, Proposal, RosterSource
 from ..obs.metrics import Metrics
 from . import factory
 from .dream_guard import DreamGuard
@@ -234,6 +247,73 @@ class DreamOutcome:
     stop_reason: str | None = None
 
 
+@dataclass(frozen=True)
+class HomeRoom:
+    """The one room of a workspace a workspace-keyed adaptor may STAND IN
+    (design/dreamer-agent-loop/39 D2, `policy.toml`'s `home_room = true`).
+
+    Built by the composition root from `Policy.home_rooms()` and handed to
+    `RegistryToolSource`; the tool source never reads policy itself. Every
+    field is what `ToolRegistry.build` needs to build the room-scoped tools
+    exactly as a tag would: `conversation_id` and `conversation_type` for
+    the bound conversation, `platform` for the roster source and the
+    reminder row's destination, `location_trusted` from the room's own
+    `location` flag (DEC-74 — the flag `RegistryToolSource.build` left at
+    its `False` default before this, so `where_is` refused in every
+    configuration).
+    """
+
+    workspace: str
+    platform: str
+    conversation_id: str
+    conversation_type: str = "group"
+    location_trusted: bool = False
+
+
+@dataclass(frozen=True)
+class AdaptorGrant:
+    """What ONE named adaptor holds PAST the Dreamer's defaults (39 D2/D3).
+
+    A NAME-KEYED MAPPING value like `AdaptorBudget` and `AdaptorSchedule`,
+    for the reason those are: a defaulted non-method member on the
+    `@runtime_checkable` `DreamAdaptor` protocol fails `isinstance` for every
+    adaptor that does not declare it. An adaptor with no entry gets
+    `AdaptorGrant()` — no act verbs, no home room — which is the whole
+    pre-DEC-162 ceiling, by omission.
+
+    `acts` are act-verb NAMES admitted past `read_only_tools()` for this
+    adaptor and no other. The three enforcement points all read it —
+    `tool_subset_faults` (startup and per run) and `RegistryToolSource.build`
+    — so an allowance is never a fourth list that can drift from the three.
+
+    `home_room` says the adaptor's `Room` is built from the workspace's home
+    room with a real roster source, `self_ids` and `location_trusted`, and
+    that `WORKSPACE_SAFE_TOOLS` does not apply to it: the refusal that
+    constant records («binding one to an arbitrary room of that workspace
+    would be a disclosure decision nobody has made») is answered by the
+    operator naming the room in `policy.toml`.
+    """
+
+    acts: frozenset[str] = frozenset()
+    home_room: bool = False
+
+
+def proactive_grant() -> AdaptorGrant:
+    """The proactive adaptor's grant (39 D3): every read verb through the home
+    room, and exactly one act verb — her own `remind`, which under the
+    `dream_adaptor` provenance stamps kind/owner/destination/payload in code
+    and screens the text before `create`. Not `send_reply` (the Dreamer does
+    not speak), not `send_to`, not `note_create`/`note_update` (39 D6).
+
+    A function returning a fresh value rather than a module-level constant,
+    for DEC-13's reason (`tests/architecture/test_no_module_level_mutable_
+    singletons.py`): the composition root builds one and hands the SAME
+    object to the runtime and the startup check, which is the identity that
+    matters — not one shared across every importer of this module.
+    """
+    return AdaptorGrant(acts=frozenset({"remind"}), home_room=True)
+
+
 class DreamToolSource(Protocol):
     """The tools an adaptor may hold, resolved by NAME.
 
@@ -255,12 +335,18 @@ class DreamToolSource(Protocol):
     `send_reply`. `verify_tool_subsets` below is the startup refusal;
     `DreamerRuntime.run` re-checks per run so a subset that changed under a
     hot-reload cannot slip through as a quiet grant.
+
+    `grant` is the ONE allowance past that ceiling (39 D3), threaded from the
+    runtime's name-keyed mapping so `build` and the two checks read the same
+    value; `adaptor` is the run's provenance, stamped onto the tools as
+    `dream_adaptor` the way the fire path stamps `fire_turn`.
     """
 
     def read_only(self) -> frozenset[str]: ...
 
     def build(
         self, *, key: str, names: frozenset[str], workspace: str | None = None,
+        adaptor: str = "", grant: AdaptorGrant | None = None,
     ) -> list[Any]: ...
 
 
@@ -294,6 +380,11 @@ class DreamToolSource(Protocol):
 # `_workspace()` falls back to the resolver, and the resolver reads the real
 # room as before. Nothing about the tag path changes — the supplied value
 # only ever WINS when a caller supplies one, and only the Dreamer does.
+#
+# An adaptor whose `AdaptorGrant.home_room` is set is EXEMPT from this set
+# (39 D2/D3): the home room is the disclosure decision the first paragraph
+# says nobody has made, and it is made per workspace in `policy.toml`. Every
+# other workspace-keyed adaptor stays bound to it.
 #
 # Hand-listed HERE and pinned by a test that measures it against
 # `read_only_tools()`, so a read tool added tomorrow is UNCLASSIFIED and turns
@@ -345,26 +436,34 @@ class AdaptorToolError(ValueError):
 
 
 def verify_tool_subsets(
-    adaptors: Sequence[DreamAdaptor], *, tools: DreamToolSource
+    adaptors: Sequence[DreamAdaptor], *, tools: DreamToolSource,
+    grants: Mapping[str, AdaptorGrant] | None = None,
 ) -> None:
     """Refuse to start if any adaptor's declared subset escapes the ceiling.
 
-    The hard line — the Dreamer may look and may not act — is enforced in two
-    places on purpose, and neither is redundant. Here it is a startup refusal,
-    which is where a wiring mistake belongs (`policy.toml`'s own precedent: she
-    refuses to start rather than run an ambiguous policy). In `run` it is a
-    per-run re-check, because the objective corpus hot-reloads and an adaptor
-    that is rebuilt or swapped between ticks would otherwise be measured once,
-    at a moment that has passed.
+    The hard line — the Dreamer may look and may not act, save the one named
+    allowance in `grants` — is enforced in two places on purpose, and neither
+    is redundant. Here it is a startup refusal, which is where a wiring
+    mistake belongs (`policy.toml`'s own precedent: she refuses to start
+    rather than run an ambiguous policy). In `run` it is a per-run re-check,
+    because the objective corpus hot-reloads and an adaptor that is rebuilt
+    or swapped between ticks would otherwise be measured once, at a moment
+    that has passed.
+
+    `grants` is the SAME mapping the runtime holds (the composition root
+    builds one and passes it to both), so the startup check measures exactly
+    what the runtime enforces.
     """
     ceiling = tools.read_only()
     for adaptor in adaptors:
-        for message in tool_subset_faults(adaptor, ceiling=ceiling):
+        grant = (grants or {}).get(adaptor.name, AdaptorGrant())
+        for message in tool_subset_faults(adaptor, ceiling=ceiling, grant=grant):
             raise AdaptorToolError(message)
 
 
 def tool_subset_faults(
-    adaptor: DreamAdaptor, *, ceiling: frozenset[str]
+    adaptor: DreamAdaptor, *, ceiling: frozenset[str],
+    grant: AdaptorGrant | None = None,
 ) -> tuple[str, ...]:
     """Every way this adaptor's declared subset is wrong, as messages.
 
@@ -372,7 +471,9 @@ def tool_subset_faults(
     unusable by this adaptor:
 
     1. **read vs act.** Outside `read_only_tools()` is an act verb, and no
-       background loop may hold one.
+       background loop may hold one — except the verbs `grant.acts` names
+       for THIS adaptor (39 D3: the proactive adaptor's `remind`, and
+       nothing else today).
     2. **room-scoped vs workspace-safe.** A WORKSPACE-keyed adaptor gets a
        workspace name as its `key`, which is not a conversation id. Every
        room-scoped read tool is bound to one — `load_transcript` reads one
@@ -381,6 +482,8 @@ def tool_subset_faults(
        not fail loudly, it returns EMPTY. `load_transcript` on an unknown
        conversation returns `{"messages": []}`, which is `unavailable`
        reported as `nothing_found`: the one substitution R-27 forbids.
+       An adaptor whose grant names a HOME ROOM (39 D2) is exempt: it does
+       have a room to bind them to, and the operator chose it.
 
     Split out of `verify_tool_subsets` so `DreamerRuntime.run` re-checks the
     identical rule rather than a second copy of it — the startup check and the
@@ -394,17 +497,19 @@ def tool_subset_faults(
     with no complaint. A protection three documents claim exists is worse than
     one nobody claims, because the next reader trusts it.
     """
+    allowance = grant if grant is not None else AdaptorGrant()
     faults: list[str] = []
     declared = frozenset(adaptor.tools)
-    escaped = declared - ceiling
+    escaped = declared - ceiling - allowance.acts
     if escaped:
         faults.append(
             f"Dreamer adaptor {adaptor.name!r} declares tools outside the "
             f"read-only ceiling: {', '.join(sorted(escaped))}. The Dreamer "
             f"may look and may not act; a tool is grantable only if its "
-            f"NativeTool row says read_only=True."
+            f"NativeTool row says read_only=True, or an AdaptorGrant names "
+            f"it for this adaptor (39 D3)."
         )
-    if adaptor.key_kind == "workspace":
+    if adaptor.key_kind == "workspace" and not allowance.home_room:
         room_scoped = declared - WORKSPACE_SAFE_TOOLS
         if room_scoped:
             faults.append(
@@ -560,11 +665,26 @@ class RegistryToolSource:
     `WORKSPACE_SAFE_TOOLS` (see that constant), because a workspace has no room
     at all — `key` is not a conversation id there, and passing it as one would
     quietly ask a room-scoped tool about a conversation that does not exist.
+
+    **Both guards have one named exception, and it is the same one** (39
+    D2/D3). An adaptor whose `AdaptorGrant` names a home room is built FROM
+    that room — the real roster source for its platform, Nora's own
+    `self_ids` so her account is skipped rather than counted `unnamed`, and
+    `location_trusted` from the room's `location` flag — so `where_is` and
+    its siblings run the disclosure guard exactly as on a tag; and its
+    `grant.acts` are admitted past `read_only()`. Everything about the
+    build that is not the room or the acts is unchanged: `deliverer=None`,
+    and the workspace is still SUPPLIED. A home-room grant for a workspace
+    that has no home room falls back to the closed shape above and says so
+    — never a guessed room.
     """
 
     def __init__(
         self, *, registry: ToolRegistry, store: Any, persons: Any, honcho: Any,
         metrics: Metrics, ai_peer: str = "nora",
+        home_rooms: Mapping[str, HomeRoom] | None = None,
+        rosters: Mapping[str, RosterSource] | None = None,
+        self_ids: frozenset[str] = frozenset(),
     ) -> None:
         self._registry = registry
         self._store = store
@@ -572,22 +692,67 @@ class RegistryToolSource:
         self._honcho = honcho
         self._metrics = metrics
         self._ai_peer = ai_peer
+        # Workspace -> home room, from `Policy.home_rooms()` (39 D2). Empty
+        # for every composition that names none, which builds exactly what
+        # it built before.
+        self._home_rooms = dict(home_rooms or {})
+        # Platform -> roster source, the same map `FirePath` holds: a home
+        # room on a platform with no roster answers `available=False`, the
+        # honest state, never an empty room.
+        self._rosters = dict(rosters or {})
+        self._self_ids = frozenset(self_ids)
 
     def read_only(self) -> frozenset[str]:
         return self._registry.read_only_tools()
 
     def build(
         self, *, key: str, names: frozenset[str], workspace: str | None = None,
+        adaptor: str = "", grant: AdaptorGrant | None = None,
     ) -> list[Any]:
         from .room import Room
 
-        wanted = frozenset(names) & self.read_only()
+        allowance = grant if grant is not None else AdaptorGrant()
+        home = self._home_rooms.get(workspace or "") if allowance.home_room else None
+        if allowance.home_room and home is None:
+            # Loud, and CLOSED: the grant said «stand in the home room» and
+            # the workspace has none. Building the room-scoped tools against
+            # a synthetic room would answer «nobody is here» (`available=
+            # False`) and `remind` would write into a conversation that does
+            # not exist, so neither is built — the acts are withheld along
+            # with the room.
+            log.error(
+                "dream adaptor %r is granted a home room but workspace %r "
+                "names none in policy.toml; building without acts or a room",
+                adaptor, workspace,
+            )
+        acts = allowance.acts if home is not None else frozenset()
+        wanted = frozenset(names) & (self.read_only() | acts)
         if not wanted:
             return []
+        if home is not None:
+            room = Room(
+                platform=home.platform, conversation_id=home.conversation_id,
+                roster_source=self._rosters.get(home.platform),
+                persons=self._persons,
+                # No tagger: the run is owed to nobody. `Room.scope()`'s
+                # degraded branch therefore narrows to nothing when the
+                # roster cannot be read, and `where_is` answers
+                # `unavailable` there — honest, not a hole (39 §0).
+                self_ids=self._self_ids,
+            )
+        else:
+            room = Room(
+                platform="", conversation_id=key, roster_source=None,
+                persons=self._persons,
+            )
         built = self._registry.build(
             store=self._store,
-            conversation_id=key,
-            conversation_type="group",
+            # The HOME ROOM's conversation, not the key, when there is one
+            # (39 D3): for a workspace-keyed adaptor the key is the
+            # workspace NAME, and a reminder row bound to it would die
+            # `failed_policy` at every fire.
+            conversation_id=home.conversation_id if home is not None else key,
+            conversation_type=home.conversation_type if home is not None else "group",
             persons=self._persons,
             honcho=self._honcho,
             # No deliverer, ever. Nothing the Dreamer holds speaks to anybody,
@@ -596,10 +761,15 @@ class RegistryToolSource:
             # deliverer is how one gets passed back in.
             deliverer=None,
             metrics=self._metrics,
-            room=Room(
-                platform="", conversation_id=key, roster_source=None,
-                persons=self._persons,
-            ),
+            room=room,
+            # DEC-74's flag, threaded from the home room exactly as a tag
+            # threads it from `Conversation.location`. `False` — the strict
+            # gate — for every build with no home room, as before.
+            location_trusted=home.location_trusted if home is not None else False,
+            # This run's PROVENANCE, read by `remind` the way it reads
+            # `fire_turn`: under it the closure stamps the row in code
+            # (39 D3) instead of reading a tagger it does not have.
+            dream_adaptor=adaptor,
             # The key-path fix (design/dreamer-agent-loop/32 §3.4): for a
             # WORKSPACE-keyed adaptor `key` IS the workspace, so the runtime
             # SUPPLIES it and the workspace-scoped verbs (the note reads,
@@ -648,6 +818,7 @@ class DreamerRuntime:
         model_name: str,
         schedules: Mapping[str, AdaptorSchedule] | None = None,
         tool_budget_overrides: Mapping[str, int] | None = None,
+        grants: Mapping[str, AdaptorGrant] | None = None,
     ) -> None:
         self._models = models
         self._instructions = instructions
@@ -680,9 +851,21 @@ class DreamerRuntime:
         # which is the same reason `max_adjudications_per_tick` arrives as an
         # int on the adaptors.
         self._tool_budget_overrides = dict(tool_budget_overrides or {})
+        # Name -> `AdaptorGrant` (39 D2/D3): the ONE allowance past the
+        # read-only ceiling and past `WORKSPACE_SAFE_TOOLS`, per adaptor, by
+        # name. The same mapping the composition root hands
+        # `verify_tool_subsets`, so the startup check and the per-run
+        # re-check below cannot disagree about who holds what. Empty by
+        # omission, which is the whole pre-DEC-162 ceiling for every adaptor.
+        self._grants = dict(grants or {})
 
     def budget_for(self, adaptor_name: str) -> AdaptorBudget:
         return self._budgets.get(adaptor_name, self._default_budget)
+
+    def grant_for(self, adaptor_name: str) -> AdaptorGrant:
+        """This adaptor's allowance — `AdaptorGrant()` (nothing) for an
+        adaptor with no entry, never a `KeyError` inside a background tick."""
+        return self._grants.get(adaptor_name, AdaptorGrant())
 
     def samples_for(self, adaptor_name: str) -> int:
         """Model calls per fire — `AdaptorSchedule.samples`, 1 for an adaptor
@@ -719,8 +902,9 @@ class DreamerRuntime:
             instructions = self._instructions.for_objective(adaptor.objective)
             sha = instructions.sha256
 
+            grant = self.grant_for(adaptor.name)
             faults = tool_subset_faults(
-                adaptor, ceiling=self._tools.read_only()
+                adaptor, ceiling=self._tools.read_only(), grant=grant,
             )
             if faults:
                 # Loud, and `unavailable` rather than a raise: a background loop
@@ -743,6 +927,7 @@ class DreamerRuntime:
                 # not exist. A scope-keyed adaptor supplies nothing and its
                 # tools resolve through the room, unchanged.
                 workspace=key if adaptor.key_kind == "workspace" else None,
+                adaptor=adaptor.name, grant=grant,
             )
             # The BUDGETS, not the guard. A `DreamGuard` owns a
             # `CallLedger`, and a ledger is SPENT STATE — build one per run
