@@ -13,6 +13,8 @@ version: 1
 
 # The Proactive Adapter — Handoff
 
+> **SUPERSEDED 2026-09-09 by [39-proactive-ooda-loop.md](39-proactive-ooda-loop.md).** The seven open questions in §3 are decided there, and §2.2's «R-31 with no asker» turned out to be the wrong question — the guard reads the room, not the asker (39 D2). This sheet stays as the record of what was verifiably true before the decisions; nothing in it is edited.
+
 ## 0. What this document is, and what it is not
 
 **It is a fact sheet.** Every claim below was checked against the code or the
