@@ -191,6 +191,12 @@ services:
       # and not `:?`. config.toml's obs.tracing.headers_env names this variable; the
       # value never appears in config (DEC-8).
       - LANGFUSE_OTLP_HEADERS=${LANGFUSE_OTLP_HEADERS:-}
+      # Sentry DSN. Optional for the same reason and with the same `:-`: error
+      # reporting is never load-bearing, and `nora/obs/errors.py` degrades to
+      # "off" (saying so at startup) rather than refusing to boot.
+      # config.toml's obs.errors.dsn_env NAMES this variable; the value never
+      # appears in config (DEC-8).
+      - SENTRY_DSN=${SENTRY_DSN:-}
       # Grounding + presence keys, all OPTIONAL (`:-` not `:?`): each names a
       # capability that stays `unavailable` (never a crash, never a leak) when
       # its key is absent — config.toml's `enabled` flag plus a present key is
