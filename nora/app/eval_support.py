@@ -136,6 +136,15 @@ __all__ = [
 BUDGET_STOP_REASONS = _BUDGET_STOP_REASONS
 
 
+#: OmniRoute serves cached completions (`x-omniroute-cache: HIT`, ~12ms, zero
+#: cost) and honours neither `Cache-Control: no-cache` nor its own
+#: `x-omniroute-cache: bypass` — measured 2026-09-09. A suite reading the cache
+#: is replaying old answers: every `sample: n` returns one verdict n times by
+#: construction, so the determinism control reports what the cache remembers
+#: rather than whether the model is stable.
+NO_CACHE_HEADERS = {"x-omniroute-no-cache": "true"}
+
+
 def eval_base_url(configured: str) -> str:
     """The LLM base url a live eval should use.
 
@@ -727,11 +736,14 @@ class _MeasuringGateClient:
     def model(self) -> str:
         return str(self._cfg.model)
 
-    async def complete(self, *, prompt: str) -> GateCompletion:
+    async def complete(self, *, system: str, prompt: str) -> GateCompletion:
         response = await asyncio.wait_for(
             self._client.chat.completions.create(
                 model=self._cfg.model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
                 response_format={"type": "json_object"},
                 max_tokens=self._cfg.max_tokens,
                 temperature=self._cfg.temperature,
@@ -790,6 +802,8 @@ class _StrandsGateClient:
         self._cfg = gate_cfg
         self._model = build_structured_model(
             base_url=base_url, api_key=api_key, model_id=str(gate_cfg.model),
+            reasoning_effort=str(gate_cfg.reasoning_effort),
+            default_headers=NO_CACHE_HEADERS,
             max_tokens=gate_cfg.max_tokens, temperature=gate_cfg.temperature,
         )
         self.usage: tuple[int, int, int] | None = None
@@ -798,10 +812,10 @@ class _StrandsGateClient:
     def model(self) -> str:
         return str(self._cfg.model)
 
-    async def complete(self, *, prompt: str) -> GateCompletion:
+    async def complete(self, *, system: str, prompt: str) -> GateCompletion:
         got = await ask_structured(
             model=self._model, prompt=prompt, schema=GateVerdictSchema,
-            timeout_seconds=self._cfg.timeout_seconds,
+            timeout_seconds=self._cfg.timeout_seconds, system_prompt=system,
         )
         self.usage = got.usage
         return GateCompletion(
@@ -864,8 +878,8 @@ def build_gate_probe(cfg: Config, *, via_sdk: bool = False) -> GateProbe:
     """
     base_url = eval_base_url(cfg.llm.base_url)
     client = create_client(
-        base_url=base_url, api_key=os.environ.get(cfg.llm.api_key_env, "")
-    )
+        base_url=base_url, api_key=os.environ.get(cfg.llm.api_key_env, ""),
+    ).with_options(default_headers=NO_CACHE_HEADERS)
     doctrine = DoctrineStore(
         cfg.doctrine.dir, strict=cfg.doctrine.strict, reload="never",
         canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,

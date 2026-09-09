@@ -22,7 +22,8 @@ from nora.ingest.relevance_gate import (
     GATE_ERROR_KINDS,
     Completion,
     RelevanceGate,
-    build_prompt,
+    build_system_prompt,
+    build_user_message,
     parse_verdict,
     render_context,
 )
@@ -38,12 +39,16 @@ class _Client:
         self.answer = answer
         self.finish_reason = finish_reason
         self.prompts: list[str] = []
+        #: The SYSTEM half, recorded separately — the split is the property
+        #: under test, so a fake that merged them could not see it.
+        self.systems: list[str] = []
 
     @property
     def model(self) -> str:
         return "nora-gate"
 
-    async def complete(self, *, prompt: str) -> Completion:
+    async def complete(self, *, system: str, prompt: str) -> Completion:
+        self.systems.append(system)
         self.prompts.append(prompt)
         if isinstance(self.answer, Exception):
             raise self.answer
@@ -192,10 +197,10 @@ async def test_the_prompt_is_exactly_the_instruction_plus_the_two_rendered_block
     gate = _gate(client, records=_Records(rows), standing=_standing(standing))
     await gate.decide(platform="discord", conversation_id="g/1")
 
-    expected = build_prompt(
-        _Doctrine.BODY, context=render_context((_row(rows[0], rid=1),), standing),
+    assert client.systems[0] == build_system_prompt(_Doctrine.BODY)
+    assert client.prompts[0] == build_user_message(
+        render_context((_row(rows[0], rid=1),), standing),
     )
-    assert client.prompts[0] == expected
 
 
 async def test_the_prompt_holds_exactly_two_untrusted_blocks():

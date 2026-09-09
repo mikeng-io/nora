@@ -37,6 +37,8 @@ from pydantic import BaseModel
 from strands import Agent
 from strands.models.openai import OpenAIModel
 
+from .tool_choice import FIRST_CALL
+
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -63,29 +65,60 @@ class StructuredResult:
 
 def build_structured_model(
     *, base_url: str, api_key: str, model_id: str, max_tokens: int,
-    temperature: float,
+    temperature: float, reasoning_effort: str = "none",
+    tool_choice: str = FIRST_CALL, default_headers: dict[str, str] | None = None,
 ) -> OpenAIModel:
     """The provider for a structured call. Its own client args rather than the
     shared `AsyncOpenAI`, because `OpenAIModel` owns its transport and the
-    alternative is reaching into a client this package did not build."""
+    alternative is reaching into a client this package did not build.
+
+    **`tool_choice` is DECLARED, not left to the SDK.** Strands sends
+    `tool_choice: None` when nothing sets it, and a provider that then applies
+    its thinking-mode default refuses the call outright:
+
+        opencode-go/deepseek-v4-flash-none: [400] Upstream request failed:
+        Thinking mode does not support this tool_choice
+
+    Measured against the `nora-gate` combo on 2026-09-09; it fans out, and the
+    same case failed on one member and succeeded on another. Declaring the
+    value with `reasoning_effort="none"` — which is what a structured call
+    wants anyway, one classification with a fixed output — keeps every member
+    of a combo able to serve it. `factory.create_model_provider` carries the
+    same argument for the tag path: a setting left to the route is a setting
+    nobody chose.
+    """
     return OpenAIModel(
-        client_args={"api_key": api_key, "base_url": base_url},
+        client_args={"api_key": api_key, "base_url": base_url,
+                     **({"default_headers": default_headers} if default_headers else {})},
         model_id=model_id,
-        params={"max_tokens": max_tokens, "temperature": temperature},
+        params={
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "reasoning_effort": reasoning_effort,
+            "tool_choice": tool_choice,
+        },
     )
 
 
 async def ask_structured(
     *, model: OpenAIModel, prompt: str, schema: type[T], timeout_seconds: float,
+    system_prompt: str | None = None,
 ) -> StructuredResult:
     """One call, `tools=[]`, no streaming, bounded.
+
+    `system_prompt` is the caller's instruction, and it goes in the SYSTEM
+    role rather than being concatenated onto `prompt`. That is the whole
+    reason this exists: a caller that glues its rules and its untrusted input
+    into one user string has thrown away the only structural difference
+    between the two, and nothing downstream can put it back.
 
     A fresh `Agent` per call: `OpenAIModel` carries mutable `config["params"]`
     and an agent carries conversation state, so a shared one would let one
     call's exchange decide the next one's (`factory.ModelSpec`'s argument, and
     `create_agent` builds per-tag for exactly this).
     """
-    agent = Agent(model=model, tools=[], callback_handler=None)
+    agent = Agent(model=model, tools=[], callback_handler=None,
+                  system_prompt=system_prompt)
     result = await asyncio.wait_for(
         agent.invoke_async(prompt, structured_output_model=schema),
         timeout=timeout_seconds,

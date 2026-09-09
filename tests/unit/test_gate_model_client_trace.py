@@ -60,7 +60,7 @@ def _client(usage: Any) -> _RelevanceGateModelClient:
 
 async def test_the_gate_call_puts_its_token_usage_on_the_gates_span(exported_spans):
     with span("relevance_gate", **{"nora.trace_kind": "generation"}):
-        got = await _client(_Usage(1830, 12, 1842)).complete(prompt="hi")
+        got = await _client(_Usage(1830, 12, 1842)).complete(system="sys", prompt="hi")
 
     assert got.content == '{"verdict": "no_go"}'
     (recorded,) = [s for s in exported_spans.get_finished_spans() if s.name == "relevance_gate"]
@@ -75,7 +75,7 @@ async def test_a_provider_that_reports_no_usage_records_no_usage(exported_spans)
     writing 0 would assert the call was free — the same argument
     `finish_reason=... or ""` makes one field over."""
     with span("relevance_gate", **{"nora.trace_kind": "generation"}):
-        await _client(None).complete(prompt="hi")
+        await _client(None).complete(system="sys", prompt="hi")
 
     (recorded,) = [s for s in exported_spans.get_finished_spans() if s.name == "relevance_gate"]
     attrs = dict(recorded.attributes or {})

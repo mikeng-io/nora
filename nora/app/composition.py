@@ -270,11 +270,19 @@ class _RelevanceGateModelClient:
     def model(self) -> str:
         return self._model
 
-    async def complete(self, *, prompt: str) -> GateCompletion:
+    async def complete(self, *, system: str, prompt: str) -> GateCompletion:
         response = await asyncio.wait_for(
             self._client.chat.completions.create(
                 model=self._model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    # The instruction in the SYSTEM role, the room in the USER
+                    # role. Concatenated into one user string — which is what
+                    # this was — a member typing `[assistant]:` is
+                    # indistinguishable from a turn Nora took, because both are
+                    # characters in the same block under the same role.
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
                 response_format={"type": "json_object"},
                 max_tokens=self._max_tokens,
                 temperature=self._temperature,
