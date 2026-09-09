@@ -53,7 +53,6 @@ async def build_app(config_path: Path) -> App:
     key = os.environ.get(cfg.llm.api_key_env, "")
     setup_logging(
         level=cfg.obs.logging.level,
-        path=cfg.obs.logging.path,
         format=cfg.obs.logging.format,
         secrets=[key] if key else [],
     )

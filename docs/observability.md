@@ -34,7 +34,7 @@ matter.
 |---|---|---|---|
 | **metrics** | Prometheus (`:9100/metrics`) | how many, how often, with what outcome | *aggregate*, over the deployment |
 | **traces** | Langfuse (+ Jaeger) | what happened in THIS turn, in what order, at what cost | *one instance*, re-derivable |
-| **logs** | `data/nora.log`, JSON lines | what a specific line of code saw | *forensic*, after the fact |
+| **logs** | stdout, JSON lines (`docker compose logs nora`) | what a specific line of code saw | *forensic*, after the fact |
 | **errors** | Sentry | which stack trace, how often, and is it new | *grouped*, per exception |
 
 **The rule that keeps them apart:** Langfuse is an LLM-observability tool, so a
@@ -272,8 +272,8 @@ measuring a provider no deployment runs.
 ## Logs
 
 `nora/obs/logging.py` — structlog in front of the root logger, rendering **JSON
-lines** to `[obs.logging] path` (`data/nora.log` — a `FileHandler`, nothing on
-stdout, which is why `docker compose logs nora` is empty), with secret
+lines** to **stdout** (a `StreamHandler`; read them with `docker compose logs
+nora`, and `| jq` because they are JSON), with secret
 redaction (R-16) and `tag_id` bound through
 `structlog.contextvars` so every line emitted during a turn carries it without
 being threaded through call signatures.
@@ -282,8 +282,9 @@ Every call site uses plain stdlib `logging.getLogger`; there is no
 `structlog.get_logger()` anywhere. Third-party libraries' records ride the same
 `foreign_pre_chain` into the same JSON stream.
 
-**Container logs are not on the docker log driver** — `docker compose logs nora`
-is empty. The file is `data/nora.log`.
+**This was a file until 2026-09-09**, and `docker compose logs nora` was
+empty — a `FileHandler` that predated the container by one day and was never
+revisited. Anything that tells you to grep `data/nora.log` is stale.
 
 ### The fields
 

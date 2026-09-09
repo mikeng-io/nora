@@ -223,9 +223,13 @@ ssh norty 'cd ~/workspace/nora && awk "/^\[notes\]/,/^\[/" config.toml'   # the 
 - **The db container is reached through compose** (`docker compose exec -T db`),
   never by grepping `docker ps` for a name — Komodo's own databases live on the
   same host and match the same patterns.
-- **Container logs are not on the docker log driver** — `docker compose logs
-  nora` is empty. Use the metrics endpoint and the tables; that is what the
-  instruments are for.
+- **Container logs ARE on the docker log driver, since 2026-09-09** — `docker
+  compose logs nora` gives JSON lines; pipe it through `jq`. It was a file
+  (`data/nora.log`) for five weeks because this module landed one day before
+  the Dockerfile, and «`docker compose logs nora` is empty» was documented as
+  a rule in three places instead of fixed. Anything still telling you to grep
+  `data/nora.log` is stale. The metrics endpoint and the tables remain the
+  stronger evidence for whether a background pass RAN.
 
 ## Gate commands
 

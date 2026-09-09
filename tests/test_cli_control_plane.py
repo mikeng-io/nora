@@ -115,7 +115,6 @@ async def env(tmp_path, aiohttp_server, monkeypatch, pg_url, example_config_path
         cfg = tomllib.load(f)
     cfg["platforms"]["signal"]["base_url"] = str(daemon.make_url("")).rstrip("/")
     cfg["store"]["data_dir"] = str(tmp_path)
-    cfg["obs"]["logging"]["path"] = str(tmp_path / "nora.log")
     cfg["doctrine"]["dir"] = str(ROOT / "nora" / "doctrine")
     cfg["identity_file"] = str(tmp_path / "identity.toml")
     cfg["policy_file"] = str(tmp_path / "policy.toml")

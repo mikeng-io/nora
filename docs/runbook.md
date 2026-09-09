@@ -145,7 +145,7 @@ is correct. To tell "quiet" from "broken":
    they are invisible in `/health`:
 
    ```bash
-   grep 'nora.discord.roster' data/nora.log     # the log is a file, not the docker driver
+   docker compose logs nora | grep nora.discord.roster   # JSON lines on stdout
    ```
 
    - `roster read forbidden for guild …` → the **GUILD_MEMBERS privileged
@@ -246,7 +246,7 @@ frontmatter, missing required key, unparseable YAML) fails to parse.
 2. Confirm it in the logs:
 
    ```bash
-   grep doctrine_reload_failed data/nora.log
+   docker compose logs nora | grep doctrine_reload_failed
    ```
 
    A failed reparse **keeps the last good doctrine** — Nora keeps replying with the
@@ -345,7 +345,7 @@ commands below are unchanged and still the right first moves.
 2. If signal-cli looks fine, check Nora's own logs:
 
    ```bash
-   tail -n 100 -f data/nora.log                 # `docker logs nora` is empty here
+   docker compose logs -n 100 -f nora
    ```
 
    Look for reconnect-backoff messages, unhandled exceptions in the SSE listen loop, or a
@@ -409,7 +409,7 @@ active for that specific tag, computed at `DoctrineStore.get()` time. Find the t
 `tag_id` (or by time) and read the hash straight off that line:
 
 ```bash
-grep doctrine_sha256 data/nora.log | tail -1
+docker compose logs nora | grep doctrine_sha256 | tail -1
 ```
 
 The same value is also reported live in `GET /health` (`doctrine_sha256` field) and as an
@@ -652,7 +652,7 @@ One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
                             default. She REFUSES TO START if it is missing or
                             allows nothing — running mute would be
                             indistinguishable from working (R-5).
-  data/                     Nora's own state — nora.log, media blobs; the record
+  data/                     Nora's own state — media blobs; the record
                             store itself is the db service's Postgres volume
                             (bind-mounted into the nora container as /app/data)
   state/signal-cli/         SIGNAL ACCOUNT: identity keys, sessions, group and

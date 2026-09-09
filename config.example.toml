@@ -1397,7 +1397,18 @@ model = "ollamacloud/deepseek-v4-flash:0731"
 
 [obs.logging]
 level = "INFO"
-path = "~/workspace/nora/data/nora.log"
+# There is no `path`: the log goes to STDOUT, and the key was REMOVED rather
+# than accepted and ignored (2026-09-09). Under `extra = "forbid"` a leftover
+# `path =` line is a loud startup failure — which is the honest outcome, and
+# the same judgement `format` below already makes.
+#
+# It was a file for five weeks by accident, not by decision: this module landed
+# one day before the Dockerfile, so a host process's sink was never revisited.
+# `docker compose logs nora` was empty, which read as «nothing ran» at least
+# once when something had; and a plain `FileHandler` with no rotation reached
+# 66 MB beside the media and database volumes.
+#
+# Read it with `docker compose logs nora` — or `| jq` , since it is JSON lines.
 format = "json"
 
 [obs.metrics]
