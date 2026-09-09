@@ -159,6 +159,10 @@ log» is not evidence of anything. The metrics endpoint and the tables are.
 
 ## Instruments and spans — the war-stories
 
+*(How the pieces fit together — the signal boundary, the path a span takes to a
+collector, how to instrument a model call, how to read it back — is
+`docs/observability.md`. This section is why the rules are what they are.)*
+
 `design/dreamer-agent-loop/02-instrument-blindness.md` is the catalogue: eight
 layers where an instrument could not observe the thing it existed to observe,
 plus the silent-match family one level down — the instruments we use to FIND

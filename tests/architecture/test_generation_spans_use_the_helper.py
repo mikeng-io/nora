@@ -40,12 +40,22 @@ ROOT = Path(__file__).resolve().parents[2]
 #: The one module allowed to write these strings — it is where they are defined.
 _HOME = ROOT / "nora" / "obs" / "tracing.py"
 
-#: The prefixes that make a span a generation. `GENERATION_ATTRIBUTES` names the
-#: two exact keys; a call site can also drift by spelling a NEIGHBOUR of them
-#: (`langfuse.observation.input`, `gen_ai.request.model`), which is how the two
-#: hand-rolled blocks actually differed, so the check is on the families.
-_FAMILIES = tuple(sorted({key.split(".")[0] + "." + key.split(".")[1]
-                          for key in GENERATION_ATTRIBUTES}))
+#: The NAMESPACES that make a span a generation. `GENERATION_ATTRIBUTES` names
+#: one exact key from each; the drift was never in those two keys but in their
+#: neighbours — `langfuse.observation.input` present on one block and absent
+#: from the other, `gen_ai.usage.*` absent from both until a live trace showed
+#: every gate call priced at zero tokens. So the check is on the whole
+#: namespace: anything a collector reads as part of "this span is a model
+#: call" belongs to the helper.
+#:
+#: Derived by taking each declared key back to its root namespace rather than
+#: written out, so adding a key from a third vendor to `GENERATION_ATTRIBUTES`
+#: extends this guard without touching this file.
+_FAMILIES = tuple(sorted({
+    ("langfuse.observation." if key.startswith("langfuse.") else
+     key.split(".")[0] + ".")
+    for key in GENERATION_ATTRIBUTES
+}))
 
 
 def _production_modules() -> list[Path]:

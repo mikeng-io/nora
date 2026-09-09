@@ -247,6 +247,14 @@ through compose, and why `docker compose logs nora` is empty).
 
 ## 8. Crosscutting concepts
 
+### Observability
+
+Three signals with a boundary that was measured rather than chosen: Prometheus
+answers "how many, how often, with what outcome", Langfuse holds the traces with
+a model call in them, and JSON-line logs are forensic. **`docs/observability.md`
+is the map** — the signal boundary, the two-filter path a span takes to a
+collector, how to instrument a model call, and how to read it back.
+
 ### The three memory layers
 
 Nora has one record and one interpretation of it, and they are frequently

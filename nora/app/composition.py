@@ -114,7 +114,7 @@ from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import annotate
+from nora.obs.tracing import annotate_generation
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.media import DiscordMediaSource
@@ -207,16 +207,16 @@ def _annotate_usage(response: Any) -> None:
     usage = getattr(response, "usage", None)
     if usage is None:
         return
-    annotate(**{
-        "gen_ai.usage.input_tokens": usage.prompt_tokens,
-        "gen_ai.usage.output_tokens": usage.completion_tokens,
-        "gen_ai.usage.total_tokens": usage.total_tokens,
-        # Langfuse reads the triple above; these two are the names its older
-        # mapping uses, and a collector upgrading under us must not silently
-        # zero the cost again.
-        "gen_ai.usage.prompt_tokens": usage.prompt_tokens,
-        "gen_ai.usage.completion_tokens": usage.completion_tokens,
-    })
+    # The SPELLING is `annotate_generation`'s, not this function's: the five
+    # attribute names for these three numbers live once, beside every other
+    # name that makes a span a generation, so a sixth raw client cannot invent
+    # a sixth spelling. What stays here is the only part that is the
+    # PROVIDER's: which fields an OpenAI-shaped response calls them.
+    annotate_generation(
+        input_tokens=usage.prompt_tokens,
+        output_tokens=usage.completion_tokens,
+        total_tokens=usage.total_tokens,
+    )
 
 
 class _RelevanceGateModelClient:

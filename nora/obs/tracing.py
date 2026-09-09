@@ -328,6 +328,9 @@ def annotate_generation(
     model: str = "",
     completion: str = "",
     finish_reason: str = "",
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    total_tokens: int | None = None,
     attributes: dict[str, object] | None = None,
 ) -> None:
     """The half of a generation only known on the way OUT, in the same spelling.
@@ -339,6 +342,13 @@ def annotate_generation(
 
     Same screening contract as `generation`: `completion` is text a model wrote
     and reaches a third party over the network. Screen it first.
+
+    **The token counts belong here rather than in a caller's return type.**
+    Usage is the provider's fact and no caller's verdict depends on it; widening
+    a port to carry a number only the collector reads would be the measurement
+    changing the thing it measures. Strands emits `gen_ai.usage.*` itself, so
+    only the raw `chat.completions.create` paths need this — and every one of
+    them exported as a generation costing zero until 2026-09-08.
     """
     out: dict[str, object] = {}
     if model:
@@ -348,6 +358,20 @@ def annotate_generation(
         out["langfuse.observation.output"] = completion
     if finish_reason:
         out["gen_ai.response.finish_reasons"] = finish_reason
+    if input_tokens is not None and output_tokens is not None and total_tokens is not None:
+        # FIVE NAMES FOR THREE NUMBERS, deliberately. Langfuse reads the
+        # `input`/`output`/`total` triple; `prompt_tokens`/`completion_tokens`
+        # are the names its older mapping uses, and a collector upgrading (or
+        # downgrading) under us must not silently price every call at zero
+        # again. Written only when ALL THREE arrived: a provider that omits
+        # usage records NOTHING rather than zero, because writing 0 asserts the
+        # call was free — the same argument `finish_reason=... or ""` makes one
+        # field over.
+        out["gen_ai.usage.input_tokens"] = input_tokens
+        out["gen_ai.usage.output_tokens"] = output_tokens
+        out["gen_ai.usage.total_tokens"] = total_tokens
+        out["gen_ai.usage.prompt_tokens"] = input_tokens
+        out["gen_ai.usage.completion_tokens"] = output_tokens
     out.update(attributes or {})
     annotate(**out)
 
