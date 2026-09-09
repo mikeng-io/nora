@@ -43,8 +43,13 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # paste the sha it reports. Updating the sha WITHOUT bumping the version is the
 # one move this table exists to make somebody stop and think about.
 PINNED: dict[str, tuple[int, str]] = {
-    "identity": (7, "dd8390f3c03f2848fa47a2454efd03ab3c9747037a73ade016040b1c841c5a09"),
-    "voice": (18, "e1e0195dc4d8d7cc5cbc04d0800b1481d56a7956f5b02afdb631dce8bf509db2"),
+    # v8 (2026-09-10): the group is «this group», not one named room. The same
+    # doctrine directory serves six rooms across three workspaces, and the
+    # prompt never renders a room label — so a hard-coded name was the only
+    # group identity she got, and it was wrong in five of the six.
+    "identity": (8, "0d496e3515c0ab030a341cc2bef8df1da22dc3088f8f1e169d4371d5e7bbeb55"),
+    # v19 (2026-09-10): same room-name removal as identity v8.
+    "voice": (19, "f85e5206f79ce51cf84b98fdf5aab82a00414e92cde3dcce09ccd2624031b4e0"),
     "silence": (2, "55abb8beab124e1d7f696ebcdcd577093b0afa7d063c031cc01e4dd4e3e1b6cc"),
     "conduct": (24, "a304ae577f27a9fc547896185f13b4ac382f77b5643af03868a97af235e4136a"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
@@ -61,7 +66,12 @@ PINNED: dict[str, tuple[int, str]] = {
     "participation-conduct": (
         1, "21512fb426ba2ac017b550d52f21d5ee40f58cb4e73e9d309389113db149458b",
     ),
-    "constraints": (8, "f2b59db09d5892e299f5ddcf0f2d89eb38a6bee71bf03d15c03fa71cbdcdffb7"),
+    # v9 (2026-09-10): R-14 restated around the ROOM rather than the summons.
+    # The file is served to four occasions and named only two ways a turn can
+    # open, so on a proactive turn the highest-authority file in the prompt
+    # forbade the turn — and proactive silence is the healthy outcome, so that
+    # would never have shown up as a failure.
+    "constraints": (9, "9a25c5e95b95b426a4e6d2f74bc4557ced8d36b7f29f33ad66484d688960194a"),
 }
 
 
