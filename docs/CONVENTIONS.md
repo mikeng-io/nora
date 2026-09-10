@@ -57,6 +57,54 @@ counting a module's responsibilities to counting its lines.
   real server**, including the shapes it returns for the wrong call. If
   reverting the code under test does not turn the test red, the test is
   decorative.
+- **Never paste production rows into a fixture.** Measured 2026-09-10, while
+  costing out a public release. `tests/fixtures/presence_corpus_sample.py` was
+  a `SELECT person_id, ts, lat, lng, accuracy_m, wire_state, recorded_at FROM
+  presence_fixes` run against `nora-db-1` and pasted in whole — 11,431 rows for
+  six people named by their real `person_id`s, its docstring stating «all real,
+  pasted verbatim (via a CSV->tuple transcription script, no values altered)».
+  The reasoning in that docstring is the part worth reading, because it is
+  careful and it is what made this land: a narrower slice «is not safe to
+  hand-pick without risking silently cherry-picking away exactly the ambiguous
+  data these tests exist to prove is handled correctly». That argument is
+  correct about TESTING and never asks the other question.
+
+  Parsed back, the corpus answers it. Each of the six has one ~11-metre cell
+  holding 3 to 11 distinct nights of overnight fixes across a 12-day window —
+  a residence, per person, by name. Two of the six share a cell, which is a
+  household. Twelve days of movement each, at a fidelity nobody in that group
+  agreed to publish.
+
+  `a32acc90 test(mobility): replace real-corpus fixture with a synthetic
+  generator` did the right thing and did not finish it: **deleting a file is
+  not deleting an object.** Blob `87ea7fcb` stayed reachable from `master` and
+  from `origin/master` for three weeks afterwards, and would have been
+  published intact by making the repository public — which is also why a
+  force-pushed history rewrite is not the remedy on GitHub, where unreachable
+  objects stay fetchable by SHA.
+
+  Three lessons, in the order they bite:
+
+  - **The privacy question is not the testing question**, and being right about
+    the second does not answer the first. "No narrower slice is safe" is a
+    reason to GENERATE the corpus, not to commit the real one.
+  - **`git rm` is not a deletion.** Anything that reaches a commit reaches
+    every clone, every fork and every archive of it, permanently. The moment to
+    refuse is `git add`.
+  - **This repo gated behaviour and gated the tree not at all.** R-18 scans
+    every byte on its way out to a room; nothing scanned a byte on its way into
+    a commit, and they are the same disclosure with a different audience.
+    `tests/architecture/test_no_real_identifiers_in_the_tree.py` closes that:
+    every phone number, UUID, 17-19 digit snowflake and RFC1918 address in the
+    tree must be DECLARED, so an identifier nobody has classified fails rather
+    than passes. Its coordinate rule is a COUNT and not a region — a file with
+    25+ distinct coordinate pairs is a location table whatever the latitudes
+    say (the busiest honest file in the tree holds 9). Falsified five ways:
+    restoring the real corpus reds the coordinate assertion, and a new phone,
+    ACI, snowflake or stale pin each reds its own. Its name half is only a
+    regression pin — there is no allowlist over English — and the file says so,
+    because a green gate must not be read as «no real names in the tree».
+
 - **Never point signal-cli at a different account, re-register it, or unlink
   its device** without an explicit decision — that store holds the device
   registration, and losing it means re-linking. Nora *does* now own the daemon

@@ -1,0 +1,15 @@
+{
+  "type": "fix",
+  "summary": "Nothing reaches a commit carrying a real person's identifier without somebody declaring it: every phone number, service id, platform snowflake and private address in the tree is now gated, and a file that is a table of coordinates is refused outright.",
+  "details": [
+    "tests/architecture/test_no_real_identifiers_in_the_tree.py is the gate. The shape half is a real defence — an identifier nobody has classified FAILS, rather than passing until someone notices — and declarations are checked in both directions, so a pin for something the tree no longer contains fails as a stale claim.",
+    "The rule the incident needed is a COUNT, not a region: a tracked file holding 25 or more distinct coordinate-shaped pairs is a location table whatever the latitudes say. Measured headroom the same day: the busiest legitimate file in the tree holds 9; tests/fixtures/presence_corpus_sample.py held thousands.",
+    "Falsified five ways, each reddening its own assertion: restoring the real presence corpus into the tree, and adding an undeclared phone number, ACI, Discord snowflake, or a pin for a value no longer present.",
+    "AGENTS.md gains a 'Never paste production rows into a fixture' rule; docs/CONVENTIONS.md carries the war-story, including why deleting the file did not delete the object and why a force-pushed rewrite is not the remedy on GitHub."
+  ],
+  "limitations": [
+    "The name half is a REGRESSION PIN, not a detector — any word can be a name and there is no allowlist over English. _PENDING_REAL_NAMES stops the eight real people already in the tree from spreading; it cannot catch the next name. A green gate does not mean 'no real names in the tree'.",
+    "The gate reads the TREE only. It says nothing about git history, where blob 87ea7fcb (11,431 real GPS fixes for six named people) remains reachable from master and origin/master; that is a history rewrite, not a test.",
+    "The _PENDING_REAL_* inventories are non-empty by design: real phone numbers, ACIs, Discord ids and the norty host address are still in the tree, pinned so they cannot grow. They are the public-release scrub's burn-down list."
+  ]
+}

@@ -346,6 +346,21 @@ summary — update-in-place, separate from the Dreamer and Honcho).
   index; on *still open*, the thing that would close it. Three instruction
   rewrites in one night changed nothing or made it worse; rendering an age per
   transcript row cut the same gate's error rate by two thirds.
+- **Never paste production rows into a fixture** — not a slice, not "just six
+  people", not with a docstring explaining that it is real. `SELECT`ing out of
+  `nora-db-1` produces PII that outlives the branch, the test, and the decision
+  to delete it: `tests/fixtures/presence_corpus_sample.py` held 11,431 real GPS
+  fixes for six named people, and parsed back, every one of them has a
+  residence recoverable to an 11-metre cell from overnight fixes. It was
+  removed from the TREE in one commit and stayed reachable from `master` and
+  `origin/master` for three weeks, because deleting a file is not deleting an
+  object. Fixtures are GENERATED, or they are placeholders from
+  `identity.example.toml`. If a synthetic corpus cannot reproduce the property
+  under test, that is a finding about the property, not a licence to commit the
+  real one. `tests/architecture/test_no_real_identifiers_in_the_tree.py` is the
+  gate: every phone number, service id, platform snowflake and private address
+  in the tree must be DECLARED there, and its `_PENDING_REAL_*` inventories
+  only shrink.
 - **Never read an instrument's output as evidence without first checking it can
   measure the thing** — state what a positive result would look like before
   concluding from a null one.
