@@ -425,8 +425,8 @@ started, and it can never ask for more, ask differently, or ask again».
 > deterministic check decides whether a tick renders: the daily floor
 > (07:00 HK, no rendered pass yet that day), or a change since the last
 > rendered pass — a note created, revised on the tag path, or newly past
-> its `revisit_at`, or a room's Standing rewritten — once every room of the
-> workspace has been quiet for `[dreamer] quiet_seconds`. A tick that does
+> its `revisit_at`, or a room's Standing rewritten — once the workspace's
+> HOME ROOM has been quiet for `[dreamer] quiet_seconds`. A tick that does
 > not render is one store read and no model call, which is the same shape
 > the note tier's watermark and the curator's blank render already have.
 > «Last rendered pass» is durable in `dream_schedule_state`
@@ -438,6 +438,23 @@ started, and it can never ask for more, ask differently, or ask again».
 > rhythm into state. **Reopens if** `nora_proactive_pass_total{reason=
 > "changed"}` runs far outnumber `remind` decisions over a week: the
 > detector fires on noise, and a slot is the honest cadence.
+>
+> **REVISED AGAIN 2026-09-10 by the operator, on the second live day:** the
+> quiet condition reads the HOME ROOM, not every room of the workspace. A
+> proactive row fires into the home room and `policy.py` refuses it anywhere
+> else, so the home room is the only room the pass can interrupt; every
+> other room was a proxy for that, and on `friends` the proxy was the whole
+> gate. Zone 42 is a games room on Discord and the busiest of the three; the
+> note that moved (09:40Z) was raised in it, and four consecutive hourly
+> ticks held `held_quiet` on Zone 42's traffic rather than speak into the
+> Signal room where the row would have landed. Measured over the 14 days to
+> 2026-09-10, 337 hourly ticks on that workspace: quiet on every room 257
+> (76%), quiet on the home room alone 313 (93%); longest unbroken
+> workspace-busy run 6 hours — long enough to swallow a note anchored on the
+> day it was raised. **Reopens if** a `changed` pass is answered as a
+> barge-in: what this drops is «a sibling room is still settling the thing
+> she is about to raise», and the fix for that is a hold that follows the
+> room that CHANGED, which `_changed_since` does not report today.
 
 `dream_loop` (`runtime.py:758`) is the Dreamer's one trigger and the sole
 caller of `DreamerRuntime.run`; `AdaptorSchedule(min_interval_seconds,

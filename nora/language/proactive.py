@@ -50,8 +50,10 @@ and nothing else unless one of two things is true: the DAILY FLOOR — no pass
 has rendered yet on this Hong Kong calendar day and it is past
 `daily_hour` — or a CHANGE since the last rendered pass: a note of the
 workspace was created, revised on the tag path, or crossed its `revisit_at`,
-or a room's Standing moved — AND every room of the workspace has been quiet
-for `quiet_seconds`. Anything else renders `""`, and `DreamerRuntime.run`
+or a room's Standing moved — AND the workspace's HOME ROOM has been quiet
+for `quiet_seconds` (the room a proactive row fires into, and so the only
+one this pass can interrupt; «every room of the workspace» until
+2026-09-10 — see `_quiet`). Anything else renders `""`, and `DreamerRuntime.run`
 makes no model call on a blank prompt. That is the same shape the note
 tier already has (a watermark that fires on lag, a curator that renders
 nothing on a tidy notebook), so a workspace where nothing moved costs one
@@ -546,13 +548,38 @@ class ProactiveAdaptor:
         return False
 
     async def _quiet(self, rooms: Sequence[WorkspaceRoom], *, now_ms: int) -> bool:
-        """Every room silent for `quiet_seconds` — the newest row of each,
-        whoever wrote it. No record store wired treats the workspace as
-        quiet; a failed read treats THAT room as not quiet (held, retried
-        next tick), never as silent."""
+        """The HOME ROOM silent for `quiet_seconds` — its newest row, whoever
+        wrote it. No record store wired treats the workspace as quiet; a
+        failed read treats the room as not quiet (held, retried next tick),
+        never as silent.
+
+        THE HOME ROOM AND NOT EVERY ROOM (revised 2026-09-10 by the operator;
+        design 39 D10 said "every room of the workspace"). A proactive row
+        fires into the home room — `inputs` renders exactly one `<home_room>`
+        and `policy.py` refuses a row anywhere else — so the home room is the
+        ONLY room this pass can interrupt. Every other room of the workspace
+        was a proxy for that, and on the live `friends` workspace the proxy
+        was the whole gate: Zone 42 is a games room on Discord, the note that
+        moved was raised in it, and the pass that would have spoken into the
+        Signal room was held `held_quiet` on Zone 42's traffic instead.
+        Measured over the 14 days to 2026-09-10, 337 hourly ticks on that
+        workspace: quiet on every room 257 (76%), quiet on the home room 313
+        (93%), and the longest unbroken workspace-busy run was 6 hours — long
+        enough to swallow a note anchored on the day it was raised, which is
+        the case that produced this change.
+
+        **Reopens if** a `changed` pass is answered as a barge-in: the
+        protection this drops is «a sibling room is still settling the very
+        thing she is about to raise», and the room that CHANGED is not read
+        here — `_changed_since` returns a bool, not which room moved. Making
+        the hold follow the changed room is the fix if that shows up; it is
+        not built on one week of one workspace.
+        """
         if self._records is None:
             return True
-        for room in rooms:
+        # `render` returns `no_home_room` before `_pass_reason` is reached, so
+        # this sequence is never empty in the live path.
+        for room in (r for r in rooms if r.home):
             try:
                 rows = await self._records.recent(
                     conversation_id=room.conversation_id, limit=1,

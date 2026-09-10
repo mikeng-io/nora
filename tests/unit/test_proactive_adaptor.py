@@ -409,25 +409,56 @@ async def test_a_tag_path_revision_in_a_quiet_room_renders_and_a_background_one_
     assert metrics.get("nora_proactive_pass_total", reason="changed") == 1
 
 
-async def test_a_change_in_a_room_still_talking_is_held_until_it_goes_quiet():
-    notes = InMemoryNoteStore()
+async def _changed_note(notes, clock, *, at_ms):
+    """A workspace whose ORIENT state has MOVED since the last rendered pass:
+    one note revised on the tag path. Everything after it turns on the quiet
+    condition alone."""
     note = await _note(notes)
-    clock = InMemoryDreamScheduleClock()
-    metrics = Metrics()
     await _rendered_once(_adaptor(notes=notes, clock_store=clock), clock, at_ms=NOW_MS)
-    t1 = NOW + timedelta(hours=2)
-    t1_ms = int(t1.timestamp() * 1000)
     await notes.append_revision(
         workspace=WS, note_id=note.id, body="moved", parent_revision_id=note.head_revision_id,
-        established_by="tag:miles", now_ms=t1_ms - 30_000,
+        established_by="tag:miles", now_ms=at_ms - 30_000,
     )
-    talking = _Records({"sig-1": t1_ms - 3_600_000, "1/2": t1_ms - 60_000})
+
+
+async def test_a_change_is_held_while_the_home_room_is_still_talking():
+    notes = InMemoryNoteStore()
+    clock = InMemoryDreamScheduleClock()
+    metrics = Metrics()
+    t1 = NOW + timedelta(hours=2)
+    t1_ms = int(t1.timestamp() * 1000)
+    await _changed_note(notes, clock, at_ms=t1_ms)
+    # `sig-1` is the HOME room and it spoke a minute ago.
+    talking = _Records({"sig-1": t1_ms - 60_000, "1/2": t1_ms - 3_600_000})
 
     assert await _adaptor(
         notes=notes, clock_store=clock, metrics=metrics, now=t1, records=talking,
     ).inputs(key=WS, batch=()) == ""
 
     assert metrics.get("nora_proactive_pass_total", reason="held_quiet") == 1
+
+
+async def test_a_change_is_not_held_by_a_sibling_room_still_talking():
+    """The live defect this rule was changed for (2026-09-10, design 39 D10).
+    A proactive row fires into the HOME room, so a sibling room's traffic
+    cannot be what stops her speaking there — on the `friends` workspace the
+    sibling was Zone 42, a games room, and it held four consecutive hourly
+    ticks on a note anchored that same day."""
+    notes = InMemoryNoteStore()
+    clock = InMemoryDreamScheduleClock()
+    metrics = Metrics()
+    t1 = NOW + timedelta(hours=2)
+    t1_ms = int(t1.timestamp() * 1000)
+    await _changed_note(notes, clock, at_ms=t1_ms)
+    # The home room has been silent an hour; the sibling spoke a minute ago.
+    sibling_loud = _Records({"sig-1": t1_ms - 3_600_000, "1/2": t1_ms - 60_000})
+
+    assert await _adaptor(
+        notes=notes, clock_store=clock, metrics=metrics, now=t1, records=sibling_loud,
+    ).inputs(key=WS, batch=())
+
+    assert metrics.get("nora_proactive_pass_total", reason="changed") == 1
+    assert metrics.get("nora_proactive_pass_total", reason="held_quiet") == 0
 
 
 async def test_a_new_note_a_due_revisit_and_a_standing_move_each_count_as_change():
