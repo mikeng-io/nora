@@ -530,3 +530,125 @@ async def test_a_note_is_woken_at_most_once_per_day_across_passes():
     assert await _decide(NOW + timedelta(hours=26)) == 1            # next day's floor
     last = await clock.last_fired(adaptor_name=WAKE_CLOCK_NAME, key=f"{WS}/{note.id}")
     assert last == int((NOW + timedelta(hours=26)).timestamp() * 1000)
+
+
+async def _proactive_row(log, note_id, *, created_at, conversation_id="sig-1"):
+    await log.create(Reminder(
+        id=uuid.uuid4(), requester_person_id="nora", platform="signal",
+        conversation_id=conversation_id, conversation_type="group",
+        text="say the venue is still open", created_at=created_at,
+        due_at=created_at + timedelta(hours=6), state=ReminderState.PENDING,
+        fired_at=None, outcome=None, kind="proactive",
+        payload={"note_id": note_id, "note_title": "t", "intent": "nudge"},
+    ))
+
+
+async def test_a_row_the_envelope_never_reported_is_still_charged_a_wake():
+    """`remind` writes inside the model loop; the envelope is the model's
+    ACCOUNT of that write, and three paths lose it (screened item, unknown
+    handle, no readable sample). `commit` reads the rows back."""
+    notes = InMemoryNoteStore()
+    note = await _note(notes)
+    log = FakeReminderStore()
+    clock_store = InMemoryDreamScheduleClock()
+    metrics = Metrics()
+    adaptor = _adaptor(
+        notes=notes, reminders=log, clock_store=clock_store, metrics=metrics,
+    )
+
+    await adaptor.inputs(key=WS, batch=())
+    # The row lands inside the loop; the envelope comes back EMPTY.
+    await _proactive_row(log, note.id, created_at=NOW)
+    wakes = await adaptor.commit(key=WS, proposals=(), now_ms=NOW_MS)
+
+    assert wakes == 1
+    assert metrics.get("nora_proactive_reconciled_total") == 1
+    assert await clock_store.last_fired(
+        adaptor_name=WAKE_CLOCK_NAME, key=f"{WS}/{note.id}",
+    ) == NOW_MS
+
+
+async def test_a_row_orphaned_by_an_unavailable_run_is_charged_by_the_next_pass():
+    """A run with no readable sample returns before `commit`, so its rows are
+    charged by the NEXT pass: that run never stamped the pass clock, so the
+    window still reaches back over them."""
+    notes = InMemoryNoteStore()
+    note = await _note(notes)
+    log = FakeReminderStore()
+    clock_store = InMemoryDreamScheduleClock()
+    # A pass rendered yesterday and was accounted for.
+    await clock_store.record_fire(
+        adaptor_name=PASS_CLOCK_NAME, key=WS, at_ms=NOW_MS - 86_400_000,
+    )
+    # Then a pass wrote a row and died unreadable — no `commit`, no wake.
+    await _proactive_row(log, note.id, created_at=NOW - timedelta(hours=2))
+    adaptor = _adaptor(notes=notes, reminders=log, clock_store=clock_store)
+
+    await adaptor.inputs(key=WS, batch=())
+    wakes = await adaptor.commit(key=WS, proposals=(), now_ms=NOW_MS)
+
+    assert wakes == 1
+
+
+async def test_reconcile_never_double_charges_what_the_envelope_reported():
+    notes = InMemoryNoteStore()
+    note = await _note(notes)
+    log = FakeReminderStore()
+    clock_store = InMemoryDreamScheduleClock()
+    metrics = Metrics()
+    adaptor = _adaptor(
+        notes=notes, reminders=log, clock_store=clock_store, metrics=metrics,
+    )
+
+    await adaptor.inputs(key=WS, batch=())
+    await _proactive_row(log, note.id, created_at=NOW)
+    parsed = await adaptor.accept(
+        key=WS, items=({"action": "remind", "note": "1", "why": "it is Saturday"},),
+    )
+    wakes = await adaptor.commit(
+        key=WS,
+        proposals=tuple(
+            Proposal(payload=p, instruction_sha256="x", model="m", established_by="e")
+            for p in parsed
+        ),
+        now_ms=NOW_MS,
+    )
+
+    assert wakes == 1
+    assert metrics.get("nora_proactive_reconciled_total") == 0
+
+
+async def test_reconcile_joins_rows_to_the_workspace_and_ignores_plain_reminders():
+    notes = InMemoryNoteStore()
+    note = await _note(notes)
+    log = FakeReminderStore()
+    clock_store = InMemoryDreamScheduleClock()
+    adaptor = _adaptor(notes=notes, reminders=log, clock_store=clock_store)
+
+    await adaptor.inputs(key=WS, batch=())
+    # Another workspace's room, and a tag-path row in this one: neither is a
+    # decision this pass made.
+    await _proactive_row(log, note.id, created_at=NOW, conversation_id="wedding-room")
+    await log.create(Reminder(
+        id=uuid.uuid4(), requester_person_id="nora", platform="signal",
+        conversation_id="sig-1", conversation_type="group", text="milk",
+        created_at=NOW, due_at=NOW + timedelta(hours=1),
+        state=ReminderState.PENDING, fired_at=None, outcome=None,
+        payload={"note_id": note.id},
+    ))
+    wakes = await adaptor.commit(key=WS, proposals=(), now_ms=NOW_MS)
+
+    assert wakes == 0
+
+
+async def test_a_blank_tick_reconciles_nothing():
+    """`inputs` rendered nothing, so no pass ran and no row is this pass's."""
+    notes = InMemoryNoteStore()
+    note = await _note(notes)
+    log = FakeReminderStore()
+    adaptor = _adaptor(notes=notes, reminders=log, rooms=())
+
+    await adaptor.inputs(key=WS, batch=())
+    await _proactive_row(log, note.id, created_at=NOW)
+
+    assert await adaptor.commit(key=WS, proposals=(), now_ms=NOW_MS) == 0

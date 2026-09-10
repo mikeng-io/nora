@@ -1651,6 +1651,19 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Proactive decide-turn decisions, by action: remind or decline.",
         ("action",),
     ),
+    _CounterSpec(
+        "nora_proactive_reconciled_total",
+        "Reminder rows `remind` wrote inside the decide loop that the pass's "
+        "own envelope never reported, found by reading the rows back in "
+        "`commit` and charged a wake there. `remind` writes during the model "
+        "loop, so a screened item, an unknown handle, or a run with no "
+        "readable sample loses the account of a write that already happened — "
+        "and an uncharged wake lets the next pass raise the same note again. "
+        "Expected to sit at zero: any sustained rate here says a screen or a "
+        "sample is dropping decisions, and this series is the only place that "
+        "is visible.",
+        (),
+    ),
     # The Relevance Gate (design/dreamer-agent-loop/36). TWO series, and the
     # split is the point: this one moves only when the gate actually decided,
     # the one below only when it could not. Both outcomes are a `no_go` at the
