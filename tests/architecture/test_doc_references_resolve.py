@@ -232,6 +232,12 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    ("docs/CONVENTIONS.md", "tests/fixtures/presence_corpus_sample.py"): (
+        "the war-story's subject: 11,431 real GPS fixes, deleted from the tree by "
+        "a32acc90 and the whole point of the entry. The dangling path IS the "
+        "record — naming the file is how the next reader finds the blob that "
+        "outlived it, and rewriting the reference would erase what happened"
+    ),
     ("design/discord-integration/00-overview.md", "deploy/watchdog.sh"): (
         "the shell watchdog was deleted 2026-09-09 once Prometheus covered its one "
         "condition with a real delivery path; this design records the reasoning as it "
