@@ -1,0 +1,11 @@
+{
+  "type": "docs",
+  "summary": "A design bundle for what Nora should keep track of between turns, and why she currently keeps track of nothing.",
+  "details": [
+    "She is measurably good at not interrupting and measurably unable to act on her own: the numbers, and why they are the doctrine working exactly as written rather than a tuning problem.",
+    "Four situations from real groups that the current design has no shape for — a dinner nobody planned, a game the group re-argues from scratch every time, a suggestion with no occasion behind it, and a friend's injury worth asking after.",
+    "What a note would have to become to hold them: something that is live rather than something that is undecided, with a record of when it last moved and when it stops being true.",
+    "The order the changes have to land in, what each one risks, and the one decision that has to be made first because everything else is overruled without it.",
+    "No behaviour changes. This is a proposal."
+  ]
+}
