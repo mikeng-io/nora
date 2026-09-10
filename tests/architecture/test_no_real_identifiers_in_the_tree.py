@@ -177,7 +177,7 @@ def _tracked_text() -> dict[str, str]:
     bodies: dict[str, str] = {}
     unreadable: list[str] = []
     for name in filter(None, out.split("\0")):
-        if name.endswith(_SKIP_SUFFIXES) or name == _SELF:
+        if name.endswith(_SKIP_SUFFIXES) or name in _EXEMPT:
             continue
         path = REPO / name
         if not path.is_file():          # a submodule or a broken link
@@ -193,6 +193,13 @@ def _tracked_text() -> dict[str, str]:
 
 
 _SELF = "tests/architecture/test_no_real_identifiers_in_the_tree.py"
+
+# The de-identification map is the ONE file whose purpose is to hold a real
+# identifier beside the pseudonym that replaces it — scanning it would report
+# every entry as an offender, and declaring its right-hand side here would put
+# the join between the two in a second place. `scrub/README.md` says why it is
+# private, and the rewrite deletes `scrub/` from the published repo.
+_EXEMPT = frozenset({_SELF, "scrub/replacements.txt"})
 
 
 @pytest.fixture(scope="module")
