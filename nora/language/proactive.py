@@ -135,7 +135,10 @@ PROACTIVE_TOOLS: frozenset[str] = frozenset({
 PASS_CLOCK_NAME = "proactive:pass"  # noqa: S105 — a table row name, not a secret
 WAKE_CLOCK_NAME = "proactive:wake"
 
-PassReason = Literal["daily", "changed", "held_quiet", "unchanged", "unclocked"]
+PassReason = Literal[
+    "daily", "changed", "held_quiet", "unchanged", "unclocked",
+    "no_home_room", "nothing_shown",
+]
 PASS_REASONS: frozenset[str] = frozenset(get_args(PassReason))
 
 #: Local hour (in `timezone`) after which the daily floor may render.
@@ -368,6 +371,12 @@ class ProactiveAdaptor:
         """
         rooms = tuple(self._rooms_of(key))
         if not any(room.home for room in rooms):
+            # COUNTED, like every other tick. An operator who never named a
+            # home room otherwise sees no series at all for this workspace,
+            # and a wiring gap that reads as silence is the one this repo has
+            # already paid for: a reason nobody counts is a reason nobody
+            # notices.
+            self._inc("nora_proactive_pass_total", reason="no_home_room")
             self._shown[key] = _Shown({}, {})
             return ""
         now = self._clock()
@@ -381,8 +390,8 @@ class ProactiveAdaptor:
         reason, since_ms = await self._pass_reason(
             key, rooms, open_notes, now=now, now_ms=now_ms,
         )
-        self._inc("nora_proactive_pass_total", reason=reason)
         if reason in ("unchanged", "held_quiet"):
+            self._inc("nora_proactive_pass_total", reason=reason)
             self._shown[key] = _Shown({}, {})
             return ""
 
@@ -402,8 +411,16 @@ class ProactiveAdaptor:
 
         standing_lines = await self._standing_lines(rooms, now_ms=now_ms)
         if not open_notes and not standing_lines:
+            # The tick was DUE — `daily` or `changed` — and still rendered
+            # nothing, because the workspace has no open notes and no room has
+            # written a position. Counted as what happened rather than as the
+            # reason it was due: `daily` and `changed` are the series the
+            # reversal condition reads as «a pass ran», and a blank render is
+            # not one (audit 2026-09-10).
+            self._inc("nora_proactive_pass_total", reason="nothing_shown")
             self._shown[key] = _Shown({}, {})
             return ""
+        self._inc("nora_proactive_pass_total", reason=reason)
 
         parts = [f"<now>{now.astimezone(self._tz):%Y-%m-%d %a %H:%M} ({self._tz.key})</now>"]
         home = next(room for room in rooms if room.home)

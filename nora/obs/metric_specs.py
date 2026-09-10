@@ -1640,10 +1640,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # is `changed` runs far outnumbering remind decisions.
     _CounterSpec(
         "nora_proactive_pass_total",
-        "Proactive adaptor ticks, by why they rendered or did not: daily "
-        "(the floor), changed (notes/Standing moved and the rooms are quiet), "
-        "held_quiet (moved but a room is still talking), unchanged, or "
-        "unclocked (no pass clock wired — every tick renders).",
+        "Proactive adaptor ticks, by what the tick DID — not by what made it "
+        "due, which is why a due tick that rendered nothing is not counted as "
+        "a pass. RENDERED: daily (the floor), changed (notes/Standing moved "
+        "and the rooms are quiet), unclocked (no pass clock wired — every tick "
+        "renders). DID NOT: held_quiet (moved but a room is still talking), "
+        "unchanged, nothing_shown (due, but no open notes and no room has "
+        "written a position), no_home_room (the operator has not said where "
+        "she stands — a wiring gap, and it is here so it does not read as "
+        "silence).",
         ("reason",),
     ),
     _CounterSpec(

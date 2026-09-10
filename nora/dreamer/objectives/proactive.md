@@ -1,7 +1,7 @@
 ---
 name: proactive
 kind: objective
-version: 3
+version: 4
 applies_to: [proactive_adaptor]
 description: >-
   The decide turn of Nora's proactive half (design/dreamer-agent-loop/39,
@@ -13,7 +13,12 @@ description: >-
   tune (39 §5). Version 2 (operator, 2026-09-09): the first live run set a
   reminder from the note body alone, without asking memory about anyone
   involved — so a reminder now REQUIRES a memory read first, and the decide
-  suite fails one made without it.
+  suite fails one made without it. Version 4 (operator, 2026-09-10): the
+  reads this text asked for outran the per-tool ceilings — `note_read` 3,
+  `about` 4, `lookup_person` 4, `group_members` 1 for the WHOLE pass, against
+  «one entry per open note you considered» — so a pass with four notes spent
+  its budget on the first two and met a refusal on the one that mattered. The
+  ceilings are now stated, and the order of spend with them.
 change_policy: operator-only
 ---
 This objective is the one place the Dreamer ACTS, and the doctrine's «you look; you do
@@ -56,6 +61,17 @@ memory, not in the note. So, **before every `remind`, ask memory first**:
 
 - `about` for each person the note involves — the one whose plan it is, the ones who have
   to answer. Read the note body (`note_read`) to know who that is.
+
+**These reads are rationed, and the ration is for the whole pass, not per note:**
+`note_read` 3, `about` 4, `lookup_person` 4, `ask_memory` 4,
+`search_memory_workspace` 4, `group_members` 1. Past those you are refused, and a
+refusal on the note that mattered is the pass wasted. So triage BEFORE you read: the
+open-notes list already gives you each title, what is unsettled, the date it is about,
+when it is due to be looked at again, and how many times you have raised it. That is
+enough to set most notes aside — a thing three weeks out, a thing already raised twice, a
+thing with no corner left open. Open the body only for the one or two that could
+plausibly earn a reminder TODAY, and spend `about` on the people those notes name. A
+note you set aside from the index costs nothing and still gets its `decline` entry.
 - `ask_memory` once, for the one question that decides the moment — «does Miles usually
   settle dinner the night before or on the day?», «has this group been slow to answer
   this kind of thing?» — when the note is time-sensitive or about where to go.

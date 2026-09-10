@@ -652,3 +652,58 @@ async def test_a_blank_tick_reconciles_nothing():
     await _proactive_row(log, note.id, created_at=NOW)
 
     assert await adaptor.commit(key=WS, proposals=(), now_ms=NOW_MS) == 0
+
+
+async def test_a_due_tick_that_renders_nothing_is_not_counted_as_a_pass():
+    """`daily`/`changed` are the series «a pass ran» is read off. A workspace
+    with no open notes and no Standing is due and renders nothing, and
+    counting that as a pass would inflate the denominator with blank ticks."""
+    metrics = Metrics()
+    adaptor = _adaptor(notes=InMemoryNoteStore(), metrics=metrics)
+
+    assert await adaptor.inputs(key=WS, batch=()) == ""
+    assert metrics.get("nora_proactive_pass_total", reason="nothing_shown") == 1
+    assert metrics.get("nora_proactive_pass_total", reason="daily") == 0
+    assert metrics.get("nora_proactive_pass_total", reason="unclocked") == 0
+
+
+async def test_a_workspace_with_no_home_room_is_counted_rather_than_silent():
+    """An operator who never named a home room otherwise sees no series at
+    all — a wiring gap reading as quiet."""
+    metrics = Metrics()
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    adaptor = _adaptor(
+        notes=notes, metrics=metrics,
+        rooms=(WorkspaceRoom(
+            platform="signal", conversation_id="sig-1", label="Friends",
+        ),),
+    )
+
+    assert await adaptor.inputs(key=WS, batch=()) == ""
+    assert metrics.get("nora_proactive_pass_total", reason="no_home_room") == 1
+
+
+def test_the_objectives_stated_ration_is_the_ration_the_guard_enforces():
+    """DEC-150's rule, applied to prose: the objective NAMES its per-tool
+    ceilings so the model can triage before it spends them, and an authored
+    copy of a number the code owns goes stale silently. This is the read-back
+    that stops it."""
+    import re
+    from pathlib import Path
+
+    from nora.agent.tools import NATIVE_TOOLS
+
+    text = (
+        Path(__file__).resolve().parents[2]
+        / "nora" / "dreamer" / "objectives" / "proactive.md"
+    ).read_text(encoding="utf-8")
+    stated = {
+        name: int(n)
+        for name, n in re.findall(r"`(\w+)` (\d+)", text)
+        if name in NATIVE_TOOLS
+    }
+    assert len(stated) >= 6, "the ration line no longer names the tools it rations"
+    assert stated == {
+        name: NATIVE_TOOLS[name].budget for name in stated
+    }, "the objective's stated ration has drifted from NATIVE_TOOLS"
