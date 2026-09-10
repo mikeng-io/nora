@@ -1,0 +1,10 @@
+{
+  "type": "fix",
+  "summary": "Nora is no longer told to write things down on turns where nobody is there to write them for, and the proactive pass is told what it is allowed to look up before it spends the looking.",
+  "details": [
+    "Her conduct says to record a fact, track an undecided thing, or note a plan. On a turn nobody asked for — the room went quiet, or she came back to something herself — there is no one to record for and every one of those tools refuses. The instruction now says so, instead of asking for something that cannot happen.",
+    "The rule about when she speaks at all named two kinds of turn. There are three: called, the floor coming to her, and coming back to a thing she decided earlier to come back to. The third is now written down, along with what it does and does not mean — deciding to look again is not deciding to speak.",
+    "The morning pass is rationed in how many notes it may open and how many people it may look up. It was being asked for more than it is allowed, and would run out on the note that mattered. It is now told the ration and told to sort the list before spending it.",
+    "The tick counter says what each tick DID rather than what made it due, so a morning that was due and found nothing to show is no longer counted as a pass that ran, and a group with no room set up is counted rather than silent."
+  ]
+}

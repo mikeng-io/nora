@@ -1,0 +1,9 @@
+{
+  "type": "fix",
+  "summary": "A reminder the proactive pass wrote but never reported still counts against the note, so the next pass cannot raise the same thing twice.",
+  "details": [
+    "The pass sets its reminder by calling a tool mid-thought, and separately reports at the end what it decided. Three things could break that report — a rejected item, a mis-named note, an answer nobody could read — and each left a reminder standing that the notebook had no record of, so the next pass was free to set a second one about the same thing.",
+    "The pass now reads back the reminders it actually wrote instead of trusting its own account of them, and charges the note for each. The window reaches back over any earlier pass that died before it could account for itself.",
+    "`nora_proactive_reconciled_total` counts the reminders found this way. It should sit at zero; a rate says decisions are being dropped somewhere upstream."
+  ]
+}

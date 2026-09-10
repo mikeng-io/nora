@@ -13,8 +13,10 @@ reserved `ai_peer` id and bound to the workspace's home room (39 D3/D5), and
 the heartbeat's fire path — the ACT turn — speaks at the decided time, or
 declines (39 D4/D12). The decision IS the tool call. The envelope this
 adaptor parses is bookkeeping: which notes it considered, what it scheduled
-or declined, and why; its sink writes `record_wake` on each note it decided
-about (39 D6) and nothing else.
+or declined, and why; its sink writes `record_wake` on each note it raised
+(39 D6) and nothing else. The envelope is bookkeeping and bookkeeping can be
+lost, so the sink reads the rows back and charges any raise the envelope did
+not report — see `commit`.
 
 WHAT IT MAY NOT DO
 ------------------
@@ -81,7 +83,7 @@ import itertools
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from zoneinfo import ZoneInfo
 
@@ -133,7 +135,10 @@ PROACTIVE_TOOLS: frozenset[str] = frozenset({
 PASS_CLOCK_NAME = "proactive:pass"  # noqa: S105 — a table row name, not a secret
 WAKE_CLOCK_NAME = "proactive:wake"
 
-PassReason = Literal["daily", "changed", "held_quiet", "unchanged", "unclocked"]
+PassReason = Literal[
+    "daily", "changed", "held_quiet", "unchanged", "unclocked",
+    "no_home_room", "nothing_shown",
+]
 PASS_REASONS: frozenset[str] = frozenset(get_args(PassReason))
 
 #: Local hour (in `timezone`) after which the daily floor may render.
@@ -199,11 +204,23 @@ class _Decision:
 class _Shown:
     """What `inputs` rendered for one key, kept for `commit`. `rendered`
     says whether a prompt was produced at all — `commit` records the pass
-    clock only then, so a blank tick never counts as a pass."""
+    clock only then, so a blank tick never counts as a pass.
+
+    `since_ms` is the pass clock as this tick READ it — the last pass whose
+    rows were accounted for. `commit` reconciles every proactive row written
+    after it, which is how a pass that died before `commit` (no readable
+    sample) still has its rows charged: its clock was never stamped, so the
+    next pass's window still reaches back over them. `None` means unclocked
+    or first-ever, and reconciliation then falls back to `at_ms` — this
+    pass's own render instant — so it still covers this pass's own rows.
+
+    `at_ms` is when `inputs` rendered."""
 
     by_handle: Mapping[str, str]
     anchor_date: Mapping[str, int | None]
     rendered: bool = False
+    since_ms: int | None = None
+    at_ms: int = 0
 
 
 class _NoteStore(Protocol):
@@ -354,6 +371,12 @@ class ProactiveAdaptor:
         """
         rooms = tuple(self._rooms_of(key))
         if not any(room.home for room in rooms):
+            # COUNTED, like every other tick. An operator who never named a
+            # home room otherwise sees no series at all for this workspace,
+            # and a wiring gap that reads as silence is the one this repo has
+            # already paid for: a reason nobody counts is a reason nobody
+            # notices.
+            self._inc("nora_proactive_pass_total", reason="no_home_room")
             self._shown[key] = _Shown({}, {})
             return ""
         now = self._clock()
@@ -364,9 +387,11 @@ class ProactiveAdaptor:
         # model is near (issue #136): daily floor, or a change since the last
         # rendered pass in a quiet workspace. Counted by reason, because the
         # reversal condition is a ratio over this series.
-        reason = await self._pass_reason(key, rooms, open_notes, now=now, now_ms=now_ms)
-        self._inc("nora_proactive_pass_total", reason=reason)
+        reason, since_ms = await self._pass_reason(
+            key, rooms, open_notes, now=now, now_ms=now_ms,
+        )
         if reason in ("unchanged", "held_quiet"):
+            self._inc("nora_proactive_pass_total", reason=reason)
             self._shown[key] = _Shown({}, {})
             return ""
 
@@ -381,12 +406,21 @@ class ProactiveAdaptor:
             note_lines.append(_note_line(handle, note, now=now, tz=self._tz))
         self._shown[key] = _Shown(
             by_handle=by_handle, anchor_date=anchor_date, rendered=True,
+            since_ms=since_ms, at_ms=now_ms,
         )
 
         standing_lines = await self._standing_lines(rooms, now_ms=now_ms)
         if not open_notes and not standing_lines:
+            # The tick was DUE — `daily` or `changed` — and still rendered
+            # nothing, because the workspace has no open notes and no room has
+            # written a position. Counted as what happened rather than as the
+            # reason it was due: `daily` and `changed` are the series the
+            # reversal condition reads as «a pass ran», and a blank render is
+            # not one (audit 2026-09-10).
+            self._inc("nora_proactive_pass_total", reason="nothing_shown")
             self._shown[key] = _Shown({}, {})
             return ""
+        self._inc("nora_proactive_pass_total", reason=reason)
 
         parts = [f"<now>{now.astimezone(self._tz):%Y-%m-%d %a %H:%M} ({self._tz.key})</now>"]
         home = next(room for room in rooms if room.home)
@@ -458,23 +492,25 @@ class ProactiveAdaptor:
     async def _pass_reason(
         self, key: str, rooms: Sequence[WorkspaceRoom], open_notes: Sequence[Note],
         *, now: datetime, now_ms: int,
-    ) -> PassReason:
-        """Why this tick renders, or why it does not (module docstring)."""
+    ) -> tuple[PassReason, int | None]:
+        """Why this tick renders, or why it does not (module docstring), and
+        the pass clock it measured that against — `commit`'s reconciliation
+        window."""
         if self._clock_store is None:
-            return "unclocked"
+            return "unclocked", None
         last = await self._clock_store.last_fired(adaptor_name=PASS_CLOCK_NAME, key=key)
         if last is None:
             # Never rendered for this workspace: the first pass is the floor.
-            return "daily"
+            return "daily", None
         local_now = now.astimezone(self._tz)
         local_last = datetime.fromtimestamp(last / 1000, tz=self._tz)
         if local_now.date() > local_last.date() and local_now.hour >= self._daily_hour:
-            return "daily"
+            return "daily", last
         if not await self._changed_since(key, rooms, open_notes, last_ms=last, now_ms=now_ms):
-            return "unchanged"
+            return "unchanged", last
         if not await self._quiet(rooms, now_ms=now_ms):
-            return "held_quiet"
-        return "changed"
+            return "held_quiet", last
+        return "changed", last
 
     async def _changed_since(
         self, key: str, rooms: Sequence[WorkspaceRoom], open_notes: Sequence[Note],
@@ -685,6 +721,21 @@ class ProactiveAdaptor:
 
         `commit(key, ())` is legal and records nothing — nothing was decided
         about, so no note was woken.
+
+        THE ENVELOPE IS NOT THE GROUND TRUTH (audit 2026-09-10). `remind`
+        writes its row inside the model loop, and three paths reach that write
+        and never reach a `remind` DECISION here: a run where no sample was
+        readable returns `unavailable` before `commit` is called at all, an
+        item the Dreamer's screen rejects never reaches `accept`, and an item
+        naming a handle this pass did not show is dropped in `accept`. On each
+        of those the row exists, the note has no wake, and `_may_wake_today`
+        therefore lets the NEXT pass write a second row about the same note.
+        So after the envelope is walked the rows themselves are read back — the
+        real property, not the model's account of it — and any note raised
+        without a wake is charged one. The window starts at the pass clock this
+        tick READ (`_Shown.since_ms`), not at this pass, so rows orphaned by an
+        `unavailable` run are covered by the next `commit`: that run never
+        stamped the clock, so the window still reaches over them.
         """
         shown = self._shown.get(key) or _Shown({}, {})
         if shown.rendered and self._clock_store is not None:
@@ -708,30 +759,95 @@ class ProactiveAdaptor:
             if decision.note_id is None or decision.note_id in seen:
                 continue
             seen.add(decision.note_id)
-            if not await self._may_wake_today(key, decision.note_id, now_ms=now_ms):
-                continue
-            next_at = default_revisit_at(
-                anchor_date=shown.anchor_date.get(decision.note_id), now_ms=now_ms,
-            )
-            try:
-                outcome = await self._notes.record_wake(
-                    workspace=key, note_id=decision.note_id,
-                    next_revisit_at=next_at, now_ms=now_ms,
-                )
-            except Exception:
-                log.exception(
-                    "proactive: record_wake failed for note %s; continuing",
-                    decision.note_id,
-                )
-                continue
-            if outcome is not None:
+            if await self._wake(key, decision.note_id, shown=shown, now_ms=now_ms):
                 wakes += 1
-                if self._clock_store is not None:
-                    await self._clock_store.record_fire(
-                        adaptor_name=WAKE_CLOCK_NAME, key=f"{key}/{decision.note_id}",
-                        at_ms=now_ms,
-                    )
+        for note_id in await self._raised_since(key, shown=shown, now_ms=now_ms):
+            if note_id in seen:
+                continue
+            seen.add(note_id)
+            # Counted apart from the envelope's own decisions: this is a row
+            # the model wrote and did not report, and the rate of it is how
+            # anyone learns that a screen or a sample is dropping decisions.
+            self._inc("nora_proactive_reconciled_total")
+            if await self._wake(key, note_id, shown=shown, now_ms=now_ms):
+                wakes += 1
         return wakes
+
+    async def _wake(
+        self, key: str, note_id: str, *, shown: _Shown, now_ms: int,
+    ) -> bool:
+        """One note's wake, day-gated. True iff a wake was recorded."""
+        if not await self._may_wake_today(key, note_id, now_ms=now_ms):
+            return False
+        anchor = shown.anchor_date.get(note_id)
+        if anchor is None and note_id not in shown.anchor_date:
+            # A note this pass did not render — a row orphaned by an earlier
+            # one. Read its anchor rather than revisit it as if it had none.
+            try:
+                head = await self._notes.read(workspace=key, note_id=note_id)
+            except Exception:
+                log.exception("proactive: note read failed for %s; continuing", note_id)
+                head = None
+            if head is not None:
+                anchor = head[0].anchor_date
+        next_at = default_revisit_at(anchor_date=anchor, now_ms=now_ms)
+        try:
+            outcome = await self._notes.record_wake(
+                workspace=key, note_id=note_id,
+                next_revisit_at=next_at, now_ms=now_ms,
+            )
+        except Exception:
+            log.exception(
+                "proactive: record_wake failed for note %s; continuing", note_id,
+            )
+            return False
+        if outcome is None:
+            return False
+        if self._clock_store is not None:
+            await self._clock_store.record_fire(
+                adaptor_name=WAKE_CLOCK_NAME, key=f"{key}/{note_id}", at_ms=now_ms,
+            )
+        return True
+
+    async def _raised_since(
+        self, key: str, *, shown: _Shown, now_ms: int,
+    ) -> tuple[str, ...]:
+        """The notes this workspace's PROACTIVE rows were written against over
+        the reconciliation window — what `remind` actually did, read from the
+        store.
+
+        Fail-soft, unlike the decision log `inputs` reads: there the read is an
+        input a decision rests on and a failure must refuse the pass; here the
+        envelope's own wakes are already recorded and refusing would undo them.
+        A failed read leaves the pass exactly as it was before this reconcile
+        existed, and logs.
+        """
+        if not shown.rendered:
+            return ()
+        since_ms = shown.since_ms if shown.since_ms is not None else shown.at_ms
+        since = datetime.fromtimestamp(since_ms / 1000, tz=UTC)
+        mine = {
+            (room.platform, room.conversation_id) for room in self._rooms_of(key)
+        }
+        try:
+            rows = await self._reminders.history(
+                requester_person_id=self._ai_peer, since=since,
+                limit=self._history_limit,
+            )
+        except Exception:
+            log.exception("proactive: reconcile read failed (key=%s)", key)
+            return ()
+        out: list[str] = []
+        for row in rows:
+            if row.kind != "proactive":
+                continue
+            if (row.platform, row.conversation_id) not in mine:
+                continue
+            payload = row.payload if isinstance(row.payload, Mapping) else {}
+            note_id = payload.get("note_id")
+            if isinstance(note_id, str) and note_id and note_id not in out:
+                out.append(note_id)
+        return tuple(out)
 
     async def _may_wake_today(self, key: str, note_id: str, *, now_ms: int) -> bool:
         """At most one wake per note per Hong Kong day (39 D6 as amended by
