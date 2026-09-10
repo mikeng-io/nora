@@ -39,15 +39,44 @@ MULTI_MESSAGE = "a genuinely separate act"
 # RE-POINTED for the participation occasion (design/dreamer-agent-loop/35):
 # the old needle — "That's the only reason you ever speak" — was the exact
 # claim the occasion overturns, and it left the file with the redefinition
-# (called means must-speak, offered means may-speak). The new needle is the
-# half that is FALSE on a heartbeat turn, where silence is a failure: an
-# obligation occasion must never read that saying nothing is success.
-SILENCE = "Most offers of the floor end that way"
+# (called means must-speak, offered means may-speak). The needle is the half
+# that is FALSE on a heartbeat turn, where silence is a failure: an obligation
+# occasion must never read that saying nothing is success.
+#
+# RE-POINTED AGAIN 2026-09-11 (issue #168). `14a55ab8` rewrote silence.md from
+# two occasions to three and rewrote this sentence with it — «Most offers of
+# the floor end that way» became «Most turns nobody asked for end that way» —
+# so the needle matched nothing and the test had been red since. The ROUTING
+# was never broken: silence.md has declared `applies_to: [tag, participation,
+# proactive]` throughout, and resolving the store shows its section reaching
+# all three. A stale needle reads exactly like a routing defect from the
+# assertion output alone, which is how the issue came to be filed as one.
+#
+# `_bodies` now collapses whitespace. NOT because this needle wraps — it sits
+# inside one 80-column line, and removing the collapse leaves this test green.
+# It is the NEGATIVE assertions it hardens: append the may-speak claim to a
+# file that reaches heartbeat, hard-wrapped across two lines, and without the
+# collapse `SILENCE not in _bodies("heartbeat")` passes while the claim is
+# being served. Measured both ways.
+SILENCE = "silence is a complete answer — a success, not a failure"
 
 
 def _bodies(store: DoctrineStore, audience: str) -> str:
+    """The assembled bodies, section tags removed and whitespace collapsed.
+
+    The collapse is for the NEGATIVE assertions. Doctrine prose is hard-wrapped,
+    so a forbidden claim that happens to break across two lines matches nothing
+    and `X not in _bodies(...)` passes while X is being served. Falsified: the
+    may-speak sentence appended to `conduct.md` (which reaches heartbeat) across
+    a line break is caught with the collapse and missed without it.
+
+    It costs nothing on the positive side and makes needles insensitive to
+    re-wrapping, which is worth having — but that is the side effect, not the
+    reason.
+    """
     text = store.get(applies_to=audience).text
-    return re.sub(r"<section[^>]*>|</section>|<nora_doctrine>|</nora_doctrine>", "", text)
+    text = re.sub(r"<section[^>]*>|</section>|<nora_doctrine>|</nora_doctrine>", "", text)
+    return re.sub(r"\s+", " ", text)
 
 
 def test_the_heartbeat_audience_is_not_degenerate(doctrine_store):
@@ -60,13 +89,27 @@ def test_the_heartbeat_audience_is_not_degenerate(doctrine_store):
 
 
 def test_silence_reaches_called_and_offered_turns_only(doctrine_store):
-    """The redefined split (design/dreamer-agent-loop/35): silence.md speaks to
-    a tag turn (must-speak) and a participation turn (may-speak) — the two
-    audiences the must/may distinction exists between. A heartbeat turn is
-    OBLIGED to speak, so the may-speak half is false there and the file stays
-    out."""
+    """silence.md speaks to the three occasions a turn can arrive on — a tag
+    (called: must-speak), a participation turn and a proactive one (both
+    offered: may-speak). A heartbeat turn is OBLIGED to speak, so the may-speak
+    half is false there and the file stays out.
+
+    `proactive` is asserted because `14a55ab8` added it to the file's
+    `applies_to` and nothing checked it; the third occasion is the whole point
+    of that rewrite."""
+    # ROUTING, asserted structurally so it cannot go stale. This is the claim
+    # #168 was filed against, and prose could never have settled it: a rewritten
+    # sentence and a missing section produce the same failure, and pytest elides
+    # the middle of the haystack so the section is invisible either way.
+    for audience in ("tag", "participation", "proactive"):
+        assert 'name="silence"' in doctrine_store.get(applies_to=audience).text, audience
+    assert 'name="silence"' not in doctrine_store.get(applies_to="heartbeat").text
+
+    # CONTENT: the may-speak half must be there to read, and must not reach an
+    # occasion that is obliged to speak.
     assert SILENCE in _bodies(doctrine_store, "tag")
     assert SILENCE in _bodies(doctrine_store, "participation")
+    assert SILENCE in _bodies(doctrine_store, "proactive")
     assert SILENCE not in _bodies(doctrine_store, "heartbeat")
 
 
