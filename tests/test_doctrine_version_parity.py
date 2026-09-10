@@ -50,8 +50,14 @@ PINNED: dict[str, tuple[int, str]] = {
     "identity": (8, "0d496e3515c0ab030a341cc2bef8df1da22dc3088f8f1e169d4371d5e7bbeb55"),
     # v19 (2026-09-10): same room-name removal as identity v8.
     "voice": (19, "f85e5206f79ce51cf84b98fdf5aab82a00414e92cde3dcce09ccd2624031b4e0"),
-    "silence": (2, "55abb8beab124e1d7f696ebcdcd577093b0afa7d063c031cc01e4dd4e3e1b6cc"),
-    "conduct": (24, "a304ae577f27a9fc547896185f13b4ac382f77b5643af03868a97af235e4136a"),
+    # conduct v25 / silence v3 (2026-09-10, `14a55ab8`): that commit edited both
+    # bodies and bumped both versions in their front matter, and never came back
+    # here. So the contract held in the direction that matters -- the version a
+    # human reads did move with the body -- and only the pin was left behind.
+    # Repinned to the version each file already carries; NOT bumped again, because
+    # nothing has moved since.
+    "silence": (3, "9fd50a24d311348710b0c199a6931f4a50a3d1d448fee19789b4efa77af750c3"),
+    "conduct": (25, "1e8dcbd8171a73ed74343bf639ef0f558d5217255060232d5cc8a569ba2e358b"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

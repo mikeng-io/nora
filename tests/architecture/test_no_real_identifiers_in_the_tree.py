@@ -121,6 +121,10 @@ _SYNTHETIC_SNOWFLAKES = frozenset({
     "77285739900000001", "77285739900000002", "77285739900000003",
     "77285739999999999", "988260089562885951", "999999999999999999",
     "9999999999999999999",
+    # the descending twin of 1234567890123456789 above; the pair is the
+    # commented-out `shadow_channel` example in config.example.toml, added by
+    # `9f5dc385`, which merged while this gate was red.
+    "9876543210987654321",
 })
 
 # Public third-party posts cited as examples, not people in the group.
