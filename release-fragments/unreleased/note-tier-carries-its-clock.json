@@ -1,0 +1,15 @@
+{
+  "type": "fix",
+  "summary": "Every block that asks her a question about time now carries one, and an absent memory block stops claiming there is nothing to remember.",
+  "details": [
+    "The curator is asked whether a note's anchor has passed and was given eight digits, no today, and no time on any evidence row. Its grounding check catches a wrong 'expired' against the real clock and cannot catch the opposite — an 'open' on a note that lapsed weeks ago is silent and costs a permanent index line on every tag.",
+    "The notes index now says which day each note is about. The pass that writes notes is told not to duplicate one it was shown, and the code's test for 'the same arrangement' is the anchor date alone — the one property the index did not carry.",
+    "Her prompt's guide to what she can see said an absent memory block means nothing has ever been recorded about someone. It also means the read failed. During an outage she was told, in her own prompt, that there was nothing to know — and would have said so.",
+    "That guide also skipped two of the eight blocks it describes. Both are there now.",
+    "The prefill read the clock twice, so the time she is told it is and the ages of the messages she reads came from two different readings."
+  ],
+  "limitations": [
+    "Nothing measures whether the curator's verdicts improve: there is no curator suite. The dates are correct by construction; their effect is not measured.",
+    "A dead second rendering of the doctrine assembly was deleted rather than fixed — it could have shipped a prompt that differed from the one the recorded hash names."
+  ]
+}

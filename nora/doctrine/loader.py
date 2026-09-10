@@ -282,15 +282,6 @@ class Doctrine:
     def versions(self) -> dict[str, int]:
         return {s.name: s.version for s in self.sections}
 
-    def blocks(self) -> list[dict]:
-        """SystemContentBlock list for a future prompt-caching cachePoint. Unused in v2."""
-        out = [
-            {"text": f"{_open_tag(s)}\n{s.body}\n</section>"}
-            for s in self.sections
-        ]
-        out.append({"text": self.runtime_context})
-        return out
-
 
 def _open_tag(s: DoctrineSection) -> str:
     """The section's opening tag: what it IS, never what it contains (design/17 §5b).

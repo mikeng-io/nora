@@ -313,6 +313,16 @@ def _media_placeholder(row: TranscriptRow) -> str:
 _LINE_TIME_FORMAT = "%Y-%m-%d %a %H:%M %Z"
 
 
+def _batch_day(batch: Sequence[TranscriptRow], *, tz: _dt.tzinfo) -> int | None:
+    """`yyyymmdd` for the newest row of a batch, in the room's zone — or `None`
+    for an empty batch, which renders the index without distances."""
+    if not batch:
+        return None
+    newest = max(row.ts for row in batch)
+    day = _dt.datetime.fromtimestamp(newest / 1000, tz=tz).date()
+    return day.year * 10000 + day.month * 100 + day.day
+
+
 def _render_line(row: TranscriptRow, *, room: str, tz: _dt.tzinfo) -> str:
     """One attributed transcript line: `<id> [<local moment>] <name> (<room>):
     <body>` — attributed on every line, so the model can attribute an
@@ -472,7 +482,21 @@ class NoteCandidateAdaptor:
             )
         parts = ["Messages in this batch:\n" + "\n".join(lines)]
         if workspace is not None:
-            index = render_notes(await self._notes.standing(workspace=workspace))
+            # WITH TODAY: the gate this index exists for compares on the
+            # anchor date alone, so a reader asked not to duplicate a note
+            # needs to see the property the comparison uses.
+            # WITH TODAY: the gate this index exists for compares on the
+            # anchor date alone, so a reader asked not to duplicate a note
+            # needs to see the property the comparison uses.
+            #
+            # Today comes from the NEWEST row of the batch in the room's own
+            # zone, not from a wall clock — the same basis the objective's
+            # relative-date resolution reads from, so «today» in the index and
+            # «today» in the transcript cannot disagree.
+            index = render_notes(
+                await self._notes.standing(workspace=workspace),
+                today=_batch_day(batch, tz=self._tz),
+            )
             if index:
                 parts.append(index)
         return "\n\n".join(parts)
