@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "The two 'survives a failing sweep' loop tests wait for the loop to keep sweeping instead of for a wall-clock window, so a loaded event loop stops failing them — and a loop that resumes once and then dies forever stops passing them.",
+  "details": [
+    "Both slept a fixed sub-second window and asserted two sweeps had landed at 0.01s intervals. True on an idle loop, false on a loaded one, which is why the debounce one went red inside full runs and green 3/3 alone (issue #170). pytest-xdist is a declared dependency, so full runs are multi-process on one box and the contention is real.",
+    "Reproduced deterministically rather than by re-running under load: blocking the loop in 25ms slices across the same window lands one sweep instead of two, every time; at 50ms it lands none, which also fails the metrics assertion, so the old form had two failure modes rather than one. Independently reproduced from external CPU contention alone — 56 burners on 14 cores gave the old form 1 failure in 20 and the new form 0 in 20.",
+    "Both now wait on an asyncio.Event set by the THIRD sweep. The third matters: `survives` and `keeps looping` is what these names promise, and injecting a `return` after two rounds left both the old form and the first version of this fix green in 0.07s against a permanently dead loop.",
+    "A timeout now fails with the sweep count rather than a bare TimeoutError, and the task is cancelled in a `finally` so a timeout cannot leak it or orphan the real exception into stderr."
+  ],
+  "limitations": [
+    "Measured, not estimated: time-to-event is about 8.3x the starvation slice, so the 25ms starvation that broke the old form fires at ~263ms against a 5s guard — a 19x margin. It would take sustained ~600ms stalls to make the guard itself flake.",
+    "Only these two are converted. `tests/unit/test_runtime.py` still holds 11 more sub-second wall-clock sleeps, plus a `_tick` helper at line 662 that hides about 24 more windows behind one call. Across `tests/`, 12 files contain sub-second sleeps and 7 hold two or more; roughly 6 genuinely share this failing shape. Not audited here — see the follow-up issue."
+  ]
+}

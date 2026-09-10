@@ -15,6 +15,8 @@ import logging
 import time
 from dataclasses import dataclass
 
+import pytest
+
 from nora.agent.dreamer import AdaptorSchedule
 from nora.app.runtime import (
     BackgroundTasks,
@@ -124,23 +126,37 @@ async def test_prune_loop_survives_a_failing_sweep_and_keeps_looping():
     class FailFirstThenOkStore:
         def __init__(self) -> None:
             self.calls = 0
+            self.kept_looping = asyncio.Event()
 
         async def prune_all(self) -> int:
             self.calls += 1
             if self.calls == 1:
                 raise RuntimeError("boom")
+            if self.calls >= 3:
+                self.kept_looping.set()
             return 3
 
     store = FailFirstThenOkStore()
     metrics = Metrics()
 
     task = asyncio.create_task(prune_loop(store, metrics, interval_seconds=0.01))
-    await asyncio.sleep(0.08)
-    task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
+    # The exact twin of the debounce test above, converted for the same reason:
+    # `sleep(0.08)` over `interval_seconds=0.01` is a wall-clock assumption, and
+    # this name promises "keeps looping" while the old assertion was satisfied
+    # by a loop that ran twice and died.
+    try:
+        await asyncio.wait_for(store.kept_looping.wait(), timeout=5.0)
+    except TimeoutError:  # pragma: no cover - only on a real regression
+        pytest.fail(
+            "the prune loop did not keep looping after a failing sweep; "
+            f"calls={store.calls}, expected at least 3"
+        )
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
-    assert store.calls >= 2, "the loop must run again after a failing sweep"
+    assert store.calls >= 3, "the loop must keep running after a failing sweep"
     assert metrics.get("nora_errors_total", stage="prune") == 1
 
 
@@ -173,6 +189,7 @@ async def test_debounce_sweep_loop_actually_removes_stale_entries():
 
 async def test_debounce_sweep_loop_survives_a_failing_sweep():
     calls = {"n": 0}
+    kept_sweeping = asyncio.Event()
     real_sweep = Debounce.sweep
 
     class ExplodingDebounce(Debounce):
@@ -180,6 +197,8 @@ async def test_debounce_sweep_loop_survives_a_failing_sweep():
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("boom")
+            if calls["n"] >= 3:
+                kept_sweeping.set()
             return real_sweep(self, older_than)
 
     d = ExplodingDebounce(1.0)
@@ -188,12 +207,33 @@ async def test_debounce_sweep_loop_survives_a_failing_sweep():
     task = asyncio.create_task(
         debounce_sweep_loop(d, metrics, interval_seconds=0.01, ttl_seconds=5.0)
     )
-    await asyncio.sleep(0.05)
-    task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
+    # Wait for the CONDITION, never for a wall-clock window. The previous form
+    # slept 0.05s and asserted two sweeps had landed at 0.01s intervals — true
+    # on an idle loop, false on a loaded one, which is why it went red in full
+    # runs and green alone (#170). Blocking the loop in 25ms slices reproduces
+    # it every time. The timeout is a deadlock guard, not a measurement: the
+    # claim is that the loop recovers, and how fast was never the point.
+    #
+    # It waits for the THIRD sweep, not the second. "Survives" and "keeps
+    # sweeping" is what the name promises, and a loop that resumes once and
+    # then returns forever satisfied the old assertion — verified: injecting
+    # `return` after two rounds left both the old and the first new form green
+    # in 0.07s against a permanently dead loop.
+    try:
+        await asyncio.wait_for(kept_sweeping.wait(), timeout=5.0)
+    except TimeoutError:  # pragma: no cover - only on a real regression
+        pytest.fail(
+            "the sweep loop did not keep sweeping after a failing sweep; "
+            f"sweeps={calls['n']}, expected at least 3"
+        )
+    finally:
+        # In `finally` so a timeout does not leak the task and orphan the real
+        # exception into stderr, which is what the first version of this did.
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
-    assert calls["n"] >= 2
+    assert calls["n"] >= 3
     assert metrics.get("nora_errors_total", stage="debounce_sweep") == 1
 
 
