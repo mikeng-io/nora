@@ -94,14 +94,32 @@ counting a module's responsibilities to counting its lines.
   - **This repo gated behaviour and gated the tree not at all.** R-18 scans
     every byte on its way out to a room; nothing scanned a byte on its way into
     a commit, and they are the same disclosure with a different audience.
-    `tests/architecture/test_no_real_identifiers_in_the_tree.py` closes that:
-    every phone number, UUID, 17-19 digit snowflake and RFC1918 address in the
-    tree must be DECLARED, so an identifier nobody has classified fails rather
-    than passes. Its coordinate rule is a COUNT and not a region — a file with
-    25+ distinct coordinate pairs is a location table whatever the latitudes
-    say (the busiest honest file in the tree holds 9). Falsified five ways:
-    restoring the real corpus reds the coordinate assertion, and a new phone,
-    ACI, snowflake or stale pin each reds its own. Its name half is only a
+    `tests/architecture/test_no_real_identifiers_in_the_tree.py` is what closes
+    it — but the FIRST version of that gate did not, and the gap is worth
+    keeping written down because it is easy to make again. It read `git
+    ls-files`, i.e. the INDEX, while the incident above is about a blob that
+    survived `git rm`. Replaying that incident exactly — add corpus, commit,
+    `git rm`, commit — left it green with eleven thousand real fixes reachable
+    from `HEAD~1`. It also failed OPEN four ways: one appended non-UTF-8 byte,
+    a `.svg` rename, a symlink, or a UTF-16 encoding each took a payload past
+    it silently, while its own docstring named that exact shape as the one that
+    must never happen (#166).
+
+    What it does now: walks every git OBJECT, every commit MESSAGE, and the
+    working tree — objects being what would be published and the working tree
+    what is about to become one. Undecodable content, and a tracked path that
+    is not a regular file, are ERRORS with a declared allowlist rather than
+    skips; there is no suffix skip list at all. Values are NORMALISED before
+    matching, so a separator-formatted number and a dashless UUID collapse to
+    their declared form. The coordinate rule is shape-agnostic — comma-, tab-
+    and JSON-separated rows all count — and a location table must be DECLARED
+    WITH A SIZE, never merely by path: exempting a path outright let the next
+    corpus be pasted into a file already on the list.
+
+    Falsified by attack, not by assertion: an undeclared identifier planted in
+    the gate's OWN source, a table pasted into a declared path, a table at an
+    undeclared path, and a payload renamed `.svg` — all four caught, all four
+    having passed the version before. Its name half is only a
     regression pin — there is no allowlist over English — and the file says so,
     because a green gate must not be read as «no real names in the tree».
 
