@@ -127,6 +127,12 @@ class _Records:
         return await self._store.recent(conversation_id=conversation_id, limit=limit)
 
 
+#: A fixed, plausible fold time for the standing fixture. `updated_at=1` — one
+#: millisecond after the epoch — was fine while nothing read it and renders as
+#: «20706d ago» now that the block carries its age.
+_FOLDED_AT_MS = 1_788_000_000_000
+
+
 def _standing(body: str | None = None, fail: bool = False):
     """The SHARED `InMemoryStandingStore` (R-C, issue #113), not an inline
     double.
@@ -151,7 +157,7 @@ def _standing(body: str | None = None, fail: bool = False):
         # fixture, not a write under test.
         store._rows[("discord", "g/1")] = Standing(
             platform="discord", conversation_id="g/1", body=body,
-            fold_count=1, updated_at=1,
+            fold_count=1, updated_at=_FOLDED_AT_MS,
         )
     return store
 
@@ -201,7 +207,7 @@ async def test_the_prompt_is_exactly_the_instruction_plus_the_two_rendered_block
 
     assert client.systems[0] == build_system_prompt(_Doctrine.BODY)
     assert client.prompts[0] == build_user_message(
-        render_context((_row(rows[0], rid=1),), standing),
+        render_context((_row(rows[0], rid=1),), (standing, _FOLDED_AT_MS)),
     )
 
 
@@ -848,3 +854,31 @@ def test_the_reader_is_told_what_standing_is_and_what_its_absence_means():
     assert "only" in header.lower() and "owes" in header
     assert "(none)" in header
     assert "member's claim" in header
+
+
+def test_the_standing_block_says_how_old_it_is():
+    """The instruction's fourth category — «a commitment SHE made that is
+    being followed up … only the standing block can establish this» — is a
+    question about WHEN, and so is «anything the room has already moved past».
+    Both were being decided against a paragraph with no time on it, so «has
+    not reported back» was undecidable from the gate's own input.
+
+    The prefill's renderer closed the identical gap in the same week. This is
+    the same block, one call site over.
+    """
+    now = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
+    three_hours_ago = int(now.timestamp() * 1000) - 3 * 3600_000
+
+    rendered = render_context((), ("She said she would check the ferry.", three_hours_ago), now=now)
+
+    assert 'written="3h ago"' in rendered
+    assert "`written` is how stale it may be" in rendered
+
+
+def test_a_standing_block_with_no_age_still_renders():
+    """A bare body is still accepted, and renders no `written`. The gate ran
+    that way until 2026-09-10 and a caller that cannot supply the time should
+    degrade to the old block rather than fail."""
+    rendered = render_context((), "a position")
+    assert "<standing" in rendered
+    assert "written=" not in rendered

@@ -12,6 +12,7 @@ from nora.agent.tools import (
     LOAD_TRANSCRIPT_MAX,
     NATIVE_TOOL_BUDGETS,
     build_tools,
+    note_handle,
 )
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import GifCandidate, MediaObject
@@ -1233,3 +1234,33 @@ async def test_send_reply_still_says_refused_when_a_guard_stops_it(wiring):
     assert await _call(tools["send_reply"], text="first") == "sent"
     assert await _call(tools["send_reply"], text="second") == "refused"
     assert capped.held_count == 0
+
+
+# ---- a note title survives the trip through the index (2026-09-10) ----------
+
+
+def test_a_note_handle_round_trips_through_an_escaped_index():
+    """The title IS the handle, and every index escapes what it renders (R-13):
+    `note_render` and the proactive `<open_notes>` both put it through
+    `escape`. So a note called «Dinner & drinks» reached the model as
+    «Dinner &amp;amp; drinks» — and `note_read`/`note_update`/`remind` tell it to
+    type the title back "exactly as `<notes>` shows it", then refused that
+    string because the stored title has no entity in it.
+
+    The cost was more than a refused call. A proactive `remind` written without
+    its `note_id` falls through `ProactiveScreen` to the flag-only path, so the
+    cancellation that fires when a note has moved on never runs — the decision
+    becomes unlinkable rather than merely retried.
+    """
+    from nora.domain.prompt import escape
+    from nora.language.note_render import render_notes  # noqa: F401  (the index)
+
+    for title in ("Dinner & drinks Saturday", "Trip <Sep> plan", "A & B > C"):
+        assert note_handle(escape(title)) == note_handle(title), title
+
+
+def test_the_handle_still_ignores_case_and_surrounding_space():
+    """The properties that were already there, kept alongside the new one — a
+    model that types the line back with a trailing space, or in another case,
+    has not named a different note."""
+    assert note_handle("  Dinner & Drinks  ") == note_handle("dinner & drinks")

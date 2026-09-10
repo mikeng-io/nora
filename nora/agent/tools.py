@@ -56,6 +56,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import Literal, Protocol, cast
 from uuid import UUID
+from xml.sax.saxutils import unescape
 from zoneinfo import ZoneInfo
 
 from nora.agent.security import _names_a_person, scan_identifiers
@@ -2341,8 +2342,23 @@ def note_handle(title: str) -> str:
     uniqueness is `(workspace, lower(title)) WHERE retired_at IS NULL`, so case
     is already not part of a note's identity, and a model that types the index
     line back with a trailing space has not named a different note.
+
+    **And UNESCAPED, for the same reason one step further on.** The handle is
+    the title as the model SAW it, and every index escapes what it renders
+    (R-13): `note_render` and the proactive `<open_notes>` both put the title
+    through `escape`. So a note called «Dinner & drinks» reaches the model as
+    «Dinner &amp;amp; drinks», and the tool docstrings tell it to type that back
+    «exactly as `<notes>` shows it» — which then failed to match the stored
+    title and answered «No note in `<notes>` has that title».
+
+    The decision was unlinkable after that, not merely refused: a proactive
+    `remind` written without its `note_id` falls through `ProactiveScreen` to
+    the flag-only path, so the note-moved cancellation D11 exists for never
+    runs. Normalising here rather than at the call sites is the same argument
+    the paragraph above makes about `casefold` — there are three readers and
+    they must agree exactly.
     """
-    return title.strip().casefold()
+    return unescape(title.strip()).casefold()
 
 
 def build_tool_specs(
