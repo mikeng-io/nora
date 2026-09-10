@@ -124,6 +124,7 @@ import itertools
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime
 from typing import Any, ClassVar, Literal, Protocol, get_args
 
 from nora.domain.bounds import over_fetch
@@ -138,7 +139,7 @@ from nora.domain.notes import (
     default_revisit_at,
 )
 from nora.domain.ports import Proposal
-from nora.domain.prompt import escape, escape_attr
+from nora.domain.prompt import age, escape, escape_attr
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.curator")
@@ -685,7 +686,10 @@ class NoteCuratorAdaptor:
                 bounds=bounds, truncated=truncated,
             ),
         )
-        return ev, _render_evidence(evidence, state), evidence
+        return ev, _render_evidence(
+            evidence, state,
+            now=datetime.fromtimestamp(self._clock() / 1000, tz=UTC),
+        ), evidence
 
     # -- inputs -----------------------------------------------------------
 
@@ -770,7 +774,9 @@ class NoteCuratorAdaptor:
             evidence_rows_by_note[note.id] = {row.id: row for row in ev_rows}
             anchor_date_by_note[note.id] = note.anchor_date
             due_or_anchored.add(note.id)
-            parts.append(_note_block(handle, note, body, ev_text))
+            parts.append(
+                _note_block(handle, note, body, ev_text, today=self._today())
+            )
 
         for note, body in due:
             handle = str(next(ordinal))
@@ -780,7 +786,9 @@ class NoteCuratorAdaptor:
             evidence_rows_by_note[note.id] = {row.id: row for row in ev_rows}
             anchor_date_by_note[note.id] = note.anchor_date
             due_or_anchored.add(note.id)
-            parts.append(_note_block(handle, note, body, ev_text))
+            parts.append(
+                _note_block(handle, note, body, ev_text, today=self._today())
+            )
 
         self._shown[key] = _Shown(
             by_handle=by_handle,
@@ -795,7 +803,15 @@ class NoteCuratorAdaptor:
         )
         if not expired and not due:
             return ""
-        return "\n".join(parts)
+        # THE CLOCK, first. The objective tells the model it is given each
+        # note's anchor «and whether that date has passed», and it was given a
+        # bare `anchor="20260912"` and no today at all — so `expired` and
+        # `moot`, two of the four verdicts, were guesses. `_ground` catches the
+        # guess in ONE direction (it refuses an ungrounded `expired`/`moot`
+        # against the real clock) and nothing catches the other: an `open` on
+        # a note whose anchor passed weeks ago is silent, and costs a
+        # permanent index line injected on every tag.
+        return "\n".join([_now_block(self._today()), *parts])
 
     # -- accept -------------------------------------------------------------
 
@@ -1327,7 +1343,7 @@ def _parse_discharge_item(entry: object) -> _DischargeItem | None:
 
 
 def _render_evidence(
-    evidence: Sequence[TranscriptRow], state: EvidenceState,
+    evidence: Sequence[TranscriptRow], state: EvidenceState, *, now: datetime,
 ) -> str:
     """The evidence portion of one note's block — `nora.language.
     note_revisitor`'s `_render_note`, split out because every note gets one
@@ -1352,12 +1368,53 @@ def _render_evidence(
     lines = ["evidence, newest last:"]
     for row in evidence:
         speaker = row.person_name or row.sender_name or row.sender_id
-        lines.append(f"[{row.id}] {escape(speaker)}: {escape(row.body or '')}")
+        # WHEN it was said. «has this closed?» and «has the room moved on?»
+        # are questions about time, and the rows carried none.
+        when = f"({age(row.ts, now)}) " if row.ts else ""
+        lines.append(
+            f"[{row.id}] {when}{escape(speaker)}: {escape(row.body or '')}"
+        )
     return "\n".join(lines)
+
+
+def _now_block(today: int) -> str:
+    """Today, named. The curator had no clock in its prompt at all — not a
+    date, not a weekday, not a time on any evidence row — while its objective
+    asks it whether an anchor has passed."""
+    day = _as_date(today)
+    when = f"{day:%Y-%m-%d %a}" if day is not None else str(today)
+    return (
+        f'<now note="today, in the room\'s own day. Every `anchor` below is '
+        f'read against this.">{escape(when)}</now>'
+    )
+
+
+def _as_date(yyyymmdd: int) -> date | None:
+    try:
+        return date(yyyymmdd // 10000, (yyyymmdd // 100) % 100, yyyymmdd % 100)
+    except ValueError:
+        return None
+
+
+def _days_from(today: int, anchor: int) -> str:
+    """«tomorrow», «3 days ago» — the anchor as a distance rather than as eight
+    digits the model has to subtract for itself."""
+    a, t = _as_date(anchor), _as_date(today)
+    if a is None or t is None:
+        return "unreadable"
+    delta = (a - t).days
+    return (
+        "today" if delta == 0
+        else "tomorrow" if delta == 1
+        else "yesterday" if delta == -1
+        else f"in {delta} days" if delta > 0
+        else f"{-delta} days ago"
+    )
 
 
 def _note_block(
     handle: str, note: Note, body: str, evidence_text: str | None,
+    *, today: int,
 ) -> str:
     """One note, rendered whole: title, uncertainty, closing condition, body,
     anchor (if any) and evidence. Bodies are rendered whole — the body IS the
@@ -1369,7 +1426,11 @@ def _note_block(
     parameter stays optional so the renderer does not lie about a note it
     was handed nothing for.
     """
-    anchor_attr = f' anchor="{note.anchor_date}"' if note.anchor_date is not None else ""
+    anchor_attr = (
+        f' anchor="{note.anchor_date}"'
+        f' anchor_is="{escape_attr(_days_from(today, note.anchor_date))}"'
+        if note.anchor_date is not None else ""
+    )
     evidence_line = f"\n  {evidence_text}" if evidence_text is not None else ""
     # ESCAPED, per R-13, and added 2026-09-10 after a CMS audit found this
     # renderer was the one place in the tier that skipped it. Every value here

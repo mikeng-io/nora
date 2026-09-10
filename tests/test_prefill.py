@@ -1,3 +1,5 @@
+import inspect
+
 from nora.agent.prefill import build_prefill, build_tag_message, escape
 from nora.domain.models import (
     DeliveryStatus,
@@ -860,3 +862,67 @@ def test_a_note_body_never_reaches_the_prefill():
     assert "9 Sept dinner" in body
     assert "which venue, and whether the 9th still works" not in body
     assert "a venue is booked, or the date is abandoned" not in body
+
+
+def test_the_notes_index_says_which_day_each_note_is_about():
+    """The anchor was on the row and rendered nowhere, in the one block two
+    readers are asked to judge against it.
+
+    The note-candidates pass is told not to propose «something already in the
+    notebook you were shown», and the code's identity rule for «the same
+    arrangement» is the anchor date ALONE (`_find_anchor_match`, which refuses
+    title and refuses entities). It was asked to judge sameness on the one
+    property the block did not carry. And this block's own hedge tells the tag
+    path's reader a listed note «may already have settled» — unanswerable from
+    the block itself.
+    """
+    import dataclasses
+
+    from nora.language.note_render import render_notes
+
+    dated = dataclasses.replace(_note(), anchor_date=20260912)
+    assert "(about Sat 12 Sep, in 2 days)" in render_notes((dated,), today=20260910)
+    assert "(about Sat 12 Sep, yesterday)" in render_notes((dated,), today=20260913)
+    # No clock: the bare date rather than a distance, never a wrong distance.
+    assert "(about 20260912)" in render_notes((dated,))
+
+
+def test_the_prefill_reads_the_clock_once():
+    """«Interpret once.» The stated wall time and the transcript's ages came
+    from two separate `datetime.now()` reads of the same clock."""
+    import nora.agent.prefill as prefill_module
+
+    source = inspect.getsource(prefill_module.build_prefill)
+    assert source.count("datetime.now()") == 1
+
+
+def test_the_header_names_every_block_it_can_show_her():
+    """The catalogue told her what six blocks are and said nothing about the
+    two the note tier and the fold put in front of her. Both are
+    self-describing via their own `note=`, which is why this ranks below the
+    absence claim — but nothing stopped it drifting further, and a block she
+    has no frame for is one she reads as scenery."""
+    header = build_prefill(
+        _ctx(), display_name="Nora", context_window=40,
+    )[0]["content"][0]["text"]
+    for block in ("group_transcript", "peer_card", "self_card", "peer_history",
+                  "replying_to", "tag_message", "notes", "standing"):
+        assert f"- {block}:" in header, block
+
+
+def test_an_absent_memory_block_is_not_claimed_to_mean_nothing_was_recorded():
+    """R-27 asserted to the model, in the catalogue. The header said an absent
+    `peer_card` means «nothing has been recorded about them yet» and an absent
+    `peer_history` means «nothing has been concluded yet» — but
+    `nora.engagement.context` returns `()` on a FAILED read and on a tier
+    switched off, as well as on a genuinely empty one. Four states, one
+    rendering, and the header named one of them as the meaning.
+
+    During a memory outage she was told in her own prompt that nothing had ever
+    been recorded about the person talking, and would say so."""
+    header = build_prefill(
+        _ctx(), display_name="Nora", context_window=40,
+    )[0]["content"][0]["text"]
+    assert "the read did not come back" in header
+    assert "either nothing was concluded or the read failed" in header
+    assert "nothing has been recorded about them yet" not in header

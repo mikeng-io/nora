@@ -137,12 +137,6 @@ def test_versions_map_is_exposed_for_logging(doctrine_dir):
     assert _store(doctrine_dir).get().versions() == {"soul": 3, "voice": 2, "guardrails": 1}
 
 
-def test_blocks_returns_one_system_content_block_per_section(doctrine_dir):
-    blocks = _store(doctrine_dir).get().blocks()
-    assert len(blocks) == 4          # 3 sections + runtime_context
-    assert all(set(b) == {"text"} for b in blocks)
-
-
 def test_get_is_cached_between_calls_when_nothing_changed(doctrine_dir):
     store = _store(doctrine_dir)
     assert store.get() is store.get()

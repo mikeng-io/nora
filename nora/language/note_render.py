@@ -58,6 +58,7 @@ dormant shape.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date
 
 from ..domain.notes import Note
 from ..domain.prompt import escape
@@ -77,7 +78,7 @@ NOTES_BLOCK_NOTE = (
 )
 
 
-def render_notes(notes: Sequence[Note]) -> str:
+def render_notes(notes: Sequence[Note], *, today: int | None = None) -> str:
     """`""` when there is nothing standing to say — either no notes at all, or
     none of them survive the `is_standing` filter. A retired note is never
     rendered: it would sit in the index as a live uncertainty, and beside its
@@ -86,7 +87,7 @@ def render_notes(notes: Sequence[Note]) -> str:
     if not standing:
         return ""
 
-    body = "\n".join(_render_entry(n) for n in standing)
+    body = "\n".join(_render_entry(n, today=today) for n in standing)
     return (
         f'<notes untrusted="true" note="{NOTES_BLOCK_NOTE}">\n'
         f"{body}\n"
@@ -94,5 +95,47 @@ def render_notes(notes: Sequence[Note]) -> str:
     )
 
 
-def _render_entry(note: Note) -> str:
-    return f"- {escape(note.title)} — {escape(note.description)}"
+def _render_entry(note: Note, *, today: int | None = None) -> str:
+    """Title, description — and the DAY the note is about.
+
+    The date was on the row and rendered nowhere, in the one block two
+    different readers are asked to judge against it. The note-candidates pass
+    is told not to propose «something already in the notebook you were shown»,
+    and the code's identity rule for «the same arrangement» is the anchor date
+    ALONE (`_find_anchor_match`, which explicitly refuses title and entities).
+    So it was asked to judge sameness on the one property the block did not
+    carry, using the one property the gate rejects. And the tag path's reader
+    was told a listed note «may already have settled» with no way to tell
+    which — the block's own hedge, unanswerable from the block.
+
+    `today` absent renders the bare date rather than a distance, which is what
+    a caller with no clock gets; `None` anchor renders neither.
+    """
+    line = f"- {escape(note.title)} — {escape(note.description)}"
+    if note.anchor_date is None:
+        return line
+    if today is None:
+        return f"{line} (about {note.anchor_date})"
+    return f"{line} (about {escape(_days_from(today, note.anchor_date))})"
+
+
+def _as_date(yyyymmdd: int) -> date | None:
+    try:
+        return date(yyyymmdd // 10000, (yyyymmdd // 100) % 100, yyyymmdd % 100)
+    except ValueError:
+        return None
+
+
+def _days_from(today: int, anchor: int) -> str:
+    a, t = _as_date(anchor), _as_date(today)
+    if a is None or t is None:
+        return str(anchor)
+    delta = (a - t).days
+    stamp = f"{a:%a %-d %b}"
+    return (
+        f"{stamp}, today" if delta == 0
+        else f"{stamp}, tomorrow" if delta == 1
+        else f"{stamp}, yesterday" if delta == -1
+        else f"{stamp}, in {delta} days" if delta > 0
+        else f"{stamp}, {-delta} days ago"
+    )
