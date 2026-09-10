@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -57,6 +57,7 @@ from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.compute import ComputeJobStore
 from nora.domain.media_join import MediaJoin
+from nora.domain.models import PersonRef
 from nora.domain.ports import (
     BlobStore,
     ComputeBackend,
@@ -175,6 +176,36 @@ class StartupError(Exception):
 _REASONING_EFFORTS: frozenset[str] = frozenset(
     {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
 )
+
+
+def _home_room_people(
+    rosters: Mapping[str, RosterSource], persons: Persons,
+) -> Callable[[WorkspaceRoom], Awaitable[tuple[PersonRef, ...]]]:
+    """The proactive pass's people index (issue #145, design 39 D9).
+
+    D9's rule is «inject the index, call for depth», and it was implemented for
+    notes and for Standing and for nothing else. A note's body is written in
+    whatever the group calls each other — «@熱咖啡☕少奶多糖», «@隨風而去» — while
+    the roster holds the mapped name; nothing joined the two, so every unknown
+    handle cost a tool call. Measured on the `friends` workspace: six of ten
+    calls in one pass were the same memory search asking who these people were,
+    until R-7 stopped the pass.
+
+    The SAME `Room` the tag path builds, so the pass and a turn cannot hold two
+    ideas of who is in a room. A platform with no roster source returns nothing
+    and the block is omitted — the pre-2026-09-10 shape, and the honest one.
+    """
+    async def read(home: WorkspaceRoom) -> tuple[PersonRef, ...]:
+        source = rosters.get(home.platform)
+        if source is None:
+            return ()
+        view = await Room(
+            platform=home.platform, conversation_id=home.conversation_id,
+            roster_source=source, persons=persons,
+        ).members()
+        return view.people if view.available else ()
+
+    return read
 
 
 def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
@@ -2660,6 +2691,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     reminders=reminders,
                     memory=memory,
                     rooms_of=lambda ws: rooms_by_workspace.get(ws, ()),
+                    # WHO IS IN THE HOME ROOM (issue #145). Built HERE because
+                    # `nora.language` may not import `nora.agent.room`, and
+                    # through the same `Room` the tag path uses so the pass and
+                    # a turn cannot disagree about who is in a room. No roster
+                    # for the platform means no block, not a failure.
+                    people_of=_home_room_people(rosters, persons),
                     ai_peer=cfg.memory.ai_peer,
                     clock=lambda: datetime.now(UTC),
                     timezone=ZoneInfo(cfg.reminders.timezone),

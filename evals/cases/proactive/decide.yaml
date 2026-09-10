@@ -173,3 +173,35 @@
     - {room: Friends, body: "Nora asked yesterday who is buying Cat's gift; Ben said he will sort it over the weekend.", age_hours: 16}
   log:
     - {about: Cat's birthday gift, intent: "ask who is buying Cat's gift", decided_hours_ago: 30, due_hours_ago: 18, outcome: sent}
+
+# ISSUE #145. The note is written in the group's own handles, which is how
+# notes are actually written — «@熱咖啡» rather than «Miles». Before the people
+# index existed the pass had nothing joining a handle to the roster, and one
+# live run spent six of its ten tool calls on the same memory search asking
+# who these people were, until R-7 stopped it.
+#
+# `expect: remind` because the ask is sound — a plan for today with an open
+# corner. What this case adds over d02 is that answering it requires resolving
+# a handle, so a pass that cannot do that either declines or burns its budget.
+- name: d11_note_written_in_the_rooms_own_handles
+  expect: remind
+  workspace: friends
+  now: "2026-09-11T07:00:00+08:00"
+  rooms:
+    - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
+  notes:
+    - title: Bath gathering tonight
+      description: 熱咖啡 proposed a bath tonight — where and what time are open
+      body: "熱咖啡 said he wants a bath tonight; 明明 is in. Nobody has said which place or what time."
+      anchor_date: 20260911
+  standing:
+    - {room: Friends, body: "熱咖啡 floated a bath tonight and 明明 said yes; the place and the hour are still open.", age_hours: 9}
+  # THE POINT OF THIS CASE. Both handles are in the people index and in the
+  # note's own body, so the decision needs at most one memory read — the one
+  # the objective requires before any remind. A pass that spends more is
+  # resolving names the prompt already carried, which is what the live run
+  # did six times over.
+  max_memory_calls: 2
+  rows:
+    - note: Bath gathering tonight
+      due_between: ["2026-09-11T12:00:00+08:00", "2026-09-11T22:00:00+08:00"]
