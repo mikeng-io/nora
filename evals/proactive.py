@@ -71,6 +71,14 @@ class DecideCase:
     log: tuple[dict[str, Any], ...] = ()
     memory: dict[str, Any] = field(default_factory=dict)
     rows: tuple[ExpectedRow, ...] = ()
+    #: A CEILING on memory reads, for a case whose point is the COST of
+    #: reaching the decision rather than the decision (issue #145). The suite
+    #: otherwise grades only what was written, and the failure this exists for
+    #: is a pass that spends six searches resolving a name the index should
+    #: have carried — a correct decision, reached the expensive way, which no
+    #: other assertion here can see. Absent means unbounded, which is every
+    #: case that predates it.
+    max_memory_calls: int | None = None
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> DecideCase:
@@ -88,6 +96,10 @@ class DecideCase:
                     due_between=(_iso(r["due_between"][0]), _iso(r["due_between"][1])),
                 )
                 for r in raw.get("rows", ())
+            ),
+            max_memory_calls=(
+                int(raw["max_memory_calls"])
+                if raw.get("max_memory_calls") is not None else None
             ),
         )
         case.validate()
@@ -189,6 +201,15 @@ def grade_decide(case: DecideCase, result: DecideResult) -> Grade:
             "FAIL",
             "a reminder was set without a single memory read — the objective "
             "requires about/ask_memory/search_memory_workspace before remind",
+        )
+    if (
+        case.max_memory_calls is not None
+        and result.memory_calls > case.max_memory_calls
+    ):
+        return Grade(
+            "FAIL",
+            f"{result.memory_calls} memory reads for a decision budgeted at "
+            f"{case.max_memory_calls} — the answer was already in the prompt",
         )
     remaining = list(result.rows)
     for expected in case.rows:

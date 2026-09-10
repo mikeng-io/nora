@@ -1147,11 +1147,59 @@ async def run_note_candidates_case(
 
 #: The eval person, as `Persons` — the same `miles_novak`/`+852111` the harness
 #: identity maps, built in memory so the decide drive needs no temp file.
+# A REAL-SHAPED ROOM, not one synthetic member. The decide suite ran against a
+# roster of exactly one person with no aliases, which meant it could not
+# reproduce the failure that motivates issue #145 at all: a note written in the
+# group's own handles, and nothing joining those handles to the roster. A
+# fixture that cannot express the defect grades a model on a problem it will
+# never be given.
+#
+# Aliases are what the group actually types — the `@handle` a note's body is
+# written in — so a case can now put one in a note and be graded on whether she
+# resolves it from the index or spends a tool call on it.
 _EVAL_PERSONS = Persons(
-    by_person={"miles_novak": PersonRef(person_id="miles_novak", name="Miles", honcho_peer_id="miles_novak")},
-    index={("signal", "+852111"): "miles_novak"},
+    by_person={
+        "miles_novak": PersonRef(
+            person_id="miles_novak", name="Miles", honcho_peer_id="miles_novak",
+            aliases=("熱咖啡", "mapleleaf"),
+        ),
+        "grant": PersonRef(
+            person_id="grant", name="Grant", honcho_peer_id="grant",
+            aliases=("明明",),
+        ),
+        "ada": PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada"),
+        "ben": PersonRef(person_id="ben", name="Ben", honcho_peer_id="ben"),
+    },
+    index={
+        ("signal", "+852111"): "miles_novak",
+        ("signal", "+852222"): "grant",
+        ("signal", "+852333"): "ada",
+        ("signal", "+852444"): "ben",
+        ("discord", "u-miles"): "miles_novak",
+        ("discord", "u-grant"): "grant",
+        ("discord", "u-ada"): "ada",
+        ("discord", "u-ben"): "ben",
+    },
 )
 _EVAL_MEMBER = "+852111"
+#: Every mapped account of the home room, so `group_members` and the people
+#: index answer with a room rather than with one person.
+_EVAL_ROOM = frozenset({"+852111", "+852222", "+852333", "+852444"})
+_EVAL_ROOM_DISCORD = frozenset({"u-miles", "u-grant", "u-ada", "u-ben"})
+
+
+async def _eval_home_room_people(home: object) -> tuple[PersonRef, ...]:
+    """The harness's `people_of`: every mapped person, in a stable order.
+
+    Not read through `Room` as production does — the harness's roster is a
+    fake keyed by conversation id and the mapping is the same either way. What
+    matters for the measurement is that the index carries the aliases a note's
+    body is written in.
+    """
+    return tuple(
+        _EVAL_PERSONS.by_person[pid]
+        for pid in ("miles_novak", "grant", "ada", "ben")
+    )
 
 
 class EvalDreamTools:
@@ -1190,7 +1238,10 @@ class EvalDreamTools:
             honcho=memory, metrics=self.metrics, ai_peer="nora",
             home_rooms={workspace: home},
             rosters={home.platform: FakeRosterSource(
-                groups={home.conversation_id: (frozenset({_EVAL_MEMBER}),)},
+                groups={home.conversation_id: (
+                    _EVAL_ROOM_DISCORD if home.platform == "discord"
+                    else _EVAL_ROOM,
+                )},
             )},
             self_ids=frozenset(),
         )
@@ -1409,6 +1460,11 @@ async def run_proactive_decide_case(
     adaptor = ProactiveAdaptor(
         notes=note_store, standing=standing_store, reminders=reminders, memory=canned,
         rooms_of=lambda ws: ws_rooms if ws == workspace else (),
+        # The people index the pass gets in production (issue #145). Read from
+        # the SAME `_EVAL_PERSONS` the tools resolve against, so a case can put
+        # a handle in a note body and the suite grades whether she reads it off
+        # the index or spends a tool call on it.
+        people_of=_eval_home_room_people,
         ai_peer="nora", clock=lambda: now, timezone=ZoneInfo("Asia/Hong_Kong"),
         metrics=Metrics(),
     )

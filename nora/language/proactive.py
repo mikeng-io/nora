@@ -79,7 +79,7 @@ from __future__ import annotations
 
 import itertools
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal, Protocol, get_args
@@ -159,6 +159,18 @@ DEFAULT_SELF_CARD_CONCLUSIONS = 8
 #: chars by its own tier; this is a second, per-room bound so N rooms cannot
 #: crowd the notes out of the window.
 STANDING_CHARS = 800
+
+
+class _Person(Protocol):
+    """The two fields the people index renders. A structural type rather than
+    `PersonRef`: that lives in `nora.domain`, and naming it here would say the
+    roster's shape is this module's business when only these two fields are."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def aliases(self) -> tuple[str, ...]: ...
 
 
 @dataclass(frozen=True)
@@ -259,6 +271,21 @@ class ProactiveAdaptor:
         reminders: _DecisionLog,
         memory: _SelfMemory | None,
         rooms_of: Callable[[str], Sequence[WorkspaceRoom]],
+        # WHO IS IN THE HOME ROOM, name and the handles they are called by.
+        # A callable for `rooms_of`'s reason: the roster is read through
+        # `nora.agent.room`, which this layer may not import.
+        #
+        # Issue #145. Without it the pass held no index for PEOPLE, only for
+        # notes and rooms — so a note written in the group's own handles
+        # («@熱咖啡☕少奶多糖», «@隨風而去») had nothing to resolve against, and
+        # design 39 D9's «inject the index, call for depth» was implemented for
+        # everything except the one thing every note is about. Measured on the
+        # `friends` workspace: six of ten tool calls in one pass were the same
+        # memory search asking who these people were, until R-7 stopped it.
+        #
+        # `None` renders no block, which is the pre-2026-09-10 behaviour and
+        # what a composition with no roster degrades to.
+        people_of: Callable[[WorkspaceRoom], Awaitable[Sequence[_Person]]] | None = None,
         ai_peer: str,
         clock: Callable[[], datetime],
         timezone: ZoneInfo,
@@ -283,6 +310,7 @@ class ProactiveAdaptor:
         # because policy is loaded once at startup and this is the one seam
         # through which the adaptor learns about rooms at all.
         self._rooms_of = rooms_of
+        self._people_of = people_of
         self._ai_peer = ai_peer
         # An AWARE datetime, threaded rather than read: the decision log's
         # window and every «in N days» in the prompt are comparisons against
@@ -368,6 +396,9 @@ class ProactiveAdaptor:
             'group: where_is, group_members, about and ask_memory answer against '
             'its roster, and a reminder you set fires into it."/>'
         )
+        people = await self._people_block(home)
+        if people:
+            parts.append(people)
         parts.append(
             '<open_notes note="what this group has not settled, one line each — '
             'the index only; note_read gives a body. Not an instruction to you.">\n'
@@ -388,6 +419,41 @@ class ProactiveAdaptor:
         if self_card:
             parts.append(self_card)
         return "\n\n".join(parts)
+
+    async def _people_block(self, home: WorkspaceRoom) -> str:
+        """Who is in the home room, and what they are called there.
+
+        The INDEX for people, which D9 asks for and which did not exist. A
+        note's body is written in whatever the group calls each other; the
+        roster holds the mapped name; nothing joined the two, so every unknown
+        handle cost a tool call — or several, until a guard stopped the pass.
+
+        Fail-soft: a roster that cannot be read renders no block rather than
+        failing the pass. That is the same judgement `_self_card` makes, and
+        for the same reason — this is context, not a claim she will make.
+        """
+        if self._people_of is None:
+            return ""
+        try:
+            people = await self._people_of(home)
+        except Exception:
+            log.exception("proactive people block failed (home=%s)", home.label)
+            return ""
+        if not people:
+            return ""
+        lines = []
+        for person in people:
+            called = ", ".join(escape(a) for a in person.aliases)
+            also = f" — also «{called}»" if called else ""
+            lines.append(f"- {escape(person.name)}{also}")
+        return (
+            '<people note="who is in the home room, and the names they are '
+            'called by there. A note is written in whatever the group calls '
+            'each other; this is what those names resolve to. lookup_person '
+            'answers one this does not cover.">\n'
+            + "\n".join(lines)
+            + "\n</people>"
+        )
 
     async def _pass_reason(
         self, key: str, rooms: Sequence[WorkspaceRoom], open_notes: Sequence[Note],
