@@ -1388,11 +1388,30 @@ model = "ollamacloud/deepseek-v4-flash:0731"
 # widen it; the two proactive eval suites (39 §5) are what say whether the
 # extra turns buy anything. It is wired only when policy.toml names a
 # `home_room = true` for a workspace — there is no [dreamer] flag for it.
-# [dreamer.budgets.proactive]
-# turns = 12
-# total_tokens = 80000
-# output_tokens = 4000
-# timeout_seconds = 240.0
+# OPENED 2026-09-10, and these are the numbers the deployment runs. They are
+# NOT a measurement — they are room to take one, and the block is uncommented
+# so that the `proactive_decide` suite measures the configuration production
+# uses instead of the field defaults. It was measuring 6 turns / 40,000 while
+# the deployment ran 24 / 1,000,000, and two of its three errors were budget
+# cuts: `limit_total_tokens` on a run nobody has ever made.
+#
+# What the failing production traces showed: the context is only ~10k, but each
+# turn RE-SENDS it, so the loop's running total is roughly context x turns and
+# 40,000 bought four turns. The decide turn had not finished researching by
+# then, and R-7 was already vetoing a fifth `search_memory_workspace`. The cost
+# scales with the workspace's roster: a one-person room finished in 19-28k, a
+# real one did not finish at all.
+#
+# So `turns` is the REAL budget here and `total_tokens` is a safety net, which
+# is the opposite of how the defaults read. Lifting total_tokens alone buys
+# more of the same circling.
+[dreamer.budgets.proactive]
+turns = 24
+total_tokens = 1000000
+output_tokens = 10000
+# 120 was not enough to observe one: a live run was still going at 58s and was
+# cut off before it decided anything.
+timeout_seconds = 240.0
 
 
 [obs.logging]

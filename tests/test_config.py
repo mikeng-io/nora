@@ -904,10 +904,27 @@ def test_the_shipped_template_declares_no_budget_block_at_all(toml_path):
     That is the shipped state and it is bounded — the assertion below is what
     keeps it from being confused with «somebody sized these»."""
     budgets = load(toml_path).dreamer.budgets
-    assert budgets == {}, (
+    assert set(budgets) == {"proactive"}, (
         "a [dreamer.budgets.*] block arrived — pin it here with the reasoning "
         "for its numbers, so the section cannot fill up unmeasured"
     )
+    # PROACTIVE, pinned 2026-09-10 with its reasoning, which is what the
+    # message above asks of anything that lands in this section.
+    #
+    # These are NOT measurements. They are room to take one, and the block is
+    # declared so that `proactive_decide` measures the configuration the
+    # deployment runs: it was measuring the field defaults (6 turns, 40,000
+    # tokens) while production ran these, and two of its three errors were
+    # `limit_total_tokens` on a budget nobody uses. A suite bound to the wrong
+    # configuration is not measuring the model.
+    #
+    # `turns` is the real bound. The context is ~10k and each turn re-sends it,
+    # so the running total is roughly context x turns; 40,000 bought four turns
+    # and the decide loop was still researching. `total_tokens` is the safety
+    # net, which is the opposite of how the defaults read.
+    proactive = budgets["proactive"]
+    assert (proactive.turns, proactive.total_tokens) == (24, 1_000_000)
+    assert (proactive.output_tokens, proactive.timeout_seconds) == (10_000, 240.0)
 
 
 def test_a_zero_budget_field_is_a_startup_failure(toml_path):
