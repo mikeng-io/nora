@@ -22,6 +22,7 @@ written for:
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -785,6 +786,46 @@ def test_a_home_room_grant_with_no_home_room_falls_back_closed():
     assert call["location_trusted"] is False
     assert call["room"].platform == ""
     assert call["room"]._roster_source is None
+
+
+def test_the_missing_home_room_is_counted_every_pass_and_logged_once(caplog):
+    """A CONFIG state, not an incident: true on every dream until somebody
+    edits policy.toml.
+
+    Live it filed the same Sentry issue on every pass, once per workspace
+    without a home room (NORA-2 — `wedding` and `friends`). Deduplicating the
+    log alone would have traded a stream of identical errors for no signal at
+    all, so the counter carries the standing reading and the log carries the
+    news: «the proactive adaptor has been inert here for a week» has to stay
+    answerable.
+    """
+    metrics = Metrics()
+    source = RegistryToolSource(
+        registry=_RecordingRegistry(), store=None, persons=None, honcho=None,
+        metrics=metrics, home_rooms={},
+    )
+
+    with caplog.at_level(logging.ERROR, logger="nora.dreamer"):
+        for _ in range(3):
+            source.build(
+                key="wedding", names=frozenset({"where_is"}), workspace="wedding",
+                adaptor="proactive", grant=proactive_grant(),
+            )
+        source.build(
+            key="friends", names=frozenset({"where_is"}), workspace="friends",
+            adaptor="proactive", grant=proactive_grant(),
+        )
+
+    assert metrics.get(
+        "nora_dream_home_room_missing_total", adaptor="proactive", workspace="wedding",
+    ) == 3
+    assert metrics.get(
+        "nora_dream_home_room_missing_total", adaptor="proactive", workspace="friends",
+    ) == 1
+    said = [r.getMessage() for r in caplog.records if "names none" in r.getMessage()]
+    assert len(said) == 2, "once per workspace, not once per pass"
+    assert any("'wedding'" in m for m in said)
+    assert any("'friends'" in m for m in said)
 
 
 def test_without_a_grant_the_build_is_byte_for_byte_the_old_one():

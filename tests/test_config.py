@@ -1026,6 +1026,61 @@ def test_shadow_mode_requires_a_channel(toml_path):
         load(toml_path)
 
 
+def test_a_discord_shadow_channel_needs_its_guild_half(toml_path):
+    """`shadow_channel = "100000000000000207"` is what the operator wrote,
+    because this file's own docs said "a channel id" — and Discord addresses a
+    room as `"<guild_id>/<channel_id>"`.
+
+    `DiscordSender.send` partitioned the bare snowflake into
+    `guild_id="100000000000000207"`, `channel_id=""`, posted to
+    `/channels//messages`, and Discord answered **405** on every participation
+    mirror and every Relevance Gate GO (NORA-3/NORA-4, 2026-09-09).
+
+    A set-but-unsendable channel fails soft on every determination exactly as
+    an unset one does, so it is the SAME config error and is refused in the
+    same place. It has to be caught here: the mirror is deliberately
+    fail-soft — review traffic must never break the path it reviews — so the
+    one loud place left is the load that reads the value.
+    """
+    text = toml_path.read_text()
+    start = text.index("\n[participation]")
+    end = text.index("\n[engagement]")
+
+    def _with(channel: str) -> str:
+        return (
+            text[:start]
+            + "\n[participation]\nenabled = true\nshadow = true\n"
+            + f'shadow_channel = "{channel}"\nshadow_platform = "discord"\n'
+            + text[end:]
+        )
+
+    toml_path.write_text(_with("100000000000000207"))
+    with pytest.raises(Exception, match="guild_id"):
+        load(toml_path)
+
+    toml_path.write_text(_with("100000000000000203/100000000000000207"))
+    cfg = load(toml_path)
+    assert cfg.participation.shadow_channel == "100000000000000203/100000000000000207"
+
+
+def test_a_shadow_channel_on_a_platform_without_guilds_is_not_shape_checked(toml_path):
+    """Only Discord's ids have two halves. A Signal conversation id is one
+    opaque base64 string in which a `/` means nothing, so asserting a shape
+    there would refuse the very ids that platform issues."""
+    text = toml_path.read_text()
+    start = text.index("\n[participation]")
+    end = text.index("\n[engagement]")
+    toml_path.write_text(
+        text[:start]
+        + "\n[participation]\nenabled = true\nshadow = true\n"
+        + 'shadow_channel = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="\n'
+        + 'shadow_platform = "signal"\n'
+        + text[end:]
+    )
+    cfg = load(toml_path)
+    assert cfg.participation.shadow_platform == "signal"
+
+
 def test_the_relevance_gate_ships_inert(toml_path):
     """design/dreamer-agent-loop/36: OFF, and in review mode when on."""
     cfg = load(toml_path)
@@ -1056,6 +1111,28 @@ def test_the_gate_shadow_requires_a_channel_once_the_gate_is_on(toml_path):
         + text[end:]
     )
     with pytest.raises(Exception, match="shadow_channel"):
+        load(toml_path)
+
+
+def test_the_gate_review_channel_needs_its_guild_half_too(toml_path):
+    """The gate's twin of the participation check, and the one that actually
+    fired: on the deployment BOTH sections held the same bare snowflake, and
+    the gate is the one in shadow mode, so it is the one whose GO verdicts
+    went nowhere. Gated on `enabled` for the same reason the emptiness check
+    is — a disabled gate posts nowhere, so its unshaped channel is not yet a
+    contradiction."""
+    text = toml_path.read_text()
+    start = text.index("\n[relevance_gate]")
+    end = text.index("\n[engagement]")
+    head = text[:start] + "\n[relevance_gate]\nshadow = true\n"
+    tail = 'shadow_channel = "100000000000000207"\nshadow_platform = "discord"\n'
+
+    # Gate OFF: nothing is posted, so nothing is asserted about the channel.
+    toml_path.write_text(head + tail + text[end:])
+    assert load(toml_path).relevance_gate.enabled is False
+
+    toml_path.write_text(head + "enabled = true\n" + tail + text[end:])
+    with pytest.raises(Exception, match="guild_id"):
         load(toml_path)
 
 

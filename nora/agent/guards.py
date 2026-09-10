@@ -211,6 +211,30 @@ class Deliverer:
         # feeds each under the Nora aiPeer. Populated only on a successful send,
         # so a refused/failed message is never fed.
         self._sent_texts: list[str] = []
+        # WHY the last `deliver` answered as it did. `deliver` returns a bool,
+        # and a bool cannot tell a guard REFUSAL from a send that reached the
+        # wire and failed there — both are False. The shadow callers in
+        # `nora.app.fire` reported the difference anyway, and got it wrong: a
+        # Discord 405 was logged for a fortnight as "REFUSED by a guard", which
+        # sent the read straight at the egress screen while the actual fault
+        # was a malformed channel id in config.toml (NORA-3/NORA-4).
+        #
+        # A field rather than a richer return type: `deliver`'s bool is what
+        # every tool call site reads, and widening it there to serve two review
+        # paths would change a contract that is right everywhere else.
+        self._last_outcome = ""
+
+    @property
+    def last_outcome(self) -> str:
+        """How the last `deliver` ended — `"sent"`, or the reason it did not.
+
+        The refusal names are the ones the metrics already use (`empty_reply`,
+        `doctrine_leak`, `egress_block`, …) so a log line and a counter can be
+        read against each other without a translation table. `"send_failed"` is
+        the one that is NOT a refusal: the text passed every guard and the
+        platform rejected it. `""` before the first call.
+        """
+        return self._last_outcome
 
     @property
     def sent_texts(self) -> tuple[str, ...]:
@@ -325,6 +349,7 @@ class Deliverer:
                 self._attempts, self._message_cap, self._tag_id,
             )
             self._metrics.inc("nora_guard_vetoes_total", rule="R-2")
+            self._last_outcome = "cap_spent"
             return False
 
         # DEC-82: convert Markdown ONCE, here, BEFORE the remaining guards, so
@@ -349,6 +374,7 @@ class Deliverer:
                 "nora_silent_failures_total", reason="empty_reply",
                 platform=self._target.platform, audience=self._audience,
             )
+            self._last_outcome = "empty_reply"
             return False
 
         # DEC-89: put back the links this reply EARNED and dropped. Ordered by
@@ -400,6 +426,7 @@ class Deliverer:
                 "nora_silent_failures_total", reason="doctrine_leak",
                 platform=self._target.platform, audience=self._audience,
             )
+            self._last_outcome = "doctrine_leak"
             return False
 
         # R-18 — see `nora.agent.egress` for why this exists and what it
@@ -433,6 +460,7 @@ class Deliverer:
                 "nora_silent_failures_total", reason="egress_block",
                 platform=self._target.platform, audience=self._audience,
             )
+            self._last_outcome = "egress_block"
             return False
 
         # The participation SEND cooldown (design/dreamer-agent-loop/35 §10.3),
@@ -453,6 +481,7 @@ class Deliverer:
             # Retained for the §10.6 shadow mirror — "what she WOULD have
             # said" — after every guard above has passed on the text.
             self._held_texts.append(styled.text)
+            self._last_outcome = "cooldown_held"
             return False
 
         self._attempts += 1
@@ -504,6 +533,7 @@ class Deliverer:
                 "nora_silent_failures_total", reason="audit_write_failed",
                 platform=self._target.platform, audience=self._audience,
             )
+            self._last_outcome = "audit_write_failed"
             return False
 
         try:
@@ -560,6 +590,7 @@ class Deliverer:
                 "nora_silent_failures_total", reason="send_failed",
                 platform=self._target.platform, audience=self._audience,
             )
+        self._last_outcome = "sent" if result.ok else "send_failed"
         return result.ok
 
 
