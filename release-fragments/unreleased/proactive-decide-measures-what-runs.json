@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "She stops raising a thing again after somebody has already answered it — and the suite that grades her now runs the budget the deployment runs.",
+  "details": [
+    "Her rule against nagging only covered the half where nobody replied. A thing she raised that somebody DID answer had no rule at all, and the strike count could not tell her either, because it only counts the raises that went unanswered. Measured over five samples: she re-raised an answered note five times out of five. With the rule stated she raises it twice in five, and the case passes.",
+    "Her decision log says a reminder was 'sent', which means the room heard her, not that the room is still waiting. The rule now says so, and points her at the room's standing to tell the difference.",
+    "The suite grading all of this was measuring six turns and forty thousand tokens while the deployment runs twenty-four and a million — two of its three errors were budget cuts on a configuration nobody uses. The template now carries the deployed numbers.",
+    "Across the suite: false positives on quiet days fall from 0.14 to 0.09, and nine of ten cases pass where eight did."
+  ],
+  "limitations": [
+    "One case still fails and is unfixed: asked to nudge the day before an event, she schedules the nudge for the day of it, four times in five. The objective already says 'the evening before, not the morning of'; an attempt to state it more concretely made every other case worse and was reverted.",
+    "Recall falls from 0.67 to 0.60 — she is slightly more likely to stay quiet. That is the trade the objective itself asks for: being late costs a little, being annoying costs the whole thing."
+  ]
+}

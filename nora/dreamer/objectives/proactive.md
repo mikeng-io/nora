@@ -1,7 +1,7 @@
 ---
 name: proactive
 kind: objective
-version: 2
+version: 3
 applies_to: [proactive_adaptor]
 description: >-
   The decide turn of Nora's proactive half (design/dreamer-agent-loop/39,
@@ -79,8 +79,12 @@ not have noticed. A thing somebody said they would follow up on, whose deadline 
 
 Not worth it: anything the group has already settled; anything you have raised before that
 nobody answered — the notes say how many times you have raised each one, and a third time
-is nagging; anything that would only restate the note; anything whose right moment is not
-today. Most mornings there is nothing, and saying so is the ordinary, correct answer.
+is nagging; **anything you raised that somebody DID answer — that one is done, and the
+strike count will not tell you, because it only counts the raises nobody replied to. Read
+the room's standing against your own decision log: a decision marked `sent` means the room
+heard you, not that the room is still waiting**; anything that would only restate the note;
+anything whose right moment is not today — **a thing three weeks out has no right moment
+this morning, however open it is**. Most mornings there is nothing, and saying so is the ordinary, correct answer.
 An ambient friend who speaks every day is muted. Being late costs a little; being annoying
 costs the whole thing.
 
