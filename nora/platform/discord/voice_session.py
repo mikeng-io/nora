@@ -9,20 +9,61 @@ the audio thread's loop — natural completion, an error, OR an explicit
 transition explicitly and synchronously, so this class must SWALLOW the
 `after` firing its own `stop()` call causes, or a skip advances the queue
 twice (once from `MusicPlayer.skip()`'s own `_advance()`, again from the
-callback it did not expect to see).
+callback it did not expect to see). **`_suppress_next_after` has two defects
+of its own — a flag stranded when the track had already ended, and a real
+`after` that fires asynchronously rather than during `stop()`. Issue #192;
+deliberately untouched here.**
 
 **A second, subtler race** (subagent review, 2026-08-23): a track ending
 naturally schedules `on_finished()` via `run_coroutine_threadsafe` — QUEUED
-on the loop, not run yet. If `MusicPlayer.skip()` reaches `voice.stop()`
-before that queued coroutine gets a turn (the common case: `skip()`'s call
-chain has no `await` before `voice.stop()`, so it reliably wins the race
-under Python's cooperative scheduling), the suppression flag above does
-NOT help — it only guards the NEXT `after` invocation `stop()` itself
-causes, not an EARLIER one already scheduled. Left unfixed, both the
-already-queued `on_finished()` and `skip()`'s own explicit advance run,
-advancing the queue twice for one skip. Fixed by keeping the `Future`
-`run_coroutine_threadsafe` returns and cancelling it in `stop()` — before
-the coroutine has started, cancellation prevents it from ever running.
+on the loop, not run yet. If `MusicPlayer.skip()` reaches `voice.play()` (a
+non-empty queue) or `voice.stop()` (an empty one) before that queued
+coroutine gets a turn, the suppression flag above does NOT help: it only
+guards the NEXT `after` invocation `stop()` itself causes, not an EARLIER one
+already scheduled. Both the already-queued `on_finished()` and `skip()`'s own
+explicit advance then run, advancing the queue twice for one skip.
+
+**Cancelling the `Future` does not prevent that, and the fix that shipped in
+2026-08 could not do what its comment claimed** (issue #179, measured
+2026-09-11). `asyncio.run_coroutine_threadsafe` returns a
+`concurrent.futures.Future` that is only CHAINED to the real `asyncio.Task`
+on a later loop iteration; cancelling it before then makes
+`asyncio.futures._chain_future` schedule `task.cancel()` with
+`call_soon_threadsafe` — which lands in the ready queue AFTER the
+`call_soon(task.__step)` the very same iteration queued. The task therefore
+takes its first step regardless. Measured directly: `fut.cancel()` returns
+`True`, `fut.cancelled()` is `True`, and the coroutine runs.
+
+So supersession is decided ON THE LOOP instead, by an EPOCH: every call that
+takes over the advance (`play()`, `stop()`) bumps `_finish_epoch`, each
+track's completions are minted under the `_play_epoch` stamped when that
+track started, and `_run_on_finished` compares the two before touching
+`on_finished`. The comparison runs in the coroutine itself, before it awaits
+anything, so no scheduling order can put a stale completion past it.
+
+**What `Future.cancel()` is still for, and why it stays.** It is the only
+thing that can stop a completion that has already STARTED and is suspended at
+an `await` — which is exactly what happens when the completion reaches
+`MusicPlayerManager.on_track_finished`'s per-guild lock while `skip()` is
+holding it. The epoch covers the not-yet-started case; the cancel covers the
+started-and-waiting case. Neither covers the other, and both are needed.
+
+**HOW FAR THIS ACTUALLY REACHES — measured, because the honest answer is
+narrower than the obvious one.** `MusicPlayerManager` serializes `skip()` and
+`on_track_finished()` under a per-guild `asyncio.Lock` (`music_manager.py`),
+and in production `MusicPlayer._advance` suspends almost immediately at
+`pop_next` (a Postgres roundtrip) and `resolve` (a network call). Driven end
+to end in THAT configuration, the pre-fix code and this one behave
+identically: the stale completion starts, blocks on the lock, and the
+deferred `task.cancel()` kills it before it can do anything. **No
+user-visible double advance was demonstrated against production's
+configuration, and this fix is not reported as one.** Remove the suspension —
+hand `MusicPlayer` stores that return without yielding, the lock still in
+place — and the pre-fix code advances two tracks for one skip while this one
+advances one. So the defect is real at this class's own boundary and is
+currently MASKED, by a lock in another module plus a cancellation that
+happens to arrive in time. That is a guarantee by coincidence; this makes the
+class provide the one its docstring claims, on its own.
 
 `after` fires from the audio player's OWN THREAD, never the event loop's —
 `asyncio.run_coroutine_threadsafe` is the only safe way back onto it from
@@ -94,6 +135,18 @@ class DiscordVoiceSession:
         self._monitor_task: asyncio.Task[None] | None = None
         self._suppress_next_after = False
         self._pending_finish: Future[None] | None = None
+        # Monotonic supersession token for queued completions (issue #179).
+        # Bumped by every call that TAKES OVER the advance; a completion
+        # minted under an older epoch is stale by definition and returns
+        # without calling `on_finished`.
+        self._finish_epoch = 0
+        # The epoch the CURRENT track was started under, stamped by `play()`
+        # and read (never written) by `_after` on the audio thread. `_after`
+        # must NOT read `_finish_epoch` directly: it would pick up a bump
+        # that a `stop()` landed between its own suppression check and that
+        # read, and then match. Stamping it here binds the token to the
+        # track rather than to the instant the callback happens to fire.
+        self._play_epoch = 0
         # Persisted across tracks, not reset on `play()` — setting the
         # volume once should stay in effect for whatever plays next, the
         # same "a setting, not an action on this one track" argument
@@ -171,13 +224,18 @@ class DiscordVoiceSession:
         self._ensure_monitor()
         # A completion signal for the track THIS call is replacing may
         # already be in flight -- e.g. `/music skip` landing right as this
-        # track's own early crossfade timer fired. Cancelling here (not
-        # just in `stop()`) is what keeps that race from double-advancing:
-        # this `play()` call IS the advance now, an already-queued one
-        # must not also run (module docstring's "second, subtler race").
-        if self._pending_finish is not None:
-            self._pending_finish.cancel()
-            self._pending_finish = None
+        # track's own early crossfade timer fired, or right after the track
+        # ended on its own. Superseding here (not just in `stop()`) is what
+        # keeps that race from double-advancing: this `play()` call IS the
+        # advance now, an already-queued one must not also run (module
+        # docstring's "second, subtler race"). `MusicPlayer.skip()` reaches
+        # HERE, not `stop()`, whenever the queue is non-empty -- which is
+        # the common skip.
+        self._supersede_pending_finish()
+        # Stamped AFTER the bump: this track's completions are minted under
+        # the epoch this call establishes, so anything that supersedes it
+        # later moves `_finish_epoch` past this value.
+        self._play_epoch = self._finish_epoch
         try:
             if already_playing:
                 # A live swap, not stop()+play() -- the AudioPlayer thread never
@@ -216,15 +274,12 @@ class DiscordVoiceSession:
             self._current_source.volume = volume
 
     def stop(self) -> None:
-        # Cancel a completion this `stop()` is about to SUPERSEDE — see the
-        # module docstring's second race. `Future.cancel()` on a not-yet-
-        # started `run_coroutine_threadsafe` future prevents it from ever
-        # running; a no-op if it already ran or was never scheduled.
+        # Invalidate a completion this `stop()` is about to SUPERSEDE — see
+        # the module docstring's second race, and why cancelling the
+        # `Future` is not what makes that hold.
         self._cancel_crossfade_timer()
         self._cancel_monitor()
-        if self._pending_finish is not None:
-            self._pending_finish.cancel()
-            self._pending_finish = None
+        self._supersede_pending_finish()
         self._suppress_next_after = True
         self._current_raw = None
         self._current_stream_url = None
@@ -249,6 +304,33 @@ class DiscordVoiceSession:
         state must end up clean regardless of whether the remote side
         already agrees, which is exactly what `force=True` guarantees."""
         await self._voice_client.disconnect(force=True)
+
+    def _supersede_pending_finish(self) -> None:
+        """Invalidate any completion already queued on the loop, because the
+        caller is TAKING OVER the advance it would have driven.
+
+        The two halves cover disjoint cases and BOTH are load-bearing:
+
+        * the epoch stops a completion that has **not started** —
+          `_run_on_finished` compares its minted epoch against this one
+          before it awaits anything. `Future.cancel()` cannot do this:
+          measured for issue #179, cancelling the `concurrent.futures.
+          Future` that `run_coroutine_threadsafe` returns reports success
+          and the coroutine runs anyway.
+        * `Future.cancel()` stops one that **has started and is suspended**
+          at an `await` — a completion sitting on `MusicPlayerManager`'s
+          per-guild lock while `skip()` holds it. The epoch cannot do this;
+          that completion already passed the check.
+
+        Known hazard, NOT fixed here (issue #193): cancelling a completion
+        suspended INSIDE `MusicPlayer._advance` can land after `pop_next` has
+        already removed the row, losing a track. The durable fix is for
+        `on_track_finished` to verify the track that finished is still the
+        one playing, rather than for the cancel to arrive in time."""
+        self._finish_epoch += 1
+        pending, self._pending_finish = self._pending_finish, None
+        if pending is not None:
+            pending.cancel()
 
     def _cancel_crossfade_timer(self) -> None:
         if self._crossfade_timer is not None:
@@ -280,7 +362,7 @@ class DiscordVoiceSession:
         if not self._voice_client.is_playing():
             return  # skipped/stopped already; nothing to crossfade into
         self._pending_finish = asyncio.run_coroutine_threadsafe(
-            self._run_on_finished(), self._loop,
+            self._run_on_finished(self._play_epoch), self._loop,
         )
 
     def _after(self, error: Exception | None) -> None:
@@ -301,11 +383,27 @@ class DiscordVoiceSession:
         # fields for the next track; `stop()` clears them itself.
         self._current_raw = None
         self._current_source = None
+        # The epoch is read HERE, on the audio thread, and carried into the
+        # coroutine: whatever supersedes this completion between now and the
+        # loop running it will have bumped it past this value.
         self._pending_finish = asyncio.run_coroutine_threadsafe(
-            self._run_on_finished(), self._loop,
+            self._run_on_finished(self._play_epoch), self._loop,
         )
 
-    async def _run_on_finished(self) -> None:
+    async def _run_on_finished(self, epoch: int) -> None:
+        # Runs on the LOOP. If something took over the advance between this
+        # completion being queued and it getting a turn — `MusicPlayer.
+        # skip()`'s own `play()`/`stop()`, a voice reconnect — the epoch has
+        # moved on and this signal is stale: delivering it would advance the
+        # queue a second time for one skip (issue #179). This check, not the
+        # `Future.cancel()` in `_supersede_pending_finish`, is what makes
+        # that impossible.
+        if epoch != self._finish_epoch:
+            log.info(
+                "voice completion superseded before it ran (epoch %d, now %d); "
+                "not advancing", epoch, self._finish_epoch,
+            )
+            return
         # The `Future` `run_coroutine_threadsafe` returns is otherwise never
         # awaited by anything — an exception raised inside `on_finished()`
         # (e.g. a transient DB error in `MusicPlayerManager.on_track_
@@ -422,6 +520,10 @@ class DiscordVoiceSession:
                 self._current_raw = None
                 self._current_source = None
                 self._suppress_next_after = False
+                # Dropping the reference is enough HERE only because the
+                # `self.play()` immediately below supersedes the epoch for
+                # us — that is what actually neutralises a completion the
+                # dead connection's last `after` already queued (#179).
                 self._pending_finish = None
                 self.play(
                     self._current_stream_url,
