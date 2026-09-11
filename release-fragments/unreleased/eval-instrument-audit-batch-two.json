@@ -1,5 +1,10 @@
 {
   "type": "fix",
   "summary": "The remaining audit findings: the offline suites could not detect a broken trigger, the Dreamer's consolidation cursor had no test, the singleton rule missed two of its three shapes, and the verdict cache ignored the grader.",
-  "details": "The offline trigger/no_trigger suites ran with no model at all, so NoSendWithoutTrigger asserted about a turn that never had the chance to send — tagging every message left the suite green. They drive a scripted reply now. The Dreamer's only .since() call site could be changed to re-read the whole conversation every tick with all tests green. A worktree eval run silently measured the template config. And the adversarial verdict cache did not hash the rubric or judge prompt, so editing a criterion left every cached verdict valid."
+  "details": [
+    "The offline trigger/no_trigger suites ran with no model at all, so NoSendWithoutTrigger asserted about a turn that never had the chance to send — tagging every message left the suite green. They drive a scripted reply now.",
+    "The Dreamer's only .since() call site could be changed to re-read the whole conversation every tick with all tests green.",
+    "A worktree eval run silently measured the template config.",
+    "The adversarial verdict cache did not hash the rubric or judge prompt, so editing a criterion left every cached verdict valid."
+  ]
 }

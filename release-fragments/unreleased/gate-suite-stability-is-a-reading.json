@@ -1,5 +1,8 @@
 {
   "type": "fix",
   "summary": "The gate suite reports stability as a rate instead of vetoing runs that show variance, and stops scoring a fail-closed no_go as a correct refusal.",
-  "details": "Determinism-across-n-runs was the suite's declared control, and it let a stable-but-wrong gate pass while declaring a mostly-right one unreadable. It is now a reported split with a Wilson interval, alongside the n it was measured at. Separately, the gate fails closed, so a timeout or refusal arrives as the same no_go a correct refusal produces; those runs are now counted and shown, and a run containing them fails."
+  "details": [
+    "Determinism-across-n-runs was the suite's declared control, and it let a stable-but-wrong gate pass while declaring a mostly-right one unreadable. It is now a reported split with a Wilson interval, alongside the n it was measured at.",
+    "Separately, the gate fails closed, so a timeout or refusal arrives as the same no_go a correct refusal produces; those runs are now counted and shown, and a run containing them fails."
+  ]
 }
