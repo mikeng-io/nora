@@ -597,6 +597,13 @@ async def _drive(tmp_path: Path) -> _Journey:
         notes=note_store, candidates=note_store,
         workspace_for=lambda _scope: WORKSPACE, metrics=metrics,
         timezone=HKT,
+        # #161 (PR #202) landed after this case was written: the adaptor now
+        # requires the room's label and the operator's description, keyed the
+        # same way `composition.py` keys them. The journey's two rooms carry
+        # the labels its policy block declares; no description is set, which
+        # is the deployment's state too.
+        label_for={THREAD_ROOM: "thread", HOME_ROOM: "home"}.get,
+        description_for={}.get,
     )
     journey.note_candidates_envelope = await candidates.inputs(
         key=THREAD_ROOM, batch=batch,
