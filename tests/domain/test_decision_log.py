@@ -47,9 +47,9 @@ def _recorder(store=None, *, metrics=None, **kw):
 
 def _row(**kw):
     base = {
-        "id": "r1", "writer": "gate", "platform": "signal",
+        "id": "r1", "writer": "participation", "platform": "signal",
         "conversation_id": "g1", "workspace": "friends", "note_id": None,
-        "verdict": "no_go", "reason": "", "ts": NOW_MS,
+        "verdict": "silent", "reason": "", "ts": NOW_MS,
     }
     base.update(kw)
     return DecisionRow(**base)
@@ -74,18 +74,19 @@ class _Broken:
 
 async def test_a_failing_write_is_swallowed_counted_and_returns_none():
     """**The rule the recorder exists for.** Four writers sit inside a reply
-    slot, a fire turn, a gate call and a Dreamer pass; a store that stops
-    answering must cost a thinner prompt on the NEXT decision, never a dropped
-    reply now. So `record` swallows, counts, and answers `None` — there is no
-    error channel for a caller to forget to check, because there is no decision
-    a caller could make with one.
+    slot, a fire turn and a Dreamer pass; a store that stops answering must
+    cost a thinner prompt on the NEXT decision, never a dropped reply now. So
+    `record` swallows, counts, and answers `None` — there is no error channel
+    for a caller to forget to check, because there is no decision a caller
+    could make with one.
 
     Falsification: remove the `try`/`except` around the `append` in `record`.
     """
     metrics = Metrics()
     recorder = _recorder(_Broken(), metrics=metrics)
     assert await recorder.record(
-        writer="gate", platform="signal", conversation_id="g1", verdict="go",
+        writer="participation", platform="signal", conversation_id="g1",
+        verdict="spoke",
     ) is None
     assert metrics.get(
         "nora_errors_total", stage="decision_log_write", platform="signal",
@@ -134,7 +135,8 @@ async def test_a_store_that_hangs_costs_the_timeout_and_nothing_more():
     # flaps is a falsification nobody can cite.
     recorder = _recorder(_Hangs(), timeout_seconds=0.5)
     assert await recorder.record(
-        writer="gate", platform="signal", conversation_id="g1", verdict="go",
+        writer="participation", platform="signal", conversation_id="g1",
+        verdict="spoke",
     ) is None
     assert await recorder.read_workspace(
         platform="signal", workspace="friends",
@@ -190,7 +192,8 @@ async def test_the_workspace_comes_from_policy_and_is_never_guessed():
     store = InMemoryDecisionLogStore()
     recorder = _recorder(store, workspace_of=lambda p, c: "friends")
     await recorder.record(
-        writer="gate", platform="signal", conversation_id="g1", verdict="go",
+        writer="participation", platform="signal", conversation_id="g1",
+        verdict="spoke",
     )
     assert (await store.recent(conversation_id="g1", since_ms=0))[0].workspace == "friends"
 
@@ -207,10 +210,12 @@ async def test_an_unknown_or_unreadable_room_leaves_the_workspace_empty():
         raise RuntimeError("policy read failed")
 
     await _recorder(store, workspace_of=lambda p, c: None).record(
-        writer="gate", platform="signal", conversation_id="g1", verdict="go",
+        writer="participation", platform="signal", conversation_id="g1",
+        verdict="spoke",
     )
     await _recorder(store, metrics=metrics, workspace_of=_boom).record(
-        writer="gate", platform="signal", conversation_id="g2", verdict="go",
+        writer="participation", platform="signal", conversation_id="g2",
+        verdict="spoke",
     )
     assert (await store.recent(conversation_id="g1", since_ms=0))[0].workspace == ""
     assert (await store.recent(conversation_id="g2", since_ms=0))[0].workspace == ""
@@ -241,7 +246,7 @@ def test_the_block_names_itself_and_every_row_carries_an_age():
         [("", (_row(reason="quiet room", ts=NOW_MS - 7_200_000),))], now=NOW,
     )
     assert block.startswith("<loop_decisions ")
-    assert "(2h ago) gate no_go — quiet room" in block
+    assert "(2h ago) participation silent — quiet room" in block
 
 
 def test_the_blocks_note_says_what_it_is_and_gives_no_instruction():
@@ -262,11 +267,11 @@ def test_the_blocks_note_says_what_it_is_and_gives_no_instruction():
 
 def test_a_room_label_prefixes_the_row_when_the_block_spans_rooms():
     block = render_decisions(
-        [("Friends", (_row(id="a"),)), ("Zone 42", (_row(id="b", verdict="go"),))],
+        [("Friends", (_row(id="a"),)), ("Zone 42", (_row(id="b", verdict="spoke"),))],
         now=NOW,
     )
-    assert "Friends gate no_go" in block
-    assert "Zone 42 gate go" in block
+    assert "Friends participation silent" in block
+    assert "Zone 42 participation spoke" in block
 
 
 def test_no_person_or_room_identifier_is_ever_rendered():
@@ -325,26 +330,27 @@ def test_every_declared_writer_renders(writer):
     """The vocabularies are `get_args` off the `Literal`, so a value added to
     one and not the other is impossible by construction — this asserts the
     renderer can actually show each of them rather than dropping one."""
-    block = render_decisions([("", (_row(writer=writer, verdict="go"),))], now=NOW)
-    assert f"{writer} go" in block
+    block = render_decisions([("", (_row(writer=writer, verdict="spoke"),))], now=NOW)
+    assert f"{writer} spoke" in block
 
 
 @pytest.mark.parametrize("verdict", VERDICTS)
 def test_every_declared_verdict_renders(verdict):
     block = render_decisions([("", (_row(verdict=verdict),))], now=NOW)
-    assert f"gate {verdict}" in block
+    assert f"participation {verdict}" in block
 
 
 async def test_the_writer_filter_is_applied_before_the_bound():
     """**The finding that broke the feature, as a property.** The bound is 20
-    rows and every reader wants a subset — each excludes its own writer. The
-    `gate` writer produces one row per closed participation window per room,
-    which out-produces every other writer by an order of magnitude, so a filter
-    applied to what came BACK hands the caller 20 gate rows and nothing it can
-    use. Silently: an empty result renders as no block at all.
+    rows and every reader wants a subset — each excludes its own writer. A
+    busy room's dominant writer can out-produce every other writer by an order
+    of magnitude, so a filter applied to what came BACK hands the caller 20 of
+    its rows and nothing it can use. Silently: an empty result renders as no
+    block at all.
 
     Measured before the fix on exactly this shape — one `proactive_decide` row
-    followed by 25 gate rows — the participation reader kept 0 of 20.
+    followed by 25 rows from a high-volume writer — the participation reader
+    kept 0 of 20.
 
     Falsification: drop `writers=` from `DecisionLogRecorder.read_workspace`
     (or from either store's query) and this goes red.
@@ -353,8 +359,8 @@ async def test_the_writer_filter_is_applied_before_the_bound():
     await store.append(row=_row(id="old-proactive", writer="proactive_decide",
                                 verdict="remind", ts=NOW_MS - 7_200_000))
     for i in range(25):
-        await store.append(row=_row(id=f"gate-{i:02d}", writer="gate",
-                                    verdict="no_go", ts=NOW_MS - 60_000 + i))
+        await store.append(row=_row(id=f"busy-{i:02d}", writer="participation",
+                                    verdict="silent", ts=NOW_MS - 60_000 + i))
     rows = await _recorder(store).read_workspace(
         platform="signal", workspace="friends",
         writers=("proactive_decide", "proactive_act"),
@@ -380,11 +386,11 @@ async def test_a_blank_workspace_answers_nothing():
 
 def test_the_note_names_only_the_writers_it_carries():
     """**The review's M2, as a property.** Both readers filter, in opposite
-    directions. A static note enumerating all five deciders told each reader
+    directions. A static note enumerating all four deciders told each reader
     its block contained rows it would never be shown — and absence then reads
-    as FACT: «the gate never ran here», «she has raised nothing», when it is a
-    filter. A block describing a superset of itself is the same defect as a
-    block with no age on its rows, one axis over.
+    as FACT: «participation never ran here», «she has raised nothing», when it
+    is a filter. A block describing a superset of itself is the same defect as
+    a block with no age on its rows, one axis over.
 
     Falsification: make `_note_for` ignore `writers` and gloss every writer.
     """
@@ -392,7 +398,7 @@ def test_the_note_names_only_the_writers_it_carries():
         [("", ())], now=NOW, writers=PARTICIPATION_DECISION_WRITERS,
     )
     assert "proactive_decide" in block and "proactive_act" in block
-    for absent in ("gate -", "participation -", "tag -"):
+    for absent in ("participation -", "tag -"):
         assert absent not in block
     # And it says WHY they are absent, rather than leaving the reader to infer
     # that those deciders never ran.

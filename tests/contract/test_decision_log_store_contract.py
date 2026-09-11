@@ -103,8 +103,8 @@ async def store(request: Any) -> AsyncIterator[_DecisionStore]:
 def _row(
     row_id: str = "d1",
     *,
-    writer: Any = "gate",
-    verdict: Any = "no_go",
+    writer: Any = "participation",
+    verdict: Any = "silent",
     conversation_id: str = CONV,
     workspace: str = WS,
     note_id: str | None = None,
@@ -240,7 +240,7 @@ async def test_a_second_row_with_the_same_id_is_refused(store):
     lose a decision that happened."""
     await store.append(row=_row("d1"))
     with pytest.raises(Exception):  # noqa: B017 — IntegrityError vs DuplicateDecisionError
-        await store.append(row=_row("d1", verdict="go"))
+        await store.append(row=_row("d1", verdict="spoke"))
 
 
 async def test_an_over_long_reason_is_refused_by_the_store_itself(store):
@@ -271,16 +271,16 @@ async def test_an_unknown_verdict_is_refused_by_the_store_itself(store):
 
 async def test_a_workspace_read_narrows_by_writer_inside_the_bound(store):
     """**The property the feature's correctness rests on.** Every reader wants a
-    subset — each excludes its own writer — and the bound is 20 rows. The `gate`
-    writer produces one row per closed participation window per room, which
-    out-produces every other writer by an order of magnitude; if `writers` were
-    a filter the CALLER applied to what came back, half an hour of gate rows
-    would fill the bound and the caller would be handed nothing.
+    subset — each excludes its own writer — and the bound is 20 rows. A busy
+    room's dominant writer can out-produce every other writer by an order of
+    magnitude; if `writers` were a filter the CALLER applied to what came
+    back, half an hour of that writer's rows would fill the bound and the
+    caller would be handed nothing.
 
     So the narrowing has to happen in the query, and the `limit` has to count
-    rows the caller can USE. This asserts exactly that shape: 5 gate rows are
-    newer than the one proactive row, the limit is 2, and a store that bounded
-    first would answer zero.
+    rows the caller can USE. This asserts exactly that shape: 5 rows from one
+    high-volume writer are newer than the one proactive row, the limit is 2,
+    and a store that bounded first would answer zero.
 
     Falsification: move the `writer.in_(...)` out of `SqlDecisionLogStore`'s
     WHERE (or the `writers` predicate out of the double's comprehension) so it
@@ -289,8 +289,8 @@ async def test_a_workspace_read_narrows_by_writer_inside_the_bound(store):
     await store.append(row=_row("p1", writer="proactive_decide",
                                 verdict="remind", ts=NOW, reason="raised it"))
     for i in range(5):
-        await store.append(row=_row(f"g{i}", writer="gate", verdict="no_go",
-                                    ts=NOW + 100 + i))
+        await store.append(row=_row(f"g{i}", writer="participation",
+                                    verdict="silent", ts=NOW + 100 + i))
     rows = await store.recent_for_workspace(
         workspace=WS, since_ms=0, writers=("proactive_decide",), limit=2,
     )
@@ -302,7 +302,7 @@ async def test_an_empty_writers_tuple_means_every_writer(store):
     nothing means it wants everything — the same convention every optional
     narrowing in this repo uses — and a store that read `()` as an empty `IN`
     would answer nothing for every unfiltered read."""
-    await store.append(row=_row("a", writer="gate", verdict="no_go"))
+    await store.append(row=_row("a", writer="participation", verdict="silent"))
     await store.append(row=_row("b", writer="tag", verdict="replied", ts=NOW + 1))
     rows = await store.recent_for_workspace(workspace=WS, since_ms=0, writers=())
     assert [r.id for r in rows] == ["a", "b"]

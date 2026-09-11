@@ -2368,7 +2368,7 @@ async def test_a_participation_turn_never_reads_back_its_own_rows(
     for row_id, writer, verdict, reason in (
         ("a", "participation", "silent", "declined"),
         ("b", "tag", "replied", "send_reply"),
-        ("c", "gate", "go", ""),
+        ("c", "proactive_decide", "remind", ""),
         ("d", "proactive_act", "spoke", "spoke"),
     ):
         await store.append(row=DecisionRow(
@@ -2385,7 +2385,7 @@ async def test_a_participation_turn_never_reads_back_its_own_rows(
     ctx = await path.build_context(_participation())
 
     assert [row.writer for _, rows in ctx.decisions for row in rows] == [
-        "proactive_act",
+        "proactive_decide", "proactive_act",
     ]
 
 

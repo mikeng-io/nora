@@ -396,10 +396,9 @@ class ProactiveAdaptor:
         self._daily_hour = daily_hour
         # The shared decision log (issue #199) — the OTHER half of the loop.
         # Distinct from `self._reminders` above, which is her own REMINDER rows
-        # and renders as `<decisions>`: this one is what the gate, the
-        # participation turn and the tag turn did in each of these rooms, and
-        # it renders as `<loop_decisions>`. `None` renders no block and writes
-        # no row.
+        # and renders as `<decisions>`: this one is what the participation
+        # turn and the tag turn did in each of these rooms, and it renders as
+        # `<loop_decisions>`. `None` renders no block and writes no row.
         self._decisions = decisions
         self._shown: dict[str, _Shown] = {}
 
@@ -755,9 +754,9 @@ class ProactiveAdaptor:
 
         **Not the same block as `<decisions>` one method up, and the two names
         are load-bearing.** `<decisions>` is her REMINDER rows: what she
-        scheduled here and how it fired. This is the gate, the participation
-        turn and the tag turn — the paths that answer when somebody else starts
-        the conversation, which this pass has never been able to see. The
+        scheduled here and how it fired. This is the participation turn and
+        the tag turn — the paths that answer when somebody else starts the
+        conversation, which this pass has never been able to see. The
         incident is 2026-09-10: participation answered a question at 16:43, and
         this pass raised the same question in another room at 18:03 because
         nothing told it the answer had already been given.
@@ -789,9 +788,10 @@ class ProactiveAdaptor:
         # cannot answer this question at all.
         rows = await self._decisions.read_workspace(
             platform=home.platform, workspace=key,
-            # In the QUERY. Post-filtering would let 20 `gate` no_go rows evict
-            # the one `participation spoke` row this pass exists to see, and
-            # the block would say «nothing happened» about the busiest room.
+            # In the QUERY. Post-filtering would let 20 rows of one busy
+            # writer evict the one `participation spoke` row this pass exists
+            # to see, and the block would say «nothing happened» about the
+            # busiest room.
             writers=PROACTIVE_DECISION_WRITERS,
         )
         labels = {(room.platform, room.conversation_id): room.label for room in rooms}

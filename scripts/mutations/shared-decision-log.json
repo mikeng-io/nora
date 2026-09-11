@@ -1,17 +1,10 @@
 [
   {
-    "name": "#199 the participation trigger records the gate's verdict",
+    "name": "DEC-179 the participation trigger records nothing to a decision log",
     "file": "nora/app/participation.py",
-    "old": "            await self._decisions.record(\n                writer=\"gate\", platform=platform,\n                conversation_id=conversation_id, verdict=verdict.verdict,\n                reason=verdict.error_kind or \"\",\n            )",
-    "new": "            pass",
-    "target": "tests/unit/test_participation.py -k logs_the_gates_verdict_not_the_gate_itself"
-  },
-  {
-    "name": "#199 a no_go is logged even though no turn runs",
-    "file": "nora/app/participation.py",
-    "old": "        if self._decisions is not None:",
-    "new": "        if self._decisions is not None and verdict.admits:",
-    "target": "tests/unit/test_participation.py -k a_no_go_is_logged_even_though_no_turn_runs"
+    "old": "        gate: RelevanceGate | None = None,\n        gate_shadow: Callable[..., Awaitable[None]] | None = None,\n        clock: Callable[[], float] = time.monotonic,",
+    "new": "        gate: RelevanceGate | None = None,\n        gate_shadow: Callable[..., Awaitable[None]] | None = None,\n        decisions: object | None = None,\n        clock: Callable[[], float] = time.monotonic,",
+    "target": "tests/unit/test_participation.py -k records_nothing_to_a_decision_log"
   },
   {
     "name": "#199 the fire path records every determination",

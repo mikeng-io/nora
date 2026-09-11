@@ -89,10 +89,10 @@ class SqlDecisionLogStore:
         `idx_decision_log_workspace_ts`.
 
         **`writers` narrows in the WHERE, so `LIMIT` counts rows the caller can
-        actually use.** Every reader excludes its own writer, and the `gate`
-        writer out-produces the rest by an order of magnitude — filtered after
-        the read, its rows fill the bound and the caller gets nothing. Empty
-        means every writer.
+        actually use.** Every reader excludes its own writer, and a busy room's
+        dominant writer can out-produce the rest by an order of magnitude —
+        filtered after the read, its rows fill the bound and the caller gets
+        nothing. Empty means every writer.
 
         The `IN` sits after `workspace` in the predicate and before the sort, so
         `idx_decision_log_workspace_ts` still drives the scan; `writer` is a

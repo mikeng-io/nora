@@ -1036,11 +1036,11 @@ async def test_the_pass_never_reads_back_its_own_proactive_rows():
         reason="declined", row_id="act",
     ))
     await store.append(row=_other_decision(
-        writer="gate", verdict="go", reason="", row_id="gate",
+        writer="tag", verdict="replied", reason="", row_id="tag",
     ))
     adaptor = _adaptor(notes=notes, decisions=_recorder(store))
     block = (await adaptor.inputs(key=WS, batch=())).split("<loop_decisions")[1]
-    assert "gate go" in block
+    assert "tag replied" in block
     assert "my own earlier reasoning" not in block
     # The row line, not the bare word: the block's own note names every
     # writer, which is what tells the model what it is reading.
@@ -1049,10 +1049,10 @@ async def test_the_pass_never_reads_back_its_own_proactive_rows():
 
 async def test_the_two_decision_blocks_keep_their_separate_names():
     """`<decisions>` is her REMINDER rows — what she scheduled here and how it
-    fired. `<loop_decisions>` is what the gate, participation and tag did. Two
-    blocks under one name in one prompt is exactly the undecidable input this
-    repo has already paid for: the model cannot tell which is which, and the
-    fix for that is never the instruction.
+    fired. `<loop_decisions>` is what participation and tag did. Two blocks
+    under one name in one prompt is exactly the undecidable input this repo
+    has already paid for: the model cannot tell which is which, and the fix
+    for that is never the instruction.
 
     Falsification: rename `<loop_decisions>` to `<decisions>` in
     `nora.domain.decision_log.render_decisions`.

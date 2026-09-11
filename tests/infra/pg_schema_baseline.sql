@@ -217,8 +217,8 @@ CONSTRAINT ck_reminders_recurrence_kind CHECK ((recurrence = ANY (ARRAY['none'::
 CONSTRAINT ck_reminders_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'cancelled'::text, 'failed'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
 CONSTRAINT decision_log_reason_fits_the_block_check CHECK ((length(reason) <= 80)),
-CONSTRAINT decision_log_verdict_is_known_check CHECK ((verdict = ANY (ARRAY['go'::text, 'no_go'::text, 'spoke'::text, 'silent'::text, 'remind'::text, 'decline'::text, 'replied'::text, 'failed'::text]))),
-CONSTRAINT decision_log_writer_is_known_check CHECK ((writer = ANY (ARRAY['gate'::text, 'participation'::text, 'proactive_decide'::text, 'proactive_act'::text, 'tag'::text])))
+CONSTRAINT decision_log_verdict_is_known_check CHECK ((verdict = ANY (ARRAY['spoke'::text, 'silent'::text, 'remind'::text, 'decline'::text, 'replied'::text, 'failed'::text]))),
+CONSTRAINT decision_log_writer_is_known_check CHECK ((writer = ANY (ARRAY['participation'::text, 'proactive_decide'::text, 'proactive_act'::text, 'tag'::text])))
 CONSTRAINT embedding_model_is_named_check CHECK ((length(btrim(model)) > 0)),
 CONSTRAINT embedding_text_is_present_check CHECK ((length(btrim(text)) > 0))
 CONSTRAINT exchange_observation_act_check CHECK ((act = ANY (ARRAY['insult_trade'::text, 'banter'::text, 'tease'::text, 'callback_joke'::text, 'agreement_ritual'::text, 'disagreement_ritual'::text, 'compliment_exchange'::text]))),

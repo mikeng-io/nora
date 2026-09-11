@@ -24,7 +24,6 @@ WHO WRITES AND WHO READS — AND WHY THE GATE DOES NEITHER
 --------------------------------------------------------
 | writer | records | written by |
 |---|---|---|
-| `gate` | `go` / `no_go`, with the fail-closed error kind | `ParticipationTrigger` |
 | `participation` | `spoke` / `silent`, with the disposition | `FirePath._determined` |
 | `proactive_act` | `spoke` / `silent`, with the disposition | `FirePath._determined` |
 | `proactive_decide` | `remind` / `decline`, and the note it was about | `ProactiveAdaptor.commit` |
@@ -40,10 +39,10 @@ with itself, which is not evidence about anything.
 `PARTICIPATION_DECISION_WRITERS` and `PROACTIVE_DECISION_WRITERS` are those two
 sets, and each is read TWICE: once as the `writers=` that bounds the query, once
 by the block's own note. Both halves matter. The bound must count rows the
-reader can USE — `gate` writes one row per closed window per room and would
-otherwise fill 20 rows by itself — and the note must name the deciders the block
-actually carries, or a filtered-out decider's absence reads as «that decider
-never ran».
+reader can USE — a room whose highest-volume writer fires far more often than
+the others would otherwise fill all 20 rows by itself — and the note must name
+the deciders the block actually carries, or a filtered-out decider's absence
+reads as «that decider never ran».
 
 **`RelevanceGate` neither writes nor reads, and that is a decision rather than
 an omission.** Its own module docstring is «ONE call, transcript + standing, no
@@ -52,10 +51,11 @@ a writer with a fail-soft path and a store read is not that shape. Design 36 §6
 is the sharper half: the gate must not be able to answer «does Nora have
 something true to add?», and a block of what she has raised carries that
 question in under a new label — a pending `kind="proactive"` row has a
-`payload["note_title"]` on it. So the gate stays a pure function, and its
-VERDICT is still durable, recorded one layer out by the trigger that called it.
-That placement is also the only one that can record a NO_GO at all: a `no_go`
-runs no turn, so nothing downstream ever sees it.
+`payload["note_title"]` on it. So the gate stays a pure function on both sides
+of this table (DEC-179): it persists nothing durable, and a `no_go` — which
+runs no turn — is invisible to every downstream reader, same as before this
+log existed. `nora_relevance_gate_total` / `nora_relevance_gate_errors_total`
+(R-23's split) are where a gate verdict is observable at all.
 
 WHAT A ROW IS — AND WHAT IT IS NOT
 ----------------------------------
@@ -64,8 +64,8 @@ fact, and not anything a person said. Every render says so in its own opening
 tag, because a block a model cannot classify is a block it will classify wrong.
 
 **No speech and NO MODEL TEXT goes in a row, ever.** `reason` is a code-derived
-label from a closed set — the gate's `error_kind`, a determination's
-`disposition`, a tag turn's disposition — and the one model-authored string that
+label from a closed set — a determination's `disposition`, a tag turn's
+disposition — and the one model-authored string that
 could have reached this table, the decide turn's `why`, is deliberately not
 stored: it is written ABOUT a note and would carry note titles into a block
 whose own note says it holds none. Her draft, her reply and the room's words
@@ -82,9 +82,9 @@ id a model believes is resolvable is worse than no id.
 
 FAIL-SOFT, AND WHY THAT IS THE WHOLE POINT OF `DecisionLogRecorder`
 -------------------------------------------------------------------
-A log write must NEVER fail a turn. The five writers sit inside a reply slot, a
-fire turn, a quiescence tick and a Dreamer pass; a store that stops answering must
-cost a thinner prompt on the next decision, never a dropped reply. So the write
+A log write must NEVER fail a turn. The four writers sit inside a reply slot, a
+fire turn and a Dreamer pass; a store that stops answering must cost a thinner
+prompt on the next decision, never a dropped reply. So the write
 is not a store call at a call site — it is `DecisionLogRecorder.record`, which
 bounds the call, swallows every exception, counts it, and returns `None`. One
 object, one place to audit, and no call site holding an `except Exception` of
@@ -121,7 +121,6 @@ log = logging.getLogger("nora.domain.decision_log")
 #: source both the CHECK constraint and the renders read — a hand-copied
 #: vocabulary is what drifts (`nora_ingest_outcomes_total`'s precedent).
 DecisionWriter = Literal[
-    "gate",               # the Relevance Gate's admission verdict
     "participation",      # the participation turn's determination
     "proactive_decide",   # the proactive adaptor's decide turn
     "proactive_act",      # a kind="proactive" row's act turn
@@ -129,11 +128,18 @@ DecisionWriter = Literal[
 ]
 
 #: What the writer decided. Also closed, and deliberately NOT one vocabulary
-#: per writer collapsed into a `bool`: «the gate said no» and «she looked again
-#: and held back» are different facts about a room and the next decider has to
-#: be able to tell them apart.
+#: per writer collapsed into a `bool`: «the tag path failed» and «she looked
+#: again and held back» are different facts about a room and the next decider
+#: has to be able to tell them apart.
+#:
+#: `go`/`no_go` (the Relevance Gate's own vocabulary) were here until DEC-179:
+#: the gate never wrote a row, `ParticipationTrigger` did on its behalf, and
+#: removing that writer left these two values with nowhere they could ever be
+#: produced — a closed vocabulary with an unreachable member is exactly the
+#: kind of decoration this module's own note-gloss test caught (every
+#: declared verdict must be glossed, and nothing glosses a verdict nobody
+#: writes).
 DecisionVerdict = Literal[
-    "go", "no_go",        # gate
     "spoke", "silent",    # participation, proactive_act
     "remind", "decline",  # proactive_decide
     "replied", "failed",  # tag
@@ -159,7 +165,7 @@ PARTICIPATION_DECISION_WRITERS: tuple[DecisionWriter, ...] = (
     "proactive_decide", "proactive_act",
 )
 PROACTIVE_DECISION_WRITERS: tuple[DecisionWriter, ...] = (
-    "gate", "participation", "tag",
+    "participation", "tag",
 )
 
 #: How much of a `reason` is kept. ONE number, not a store cap and a render cap:
@@ -202,9 +208,8 @@ class DecisionRow:
     workspace: str
     note_id: str | None
     verdict: DecisionVerdict
-    #: A CODE-DERIVED label and never model text: the gate's `error_kind`, a
-    #: determination's `disposition`, a tag turn's disposition. Empty is
-    #: ordinary.
+    #: A CODE-DERIVED label and never model text: a determination's
+    #: `disposition`, a tag turn's disposition. Empty is ordinary.
     #:
     #: The proactive decide turn's own `why` was written here until the third
     #: review of this branch and is not any more. It is the one model-authored
@@ -425,13 +430,13 @@ class DecisionLogRecorder:
         **`writers` is pushed into the QUERY, and filtering after the read
         instead is the defect this argument exists to prevent.** Every reader
         wants a subset — each one excludes its own writer — and the bound is 20
-        rows. The `gate` writer produces one row per closed participation
-        window per room, which is the highest-rate writer in the system by an
-        order of magnitude; filtered afterwards, 20 gate rows from the last
-        half hour evict every `proactive_decide` row and the participation turn
-        renders NO BLOCK, silently, in exactly the busy room where issue #199
-        happened. Measured on the contract-suite double: one proactive row plus
-        25 ordinary gate rows answered 20 rows, 0 of them readable.
+        rows. A busy room's dominant writer can out-produce every other writer
+        by an order of magnitude; filtered afterwards, 20 of its rows from the
+        last half hour evict every `proactive_decide` row and the
+        participation turn renders NO BLOCK, silently, in exactly the busy
+        room where issue #199 happened. Measured on the contract-suite double:
+        one proactive row plus 25 ordinary rows from one high-volume writer
+        answered 20 rows, 0 of them readable.
 
         So the bound has to be 20 READABLE rows. An empty `writers` means every
         writer, which is what a caller with no filter means.
@@ -520,13 +525,12 @@ class DecisionLogRecorder:
 #: **That is M2 from the 2026-09-11 review and it is the whole "say what you
 #: are reading" rule.** Both readers filter — the participation turn keeps the
 #: proactive writers, the proactive pass keeps the others — so a static note
-#: enumerating all five told each reader its block contained rows it would
-#: never be shown. Absence then reads as FACT: «the gate never ran here», «she
-#: has raised nothing», when it is a filter. A block that describes a superset
-#: of itself is the same defect as a block with no age on its rows, one axis
-#: over.
+#: enumerating all four told each reader its block contained rows it would
+#: never be shown. Absence then reads as FACT: «participation never ran
+#: here», «she has raised nothing», when it is a filter. A block that
+#: describes a superset of itself is the same defect as a block with no age
+#: on its rows, one axis over.
 _WRITER_GLOSS: dict[str, str] = {
-    "gate": "gate - whether a quiet room was worth a reply at all (go / no_go)",
     "participation": (
         "participation - a room nobody addressed you in, where you took the "
         "floor or chose not to (spoke / silent)"
@@ -556,9 +560,10 @@ def _note_for(writers: Sequence[str]) -> str:
     else's record. Same agent, same prompt, one grammatical person.
 
     Says what the rows are, which way time runs, how old each is, what the
-    trailing clause is (a code label, not reasoning — so a `no_go - call_failed`
-    reads as an outage and not as a reason to decline), what `note <id>` is and
-    is not, and what the block is NOT. No verb aimed at the model.
+    trailing clause is (a code label, not reasoning — so a `silent -
+    held_cooldown` reads as a held message and not as a reason to decline),
+    what `note <id>` is and is not, and what the block is NOT. No verb aimed
+    at the model.
     """
     names = [w for w in WRITERS if w in set(writers)] or list(WRITERS)
     return (
@@ -571,15 +576,6 @@ def _note_for(writers: Sequence[str]) -> str:
         "absence here says nothing about it. SILENT AND DECLINE ARE HEALTHY "
         "OUTCOMES, not failures. A clause after a dash is a code label for "
         "HOW"
-        # Only where the gate is actually in the block. A note that explains a
-        # verdict the reader will never see is the same defect as a note that
-        # enumerates a writer the reader will never see, and every sentence
-        # here is paid for on every turn.
-        + (
-            " - on a no_go it names an outage (call_failed, truncated), never "
-            "a reason to decline"
-            if "gate" in names else ""
-        )
         + ". `note <id>` means the decision was about a tracked note; it is an "
         "internal marker you cannot look up. This is NOT notes, NOT memory, "
         "and NOT anything a person said: it is the record of your own turns. "
@@ -672,15 +668,15 @@ def render_decisions(
     **`writers` is what the caller FILTERED TO, and passing it is not
     optional bookkeeping.** The note names those deciders and only those, so a
     decider the caller excluded is stated as absent from the block rather than
-    silently missing from it — otherwise the participation turn reads «no gate
-    row» as «the gate never ran here», which is a false fact handed to a
-    decider. Empty means unfiltered.
+    silently missing from it — otherwise the participation turn reads «no
+    proactive_decide row» as «she has raised nothing», which is a false fact
+    handed to a decider. Empty means unfiltered.
 
     **What is model-authored in here: nothing.** Every `reason` any writer can
     produce is a code label from a closed set, and the decide turn's `why` is
     deliberately not stored. `untrusted="true"` and the per-field `escape` stay
     anyway — defence in depth on a block assembled from a database, where the
-    next writer is one edit away from being less careful than these five.
+    next writer is one edit away from being less careful than these four.
     """
     lines: list[str] = []
     for label, rows in groups:

@@ -37,7 +37,6 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 
-from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.models import NormalizedMessage
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.relevance_gate import RelevanceGate
@@ -73,7 +72,6 @@ class ParticipationTrigger:
         max_window_messages: int = 10,
         gate: RelevanceGate | None = None,
         gate_shadow: Callable[..., Awaitable[None]] | None = None,
-        decisions: DecisionLogRecorder | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._speak = speak
@@ -89,20 +87,6 @@ class ParticipationTrigger:
         # unset, a GO runs the turn. One switch, so there is no state in which
         # the room hears something the reviewer did not.
         self._gate_shadow = gate_shadow
-        # The shared decision log (issue #199). The GATE does not write it
-        # and does not read it: `relevance_gate` is «ONE call, transcript +
-        # standing, no tools, no doctrine, no loop, JSON out», and a writer
-        # with a fail-soft path is not that shape. The verdict is recorded
-        # HERE instead, one layer out, where the participation path already
-        # holds it — so the gate stays a pure function and the verdict is
-        # still durable.
-        #
-        # This is the one writer that can record a NO_GO at all. A `no_go`
-        # runs no turn, so `FirePath` never sees it; without this row the
-        # log would say «nothing happened in this room» for a room the gate
-        # looked at and declined twenty times today, which is the exact
-        # false reading the log exists to stop.
-        self._decisions = decisions
         self._settle_seconds = settle_seconds
         self._cooldown_seconds = cooldown_seconds
         # The VOLUME arm of the batch (see `close_due_windows`). Sized against
@@ -248,22 +232,6 @@ class ParticipationTrigger:
         verdict = await self._gate.decide(
             platform=platform, conversation_id=conversation_id,
         )
-        if self._decisions is not None:
-            # Every verdict, including the fail-closed ones, and `reason`
-            # carries the `error_kind` that made one fail closed. R-23's split
-            # moved into the log: «the gate said no» and «the gate was DOWN»
-            # are the same observable `no_go` and completely different facts,
-            # and a later decider reading a window of `no_go - call_failed` is
-            # reading an outage, not a quiet room.
-            #
-            # NEVER the score. It is reference-only (36 decision 5), and a
-            # number rendered into another decider's prompt reads as a
-            # threshold to whatever sees it next.
-            await self._decisions.record(
-                writer="gate", platform=platform,
-                conversation_id=conversation_id, verdict=verdict.verdict,
-                reason=verdict.error_kind or "",
-            )
         return verdict.admits, (verdict.score if verdict.admits else None)
 
     def sweep(self, older_than: float) -> int:

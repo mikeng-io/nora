@@ -963,9 +963,9 @@ class FirePath:
         rows = await self._decisions.read_workspace(
             platform=occasion.platform, workspace=workspace,
             # In the QUERY, never a filter over what came back. The bound is 20
-            # rows and `gate` writes one per closed window per room, so a
-            # post-filter hands this turn 20 gate rows and nothing it can read
-            # — silently, in exactly the busy room where issue #199 happened.
+            # rows, so a post-filter could let one busy writer's rows evict
+            # every other decider's — silently, in exactly the busy room where
+            # issue #199 happened.
             #
             # The SAME constant `build_prefill` hands the renderer, so the
             # block's note names exactly the deciders the query asked for.

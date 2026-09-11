@@ -65,12 +65,12 @@ def upgrade() -> None:
         sa.Column("reason", sa.Text, nullable=False, server_default=""),
         sa.Column("ts", sa.BigInteger, nullable=False),
         sa.CheckConstraint(
-            "writer in ('gate', 'participation', 'proactive_decide', "
+            "writer in ('participation', 'proactive_decide', "
             "'proactive_act', 'tag')",
             name="decision_log_writer_is_known_check",
         ),
         sa.CheckConstraint(
-            "verdict in ('go', 'no_go', 'spoke', 'silent', 'remind', "
+            "verdict in ('spoke', 'silent', 'remind', "
             "'decline', 'replied', 'failed')",
             name="decision_log_verdict_is_known_check",
         ),

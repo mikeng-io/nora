@@ -2518,12 +2518,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             gate_shadow=(
                 fire_path.post_gate_verdict if cfg.relevance_gate.shadow else None
             ),
-            # The shared decision log (issue #199). The verdict is recorded
-            # HERE and not inside `RelevanceGate`: the gate is a pure
-            # function — one call, transcript + standing, JSON out — and it
-            # neither writes this log nor reads it. This is also the only
-            # writer that can record a NO_GO, since a no_go runs no turn.
-            decisions=decision_log,
         )
     elif cfg.participation.enabled:
         # The CONVERSE of `_the_gate_needs_something_behind_it` (nora/config.py),
@@ -2883,8 +2877,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     quiet_seconds=cfg.dreamer.quiet_seconds,
                     # The shared decision log (issue #199): this pass
                     # writes its own decide verdicts and reads back the
-                    # gate / participation / tag rows of every room of
-                    # the workspace. Never its OWN rows — 39 sec.1's
+                    # participation / tag rows of every room of the
+                    # workspace. Never its OWN rows — 39 sec.1's
                     # self-echo brake, here as a predicate.
                     decisions=decision_log,
                 ),
