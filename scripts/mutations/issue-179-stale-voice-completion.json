@@ -1,0 +1,51 @@
+[
+ {
+  "name": "#179 the epoch guard drops a completion superseded before it ran (skip with an empty queue)",
+  "file": "nora/platform/discord/voice_session.py",
+  "old": "        if epoch != self._finish_epoch:",
+  "new": "        if False:",
+  "target": "tests/unit/test_discord_voice_session.py -k a_pending_natural_finish_is_cancelled_by_a_stop_that_beats_it_to_running"
+ },
+ {
+  "name": "#179 the epoch guard drops a completion superseded before it ran (skip with a next track)",
+  "file": "nora/platform/discord/voice_session.py",
+  "old": "        if epoch != self._finish_epoch:",
+  "new": "        if False:",
+  "target": "tests/unit/test_discord_voice_session.py -k a_pending_natural_finish_is_cancelled_by_a_play_that_beats_it_to_running"
+ },
+ {
+  "name": "#179 superseding bumps the epoch (without it the guard can never fire)",
+  "file": "nora/platform/discord/voice_session.py",
+  "old": "        self._finish_epoch += 1",
+  "new": "        self._finish_epoch += 0",
+  "target": "tests/unit/test_discord_voice_session.py -k a_pending_natural_finish_is_cancelled_by_a_stop_that_beats_it_to_running"
+ },
+ {
+  "name": "#179 stop() supersedes instead of only cancelling the (inert-when-unstarted) Future",
+  "file": "nora/platform/discord/voice_session.py",
+  "old": "        self._cancel_monitor()\n        self._supersede_pending_finish()\n        self._suppress_next_after = True",
+  "new": "        self._cancel_monitor()\n        if self._pending_finish is not None:\n            self._pending_finish.cancel()\n            self._pending_finish = None\n        self._suppress_next_after = True",
+  "target": "tests/unit/test_discord_voice_session.py -k a_pending_natural_finish_is_cancelled_by_a_stop_that_beats_it_to_running"
+ },
+ {
+  "name": "#179 play() supersedes instead of only cancelling the Future -- skip()'s common path",
+  "file": "nora/platform/discord/voice_session.py",
+  "old": "        # the common skip.\n        self._supersede_pending_finish()",
+  "new": "        # the common skip.\n        if self._pending_finish is not None:\n            self._pending_finish.cancel()\n            self._pending_finish = None",
+  "target": "tests/unit/test_discord_voice_session.py -k a_pending_natural_finish_is_cancelled_by_a_play_that_beats_it_to_running"
+ },
+ {
+  "name": "#179 a completion is minted under the epoch its TRACK started with (positive control: a legit finish still fires)",
+  "file": "nora/platform/discord/voice_session.py",
+  "old": "        self._play_epoch = self._finish_epoch",
+  "new": "        self._play_epoch = -1",
+  "target": "tests/unit/test_discord_voice_session.py -k a_natural_after_firing_without_a_preceding_stop_schedules_on_finished"
+ },
+ {
+  "name": "#179 Future.cancel() is retained -- the only thing that stops a completion already suspended at an await",
+  "file": "nora/platform/discord/voice_session.py",
+  "old": "        pending, self._pending_finish = self._pending_finish, None\n        if pending is not None:\n            pending.cancel()",
+  "new": "        self._pending_finish = None",
+  "target": "tests/unit/test_discord_voice_session.py -k a_completion_already_suspended_inside_on_finished_is_cancelled_by_a_stop"
+ }
+]
