@@ -22,11 +22,10 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
-from pydantic import BaseModel, Field
 
 from nora.agent import factory
 from nora.agent import tool_choice as tool_choice_module
@@ -54,7 +53,11 @@ from nora.domain.standing import Standing
 from nora.engagement.stages.deliver import BUDGET_STOP_REASONS as _BUDGET_STOP_REASONS
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql.engine import create_sql_engine
-from nora.ingest.relevance_gate import GATE_AUDIENCE, RelevanceGate
+from nora.ingest.relevance_gate import (
+    GATE_AUDIENCE,
+    GateVerdictSchema,
+    RelevanceGate,
+)
 from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.instructions.dreamer import DreamerInstructions
 from nora.language.note_candidates import NoteCandidateAdaptor
@@ -831,25 +834,6 @@ class _MeasuringGateClient:
         )
 
 
-class GateVerdictSchema(BaseModel):
-    """The gate's verdict, as a schema the SDK can enforce.
-
-    The SAME two fields `participation.md` asks for in prose and
-    `parse_verdict` reads back, declared once so the comparison below is about
-    the CALL and not about two different questions. `relevance_score` is
-    optional exactly as it is today — the gate's own parser treats a missing
-    score as absent rather than as zero.
-    """
-
-    verdict: Literal["go", "no_go"] = Field(
-        description="whether this window is worth a participation turn",
-    )
-    relevance_score: float = Field(
-        default=-1.0,
-        description="0.0-1.0 confidence that the room wants Nora; omit if unsure",
-    )
-
-
 class _StrandsGateClient:
     """The gate's model call through the Agent SDK instead of a raw completion.
 
@@ -864,6 +848,13 @@ class _StrandsGateClient:
     may only be imported from `nora/agent/` (`tests/test_boundaries.py`) —
     a rule this class tripped on its first cut, and correctly: the SDK belongs
     behind the agent boundary whoever is calling it.
+
+    `GateVerdictSchema` is `nora.ingest.relevance_gate`'s, not a copy declared
+    here. It was a copy until 2026-09-11, which was survivable only while
+    production also imported it — with the gate back on a raw completion
+    (#186) the canonical one would have been left with no caller at all and
+    the two would have been free to drift apart. Two schemas is two questions,
+    and this class exists to vary the CALL and nothing else.
     """
 
     def __init__(self, *, base_url: str, api_key: str, gate_cfg: Any) -> None:
@@ -1078,7 +1069,8 @@ def build_note_candidates_runtime(
 async def run_note_candidates_case(
     runtime: DreamerRuntime, *, cfg: Config, workspace: str, scope: str,
     batch: Sequence[dict[str, Any]], notebook: Sequence[dict[str, Any]],
-    now_ms: int,
+    now_ms: int, room_label: str | None = None,
+    room_description: str | None = None,
 ) -> NoteCandidatesDrive:
     """One case: seed the notebook, hand the batch to the real adaptor through
     the real runtime, snapshot the notebook on both sides.
@@ -1088,7 +1080,9 @@ async def run_note_candidates_case(
     tag path's own `create` shape (`established_by="tag:eval"`), so the
     standing notes the adaptor renders look exactly like ones a person made.
     `cfg` supplies the room's zone (`[reminders] timezone`) exactly as
-    composition does, so a rendered moment reads the same here as live.
+    composition does, so a rendered moment reads the same here as live, and
+    `room_label`/`room_description` supply what `policy.toml` supplies live
+    (issue #161) so a case can measure a games room as a games room.
     """
     store = InMemoryNoteStore()
     for entry in notebook:
@@ -1100,6 +1094,14 @@ async def run_note_candidates_case(
         )
     adaptor = NoteCandidateAdaptor(
         notes=store, candidates=store, workspace_for=lambda _key: workspace,
+        # The room a case is set in, exactly as composition supplies it from
+        # `policy.toml` (issue #161): `room_label` is what the room is called
+        # and reaches every rendered batch line; `room_description` is the
+        # operator's sentence about what kind of room it is. A case that
+        # names neither renders what an unlabelled, undescribed room renders
+        # live — the honest default, not a nicer one.
+        label_for=lambda _key: room_label,
+        description_for=lambda _key: room_description,
         metrics=Metrics(), timezone=ZoneInfo(cfg.reminders.timezone),
     )
     rows = [

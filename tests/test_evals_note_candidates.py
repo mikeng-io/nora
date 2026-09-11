@@ -53,13 +53,17 @@ def test_the_corpus_loads_and_is_balanced():
     path, an invitation with no uptake, the Cantonese-only twin of the
     one-person plan, a settled solo plan, and a conditional. Eighteen after
     2026-09-10, when a LIVE miss named one more the brainstorm could not:
-    a room where terse plan-shaped chatter is not a plan (#161)."""
+    a room where terse plan-shaped chatter is not a plan (#161). Twenty once
+    #161 was FIXED: n10b/n11b are n10/n11's controlled pair — the same two
+    batches with the room named and described in `policy.toml` — so one live
+    run answers «does telling the model what room it is reading change the
+    judgement» on identical input rather than across a corpus."""
     cases = load_note_candidates_cases(CORPUS)
-    assert len(cases) == 18
+    assert len(cases) == 20
     by_expect = {}
     for c in cases:
         by_expect.setdefault(c.expect, []).append(c.name)
-    assert len(by_expect["none"]) == 11, by_expect
+    assert len(by_expect["none"]) == 13, by_expect
     assert len(by_expect["create"]) + len(by_expect["update"]) == 7, by_expect
     assert "n6_stated_then_cancelled" in by_expect["none"], (
         "the adversarial negative: every surface feature of a positive, and "
@@ -76,6 +80,24 @@ def test_the_corpus_loads_and_is_balanced():
         "its second half: a subject taken from the notebook index and bound "
         "onto a batch that never mentions it"
     )
+    # THE CONTROLLED PAIR (#161). Same batch, same notebook, one variable:
+    # whether the operator has said what kind of room this is. A pair that
+    # drifts apart on anything else stops being a measurement of the lever and
+    # becomes two more cases.
+    described = {c.name: c for c in cases}
+    for bare, paired in (
+        ("n10_games_room_shorthand_is_not_an_arrangement",
+         "n10b_a_described_games_room_is_still_not_an_arrangement"),
+        ("n11_notebook_subject_is_not_a_licence_to_rewrite_it",
+         "n11b_a_described_games_room_does_not_rewrite_the_notebook_subject"),
+    ):
+        a, b = described[bare], described[paired]
+        assert (a.room_label, a.room_description) == (None, None), bare
+        assert b.room_label and b.room_description, paired
+        assert a.expect == b.expect == "none"
+        assert [m.body for m in a.batch] == [m.body for m in b.batch], paired
+        assert [n.title for n in a.notebook] == [n.title for n in b.notebook], paired
+
     assert SUITES["note_candidates"] == (CORPUS,)
 
 
