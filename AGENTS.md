@@ -277,16 +277,32 @@ uv run lint-imports                                      # import boundaries cle
 
 **What "types clean" actually covers.** The strict flags in `pyproject.toml`
 apply to `nora.domain`, `nora.config`, `nora.app`, `nora.infra` and
-`nora.presence` — five packages. `nora/engagement` is on the mypy command line
-but NOT in that override, so it is checked without the strict flags; measured
-2026-09-08, it carries **137 errors** under them. The rest of `nora/` is not
-type-checked at all, and the measured strict-error counts are: `web` 156,
-`ingest` 137, `agent` 133, `analytics` 110, `compute` 66, `platform` 34,
-`testing` 30, `obs` 11, `doctrine` 6, `instructions` 5, `language` 3, and
-`skills` 0. (`nora/dreamer` holds no Python at all — it is the objectives tree —
-so its absence from the scope was never a gap.) Do not read a green `make gate`
-as "this repo is type-safe"; read it as "five packages are, and the numbers
-above say what the rest would cost". Issue #121 tracks the expansion.
+`nora.presence` — five packages. `nora/engagement` and `nora/language` are on
+the mypy command line but NOT in that override, so they are checked without the
+strict flags. The rest of `nora/` is not type-checked at all.
+
+**Measure a package's own errors, not the run's.** An earlier version of this
+table was wrong by 2.5x overall and by 15x on `engagement`, and the reason is
+worth keeping: putting the strict flags on the COMMAND LINE applies them to
+every transitively imported module, so `nora/agent`'s errors were counted again
+in almost every row. `ingest` was recorded as 137 — its own count is **zero**;
+all 137 were `nora/agent` and the platform adapters seen through it. Scope the
+override in `pyproject.toml` and re-run, or the number measures the import
+graph rather than the package.
+
+Own-file strict errors, measured 2026-09-11 against a scoped override:
+
+| free (0 errors) | cheap | a project |
+|---|---|---|
+| `ingest`, `analytics`, `doctrine`, `language`, `skills` | `instructions` 2, `engagement` 9 | `web` 49, `compute` 66, `agent` 124 |
+
+Eight packages can join the strict override for **60 errors total**, and five of
+them for nothing. `platform` 34, `testing` 30 and `obs` 15 sit between.
+
+(`nora/dreamer` holds no Python at all — it is the objectives tree — so its
+absence from the scope was never a gap.) Do not read a green `make gate` as
+"this repo is type-safe"; read it as "five packages are, and the table above
+says what the rest would cost". Issue #121 tracks the expansion.
 
 A fresh worktree needs `uv sync --extra evals` once, or pytest dies at
 COLLECTION on the eval modules — `strands-agents-evals` is a declared optional

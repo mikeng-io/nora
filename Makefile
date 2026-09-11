@@ -29,7 +29,7 @@ lint:
 	uv run ruff check nora/ evals/ tests/
 
 typecheck:
-	uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence nora/engagement
+	uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence nora/engagement nora/language
 
 imports:
 	uv run lint-imports
@@ -77,7 +77,7 @@ eval-participation:
 	uv run python -m evals.run --suite participation
 
 # The note-candidates scenario suite (design/dreamer-agent-loop/37 §7, issue
-# #118): ten batches through the real Dreamer runtime + adaptor, N samples
+# #118): 18 batches through the real Dreamer runtime + adaptor, N samples
 # each, graded on the notebook. `make eval-note-candidates SAMPLES=5
 # DREAMER_DIR=/path/to/variant` measures a prompt variant held as files.
 SAMPLES ?= 3
