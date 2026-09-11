@@ -2,10 +2,13 @@ import pytest
 from aiohttp import web
 
 from nora.domain.models import ConversationTarget
+from nora.domain.ports import Mention
+from nora.domain.utf16 import utf16_len
 from nora.platform.discord.send import DiscordSender
 from nora.platform.discord.snowflake import timestamp_ms
 
 TARGET = ConversationTarget("discord", "1/2", "group")
+TYLER_SNOWFLAKE = "100000000000000002"
 
 
 @pytest.fixture
@@ -196,6 +199,65 @@ async def test_a_failed_member_lookup_falls_back_to_the_original_text(rest_serve
     assert result.ok is True
     assert rest_server_with_members.calls[0] == {
         "content": "@Miles Novak hi",
+        "allowed_mentions": {"parse": [], "users": []},
+    }
+
+
+async def test_a_composed_mention_is_spliced_and_listed_in_allowed_mentions(rest_server):
+    """Issue #211: `OutboundComposer` on `discord` now resolves a handle to a
+    real snowflake and hands `send` a `Mention` for it — the POST body must
+    carry exactly one `<@id>` chip and list the id in `allowed_mentions.users`,
+    with no member-list round trip (the composer already confirmed the
+    person against the roster; there is nothing left to look up)."""
+    sender = DiscordSender("tok", base_url=str(rest_server.make_url("")).rstrip("/"))
+    text = "@Tyler Cortez 柯屎係你嘅 escape plan"
+    mention = Mention(
+        start=0, length=utf16_len("@Tyler Cortez"), recipient=TYLER_SNOWFLAKE,
+    )
+
+    result = await sender.send(TARGET, text, mentions=(mention,))
+
+    assert result.ok is True
+    body = rest_server.calls[0]
+    assert body["content"] == f"<@{TYLER_SNOWFLAKE}> 柯屎係你嘅 escape plan"
+    assert body["content"].count(f"<@{TYLER_SNOWFLAKE}>") == 1
+    assert body["allowed_mentions"] == {"parse": [], "users": [TYLER_SNOWFLAKE]}
+
+
+async def test_a_composed_mention_leaves_an_unmapped_handle_to_the_name_fallback(
+    rest_server_with_members,
+):
+    """The composer only ever covers a handle it resolved; an `@Name` it did
+    NOT produce a `Mention` for (unmapped in `identity.toml`, or not in this
+    room) still goes through the OLD name-matching fallback — and if that
+    fallback also finds nothing, the handle is untouched, never guessed."""
+    rest_server_with_members.state["members"] = []
+    sender = DiscordSender(
+        "tok", base_url=str(rest_server_with_members.make_url("")).rstrip("/"),
+    )
+    text = "@Tyler Cortez and @Someone Unmapped"
+    mention = Mention(
+        start=0, length=utf16_len("@Tyler Cortez"), recipient=TYLER_SNOWFLAKE,
+    )
+
+    result = await sender.send(TARGET, text, mentions=(mention,))
+
+    assert result.ok is True
+    body = rest_server_with_members.calls[0]
+    assert body["content"] == f"<@{TYLER_SNOWFLAKE}> and @Someone Unmapped"
+    assert body["allowed_mentions"] == {"parse": [], "users": [TYLER_SNOWFLAKE]}
+
+
+async def test_no_mentions_and_no_at_sign_never_touches_the_composed_path(rest_server):
+    """The common message — nobody tagged — must not call the splice at all
+    and must still post the plain, undecorated payload."""
+    sender = DiscordSender("tok", base_url=str(rest_server.make_url("")).rstrip("/"))
+
+    result = await sender.send(TARGET, "no mentions here")
+
+    assert result.ok is True
+    assert rest_server.calls[0] == {
+        "content": "no mentions here",
         "allowed_mentions": {"parse": [], "users": []},
     }
 

@@ -1,12 +1,29 @@
-"""Turn the model's plaintext `@Name` into a real Discord `<@id>` ping.
+"""Turn a mention into a real Discord `<@id>` ping — two vocabularies, two paths.
 
-The model only ever writes text — `send_reply(text: str)` has no structured
-mention parameter, and the transcript it reads never carries a snowflake
+**`splice_composed_mentions` (added #211)** is the FIRST path now, and the
+preferred one: `nora.agent.outbound.OutboundComposer` already resolved a
+`@Tyler Cortez` handle against `identity.toml` and this room's live roster
+before the text ever reached here, and it did so producing exactly what
+Signal's `Mention` always meant — a `(start, length)` range in UTF-16 code
+units plus the id to put there. Discord has no out-of-band range to hand that
+to, so this function does the one thing Signal's own JSON-RPC layer does for
+free: splices the id INTO the text, at the exact span the composer measured.
+
+**`resolve_outbound_mentions` is the SECOND path, and now a fallback rather
+than the only mechanism.** The model only ever writes text —
+`send_reply(text: str)` has no structured mention parameter, and the
+transcript it reads never carries a snowflake
 (`nora.platform.discord.parser._resolve_inbound_mentions` is the inbound half
-of this same problem, and the reason: the model has no id to write even if
-it wanted to). So THIS is the only place that can turn `@Miles Novak` into
-something Discord will actually notify on: matched, server-side, against the
-room's live member list, right before the send.
+of this same problem, and the reason: the model has no id to write even if it
+wanted to). Before #211, this was the ONLY place that could turn `@Miles Novak`
+into something Discord will actually notify on, matched server-side against
+the room's live member list right before the send — and it still is, for any
+`@Name` the composer's `Mention`s did not cover (a handle `identity.toml` maps
+to nobody, or that resolves but nobody in this room answers to). `nora.
+platform.discord.send.DiscordSender.send` runs it ONLY over the text left
+after `splice_composed_mentions` — a range the composer already covered is
+gone from the string by then (replaced with `<@id>`), so this can never
+re-guess a person the composer already settled.
 
 `DiscordRoster` already reads this same endpoint but deliberately drops
 names (`nora/platform/discord/roster.py`'s docstring: a username is not a
@@ -29,6 +46,9 @@ from __future__ import annotations
 import logging
 
 import aiohttp
+
+from ...domain.ports import Mention
+from ...domain.utf16 import utf16_index
 
 log = logging.getLogger("nora.discord.mention_resolve")
 
@@ -139,3 +159,37 @@ def resolve_outbound_mentions(
             text = text.replace(token, f"<@{named_members[name]}>")
             spliced.append(named_members[name])
     return text, tuple(spliced)
+
+
+def splice_composed_mentions(
+    text: str, mentions: tuple[Mention, ...],
+) -> tuple[str, tuple[str, ...]]:
+    """Splice `<@id>` over every `Mention` the composer already resolved.
+
+    `Mention.start`/`.length` are UTF-16 code units (`nora.agent.outbound`'s
+    contract — the same one Signal's `bodyRange` uses), computed once, upstream
+    of this call, against `identity.toml` and THIS room's live roster
+    (`OutboundComposer._recipient`). There is nothing left to resolve here:
+    the only job is converting a unit Python `str` slicing does not use into
+    one it does (`nora.domain.utf16.utf16_index`) and writing the id in.
+
+    **Right-to-left, sorted by `start` descending.** Every splice changes the
+    length of `text` — `<@100000000000000002>` is not the same UTF-16 length
+    as `@Tyler Cortez`, and it does not have to be — so splicing the LEFTMOST
+    mention first would shift the Python string index of every mention still
+    to come. Splicing the last one first never touches a byte an earlier
+    mention's offset depends on.
+
+    Returns the (rewritten) text and the ids spliced, in the same order
+    `mentions` arrived in — the only ids the caller may tell Discord it's
+    allowed to ping (`allowed_mentions.users`).
+    """
+    if not mentions:
+        return text, ()
+    ordered = sorted(range(len(mentions)), key=lambda i: mentions[i].start, reverse=True)
+    for i in ordered:
+        mention = mentions[i]
+        start = utf16_index(text, mention.start)
+        end = utf16_index(text, mention.start + mention.length)
+        text = text[:start] + f"<@{mention.recipient}>" + text[end:]
+    return text, tuple(m.recipient for m in mentions)

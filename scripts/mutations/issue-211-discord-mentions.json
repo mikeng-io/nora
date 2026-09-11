@@ -1,0 +1,30 @@
+[
+  {
+    "name": "#211 _preferred_recipient is platform-aware (a snowflake is accepted on discord)",
+    "file": "nora/agent/outbound.py",
+    "old": "    if platform == \"discord\":\n        snowflakes = sorted(v for v in ids if _SNOWFLAKE_RE.fullmatch(v))\n        return snowflakes[0] if snowflakes else None\n    uuids = sorted(v for v in ids if _UUID_RE.fullmatch(v))",
+    "new": "    uuids = sorted(v for v in ids if _UUID_RE.fullmatch(v))",
+    "target": "tests/unit/test_outbound_composer.py -k discord_snowflake_is_accepted_as_the_preferred_recipient_form"
+  },
+  {
+    "name": "#211 a composed Mention is spliced into content before the wire",
+    "file": "nora/platform/discord/send.py",
+    "old": "        resolved_text = text\n        allowed_users: list[str] = []\n        if mentions:\n            resolved_text, composed_users = splice_composed_mentions(resolved_text, mentions)\n            allowed_users.extend(composed_users)\n        if \"@\" in resolved_text:",
+    "new": "        resolved_text = text\n        allowed_users: list[str] = []\n        if \"@\" in resolved_text:",
+    "target": "tests/test_discord_send.py -k a_composed_mention_is_spliced_and_listed_in_allowed_mentions"
+  },
+  {
+    "name": "#211 a spliced recipient is added to allowed_mentions.users",
+    "file": "nora/platform/discord/send.py",
+    "old": "            resolved_text, composed_users = splice_composed_mentions(resolved_text, mentions)\n            allowed_users.extend(composed_users)",
+    "new": "            resolved_text, composed_users = splice_composed_mentions(resolved_text, mentions)",
+    "target": "tests/test_discord_send.py -k a_composed_mention_is_spliced_and_listed_in_allowed_mentions"
+  },
+  {
+    "name": "#211 the UTF-16 offset walk counts a non-BMP character as 2 units",
+    "file": "nora/domain/utf16.py",
+    "old": "        units += 2 if ord(ch) > 0xFFFF else 1",
+    "new": "        units += 1",
+    "target": "tests/test_discord_mention_resolve.py -k a_composed_mention_after_an_emoji_is_positioned_by_utf16_units"
+  }
+]

@@ -211,13 +211,30 @@ def _is_word(ch: str) -> bool:
     return ch.isascii() and (ch.isalnum() or ch == "_")
 
 
-def _preferred_recipient(ids: frozenset[str]) -> str | None:
+def _preferred_recipient(ids: frozenset[str], *, platform: str) -> str | None:
     """The id form to put on the wire, out of the ones the ROSTER confirmed.
 
-    ACI first. Under sealed sender the same account reaches Nora as a phone
-    number on one message and as an ACI on another (design/10 §1.1), the ACI is
-    the stable one, and it is the form `nora.platform.signal.react` already
-    sends as `targetAuthor` for exactly this reason.
+    **Platform-aware, because "an id form the wire will accept" is a different
+    predicate per platform (issue #211).** This function used to be written
+    for signal-cli's RECIPIENT grammar alone, and a Discord snowflake — an
+    all-digit string with no `+` and no hyphens — matched neither of the two
+    patterns it knew, so `_recipient` refused every Discord mention as
+    `unresolved` even though the person WAS mapped and the roster DID confirm
+    them. The fix is a branch, not a rewrite: Signal's rule is unchanged byte
+    for byte below, because it is still exactly right for Signal.
+
+    On `platform="discord"`: a snowflake is a bare digit string — accept it,
+    and there is no hierarchy to prefer between (unlike Signal's ACI-over-
+    E164), because the roster gate upstream (`_recipient`) has already
+    intersected `identity.toml`'s ids with the ones THIS guild's member list
+    just reported for the account, so `ids` holds only id forms Discord itself
+    just gave — a snowflake, and nothing else it would need to choose between.
+
+    On every other platform (Signal today): ACI first. Under sealed sender the
+    same account reaches Nora as a phone number on one message and as an ACI
+    on another (design/10 §1.1), the ACI is the stable one, and it is the form
+    `nora.platform.signal.react` already sends as `targetAuthor` for exactly
+    this reason.
 
     Anything that is neither a UUID nor an E.164 number returns `None` rather
     than being sent hopefully. A Signal USERNAME is the concrete case: it is a
@@ -228,6 +245,9 @@ def _preferred_recipient(ids: frozenset[str]) -> str | None:
     numbers and ACIs), which is why it is a `None` and not a prefix hack: there
     is no live case to validate a hack against.
     """
+    if platform == "discord":
+        snowflakes = sorted(v for v in ids if _SNOWFLAKE_RE.fullmatch(v))
+        return snowflakes[0] if snowflakes else None
     uuids = sorted(v for v in ids if _UUID_RE.fullmatch(v))
     if uuids:
         return uuids[0]
@@ -245,6 +265,14 @@ def _preferred_recipient(ids: frozenset[str]) -> str | None:
 _UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
                       r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 _E164_RE = re.compile(r"\+\d{8,15}")
+
+# A Discord snowflake: an unsigned integer, decimal, no leading `+` and no
+# hyphens — the one id form `_UUID_RE`/`_E164_RE` were never meant to accept
+# and the reason #211 happened (every snowflake refused as neither). Sharing
+# neither pattern with them for the same reason they do not share one with
+# each other: this one's job is "is this a whole snowflake", not "does a
+# snowflake appear somewhere".
+_SNOWFLAKE_RE = re.compile(r"\d+")
 
 
 def first_url(text: str) -> str | None:
@@ -402,7 +430,7 @@ class OutboundComposer:
             shared = ids & member
             if not shared:
                 continue
-            recipient = _preferred_recipient(shared)
+            recipient = _preferred_recipient(shared, platform=self._platform)
             if recipient is None:
                 # In the room, but every id form the platform gave for them is
                 # one signal-cli's RECIPIENT grammar would not take. Counted
