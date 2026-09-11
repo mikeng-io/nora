@@ -366,3 +366,70 @@ def test_the_ast_walk_actually_finds_keys():
         return a, b, c
 
     assert _keys_read_by(sample) == {"alpha", "beta", "gamma"}
+
+
+# ---------------------------------------------------------------------------
+# the objective's own worked example, through the runtime's egress screen
+# ---------------------------------------------------------------------------
+
+
+def test_the_worked_example_survives_the_egress_screen():
+    """**The gate that reads what the MODEL reads** (issue #63).
+
+    `tests/contract/test_dream_adaptor_contract.py` drives each adaptor's
+    items through the real `screen()`, and that is the right place for it —
+    but those items are hand-written per entry, so an author who invents a
+    clean item satisfies it while the objective on the bind mount still shows
+    the model a uuid. This one has no fixture to be honest about: it reads the
+    SHIPPED objective and screens the example it TELLS the model to copy.
+
+    That is the whole mechanism of the defect. `dream_screen._offence` walks
+    every string reachable in an item and `egress._UUID` matches any
+    hyphenated uuid, so an objective whose example carries a row id teaches
+    the model to return one — and every item it returns is then dropped
+    before `accept`, while the run reports `ok`, `commit` writes nothing, and
+    the tier is inert with every counter healthy. Three adaptors shipped that
+    way.
+
+    The fix is always the same and it is not widening the screen: render an
+    ordinal handle (`### note 1`), keep the id in the adaptor's own per-run
+    map, resolve it in `accept`. The screen is the R-18/R-28 floor and an
+    exemption for one tier is how that rule dies.
+    """
+    from nora.agent.dream_screen import screen
+    from nora.obs.metrics import Metrics
+
+    offences: dict[str, list[tuple[str, str]]] = {}
+    for module, cls in _adaptors():
+        items = _return_examples(cls.objective, cls.envelope_key)
+        assert items, f"{cls.objective}.md shows no example items"
+        _, rejected = screen(
+            adaptor=cls.name, items=items, metrics=Metrics(),
+        )
+        if rejected:
+            offences[f"{module.__name__}:{cls.objective}"] = [
+                (r.reason, r.path) for r in rejected
+            ]
+
+    assert not offences, (
+        f"an objective's own worked example carries something the runtime's "
+        f"egress screen drops: {offences}. Whatever the example shows, the "
+        f"model copies — and every copy is dropped before `accept`, silently, "
+        f"with the run still reporting `ok`."
+    )
+
+
+def test_the_example_screen_would_catch_an_identifier():
+    """The run-that-ran control for the test above. `not rejected` is also
+    what an empty example list, a screen that rejects nothing, or an import
+    that quietly resolved to a no-op would produce."""
+    from nora.agent.dream_screen import screen
+    from nora.obs.metrics import Metrics
+
+    _, rejected = screen(
+        adaptor="probe",
+        items=({"note_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7"},),
+        metrics=Metrics(),
+    )
+
+    assert [r.reason for r in rejected] == ["identifier"]

@@ -248,6 +248,23 @@ DEFAULT_EVIDENCE_MESSAGES_PER_NOTE = 40
 #: one this cap needs to detect.
 MAX_DISCHARGE_ITEMS_PER_NOTE = 5
 
+#: How many awaited collaborator CALL SITES `inputs` and `commit` hold between
+#: them — the number `DreamerRuntime` multiplies by `[dreamer]
+#: store_timeout_seconds` to bound each of them (issue #60). It lives HERE, in
+#: the module that makes the calls, on `STANDING_STORE_CALLS_PER_FOLD`'s own
+#: argument: a bound derived from a number kept somewhere else drifts in
+#: silence, because a hold that is too wide looks exactly like a healthy one
+#: until something wedges.
+#:
+#: `inputs`: `anchored_before`, `due_for_revisit`, `standing`, and per rendered
+#: note `_gather_evidence`'s `record.recent` and `media_join.enrich`. `commit`:
+#: per retiring verdict `read` and `supersede`, per surviving note
+#: `record_wake`, and the two discharge sinks (`create_event`, `conclude`).
+#: `tests/architecture/test_dream_store_calls_are_declared.py` counts them off
+#: this module's AST and reddens when a call is added without this number
+#: moving.
+STORE_CALLS_PER_TICK = 10
+
 #: A commitment's Event title — generous prose, capped the same way
 #: `nora.language.note_candidates` caps every model-authored field ahead of
 #: the store rather than trusting the store's own ceiling to catch it first.
@@ -521,6 +538,8 @@ class NoteCuratorAdaptor:
     #: being a ceiling rather than a grant means an empty subset is the honest
     #: declaration rather than a missing one.
     tools: frozenset[str] = frozenset()
+    #: `DreamAdaptor.store_calls_per_tick` — see `STORE_CALLS_PER_TICK` above.
+    store_calls_per_tick = STORE_CALLS_PER_TICK
 
     def __init__(
         self,
@@ -1092,6 +1111,23 @@ class NoteCuratorAdaptor:
                     # write is never a reason to hold up or reopen it (the
                     # module docstring's own framing: the row's fate never
                     # depends on what discharge does with its content).
+                    #
+                    # **That argument was made about EXCEPTIONS, and since
+                    # 2026-09-11 there is a second way out of this line.**
+                    # `DreamerRuntime` runs `commit` under a wall clock
+                    # (issue #60), so a discharge sink that stops answering
+                    # CANCELS here — and the note is already retired, so
+                    # `anchored_before` will never select it again and its
+                    # commitments and person-claims are lost with nothing to
+                    # re-derive them from. `_run_discharge`'s own `except` is
+                    # no help: `CancelledError` is a `BaseException`.
+                    #
+                    # NOT reordered here, because discharge-then-retire trades
+                    # a silent LOSS for a silent DUPLICATE (a cancel between
+                    # the two re-runs discharge next tick), and which of those
+                    # this tier wants is a decision, not a cleanup. Inert
+                    # today — `discharge_enabled` ships False — and filed as
+                    # issue #195 rather than left in a comment nobody greps.
                     await self._run_discharge(
                         note=current[0], verdict=verdict,
                         evidence_rows=shown.evidence_rows.get(note_id, {}),

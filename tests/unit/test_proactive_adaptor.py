@@ -757,3 +757,50 @@ def test_the_objectives_stated_ration_is_the_ration_the_guard_enforces():
     assert stated == {
         name: NATIVE_TOOLS[name].budget for name in stated
     }, "the objective's stated ration has drifted from NATIVE_TOOLS"
+
+
+async def test_a_cancelled_commit_leaves_the_pass_slot_open():
+    """**The pass clock is stamped LAST, and this is why** (cold review of the
+    issue-#60 bound).
+
+    `DreamerRuntime` now runs `commit` under a wall clock, so a store that
+    stops answering CANCELS this method part-way through. Stamped FIRST — as
+    it was — the pass was recorded as fired with zero wakes written: the next
+    tick reads `last = now`, finds the workspace unchanged for the rest of the
+    local day, and does not render, while the `remind` rows already written
+    inside the model loop are orphaned forever because `_raised_since`'s
+    window starts at that same clock and has moved past them.
+
+    So the property is not «a wake was recorded» — it is that a cancellation
+    leaves the SLOT OPEN. Driven with a real cancel (a `record_wake` that
+    never returns, cut off the way the runtime cuts it off) rather than with a
+    raised exception, because `_wake` catches exceptions and a raising fake
+    would never reach the stamp at all — the test would pass against the
+    broken order.
+    """
+    import asyncio
+
+    class _WedgedWakes(InMemoryNoteStore):
+        async def record_wake(self, **kw):
+            await asyncio.Event().wait()
+
+    notes = _WedgedWakes()
+    note = await _note(notes)
+    log = FakeReminderStore()
+    clock_store = InMemoryDreamScheduleClock()
+    adaptor = _adaptor(notes=notes, reminders=log, clock_store=clock_store)
+
+    await adaptor.inputs(key=WS, batch=())
+    await _proactive_row(log, note.id, created_at=NOW)
+
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(
+            adaptor.commit(key=WS, proposals=(), now_ms=NOW_MS), timeout=0.05,
+        )
+
+    assert await clock_store.last_fired(
+        adaptor_name=PASS_CLOCK_NAME, key=WS,
+    ) is None, (
+        "a commit the runtime cancelled stamped the pass as fired; the next "
+        "tick will not render, and the rows this pass wrote are orphaned"
+    )

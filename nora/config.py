@@ -21,6 +21,7 @@ from pydantic import (
     model_validator,
 )
 
+from nora.domain.ports import DEFAULT_DREAM_STORE_TIMEOUT_SECONDS
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -2265,12 +2266,31 @@ class DreamerConfig(BaseModel):
       fires at zero lag. This is the one that fires on a quiet room.
     - `batch_limit` — the most messages one cycle reads. A per-adaptor
       `AdaptorSchedule` entry overrides it; this is the shared default.
+
+    **`store_timeout_seconds` is the per-CALL-SITE allowance the runtime
+    multiplies by an adaptor's own `store_calls_per_tick`** to bound `inputs`
+    and `commit` (issue #60). Before it, only `factory.invoke` was bounded:
+    a wedged store call left `dream_loop` holding `<adaptor>:<key>` in its
+    `running` set forever, that unit never ticked again, and the skip was
+    counted under `reason="in_flight_adaptor"` — a label that cannot separate
+    «a long run» from «wedged since Tuesday».
+
+    **It is NOT `[standing] store_timeout_seconds`' number, and the first
+    draft made it one.** That value bounds ONE call; this one multiplies
+    SITES, and a site inside a per-note loop runs once per note — so at 5s the
+    curator's bound was 50s against a legitimate degraded case of 90s, which
+    turns a slow tick into a counted store timeout and, for a daily-slotted
+    adaptor, a lost day. `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS` in
+    `nora.domain.ports` carries that arithmetic and is the single definition
+    this section and `nora.agent.dreamer` both read.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     dir: Path = Path("nora/dreamer")
     tick_seconds: float = Field(default=300.0, gt=0)
+    store_timeout_seconds: float = Field(
+        default=DEFAULT_DREAM_STORE_TIMEOUT_SECONDS, gt=0)
     safety_lag: int = Field(default=300, ge=1)
     quiet_seconds: float = Field(default=1800.0, ge=0)
     max_age_seconds: float = Field(default=86_400.0, gt=0)

@@ -29,7 +29,7 @@ from typing import Any
 
 import pytest
 
-from nora.agent import factory
+from nora.agent import dreamer, factory
 from nora.agent.dreamer import (
     MAX_ITEMS,
     WORKSPACE_SAFE_TOOLS,
@@ -135,6 +135,10 @@ class _Adaptor:
     uses_watermark = True
     objective = "room-language"
     envelope_key = "observations"
+    #: `DreamAdaptor.store_calls_per_tick` (issue #60). 1 keeps the
+    #: default bound at one `store_timeout_seconds`, which every fake
+    #: below returns inside.
+    store_calls_per_tick = 1
 
     def __init__(
         self, *, sink: _Sink, tools: frozenset[str] = frozenset({"now"}),
@@ -171,6 +175,7 @@ def _runtime(
     replies: list[str] | None = None,
     schedules: dict[str, AdaptorSchedule] | None = None,
     grants: dict[str, AdaptorGrant] | None = None,
+    store_timeout_seconds: float = 5.0,
 ) -> tuple[DreamerRuntime, Metrics]:
     """Wires the runtime with the Strands boundary replaced.
 
@@ -208,6 +213,7 @@ def _runtime(
         model_name="deepseek-v4-flash",
         schedules=schedules,
         grants=grants,
+        store_timeout_seconds=store_timeout_seconds,
     )
     return runtime, metrics
 
@@ -1475,3 +1481,309 @@ async def test_each_sample_gets_its_own_guard(monkeypatch):
     assert len({id(g) for g in guards}) == 3, (
         "each sample must get a fresh guard; a shared one shares its ledger"
     )
+
+
+# ---------------------------------------------------------------------------
+# issue #60 — the store phases are bounded, and a timeout is COUNTED
+# ---------------------------------------------------------------------------
+#
+# `asyncio.wait_for` appeared exactly once in this module, around
+# `factory.invoke`. `adaptor.inputs` and `adaptor.commit` were bare awaits, and
+# the engine sets no `command_timeout` — so a connection hanging mid-query left
+# `dream_loop` holding `<adaptor>:<key>` in its `running` set FOREVER. The skip
+# was counted, under `reason="in_flight_adaptor"`, which is also what an
+# ordinary long run produces: the tier went quiet and the only symptom was an
+# absence.
+#
+# Every test here drives a REAL hang (an `Event` nobody sets) under a tiny
+# bound, so what is asserted is that the runtime RETURNED — the release — and
+# not merely that a number moved.
+
+
+class _Wedged(_Adaptor):
+    """An adaptor whose named phase never returns. `blocked` is set as soon as
+    the phase is entered, so a test can tell "the store hung" from "the store
+    was never called" — a bound that passed because nothing ran would be the
+    exit-code-5 failure one layer up."""
+
+    def __init__(self, *, sink: _Sink, phase: str) -> None:
+        super().__init__(sink=sink)
+        self._phase = phase
+        self.blocked = asyncio.Event()
+        self._forever = asyncio.Event()
+
+    async def _hang(self) -> None:
+        self.blocked.set()
+        await self._forever.wait()
+
+    async def inputs(self, *, key, batch):
+        if self._phase == "inputs":
+            await self._hang()
+        return f"inputs for {key}"
+
+    async def commit(self, *, key, proposals, now_ms):
+        if self._phase == "commit":
+            await self._hang()
+        return await self.sink.commit(key=key, proposals=proposals, now_ms=now_ms)
+
+
+async def test_a_wedged_inputs_is_cut_off_counted_and_the_unit_released(
+    monkeypatch,
+):
+    """The whole defect in one test: the run RETURNS (so `dream_loop`'s
+    `finally: running.discard(unit)` fires and this key ticks again), it is
+    R-27's `unavailable` (nobody read this batch, the watermark holds), and the
+    timeout lands on its own series rather than being absorbed into the
+    `unavailable` a 429 also produces."""
+    adaptor = _Wedged(sink=_Sink(), phase="inputs")
+    runtime, metrics = _runtime(
+        monkeypatch, raw='{"observations": [{"term": "a"}]}',
+        store_timeout_seconds=0.01,
+    )
+
+    outcome = await asyncio.wait_for(
+        runtime.run(adaptor=adaptor, key="g1", batch=()), timeout=5,
+    )
+
+    assert adaptor.blocked.is_set(), "inputs was never entered — nothing hung"
+    assert outcome.status == "unavailable"
+    assert metrics.get(
+        "nora_dream_store_timeout_total", adaptor="test-adaptor",
+        phase="inputs",
+    ) == 1
+    assert metrics.get(
+        "nora_dream_store_timeout_total", adaptor="test-adaptor",
+        phase="commit",
+    ) == 0, "a wedged inputs must not be reported as a wedged commit"
+
+
+async def test_a_wedged_commit_is_cut_off_counted_and_the_unit_released(
+    monkeypatch,
+):
+    """The other half. `commit` is where the tier WRITES, so this is the one
+    whose cancellation costs something — and the trade is deliberate: a commit
+    cut off mid-sequence leaves live state the next tick re-selects, while a
+    commit that never returns leaves the unit dead and nothing re-selects
+    that."""
+    adaptor = _Wedged(sink=_Sink(), phase="commit")
+    runtime, metrics = _runtime(
+        monkeypatch, raw='{"observations": [{"term": "a"}]}',
+        store_timeout_seconds=0.01,
+    )
+    row = TranscriptRow(
+        id=7, sender_id="p1", sender_name="A", ts=1, body="big walk",
+        is_nora=False, delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+
+    outcome = await asyncio.wait_for(
+        runtime.run(adaptor=adaptor, key="g1", batch=(row,)), timeout=5,
+    )
+
+    assert adaptor.blocked.is_set(), "commit was never entered — nothing hung"
+    assert outcome.status == "unavailable"
+    assert metrics.get(
+        "nora_dream_store_timeout_total", adaptor="test-adaptor",
+        phase="commit",
+    ) == 1
+
+
+async def test_the_blank_prompt_commit_is_bounded_too(monkeypatch):
+    """The decay path's `commit(key, ())` is a SECOND call site, on the branch
+    that never reaches the model at all. It was the easiest one to forget: the
+    fire condition returns before any of the model machinery is built, so a
+    bound applied only to the normal path would leave the watermark-free
+    adaptors — which take this branch on most ticks — exactly as exposed as
+    before."""
+    class _BlankWedged(_Wedged):
+        async def inputs(self, *, key, batch):
+            return "   \n  "
+
+    adaptor = _BlankWedged(sink=_Sink(), phase="commit")
+    runtime, metrics = _runtime(monkeypatch, store_timeout_seconds=0.01)
+
+    outcome = await asyncio.wait_for(
+        runtime.run(adaptor=adaptor, key="g1", batch=()), timeout=5,
+    )
+
+    assert adaptor.blocked.is_set()
+    assert outcome.status == "unavailable"
+    assert metrics.get(
+        "nora_dream_store_timeout_total", adaptor="test-adaptor",
+        phase="commit",
+    ) == 1
+
+
+async def test_a_store_phase_inside_the_bound_is_not_cut_off(monkeypatch):
+    """**The positive control, and it is not optional here.** Every assertion
+    above is satisfied by a runtime that cancels `inputs` unconditionally, and
+    a bound that fires on a healthy store is worse than none: it would turn
+    every tick into an `unavailable` and hold every watermark. So one slow —
+    but returning — phase must come through untouched, with the counter at
+    zero."""
+    slept: list[float] = []
+
+    class _Slow(_Adaptor):
+        async def inputs(self, *, key, batch):
+            await asyncio.sleep(0.01)
+            slept.append(0.01)
+            return f"inputs for {key}"
+
+    runtime, metrics = _runtime(
+        monkeypatch, raw='{"observations": [{"term": "a"}]}',
+        store_timeout_seconds=5.0,
+    )
+
+    outcome = await runtime.run(adaptor=_Slow(sink=_Sink()), key="g1", batch=())
+
+    assert slept == [0.01], "the slow phase did not run to completion"
+    assert outcome.status == "ok"
+    assert metrics.get(
+        "nora_dream_store_timeout_total", adaptor="test-adaptor",
+        phase="inputs",
+    ) == 0
+
+
+def test_the_bound_is_the_adaptors_own_declared_call_count(monkeypatch):
+    """The bound is `store_calls_per_tick` x the config allowance, read off
+    the ADAPTOR — so an adaptor that grows a store call widens its own hold
+    and nobody else's. Asserted as arithmetic rather than through a timing
+    test, because a timing test cannot tell 10x5 from 50 flat."""
+    runtime, _ = _runtime(monkeypatch, store_timeout_seconds=5.0)
+
+    class _Ten(_Adaptor):
+        store_calls_per_tick = 10
+
+    assert runtime.store_bound_for(_Adaptor(sink=_Sink())) == 5.0
+    assert runtime.store_bound_for(_Ten(sink=_Sink())) == 50.0
+
+
+# ---------------------------------------------------------------------------
+# issue #63 — a batch the screen takes ALL of is named, not inferred
+# ---------------------------------------------------------------------------
+
+
+async def test_a_batch_the_screen_rejects_entirely_is_counted(monkeypatch):
+    """The silent failure, given a name.
+
+    An adaptor whose objective asks the model to echo a row id back has every
+    item dropped here — `dream_screen` walks every string in an item and
+    `egress._UUID` matches any hyphenated uuid — so the tick spends a model
+    call, `accept` receives `()`, `commit` writes nothing, and the run reports
+    `ok`. Three adaptors shipped that way and every counter stayed healthy.
+
+    The STATUS stays `ok` on purpose (R-27: a run whose model DID answer may
+    not claim «there was nothing»), which is exactly why the condition needs
+    its own series."""
+    sink = _Sink()
+    adaptor = _Adaptor(sink=sink)
+    runtime, metrics = _runtime(
+        monkeypatch,
+        raw='{"observations": [{"term": "a", "id": '
+            '"7c9e6679-7425-40de-944b-e07fc1f90ae7"}]}',
+    )
+
+    outcome = await runtime.run(adaptor=adaptor, key="g1", batch=())
+
+    assert outcome.status == "ok", (
+        "the model answered; `nothing_found` would be a claim about the world "
+        "that this run cannot make"
+    )
+    assert outcome.written == 0
+    assert metrics.get(
+        "nora_dream_empty_after_screen_total", adaptor="test-adaptor") == 1
+    assert metrics.get(
+        "nora_dream_screened_total", adaptor="test-adaptor",
+        reason="identifier") == 1
+
+
+async def test_a_batch_that_survives_the_screen_is_not_counted(monkeypatch):
+    """The control for the series above: `nora_dream_empty_after_screen_total`
+    has to be structurally zero on a healthy adaptor, or it is an alarm nobody
+    can act on."""
+    runtime, metrics = _runtime(
+        monkeypatch, raw='{"observations": [{"term": "big walk"}]}')
+
+    outcome = await runtime.run(adaptor=_Adaptor(sink=_Sink()), key="g1", batch=())
+
+    assert outcome.status == "ok"
+    assert metrics.get(
+        "nora_dream_empty_after_screen_total", adaptor="test-adaptor") == 0
+
+
+async def test_a_model_that_returned_nothing_is_not_counted_as_a_rejection(
+    monkeypatch,
+):
+    """And the other side of the same line: an EMPTY envelope is
+    `nothing_found` and is not a screen event. Without this the counter would
+    also fire on every quiet tick, which is the fastest way to make an alarm
+    worthless."""
+    runtime, metrics = _runtime(monkeypatch, raw='{"observations": []}')
+
+    outcome = await runtime.run(adaptor=_Adaptor(sink=_Sink()), key="g1", batch=())
+
+    assert outcome.status == "nothing_found"
+    assert metrics.get(
+        "nora_dream_empty_after_screen_total", adaptor="test-adaptor") == 0
+
+
+async def test_a_collaborators_own_timeout_is_not_counted_as_the_runtimes(
+    monkeypatch,
+):
+    """**Since 3.10 `socket.timeout IS TimeoutError`**, so an aiohttp read
+    timeout, an asyncpg `command_timeout`, or any other collaborator's own
+    clock raises the exact class this handler catches. Counted as «the runtime
+    cut it off», that puts a false reading on the one series an operator would
+    page on — and the log line says «a store call did not return» about a
+    store that answered promptly, with an error.
+
+    `asyncio.timeout` plus `cm.expired()` is the only thing that separates
+    them; `wait_for`'s bare `except TimeoutError` cannot. The run is still
+    `unavailable` either way — an inner timeout IS a failed read — so what is
+    asserted here is the DIAGNOSIS, not the outcome."""
+    class _InnerTimeout(_Adaptor):
+        async def inputs(self, *, key, batch):
+            raise TimeoutError("the driver's own command_timeout")
+
+    runtime, metrics = _runtime(monkeypatch, store_timeout_seconds=30.0)
+
+    outcome = await runtime.run(
+        adaptor=_InnerTimeout(sink=_Sink()), key="g1", batch=())
+
+    assert outcome.status == "unavailable", "a failed read is still unavailable"
+    assert metrics.get(
+        "nora_dream_store_timeout_total", adaptor="test-adaptor",
+        phase="inputs",
+    ) == 0, (
+        "the collaborator's own clock was reported as the runtime's wall "
+        "clock — the series that exists to say «a store wedged» now says it "
+        "about a store that answered"
+    )
+
+
+def test_the_phase_label_vocabulary_is_derived_from_the_type():
+    """`nora_dream_store_timeout_total{phase}` takes its values from three
+    bare literals at the call sites. A typo there creates a NEW series rather
+    than an error and the old one silently goes flat, which is the failure
+    `nora.domain.bounds.BOUND_SITES` and `NoteCuratorAdaptor._VOCABULARIES`
+    already exist to prevent. Asserted against the module's own `Literal`, so
+    the two cannot drift."""
+    import ast
+    import inspect
+
+    emitted: set[str] = set()
+    tree = ast.parse(inspect.getsource(dreamer))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        f = node.func
+        if not (isinstance(f, ast.Attribute) and f.attr == "_bounded_store_call"):
+            continue
+        for kw in node.keywords:
+            if kw.arg == "phase" and isinstance(kw.value, ast.Constant):
+                emitted.add(kw.value.value)
+
+    assert emitted, "the walk found no phases at all — it is not measuring"
+    assert emitted <= dreamer.STORE_PHASES, (
+        f"emitted but not in the vocabulary: {emitted - dreamer.STORE_PHASES}"
+    )
+    assert {"inputs", "commit"} == dreamer.STORE_PHASES

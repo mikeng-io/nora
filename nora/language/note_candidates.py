@@ -157,6 +157,24 @@ MAX_RENDERED_MESSAGES = 500
 #: be dropped rather than raise out of a background tick.
 _MIN_ANCHOR_DATE = 10_000_000
 
+#: How many awaited collaborator CALL SITES `inputs` and `commit` hold between
+#: them — the number `DreamerRuntime` multiplies by `[dreamer]
+#: store_timeout_seconds` to bound each of them (issue #60). It lives HERE, in
+#: the module that makes the calls, for the reason
+#: `STANDING_STORE_CALLS_PER_FOLD` lives beside the stage that makes its own:
+#: a bound derived from a number written somewhere else drifts silently, and
+#: the drift is invisible because a wider hold looks exactly like a healthy
+#: one until something wedges.
+#:
+#: One `standing()` in `inputs`; in `commit`, per candidate,
+#: `record_create_candidate`, a second `standing()`, and then either the
+#: create arm (`propose` + up to two `set_create_candidate_status`) or the
+#: update arm (`read`, `propose`, two `set_create_candidate_status`).
+#: `tests/architecture/test_dream_store_calls_are_declared.py` counts them off
+#: this module's AST and reddens when a call is added without this number
+#: moving.
+STORE_CALLS_PER_TICK = 10
+
 #: Every value `nora_note_candidate_gate_total{action}` may carry, DERIVED
 #: rather than hand-copied into the metric's help text (`nora.obs.
 #: metric_specs`) — `nora.language.note_curator.CURATOR_ACTIONS`' own
@@ -408,6 +426,8 @@ class NoteCandidateAdaptor:
     #: decides what is worth carrying forward, and a
     #: tool call per candidate is a cost nobody asked for here.
     tools: frozenset[str] = frozenset()
+    #: `DreamAdaptor.store_calls_per_tick` — see `STORE_CALLS_PER_TICK` above.
+    store_calls_per_tick = STORE_CALLS_PER_TICK
 
     _VOCABULARIES: ClassVar[dict[str, tuple[str, frozenset[str]]]] = {
         "nora_note_candidate_gate_total": ("action", GATE_ACTIONS),

@@ -1348,6 +1348,25 @@ max_age_seconds = 86400
 # The most messages one cycle reads. A per-adaptor AdaptorSchedule entry
 # overrides it; this is the shared default.
 batch_limit = 400
+# The per-CALL-SITE allowance the runtime multiplies by an adaptor's own
+# `store_calls_per_tick` to bound `inputs` and `commit` (issue #60). Until it
+# existed only the model call was bounded, so a store call that never returned
+# left dream_loop holding `<adaptor>:<key>` FOREVER: that unit never ticked
+# again, and the skip was counted under reason="in_flight_adaptor", a label
+# that cannot tell a long run from one wedged since Tuesday. A timeout now
+# lands on nora_dream_store_timeout_total{adaptor,phase} and the unit is
+# released. 5s is [standing] store_timeout_seconds' number, for the same
+# engine — which sets no command_timeout of its own.
+#
+# 15 is sized against the CURATOR's degraded worst case rather than one
+# healthy call: the number multiplies SITES, and a site inside a per-note loop
+# runs once per note. note-curation renders up to 30 notes and each costs a
+# record read plus a media join that carries its own 3s bound, so a degraded
+# media store legitimately spends 90s inside one inputs — at 5s x 10 sites the
+# bound would have fired at 50s and turned a slow tick into a false alarm and,
+# for a daily adaptor, a lost day. Raise it only against a reading of that
+# kind, never to quiet an alarm.
+store_timeout_seconds = 15.0
 # NONE, and it is the fix for the knowledge tier's first production failure.
 # Reasoning is billed as COMPLETION on this model family, so the effort is a
 # budget spent BEFORE any answer text — and at "low" the extractor spends all

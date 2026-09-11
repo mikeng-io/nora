@@ -1081,6 +1081,46 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "everything it found').",
         ("adaptor", "reason"),
     ),
+    # Issue #63's alarm, and it is the production half of a defect whose CI
+    # half is `tests/contract/test_dream_adaptor_contract.py`. An adaptor
+    # whose objective asks the model to echo a row id back has EVERY item
+    # dropped by `dream_screen` (`_UUID` matches any hyphenated uuid): the
+    # tick spends a model call, writes nothing, and reports `ok`. Three
+    # adaptors shipped that way. `nora_dream_screened_total` counts the drops
+    # per item and cannot answer «was that all of them», because a run's item
+    # count is not on that series — this is the series that can. Structurally
+    # zero while every adaptor keeps identifiers out of its envelope, which is
+    # exactly what makes a non-zero reading worth an alert.
+    _CounterSpec(
+        "nora_dream_empty_after_screen_total",
+        "Dreamer runs where the model returned items and the R-18/R-28 "
+        "screen kept none, by adaptor: a model call spent, nothing written, "
+        "and the run still `ok` (R-27 — «there was nothing» is a claim a run "
+        "whose model DID answer may not make). Non-zero means an adaptor is "
+        "putting an identifier or a coordinate in its envelope.",
+        ("adaptor",),
+    ),
+    # Issue #60. `DreamerRuntime` bounded only `factory.invoke`, so a store
+    # call inside `adaptor.inputs` or `adaptor.commit` that never returned
+    # left `dream_loop` holding `<adaptor>:<key>` in `running` FOREVER — that
+    # unit never ticked again, and the skip landed on
+    # `nora_dream_skipped_total{reason="in_flight_adaptor"}`, which cannot
+    # separate a long run from one wedged since Tuesday. The timeout now
+    # releases the unit and lands HERE, where it is a different diagnosis
+    # from the `unavailable` a 429 or a prose reply produces.
+    _CounterSpec(
+        "nora_dream_store_timeout_total",
+        "Adaptor store phases cut off by the runtime's OWN wall clock, by "
+        "adaptor and phase: inputs (the render's reads) or commit (the "
+        "tier's writes). The run is `unavailable` and the unit is released "
+        "as soon as the phase can be cancelled — a collaborator that "
+        "swallows CancelledError, or a synchronous blocking call, can still "
+        "outlive it. A collaborator's OWN timeout (an asyncpg "
+        "command_timeout, an aiohttp read) is NOT counted here: it is the "
+        "same TimeoutError class and would put a false reading on the one "
+        "series that says a store wedged.",
+        ("adaptor", "phase"),
+    ),
     # Strands raises nothing and logs nothing when a budget cap binds — the
     # `AgentResult.stop_reason` string is the only channel there is — so a
     # runaway loop spending its full ceiling every tick is invisible without

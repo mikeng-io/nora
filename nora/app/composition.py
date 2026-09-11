@@ -2834,6 +2834,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # that does the research.
             tool_budget_overrides=cfg.llm.budgets,
             grants=dream_grants,
+            # The per-CALL-SITE allowance for `inputs`/`commit` (issue #60),
+            # multiplied by each adaptor's own declared `store_calls_per_tick`.
+            store_timeout_seconds=cfg.dreamer.store_timeout_seconds,
         )
         # R-5's refuse-to-start shape, and the one check that must run at
         # STARTUP rather than at the first tick: an adaptor holding an act verb
