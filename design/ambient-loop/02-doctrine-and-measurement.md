@@ -1,153 +1,93 @@
 ---
 type: analysis
-title: "Doctrine Per Stage, Inputs Across Stages, And The Cases That Do Not Exist"
-description: "Where the real change is. The architecture is in place; what each stage is TOLD, and what proves the loop works, are not. One objective per stage stays — but each objective's inputs cross the seams, one save/don't-save rule is shared by all of them, and the eval layer gains cases that can only pass when two stages agree. Written to the repo's own lesson: when a model judges badly, read its input before its instruction."
+title: "Inputs Per Objective, The Rule That Stays, And The Cases With Their Real Cost"
+description: "Where the change actually is. One objective per stage stays. What each is TOLD changes — including one render (the debrief's outcome header) that #199 turns on. Design 33 §3's write-time test stays as the rule; version 1's replacement was circular. The seam cases are listed with the fixture each needs, because version 1 claimed they were free and none of them are. The positive control is #199 itself, being built as a journey case tonight."
 tags: [nora, ambient, ooda, doctrine, objectives, evals, measurement]
 timestamp: '2026-09-11'
 edges:
   - {dst: 01-stages-and-seams, rel: depends_on, provenance: asserted}
-version: 1
+version: 2
 ---
 
-# Doctrine Per Stage, Inputs Across Stages
+# Inputs Per Objective, The Rule That Stays, The Cases With Their Cost
 
-## 1. The change is not the wording
+## 1. The change is what each stage is told, not what it is instructed
 
-The operator's framing, which this node adopts: *the tools and the structure
-are already there; what has to change is the doctrine and the measurement —
-what she saves, what she does not, and how we know.*
+`AGENTS.md`: **when a model judges badly, read its INPUT before you rewrite
+its instruction.** Measured three times on 2026-09-09/10; measured a fourth
+time on 2026-09-11 in the rarest form — the input **did** carry the truth
+(her sent row, two lines above the tag) and a header that did not say what it
+was scoped to beat it. So this node specifies renders. Instruction wording is
+the operator's, and the one place this node touches a render that the
+objective reads is the debrief's outcome header, because that is the defect.
 
-That is exactly the repo's own rule, applied to the loop instead of to one
-gate. `AGENTS.md`: **when a model judges badly, read its INPUT before you
-rewrite its instruction.** Measured three times on 2026-09-09/10 and it went
-the same way each time; the Relevance Gate's three instruction rewrites changed
-nothing or made it worse, and rendering an age per row cut its error rate by
-two thirds. #161 is the same shape (the room was never in the prompt). #186 is
-the same shape one layer down (the reasoning was never on the wire).
+## 2. What each objective is told
 
-So the order here is: inputs first (`§2`), the one rule that has to be shared
-(`§3`), then the cases that would show it working (`§4`). Instruction wording
-is last and is the operator's.
-
-## 2. What each objective is told — the crossing inputs
-
-Five objectives exist and stay five. Each keeps one question. What changes is
-the block list each is handed.
-
-| objective | today | adds | why |
+| objective | reads today | adds | why |
 |---|---|---|---|
-| `participation.md` (gate) | transcript with ages, Standing | the open notes touching this room, with anchor / closing condition / last move; the peer cards of the people in the window; proactive's rows for this room, last 24h | "is this hers?" turns on what she is holding and who is talking (`01 §2.2`) |
-| `proactive.md` (decide) | notes, Standing, people, own log, self card | participation's verdicts for each room, last 24h — admitted / declined, and whether she spoke | "worth raising?" turns on whether the room has already heard from her, or has been declining the subject (`01 §2.3`) |
-| `note-candidates.md` | batch, notebook | the room's label and its operator description; the room's Standing; the people involved, from memory | "is this an arrangement?" turns on what room this is and who these people are (`01 §2.1`, `§2.5`) |
-| `note-curation.md` | notebook | each note's *last move* — including her own act on it | "has this gone quiet?" needs to know whether the last thing that happened was her asking (`01 §2.4`) |
-| `standing-debrief.md` | the exchange, prior | the open notes for this room | the room's position should know what is unsettled in it — today the fold can contradict the notebook |
+| `standing-debrief.md` | the exchange, prior, `<what_happened>` | the header **scoped to the turn**; a `Nora:` row after the tag marked as a delivered reply | #199 — a turn outcome became a room position (`01 §2.2`) |
+| `standing-verdict.md` | the exchange, reasoning, outcome | a deterministic check beside the model: *no reply was sent* + a `Nora:` row after the tag → `unsupported` | the verdict has never once returned false (#189); here it should have |
+| `participation.md` (gate) | transcript with ages, Standing | the loop's own decisions for this room, last 24h — proactive rows pending or fired | not notes, not memory: design 36 stands. The gate learns what the *loop* did, ≤ 300 tokens |
+| `proactive.md` (decide) | notes, Standing, roster, own log, self card | participation's verdicts per room, last 24h; a bounded recent window for any room a note references | `01 §2.1`, `§2.3` — #199's decider had nothing that could contradict a false note |
+| `note-candidates.md` | batch, notebook | the room's label and operator description | `01 §2.4` |
+| `note-curation.md` | notebook, per-note window | her own sent rows as evidence a closing condition is met (closure, not content) | `01 §2.2` |
 
-Every addition is a render block over state that already exists. None needs a
-new store. Two need a new column (`last_moved_at` on `note`, and a `writer` on
-the decision log — `03 §3`).
+Every addition is a render block over state that exists or a store that lands
+tonight. The rule for every block, restated because it was missing a fourth
+time: **a block says what it is, how old it is, which way it reads — and what
+it is scoped to.**
 
-**The rule for every block, restated because it is what was missing each
-time:** a block says what it is, how old it is, and which way it reads. A note
-line carries its anchor *and* when it last moved. A decider's row carries who
-decided, what, and when. A peer card carries when it was last distilled. The
-gate's fix was an age per row; there is no reason to learn it a fifth time.
+## 3. The rule that stays
 
-## 3. The one rule that has to be shared
+Version 1 proposed *"what the loop holds is what the loop would act on."* The
+review showed it circular — note existence depending on gate verdicts
+depending on note existence — and inert at cold start: with 0 of 33 windows
+admitted it licenses holding nothing.
 
-Today three files decide, separately, what enters held state:
-`note-candidates.md` decides what becomes a note; `standing-debrief.md`
-decides what stays in the position; the curator decides what retires. Three
-authors, three thresholds, no common test.
+Design 33 §3's test is intrinsic and decidable at write time, and it stays:
 
-The rule this node proposes for all of them, in one sentence:
+> A thing with no closing condition is not a note. Forward-lookingness: the
+> entry has not finished its job.
 
-> **What the loop holds is what the loop would act on.** A thing the deciders
-> would never raise and the gate would never admit a turn about is not tracked
-> uncertainty — it is noise that happens to be phrased like a plan.
+What v1 was reaching for survives as a **retirement** signal, not a write-time
+rule: a note the deciders have declined N times across both paths is evidence
+for the curator that it was never live — one input to `note-curation.md`,
+once the shared log exists to count it. That is decidable, non-circular, and
+cannot hold nothing.
 
-Consequences, each of which is checkable:
+## 4. The cases, with what each actually needs
 
-- **A note earns its place by having a decider that could use it.** "Bath
-  gathering" from a games room fails this test the moment the gate is shown it:
-  no window in that room would be admitted *because of* it, and the proactive
-  turn would decline to raise it. A candidate the deciders would ignore is not
-  written. (This is what `01 §2.3`'s shared log makes measurable: a subject the
-  gate has declined N times is evidence against extracting it.)
-- **Standing holds what would change a decision.** `Tyler 話食緊飯` stays out
-  because no decider's verdict turns on it. #78 fixed the writer's person; this
-  gives the fold the test it was missing.
-- **Retirement is when no decider could act on it any more**, not when a date
-  has passed — a note anchored on the 25th whose owed answer was due the 8th
-  (#159, #162) is *more* live on the 9th, not less.
+Version 1 said all six were "expressible with the fixtures the suites already
+have". None are. The honest table:
 
-This is not a new value. It is design 33 §3's "a note is a staging area for
-something that will be acted on" made into a rule the other stages are also
-bound by, so the three files stop disagreeing about the same object.
-
-## 4. The cases that do not exist
-
-Every suite in the tree scores one stage against inputs its own author chose:
-
-| suite | cases | what it measures | what it cannot see |
+| case | spans | needs | status |
 |---|---|---|---|
-| `relevance_gate` | 40 | admit / decline, safety | whether an open note should have changed the verdict |
-| `proactive_decide` | 11 | remind / decline, when | whether participation already spoke |
-| `proactive_act` | — | speak / silent | — |
-| `note_candidates` | 18 | create / none | whether the deciders would ever use the note |
-| `participation` | 11 | speak / silence through the real path | anything the gate held |
+| **S1 · Cyberport** (#199) | Observe → Act → Orient → Decide, twice | a multi-stage harness that admits participation (`offline.py:290` removes it on purpose for the participation suite), a fake clock across ticks, a scripted `APIError` | **being built tonight** as the loop's positive control; red on master at the debrief step |
+| **S2 · she already spoke** | Decide ↔ Decide | `DecideCase` has no participation input; every `log:` row is forced to `kind="proactive"` — needs the shared log in the fixture | after D lands |
+| **S3 · the race** | tag ↔ participation | the tag turn reads the shared log; a scripted participation send one second before the tag | after D lands; S1 already drives the shape |
+| **S4 · her act moved the thread** | Act → Orient | a curator suite — **there is none** (`evals/run.py` `SUITES`); and `record_wake` already stamps this, so the case asserts a *judgement* (retire / hold), not rendered text | new suite |
+| **S5 · a pending row overtaken** | Decide ↔ Decide | the cancel half is already covered model-free by `a02_note_moved_on_the_tag_path`; the *admit* half needs the gate to see the pending row (shared log) | after D lands |
+| **S6 · same people, different room** | Observe → Orient | `BatchMessage` has no room field; on one fire it is true by construction and on two the anchor-date dedupe catches it — needs a **different-anchor** twin to be falsifiable | fixture + twin |
 
-Four green suites and a loop that admitted zero windows. The seam cases that
-would have been red:
+Two disciplines the participation suite already states and these must
+inherit: *a case that cannot flip measures nothing* (every positive needs a
+twin), and *asserting rendered text measures the renderer* — S4 and S6 as v1
+wrote them were tautologies.
 
-**S1 — a note closes in a window.** An open note with a closing condition;
-a window in which the condition is met. *Participation admits.* Today's gate
-declines (it cannot see the note) and today's suite cannot express the case.
+## 5. The positive control
 
-**S2 — she already spoke.** Participation admitted and spoke in a room at
-14:00 about X. Proactive at 16:00 with X still open. *Proactive holds.* Today
-it cannot know, and the decide suite has no participation input.
+One scenario through the real stages, twice around. It is #199, as it should
+have gone:
 
-**S3 — the room keeps declining.** Five consecutive windows on subject X
-declined by the gate. A batch mentioning X reaches the note tier. *No note.*
-Today the tier writes it; the candidates suite has no gate input.
+> A human row lands in a Signal room, untagged (**Observe**). The gate admits;
+> the participation turn answers (**Decide → Act**). The user tags one second
+> later; the tag turn sees participation's answer in the shared log and does
+> not re-derive it (**Decide ↔ Decide**) — or, if it runs and dies, the
+> debrief writes Standing that knows a reply was sent, proposes no note, and
+> the verdict would have caught it if it had (**Act → Orient**). At +80 min
+> the proactive decider reads the log, sees the question was answered, and
+> schedules nothing (**Decide**). Nothing lands in any room after the first
+> answer.
 
-**S4 — her own act moved the thread.** Proactive raised X at 09:00; nobody
-answered. Curator at 16:00. *The note reads "asked, unanswered since 09:00",
-not "untouched since Tuesday".* Today the note looks identical to before she
-spoke (`01 §2.4`).
-
-**S5 — a pending row is overtaken.** A `kind="proactive"` row for 18:00 about
-tonight's dinner; a 17:40 window settles it. *The gate admits AND the row is
-cancelled.* Today D11 cancels only on a tag-path note revision.
-
-**S6 — the same people, a different room.** The same arrangement mentioned in
-the games channel and in the Signal room. *One note, anchored where plans are
-made.* Today: two notes or one wrong one, because the tier cannot tell the
-rooms apart.
-
-Six cases, each spanning two stages, each expressible with the fixtures the
-suites already have — a seeded note, a scripted window, a clocked decide turn.
-They are the acceptance criteria for `03 §4`'s migration, and **they are a
-precondition for tuning any single component again**: #158 already shows the
-decide suite cannot separate a prompt change from noise at n=5; a seam that is
-unmeasured cannot be tuned at all.
-
-## 5. What proves the loop, end to end
-
-One scenario, run through the real stages, is the loop's positive control —
-the thing that says "this exists" rather than "each part exists":
-
-> A human row lands in a planning room (**Observe**). The note tier writes a
-> note with an anchor and a closing condition; Standing records the room is
-> waiting on it (**Orient**). A window closes with the condition unmet;
-> participation declines — correctly — and the decline is logged. The clock
-> fires; proactive reads the note, the log, and the people, and schedules a
-> reminder for the evening (**Decide**). The reminder fires; she asks the
-> question in the room (**Act**). Her row lands; the note is stamped as moved
-> by her act. The next window answers her; participation admits — because the
-> note's condition is now met — and the curator retires it (**Observe → Orient
-> → Decide → Act**, second pass).
-
-Every step of that is buildable today except the two stamps (`03 §3`). It
-belongs in `evals/` as one journey case, and it is red on the current tree at
-the third step.
+It is red on the current tree at the debrief step. It goes green when A1–A4
+land, and stays the loop's acceptance test after that.

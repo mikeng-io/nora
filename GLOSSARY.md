@@ -162,7 +162,7 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   The passive half answers when tagged; the active half acts when nobody
   asked. Both run one **OODA loop** — observe (human rows), orient (notes,
   Standing), decide, act — closed through a human; that loop is the
-  **ambient loop** above, and the proactive adaptor is one of its two
+  **ambient loop** (below), and the proactive adaptor is one of its two
   deciders. The active half is a
   Dreamer adaptor whose **decide turn** reads a workspace's open notes, each
   room's Standing with its age, its own **decision log** (what it scheduled
@@ -236,7 +236,8 @@ A capability claim in an authored file now **fails to load**.
   anything worth raising, and when?) — and **Act** is the fire path. The loop
   is the system's, not the proactive adaptor's; the components are its
   stages, and each seam between two of them carries a contract
-  (design/ambient-loop/01).
+  (design/ambient-loop/01). The tag path is the *other* backbone and feeds
+  this one: its debrief writes Standing and proposes notes.
 - **tag** — a message that triggers her. One tag = one turn.
 - **turn** — everything from admission to reply. Contains several **model
   calls**; each call is a **round trip** (~4s) and each retained tool result is

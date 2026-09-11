@@ -1,16 +1,16 @@
 ---
 type: proposal
 title: "The Ambient Loop Is Nora's Second Backbone — One OODA Loop, Named As The System's"
-description: "Nora has two backbones, not one. The tag path answers when called. The ambient loop is how she is PRESENT without being called — and it is one observe–orient–decide–act loop whose stages are the ingest path, the memory layer, two deciders (participation and proactive), and the shared fire path. The loop already exists in the tree; it has never been named as the system's, only as the proactive adaptor's. This node fixes what it is, what it is not, and why the components rotted independently while each was correct on its own terms."
+description: "Nora has two backbones. The tag path answers when called. The ambient loop is how she is present when not called — one observe–orient–decide–act loop whose stages are the ingest path, the memory layer, two deciders (participation and proactive) and the shared fire path. The loop exists in the tree and had only been named as the proactive adaptor's. Version 2: rewritten against an adversarial review that refuted four of version 1's claims, and against a live incident (#199) that crossed five of the loop's seams in ninety minutes."
 tags: [nora, ambient, ooda, backbone, participation, proactive, notes, standing, memory]
 timestamp: '2026-09-11'
 edges:
-  - {dst: "dreamer-agent-loop/39-proactive-ooda-loop", rel: supersedes, provenance: asserted}
-  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: revises, provenance: asserted}
-  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: revises, provenance: asserted}
+  - {dst: "dreamer-agent-loop/39-proactive-ooda-loop", rel: revises, provenance: asserted}
+  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: depends_on, provenance: asserted}
+  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: depends_on, provenance: asserted}
   - {dst: "dreamer-agent-loop/26-standing", rel: depends_on, provenance: asserted}
   - {dst: "dreamer-agent-loop/33-note-dreamer-schedule", rel: depends_on, provenance: asserted}
-version: 1
+version: 2
 ---
 
 # The Ambient Loop Is Nora's Second Backbone
@@ -18,130 +18,141 @@ version: 1
 ## 0. What this node decides
 
 **Nora has two backbones.** The **tag path** is how she answers when somebody
-calls her — one tag, one turn, one reply. The **ambient loop** is how she is
-present in a room when nobody has called her: reading everything, holding what
-is unsettled, speaking when there is an occasion, and staying quiet the rest
-of the time. Everything that is not the tag path is a stage of this loop.
+calls her — one tag, one turn, one reply, owed always. The **ambient loop** is
+how she is present when nobody has: reading everything, holding what is
+unsettled, speaking when there is an occasion, and staying quiet the rest of
+the time. It is one observe–orient–decide–act loop, closed through a human.
 
-The loop is an OODA loop — observe, orient, decide, act — and it is closed
-through a human. That sentence is already in the tree (design 39 §1,
-`nora/language/proactive.py:1`, `nora/app/fire.py:303`, GLOSSARY under
-*proactive*). What is **not** in the tree, anywhere, is the claim this node
-makes: **the loop is the system's, not the proactive adaptor's.** Design 39
-wrote it from the adaptor's seat — "one loop, two entry points", where the two
-entries are *tag* and *proactive* — and in doing so left the participation
-mode out of the loop entirely and treated the memory layer as an input to one
-stage rather than the medium every stage reads and writes.
+That sentence is in the tree already — design 39 §1, `proactive.py:1`,
+`fire.py:303`, GLOSSARY under *proactive*. What is not in the tree is the
+claim this node makes: **the loop is the system's, not the proactive
+adaptor's.** Design 39 wrote it from the adaptor's seat. Its two entry points
+are *tag* and *proactive*; the participation decider is not in the table; the
+memory layer is one stage's input rather than the medium every judging stage
+reads.
 
-That misplacement is not a documentation nit. It is why four components that
-are each correct on their own terms measurably fail at their seams (§3), and
-why every one of them has its own doctrine file and its own eval suite while
-**no case anywhere measures a property that crosses two of them** (`02 §3`).
+**What version 1 of this node got wrong, and version 2 corrects.** An
+adversarial review of v1 found four false claims about the tree and one
+circular rule, and they are worth naming here because each is a way this
+framing can go wrong again:
 
-## 1. The two backbones, and what separates them
+1. The relevance gate is blind to notes and memory **on purpose** — design 36
+   decision 5 — and the participation *turn* behind it already reads both. v1
+   called that a seam. It is a two-layer Decide, and the layers are the design.
+2. Two of v1's "seams" were component bugs: #186 is a one-file transport swap
+   inside the gate; #161's `key` is already the room and the note tier throws
+   it away. Neither needs input from another stage.
+3. The tag path is a **writer** of the loop's held state — the debrief writes
+   Standing and proposes notes. v1 called it a consumer. It feeds the loop.
+4. v1's shared rule ("hold what the deciders would act on") was circular; with
+   0 windows admitted it evaluates to hold nothing. Design 33 §3's test — a
+   note has a closing condition — is decidable at write time and stays.
+
+What survived the review, and is now grounded on an incident rather than an
+argument, is in §2–§3.
+
+## 1. The two backbones
 
 | | tag path | ambient loop |
 |---|---|---|
 | **trigger** | somebody addresses her | a window closes; a note moves; a clock fires |
-| **owed** | a reply, always (R-2, R-5's floor) | nothing — silence is the default outcome |
+| **owed** | a reply, always | nothing — silence is the default outcome |
 | **scope** | one room, one exchange | a workspace, across rooms and turns |
 | **judgement** | *what* to say | *whether* to say anything, and *when* |
-| **where it lives** | `nora/engagement/` | `nora/ingest/`, the memory layer, the two deciders, `nora/app/fire.py` |
 | **what it is for** | being useful when asked | being there when not asked |
 
-The two share the doctrine substrate, the tool registry, the deliverer chain
-and the conversation slot. They do not share a trigger, an obligation, or a
-scope. The tag path can be understood one turn at a time. The ambient loop
-cannot: its whole value is what it carries **between** turns, which is why it
-has to be named as a loop and not as a list of features that happen to run in
-the background.
+They share the doctrine substrate, the tool registry, the deliverer chain and
+the conversation slot. They do not share a trigger, an obligation, or a scope.
 
-Design 39's reading — that tag is the "passive half" and enters the loop at
-Act — is retired. Tag is not a half of this loop. It is the other backbone,
-and it reads the loop's state (Standing, notes, the peer card) the way any
-consumer reads a substrate: without being a stage of it.
+**And they share held state in both directions.** The tag path's debrief is
+the principal writer of Standing and proposes notes (`debrief.py:551-608`);
+the loop's deciders read both. So the tag path is not a stage of the loop and
+not merely a consumer of it — it is the other backbone, and the loop's Orient
+stage is fed by it. Design 39's "tag is the passive half, entering at Act" was
+closer than v1 allowed: tag *does* enter, at Orient, as a writer.
 
 ## 2. The loop, named
 
 ```
-             ┌──────────────────────────────────────────────────────┐
-             │                                                      │
-   rooms ──▶ OBSERVE ──▶ ORIENT ──▶ DECIDE ──▶ ACT ──▶ rooms ──▶ ─┘
-             ingest      memory     ┌ participation   fire path
-                                    └ proactive
+                 ┌───────────────────────────────────────────────────────┐
+                 │                                                       │
+   rooms ──▶ OBSERVE ──▶ ORIENT ──▶ DECIDE ──▶ ACT ──▶ rooms ──▶ ────────┘
+             ingest      notes      ┌ participation (gate → turn)    fire path
+                         Standing   └ proactive (decide → act)
+                         Honcho          ▲
+   tag path ────────────────┘            │ each decider is two-layer
+   (debrief writes Standing, notes)      │ and neither sees the other
 ```
 
 | stage | what it is in Nora | where |
 |---|---|---|
-| **Observe** | every human row lands in the record and is fed to memory, marked with its room, its time and who sent it | `nora/ingest/` — scope → identity → media → audit → memory feed → gate |
-| **Orient** | raw rows become held state: what is unsettled (notes), where each room stands (Standing), who these people are (Honcho) | `note-candidates`, `note-curation`, the Standing fold, Honcho's peer cards |
-| **Decide** | **two deciders**, one question each | **participation**: "this window just closed — is it hers?" (`nora/ingest/relevance_gate.py`) · **proactive**: "across the workspace, is anything worth raising, and when?" (`nora/language/proactive.py`) |
-| **Act** | say it, in a room, under the room's policy, or decline | `FirePath.speak` — `kind="participation"` and `kind="proactive"` |
-| **feedback** | her own rows land in the record; Standing folds them; the self card distils them | the Act → Observe edge, with the brakes design 39 §1 already lists |
+| **Observe** | every human row lands in the record, marked with its room, its time and who sent it, and is fed to memory | `nora/ingest/` |
+| **Orient** | rows become held state: what is unsettled (notes), where each room stands (Standing), who these people are (Honcho). Written by the note tier, the curator, and **the tag path's debrief** | `note_candidates.py`, `note_curator.py`, `debrief.py`, Honcho |
+| **Decide** | **two deciders, each two-layer.** *Participation:* the gate (cheap — transcript + Standing, blind to notes and memory by design 36) admits a closed window; the turn behind it (everything) decides whether she holds anything to add. *Proactive:* the decide turn (notes, Standing, people, own log — no transcript, 39 D9) schedules a time; the act turn (the home room's transcript) speaks or declines | `relevance_gate.py` + `fire.py` participation; `proactive.py` + `fire.py` proactive |
+| **Act** | say it, in a room, under the room's policy, or decline | `FirePath.speak` |
+| **feedback** | her rows land; the debrief folds them into Standing; `record_wake`/`strikes` stamp a note she raised | the Act → Observe edge, with 39 §1's brakes |
 
-**Two deciders, not one.** This is the correction to design 39. Participation
-and proactive are the same stage asked two questions on two triggers. They read
-the same held state and speak through the same path. What differs is the
-trigger (a quiescence window versus a change or a clock), the scope (one room
-versus a workspace) and the shape of the answer (admit this window versus
-schedule a time). Treating one as "the loop" and the other as "a fifth Event"
-is how they came to be built without reference to each other.
+**Memory is the medium.** Written at Observe and after every tag; read by the
+proactive decide turn, the participation *turn*, and the tag path. Not read by
+the gate (by design) or the note tier (#118 step 4). Whether the note tier
+should read it is an open question with a measurement attached (`03` DEC-178),
+not a decision.
 
-**Memory is the medium, not a stage.** Honcho, the note store and the Standing
-table are written at Observe and Act and read at Orient and Decide. Design 39
-placed Honcho inside Observe; the tree places it everywhere or nowhere — the
-proactive turn reads it, the gate never does, the note tier never does (`01 §1`).
-A medium that only some stages can see is not a medium.
+## 3. The incident that grounds this node — #199, 2026-09-11
 
-## 3. Why this is the right time to name it
+Design arguments are cheap. This one happened, in the operator's own rooms,
+and it crossed five seams in ninety minutes. Every row is in `03 §5`'s table
+with its trace id.
 
-The evidence that the loop was never treated as one thing is that its seams
-are where it fails, measured:
+16:42, Signal, untagged: *how do I get to Cyberport at 10 tomorrow?* The gate
+**admitted** the window; the participation turn **answered in full** at 16:43.
+One second later the operator — not having seen the answer — tagged her. The
+tag turn re-derived the whole route from scratch (`saved_places`, `route` ×2),
+hit six `reasoningContent` warnings, and **died** with `APIError`. Its debrief
+was handed `<what_happened>the model call failed; nothing was sent</what_happened>`
+plus a 133-row transcript whose second-to-last row was her own sent answer.
+The fold wrote Standing as *«我今日冇出過任何回覆»* — a room-scoped claim
+generalised from a turn-scoped header — and **proposed a note** with the same
+false premise. The verdict returned `grounded: true`. At 18:03 the proactive
+decider, which has no transcript, read the note and Standing and scheduled a
+reminder: *«got no route at all — raise at 18:11»*. At 18:11 the act turn
+fired into the **home room — Discord**, read Discord's transcript, found no
+Cyberport in it, and told him it was catching up on a question it had never
+answered and could not find his address.
 
-- **Observe → Orient.** The note tier is handed a batch that says which
-  *workspace* it came from, not which *room*. On `friends` every line renders
-  `(friends)` whether it came from Signal or a Discord games channel, and the
-  tier wrote two notes about a "Bath gathering" from a games room's shorthand
-  — the second from a batch in which the word *bath* does not appear (#161).
-- **Orient → Decide.** The participation decider's verdict is formed on a
-  transport that drops the reasoning before the verdict is made. Measured
-  2026-09-11, same tree, same model, same instruction: raw completion holds
-  the safety bar 6/6; the transport production runs breaches it 1/6 — a forged
-  assistant row inside a member's message is believed 4 times in 5 (#186).
-- **Decide ↔ Decide.** The two deciders cannot see each other. Participation
-  does not know proactive raised the thing this window is about; proactive does
-  not know participation spoke in this room two hours ago (`01 §3`).
-- **Act → Observe.** The identity doctrine says «then you're done». Recall on
-  the proactive decide suite is 0.34 against a false-positive rate of 0.02
-  (#173 `01 §1`): she is measurably right about staying quiet and measurably
-  unable to act, because the loop is told to stop at Act.
-- **The ambient Decide has never fired.** 0 of 33 windows admitted in the 20
-  hours after participation went live (#163). The operator's read is that the
-  rooms were quiet — which is a valid reading, and also means half the loop has
-  no production evidence at all.
+Five seams, in order:
 
-None of those is inside a component. Every one is between two. That is the
-signature of four things built as if they were standalone, and the reason
-this node exists before another component is tuned.
+| seam | what crossed it wrongly |
+|---|---|
+| **Decide ↔ Decide** (participation ↔ tag) | the tag turn could not see that participation had just answered; it re-derived and died |
+| **Act → Orient** (the debrief) | a turn outcome became a room position; the header outranked a row the model could see |
+| **Orient** (debrief → note) | the false position became a false note with a closing condition her own answer had already met |
+| **Orient → Decide** (proactive) | no input could contradict the held state; the decider trusted it and read memory six times |
+| **Act** (the room) | home-room-only; the answer to a Signal question landed in Discord |
+
+None of those is inside a component. That is the whole argument of this node,
+and it needed to happen before it could be made honestly.
 
 ## 4. What this node does not do
 
-- **It does not change the architecture.** Every stage named above exists in
-  the tree today. No new process, no new store, no new occasion kind.
-- **It does not decide DEC-163** (#173 — whether «then you're done» becomes
-  «stopping talking is not the same as being finished»). That is the Act →
-  Observe edge and it is operator-only. This node names the edge; that
-  decision says what flows across it.
-- **It does not rewrite any doctrine file.** `02` says what each stage's
-  objective must be *told* — inputs, not instructions — and what would prove
-  the loop is working. The wording is the operator's.
-- **It does not touch the tag path.**
+- **It does not change the architecture.** No new process, no new occasion
+  kind. It adds **one store** — the shared decision log (`03` DEC-179) — which
+  v1 wrongly claimed already existed.
+- **It does not reverse design 36.** The gate stays cheap and blind to notes
+  and memory. What the gate gains is the loop's own decisions, which are
+  neither.
+- **It does not decide DEC-163** (#173). §3's Act → Orient seam is the
+  structural half of "keeps track between turns"; whether she is *finished*
+  when she has answered is a sentence in `identity.md` and is the operator's.
+- **It does not rewrite any objective.** `02` specifies inputs; wording is the
+  operator's — with one exception stated there: the debrief's outcome header
+  is a render, not an instruction, and it is what #199 turns on.
 
 ## 5. Reading order
 
-`01` — the four stages and the five seams, with what each stage owes its
-neighbours and a table of what each actually reads today. `02` — doctrine as
-per-stage objectives with crossing inputs, the shared save/don't-save rule, and
-the cross-seam eval cases that do not exist. `03` — decisions with reversal
-conditions, what this supersedes, the migration order, and the open issues
-re-filed as seams.
+`01` — the corrected table of what each stage reads today, the five seams
+with their contracts, and which of v1's seams were component bugs. `02` —
+inputs per objective, the write-time rule that stays, the seam cases with
+their real fixture costs, the positive control. `03` — decisions with reversal
+conditions, what is superseded, the migration as it is actually being landed
+tonight, and the open issues re-read as seams.

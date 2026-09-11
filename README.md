@@ -56,7 +56,19 @@ To get a reply, send a message containing the trigger text (`engagement.trigger.
 `policy.toml` allows. Everything else she reads and stores; whether she may ever
 speak in a room uncalled is a separate, per-room grant in `policy.toml` (below).
 
-## Architecture: two paths, and a background tier
+## Architecture: two backbones
+
+Nora has two backbones. The **tag path** answers when somebody calls her —
+one tag, one turn, one reply, owed always. The **ambient loop** is how she is
+present when nobody has: one observe–orient–decide–act loop over the ingest
+path (Observe), the memory layer — notes, Standing, Honcho — (Orient), two
+deciders — participation and proactive — (Decide), and the fire path (Act),
+closed through a human. The tag path feeds the loop: its debrief writes
+Standing and proposes notes. `design/ambient-loop/` names the loop, the
+contract on each seam between its stages, and the incident that showed why
+the seams matter (#199). The diagram below is the same picture drawn as code
+paths.
+
 
 ```
 Signal / Discord / WhatsApp room

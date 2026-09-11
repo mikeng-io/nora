@@ -1,171 +1,155 @@
 ---
 type: analysis
-title: "Four Stages, Five Seams — What Each Owes The Next, And What Each Reads Today"
-description: "The ambient loop's stages as they exist in the tree, a measured table of what each stage is actually handed (transcript, Standing, notes, memory, the other decider's verdicts), and the contract on each seam: what Observe owes Orient, Orient owes Decide, the two deciders owe each other, Act owes Observe. Every gap in the table is an open issue or a case the suite cannot express."
-tags: [nora, ambient, ooda, seams, participation, proactive, notes, standing, honcho]
+title: "What Each Stage Reads Today, The Five Seams, And Which Of Them Are Real"
+description: "The corrected table of what each stage is handed (version 1 had three cells wrong and merged injected blocks with callable tools). Then the seams: two that are real and unwired (the two deciders cannot see each other; the debrief writes a room position from a turn outcome), two that are component bugs wearing seam clothing (#161 lever 1, #186), one that is an open measurement (memory into the note tier). Grounded on the code at 0a5933b4 and on #199."
+tags: [nora, ambient, ooda, seams, participation, proactive, notes, standing, honcho, debrief]
 timestamp: '2026-09-11'
 edges:
   - {dst: 00-overview, rel: depends_on, provenance: asserted}
-version: 1
+version: 2
 ---
 
-# Four Stages, Five Seams
+# What Each Stage Reads Today, And The Five Seams
 
-## 1. What each stage is handed today
+## 1. The table, corrected
 
-Read from the code on 2026-09-11 at `0a5933b4`, not from the design nodes.
+Read from the code at `0a5933b4`. **Injected** means rendered into the
+prompt; **callable** means the model may ask for it (39 D9: inject the index,
+call for depth). Version 1 of this node merged the two and got three cells
+wrong; the corrections are marked.
 
-| stage / decider | transcript | Standing | notes index | memory (Honcho) | the other decider | room identity |
+| stage | transcript | Standing | notes | memory | other decider | room named |
 |---|---|---|---|---|---|---|
-| **Orient — note-candidates** | the batch | ✗ | ✓ (`render_notes`) | ✗ | ✗ | **workspace name only** |
-| **Orient — note-curation** | ✗ | ✗ | ✓ | ✗ | ✗ | — |
-| **Orient — Standing fold** | the exchange | prior | ✗ | ✗ | ✗ | ✓ (per room) |
-| **Decide — participation** | ✓ with ages | ✓ | ✗ | ✗ | ✗ | ✓ |
-| **Decide — proactive** | ✗ | ✓ per room, with age | ✓ | ✓ (`about`, `ask_memory`, the `<people>` index) | its **own** decision log | home room |
+| **Orient · note-candidates** | batch, injected | ✗ | index, injected | ✗ | ✗ | **✗ — workspace name** (bug, #161) |
+| **Orient · note-curation** | **✓ per-note window, injected** (v1 said ✗) | ✗ | ✓ | ✗ | ✗ | — |
+| **Orient · Standing fold** (tag path) | the exchange, injected | prior | ✗ | ✗ | ✗ | **✗** (v1 said ✓; `render_debrief_turn` names no room) |
+| **Decide · gate** | ✓ with ages | ✓ with age | ✗ *by design 36* | ✗ *by design 36* | ✗ | **✗** (v1 said ✓; the prompt names no room, label or platform) |
+| **Decide · participation turn** | ✓ | ✓ | **✓ `<notes>`** | ✓ peer card | ✗ | ✓ |
+| **Decide · proactive decide** | ✗ (39 D9) | ✓ per room, aged | ✓ | roster injected; Honcho **callable** (v1 called the `<people>` block Honcho — it is the roster) | own log only | home room |
+| **Decide · proactive act** | home room's, injected | ✓ | ✓ | ✓ | ✗ | home room |
 
-Where each cell comes from: `nora/ingest/relevance_gate.py:14` («ONE call,
-transcript + standing, no tools»), `:426` (the `<standing>` block);
-`nora/language/proactive.py:430-457` (`inputs()` renders the home room, the
-people index, notes, Standing lines, the decision log and the self card);
-`nora/language/note_candidates.py:471-475` (the batch rendered with the
-workspace name where `_render_line`'s docstring promises the room, #161) and
-`:50` (the notebook projection).
+Where each cell comes from: `relevance_gate.py:14-27` (the gate's deliberate
+blindness, quoted in §2.3), `:525-531` (no room in the prompt); `fire.py:319,
+:551, :631` (the participation turn's `<notes>`); `proactive.py:449-479`
+(`inputs()`), `:481-513` (`_people_block` reads the roster, not memory);
+`note_candidates.py:491-495` (`room = workspace or key`); `note_curator.py:670`
+(the per-note transcript window); `debrief_render.py:240-247` (no room label,
+id-suppression at `:34-42`).
 
-Three readings of that table:
+Three readings:
 
-1. **No stage sees more than half the loop's state.** The proactive decider is
-   the best-fed and it does not see the transcript; the participation decider
-   sees the transcript and nothing the loop has *held*.
-2. **Memory reaches one stage of four.** Honcho is fed at Observe
-   (`nora/ingest/stages/memory_feed.py`) and at the tag path's feedback stage,
-   and is read by the proactive decider and the tag path. The participation
-   decider judges relevance with no peer card. The note tier extracts
-   arrangements with no idea who these people are to each other (#118 step 4,
-   deferred as polish; this node says it is a seam).
-3. **The two deciders are mutually blind.** Neither column has a ✓.
+1. **Three stages do not know which room they are in** — the note tier, the
+   Standing fold, and the gate. v1 counted one.
+2. **The two deciders are mutually blind**, and so are participation and the
+   tag path. The "other decider" column is empty in every row, and #199 is
+   what that costs: the tag turn re-derived an answer participation had sent
+   one second earlier.
+3. **Memory reaches every stage that judges except two:** the gate (by
+   design) and the note tier (#118 step 4, deferred).
 
-## 2. The five seams, and what crosses each
+## 2. The five seams
 
-### 2.1 Observe → Orient: *a row must say where and when it came from*
+### 2.1 Decide ↔ Decide — *real, unwired, needs a store*
 
-Observe's output is a `TranscriptRow` with `ts`, `sender`, `body`, and a
-`conversation_id`. The note tier is handed a batch of them keyed by
-**workspace** — `composition.py:2616-2620` builds `workspace_for` from
-`conv.primary_id` — so the room collapses into the group it belongs to.
+Three decision paths, none aware of the others: the gate + participation turn,
+the proactive decide + act turns, and the tag path. The gate persists
+**nothing durable** — metrics and trace attributes only (`relevance_gate.py:698-711`).
+The proactive adaptor keeps a private log over its own reminder rows. The
+determination log (`obs/determination.py`, written at `fire.py:1682`) is
+write-only and read back into no prompt. v1 said "a `writer` column on a table
+that exists". No such table exists. **This is the one new store the loop
+needs** (`03` DEC-179), and it is being built tonight.
 
-**What Orient needs and does not get:** the room's *label* and, for any room
-the operator can describe, what kind of room it is. In a games channel `2200`
-is when people log on; in a planning room it is a time to meet. The batch
-cannot say which, so the model decides from the words alone and is right by
-its instruction and wrong by the room (#161, both notes still open).
+What crosses it, once it exists: the proactive decider sees participation
+admitted and spoke in this room at 14:02, so it does not schedule a 16:00
+reminder about the same thing; the gate sees a `kind="proactive"` row is
+pending for 18:00 about tonight's dinner, so a 17:40 window that settles it is
+admitted *and* the row is cancelled; the tag turn sees participation answered
+one second ago, so it does not re-derive the route and die doing it (#199).
 
-**Contract.** Every row Observe hands Orient carries the room it came from as
-the room, not the workspace, and the operator may attach a one-line
-`description` to a room in `policy.toml` that Orient renders above the batch.
-The Standing fold already gets this (it is per room by construction). The note
-tier does not, and it is the one that writes durable state.
+### 2.2 Act → Orient — *real, and #199 is its exact shape*
 
-### 2.2 Orient → Decide: *held state must reach every decider intact*
+The tag path's debrief writes Standing and proposes notes from a render of the
+finished turn. That render carries `<what_happened>` from the turn's outcome.
+For `llm_error` it says *nothing was sent* — true of the turn, unscoped, and
+the fold generalised it to *I have sent nothing today* with her sent row two
+lines above the tag in the same window. The verdict, which exists to catch
+unsupported claims, said `grounded: true`. The same fold proposed a note whose
+closing condition her own row had already met.
 
-Two failures here, one per decider.
+Design 39 §1's brake — *nothing Nora says can create, revise or close a note* —
+holds for her **words**. It does not hold for her **turn outcomes**, which the
+debrief writes as held state, and it cuts the other way: her own row cannot
+close a note whose closing condition it satisfies. What already exists on this
+edge and must not be duplicated: `record_wake` / `strikes` / `revisit_at`
+(`schema.py:1805-1809`, 39 D6) stamp *raised by her, unanswered*. v1's
+`last_moved_at` would have been a second copy of that.
 
-**Participation gets the transcript and Standing; it never sees the notes.** A
-window in which somebody writes «so are we booking or not» is obviously hers
-if there is an open note anchored on that dinner — and the gate cannot know
-there is. It judges «is this hers?» from the words and a one-paragraph
-position, with the loop's most specific held state (what she is tracking, and
-what would close it) withheld. Every note has a `closing_condition`; the gate
-is the one place a closing condition could be *recognised* in a live room, and
-it is not shown any.
+**Contract.** The outcome header is scoped to the turn; a `Nora:` row after
+the tag is legible to the fold as a delivered reply regardless of outcome; the
+verdict can see the contradiction from the transcript alone; a dead turn does
+not propose notes; closure — not content — may be satisfied by her own row.
+Fixes A1–A4 on #199, landing tonight.
 
-**Proactive gets held state that was formed without reading the transport
-that carries participation's verdict.** Narrower and worse: the participation
-decider's own reasoning is dropped in transit before its verdict forms
-(#186 — `nora/agent/structured.py`'s module docstring names the mechanism and
-forbids the use; `composition.py:333` makes it anyway). Measured 2026-09-11:
-raw 6/6 safety held, SDK transport 1/6 breached, 2.4x the tokens.
+### 2.3 Orient → Decide — *by design where the gate is concerned; real for the proactive decider*
 
-**Contract.** Orient owes each decider the same three things, rendered with
-what they are and how old they are: the room's position (Standing, with its
-`written` time — already done), the open notes that touch this room (with
-anchor, closing condition and last move), and the peer cards of the people in
-the window. And the wire between Orient and a decider must not discard the
-decider's own reasoning; that is not a tuning knob.
+**The gate.** `relevance_gate.py:18-27`, verbatim:
 
-### 2.3 Decide ↔ Decide: *the two deciders must see each other's recent verdicts*
+> "Does NORA hold something true to add?" It never sees notes, facts or the
+> peer card, so it cannot — and must not pretend to. That question belongs to
+> the participation turn behind the gate… A gate that started guessing the
+> second question would be the 35 design again in a cheaper coat.
 
-Today each decider keeps its own log and reads only that.
+That is design 36 decision 5, and the turn behind the gate renders `<notes>`
+and the peer card. v1's flagship seam case ("a note closes in a window →
+admit") already exists twice in the participation suite and passes. The gate
+is not missing notes; it is a cheap pre-filter *in front of* the decider that
+has them. Nothing here changes that. The one crossing input the gate does have
+— Standing — is set in **1 of 40** gate cases; that is the measurement to take
+before anything else is added to the gate.
 
-**Participation → proactive.** The proactive turn reads a decision log of its
-own `remind`/`decline` history. It does not know that participation was
-admitted in this room at 14:02 and spoke, so it may schedule a 16:00 reminder
-about the thing she already raised. It does not know participation has
-*declined* five consecutive windows on the same subject — which is direct
-evidence the room is not ready, and a stronger reason to hold than any
-quiet-seconds rule.
+**The proactive decider.** 39 D9 dropped `load_transcript` from its tool set
+on the argument that Standing already carries the room and the verbatim
+window is where self-echo would be loudest. #199 is D9's own reversal
+condition firing: faced with a note saying *未覆* and Standing saying *model
+call 死咗*, the decide turn had no input that could contradict either, read
+memory six times, and scheduled the reminder. **Contract:** the decide turn
+gets a bounded way to check a note against the record — a recent window for
+any room a note references — or the shared log (§2.1) carrying the
+participation verdict that answered it. The second is smaller and lands
+first.
 
-**Proactive → participation.** The gate does not know a `kind="proactive"` row
-is pending for 18:00 about tonight's dinner. A window at 17:40 in which the
-dinner gets settled is exactly the window that should *cancel* that row
-(design 39 D11 does this only for a tag-path note revision) — or the window
-the gate should admit precisely because the row is waiting on it.
+### 2.4 Observe → Orient — *a component bug, plus one config field*
 
-**Contract.** One decision log, two writers, both readers. A row records which
-decider wrote it, the room, the note it concerned if any, the verdict, and
-the time. Each decider's render carries the other's rows for the same room
-over the last day, with ages. This is a render change on both sides and a
-`writer` column on a table that already exists (`proactive:pass` and the
-determination log both already record decisions; they are not joined).
+v1 said "a row must say where it came from". It does: `key` in
+`note_candidates.py:491` **is** the room's conversation id, and the next line
+overwrites it with the workspace. Observe is fine; Orient throws the room
+away. Fix: render the room's label (`composition.py` already builds the map
+the proactive adaptor uses). The only genuinely cross-stage part is the
+operator's one-line `description` per room in `policy.toml`, which is config,
+not a stage. Both land tonight (#161).
 
-### 2.4 Act → Observe: *what flows back, and what must not*
+The same defect exists in two more places the table shows and #161 does not
+name: the gate's prompt and the Standing fold's render carry no room label
+either. Filed as part of the follow-up in `03 §5`.
 
-Design 39 §1 spends its length on this edge's **brakes** — her own rows must
-not become notes, an act turn may not set a reminder, the decide turn may not
-write note content — and every brake is real and stays. What it does not say
-is what *should* flow back.
+### 2.5 The medium — *one open measurement*
 
-Today, after she acts: her row lands in the record (`is_nora == 1`), the next
-tag turn's Standing fold reads it, the self card eventually distils it. What
-does **not** happen: nothing records that the thing she raised has now
-*moved* — that she asked the question, that nobody answered, that the note's
-last movement was her own act. The note carries one date (#159) and no
-"last moved" (#173 `04`). So the next Decide sees a note that looks exactly as
-it did before she spoke.
+Honcho reaches the participation turn, the proactive decider (callable) and
+the tag path. The note tier extracts "is this an arrangement?" with no idea
+who these people are to each other. #118 step 4 deferred that as "only if
+bodies read as useless". This node says it is worth *measuring* — and stops
+there, because the precedent on the gate (#144/#147: a capability list made
+the verdict measurably worse) says more input is not always better. `03`
+DEC-178 is an open question with the experiment attached, not a decision.
 
-**Contract.** An act that concerns a note stamps the note with *acted, when,
-by which decider* — not as content (the brake stands: nothing she says becomes
-a note), but as movement. The next Orient then knows the thread has her act on
-it and can tell "unanswered since she asked" from "untouched". This is the
-narrow, structural half of what #173 asks for; the wide half — whether she is
-*finished* when she has answered — is DEC-163 and is the operator's.
+## 3. Which of v1's seams were not seams
 
-### 2.5 The medium: *memory is read at Orient and Decide, written at Observe and Act*
+- **#186** — the gate's verdict is formed on a transport that drops the
+  decider's *own* reasoning. That is inside the gate. One-file fix, measured
+  6/6 vs 1/6. Landing tonight.
+- **#161 lever 1** — above. Inside the note tier.
 
-Honcho is fed by ingest and by the tag path, read by the proactive decider and
-the tag path. The correct shape is simpler to state than the current one:
-**every stage that judges reads it; every stage that observes writes it.**
-
-| stage | reads memory today | should |
-|---|---|---|
-| Orient — note-candidates | ✗ | ✓ — who is involved, before deciding whether "three of us, 2200" is an arrangement (#118 step 4) |
-| Orient — Standing fold | ✗ | ✓ — the fold is Nora's read of the room; her read of the people is in the card |
-| Decide — participation | ✗ | ✓ — relevance to *these* people, not to a transcript |
-| Decide — proactive | ✓ | ✓ |
-
-None of these is new machinery. `about` and the `<people>` index exist; the
-question is which prompts render them.
-
-## 3. Why each component was correct and the loop was not
-
-Each of the four was built to its own node, measured by its own suite, and
-passed. Design 35/36 built participation as "the fifth Event" with a 40-case
-gate suite; design 33/37 built the note tier with an 18-case suite; design 39
-built the proactive adaptor with two suites. Every suite scores its component
-against inputs the component's author chose. **Not one case in any suite is
-about the seam** — nothing says "admit because a note is closing here",
-"hold because participation spoke", "do not extract because the gate has been
-declining this subject". So the seams were never red, and were never fixed.
-
-That is what "各自為政" costs, made specific: four green suites and a loop
-that admitted zero windows, raised a games room's shorthand as an arrangement,
-and believed a forged assistant row.
+Both are real, both matter, neither needs another stage. Keeping them out of
+the seam list is what keeps the seam list honest: DEC-176's reversal
+condition is exactly "a seam failure closed with no cross-stage input".

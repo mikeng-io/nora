@@ -10,7 +10,7 @@ description: >
   suite could see it. This bundle names the loop as the system's, writes the
   contract on each seam, states the one save/don't-save rule all stages share,
   and lists the six cross-stage cases that do not exist.
-status: proposal
+status: proposed
 origin: >
   Working session with miles, 2026-09-11, after a day of merging and re-verifying
   every open issue against the tree. Three issues the operator was asked to
@@ -37,8 +37,10 @@ external_edges:
 decisions:
   reserved: "DEC-176 .. DEC-180"
   index: 03-decisions.md
+governance:
+  reviewed_by: "adversarial Opus review of version 1, 2026-09-11 — DO NOT LAND; eight blockers, all folded into version 2"
 open_questions:
-  - "OPERATOR — DEC-163 (#173): whether «then you're done» changes. This bundle names the Act → Observe edge and does not decide what flows across it"
-  - "OPERATOR — the room descriptions in policy.toml (#161 lever 2): one sentence per room, only the operator can write them"
-  - "UNDECIDED — whether the shared decision log is a new table or a `writer` column on `dream_schedule_state` / the determination log (03 §2, DEC-179)"
-  - "UNMEASURED — whether rendering peer cards into the gate helps or hurts at n>=30 (DEC-178's reversal condition; the capability-list precedent says more input can be worse)"
+  - "OPERATOR — DEC-163 (#173): whether «then you're done» changes. This bundle names the Act → Orient edge and does not decide what flows across it"
+  - "OPERATOR — the room descriptions in policy.toml (#161 lever 2): one sentence per room"
+  - "OPERATOR — F1: does a proactive row fire into the room the thread was raised in, or always the home room? A `proactive = true` trust grant per room"
+  - "UNMEASURED — DEC-178: memory into the note tier, decided by the 18-case suite both ways at n>=5, not by argument"
