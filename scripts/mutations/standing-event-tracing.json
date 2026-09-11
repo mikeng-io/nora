@@ -1,0 +1,30 @@
+[
+  {
+    "name": "#209 the event fold's standing call is traced through debrief._complete",
+    "file": "nora/ingest/stages/standing_event.py",
+    "old": "        reply = await _debrief_complete(\n            wiring.client, call=\"fold\", tag_id=\"\", conversation_id=conversation_id,\n            prompt=(system, user),\n        )",
+    "new": "        reply = await wiring.client.complete(system=system, prompt=user)",
+    "target": "tests/unit/test_standing_event.py"
+  },
+  {
+    "name": "#209 the event fold's verdict call is traced through debrief._complete",
+    "file": "nora/ingest/stages/standing_event.py",
+    "old": "        return await _debrief_complete(\n            wiring.client, call=\"verdict\", tag_id=\"\", conversation_id=conversation_id,\n            prompt=(system, user),\n        )",
+    "new": "        return await wiring.client.complete(system=system, prompt=user)",
+    "target": "tests/unit/test_standing_event.py"
+  },
+  {
+    "name": "#209 _event_fold opens its own root, detached from whoever dispatched it",
+    "file": "nora/ingest/stages/standing_event.py",
+    "old": "        with attached(None), span(\n",
+    "new": "        with span(\n",
+    "target": "tests/unit/test_standing_event.py"
+  },
+  {
+    "name": "#209 the event fold's tag id is honestly empty, not a borrowed conversation id",
+    "file": "nora/ingest/stages/standing_event.py",
+    "old": "wiring.client, call=\"fold\", tag_id=\"\", conversation_id=conversation_id,",
+    "new": "wiring.client, call=\"fold\", tag_id=conversation_id, conversation_id=conversation_id,",
+    "target": "tests/unit/test_standing_event.py"
+  }
+]

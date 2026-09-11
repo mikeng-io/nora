@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "The event-driven Standing rollup's model calls are now traced: they render as engagement.debrief.fold/.verdict generations under a root span the fold owns, instead of being invisible or mis-rooted under whatever dispatched it.",
+  "details": [
+    "The rollup fold (nora/ingest/stages/standing_event.py) called the model client directly, bypassing debrief._complete's generation(...) wrapper, so its two model calls carried no span at all: no model, no prompt digest, no finish_reason. Both calls now go through debrief._complete, with an honestly empty tag_id (this path has no tag) and the conversation id it does have.",
+    "_event_fold now opens its own root span (standing.event_fold, nora.trace_kind=generation) under attached(None), so it never inherits the ingest pipeline's plumbing root regardless of which of the two dispatch paths (a fresh spawn, or a slot's release_and_dispatch) started it. Before this, a fold dispatched from inside the ingest path's plumbing root was dropped entirely at the sampler, and a fold started from an empty context surfaced as an unnamed bare Strands trace."
+  ],
+  "limitations": [
+    "The verdict this path produces is still not persisted (no tag_id to key a TurnVerdict on) — only its visibility on the trace changed, not what it writes."
+  ]
+}
