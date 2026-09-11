@@ -39,6 +39,7 @@ from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import CompositePolicy, RelevanceGatePolicy, TriggerTextPolicy
+from nora.ingest.relevance_gate import RelevanceGate
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import permissive_policy
@@ -77,6 +78,7 @@ def build_offline_pipeline(
     participation_runner: Any = None,
     participation_clock: Callable[[], float] | None = None,
     participation_opt_in: bool = False,
+    participation_gate: RelevanceGate | None = None,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks, ParticipationTrigger | None]:
     """Wire ingest+engagement+dispatcher from already-built collaborators.
 
@@ -98,7 +100,9 @@ def build_offline_pipeline(
     this module here). The trigger is the fourth return value (`None` when
     neither `participation` nor `participation_runner` was given); the caller
     drives `close_due_windows` on it, with `participation_clock` injecting the
-    clock the settle/cooldown durations are measured against.
+    clock the settle/cooldown durations are measured against, and
+    `participation_gate` optionally putting a REAL `RelevanceGate` in front of
+    it (see the `gate=` comment at the trigger's construction).
     """
     metrics = metrics or Metrics()
     background = BackgroundTasks()
@@ -287,11 +291,21 @@ def build_offline_pipeline(
             settle_seconds=cfg.participation.settle_seconds,
             max_window_messages=cfg.participation.max_window_messages,
             cooldown_seconds=cfg.participation.cooldown_minutes * 60,
-            # NO gate, deliberately. `gate=None` admits every closed window,
-            # which is what an eval of the TURN needs: a suite that had to
-            # get past a live gate call first would be measuring the gate's
-            # verdict and the turn's behaviour in one number, and a flaky
-            # gate would read as a flaky turn. The gate has its own cases.
+            # `None` by DEFAULT, deliberately. `gate=None` admits every closed
+            # window, which is what an eval of the TURN needs: a suite that had
+            # to get past a live gate call first would be measuring the gate's
+            # verdict and the turn's behaviour in one number, and a flaky gate
+            # would read as a flaky turn. The gate has its own cases.
+            #
+            # `participation_gate` is the opt-in for the other kind of case: a
+            # JOURNEY, where the gate's admit is one stage of the chain under
+            # test and a trigger that admits everything would make that stage
+            # vacuous. Passed a REAL `RelevanceGate` over a scripted model
+            # client, the admit is a decision the case can assert on. Same
+            # shape (and same reason) as `debrief_wiring`/`tag_trace_store`
+            # above: built by nobody here, `None` unless a caller wants the
+            # stage, so no existing eval run changes.
+            gate=participation_gate,
             clock=participation_clock or time.monotonic,
         )
     dispatcher = Dispatcher(
