@@ -10,6 +10,8 @@ five of the six failures it exists to catch.
 
 from __future__ import annotations
 
+import dataclasses
+import re
 from datetime import UTC
 
 from nora.domain.models import DeliveryStatus, TranscriptRow
@@ -18,6 +20,8 @@ from nora.domain.tag_trace import TagTrace
 from nora.engagement.debrief_render import (
     render_debrief_input,
     render_debrief_turn,
+    render_rollup_input,
+    render_rollup_verdict_input,
     render_verdict_input,
 )
 
@@ -67,7 +71,9 @@ def test_nora_is_rendered_as_a_distinct_speaker():
         _row(2, 1_756_000_980_000, None, "睇下先", is_nora=True),
     )))
     assert "Miles: 去邊食" in out
-    assert "Nora: 睇下先" in out
+    # Her line also carries its DELIVERY (mapping 7, issue #199) — see
+    # `test_her_own_rows_carry_whether_the_room_actually_got_them`.
+    assert "Nora (delivered): 睇下先" in out
 
 
 def test_the_person_id_never_reaches_the_prompt():
@@ -129,22 +135,35 @@ def test_the_outcome_gloss_speaks_in_the_first_person():
     HER OWN turn, so the outcome gloss must address her as "you" — a
     third-person gloss ("she replied") is the same cast that made the
     objective produce transcript recaps instead of positions. Every gloss
-    that names the actor must be first person; the two that name nobody
-    (timeout, llm_error) are already person-neutral and must stay that way."""
+    must address her as "you", and none of them may name her in the third
+    person.
+
+    **AMENDED 2026-09-11 (issue #199).** This used to require `timeout` and
+    `llm_error` to contain no `"you "` at all, on the argument that the two
+    glosses named nobody and should stay that way. Person-NEUTRALITY was
+    never the rule — never-third-person is — and the neutral wording is
+    precisely what let the fold decide for itself whose "nothing was sent"
+    it was reading: it generalised a turn outcome into «I have sent nothing
+    today» with her own delivered answer in the same window. The two crash
+    glosses now say whose nothing it is, in the second person like every
+    other one."""
     for outcome, expected in (
         ("send_reply", "you replied, through the send_reply tool"),
         ("recovered", "you wrote a reply as prose"),
         ("silent", "you chose to say nothing"),
         ("vetoed", "you tried to reply"),
+        ("timeout", "this turn's model call did not finish in time"),
+        ("llm_error", "this turn's model call failed"),
     ):
         out = _render(trace=_trace(outcome=outcome))
         assert expected in out, f"{outcome}: {expected!r} not in {out!r}"
-        assert "she " not in out and "her " not in out, (
+        # WORD BOUNDARIES, not a bare substring. `"her "` matches inside
+        # "another turn" and "any other turn", which the scope clause below
+        # says twice — a gate that cries wolf on ordinary English is a gate
+        # somebody deletes.
+        assert not re.search(r"\b(she|her|hers)\b", out), (
             f"{outcome}: third-person gloss leaked into the render"
         )
-    for outcome in ("timeout", "llm_error"):
-        out = _render(trace=_trace(outcome=outcome))
-        assert "you " not in out, f"{outcome}: person-neutral gloss gained a person"
 
 
 def test_the_prior_block_is_present_even_when_there_is_no_prior():
@@ -275,3 +294,152 @@ def test_the_standing_render_is_the_prior_plus_the_same_turn_block():
     assert standing == "<standing_prior>\nold position\n</standing_prior>\n\n" + turn
     assert verdict == turn
     assert standing != verdict  # the whole point of the split
+
+
+# --- issue #199: the seventh mapping, and the scope of a failure header -----
+
+
+def test_her_own_rows_carry_whether_the_room_actually_got_them():
+    """Mapping 7. `is_nora` made her a distinct SPEAKER and stopped there, so
+    a reply that had reached the room looked exactly like one that had not —
+    and a turn-scoped «nothing was sent» header was then free to explain it
+    away. The mark is read off `delivery_status`, the column the sender writes
+    back once the platform has accepted the message, so it is the record's own
+    answer to «did this reach anybody» rather than an inference from the turn.
+
+    A `PENDING` row renders `not delivered` beside a `FAILED` one on purpose:
+    the honest reading of a row still pending is «not known to have reached
+    the room», and a mark whose job is to stop a false «I sent nothing» must
+    under-claim delivery rather than over-claim it."""
+    sent = _row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True)
+    pending = dataclasses.replace(
+        _row(2, 1_756_000_980_000, None, "跟住呢", is_nora=True),
+        delivery_status=DeliveryStatus.PENDING,
+    )
+    failed = dataclasses.replace(
+        _row(3, 1_756_001_040_000, None, "再試", is_nora=True),
+        delivery_status=DeliveryStatus.FAILED,
+    )
+    out = _render(trace=_trace(rows=(sent, pending, failed)))
+    assert "Nora (delivered): 路線係咁" in out
+    assert "Nora (not delivered): 跟住呢" in out
+    assert "Nora (not delivered): 再試" in out
+
+
+def test_a_row_from_the_room_carries_no_delivery_mark():
+    """Only HER rows. `delivery_status` on an inbound row describes a send
+    that never happened, so marking those would put a word on a line where it
+    means nothing and teach the fold to read the mark as decoration."""
+    out = _render(trace=_trace(rows=(
+        _row(1, 1_756_000_920_000, "Miles", "去邊食"),
+    )))
+    assert "Miles: 去邊食" in out
+    # The LEGEND names the token, so the assertion is about the LINE.
+    assert "Miles (delivered)" not in out
+    assert "Miles (not delivered)" not in out
+
+
+def test_the_transcript_says_what_the_delivery_mark_means():
+    """A mark with no legend is a token the model gets to interpret, which is
+    the whole defect one level down. The block explains itself: what the mark
+    is read from, and — the sentence issue #199 turns on — that a delivered
+    line of hers was delivered whatever any turn's outcome says, because
+    another turn may have sent it."""
+    out = _render(trace=_trace(rows=(
+        _row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True),
+    )))
+    assert "Every line below is a message that is IN THE RECORD" in out
+    assert "another turn may have sent it" in out
+    # A SIBLING of `<transcript>`, never a line inside it: everything between
+    # those tags is a message somebody sent, and a sentence of ours in there
+    # is one more thing the reader has to work out is not one.
+    assert "<how_to_read_the_transcript>" in out
+    body = out.split("<transcript>")[1].split("</transcript>")[0]
+    assert "How to read" not in body and "read off the send record" not in body
+    assert out.index("<how_to_read_the_transcript>") < out.index("路線係咁")
+
+
+def test_a_crashed_turns_header_says_it_is_this_turn_that_sent_nothing():
+    """`llm_error` read «the model call failed; nothing was sent» — true of
+    the turn, silent about its scope. The fold read it as a statement about
+    the conversation and wrote «我今日冇出過任何回覆» with her delivered answer
+    two rows above the tag."""
+    out = _render(trace=_trace(outcome="llm_error"))
+    assert "this turn's model call failed, so THIS TURN sent nothing" in out
+    assert "nothing was sent" not in out
+
+
+def test_a_sent_nothing_header_denies_the_room_reading_outright():
+    """The scope CLAUSE, spliced into all four «sent nothing» glosses from one
+    constant so they cannot drift into saying four different things about one
+    boundary. Saying «this turn» is not enough on its own — the failure was a
+    generalisation, so the block denies the generalisation in words."""
+    header = out = _render(trace=_trace(outcome="timeout"))
+    header = header.split("<what_happened>")[1].split("</what_happened>")[0]
+    assert "a fact about THIS TURN and nothing else" in header
+    assert "does not describe what any other turn of yours sent" in header
+    # **The header talks about the TURN and nothing else**, including about
+    # the transcript. It carried a clause about delivered replies until the
+    # journey control (#199's own positive control) scored it as widening the
+    # claim past the turn — which it was, in a header whose one job is to not
+    # widen. The transcript's legend owns everything about the transcript.
+    assert "delivered" not in header
+    assert "How to read" not in header
+    assert "read off the send record" in out
+
+
+def test_the_rollup_render_marks_and_explains_the_same_way():
+    """The event-path fold reads the same rows through the same renderer. A
+    delivery mark in the tag fold's transcript and a bare one in the rollup's
+    would be one token meaning two things to the same model."""
+    out = render_rollup_input(
+        prior=None, display_name="Nora", tz=UTC,
+        rows=(_row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True),),
+    )
+    assert "Nora (delivered): 路線係咁" in out
+    assert "<how_to_read_the_transcript>" in out
+
+
+def test_the_rollup_verdict_render_sees_the_same_marked_transcript():
+    """The event path's TWO calls — the rollup position and its judge — read
+    the same batch, and D4's whole point is that they must never disagree
+    about what happened. Routing the position call through `_transcript_block`
+    and leaving the judge on a bare `_transcript` would give the two exactly
+    that disagreement about the one thing this branch adds: whether a line of
+    hers went out. It was guarded by nothing until this existed — this
+    renderer had no test at all."""
+    rows = (_row(1, 1_756_000_920_000, "Miles", "去邊食"),
+            _row(2, 1_756_000_980_000, None, "路線係咁", is_nora=True))
+    verdict = render_rollup_verdict_input(rows=rows, display_name="Nora", tz=UTC)
+    position = render_rollup_input(
+        prior=None, rows=rows, display_name="Nora", tz=UTC)
+    assert "Nora (delivered): 路線係咁" in verdict
+    assert "<how_to_read_the_transcript>" in verdict
+    # The judge's block IS the position call's block, minus the prior.
+    assert verdict.split("<conversation>")[1] == position.split("<conversation>")[1]
+
+
+def test_every_gloss_that_sent_nothing_scopes_itself_to_the_turn():
+    """**Four outcomes send nothing, not two**, and two of them were scoped by
+    a clause no test read. `silent` and `vetoed` say «no delivery was
+    attempted» and «every attempt was refused by a guard» — both true of the
+    turn, both silent about the room, which is the exact shape that produced
+    #199 on `llm_error`. Their scoping was measured unguarded: restoring
+    master's wording on either left the suite green."""
+    for outcome, scoped in (
+        ("silent", "you chose to say nothing on this turn"),
+        ("vetoed", "on this turn you tried to reply"),
+        ("timeout", "this turn's model call did not finish in time"),
+        ("llm_error", "this turn's model call failed"),
+    ):
+        out = _render(trace=_trace(outcome=outcome))
+        header = out.split("<what_happened>")[1].split("</what_happened>")[0]
+        assert scoped in header, f"{outcome}: {scoped!r} not in {header!r}"
+        assert "a fact about THIS TURN and nothing else" in header, outcome
+    # And the two that DID send something carry no scope clause at all —
+    # there is nothing to scope, and a clause on every outcome would be noise
+    # the reader learns to skip.
+    for outcome in ("send_reply", "recovered"):
+        out = _render(trace=_trace(outcome=outcome))
+        header = out.split("<what_happened>")[1].split("</what_happened>")[0]
+        assert "a fact about THIS TURN" not in header, outcome

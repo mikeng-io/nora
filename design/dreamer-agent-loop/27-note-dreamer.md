@@ -589,6 +589,23 @@ book Yardbird for the 9th"* is an intention she stated, not the group settling
 anything — closing a note on it is self-attestation deciding a retirement,
 which is the one thing no measure in this repo may rest on.
 
+**NARROWED 2026-09-11 (issue #199): her DELIVERED rows are.** The rule above
+is about a claim she made; `delivery_status == SENT` is not a claim she made —
+the sender writes it back once the platform has accepted the message, which is
+A9's record-first/send-after pair answering *did this reach anybody*. The
+filter made one whole class of note unclosable by construction: a closing
+condition can name something only SHE can do ("Nora successfully sends a
+route"), so the pass whose job is to retire it could never see the thing that
+satisfied it. Her delivered rows are now rendered in their own marked block
+and a `closed` verdict may cite one. Everything else derived from the evidence
+stays human-only — the quiet-room reading and `_covers`, so `expired`/`moot`
+remain unreachable through her — and a `PENDING` or `FAILED` row of hers is
+still the self-attestation this paragraph refuses. A discharge is never
+grounded on a row of hers: the refusal sits past `_run_discharge`'s single
+`cited_row` resolution, on its own `self_cited` outcome, so a note she
+closed retires with no commitment and no person-claim routed out of it
+(design 39 D7).
+
 **A failed record read leaves the note standing**, counted apart from an
 honestly quiet room. Both render identically to the model — its job is the same
 either way, decide nothing — but they are different states for the operator, and

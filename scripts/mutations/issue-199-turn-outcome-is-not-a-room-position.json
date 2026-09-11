@@ -1,0 +1,191 @@
+[
+ {
+  "name": "#199 A1 the llm_error gloss is scoped to the turn",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    \"llm_error\": \"this turn's model call failed, so THIS TURN sent nothing\"",
+  "new": "    \"llm_error\": \"the model call failed; nothing was sent\"",
+  "target": "tests/unit/test_debrief_render.py -k a_crashed_turns_header_says_it_is_this_turn_that_sent_nothing"
+ },
+ {
+  "name": "#199 A1 the scope clause denies the room reading outright",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "_THIS_TURN_ONLY = (\n    \". That is a fact about THIS TURN and nothing else — it does not describe \"\n    \"what any other turn of yours sent.\"\n)",
+  "new": "_THIS_TURN_ONLY = \"\"",
+  "target": "tests/unit/test_debrief_render.py -k a_sent_nothing_header_denies_the_room_reading_outright"
+ },
+ {
+  "name": "#199 A1 her own rows carry their delivery state",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "        if row.is_nora:\n            who += f\" ({_delivery(row)})\"",
+  "new": "        if False:\n            who += f\" ({_delivery(row)})\"",
+  "target": "tests/unit/test_debrief_render.py -k her_own_rows_carry_whether_the_room_actually_got_them"
+ },
+ {
+  "name": "#199 A1 the mark is read off the send record, not assumed",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    return _DELIVERED if row.delivery_status is DeliveryStatus.SENT else _NOT_DELIVERED",
+  "new": "    return _DELIVERED",
+  "target": "tests/unit/test_debrief_render.py -k her_own_rows_carry_whether_the_room_actually_got_them"
+ },
+ {
+  "name": "#199 A1 the transcript carries the legend that explains the mark",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "        f\"  <how_to_read_the_transcript>{_TRANSCRIPT_LEGEND}\"\n        \"</how_to_read_the_transcript>\\n\"\n",
+  "new": "",
+  "target": "tests/unit/test_debrief_render.py -k the_transcript_says_what_the_delivery_mark_means"
+ },
+ {
+  "name": "#199 A1 the rollup render goes through the same block, mark and legend",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    block = _transcript_block(rows, display_name=display_name, tz=tz)\n    return (\n        f\"{prior_block}\\n\\n\"\n        f\"<conversation>\\n{block}\\n</conversation>\"\n    )",
+  "new": "    transcript = _transcript(rows, display_name=display_name, tz=tz)\n    return (\n        f\"{prior_block}\\n\\n\"\n        f\"<conversation>\\n  <transcript>\\n{transcript}\\n  </transcript>\\n\"\n        f\"</conversation>\"\n    )",
+  "target": "tests/unit/test_debrief_render.py -k the_rollup_render_marks_and_explains_the_same_way"
+ },
+ {
+  "name": "#199 A2 the deterministic check reaches the verdict at all",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "        contradicted = _delivered_despite_the_outcome(trace, batch)",
+  "new": "        contradicted = None",
+  "target": "tests/unit/test_debrief.py -k the_verdict_can_come_back_false_without_the_model_agreeing"
+ },
+ {
+  "name": "#199 A2 the check fires only on a turn that broke without sending",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "    if trace.outcome not in _BROKEN_TURN_OUTCOMES or not trace.transcript:\n        return None",
+  "new": "    if not trace.transcript:\n        return None",
+  "target": "tests/unit/test_debrief.py -k a_turn_that_actually_replied_is_not_convicted_by_its_own_reply"
+ },
+ {
+  "name": "#199 A2 only a row the record marks SENT is a contradiction",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "        if row.is_nora and row.delivery_status is DeliveryStatus.SENT:\n            return row",
+  "new": "        if row.is_nora:\n            return row",
+  "target": "tests/unit/test_debrief.py -k a_row_of_hers_that_never_reached_the_room_is_not_a_contradiction"
+ },
+ {
+  "name": "#199 A2 a reply delivered while the dead turn ran is seen through the batch",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "        *(row for row in batch\n          if row.id not in own_ids and row.ts >= floor),",
+  "new": "",
+  "target": "tests/unit/test_debrief.py -k a_reply_delivered_while_the_dead_turn_ran_is_seen_too"
+ },
+ {
+  "name": "#199 A2 the model's grounded verdict is overridden, not merged into",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "            grounded=False, unsupported=claims, created_at=now_ms,",
+  "new": "            grounded=verdict.grounded if verdict is not None else False,\n            unsupported=claims, created_at=now_ms,",
+  "target": "tests/unit/test_debrief.py -k the_verdict_can_come_back_false_without_the_model_agreeing"
+ },
+ {
+  "name": "#199 A2 the code claim goes first, so a verdict at its cap survives",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "    claims = (claim, *existing)[:UNSUPPORTED_MAX_ITEMS]",
+  "new": "    claims = (*existing, claim)",
+  "target": "tests/unit/test_debrief.py -k the_deterministic_claim_survives_a_model_verdict_at_its_cap"
+ },
+ {
+  "name": "#199 A3 a dead turn does not reach the note sink",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "        if notes_sink is not None and trace.outcome in _BROKEN_TURN_OUTCOMES:",
+  "new": "        if notes_sink is not None and False:",
+  "target": "tests/unit/test_debrief.py -k a_dead_turn_never_becomes_a_claim_that_she_never_answered"
+ },
+ {
+  "name": "#199 A4 her delivered rows are citable evidence for a closed verdict",
+  "file": "nora/language/note_curator.py",
+  "old": "            message_ids=frozenset(\n                row.id for row in (*evidence, *own_sends)\n            ),",
+  "new": "            message_ids=frozenset(row.id for row in evidence),",
+  "target": "tests/unit/test_note_curator.py -k a_reply_she_actually_delivered_can_close_a_note"
+ },
+ {
+  "name": "#199 A4 only a row the record marks SENT is admitted",
+  "file": "nora/language/note_curator.py",
+  "old": "        if row.is_nora and row.delivery_status is DeliveryStatus.SENT",
+  "new": "        if row.is_nora",
+  "target": "tests/unit/test_note_curator.py -k a_message_of_hers_that_never_reached_the_room_is_not_evidence"
+ },
+ {
+  "name": "#199 A4 the curator is told what her rows are before it reads them",
+  "file": "nora/language/note_curator.py",
+  "old": "    tail = (\n        \"\\n\" + _render_own_sends(own_sends, now=now) if own_sends else \"\"\n    )",
+  "new": "    tail = \"\"",
+  "target": "tests/unit/test_note_curator.py -k a_stretch_of_only_her_rows_is_still_not_the_group_speaking"
+ },
+ {
+  "name": "#199 A4 an is_nora citation cannot GROUND a discharge (design 39 D7)",
+  "file": "nora/language/note_curator.py",
+  "old": "        if cited_row is not None and cited_row.is_nora:",
+  "new": "        if False:",
+  "target": "tests/unit/test_note_curator.py -k a_note_closed_on_her_own_row_discharges_nothing"
+ },
+ {
+  "name": "#199 A4 the discharge lookup can SEE her row, so the refusal is a decision and not a miss",
+  "file": "nora/language/note_curator.py",
+  "old": "        ), (*evidence, *own_sends)",
+  "new": "        ), evidence",
+  "target": "tests/unit/test_note_curator.py -k a_note_closed_on_her_own_row_discharges_nothing"
+ },
+ {
+  "name": "#199 A4 expiry still runs on the human evidence alone (positive control: her row cannot expire a note)",
+  "file": "nora/language/note_curator.py",
+  "old": "            anchor_covered=_covers(\n                evidence, rows=rows, created_at=note.created_at,",
+  "new": "            anchor_covered=_covers(\n                (*evidence, *own_sends), rows=rows, created_at=note.created_at,",
+  "target": "tests/unit/test_note_curator.py -k her_own_row_can_never_expire_a_note"
+ },
+ {
+  "name": "#199 A2 the trace half is bounded by a CLOCK, not by the row window",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "        *(row for row in trace.transcript if row.ts >= floor),",
+  "new": "        *trace.transcript,",
+  "target": "tests/unit/test_debrief.py -k a_reply_from_days_ago_in_the_window_is_not_this_turns_business"
+ },
+ {
+  "name": "#199 A2 the batch half is bounded by the same floor",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "          if row.id not in own_ids and row.ts >= floor),",
+  "new": "          if row.id not in own_ids),",
+  "target": "tests/unit/test_debrief.py -k a_batch_reply_from_before_the_turn_is_not_this_turns_business"
+ },
+ {
+  "name": "#199 A2 the floor is a real bound and not zero",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "_CONTEMPORARY_MS = 5 * 60 * 1000",
+  "new": "_CONTEMPORARY_MS = 10 ** 15",
+  "target": "tests/unit/test_debrief.py -k a_reply_from_days_ago_in_the_window_is_not_this_turns_business"
+ },
+ {
+  "name": "#199 A2 the override is counted with what the model had said",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "            metrics.inc(\n                \"nora_debrief_room_scope_overrides_total\",",
+  "new": "            _unused = (\n                \"nora_debrief_room_scope_overrides_total\",",
+  "target": "tests/unit/test_debrief.py -k the_override_says_what_the_model_had_said"
+ },
+ {
+  "name": "#199 A3 the broken-turn set is the two outcomes that BROKE, not every silent one",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "_BROKEN_TURN_OUTCOMES = frozenset({\"llm_error\", \"timeout\"})",
+  "new": "_BROKEN_TURN_OUTCOMES = frozenset({\"llm_error\", \"timeout\", \"silent\", \"vetoed\"})",
+  "target": "tests/unit/test_debrief.py -k only_a_turn_that_broke_is_refused_the_note_path"
+ },
+ {
+  "name": "#199 A1 silent and vetoed carry the scope clause too",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    \"silent\": \"you chose to say nothing on this turn — no delivery was \"\n              \"attempted for it (R-5)\" + _THIS_TURN_ONLY,",
+  "new": "    \"silent\": \"you chose to say nothing — no delivery was attempted (R-5)\",",
+  "target": "tests/unit/test_debrief_render.py -k every_gloss_that_sent_nothing_scopes_itself_to_the_turn"
+ },
+ {
+  "name": "#199 A1 the rollup VERDICT render goes through the same marked block",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    block = _transcript_block(rows, display_name=display_name, tz=tz)\n    return f\"<conversation>\\n{block}\\n</conversation>\"",
+  "new": "    transcript = _transcript(rows, display_name=display_name, tz=tz)\n    return (\n        f\"<conversation>\\n  <transcript>\\n{transcript}\\n  </transcript>\\n\"\n        f\"</conversation>\"\n    )",
+  "target": "tests/unit/test_debrief_render.py -k the_rollup_verdict_render_sees_the_same_marked_transcript"
+ },
+ {
+  "name": "#199 A4 the own-sends block rides on the NON-EMPTY evidence branch too",
+  "file": "nora/language/note_curator.py",
+  "old": "    return \"\\n\".join(lines) + tail",
+  "new": "    return \"\\n\".join(lines)",
+  "target": "tests/unit/test_note_curator.py -k her_delivered_row_is_shown_beside_the_group_and_not_instead_of_it"
+ }
+]

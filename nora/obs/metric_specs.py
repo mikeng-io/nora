@@ -1283,11 +1283,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #   unwritten    — the sink refused the whole batch (TypeError,
     #                  StaleNoteHeadError, ValueError). Never folded in with
     #                  `refused`: one is our boundary, the other is the store's
+    #   broken_turn  — issue #199: the turn ended `llm_error` or `timeout`, so
+    #                  the fold was refused the proposal path before anything
+    #                  was parsed. ONE sample per fold, not one per note —
+    #                  parsing first would have counted `already_read` and
+    #                  `over_cap` for proposals that could never be made
     _CounterSpec(
         "nora_debrief_note_proposals_total",
         "Notes the debrief raised, by disposition: proposed, already_read, "
         "refused, over_cap, malformed, unwritten (the propose did not "
-        "complete; whether it committed is unknown), no_workspace (policy "
+        "complete; whether it committed is unknown), broken_turn (the turn "
+        "ended llm_error or timeout — a dead turn raises no notes), "
+        "no_workspace (policy "
         "names no notebook for the room — a refusal, not a fault) and "
         "no_workspace_unavailable (the resolver itself failed). The last two "
         "are separate because an unmapped room and a broken resolver are "
@@ -1320,6 +1327,26 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "labels as nora_standing_rederivations_total; a persistent gap "
         "between the two is a fold that keeps failing, not a latch.",
         ("trigger",),
+    ),
+    # Issue #199's deterministic half, and it exists because the check it
+    # counts would otherwise make `nora_turn_verdict_total` unreadable.
+    # #189's finding — the judge has never once returned false — is read off
+    # that series, and from now on a `false` there may be code-authored. The
+    # `model_verdict` label says what the MODEL had said at the moment the
+    # code overrode it: `grounded` is the incident's own shape (the judge
+    # blessed a contradicted position), `ungrounded` means both halves agreed,
+    # `absent` means the judge produced nothing usable and this is the only
+    # verdict the turn has. A rising `grounded` is the reading that says the
+    # prompt half is still not seeing what the record does.
+    _CounterSpec(
+        "nora_debrief_room_scope_overrides_total",
+        "Turns the debrief's deterministic check forced to ungrounded — the "
+        "turn broke without sending while a reply of hers was delivered "
+        "contemporaneously — by what the model's own verdict had said: "
+        "grounded, ungrounded, or absent. Subtract nothing from "
+        "nora_turn_verdict_total; read the two together, because a false "
+        "there no longer implies the judge convicted.",
+        ("model_verdict",),
     ),
     _CounterSpec(
         "nora_turn_verdict_total",
@@ -1574,7 +1601,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Gathering/Event service, person_claim -> Honcho's conclusion lane) "
         "and outcome: written (ok), refused (a code-level "
         "decision — malformed, or the closing citation's sender maps to no "
-        "resolvable person to attach it to — never a guess), unavailable "
+        "resolvable person to attach it to — never a guess), self_cited "
+        "(issue #199: the note was closed by citing one of Nora's OWN "
+        "delivered rows, so no person's warrant carries the item — kept apart "
+        "from refused because an unmapped sender is a roster gap an operator "
+        "can close and this boundary never closes), unavailable "
         "(discharge_enabled is true but the owning tier's collaborator is "
         "missing, or its write raised). Emitted by nora.language."
         "note_curator.NoteCuratorAdaptor's discharge step, which runs only "

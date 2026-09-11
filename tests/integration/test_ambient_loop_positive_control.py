@@ -39,19 +39,27 @@ THE ASSERTIONS, EACH AT THE STAGE WHERE IT BECOMES DECIDABLE
    row in the window was delivered (`3a2`), the verdict refuses a position
    claiming no reply was sent (`3b`), no note and no create-candidate come out
    of a dead turn (`3c`), and neither background pass is shown the false
-   premise (`3d`)  — **all five xfail, #199**
+   premise (`3d`)
 4. after the proactive decide tick at +80min — the pass declines to render
    (`unchanged`) and no `kind="proactive"` reminder row exists  (`test_4_*`;
    read its docstring for what a green there is and is not worth)
 5. across the whole run — zero sends into the home room  (`test_5_*`)
 
-**3 IS RED ON MASTER AND THAT IS THE POINT.** This case is the instrument for
-the debrief fix landing on a parallel branch for #199; it does not contain the
-fix. The five stage-3 assertions carry `@pytest.mark.xfail(strict=True)`
-citing the issue, so the gate stays green here while the case stays honest —
-and `strict=True` means the day the fix lands, the XPASS fails the suite and
-forces someone to delete the marker. Run them with the marker removed to see
-what they say (the mutation evidence is in the PR body).
+**3 WAS RED ON MASTER AND THAT WAS THE POINT.** This case was landed as the
+instrument for the debrief fix, not as the fix: the five stage-3 assertions
+carried `@pytest.mark.xfail(strict=True)` citing #199, so the gate stayed
+green here while the case stayed honest, and `strict=True` meant the XPASS
+would fail the suite the day the fix landed and force the markers out. That
+happened on 2026-09-11 and all five markers are gone. They are now ordinary
+assertions and a regression in any of the four fixes reddens this file — which
+is the only reason the instrument was worth building before the fix.
+
+Two things the XPASS caught that the fix's own unit tests did not, and both
+are why a journey case earns its keep: the first draft of the scoped header
+also carried a clause about replies in the transcript, which `3a` scored as
+widening the claim past the turn (correctly — a header whose one job is not to
+widen); and the transcript legend was rendered as a line INSIDE `<transcript>`,
+where `test_0`'s own control counted it as a fourth message.
 
 WHY IT IS NOT GREEN FOR THE WRONG REASON
 ----------------------------------------
@@ -720,7 +728,11 @@ def test_0_every_stage_of_the_journey_actually_ran(journey: _Journey) -> None:
     window = journey.fold_input.split("<transcript>")[1].split("</transcript>")[0]
     lines = [line for line in window.splitlines() if line.strip()]
     assert len(lines) == 3, f"expected question, answer, tag; got {lines}"
-    assert lines[1].startswith("[16:43] Nora:") and ROUTE_ANSWER[:12] in lines[1], (
+    # `"[16:43] Nora"` and not `"[16:43] Nora:"` — the speaker may carry a
+    # trailing marker, which is one of the three shapes `3a2` explicitly
+    # accepts for "the fold is told this row went out". Pinning the colon
+    # would have made this control refuse a fix `3a2` was written to pass.
+    assert lines[1].startswith("[16:43] Nora") and ROUTE_ANSWER[:12] in lines[1], (
         f"her sent row must render at 16:43 as the middle line; got {lines}"
     )
     assert "Nora" not in lines[2], (
@@ -787,21 +799,10 @@ def test_2_the_tag_turn_died_with_llm_error_and_sent_nothing(
 
 
 # ---------------------------------------------------------------------------
-# 3 — after the debrief.  RED ON MASTER (#199).
+# 3 — after the debrief.  RED ON MASTER UNTIL 2026-09-11 (#199); the five
+# `xfail(strict=True)` markers came off when the fix landed, exactly as they
+# were built to.
 # ---------------------------------------------------------------------------
-
-_XFAIL_199 = (
-    "#199: the debrief writes a ROOM position from a TURN outcome. "
-    "`_OUTCOME_GLOSS['llm_error']` in nora/engagement/debrief_render.py reads "
-    "«the model call failed; nothing was sent» with no scope — true of the "
-    "turn, false of the room — and the fold generalised it into «I have sent "
-    "nothing today» with her own sent row two lines above it in the same "
-    "window. The verdict blessed it (`grounded: true`) and the same fold "
-    "proposed a note on the same false premise. The fix is #199's shape items "
-    "1-3 and lands on a parallel branch; this case is the instrument for it, "
-    "not the fix. strict=True so the XPASS fails the suite the day it lands "
-    "and forces this marker to be deleted."
-)
 
 
 #: Wordings that bind a claim to the turn that produced it. Any of them
@@ -812,7 +813,6 @@ _TURN_SCOPE_TOKENS = ("this turn", "the turn", "this attempt")
 _ROOM_SCOPE_TOKENS = ("today", "anywhere", "at all", "any reply", "nothing all")
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_199)
 def test_3a_the_fold_is_told_the_header_is_about_this_turn(
     journey: _Journey,
 ) -> None:
@@ -863,7 +863,6 @@ def test_3a_the_fold_is_told_the_header_is_about_this_turn(
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_199)
 def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
     journey: _Journey,
 ) -> None:
@@ -896,9 +895,26 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
         "just that it exists — it reads:\n"
         + journey.fold_input.split("<transcript>")[1].split("</transcript>")[0]
     )
+    # AND THE ROW ITSELF CARRIES IT. Measured 2026-09-11: with the per-row
+    # marker stripped and only the legend left standing, every assertion in
+    # this file passed — the legend contains the words "delivered" and "was
+    # sent", so the haystack above is satisfied by an explanation of a mark
+    # that is not there. A legend explaining a marker nobody rendered is
+    # precisely the block-that-does-not-say-what-it-is defect this case
+    # exists to catch, one level up.
+    window = journey.fold_input.split("<transcript>")[1].split("</transcript>")[0]
+    her_row = next(
+        line for line in window.splitlines()
+        if line.strip().startswith("[16:43]") and "Nora" in line
+    )
+    assert any(
+        token in her_row.lower() for token in ("delivered", "was sent", "went out")
+    ), (
+        "her row must say on the row that it went out; the legend alone is an "
+        f"explanation of a mark that is not there. The row reads: {her_row!r}"
+    )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_199)
 async def test_3b_the_verdict_refuses_a_position_that_claims_no_reply(
     journey: _Journey,
 ) -> None:
@@ -940,7 +956,6 @@ async def test_3b_the_verdict_refuses_a_position_that_claims_no_reply(
     ) is not None
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_199)
 async def test_3c_no_note_is_proposed_from_a_dead_turn(journey: _Journey) -> None:
     """#199 shape 3 — a note proposed from a dead turn is about the TURN.
 
@@ -962,7 +977,6 @@ async def test_3c_no_note_is_proposed_from_a_dead_turn(journey: _Journey) -> Non
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_199)
 def test_3d_the_proactive_decider_is_never_shown_the_false_premise(
     journey: _Journey,
 ) -> None:

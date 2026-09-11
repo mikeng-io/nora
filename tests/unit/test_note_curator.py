@@ -116,16 +116,26 @@ def _h(curator, note) -> str:
 
 
 def _row(row_id: int, body: str, *, ts: int = NOW + 1000,
-         is_nora: bool = False) -> dict:
+         is_nora: bool = False,
+         delivery_status: DeliveryStatus = DeliveryStatus.SENT) -> dict:
     """One `FakeRecordStore` row, in the store's own dict shape — the note
     tier's evidence source. `conversation_id="conv-1"` matches `_seed`'s own
     `established_in`, so a row appended here is in scope for any note this
-    file creates."""
+    file creates.
+
+    An `is_nora` row carries NO `person_id` and no human sender, exactly as
+    the record holds one: she is the reserved `ai_peer` id, not a person in
+    `identity.toml` (DEC-162 D5). Issue #199's discharge boundary rests on
+    that, so a helper that quietly gave her Miles's `person_id` would make the
+    test that pins it pass against a row production cannot produce.
+    """
     return {
         "id": row_id, "platform": "signal", "conversation_id": "conv-1",
-        "sender_id": "+852111", "sender_name": "Miles", "person_id": "miles",
+        "sender_id": "nora" if is_nora else "+852111",
+        "sender_name": None if is_nora else "Miles",
+        "person_id": None if is_nora else "miles",
         "ts": ts, "body": body, "is_nora": is_nora,
-        "delivery_status": DeliveryStatus.SENT, "raw_json": None,
+        "delivery_status": delivery_status, "raw_json": None,
         "quoted_ts": None, "media_json": "[]",
     }
 
@@ -875,26 +885,93 @@ async def test_a_window_of_only_noras_messages_is_not_a_quiet_room():
     assert "nothing has been said" not in rendered
 
 
-async def test_noras_own_words_are_not_evidence():
-    """`recent` does NOT exclude `is_nora` rows. Her saying «I'll book
-    Yardbird» is an intention she stated, not the group settling anything, and
-    closing a note on it is self-attestation deciding a retirement."""
+async def _close_on(curator, note, *, cited: int) -> int:
+    """Drive one `closed` verdict citing `cited` all the way to the store, and
+    report how many notes it actually retired. The model's half is spoken in
+    HANDLES, never ids (`_h`), because that is the only language production
+    can put in front of it."""
+    kept = await curator.accept(key=WS, items=(
+        {"note_id": _h(curator, note), "verdict": "closed", "why": "x",
+         "cited_message_id": cited},
+    ))
+    return await curator.commit(
+        key=WS, proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ), now_ms=NOW + 5,
+    )
+
+
+async def test_a_reply_she_actually_delivered_can_close_a_note():
+    """**AMENDED 2026-09-11, issue #199.** This test used to assert the
+    opposite — that nothing of hers reaches the evidence at all — on R-74's
+    reading that «I'll book Yardbird» is an intention she stated, not the
+    group settling anything.
+
+    That reading holds for her WORDS and it is unchanged. What it was also
+    doing, unintentionally, is making a whole class of note unclosable by
+    construction: a closing condition can name something only SHE can do
+    («Nora successfully sends a route»), and with her rows filtered out the
+    one pass whose job is to retire it could never see the thing that settled
+    it. The live note (#199) sat open with its condition already met, and the
+    proactive pass raised it at the operator the next morning.
+
+    So `closure` is admitted and `content` is not: the row must be `SENT` —
+    the sender writes that back after the platform accepted the message, so
+    it is a fact about the record rather than a claim she made."""
     store = InMemoryNoteStore()
-    note = await _seed(store, title="Dinner", anchor=None, entities=("ada",),
+    note = await _seed(store, title="Route", anchor=None, entities=("miles",),
+                       revisit_at=NOW - 1)
+    record = FakeRecordStore()
+    record.rows.append(_row(7, "969P from Tin Shui Chi, leave 8:25",
+                            ts=NOW + 1, is_nora=True))
+    curator = _curator(store, record=record)
+
+    rendered = await curator.inputs(key=WS, batch=())
+    assert "969P from Tin Shui Chi" in rendered
+    assert "Each was DELIVERED" in rendered
+
+    assert await _close_on(curator, note, cited=7) == 1
+    assert store.notes[note.id].retire_reason == NoteSupersedeReason.RETIRED_CLOSED
+
+
+async def test_a_message_of_hers_that_never_reached_the_room_is_not_evidence():
+    """`SENT` only, and this is where R-74's self-attestation rule still
+    lands. A `PENDING` row is an intention with nothing behind it — the doer
+    saying it is done — which is exactly what may not decide a retirement."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Route", anchor=None, entities=("miles",),
                        revisit_at=NOW - 1)
     record = FakeRecordStore()
     record.rows.append(_row(7, "I'll book Yardbird for the 9th", ts=NOW + 1,
-                            is_nora=True))
-    record.rows.append(_row(8, "sounds good", ts=NOW + 2))
-    metrics = Metrics()
-    curator = _curator(store, metrics, record=record)
+                            is_nora=True,
+                            delivery_status=DeliveryStatus.PENDING))
+    curator = _curator(store, record=record)
 
     rendered = await curator.inputs(key=WS, batch=())
     assert "I'll book Yardbird" not in rendered
+    assert await _close_on(curator, note, cited=7) == 0
 
+
+async def test_her_own_row_can_never_expire_a_note():
+    """The narrow crack is CLOSURE and nothing else. `expired` means «the
+    moment went by and the room said nothing to it», and `anchor_covered` is
+    computed from the human evidence alone — `_covers` fails closed on an
+    empty one — so a stretch in which only she spoke still cannot establish
+    that a window spans a moment."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=PASSED_ANCHOR,
+                       entities=("ada",))
+    record = FakeRecordStore()
+    record.rows.append(_row(7, "route sent", ts=_after(PASSED_ANCHOR),
+                            is_nora=True))
+    metrics = Metrics()
+    curator = _curator(store, metrics, record=record,
+                       now_ms=_after(PASSED_ANCHOR) + 1)
+
+    await curator.inputs(key=WS, batch=())
     kept = await curator.accept(key=WS, items=(
-        {"note_id": _h(curator, note), "verdict": "closed", "why": "x",
-         "cited_message_id": 7},
+        {"note_id": _h(curator, note), "verdict": "expired", "why": "x"},
     ))
     written = await curator.commit(
         key=WS, proposals=tuple(
@@ -902,7 +979,93 @@ async def test_noras_own_words_are_not_evidence():
                      established_by="run-1") for k in kept
         ), now_ms=NOW + 5,
     )
-    assert written == 0, "citing a message this run never showed is refused"
+    assert written == 0
+    assert metrics.get(
+        "nora_note_curator_dropped_total", reason="anchor_not_covered") == 1
+    assert store.notes[note.id].retired_at is None
+
+
+async def test_a_stretch_of_only_her_rows_is_still_not_the_group_speaking():
+    """`EvidenceState` is derived from the human rows too, so admitting her
+    delivered rows as citable did not quietly turn a quiet room into a busy
+    one. Both readings are rendered side by side and neither contradicts the
+    other: nothing the GROUP has said, and here is what YOU sent."""
+    store = InMemoryNoteStore()
+    await _seed(store, title="Dinner", anchor=None, entities=("ada",),
+                revisit_at=NOW - 1)
+    record = FakeRecordStore()
+    record.rows.append(_row(7, "route sent", ts=NOW + 1, is_nora=True))
+    metrics = Metrics()
+
+    rendered = await _curator(
+        store, metrics, record=record).inputs(key=WS, batch=())
+
+    assert metrics.get(
+        "nora_note_curator_candidates_total", evidence="self_only") == 1
+    assert "nothing the group has said" in rendered
+    assert "your own messages since this note" in rendered
+
+
+async def test_a_note_closed_on_her_own_row_discharges_nothing():
+    """**Design 39 D7 in code: she may see herself, she may not cite herself
+    as the state of the world.** Every discharge item is grounded on the
+    CLOSING CITATION's sender — one resolution in `_run_discharge`, shared by
+    the commitment route and the person-claim route — so admitting her rows to
+    the citation slot without this would make Nora the requester of a
+    Gathering event and the subject of a person-claim in Honcho.
+
+    Refused where the warrant is READ — one guard in `_run_discharge`, past
+    the single `cited_row` resolution, so it covers the commitment route and
+    the person-claim route at once. It could not live further up: her row is
+    in `message_ids` because `_ground` has to accept it as a closing citation,
+    and a row in `message_ids` necessarily reaches this lookup.
+
+    **Its own label, and that is what makes the guard measurable.**
+    `_discharge_commitment` would also refuse her today, on `refused` — «the
+    sender maps to nobody» — but only because she is the reserved `ai_peer` id
+    and carries no `person_id`, which is a fact about `identity.toml` standing
+    in for a rule about warrants. Remove the guard and the counts move from
+    `self_cited` to `refused`; that is the mutation this test kills."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Route", anchor=None, entities=("miles",),
+                       revisit_at=NOW - 1)
+    record = FakeRecordStore()
+    record.rows.append(_row(7, "969P, leave 8:25", ts=NOW + 1, is_nora=True))
+    events = _FakeEventSink()
+    metrics = Metrics()
+    conclusions = _FakeConclusionSink()
+    curator = _curator(store, metrics, record=record, discharge_enabled=True,
+                       events=events, conclusions=conclusions)
+
+    await curator.inputs(key=WS, batch=())
+    kept = await curator.accept(key=WS, items=(
+        {"note_id": _h(curator, note), "verdict": "closed", "why": "x",
+         "cited_message_id": 7,
+         "discharge": [
+             {"kind": "commitment", "title": "Cyberport trip"},
+             {"kind": "person_claim", "content": "likes the 969P"},
+         ]},
+    ))
+    written = await curator.commit(
+        key=WS, proposals=tuple(
+            Proposal(payload=k, instruction_sha256="a" * 64, model="m",
+                     established_by="run-1") for k in kept
+        ), now_ms=NOW + 5,
+    )
+
+    assert written == 1, "the retirement itself still lands"
+    # BOTH routes, from ONE guard past the single `cited_row` resolution.
+    assert events.calls == []
+    assert conclusions.calls == []
+    assert metrics.get("nora_note_discharge_total",
+                       kind="commitment", outcome="self_cited") == 1
+    assert metrics.get("nora_note_discharge_total",
+                       kind="person_claim", outcome="self_cited") == 1
+    # NOT `refused` — an unmapped sender is a roster gap an operator can
+    # close, and this boundary never closes. One bucket for both would report
+    # a permanent rule as a configuration problem.
+    assert metrics.get("nora_note_discharge_total",
+                       kind="commitment", outcome="refused") == 0
 
 
 # ---------------------------------------------------------------------------
@@ -2013,3 +2176,31 @@ def test_every_evidence_row_says_when_it_was_said():
         delivery_status=DeliveryStatus.SENT, raw_json=None, person_name="Miles",
     )
     assert "(3h ago) Miles: I'll sort it" in _render_evidence((row,), "present", now=now)
+
+
+async def test_her_delivered_row_is_shown_beside_the_group_and_not_instead_of_it():
+    """**The own-sends block rides on BOTH branches of the evidence render**,
+    and until this test ran, only the empty-evidence branch was guarded —
+    dropping the tail from the other one left the whole suite green. That is
+    the branch a real room is usually on: somebody said something since the
+    note AND she answered. Without the tail there, her row is in the citation
+    allow-list but rendered nowhere, so the model has an id it was never
+    shown and the note is unclosable again — the exact defect A4 removes,
+    reachable through the ordinary case rather than the quiet one."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Route", anchor=None, entities=("miles",),
+                       revisit_at=NOW - 1)
+    record = FakeRecordStore()
+    record.rows.append(_row(7, "969P from Tin Shui Chi", ts=NOW + 1,
+                            is_nora=True))
+    record.rows.append(_row(8, "thanks", ts=NOW + 2))
+    curator = _curator(store, record=record)
+
+    rendered = await curator.inputs(key=WS, batch=())
+    # Both blocks, and the group's one still reads as the group's.
+    assert "evidence, newest last:" in rendered
+    assert "thanks" in rendered
+    assert "your own messages since this note" in rendered
+    assert "969P from Tin Shui Chi" in rendered
+
+    assert await _close_on(curator, note, cited=7) == 1
