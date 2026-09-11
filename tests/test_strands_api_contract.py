@@ -62,6 +62,28 @@ def test_obligation_3_hook_events_expose_cancel_tool_and_retry():
     )
 
 
+def test_obligation_3b_after_tool_call_result_is_writable():
+    """R-91 / issue #160: `DreamGuard` REPLACES a refused memory read's result.
+
+    `BeforeToolCallEvent.cancel_tool` is the only way to stop a call from
+    running and the executor turns it into an ERROR `ToolResult` — which is
+    exactly what a spent budget must not look like. The rewrite happens in the
+    after-hook and depends on `result` being one of the writable fields:
+    `BaseHookEvent.__setattr__` raises `AttributeError` for every field
+    `_can_write` does not name. Asserted against the real event rather than
+    the class, because `_can_write` is an instance method and a drift here
+    would otherwise surface as a swallowed exception inside an unattended
+    background run.
+    """
+    from strands.hooks import AfterToolCallEvent
+
+    can_write = AfterToolCallEvent._can_write
+    assert can_write(AfterToolCallEvent, "result"), (
+        "DRIFT: AfterToolCallEvent.result is no longer writable — the per-pass "
+        "memory refusal cannot be rendered as R-27 `unavailable` (R-91)"
+    )
+
+
 def test_obligation_4_openai_model_accepts_a_custom_client():
     """Call-site drift, not design drift (spec C.10 obligation 4, decided 2026-08-03).
 

@@ -30,7 +30,6 @@ import sqlalchemy as sa
 from nora.agent import factory
 from nora.agent import tool_choice as tool_choice_module
 from nora.agent.dreamer import (
-    AdaptorBudget,
     AdaptorGrant,
     AdaptorSchedule,
     DreamerRuntime,
@@ -43,6 +42,7 @@ from nora.agent.guards import LeakGuard
 from nora.agent.registry import ToolRegistry
 from nora.agent.structured import ask_structured, build_structured_model
 from nora.agent.whereis import Circle
+from nora.app.composition import _adaptor_budget
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
@@ -1045,11 +1045,12 @@ def build_note_candidates_runtime(
     runtime = DreamerRuntime(
         models=models, instructions=instructions, tools=_NoDreamTools(),
         budgets={},
-        default_budget=AdaptorBudget(
-            turns=fallback.turns, total_tokens=fallback.total_tokens,
-            output_tokens=fallback.output_tokens,
-            timeout_seconds=fallback.timeout_seconds,
-        ),
+        # The composition root's OWN converter, not a fourth hand-build of the
+        # same five fields: `max_memory_calls` is defaulted on both types, so a
+        # site that forgot it would hand the runtime a number the operator did
+        # not choose — silently, and in the suite that is supposed to MEASURE
+        # that number.
+        default_budget=_adaptor_budget(fallback),
         retry=factory.build_retry_policy(timeout_seconds=cfg.llm.timeout_seconds),
         metrics=Metrics(), model_name=model,
         # The production schedule entry's shape (composition.py), with the
@@ -1293,14 +1294,8 @@ def build_proactive_runtime(
     budget = cfg.dreamer.budget_for("proactive")
     runtime = DreamerRuntime(
         models=models, instructions=instructions, tools=tools,
-        budgets={"proactive": AdaptorBudget(
-            turns=budget.turns, total_tokens=budget.total_tokens,
-            output_tokens=budget.output_tokens, timeout_seconds=budget.timeout_seconds,
-        )},
-        default_budget=AdaptorBudget(
-            turns=budget.turns, total_tokens=budget.total_tokens,
-            output_tokens=budget.output_tokens, timeout_seconds=budget.timeout_seconds,
-        ),
+        budgets={"proactive": _adaptor_budget(budget)},
+        default_budget=_adaptor_budget(budget),
         retry=factory.build_retry_policy(timeout_seconds=cfg.llm.timeout_seconds),
         metrics=Metrics(), model_name=model,
         schedules={"proactive": AdaptorSchedule(min_interval_seconds=86400, batch_limit=1)},
@@ -1326,10 +1321,12 @@ class ProactiveDecideDrive:
     #: `nora_reminders_created_total` over its statuses. A quiet case with
     #: attempts and no rows is a false positive the store cannot show.
     remind_attempts: int = 0
-    #: Memory reads the turn made — `about` and `ask_memory` (counted on
-    #: `nora_room_lookups_total`) plus `search_memory_workspace` (on
-    #: `nora_tool_calls_total`), every status. Objective version 2 requires
-    #: one before any `remind`; the grader reads this.
+    #: Memory reads the turn made — `about`, `ask_memory` and `lookup_person`
+    #: (counted on `nora_room_lookups_total`) plus `search_memory_workspace`
+    #: (on `nora_tool_calls_total`), every status, and the same four the pass
+    #: ceiling counts. Objective version 2 requires one before any `remind`;
+    #: the grader reads this. A read the ceiling REFUSED never ran and is not
+    #: here — `memory_calls_from`.
     memory_calls: int = 0
 
 
@@ -1500,10 +1497,22 @@ async def run_proactive_decide_case(
 
 
 #: The memory verbs the decide turn holds (39 D3) and the series each counts
-#: on — the two room-scoped ones on the room-lookup series (`_record_room`),
+#: on — the three room-scoped ones on the room-lookup series (`_record_room`),
 #: the workspace one on the tool-call series (`_record`).
+#:
+#: **It is `nora.agent.dreamer.MEMORY_TOOLS`, and the two are pinned against
+#: each other** (`tests/unit/test_dream_memory_budget.py`). `lookup_person`
+#: was missing here until 2026-09-11 and the omission was not cosmetic: the
+#: grader FAILS a `remind` case that made NO memory read
+#: (`evals/proactive.py`), and `d11` is the case whose whole point is that
+#: deciding it requires resolving a handle — so a pass that spent its ration
+#: on `lookup_person`, the verb granted for exactly that (issue #145), scored
+#: zero memory calls and failed for doing the right thing. A cost instrument
+#: that cannot see one of the four verbs it is bounding is measuring a
+#: different pass from the one that ran.
 _MEMORY_VERB_SERIES: Mapping[str, frozenset[str]] = {
-    "nora_room_lookups_total": frozenset({"about", "ask_memory"}),
+    "nora_room_lookups_total": frozenset(
+        {"about", "ask_memory", "lookup_person"}),
     "nora_tool_calls_total": frozenset({"search_memory_workspace"}),
 }
 
@@ -1511,7 +1520,18 @@ _MEMORY_VERB_SERIES: Mapping[str, frozenset[str]] = {
 def memory_calls_from(metrics: Metrics) -> int:
     """How many memory reads a run made, whatever they answered, read off
     the tools' own counters. Every status counts — the rule is that she
-    ASKED, and an `unavailable` answer is still an ask."""
+    ASKED, and an `unavailable` answer is still an ask.
+
+    **A read the PASS CEILING refused is not counted here, and cannot be**
+    (R-91, issue #160): the guard stops that call before the tool runs, so no
+    tool counter moves. The consequence is worth stating rather than
+    discovering — a case's `max_memory_calls` assertion (`evals/proactive.py`)
+    can no longer trip while the ceiling is at or below it, so on `d11` it has
+    become a check that the ceiling is WIRED rather than a measurement of how
+    much the pass wanted to read. What the model wanted is on
+    `nora_dream_guard_vetoes_total{rule="memory-budget"}`, which this drive
+    does not reach — the runtime holds its own `Metrics`. Issue #205.
+    """
     total = 0.0
     for (name, labels), value in metrics.snapshot().items():
         verbs = _MEMORY_VERB_SERIES.get(name)

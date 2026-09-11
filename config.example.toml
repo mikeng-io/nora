@@ -1406,7 +1406,8 @@ reasoning_effort = "none"
 model = "ollamacloud/deepseek-v4-flash:0731"
 
 # Per-adaptor run ceilings (`DreamBudgetConfig`; an adaptor with no block gets
-# the defaults: 6 turns, 40000 total tokens, 4000 output tokens, 120 s). The
+# the defaults: 6 turns, 40000 total tokens, 4000 output tokens, 120 s, and 2
+# memory reads per pass). The
 # proactive adaptor (design/dreamer-agent-loop/39 D1, revised by issue #136)
 # ticks hourly per workspace but RENDERS — pays a model call — only on a daily
 # floor or a change in a quiet workspace, and researches with real tools —
@@ -1439,6 +1440,35 @@ output_tokens = 10000
 # 120 was not enough to observe one: a live run was still going at 58s and was
 # cut off before it decided anything.
 timeout_seconds = 240.0
+# THE PER-PASS MEMORY CEILING (issue #160). How many reads ONE pass may make
+# across `about`, `ask_memory`, `search_memory_workspace` and `lookup_person`
+# TOGETHER — not per verb. The per-tool budgets above ([llm.budgets] and the
+# NATIVE_TOOLS table) bound each verb on its own, which is exactly what a pass
+# spends by asking four different verbs the same question.
+#
+# The measurement that put it here: a decide turn on the `friends` workspace
+# (Langfuse 340373cd, 2026-09-10 18:03 HKT) made `note_read` three times,
+# `about`, `search_memory_workspace` and `ask_memory` — six held-state reads
+# for TWO notes whose two handles its own `<people>` block already carried.
+# Four rewrites of the objective moved the memory count from 7-8 down to 3-5
+# and never reached 2; the fifth, which stated the cap in words, cost `d02`
+# 5/5 -> 1/5 because a model told it has a hard cap declines the work rather
+# than spending less. So the ceiling is enforced in CODE and the objective says
+# nothing about it.
+#
+# The (N+1)th read is ANSWERED — R-27 `unavailable` with a reason the model can
+# read — never an error, never a silent empty. 2 is `d11`'s grading budget: the
+# one read the objective requires before any `remind`, plus one. Raise it for a
+# workspace whose notes genuinely involve more people than the index can settle;
+# the reading that says so is the decide suite losing recall at 2 that it keeps
+# at 3. Omit the key and every adaptor gets 2 by default — a ceiling by
+# omission, never an unbounded pass.
+#
+# It is PER SAMPLE, so an adaptor with `samples = N` may make N x this per
+# fire — the same grain the three token caps above have. Inert here (the
+# proactive adaptor takes one sample per fire) and stated so that it is not a
+# surprise the day it is not.
+max_memory_calls = 2
 
 
 [obs.logging]
