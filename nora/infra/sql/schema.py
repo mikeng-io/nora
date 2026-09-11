@@ -2306,10 +2306,12 @@ DECISION_LOG = sa.Table(
         f"verdict in ({_in_list(VERDICTS)})",
         name="decision_log_verdict_is_known_check",
     ),
-    # The prompt budget, as DDL. `reason` rides into the Relevance Gate's
-    # prompt on every quiet window in every opted-in room, so an unbounded one
-    # is a per-window token cost paid forever; capped in BOTH places like every
-    # other injected model text in this schema.
+    # The prompt budget, as DDL. `reason` rides into the participation turn's
+    # prompt and the proactive decide turn's, 20 rows at a time, so an
+    # unbounded one is a per-turn token cost paid forever; capped in BOTH
+    # places like every other injected text in this schema. (NOT the Relevance
+    # Gate's prompt — an earlier draft of this comment said so and the gate was
+    # deliberately excluded from this log before it shipped.)
     sa.CheckConstraint(
         f"length(reason) <= {REASON_MAX_CHARS}",
         name="decision_log_reason_fits_the_block_check",

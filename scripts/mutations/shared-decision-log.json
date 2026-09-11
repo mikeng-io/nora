@@ -51,15 +51,15 @@
   {
     "name": "#199 the tag path records its outcome",
     "file": "nora/engagement/pipeline.py",
-    "old": "                await self._decisions.record(\n                    writer=\"tag\", platform=msg.platform,\n                    conversation_id=msg.conversation_id,\n                    verdict=\"replied\" if delivered else \"failed\",\n                    reason=real_outcome,\n                )",
-    "new": "                pass",
+    "old": "                    verdict=(\n                        \"replied\" if delivered\n                        else \"silent\" if real_outcome == \"silent\"\n                        else \"failed\"\n                    ),\n                    reason=real_outcome,",
+    "new": "                    verdict=\"failed\",\n                    reason=real_outcome,",
     "target": "tests/unit/test_engagement_pipeline.py -k tag_turn_that_replies_is_written_to_the_decision_log"
   },
   {
     "name": "#199 a tag turn that said nothing is recorded too (the write is BEFORE the return)",
     "file": "nora/engagement/pipeline.py",
-    "old": "            if self._decisions is not None:\n                await self._decisions.record(",
-    "new": "            if self._decisions is not None and delivered:\n                await self._decisions.record(",
+    "old": "            if self._decisions is not None:\n                await self._decisions.record(\n                    writer=\"tag\", platform=msg.platform,\n                    conversation_id=msg.conversation_id,\n                    # THREE outcomes",
+    "new": "            if self._decisions is not None and delivered:\n                await self._decisions.record(\n                    writer=\"tag\", platform=msg.platform,\n                    conversation_id=msg.conversation_id,\n                    # THREE outcomes",
     "target": "tests/unit/test_engagement_pipeline.py -k tag_turn_that_said_nothing_is_written_too"
   },
   {
@@ -72,8 +72,8 @@
   {
     "name": "#199 the participation turn's read excludes its own writers",
     "file": "nora/app/fire.py",
-    "old": "            if row.writer in (\"proactive_decide\", \"proactive_act\")\n        )\n\n    def _room_label",
-    "new": "        )\n\n    def _room_label",
+    "old": "            writers=PARTICIPATION_DECISION_WRITERS,\n        )\n        return tuple((self._room_label(row), (row,)) for row in rows)",
+    "new": "        )\n        return tuple((self._room_label(row), (row,)) for row in rows)",
     "target": "tests/unit/test_fire_path.py -k participation_turn_never_reads_back_its_own_rows"
   },
   {
@@ -100,15 +100,15 @@
   {
     "name": "#199 the proactive pass's read excludes its own writers",
     "file": "nora/language/proactive.py",
-    "old": "                if row.writer in (\"gate\", \"participation\", \"tag\")",
-    "new": "                if True",
+    "old": "            writers=PROACTIVE_DECISION_WRITERS,\n        )\n        labels =",
+    "new": "        )\n        labels =",
     "target": "tests/unit/test_proactive_adaptor.py -k pass_never_reads_back_its_own_proactive_rows"
   },
   {
     "name": "#199 the two decision blocks keep separate names",
     "file": "nora/domain/decision_log.py",
-    "old": "        f'<loop_decisions untrusted=\"true\" note=\"{escape(_NOTE)}\">\\n'",
-    "new": "        f'<decisions untrusted=\"true\" note=\"{escape(_NOTE)}\">\\n'",
+    "old": "        f'<loop_decisions untrusted=\"true\" note=\"{escape_attr(_note_for(writers))}\">\\n'",
+    "new": "        f'<decisions untrusted=\"true\" note=\"{escape_attr(_note_for(writers))}\">\\n'",
     "target": "tests/unit/test_proactive_adaptor.py -k the_two_decision_blocks_keep_their_separate_names"
   },
   {
@@ -163,22 +163,78 @@
   {
     "name": "#199 the double's LIMIT takes the newest rows too",
     "file": "nora/testing/decision_log.py",
-    "old": "        return tuple(inside[-limit:]) if limit >= 0 else ()",
-    "new": "        return tuple(inside[:limit]) if limit >= 0 else ()",
+    "old": "        return tuple(inside[-limit:]) if limit > 0 else ()",
+    "new": "        return tuple(inside[:limit]) if limit > 0 else ()",
     "target": "tests/contract/test_decision_log_store_contract.py -k limit_takes_the_newest_rows"
   },
   {
     "name": "#199 the store's window bound is real",
     "file": "nora/infra/sql/decision_log.py",
-    "old": "            .where(scope, DECISION_LOG.c.ts >= since_ms)",
-    "new": "            .where(scope)",
+    "old": "        where = [scope, DECISION_LOG.c.ts >= since_ms]",
+    "new": "        where = [scope]",
     "target": "tests/contract/test_decision_log_store_contract.py -k older_than_the_window"
   },
   {
     "name": "#199 the workspace read does not leak another workspace",
     "file": "nora/infra/sql/decision_log.py",
-    "old": "        return await self._read(DECISION_LOG.c.workspace == workspace,\n                                since_ms=since_ms, limit=limit)",
-    "new": "        return await self._read(sa.true(), since_ms=since_ms, limit=limit)",
+    "old": "        return await self._read(DECISION_LOG.c.workspace == workspace,\n                                since_ms=since_ms, limit=limit, writers=writers)",
+    "new": "        return await self._read(sa.true(),\n                                since_ms=since_ms, limit=limit, writers=writers)",
     "target": "tests/contract/test_decision_log_store_contract.py -k workspace_read_spans_its_rooms"
+  },
+  {
+    "name": "#199 a tag turn that DELIBERATELY said nothing is not called a failure",
+    "file": "nora/engagement/pipeline.py",
+    "old": "                        else \"silent\" if real_outcome == \"silent\"\n",
+    "new": "",
+    "target": "tests/unit/test_engagement_pipeline.py -k tag_turn_that_said_nothing_is_written_too"
+  },
+  {
+    "name": "#199 a tag turn that FAULTED still writes a row",
+    "file": "nora/engagement/pipeline.py",
+    "old": "            if self._decisions is not None:\n                await self._decisions.record(\n                    writer=\"tag\", platform=msg.platform,\n                    conversation_id=msg.conversation_id,\n                    verdict=\"failed\", reason=\"handler_error\",\n                )",
+    "new": "            pass",
+    "target": "tests/unit/test_engagement_pipeline.py -k tag_turn_that_faults_is_written_too"
+  },
+  {
+    "name": "#199 the writer filter is in the QUERY, not over what came back",
+    "file": "nora/infra/sql/decision_log.py",
+    "old": "        if writers:\n            where.append(DECISION_LOG.c.writer.in_(tuple(writers)))",
+    "new": "        pass",
+    "target": "tests/contract/test_decision_log_store_contract.py -k workspace_read_narrows_by_writer_inside_the_bound"
+  },
+  {
+    "name": "#199 the double narrows by writer before the bound too",
+    "file": "nora/testing/decision_log.py",
+    "old": "                and (not writers or r.writer in writers)",
+    "new": "",
+    "target": "tests/contract/test_decision_log_store_contract.py -k workspace_read_narrows_by_writer_inside_the_bound"
+  },
+  {
+    "name": "#199 the recorder passes the reader's writer set to the store",
+    "file": "nora/domain/decision_log.py",
+    "old": "                writers=tuple(writers), limit=self._limit,",
+    "new": "                limit=self._limit,",
+    "target": "tests/domain/test_decision_log.py -k writer_filter_is_applied_before_the_bound"
+  },
+  {
+    "name": "#199 a blank workspace answers nothing",
+    "file": "nora/domain/decision_log.py",
+    "old": "        if not workspace:\n            return ()\n        return await self._read(",
+    "new": "        return await self._read(",
+    "target": "tests/domain/test_decision_log.py -k blank_workspace_answers_nothing"
+  },
+  {
+    "name": "#199 a limit of zero answers nothing on the double too",
+    "file": "nora/testing/decision_log.py",
+    "old": "        return tuple(inside[-limit:]) if limit > 0 else ()",
+    "new": "        return tuple(inside[-limit:]) if limit >= 0 else ()",
+    "target": "tests/contract/test_decision_log_store_contract.py -k limit_of_zero_answers_nothing"
+  },
+  {
+    "name": "#199 the block names ONLY the deciders it carries",
+    "file": "nora/domain/decision_log.py",
+    "old": "    names = [w for w in WRITERS if w in set(writers)] or list(WRITERS)",
+    "new": "    names = list(WRITERS)",
+    "target": "tests/domain/test_decision_log.py -k note_names_only_the_writers_it_carries"
   }
 ]

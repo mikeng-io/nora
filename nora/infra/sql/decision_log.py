@@ -18,6 +18,7 @@ replacing would lose a decision that happened.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import sqlalchemy as sa
@@ -81,19 +82,35 @@ class SqlDecisionLogStore:
                                 since_ms=since_ms, limit=limit)
 
     async def recent_for_workspace(
-        self, *, workspace: str, since_ms: int, limit: int = RECENT_LIMIT,
+        self, *, workspace: str, since_ms: int,
+        writers: Sequence[str] = (), limit: int = RECENT_LIMIT,
     ) -> tuple[DecisionRow, ...]:
         """The same read across every room of one workspace, served by
-        `idx_decision_log_workspace_ts`."""
+        `idx_decision_log_workspace_ts`.
+
+        **`writers` narrows in the WHERE, so `LIMIT` counts rows the caller can
+        actually use.** Every reader excludes its own writer, and the `gate`
+        writer out-produces the rest by an order of magnitude — filtered after
+        the read, its rows fill the bound and the caller gets nothing. Empty
+        means every writer.
+
+        The `IN` sits after `workspace` in the predicate and before the sort, so
+        `idx_decision_log_workspace_ts` still drives the scan; `writer` is a
+        low-cardinality filter over what that index already ordered.
+        """
         return await self._read(DECISION_LOG.c.workspace == workspace,
-                                since_ms=since_ms, limit=limit)
+                                since_ms=since_ms, limit=limit, writers=writers)
 
     async def _read(
         self, scope: sa.ColumnElement[bool], *, since_ms: int, limit: int,
+        writers: Sequence[str] = (),
     ) -> tuple[DecisionRow, ...]:
+        where = [scope, DECISION_LOG.c.ts >= since_ms]
+        if writers:
+            where.append(DECISION_LOG.c.writer.in_(tuple(writers)))
         stmt = (
             sa.select(DECISION_LOG)
-            .where(scope, DECISION_LOG.c.ts >= since_ms)
+            .where(*where)
             .order_by(DECISION_LOG.c.ts.desc(), DECISION_LOG.c.id.desc())
             .limit(limit)
         )

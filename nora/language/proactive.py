@@ -89,7 +89,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from zoneinfo import ZoneInfo
 
-from nora.domain.decision_log import DecisionLogRecorder, render_decisions
+from nora.domain.decision_log import (
+    PROACTIVE_DECISION_WRITERS,
+    DecisionLogRecorder,
+    render_decisions,
+)
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import (
     Note,
@@ -756,6 +760,10 @@ class ProactiveAdaptor:
         # cannot answer this question at all.
         rows = await self._decisions.read_workspace(
             platform=home.platform, workspace=key,
+            # In the QUERY. Post-filtering would let 20 `gate` no_go rows evict
+            # the one `participation spoke` row this pass exists to see, and
+            # the block would say «nothing happened» about the busiest room.
+            writers=PROACTIVE_DECISION_WRITERS,
         )
         labels = {(room.platform, room.conversation_id): room.label for room in rooms}
         return render_decisions(
@@ -765,9 +773,13 @@ class ProactiveAdaptor:
                     (row,),
                 )
                 for row in rows
-                if row.writer in ("gate", "participation", "tag")
             ],
             now=now,
+            # The SAME constant the query used, so the note names exactly the
+            # deciders this block carries — a decider it excluded is stated as
+            # absent rather than silently missing, and its absence stops
+            # reading as «that decider never ran».
+            writers=PROACTIVE_DECISION_WRITERS,
             empty="(nothing happened in these rooms in this window)",
         )
 

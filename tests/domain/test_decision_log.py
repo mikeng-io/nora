@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 import pytest
 
 from nora.domain.decision_log import (
+    PARTICIPATION_DECISION_WRITERS,
     REASON_MAX_CHARS,
     RECENT_LIMIT,
     RECENT_WINDOW_MS,
@@ -65,7 +66,9 @@ class _Broken:
     async def append(self, *, row):
         raise RuntimeError("decision log down")
 
-    async def recent(self, *, conversation_id, since_ms, limit=RECENT_LIMIT):
+    async def recent_for_workspace(
+        self, *, workspace, since_ms, writers=(), limit=RECENT_LIMIT,
+    ):
         raise RuntimeError("decision log down")
 
 
@@ -97,7 +100,9 @@ async def test_a_failing_read_answers_no_rows_and_is_counted_separately():
     would tell them apart."""
     metrics = Metrics()
     recorder = _recorder(_Broken(), metrics=metrics)
-    assert await recorder.read(platform="signal", conversation_id="g1") == ()
+    assert await recorder.read_workspace(
+        platform="signal", workspace="friends",
+    ) == ()
     assert metrics.get(
         "nora_errors_total", stage="decision_log_read", platform="signal",
     ) == 1
@@ -115,16 +120,25 @@ async def test_a_store_that_hangs_costs_the_timeout_and_nothing_more():
 
     class _Hangs:
         async def append(self, *, row):
-            await asyncio.sleep(30)
+            await asyncio.sleep(5)
 
-        async def recent(self, *, conversation_id, since_ms, limit=RECENT_LIMIT):
-            await asyncio.sleep(30)
+        async def recent_for_workspace(
+            self, *, workspace, since_ms, writers=(), limit=RECENT_LIMIT,
+        ):
+            await asyncio.sleep(5)
 
-    recorder = _recorder(_Hangs(), timeout_seconds=0.01)
+    # 0.5s against a 5s sleep, NOT 0.01s against 30s. The margin is the point:
+    # a 10ms wall clock on a loaded machine is a coin flip, and this test was
+    # observed red once in five runs at that setting — on the assertion that
+    # carries this whole module's central safety claim. A falsification that
+    # flaps is a falsification nobody can cite.
+    recorder = _recorder(_Hangs(), timeout_seconds=0.5)
     assert await recorder.record(
         writer="gate", platform="signal", conversation_id="g1", verdict="go",
     ) is None
-    assert await recorder.read(platform="signal", conversation_id="g1") == ()
+    assert await recorder.read_workspace(
+        platform="signal", workspace="friends",
+    ) == ()
 
 
 async def test_a_long_reason_is_truncated_rather_than_dropped():
@@ -213,7 +227,9 @@ async def test_the_read_window_is_24_hours_and_the_recorder_applies_it():
     await store.append(row=_row(id="old", ts=NOW_MS - RECENT_WINDOW_MS - 1,
                                 reason="yesterday"))
     await store.append(row=_row(id="new", ts=NOW_MS - 1000, reason="today"))
-    rows = await _recorder(store).read(platform="signal", conversation_id="g1")
+    rows = await _recorder(store).read_workspace(
+        platform="signal", workspace="friends",
+    )
     assert [r.reason for r in rows] == ["today"]
 
 
@@ -317,3 +333,89 @@ def test_every_declared_writer_renders(writer):
 def test_every_declared_verdict_renders(verdict):
     block = render_decisions([("", (_row(verdict=verdict),))], now=NOW)
     assert f"gate {verdict}" in block
+
+
+async def test_the_writer_filter_is_applied_before_the_bound():
+    """**The finding that broke the feature, as a property.** The bound is 20
+    rows and every reader wants a subset — each excludes its own writer. The
+    `gate` writer produces one row per closed participation window per room,
+    which out-produces every other writer by an order of magnitude, so a filter
+    applied to what came BACK hands the caller 20 gate rows and nothing it can
+    use. Silently: an empty result renders as no block at all.
+
+    Measured before the fix on exactly this shape — one `proactive_decide` row
+    followed by 25 gate rows — the participation reader kept 0 of 20.
+
+    Falsification: drop `writers=` from `DecisionLogRecorder.read_workspace`
+    (or from either store's query) and this goes red.
+    """
+    store = InMemoryDecisionLogStore()
+    await store.append(row=_row(id="old-proactive", writer="proactive_decide",
+                                verdict="remind", ts=NOW_MS - 7_200_000))
+    for i in range(25):
+        await store.append(row=_row(id=f"gate-{i:02d}", writer="gate",
+                                    verdict="no_go", ts=NOW_MS - 60_000 + i))
+    rows = await _recorder(store).read_workspace(
+        platform="signal", workspace="friends",
+        writers=("proactive_decide", "proactive_act"),
+    )
+    assert [r.id for r in rows] == ["old-proactive"]
+
+
+async def test_a_blank_workspace_answers_nothing():
+    """An unmapped room writes `workspace=""` deliberately — the wiring gap this
+    module refuses to guess past. So `""` is not a workspace, it is the POOL of
+    every unmapped room in every social unit, and answering it would be the
+    cross-workspace leak the module's own argument forbids.
+
+    Falsification: drop the `if not workspace: return ()` guard in
+    `read_workspace`.
+    """
+    store = InMemoryDecisionLogStore()
+    await store.append(row=_row(id="orphan", workspace="", reason="unmapped"))
+    assert await _recorder(store).read_workspace(
+        platform="signal", workspace="",
+    ) == ()
+
+
+def test_the_note_names_only_the_writers_it_carries():
+    """**The review's M2, as a property.** Both readers filter, in opposite
+    directions. A static note enumerating all five deciders told each reader
+    its block contained rows it would never be shown — and absence then reads
+    as FACT: «the gate never ran here», «she has raised nothing», when it is a
+    filter. A block describing a superset of itself is the same defect as a
+    block with no age on its rows, one axis over.
+
+    Falsification: make `_note_for` ignore `writers` and gloss every writer.
+    """
+    block = render_decisions(
+        [("", ())], now=NOW, writers=PARTICIPATION_DECISION_WRITERS,
+    )
+    assert "proactive_decide" in block and "proactive_act" in block
+    for absent in ("gate -", "participation -", "tag -"):
+        assert absent not in block
+    # And it says WHY they are absent, rather than leaving the reader to infer
+    # that those deciders never ran.
+    assert "not in this block at all" in block
+
+
+def test_the_note_speaks_to_the_model_in_the_second_person():
+    """`nora.language.proactive` renders this block beside `<decisions>`, whose
+    note says «what YOU decided to raise». A neighbour speaking about «Nora's
+    own loop» and «her deciders» invites the model — which IS Nora — to read
+    the second block as somebody else's record. Same agent, same prompt, one
+    grammatical person."""
+    block = render_decisions([("", ())], now=NOW, writers=WRITERS)
+    assert "your own ambient loop" in block
+    assert "Nora" not in block
+
+
+def test_the_note_glosses_every_verdict_it_can_show():
+    """A verdict a reader cannot interpret is a row it cannot use. `silent` and
+    `decline` are named as HEALTHY outcomes, because the neighbouring
+    `<decisions>` block uses `silent` with a different meaning and `failed`
+    reads as a defect unless something says otherwise."""
+    block = render_decisions([("", ())], now=NOW, writers=WRITERS)
+    for verdict in VERDICTS:
+        assert verdict in block, verdict
+    assert "HEALTHY OUTCOMES" in block

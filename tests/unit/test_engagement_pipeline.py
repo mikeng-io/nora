@@ -2878,12 +2878,19 @@ async def test_a_tag_turn_that_replies_is_written_to_the_decision_log():
 
 async def test_a_tag_turn_that_said_nothing_is_written_too():
     """The row that matters most, and the one a naive writer misses: it is
-    written BEFORE the `not delivered` return, so a turn that failed is logged
-    as loudly as one that replied. A log that recorded only successes would
-    answer «this room has been quiet» for a room she has failed in four times,
-    which is the opposite of the fact the next decider needs.
+    written BEFORE the `not delivered` return, so a turn that said nothing is
+    logged as loudly as one that replied. A log that recorded only successes
+    would answer «this room has been quiet» for a room she has been silent in
+    four times, which is the opposite of the fact the next decider needs.
 
-    Falsification: move the `record` call below the `if not delivered: return`.
+    **`silent`, not `failed`.** R-5's deliberate silence is the healthy
+    outcome, and labelling it `failed` would make a working turn read as a
+    broken one to whatever renders the block next — DEC-25's rule that a
+    `reason` naming the wrong cause is worse than a missing one, moved into a
+    prompt. `failed` is kept for a turn a guard vetoed or a fault killed.
+
+    Falsification: move the `record` call below the `if not delivered: return`,
+    or collapse the three-way verdict back to `replied`/`failed`.
     """
     store = InMemoryDecisionLogStore()
     pipeline, _, _, _, background = _build_pipeline(
@@ -2896,7 +2903,7 @@ async def test_a_tag_turn_that_said_nothing_is_written_too():
 
     rows = await store.recent(conversation_id="g1", since_ms=0)
     assert [(r.writer, r.verdict, r.reason) for r in rows] == [
-        ("tag", "failed", "silent"),
+        ("tag", "silent", "silent"),
     ]
 
 
@@ -2926,3 +2933,48 @@ async def test_a_decision_log_that_is_down_never_fails_a_tag_reply():
     assert metrics.get(
         "nora_errors_total", stage="decision_log_write", platform="signal",
     ) == 1
+
+
+async def test_a_tag_turn_that_faults_is_written_too():
+    """**The incident's own failure mode.** 2026-09-10's tag turn re-derived an
+    answer participation had just sent and DIED doing it. The write beside
+    `check_outcome` never runs for such a turn — the fault lands in the
+    pipeline's `except BaseException` — so without a row there, the log says
+    nothing happened in that room at 16:44 and the very turn it exists to make
+    visible is the one it misses.
+
+    Written even though the TRACE is deliberately dropped on the same branch,
+    and the two are not in tension: the trace is dropped because that branch
+    cannot know what reached the group, so any outcome it wrote would be a
+    guess. The log's claim is narrower and certain — this turn faulted.
+
+    Falsification: delete the `record` call in `EngagementPipeline.run`'s
+    `except BaseException` and this goes red.
+    """
+    class _ExplodingAssembler:
+        """Raises INSIDE the pipeline's own try. A runner that raises is not
+        enough — `invoke.run` catches that and answers `llm_error`, which is a
+        turn that finished badly rather than a turn that faulted."""
+
+        async def assemble(self, *, request):
+            raise RuntimeError("the context assembly died")
+
+    store = InMemoryDecisionLogStore()
+    pipeline, metrics, _, _, background = _build_pipeline(
+        context_assembler=_ExplodingAssembler(),
+        decisions=_decision_recorder(store),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    # The positive control: the turn really did fault, on the series that
+    # already counted it. A `== 0` assertion here would also be true of a turn
+    # that never ran.
+    assert metrics.get(
+        "nora_silent_failures_total", reason="handler_error", audience="tag",
+    ) == 1
+    rows = await store.recent(conversation_id="g1", since_ms=0)
+    assert [(r.writer, r.verdict, r.reason) for r in rows] == [
+        ("tag", "failed", "handler_error"),
+    ]

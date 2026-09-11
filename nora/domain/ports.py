@@ -2233,8 +2233,19 @@ class DecisionLogStore(Protocol):
         ...
 
     async def recent_for_workspace(
-        self, *, workspace: str, since_ms: int, limit: int = ...,
+        self, *, workspace: str, since_ms: int,
+        writers: Sequence[str] = ..., limit: int = ...,
     ) -> Sequence[DecisionRow]:
-        """The same read across every room of one workspace. Same bounds, same
-        order, same tie-break."""
+        """The same read across every room of one workspace, narrowed to
+        `writers`. Same bounds, same order, same tie-break.
+
+        **`writers` is on the QUERY and not a filter the caller applies after,
+        and that distinction decides whether the feature works.** Every reader
+        excludes its own writer; the bound is 20 rows; and `gate` writes one row
+        per closed participation window per room, which out-produces every other
+        writer by an order of magnitude. Filtered afterwards, half an hour of
+        gate rows fills the bound and the caller is handed nothing — silently,
+        because an empty result renders as an empty block. The bound must count
+        rows the caller can USE. Empty means every writer.
+        """
         ...

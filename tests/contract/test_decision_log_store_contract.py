@@ -58,7 +58,8 @@ class _DecisionStore(Protocol):
         self, *, conversation_id: str, since_ms: int, limit: int = ...,
     ) -> tuple[DecisionRow, ...]: ...
     async def recent_for_workspace(
-        self, *, workspace: str, since_ms: int, limit: int = ...,
+        self, *, workspace: str, since_ms: int,
+        writers: Any = ..., limit: int = ...,
     ) -> tuple[DecisionRow, ...]: ...
 
 
@@ -266,3 +267,59 @@ async def test_an_unknown_verdict_is_refused_by_the_store_itself(store):
     row = _smuggle(_row("d1"), verdict="maybe")
     with pytest.raises(Exception):  # noqa: B017
         await store.append(row=row)
+
+
+async def test_a_workspace_read_narrows_by_writer_inside_the_bound(store):
+    """**The property the feature's correctness rests on.** Every reader wants a
+    subset — each excludes its own writer — and the bound is 20 rows. The `gate`
+    writer produces one row per closed participation window per room, which
+    out-produces every other writer by an order of magnitude; if `writers` were
+    a filter the CALLER applied to what came back, half an hour of gate rows
+    would fill the bound and the caller would be handed nothing.
+
+    So the narrowing has to happen in the query, and the `limit` has to count
+    rows the caller can USE. This asserts exactly that shape: 5 gate rows are
+    newer than the one proactive row, the limit is 2, and a store that bounded
+    first would answer zero.
+
+    Falsification: move the `writer.in_(...)` out of `SqlDecisionLogStore`'s
+    WHERE (or the `writers` predicate out of the double's comprehension) so it
+    applies after `_window`, and this goes red on that implementation.
+    """
+    await store.append(row=_row("p1", writer="proactive_decide",
+                                verdict="remind", ts=NOW, reason="raised it"))
+    for i in range(5):
+        await store.append(row=_row(f"g{i}", writer="gate", verdict="no_go",
+                                    ts=NOW + 100 + i))
+    rows = await store.recent_for_workspace(
+        workspace=WS, since_ms=0, writers=("proactive_decide",), limit=2,
+    )
+    assert [r.id for r in rows] == ["p1"]
+
+
+async def test_an_empty_writers_tuple_means_every_writer(store):
+    """The absent filter, and it is NOT «no writers». A caller that passes
+    nothing means it wants everything — the same convention every optional
+    narrowing in this repo uses — and a store that read `()` as an empty `IN`
+    would answer nothing for every unfiltered read."""
+    await store.append(row=_row("a", writer="gate", verdict="no_go"))
+    await store.append(row=_row("b", writer="tag", verdict="replied", ts=NOW + 1))
+    rows = await store.recent_for_workspace(workspace=WS, since_ms=0, writers=())
+    assert [r.id for r in rows] == ["a", "b"]
+
+
+async def test_a_limit_of_zero_answers_nothing_on_both_implementations(store):
+    """Python and SQL disagree here and do it SILENTLY: `rows[-0:]` is every
+    row, `LIMIT 0` is none. Unreachable from production — the recorder always
+    passes `RECENT_LIMIT` — which is exactly why it belongs in this suite: it is
+    the fake-is-more-permissive-than-the-store shape the double's own docstring
+    exists to refuse, and it was found by a reviewer rather than by a test.
+
+    Falsification: restore `inside[-limit:] if limit >= 0` in the double.
+    """
+    for i in range(3):
+        await store.append(row=_row(f"d{i}", ts=NOW + i))
+    assert await store.recent(conversation_id=CONV, since_ms=0, limit=0) == ()
+    assert await store.recent_for_workspace(
+        workspace=WS, since_ms=0, limit=0,
+    ) == ()

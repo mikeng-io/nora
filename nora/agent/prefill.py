@@ -10,7 +10,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime
 
-from ..domain.decision_log import render_decisions
+from ..domain.decision_log import (
+    PARTICIPATION_DECISION_WRITERS,
+    render_decisions,
+)
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import age, escape
 from ..domain.prompt import escape_attr as _escape_attr
@@ -537,9 +540,9 @@ def _standing_block(ctx: TagContext) -> str:
 
 
 def _decisions_block(ctx: TagContext, *, now: datetime) -> str:
-    """What NORA'S OWN LOOP already did in this room, as `<loop_decisions>`
-    (issue #199). `""` when there is nothing — which is every turn but the
-    participation occasion's today.
+    """What NORA'S OWN LOOP already did across this WORKSPACE, as
+    `<loop_decisions>` (issue #199). `""` when there is nothing — which is
+    every turn but the participation occasion's today.
 
     **This is the only block here that is not about the world.** Its five
     neighbours distil what people said, what they are like, what the workspace
@@ -547,7 +550,19 @@ def _decisions_block(ctx: TagContext, *, now: datetime) -> str:
     decide and act turns that raised something in this room unprompted, with
     how long ago. Before it, the participation turn could not tell a room
     nobody had spoken to from a room she had raised the same question in two
-    hours earlier — 2026-09-10's duplicate, the third leg of it.
+    hours earlier — 2026-09-10's duplicate, the third leg of it. WORKSPACE and
+    not room: a proactive row fires into the workspace's home room and nowhere
+    else, so on the incident's own rooms a room-scoped block would have carried
+    nothing.
+
+    **An empty block is not rendered, and that is a deliberate difference from
+    `render_decisions`' own default.** Its siblings here — `<notes>`,
+    `<standing>`, `<self_card>` — all emit nothing rather than emit an
+    "(empty)" line, and the reason is the prefix cache: a block that appears on
+    every turn whether or not it has content is a block every turn pays for.
+    The renderer's `empty` text is for a caller that has ONE block and needs
+    «nothing here» to be distinguishable from «no log wired»; this caller has
+    five neighbours and follows their convention.
 
     **Named `loop_decisions`, not `decisions`**, because
     `nora.language.proactive` already renders a `<decisions>` block for her
@@ -565,7 +580,9 @@ def _decisions_block(ctx: TagContext, *, now: datetime) -> str:
     """
     if not ctx.decisions:
         return ""
-    return render_decisions(ctx.decisions, now=now) + "\n"
+    return render_decisions(
+        ctx.decisions, now=now, writers=PARTICIPATION_DECISION_WRITERS,
+    ) + "\n"
 
 
 def build_prefill(

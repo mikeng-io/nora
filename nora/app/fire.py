@@ -85,6 +85,7 @@ from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.compute import ComputeJob
 from nora.domain.decision_log import (
+    PARTICIPATION_DECISION_WRITERS,
     DecisionLogRecorder,
     DecisionRow,
     DecisionWriter,
@@ -961,12 +962,16 @@ class FirePath:
             return ()
         rows = await self._decisions.read_workspace(
             platform=occasion.platform, workspace=workspace,
+            # In the QUERY, never a filter over what came back. The bound is 20
+            # rows and `gate` writes one per closed window per room, so a
+            # post-filter hands this turn 20 gate rows and nothing it can read
+            # — silently, in exactly the busy room where issue #199 happened.
+            #
+            # The SAME constant `build_prefill` hands the renderer, so the
+            # block's note names exactly the deciders the query asked for.
+            writers=PARTICIPATION_DECISION_WRITERS,
         )
-        return tuple(
-            (self._room_label(row), (row,))
-            for row in rows
-            if row.writer in ("proactive_decide", "proactive_act")
-        )
+        return tuple((self._room_label(row), (row,)) for row in rows)
 
     def _room_label(self, row: DecisionRow) -> str:
         """The operator-authored policy label for the room a decision was made

@@ -61,13 +61,6 @@ _NOT_A_BUILDER = {
     # and its own log, never transcript rows (39 §1 keeps `load_transcript`
     # out of it on purpose).
     "nora/language/proactive.py": "reads one row's ts per room for the quiet check",
-    # The decision log (issue #199) reads DECISION rows, not transcript
-    # rows — the collision is on the method NAME `recent`, which this
-    # scan matches by attribute. A `DecisionRow` has no body, no sender
-    # and no media handle to join; it carries a writer, a verdict and a
-    # short clause, all of them written by Nora's own loop. Nothing a
-    # `MediaJoin` could enrich passes through here.
-    "nora/domain/decision_log.py": "reads decision rows, not transcript rows",
 }
 
 

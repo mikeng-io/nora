@@ -19,6 +19,8 @@ input, which is the fake-diverges failure this file exists to avoid.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from nora.domain.decision_log import (
     REASON_MAX_CHARS,
     RECENT_LIMIT,
@@ -71,10 +73,19 @@ class InMemoryDecisionLogStore:
         )
 
     async def recent_for_workspace(
-        self, *, workspace: str, since_ms: int, limit: int = RECENT_LIMIT,
+        self, *, workspace: str, since_ms: int,
+        writers: Sequence[str] = (), limit: int = RECENT_LIMIT,
     ) -> tuple[DecisionRow, ...]:
+        # The `writers` narrowing happens BEFORE `_window`, matching the SQL
+        # store's WHERE. A double that filtered after the limit would answer
+        # fewer rows than Postgres for the same input — and would hide the
+        # exact starvation the argument exists to prevent.
         return self._window(
-            [r for r in self._rows.values() if r.workspace == workspace],
+            [
+                r for r in self._rows.values()
+                if r.workspace == workspace
+                and (not writers or r.writer in writers)
+            ],
             since_ms=since_ms, limit=limit,
         )
 
@@ -88,4 +99,10 @@ class InMemoryDecisionLogStore:
         # `[-limit:]` and NOT `[:limit]`. The whole point of the bound is to
         # answer the most recent decisions; taking the head answers the oldest
         # ones under a note that says "the last 24 hours".
-        return tuple(inside[-limit:]) if limit >= 0 else ()
+        #
+        # `limit <= 0` answers NOTHING, spelled out because Python disagrees
+        # with SQL here and silently: `inside[-0:]` is `inside[0:]` — every
+        # row — while `LIMIT 0` is no rows. Unreachable from production, which
+        # is exactly the shape this file exists to refuse: a double that is
+        # more permissive than the store on an input no test happens to try.
+        return tuple(inside[-limit:]) if limit > 0 else ()
