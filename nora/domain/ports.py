@@ -202,6 +202,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
+from nora.domain.decision_log import DecisionRow as DecisionRow
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBlob as MediaBlob
@@ -2152,5 +2153,99 @@ class TurnVerdictStore(Protocol):
 
         `None` when nothing here has been judged ungrounded, which is the
         ordinary state and is not a reason to re-derive.
+        """
+        ...
+
+
+@runtime_checkable
+class DecisionLogStore(Protocol):
+    """Where every ambient decision is written, and where the NEXT decider
+    reads what the others already did (issue #199).
+
+    **Append-only, and the absent verbs are the point.** There is no `update`,
+    no `delete` and no upsert: a decision happened, and a log whose rows can be
+    rewritten is not a record of what happened — it is a record of what somebody
+    later wanted to have happened. The same move `TurnVerdictStore` makes by
+    having no `write` and `DreamSink` by having no delete. `id` is the primary
+    key, so a duplicate is a caller reusing an id rather than a second decision,
+    and Postgres says so.
+
+    **Two reads, and `recent_for_workspace` is the PRIMARY one.** A
+    `kind="proactive"` row fires into the workspace's home room and nowhere
+    else (39 D2/D3); the thread it is about runs wherever the group is
+    talking, which in the measured incident was a different room on a different
+    platform. So a reader scoped to one room sees nothing and the duplicate it
+    exists to prevent goes through anyway. `recent` — one room — is the narrow
+    read, kept for a caller that genuinely means one room. They are two reads
+    and not one filter because they need two indexes: collapsing them would
+    make the workspace case an unindexed scan, and AGENTS.md's rule is that
+    something must measure the COST, not just the answer.
+
+    **Both reads are bounded by the store, twice** — `since_ms` and `limit` —
+    rather than by the caller slicing what came back. A block that rides into a
+    cheap gate call on every quiet window cannot be allowed to grow with a busy
+    room's history, and a bound applied after the rows arrive is a bound on the
+    string, not on the query.
+
+    **`limit` takes the NEWEST rows and the result is oldest-first.** Those are
+    two separate statements and a store that gets the first one wrong looks
+    correct: it answers a busy room's oldest 20 decisions, rendered under a
+    «last 24 hours» note, with nothing saying the block is about yesterday.
+    """
+
+    async def append(self, *, row: DecisionRow) -> None:
+        """Write one decision. Raises if the `id` already exists.
+
+        **A row is written at turn COMPLETION** — after the message went out,
+        or after the decision to stay silent was taken — never when the turn
+        starts. That is what closes issue #199's ordering: the send at 16:43:57
+        is durable before the tag turn at 16:44:04 reads anything, so the
+        second turn can see the first one's answer. The gate's verdict is the
+        one row with no turn behind it and is written when the verdict is
+        reached, which is its completion.
+
+        **It does NOT close a mid-turn race, and nothing here should be read as
+        claiming otherwise.** A tag that lands while a participation turn is
+        still running reads a log that does not yet contain it, and both turns
+        answer. Serialising that is `ConversationSlots`' job — one turn per
+        room at a time — and this log is a record, not a lock. What it removes
+        is the SEQUENTIAL duplicate; the concurrent one is out of its reach by
+        construction.
+
+        Callers reach this through `nora.domain.decision_log.
+        DecisionLogRecorder`, never directly: the recorder is where the bound
+        and the fail-soft rule live, and a log write must never fail a turn.
+        """
+        ...
+
+    async def recent(
+        self, *, conversation_id: str, since_ms: int, limit: int = ...,
+    ) -> Sequence[DecisionRow]:
+        """This room's decisions at or after `since_ms`, the NEWEST `limit` of
+        them, returned OLDEST-FIRST.
+
+        Oldest-first to match `RecordStore.recent`, which the same prompt
+        renders beside it — one document, one direction of time. Ties on `ts`
+        break on `id` so two implementations answer the same rows in the same
+        order; two decisions in one millisecond are reachable, and issue #199's
+        own incident is a tag turn one second behind a participation answer.
+        """
+        ...
+
+    async def recent_for_workspace(
+        self, *, workspace: str, since_ms: int,
+        writers: Sequence[str] = ..., limit: int = ...,
+    ) -> Sequence[DecisionRow]:
+        """The same read across every room of one workspace, narrowed to
+        `writers`. Same bounds, same order, same tie-break.
+
+        **`writers` is on the QUERY and not a filter the caller applies after,
+        and that distinction decides whether the feature works.** Every reader
+        excludes its own writer; the bound is 20 rows; and `gate` writes one row
+        per closed participation window per room, which out-produces every other
+        writer by an order of magnitude. Filtered afterwards, half an hour of
+        gate rows fills the bound and the caller is handed nothing — silently,
+        because an empty result renders as an empty block. The bound must count
+        rows the caller can USE. Empty means every writer.
         """
         ...

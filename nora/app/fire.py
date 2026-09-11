@@ -84,6 +84,12 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.compute import ComputeJob
+from nora.domain.decision_log import (
+    PARTICIPATION_DECISION_WRITERS,
+    DecisionLogRecorder,
+    DecisionRow,
+    DecisionWriter,
+)
 from nora.domain.events import Event, EventFactory
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
@@ -636,6 +642,7 @@ class FirePath:
         shadow_platform: str = "discord",
         gate_shadow_channel: str | None = None,
         gate_shadow_platform: str = "discord",
+        decisions: DecisionLogRecorder | None = None,
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -790,6 +797,12 @@ class FirePath:
         # turn drafts to mirror.
         self._gate_shadow_channel = gate_shadow_channel
         self._gate_shadow_platform = gate_shadow_platform
+        # The shared decision log (issue #199), written from `_determined` —
+        # the ONE method all four determination exits already converge on, so
+        # the writer cannot come apart from the record it writes. `None` is the
+        # dormant default: a deployment that has not wired it fires exactly as
+        # before.
+        self._decisions = decisions
 
     async def build_context(self, occasion: Event) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
@@ -884,8 +897,13 @@ class FirePath:
         # The workspace-keyed tier resolves the workspace ONCE per turn, and
         # the read is skipped entirely when it is not wired (the dormant
         # default must not count a gap it does not have).
+        # Resolved ONCE per turn and now read by two tiers, so the `notes`
+        # guard is no longer the whole condition: the decision log is
+        # workspace-scoped too (issue #199), and a turn that skipped the
+        # lookup because the note tier was off would render no decisions block
+        # for a reason unrelated to decisions.
         workspace: str | None = None
-        if self._notes is not None:
+        if self._notes is not None or self._decisions is not None:
             workspace = self._workspace_for(occasion)
 
         return TagContext(
@@ -897,7 +915,76 @@ class FirePath:
             started_at=time.perf_counter(),
             standing=await self._read_standing(occasion),
             notes=await self._read_notes(occasion, workspace),
+            decisions=await self._read_decisions(occasion, workspace),
         )
+
+    async def _read_decisions(
+        self, occasion: Event, workspace: str | None,
+    ) -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
+        """What her PROACTIVE half already did across this WORKSPACE, for the
+        participation turn only (issue #199). `(room label, rows)` groups.
+
+        **Workspace-scoped, and «this room» would have missed the incident it
+        exists for.** A `kind="proactive"` row fires into the workspace's home
+        room and nowhere else (39 D2/D3); on 2026-09-10 that was a Discord
+        room while the thread was on Signal. A participation turn in the
+        Signal room reading «this room, last 24 hours» sees nothing and speaks
+        anyway. The room a decision was made in is rendered as its policy
+        LABEL instead, which is what a reader actually needs from it.
+
+        **Participation only, and the restriction is the decision.** This is
+        the turn deciding whether to speak into a room nobody addressed her in,
+        so «she raised this two hours ago in another room» is the fact that
+        changes the answer. A reminder or a gathering firing was decided when
+        its row was written; handing it this block would cost a read and change
+        nothing.
+
+        **Her own participation rows are excluded.** A turn reading back its
+        own last verdict is a turn agreeing with itself, and on the ambient
+        path that is the direction design 35's silence bias already leans. The
+        tag rows are excluded too: a tag is somebody asking, so what it
+        answered belongs in the transcript underneath, where it already is.
+
+        **A turn with no workspace renders NO block, rather than falling back
+        to this room.** No workspace is the wiring gap `_workspace_for` already
+        refuses to guess past, and a narrower read presented under a block that
+        says «across this group» would be a claim the rows cannot support.
+
+        Fail-soft with no `except` here — `DecisionLogRecorder.read_workspace`
+        answers `()` on every failure and counts it. `None` is the dormant
+        default.
+        """
+        if (
+            self._decisions is None
+            or occasion.kind != "participation"
+            or not workspace
+        ):
+            return ()
+        rows = await self._decisions.read_workspace(
+            platform=occasion.platform, workspace=workspace,
+            # In the QUERY, never a filter over what came back. The bound is 20
+            # rows, so a post-filter could let one busy writer's rows evict
+            # every other decider's — silently, in exactly the busy room where
+            # issue #199 happened.
+            #
+            # The SAME constant `build_prefill` hands the renderer, so the
+            # block's note names exactly the deciders the query asked for.
+            writers=PARTICIPATION_DECISION_WRITERS,
+        )
+        return tuple((self._room_label(row), (row,)) for row in rows)
+
+    def _room_label(self, row: DecisionRow) -> str:
+        """The operator-authored policy label for the room a decision was made
+        in, or `""`. NEVER the conversation id (R-18/R-28) — an unlabelled room
+        renders with no prefix rather than with an identifier."""
+        if self._policy is None:
+            return ""
+        try:
+            convo = self._policy.conversation(row.platform, row.conversation_id)
+        except Exception:
+            log.exception("policy read failed while labelling a decision row")
+            return ""
+        return convo.label if convo is not None else ""
 
     def _workspace_for(self, occasion: Event) -> str | None:
         """The workspace this occasion's room belongs to, or `None`.
@@ -1713,8 +1800,52 @@ class FirePath:
             window=window_from(ctx.transcript),
         )
         log_determination(log, d)
+        await self._log_decision(occasion, d)
         if occasion.kind == "participation":
             await self._mirror(occasion, ctx, doctrine, d)
+
+    async def _log_decision(self, occasion: Event, d: Determination) -> None:
+        """The determination as a DECISION-LOG row — a THIRD sink, and the only
+        one another decider can read (issue #199).
+
+        The log and the mirror are both write-only as far as a prompt is
+        concerned: one goes to a file, one goes to a channel an operator reads.
+        Neither is reachable from the gate deciding whether to admit the next
+        window in this room, or from the proactive pass deciding what to raise
+        in it tomorrow. That is the whole gap — three decision paths, one room,
+        and 2026-09-10's duplicate answered twice and raised a third time.
+
+        **`disposition`, never her words.** `Determination.texts` is her reply
+        or the draft she declined to send; it stays in the DEBUG half of the
+        determination log and in the audit rows. What goes in the row is the
+        four-way outcome — `spoke` / `held_shadow` / `held_cooldown` /
+        `declined` — which is a label this codebase derives rather than a
+        model authors. That is what lets the row ride into a cheap external
+        gate call without becoming an egress question.
+
+        Only the two occasions that CAN decline the floor are logged. A
+        reminder or a gathering firing is not a decision about whether to
+        speak — it was decided when the row was written — and putting it here
+        would dilute the block with rows no decider can act on.
+
+        `record` never raises and never blocks past its own timeout, so this
+        cannot change the turn's outcome, which is the property `_mirror` one
+        method down also holds and for the same stated reason.
+        """
+        if self._decisions is None:
+            return
+        writer: DecisionWriter | None = (
+            "participation" if occasion.kind == "participation"
+            else "proactive_act" if occasion.kind == "proactive"
+            else None
+        )
+        if writer is None:
+            return
+        await self._decisions.record(
+            writer=writer, platform=occasion.platform,
+            conversation_id=occasion.conversation_id,
+            verdict=d.verdict, reason=d.disposition,
+        )
 
     async def _mirror(
         self, occasion: Event, ctx: TagContext, doctrine: Any,

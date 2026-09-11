@@ -54,12 +54,14 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
 ADD CONSTRAINT artifacts_slug_key UNIQUE (slug);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
+ADD CONSTRAINT decision_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT dream_schedule_state_pkey PRIMARY KEY (adaptor_name, scope_id);
 ADD CONSTRAINT embedding_pkey PRIMARY KEY (kind, row_key);
 ADD CONSTRAINT event_rsvps_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id);
@@ -123,6 +125,7 @@ ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.compute_jobs
 ALTER TABLE ONLY public.consolidation_watermark
+ALTER TABLE ONLY public.decision_log
 ALTER TABLE ONLY public.dream_schedule_state
 ALTER TABLE ONLY public.embedding
 ALTER TABLE ONLY public.event_rsvps
@@ -213,6 +216,9 @@ CONSTRAINT ck_reminders_recurrence_interval CHECK ((recurrence_interval >= 1)),
 CONSTRAINT ck_reminders_recurrence_kind CHECK ((recurrence = ANY (ARRAY['none'::text, 'minutely'::text, 'hourly'::text, 'daily'::text, 'weekly'::text, 'monthly'::text, 'yearly'::text]))),
 CONSTRAINT ck_reminders_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'cancelled'::text, 'failed'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
+CONSTRAINT decision_log_reason_fits_the_block_check CHECK ((length(reason) <= 80)),
+CONSTRAINT decision_log_verdict_is_known_check CHECK ((verdict = ANY (ARRAY['spoke'::text, 'silent'::text, 'remind'::text, 'decline'::text, 'replied'::text, 'failed'::text]))),
+CONSTRAINT decision_log_writer_is_known_check CHECK ((writer = ANY (ARRAY['participation'::text, 'proactive_decide'::text, 'proactive_act'::text, 'tag'::text])))
 CONSTRAINT embedding_model_is_named_check CHECK ((length(btrim(model)) > 0)),
 CONSTRAINT embedding_text_is_present_check CHECK ((length(btrim(text)) > 0))
 CONSTRAINT exchange_observation_act_check CHECK ((act = ANY (ARRAY['insult_trade'::text, 'banter'::text, 'tease'::text, 'callback_joke'::text, 'agreement_ritual'::text, 'disagreement_ritual'::text, 'compliment_exchange'::text]))),
@@ -280,6 +286,8 @@ CONSTRAINT turn_verdict_unsupported_fits_the_list_check CHECK ((cardinality(unsu
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
+CREATE INDEX idx_decision_log_conv_ts ON public.decision_log USING btree (conversation_id, ts DESC, id DESC);
+CREATE INDEX idx_decision_log_workspace_ts ON public.decision_log USING btree (workspace, ts DESC, id DESC);
 CREATE INDEX idx_embedding_scope ON public.embedding USING btree (kind, scope);
 CREATE INDEX idx_embedding_v1024 ON public.embedding USING hnsw (v1024 public.vector_cosine_ops);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
@@ -310,6 +318,7 @@ CREATE TABLE public.analytics_watermark (
 CREATE TABLE public.artifacts (
 CREATE TABLE public.compute_jobs (
 CREATE TABLE public.consolidation_watermark (
+CREATE TABLE public.decision_log (
 CREATE TABLE public.dream_schedule_state (
 CREATE TABLE public.embedding (
 CREATE TABLE public.event_rsvps (
@@ -455,6 +464,7 @@ conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
+conversation_id text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
 conversation_type text NOT NULL,
@@ -544,6 +554,7 @@ id integer NOT NULL,
 id integer NOT NULL,
 id integer NOT NULL,
 id text NOT NULL,
+id text NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -622,6 +633,7 @@ model text,
 model text,
 name text NOT NULL,
 narrative text NOT NULL,
+note_id text,
 note_id uuid NOT NULL,
 note_id uuid NOT NULL,
 notify_channel_id text NOT NULL,
@@ -668,6 +680,7 @@ platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
+platform text NOT NULL,
 predicate text NOT NULL,
 predicate text NOT NULL,
 premise_fact_id uuid NOT NULL,
@@ -678,6 +691,7 @@ radius_m double precision NOT NULL,
 radius_m double precision NOT NULL,
 radius_m double precision,
 raw_json text,
+reason text DEFAULT ''::text NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recorded_at bigint NOT NULL,
@@ -779,6 +793,7 @@ tool_result jsonb NOT NULL,
 transcript jsonb NOT NULL,
 ts bigint NOT NULL,
 ts bigint NOT NULL,
+ts bigint NOT NULL,
 uncertainty text NOT NULL,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
 updated_at bigint NOT NULL,
@@ -802,16 +817,19 @@ venue_price_level text DEFAULT ''::text NOT NULL,
 venue_rating double precision,
 venue_resolved_at timestamp with time zone,
 venue_text text,
+verdict text NOT NULL,
 version text NOT NULL,
 version_num character varying(32) NOT NULL
 voice_channel_id text NOT NULL,
 volume double precision NOT NULL,
 warrant_kind text DEFAULT 'source'::text NOT NULL,
 wire_state text NOT NULL,
+workspace text DEFAULT ''::text NOT NULL,
 workspace text NOT NULL,
 workspace text NOT NULL,
 workspace text NOT NULL,
 workspace text NOT NULL,
 workspace text NOT NULL,
 workspace text,
+writer text NOT NULL,
 written_at bigint NOT NULL,

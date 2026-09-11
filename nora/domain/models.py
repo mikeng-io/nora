@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from .decision_log import DecisionRow
 from .media import MediaBlob, MediaRef
 from .notes import Note
 from .standing import Standing
@@ -326,6 +327,32 @@ class TagContext:
     # working, and `[standing] enabled = false` (the shipped default) leaves it
     # `None` on every turn.
     standing: Standing | None = None
+    # The shared decision log (issue #199) — what NORA'S OWN LOOP already did
+    # across this WORKSPACE, as `<loop_decisions>`. `(room label, rows)` per
+    # group, because the row that matters is usually from the OTHER room: a
+    # `kind="proactive"` row fires into the workspace's home room and nowhere
+    # else, while the thread it is about runs wherever the group is talking,
+    # and in the measured incident those were different rooms on different
+    # platforms. A room-scoped block would have seen nothing.
+    #
+    # Populated only for the participation occasion today
+    # (`FirePath.build_context`): that is the turn deciding whether to speak
+    # into a room nobody addressed her in, and so the one turn for which «she
+    # already raised this two hours ago» changes the answer.
+    #
+    # It is NOT a sixth context block on the same axis as its neighbours. Every
+    # block above is a distillation of the WORLD — what people said, what they
+    # are like, what the workspace has not settled. This is a record of her own
+    # turns, which is why it is marked untrusted and carries an age per row
+    # rather than reading as state.
+    #
+    # The LABEL is the operator-authored policy label, never an id, and the
+    # rows carry no title and no model text — see `decision_line`.
+    #
+    # Defaulted empty like its five siblings, and `render_decisions` is not
+    # called at all for an empty tuple, so a deployed prompt gains nothing
+    # until something populates it.
+    decisions: tuple[tuple[str, tuple[DecisionRow, ...]], ...] = ()
 
 
 @dataclass(frozen=True)

@@ -248,6 +248,14 @@ def build_offline_pipeline(
             },
             standing=standing,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
+            # The shared decision log (issue #199). `None` on purpose, and the
+            # keyword is written out rather than defaulted so the parity gate
+            # can see the choice: an eval drives ONE turn against a scripted
+            # world, so there is no prior loop to have decided anything and a
+            # wired log would render an empty block on every case. Production
+            # passes a real recorder; both sides name the collaborator, which
+            # is what that gate is for.
+            decisions=None,
             # The SAME tier stores the assembler above was handed: the
             # participation determination's prompt is supposed to carry
             # whatever standing/notes the room has — an eval whose

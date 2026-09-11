@@ -10,6 +10,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime
 
+from ..domain.decision_log import (
+    PARTICIPATION_DECISION_WRITERS,
+    render_decisions,
+)
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import age, escape
 from ..domain.prompt import escape_attr as _escape_attr
@@ -535,6 +539,52 @@ def _standing_block(ctx: TagContext) -> str:
     return f"{block}\n" if block else ""
 
 
+def _decisions_block(ctx: TagContext, *, now: datetime) -> str:
+    """What NORA'S OWN LOOP already did across this WORKSPACE, as
+    `<loop_decisions>` (issue #199). `""` when there is nothing — which is
+    every turn but the participation occasion's today.
+
+    **This is the only block here that is not about the world.** Its five
+    neighbours distil what people said, what they are like, what the workspace
+    has not settled. This one is the record of her own turns: the proactive
+    decide and act turns that raised something in this room unprompted, with
+    how long ago. Before it, the participation turn could not tell a room
+    nobody had spoken to from a room she had raised the same question in two
+    hours earlier — 2026-09-10's duplicate, the third leg of it. WORKSPACE and
+    not room: a proactive row fires into the workspace's home room and nowhere
+    else, so on the incident's own rooms a room-scoped block would have carried
+    nothing.
+
+    **An empty block is not rendered, and that is a deliberate difference from
+    `render_decisions`' own default.** Its siblings here — `<notes>`,
+    `<standing>`, `<self_card>` — all emit nothing rather than emit an
+    "(empty)" line, and the reason is the prefix cache: a block that appears on
+    every turn whether or not it has content is a block every turn pays for.
+    The renderer's `empty` text is for a caller that has ONE block and needs
+    «nothing here» to be distinguishable from «no log wired»; this caller has
+    five neighbours and follows their convention.
+
+    **Named `loop_decisions`, not `decisions`**, because
+    `nora.language.proactive` already renders a `<decisions>` block for her
+    REMINDER rows. Two blocks under one name in one prompt is an input the
+    model cannot disambiguate, and the fix for that is never the instruction.
+
+    It sits with the volatile tier, after `<notes>`: a note is the open
+    question, and this is what she has already DONE about the open questions —
+    read in order, the pair says *here is what is unsettled, here is what you
+    already tried*. `<standing>` stays last, adjacent to the transcript it is
+    about, for the reason its own docstring argues.
+
+    Trailing newline added here, not by `render_decisions`, so blocks
+    concatenate onto separate lines — `_notes_block`'s convention.
+    """
+    if not ctx.decisions:
+        return ""
+    return render_decisions(
+        ctx.decisions, now=now, writers=PARTICIPATION_DECISION_WRITERS,
+    ) + "\n"
+
+
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
@@ -597,6 +647,7 @@ def build_prefill(
             + _self_card_block(ctx) + _peer_card_block(ctx)
             + _peer_history_block(ctx)
             + _notes_block(ctx, now=clock)
+            + _decisions_block(ctx, now=clock)
             + _standing_block(ctx)
             + _transcript_block(ctx, display_name, clock),
         ),

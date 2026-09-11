@@ -70,6 +70,10 @@ AgentRunner`, a stage-level `Protocol`, not one of `nora/domain/ports.py`'s
 ports — also exempt; see their docstrings.
 """
 
+from nora.testing.decision_log import (
+    DuplicateDecisionError,
+    InMemoryDecisionLogStore,
+)
 from nora.testing.dream_schedule import InMemoryDreamScheduleClock
 from nora.testing.eval_backends import (
     BACKED_TOOLS,
@@ -128,6 +132,7 @@ __all__ = [
     "CannedStreetParkingProvider",
     "CannedTransitSource",
     "CannedWeatherProvider",
+    "DuplicateDecisionError",
     "DuplicateVerdictError",
     "FakeAdapter",
     "FakeAgentRunner",
@@ -147,6 +152,7 @@ __all__ = [
     "FakeRosterSource",
     "FakeToolCallLogStore",
     "FakeTranscriber",
+    "InMemoryDecisionLogStore",
     "InMemoryDreamScheduleClock",
     "InMemoryNoteStore",
     "InMemoryStandingStore",

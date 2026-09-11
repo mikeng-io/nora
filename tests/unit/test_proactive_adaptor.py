@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from nora.domain.decision_log import DecisionLogRecorder, DecisionRow
 from nora.domain.ports import DreamAdaptor, Proposal
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
@@ -30,6 +31,7 @@ from nora.language.proactive import (
 )
 from nora.obs.metrics import Metrics
 from nora.testing import (
+    InMemoryDecisionLogStore,
     InMemoryDreamScheduleClock,
     InMemoryNoteStore,
     InMemoryStandingStore,
@@ -51,8 +53,10 @@ ROOMS = (
 def _adaptor(
     *, notes=None, standing=None, reminders=None, memory=None, rooms=ROOMS,
     metrics=None, clock_store=None, records=None, now=None, quiet_seconds=1800.0,
+    decisions=None,
 ):
     return ProactiveAdaptor(
+        decisions=decisions,
         notes=notes if notes is not None else InMemoryNoteStore(),
         standing=standing,
         reminders=reminders if reminders is not None else FakeReminderStore(),
@@ -842,3 +846,231 @@ async def test_a_cancelled_commit_leaves_the_pass_slot_open():
         "a commit the runtime cancelled stamped the pass as fired; the next "
         "tick will not render, and the rows this pass wrote are orphaned"
     )
+
+
+# --- the shared decision log (issue #199) ---------------------------------
+
+
+def _recorder(store=None, *, metrics=None, **kw):
+    """A real `DecisionLogRecorder` over the SHARED in-memory store, which
+    `tests/contract/test_decision_log_store_contract.py` judges against
+    Postgres — never an inline double, per this file's own standing rule."""
+    return DecisionLogRecorder(
+        store=store if store is not None else InMemoryDecisionLogStore(),
+        metrics=metrics if metrics is not None else Metrics(),
+        clock=lambda: NOW,
+        **kw,
+    )
+
+
+def _other_decision(
+    *, writer="participation", verdict="spoke", reason="",
+    conversation_id="sig-1", platform="signal", ago_ms=0, row_id="r1",
+):
+    return DecisionRow(
+        id=row_id, writer=writer, platform=platform,
+        conversation_id=conversation_id, workspace=WS, note_id=None,
+        verdict=verdict, reason=reason, ts=NOW_MS - ago_ms,
+    )
+
+
+async def test_the_decide_turn_logs_every_decision_including_the_declines():
+    """**The writer.** A `decline` is logged as loudly as a `remind`, and that
+    is the point: a row saying «I looked at this and passed, because X» is the
+    only thing that stops the gate reading the same room tomorrow — or this
+    pass next week — from re-deriving the same conclusion from scratch
+    (issue #199).
+
+    The note id rides along on the rows that have one, so a later reader can
+    join a raise to what it was about.
+
+    Falsification: delete the `_log_decision` call in `commit` and this goes
+    red.
+    """
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    await _note(notes, title="Trip to Taipei", anchor=20261003)
+    store = InMemoryDecisionLogStore()
+    adaptor = _adaptor(notes=notes, decisions=_recorder(store))
+    await adaptor.inputs(key=WS, batch=())
+    payloads = await adaptor.accept(key=WS, items=(
+        {"note": "1", "action": "remind", "why": "nobody has picked a venue"},
+        {"note": "2", "action": "decline", "why": "still three weeks out"},
+    ))
+    await adaptor.commit(
+        key=WS,
+        proposals=tuple(
+            Proposal(payload=p, instruction_sha256="a" * 64, model="m",
+                     established_by="dream:x")
+            for p in payloads
+        ),
+        now_ms=NOW_MS,
+    )
+    rows = await store.recent(conversation_id="sig-1", since_ms=0)
+    assert [(r.writer, r.verdict) for r in rows] == [
+        ("proactive_decide", "remind"),
+        ("proactive_decide", "decline"),
+    ]
+    # The note it was about rides on the row so a reader can match it; the
+    # model's own `why` does NOT. It is the one model-authored string that
+    # would reach this table, it is written about a note, and it would carry
+    # note titles into a block whose whole claim is that it holds no notes.
+    assert all(r.note_id is not None for r in rows)
+    assert [r.reason for r in rows] == ["", ""]
+    assert "venue" not in str(rows)
+
+
+async def test_the_decide_turns_rows_land_in_the_home_room():
+    """A proactive row fires into the home room (39 D2/D3), so that is the room
+    a later decider has to weigh the decision against. Logging it against the
+    workspace's other room would put the decision where it will never fire."""
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    store = InMemoryDecisionLogStore()
+    adaptor = _adaptor(notes=notes, decisions=_recorder(store))
+    await adaptor.inputs(key=WS, batch=())
+    payloads = await adaptor.accept(
+        key=WS, items=({"note": "1", "action": "remind", "why": "why"},),
+    )
+    await adaptor.commit(
+        key=WS,
+        proposals=tuple(
+            Proposal(payload=p, instruction_sha256="a" * 64, model="m",
+                     established_by="d")
+            for p in payloads
+        ),
+        now_ms=NOW_MS,
+    )
+    assert await store.recent(conversation_id="1/2", since_ms=0) == ()
+    assert len(await store.recent(conversation_id="sig-1", since_ms=0)) == 1
+
+
+async def test_a_decision_log_that_is_down_never_fails_a_pass():
+    """A log write must never fail a turn. `commit` is where the wakes are
+    recorded — the strikes that bound the whole self-refine loop (39 D6) — so a
+    store that raises must not be able to cost one."""
+    class _Broken:
+        async def append(self, *, row):
+            raise RuntimeError("decision log down")
+
+        async def recent(self, *, conversation_id, since_ms, limit=20):
+            raise RuntimeError("decision log down")
+
+    notes = InMemoryNoteStore()
+    note = await _note(notes)
+    metrics = Metrics()
+    adaptor = _adaptor(
+        notes=notes, metrics=metrics,
+        decisions=_recorder(_Broken(), metrics=metrics),
+    )
+    await adaptor.inputs(key=WS, batch=())
+    payloads = await adaptor.accept(
+        key=WS, items=({"note": "1", "action": "remind", "why": "why"},),
+    )
+    wakes = await adaptor.commit(
+        key=WS,
+        proposals=tuple(
+            Proposal(payload=p, instruction_sha256="a" * 64, model="m",
+                     established_by="d")
+            for p in payloads
+        ),
+        now_ms=NOW_MS,
+    )
+    assert wakes == 1
+    head = await notes.read(workspace=WS, note_id=note.id)
+    assert head is not None
+    assert 'stage="decision_log_write"' in metrics.render()
+
+
+async def test_the_pass_sees_what_the_other_deciders_did_in_each_room():
+    """**The render.** Issue #199's incident, as the property: participation
+    answered a question at 16:43 and this pass raised the same question in
+    another room at 18:03, because nothing told it the answer had been given.
+
+    Per ROOM, with the room's operator-authored label and an age per row —
+    every question this block answers is a question about WHEN.
+
+    Falsification: drop the `_loop_decisions` term from `inputs`' `parts`.
+    """
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    store = InMemoryDecisionLogStore()
+    await store.append(row=_other_decision(
+        writer="participation", verdict="spoke", reason="spoke",
+        conversation_id="sig-1", ago_ms=3_600_000, row_id="a",
+    ))
+    await store.append(row=_other_decision(
+        writer="tag", verdict="replied", reason="send_reply",
+        conversation_id="1/2", platform="discord", ago_ms=7_200_000, row_id="b",
+    ))
+    adaptor = _adaptor(notes=notes, decisions=_recorder(store))
+    prompt = await adaptor.inputs(key=WS, batch=())
+    assert "<loop_decisions" in prompt
+    block = prompt.split("<loop_decisions")[1]
+    # No trailing reason: the disposition merely repeats the verdict, and a
+    # field that says nothing does not belong in a block whose claim is that
+    # every field on a row is worth reading.
+    assert "(60m ago) Friends participation spoke\n" in block
+    assert "(2h ago) Zone 42 tag replied — send_reply" in block
+
+
+async def test_the_pass_never_reads_back_its_own_proactive_rows():
+    """39 §1's self-echo brake, applied to the new input rather than weakened.
+    Three inputs already carry her own words into this turn and the brake on
+    them is framing, not a predicate. Here a predicate is available: a decide
+    turn reading back its own last decide turn would be the fourth and the
+    loudest, because the row says what it concluded in the words it concluded
+    it in.
+
+    Falsification: drop the `row.writer in (...)` filter in `_loop_decisions`.
+    """
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    store = InMemoryDecisionLogStore()
+    await store.append(row=_other_decision(
+        writer="proactive_decide", verdict="remind",
+        reason="my own earlier reasoning", row_id="mine",
+    ))
+    await store.append(row=_other_decision(
+        writer="proactive_act", verdict="silent",
+        reason="declined", row_id="act",
+    ))
+    await store.append(row=_other_decision(
+        writer="tag", verdict="replied", reason="", row_id="tag",
+    ))
+    adaptor = _adaptor(notes=notes, decisions=_recorder(store))
+    block = (await adaptor.inputs(key=WS, batch=())).split("<loop_decisions")[1]
+    assert "tag replied" in block
+    assert "my own earlier reasoning" not in block
+    # The row line, not the bare word: the block's own note names every
+    # writer, which is what tells the model what it is reading.
+    assert "proactive_act silent" not in block
+
+
+async def test_the_two_decision_blocks_keep_their_separate_names():
+    """`<decisions>` is her REMINDER rows — what she scheduled here and how it
+    fired. `<loop_decisions>` is what participation and tag did. Two blocks
+    under one name in one prompt is exactly the undecidable input this repo
+    has already paid for: the model cannot tell which is which, and the fix
+    for that is never the instruction.
+
+    Falsification: rename `<loop_decisions>` to `<decisions>` in
+    `nora.domain.decision_log.render_decisions`.
+    """
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    prompt = await _adaptor(
+        notes=notes, decisions=_recorder(),
+    ).inputs(key=WS, batch=())
+    assert prompt.count("<decisions ") == 1
+    assert prompt.count("<loop_decisions ") == 1
+
+
+async def test_a_pass_with_no_decision_log_renders_no_loop_block():
+    """`None` is the dormant default. A composition that has not wired the log
+    renders exactly the prompt it rendered before — not an empty block
+    claiming nothing happened."""
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    prompt = await _adaptor(notes=notes).inputs(key=WS, batch=())
+    assert "<loop_decisions" not in prompt

@@ -89,6 +89,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from zoneinfo import ZoneInfo
 
+from nora.domain.decision_log import (
+    PROACTIVE_DECISION_WRITERS,
+    DecisionLogRecorder,
+    render_decisions,
+)
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import (
     Note,
@@ -148,13 +153,22 @@ WAKE_CLOCK_NAME = "proactive:wake"
 #: This is the WIDEST of the three shipped adaptors, and the reason is its
 #: render: `inputs` reads the note index, each note's last revision, the home
 #: room's quiet window, the standing position (twice — once for the block,
-#: once per changed note), the decision log, the self card, and both
-#: `dream_schedule_state` clocks; `commit` records the pass fire, then per
-#: woken note a read, a wake and a second fire.
+#: once per changed note), her reminder log, the SHARED DECISION LOG (one
+#: `read` site, gathered across the workspace's rooms), the self card, and both
+#: `dream_schedule_state` clocks; `commit` records the pass fire, one decision
+#: -log `record` per envelope item, then per woken note a read, a wake and a
+#: second fire.
 #: `tests/architecture/test_dream_store_calls_are_declared.py` counts them off
 #: this module's AST and reddens when a call is added without this number
 #: moving.
-STORE_CALLS_PER_TICK = 14
+#:
+#: 14 -> 16 on 2026-09-11 (issue #199): `_loop_decisions`' read and
+#: `_log_decision`'s write. Both are `DecisionLogRecorder` calls, which carry
+#: their OWN 2s wall clock and never raise — so unlike every other call
+#: counted here they cannot be the thing that wedges a tick. They are counted
+#: anyway, because the number is «call sites this method holds» and a bound
+#: that quietly stopped matching the source is the defect this gate exists for.
+STORE_CALLS_PER_TICK = 16
 
 PassReason = Literal[
     "daily", "changed", "held_quiet", "unchanged", "unclocked",
@@ -347,6 +361,7 @@ class ProactiveAdaptor:
         records: _TranscriptSource | None = None,
         quiet_seconds: float = DEFAULT_QUIET_SECONDS,
         daily_hour: int = DEFAULT_DAILY_HOUR,
+        decisions: DecisionLogRecorder | None = None,
     ) -> None:
         self._notes = notes
         # `None` is `[standing] enabled = false`: no paragraph to read, and
@@ -379,6 +394,12 @@ class ProactiveAdaptor:
         self._records = records
         self._quiet_ms = int(quiet_seconds * 1000)
         self._daily_hour = daily_hour
+        # The shared decision log (issue #199) — the OTHER half of the loop.
+        # Distinct from `self._reminders` above, which is her own REMINDER rows
+        # and renders as `<decisions>`: this one is what the participation
+        # turn and the tag turn did in each of these rooms, and it renders as
+        # `<loop_decisions>`. `None` renders no block and writes no row.
+        self._decisions = decisions
         self._shown: dict[str, _Shown] = {}
 
     def _inc(self, name: str, **labels: str) -> None:
@@ -502,6 +523,7 @@ class ProactiveAdaptor:
             + "\n</rooms>"
         )
         parts.append(await self._decision_log(rooms, now=now))
+        parts.append(await self._loop_decisions(key, rooms, home, now=now))
         self_card = await self._self_card(key, platform=home.platform)
         if self_card:
             parts.append(self_card)
@@ -723,6 +745,73 @@ class ProactiveAdaptor:
             + "\n</decisions>"
         )
 
+    async def _loop_decisions(
+        self, key: str, rooms: Sequence[WorkspaceRoom],
+        home: WorkspaceRoom, *, now: datetime,
+    ) -> str:
+        """`<loop_decisions>` — what the OTHER half of the loop did in each of
+        this workspace's rooms over the last 24 hours (issue #199).
+
+        **Not the same block as `<decisions>` one method up, and the two names
+        are load-bearing.** `<decisions>` is her REMINDER rows: what she
+        scheduled here and how it fired. This is the participation turn and
+        the tag turn — the paths that answer when somebody else starts the
+        conversation, which this pass has never been able to see. The
+        incident is 2026-09-10: participation answered a question at 16:43, and
+        this pass raised the same question in another room at 18:03 because
+        nothing told it the answer had already been given.
+
+        **Her own proactive rows are excluded**, and that is design 39 §1's
+        self-echo brake applied to a new input rather than weakened. Three
+        inputs already carry her own words back into this turn (Standing, the
+        self card, and `<decisions>`); the brake on those is framing and
+        measurement, not a predicate. Here a predicate is available, so it is
+        used: a decide turn reading back its own last decide turn would be the
+        fourth and the loudest, because the row says exactly what it concluded
+        in the words it concluded it in.
+
+        **Fail-SOFT, unlike `_decision_log`.** That one refuses the pass
+        (R-27: «I could not check» → do not write rows on the strength of
+        nothing) because it is the record of what she has already SCHEDULED,
+        and a pass blind to it repeats yesterday. This block is a different
+        kind of input: missing it means she may raise something already
+        handled — the state this pass has been in since it shipped — so the
+        honest degradation is a thinner prompt, which is also `_standing_lines`'
+        and `_self_card`'s judgement.
+        """
+        if self._decisions is None:
+            return ""
+        # ONE workspace-scoped read, not one per room. The pass is
+        # workspace-keyed, the bound is 20 rows over the whole unit rather than
+        # 20 per room, and `idx_decision_log_workspace_ts` serves it — see
+        # `DecisionLogRecorder.read_workspace` for why the room-scoped read
+        # cannot answer this question at all.
+        rows = await self._decisions.read_workspace(
+            platform=home.platform, workspace=key,
+            # In the QUERY. Post-filtering would let 20 rows of one busy
+            # writer evict the one `participation spoke` row this pass exists
+            # to see, and the block would say «nothing happened» about the
+            # busiest room.
+            writers=PROACTIVE_DECISION_WRITERS,
+        )
+        labels = {(room.platform, room.conversation_id): room.label for room in rooms}
+        return render_decisions(
+            [
+                (
+                    labels.get((row.platform, row.conversation_id), ""),
+                    (row,),
+                )
+                for row in rows
+            ],
+            now=now,
+            # The SAME constant the query used, so the note names exactly the
+            # deciders this block carries — a decider it excluded is stated as
+            # absent rather than silently missing, and its absence stops
+            # reading as «that decider never ran».
+            writers=PROACTIVE_DECISION_WRITERS,
+            empty="(nothing happened in these rooms in this window)",
+        )
+
     async def _self_card(self, key: str, *, platform: str) -> str:
         """`<self_card>`, DEC-96's own framing: Honcho's `(nora -> nora)`
         distillation of her own replies — a record she may contradict, never
@@ -834,6 +923,7 @@ class ProactiveAdaptor:
             if not isinstance(decision, _Decision):
                 continue
             self._inc("nora_proactive_decisions_total", action=decision.action)
+            await self._log_decision(key, decision)
             if decision.action != "remind":
                 continue
             if decision.note_id is None or decision.note_id in seen:
@@ -880,6 +970,49 @@ class ProactiveAdaptor:
                 adaptor_name=PASS_CLOCK_NAME, key=key, at_ms=now_ms,
             )
         return wakes
+
+    async def _log_decision(self, key: str, decision: _Decision) -> None:
+        """One envelope decision, as a decision-log row (issue #199).
+
+        **A `decline` is logged as loudly as a `remind`, and that is the whole
+        value of this writer.** A row saying «I looked at this and decided not
+        to raise it, because X» is the one thing that stops the next pass — or
+        the gate, reading the same room tomorrow — from re-deriving the same
+        conclusion from scratch. A log that recorded only the raises would
+        answer «nothing has happened here» for a workspace she has considered
+        and passed on four days running.
+
+        It rides beside `nora_proactive_decisions_total{action}`, not instead
+        of it: the counter answers how many and how often, this answers WHICH
+        and WHY, and AGENTS.md's rule is that those are different instruments.
+
+        **Into the HOME ROOM**, because that is where a proactive row would
+        fire (39 D2/D3) and so the room a later decider has to weigh it
+        against. A decision with no home room never reaches here — `inputs`
+        returns `""` and the pass does not run.
+
+        **The model's own `why` is NOT written, and that is a reversal from
+        this branch's first cut.** It is the one model-authored string that
+        would have reached this table, it is written ABOUT a note, and it
+        therefore carries note titles into a block whose whole claim is that it
+        holds no notes. `note_id` is what a reader needs from a decide row —
+        the participation turn has `<notes>` in the same prompt to resolve it
+        against — and a reader that cannot resolve an id has no business being
+        handed a title. So the row carries the verdict and the note it was
+        about; the reasoning stays in the Langfuse trace, where it is
+        re-derivable and not in front of a model.
+        """
+        if self._decisions is None:
+            return
+        home = next((room for room in self._rooms_of(key) if room.home), None)
+        if home is None:
+            return
+        await self._decisions.record(
+            writer="proactive_decide", platform=home.platform,
+            conversation_id=home.conversation_id,
+            verdict="remind" if decision.action == "remind" else "decline",
+            note_id=decision.note_id,
+        )
 
     async def _wake(
         self, key: str, note_id: str, *, shown: _Shown, now_ms: int,

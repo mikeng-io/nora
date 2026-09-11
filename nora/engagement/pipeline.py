@@ -89,6 +89,7 @@ from nora.agent.prefill import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.ports import (
     EngagementRequest,
     LinkPreviewSource,
@@ -211,6 +212,7 @@ class EngagementPipeline:
         tool_call_log_store: ToolCallLogStore | None = None,
         tag_trace_store: Any = None,
         debrief_wiring: debrief.Wiring | None = None,
+        decisions: DecisionLogRecorder | None = None,
     ) -> None:
         # Platform -> adapter, not a single adapter: a reply must leave on the
         # SAME platform the tag arrived on. Nora reached a second platform
@@ -247,6 +249,15 @@ class EngagementPipeline:
         self._spawn = spawn
         self._reactions = reactions
         self._llm_state = llm_state
+        # The shared decision log (issue #199). The tag path is the one decider
+        # of the three that is never in doubt about whether it should speak —
+        # somebody addressed her — so it READS nothing here and only WRITES.
+        # What it writes is what the other two could not see: 2026-09-10's
+        # incident is a tag turn one second behind a participation answer,
+        # re-deriving it from scratch, and then a proactive pass raising the
+        # same question in another room 80 minutes later. `None` is the dormant
+        # default; an unwired composition behaves exactly as before.
+        self._decisions = decisions
         # Optional, and `None` is a real production-shaped state, not a test
         # affordance: `nora.app.offline` (the integration and eval harnesses)
         # has no daemon to ask. `nora.agent.room.Room` reports an absent source
@@ -999,6 +1010,44 @@ class EngagementPipeline:
                 else ("vetoed" if handle.deliverer.called else "silent")
             )
             trace = dataclasses.replace(trace, outcome=real_outcome)
+            # The shared decision log (issue #199), written HERE — after
+            # `real_outcome` is known and BEFORE the `not delivered` return,
+            # so a turn that said nothing is logged as loudly as one that
+            # replied. A log that only recorded successes would answer «this
+            # room has been quiet» for a room where she has failed four times,
+            # which is the opposite of the fact the next decider needs.
+            #
+            # `real_outcome` is reused rather than re-derived: it is already
+            # the finer split (`send_reply` / `recovered` / `vetoed` /
+            # `silent`) and a second derivation is a third place the two can
+            # disagree. `verdict` is the coarse half the block renders.
+            #
+            # AWAITED INLINE, not fire-and-forget. It cannot fail this turn —
+            # the recorder never raises — and the reply has ALREADY gone out by
+            # here, so what it can delay is the trace save and the indicator
+            # release, by at most the recorder's own 2s. Said plainly because
+            # the wrong word here is an invitation to "optimise" it into a
+            # spawn, and a spawned write would not be ordered before the next
+            # turn's read, which is the whole property (see
+            # `DecisionLogStore.append`: rows are written at turn COMPLETION).
+            if self._decisions is not None:
+                await self._decisions.record(
+                    writer="tag", platform=msg.platform,
+                    conversation_id=msg.conversation_id,
+                    # THREE outcomes and not two. `failed` for a turn that
+                    # chose not to speak would be a mislabel of R-5 — her
+                    # deliberate silence is the healthy outcome, not a defect —
+                    # and a later decider reading `tag failed` about it would
+                    # read a working turn as a broken one. `real_outcome`
+                    # already carries the split: `silent` is «she never called
+                    # the tool», `vetoed` is «a guard stopped every attempt».
+                    verdict=(
+                        "replied" if delivered
+                        else "silent" if real_outcome == "silent"
+                        else "failed"
+                    ),
+                    reason=real_outcome,
+                )
             if not delivered:
                 return                       # `finally` still resolves the indicator
 
@@ -1030,6 +1079,25 @@ class EngagementPipeline:
                 "nora_silent_failures_total", reason="handler_error",
                 platform=msg.platform, audience="tag",
             )
+            # The shared decision log (issue #199), and THIS branch is the
+            # incident's own failure mode: 2026-09-10's tag turn re-derived an
+            # answer participation had just sent and DIED doing it. Without a
+            # row here the log says nothing happened in that room at 16:44, and
+            # the very turn the log exists to make visible is the one it
+            # misses.
+            #
+            # Written even though `trace` is deliberately dropped a few lines
+            # down, and the two are not in tension. The trace is dropped
+            # because this branch cannot know WHAT reached the group, so any
+            # outcome it wrote would be a guess. The log's claim is narrower
+            # and certain: this turn faulted. `handler_error` is the reason
+            # the counter above already uses.
+            if self._decisions is not None:
+                await self._decisions.record(
+                    writer="tag", platform=msg.platform,
+                    conversation_id=msg.conversation_id,
+                    verdict="failed", reason="handler_error",
+                )
             # Task 6 fix (review finding 1): `trace` may already be bound here
             # — a fault inside the never-silent-fallback delivery, the DEC-93
             # recovery delivery, or `check_outcome` itself lands in THIS

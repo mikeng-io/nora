@@ -11,6 +11,7 @@ never a sleep — the same discipline `Debounce`'s own tests keep.
 from __future__ import annotations
 
 import contextlib
+import inspect
 
 from nora.app.fire import SENT, SILENT
 from nora.app.participation import ParticipationTrigger
@@ -255,6 +256,11 @@ class _Verdict:
     def __init__(self, admits: bool, score: float) -> None:
         self.admits, self.score = admits, score
         self.verdict = "go" if admits else "no_go"
+        # A CHOSEN verdict carries no error kind — the fail-closed half is
+        # the gate's own. Kept on the fake for shape-parity with the real
+        # `GateVerdict`, though the trigger itself reads neither field since
+        # DEC-179 (it never wrote a decision-log row from the gate's verdict).
+        self.error_kind = None
 
 
 class _ShadowPost:
@@ -524,3 +530,29 @@ async def test_a_quiet_room_still_closes_on_the_timeout_arm():
     clock.now += SETTLE + 1
     assert await trigger.close_due_windows() == 1
     assert len(gate.asked) == 1
+
+
+# --- the shared decision log (issue #199) / DEC-179 ------------------------
+
+
+def test_the_trigger_records_nothing_to_a_decision_log():
+    """**DEC-179: never the gate.** `RelevanceGate` is «ONE call, transcript +
+    standing, no tools, no doctrine, no loop, JSON out» — a writer with a
+    fail-soft path and a store read is not that shape, and design 36 §6
+    forbids it reading a block of what she has already raised (a pending
+    proactive row carries a `note_title`). This branch once recorded the
+    gate's verdict one layer OUT, in this trigger; DEC-179 (three reviews on
+    `design/ambient-loop`) held that the gate's admission control stays out of
+    the decision-log seam on BOTH sides, so the trigger was cut loose from it
+    entirely rather than kept as a lone exception.
+
+    Asserted structurally rather than behaviourally: the test-seam policy
+    (AGENTS.md) is that a production class takes every collaborator through
+    `__init__` and nothing else, so the only way this trigger could write a
+    decision row again is for a constructor parameter naming one to exist.
+
+    Falsification: give `ParticipationTrigger.__init__` a `decisions`
+    parameter (or any other decision-log collaborator) and this goes red.
+    """
+    params = inspect.signature(ParticipationTrigger.__init__).parameters
+    assert not any("decision" in name for name in params)
