@@ -27,6 +27,7 @@ from nora.domain.standing import Standing
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.stages import standing_event
 from nora.obs.metrics import Metrics
+from nora.obs.tracing import TRACE_KIND, span
 from nora.testing import FakeRecordStore, InMemoryStandingStore
 
 pytestmark = pytest.mark.asyncio
@@ -233,3 +234,122 @@ async def test_the_watermark_gap_gauge_is_set_by_the_check():
     harness = _Harness(record_store=store)
     await harness.run_one_spawn()
     assert harness.metrics.get("nora_standing_watermark_gap") == 200
+
+
+# --- tracing (issue #209) --------------------------------------------------
+
+
+async def test_an_event_fold_from_inside_plumbing_exports_one_generation_root(
+        exported_spans):
+    """The event fold must never inherit the ingest pipeline's `plumbing`
+    root, whoever dispatched it (issue #209). `nora/ingest/pipeline.py` opens
+    exactly this shape — a root span declaring `nora.trace_kind=plumbing` —
+    around every stage it runs, including this one's `run`/`_check`; without
+    its own `attached(None)` the fold's spans would nest under that root and
+    be dropped WITH it at the sampler (`_PlumbingIsNotATrace`, R-76), same as
+    every event fold before this fix (issue #209's root-name census: zero
+    `standing.event_fold` / `engagement.debrief.*` roots on 09-09 or 09-10).
+
+    `exported_spans` is built with `build_sampler()` — production's own rule
+    — so a regression here does not just misname a span, it makes the whole
+    fold invisible to the collector.
+
+    PROBE: delete `with attached(None)` from `_event_fold` and this test
+    reddens — the plumbing root captures the fold's spans and the sampler
+    drops all of them, so `exported_spans` comes back empty. See the paired
+    mutation entry.
+    """
+    store = FakeRecordStore()
+    await _seed(store, 200)
+    harness = _Harness(record_store=store)
+
+    with span("ingest.some_stage", **{TRACE_KIND: "plumbing"}):
+        await harness.run_one_spawn()
+
+    spans = exported_spans.get_finished_spans()
+    roots = [s for s in spans if s.parent is None]
+    assert [s.name for s in roots] == ["standing.event_fold"], (
+        "the event fold must export exactly ONE root of its own — never the "
+        f"ingest pipeline's plumbing root; roots seen: {[s.name for s in roots]}"
+    )
+    root = roots[0]
+    assert root.attributes["nora.trace_kind"] == "generation"
+    assert root.attributes["nora.platform"] == "signal"
+    assert root.attributes["nora.conversation_id"] == "g1"
+
+    by_name = {s.name: s for s in spans}
+    for child_name in ("engagement.debrief.fold", "engagement.debrief.verdict"):
+        assert child_name in by_name, (
+            f"{child_name} did not reach the collector at all"
+        )
+        child = by_name[child_name]
+        assert child.context.trace_id == root.context.trace_id, (
+            f"{child_name} is not in the same trace as standing.event_fold"
+        )
+        assert child.attributes["nora.conversation_id"] == "g1"
+    # The event fold has no tag — the honest value on the generation is an
+    # EMPTY tag id, never a borrowed or fabricated one (issue #209).
+    assert by_name["engagement.debrief.fold"].attributes["nora.tag_id"] == ""
+
+
+async def test_a_queued_fold_dispatched_from_another_turns_span_still_opens_its_own_root(
+        exported_spans):
+    """The SECOND dispatch path (issue #209): a fold ENQUEUED behind a held
+    slot (D2 — the check never `try_acquire`-skips) is later started by
+    `ConversationSlots.release_and_dispatch`, which can run from inside some
+    OTHER turn's span — the tag path's own `engagement` root, in production —
+    rather than the ingest path's `plumbing` root the test above covers.
+    `attached(None)` lives in `_event_fold` itself, not at either dispatch
+    call site, so it has to cover this path too; this is proved rather than
+    assumed, because a `plumbing` root and a real (`generation`-kind) root
+    fail differently — nesting under `plumbing` is invisible (the whole
+    subtree is dropped at the sampler), where nesting under a live turn's own
+    root is exactly issue #209's OTHER failure mode: the fold surfaces, but as
+    an unnamed child of somebody else's trace rather than its own. The first
+    test cannot see that shape at all — its parent is dropped, so `nested`
+    and `dropped` read identically there.
+
+    PROBE: delete `with attached(None)` from `_event_fold` and the two roots
+    below collapse into one — the fold's spans nest under `unrelated.turn`
+    instead of opening `standing.event_fold` as a trace of its own.
+    """
+    store = FakeRecordStore()
+    await _seed(store, 200)
+    harness = _Harness(record_store=store)
+    key = ("signal", "g1")
+
+    # Simulate a turn already holding this conversation's slot: the check
+    # must ENQUEUE the fold rather than spawn it directly (D2).
+    harness.slots.acquire(key)
+    await standing_event.run(
+        message=_msg(), wiring=harness.wiring, metrics=harness.metrics,
+        spawn=harness.spawned.append,
+    )
+    await harness.spawned.pop(0)  # the check
+    assert not harness.spawned, "the check must enqueue, not spawn, while held"
+    assert harness.slots.depth(key) == 1
+
+    # The holder's OWN turn finishes, from inside its OWN span — and THAT is
+    # what starts the queued fold, exactly as `release_and_dispatch`'s own
+    # docstring describes.
+    with span("unrelated.turn", **{TRACE_KIND: "generation"}):
+        harness.slots.release_and_dispatch(key)
+        assert harness.spawned, "release_and_dispatch must spawn the queued fold"
+        await harness.spawned.pop(0)
+
+    spans = exported_spans.get_finished_spans()
+    roots = {s.context.trace_id: s for s in spans if s.parent is None}
+    assert sorted(s.name for s in roots.values()) == [
+        "standing.event_fold", "unrelated.turn",
+    ], (
+        "the queued fold must open its OWN trace, never nest under whichever "
+        "turn's span happened to be current when release_and_dispatch ran it"
+    )
+    fold_root = next(s for s in roots.values() if s.name == "standing.event_fold")
+    same_trace = {
+        s.name: s for s in spans if s.context.trace_id == fold_root.context.trace_id
+    }
+    for child_name in ("engagement.debrief.fold", "engagement.debrief.verdict"):
+        assert child_name in same_trace, (
+            f"{child_name} did not export under the fold's own root"
+        )
