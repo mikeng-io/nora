@@ -2245,3 +2245,234 @@ async def test_r81_a_quote_is_grounded_only_against_the_person_who_said_it():
         "Avery is not in the rendered transcript at all — the assertion above "
         "would then hold for a render that simply dropped her"
     )
+
+
+# --- issue #199: a turn outcome is not a room position ----------------------
+
+
+def _incident_trace(outcome: str = "llm_error") -> TagTrace:
+    """The 2026-09-11 shape, as the record holds it (issue #199).
+
+    Miles asked for a route at 16:42; the participation turn answered at
+    16:43:57 and the row is `is_nora=1 delivery_status=sent`. He tagged her in
+    the same second, having not seen it. The tag turn started 7 seconds later,
+    re-derived the route from scratch, and died with `APIError` --
+    `outcome="llm_error"`. So her delivered answer is the second-to-last row
+    of the window the dead turn was reading, and the tag is the last.
+    """
+    answer = TranscriptRow(
+        id=132, sender_id="nora", sender_name=None, ts=1_757_666_637_000,
+        body="聽朝 10 點到數碼港 — 969P", is_nora=True,
+        delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+    tag = TranscriptRow(
+        id=133, sender_id="+852111", sender_name="Miles",
+        ts=1_757_666_637_000, body="@Nora 點去", is_nora=False,
+        delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+    return TagTrace(
+        tag_id="2301f72a", conversation_id="g1", messages=(),
+        transcript=(answer, tag), outcome=outcome,
+        created_at=1_757_666_714_000,
+    )
+
+
+def _ok_with_note(body: str) -> debrief.Completion:
+    """Call A answering with a position AND the note the live fold raised."""
+    return debrief.Completion(json.dumps({
+        "standing": body,
+        "notes": [{
+            "title": "Miles's route to Cyberport is unanswered",
+            "description": "the model call failed and nothing was sent",
+            "uncertainty": "whether he ever got a route",
+            "closing_condition": "Nora successfully sends a route",
+            "anchor_date": 20260912,
+            "body": "Miles asked at 16:42 how to get to Cyberport",
+        }],
+    }), "stop")
+
+
+async def test_a_dead_turn_never_becomes_a_claim_that_she_never_answered():
+    """**The incident, whole** (issue #199). A tag turn died with
+    `llm_error`; the fold was handed "the model call failed; nothing was
+    sent" beside a transcript whose second-to-last row was her own delivered
+    answer, and wrote the ROOM position "I have not sent a single reply
+    today". It then proposed a note on the same premise, the verdict returned
+    `grounded: true`, and ninety minutes later the proactive pass raised it at
+    the operator in a different room.
+
+    Three fixes, one shape, asserted where each of them actually lands:
+
+    - what the fold is TOLD -- the header is scoped to the turn and her
+      delivered row is marked as delivered. The stage cannot assert what a
+      model concludes, and the render IS the whole fix, so this is the honest
+      place to measure it;
+    - what the VERDICT says -- a code check, not a prompt line, because the
+      verdict call has never once returned false in production (#189);
+    - what reaches the note sink -- nothing.
+    """
+    client = _Client(_ok_with_note("he is waiting on a route"), _grounded())
+    sink = _FakeSink()
+    _, metrics, verdicts = await _run(
+        trace=_incident_trace(), client=client, notes_sink=sink)
+
+    fold_prompt = next(
+        p for p in client.prompts if p.startswith("OBJECTIVE-TEXT"))
+    assert "this turn's model call failed, so THIS TURN sent nothing" in fold_prompt
+    assert "says nothing about what you sent on any other turn" in fold_prompt
+    assert "Nora (delivered): 聽朝 10 點到數碼港" in fold_prompt
+
+    verdict = await verdicts.read(tag_id="2301f72a")
+    assert verdict is not None
+    assert verdict.grounded is False
+    assert any("was delivered to this room at" in c for c in verdict.unsupported)
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="false") == 1
+
+    assert sink.batches == []
+    assert _counter(
+        metrics, "nora_debrief_note_proposals_total", outcome="broken_turn") == 1
+
+
+async def test_the_verdict_can_come_back_false_without_the_model_agreeing():
+    """The model said `grounded: true` -- the only thing that call has ever
+    said. The code check overrides it, and the flip is not optional: the
+    domain type refuses a grounded verdict carrying unsupported claims, so
+    "grounded, with a claim" is not even representable."""
+    _, _, verdicts = await _run(
+        trace=_incident_trace(),
+        client=_Client(_ok("a position"), _grounded(grounded=True)))
+    verdict = await verdicts.read(tag_id="2301f72a")
+    assert verdict is not None and verdict.grounded is False
+
+
+async def test_the_deterministic_claim_survives_a_model_verdict_at_its_cap():
+    """`UNSUPPORTED_MAX_ITEMS` truncates nothing -- the domain type refuses an
+    over-long list outright -- so folding a claim into a verdict already
+    carrying ten would have taken the whole verdict down with a `ValueError`.
+    The code claim goes first and the model's oldest is dropped."""
+    _, _, verdicts = await _run(
+        trace=_incident_trace(),
+        client=_Client(_ok("a position"), _grounded(
+            grounded=False,
+            unsupported=tuple(f"claim {i}" for i in range(10)))))
+    verdict = await verdicts.read(tag_id="2301f72a")
+    assert verdict is not None
+    assert len(verdict.unsupported) == 10
+    assert "was delivered to this room at" in verdict.unsupported[0]
+    assert "claim 9" not in verdict.unsupported
+
+
+async def test_a_verdict_is_still_written_when_the_judge_call_itself_failed():
+    """The check needs no completion, which is the point of it being code. A
+    judge call that never returned leaves the disposition `unavailable` and
+    the model half with nothing -- and the turn still comes back ungrounded."""
+    _, metrics, verdicts = await _run(
+        trace=_incident_trace(),
+        client=_Client(_ok("a position"), RuntimeError("verdict call down")))
+    verdict = await verdicts.read(tag_id="2301f72a")
+    assert verdict is not None and verdict.grounded is False
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="false") == 1
+
+
+async def test_a_turn_that_broke_with_no_reply_of_hers_in_it_is_left_alone():
+    """The NEGATIVE half. A crash is not itself ungrounded -- the check needs
+    BOTH halves, and a dead turn whose window holds nothing of hers is an
+    ordinary dead turn. Without this the instrument would report every
+    `llm_error` as a grounding failure and the series would say nothing."""
+    trace = dataclasses.replace(
+        _incident_trace(),
+        transcript=(TranscriptRow(
+            id=133, sender_id="+852111", sender_name="Miles",
+            ts=1_757_666_637_000, body="@Nora 點去", is_nora=False,
+            delivery_status=DeliveryStatus.SENT, raw_json=None),),
+    )
+    _, metrics, verdicts = await _run(
+        trace=trace, client=_Client(_ok("a position"), _grounded()))
+    verdict = await verdicts.read(tag_id="2301f72a")
+    assert verdict is not None and verdict.grounded is True
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="true") == 1
+
+
+async def test_a_row_of_hers_that_never_reached_the_room_is_not_a_contradiction():
+    """`SENT` only. A `PENDING` row of hers is the record saying "a send was
+    started", not "the room got it" -- and a check that read it as delivery
+    would convict a turn on the very thing it exists to distinguish."""
+    trace = _incident_trace()
+    trace = dataclasses.replace(trace, transcript=(
+        dataclasses.replace(trace.transcript[0],
+                            delivery_status=DeliveryStatus.PENDING),
+        trace.transcript[1],
+    ))
+    _, _, verdicts = await _run(
+        trace=trace, client=_Client(_ok("a position"), _grounded()))
+    verdict = await verdicts.read(tag_id="2301f72a")
+    assert verdict is not None and verdict.grounded is True
+
+
+async def test_a_reply_delivered_while_the_dead_turn_ran_is_seen_too():
+    """The other half of the race: a participation turn replying WHILE the tag
+    turn runs records its row after the turn captured its window, so it
+    reaches the fold through the watermark batch and never through the trace.
+    Bounded at the TAG's own clock -- an older batch row is not this turn's
+    business."""
+    trace = dataclasses.replace(
+        _incident_trace(),
+        transcript=(TranscriptRow(
+            id=133, sender_id="+852111", sender_name="Miles",
+            ts=1_757_666_637_000, body="@Nora 點去", is_nora=False,
+            delivery_status=DeliveryStatus.SENT, raw_json=None),),
+    )
+    record = FakeRecordStore()
+    await record.append(
+        message=NormalizedMessage(
+            "signal", "g1", "group", "nora", None, 1_757_666_700_000,
+            "a route", {}),
+        is_nora=True, delivery_status=DeliveryStatus.SENT,
+    )
+    _, _, verdicts = await _run(
+        trace=trace, record_store=record,
+        client=_Client(_ok("a position"), _grounded()))
+    verdict = await verdicts.read(tag_id="2301f72a")
+    assert verdict is not None and verdict.grounded is False
+
+
+async def test_a_completed_turn_still_proposes_the_notes_it_raised():
+    """The POSITIVE CONTROL for the note refusal. `broken_turn` has to be the
+    reason nothing was proposed, not a sink that never worked in this harness
+    -- and an `llm_error` assertion alone is true of both."""
+    sink = _FakeSink()
+    _, metrics, _ = await _run(
+        trace=_incident_trace(outcome="send_reply"),
+        client=_Client(_ok_with_note("a position"), _grounded()),
+        notes_sink=sink)
+    assert len(sink.batches) == 1 and len(sink.batches[0]) == 1
+    assert _counter(
+        metrics, "nora_debrief_note_proposals_total", outcome="proposed") == 1
+
+
+async def test_a_dead_turn_still_revises_the_position():
+    """The asymmetry is deliberate. A turn that died IS worth folding -- "I
+    owe him an answer, my turn crashed" is exactly what a position should
+    carry. What it is not worth is a permanent index line."""
+    store, metrics, _ = await _run(
+        trace=_incident_trace(),
+        client=_Client(_ok("my turn died, I owe him an answer"), _grounded()))
+    position = await store.read(platform="signal", conversation_id="g1")
+    assert position is not None
+    assert position.body == "my turn died, I owe him an answer"
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+
+
+async def test_a_turn_that_actually_replied_is_not_convicted_by_its_own_reply():
+    """The OTHER negative half, and the one the fix needs most. Almost every
+    healthy turn ends with a delivered row of hers inside its own window --
+    that is what a reply IS. A check that looked only at the row and not at
+    the outcome would return `grounded=false` on every successful turn in the
+    deployment, which is a re-derivation on every fold and an instrument that
+    says nothing."""
+    _, metrics, verdicts = await _run(
+        trace=_incident_trace(outcome="send_reply"),
+        client=_Client(_ok("a position"), _grounded()))
+    verdict = await verdicts.read(tag_id="2301f72a")
+    assert verdict is not None and verdict.grounded is True
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="true") == 1

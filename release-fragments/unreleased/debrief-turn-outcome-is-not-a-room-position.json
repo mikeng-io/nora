@@ -1,0 +1,15 @@
+{
+  "type": "fix",
+  "summary": "Nora stops telling people she never answered them. A turn that crashed no longer becomes a claim that she has sent nothing at all, and a note about an answer she already gave can now be closed by the answer.",
+  "details": [
+    "A tag turn that died mid-call was reviewed with the header \"the model call failed; nothing was sent\" — true of that turn, silent about its scope. The review read it as a statement about the whole conversation and wrote \"I have not sent a single reply today\", with her own delivered answer sitting two rows above the tag in the same transcript it was reading. The failure headers now say whose nothing it is, and every message of hers in the transcript is marked with whether the room actually received it, read off the send record rather than inferred from the turn.",
+    "The grounding check that should have caught it returned \"grounded\" and has never once returned anything else in production. It is now backed by a check in code that can: a turn that broke without sending, with a reply of hers delivered inside its own window, comes back ungrounded whatever the model says — and whatever the model says is irrelevant, because the check needs no model call at all. The position is then re-derived from the record on the next review rather than carried forward.",
+    "A turn that died no longer raises notes. It still revises the position — \"my turn crashed, I owe him an answer\" is exactly what a position should carry — but a permanent notebook entry built on a failure header is not. The live one said an answer was outstanding seven seconds after she had sent it, and ninety minutes later she raised it with him in a different room.",
+    "A note whose closing condition is something only she can do can now be closed by her having done it. Her delivered messages reach the tidy-up pass under a marker saying what they are, and may be cited to close a note. Nothing else changed: her words still cannot create or revise a note, still cannot expire one, still do not count as the group having spoken, and a message that never actually reached the room is still not evidence of anything."
+  ],
+  "limitations": [
+    "The new ungrounded check looks at the window the broken turn itself was reading, plus anything delivered at or after the message that triggered it. A reply delivered earlier in a long unreviewed stretch is outside it — deliberately, because that stretch can be a whole day and the check would then fire on almost every failure.",
+    "What the review is told changed; what it then concludes is still a model's judgement. The scoped header and the delivery marks remove the contradiction it was reading, they do not guarantee the paragraph it writes.",
+    "The rest of the chain this incident crossed is untouched: the background pass still decides without reading the transcript, it still speaks in the home room rather than the room the thread is in, and the two paths that both decided to answer at 16:43 still cannot see each other."
+  ]
+}

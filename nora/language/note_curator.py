@@ -130,7 +130,7 @@ from typing import Any, ClassVar, Literal, Protocol, get_args
 from nora.domain.bounds import over_fetch
 from nora.domain.gatherings import AmbiguousOpenGatheringsError
 from nora.domain.media_join import MediaJoin
-from nora.domain.models import TranscriptRow
+from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import (
     MAX_DATELESS_STRIKES,
     Note,
@@ -220,6 +220,13 @@ DISCHARGE_KINDS: frozenset[str] = frozenset({
 #: the owning tier's collaborator is missing, or its own write raised).
 DISCHARGE_OUTCOMES: frozenset[str] = frozenset({
     "written", "refused", "unavailable",
+    # Issue #199 / design 39 D7: the closing citation was one of NORA'S OWN
+    # delivered rows, so there is no person whose warrant this item carries.
+    # Its OWN label and never `refused`, which already means «the sender maps
+    # to nobody» — an unmapped human is a roster gap an operator can fix, and
+    # this is a rule that will never stop applying. One bucket for both would
+    # report a permanent boundary as a configuration problem.
+    "self_cited",
 })
 
 #: Whether a note that actually retired `closed` had anything to discharge —
@@ -236,8 +243,11 @@ DEFAULT_MAX_REVISITS_PER_TICK = 10
 #: Messages of a note's own `established_in` rendered as its evidence. `recent`
 #: returns the newest `limit` rows OLDEST-FIRST; filtered to rows that actually
 #: postdate the note (a closing condition cannot have been met before the note
-#: existed) and to rows that are not Nora's own. This cap is ALSO what
-#: `_covers` measures the anchor window against — see that function.
+#: existed). Her own rows are split off rather than dropped since issue #199 —
+#: the human half is the evidence every existing signal is computed from, and
+#: the delivered half is citable for `closed` and nothing else (`_own_sends`).
+#: This cap is ALSO what `_covers` measures the anchor window against — see
+#: that function.
 DEFAULT_EVIDENCE_MESSAGES_PER_NOTE = 40
 
 #: How many discharge items ONE closed note's classification may carry — a
@@ -682,13 +692,22 @@ class NoteCuratorAdaptor:
         if rows and self._media_join is not None:
             rows = list(await self._media_join.enrich(rows, path="note_curator"))
         # TRUNCATION read BEFORE either filter — a property of what `recent`
-        # COULD return, not of what survived. `is_nora` rows are excluded HERE
-        # because `recent` does not exclude them; her own words are an
-        # intention she stated, not the group settling anything, and closing a
-        # note on them would be self-attestation deciding a retirement.
+        # COULD return, not of what survived. `is_nora` rows are still kept
+        # out of `evidence` HERE because `recent` does not exclude them: her
+        # own words are an intention she stated, not the group settling
+        # anything, and every signal derived from `evidence` — the quiet-room
+        # reading, `_covers`, the rows discharge resolves against — has to
+        # stay a statement about the GROUP.
         truncated = len(rows) >= self._evidence_limit
         since = [row for row in rows if row.ts > note.created_at]
         evidence = tuple(row for row in since if not row.is_nora)
+        # ISSUE #199's NARROW HALF: her own DELIVERED rows, kept apart from
+        # `evidence` rather than folded into it. See `_own_sends` for the
+        # boundary and `_render_own_sends` for what the model is told they
+        # are. Everything below computes from `evidence` exactly as before —
+        # `state`, `_covers`, and the rows `commit`'s discharge resolves
+        # against — so the only thing her rows can newly do is be CITED.
+        own_sends = _own_sends(since)
         if state != "unavailable" and not evidence:
             state = "self_only" if since else "absent"
         bounds = (
@@ -697,7 +716,15 @@ class NoteCuratorAdaptor:
         )
         self._inc("nora_note_curator_candidates_total", evidence=state)
         ev = _Evidence(
-            message_ids=frozenset(row.id for row in evidence),
+            # The citation allow-list, and the ONE place her rows join. A
+            # `closed` verdict may now point at a reply she actually
+            # delivered; `expired`/`moot` still run through `anchor_covered`,
+            # which is computed from `evidence` alone and returns False on an
+            # empty one — so a window holding only her rows can still close a
+            # note and still cannot expire one.
+            message_ids=frozenset(
+                row.id for row in (*evidence, *own_sends)
+            ),
             has_anchor=bounds is not None,
             anchor_passed=bounds is not None and now_ms > bounds[1],
             anchor_covered=_covers(
@@ -708,7 +735,17 @@ class NoteCuratorAdaptor:
         return ev, _render_evidence(
             evidence, state,
             now=datetime.fromtimestamp(self._clock() / 1000, tz=UTC),
-        ), evidence
+            own_sends=own_sends,
+        # THE THIRD ELEMENT CARRIES HER ROWS TOO, and it has to: it is
+        # `commit`'s discharge lookup, and ONE tuple serves both slots. Her
+        # row is in `message_ids`, so `_ground` accepts it as a closing
+        # citation, so `_run_discharge` will look it up — and a map that
+        # could not find it would make the refusal a lookup MISS rather than a
+        # decision, which is the shape that reads as working right up until
+        # somebody widens the map. The refusal lives where the warrant is
+        # READ (`_run_discharge`), on its own label; this hands that refusal
+        # the row it has to recognise.
+        ), (*evidence, *own_sends)
 
     # -- inputs -----------------------------------------------------------
 
@@ -1210,6 +1247,39 @@ class NoteCuratorAdaptor:
             evidence_rows.get(verdict.cited_message_id)
             if verdict.cited_message_id is not None else None
         )
+        # **A NOTE CLOSED ON ONE OF NORA'S OWN ROWS DISCHARGES NOTHING**
+        # (issue #199; design 39 D7 — she may see herself, she may not cite
+        # herself as the state of the world).
+        #
+        # THE GUARD IS HERE, at the one place the warrant is READ, and not at
+        # any of the three places it could have been written. `cited_row` is
+        # resolved ONCE and serves both routes, so one refusal covers a
+        # commitment reaching the Gathering service and a person-claim
+        # reaching Honcho; a guard further up would cover whichever caller
+        # happened to exist when it was written. Issue #199 admitted her
+        # delivered rows to the citation slot — it had to, because the note it
+        # was opened about had a closing condition only she could satisfy and
+        # her row was the only row in the window — and admitting a row to
+        # `message_ids` necessarily hands it to this line.
+        #
+        # Its own label, never `refused`: `_discharge_commitment` already uses
+        # that for «the sender maps to nobody», which is a roster gap an
+        # operator can close. This one never closes. The two would otherwise
+        # share a series an operator reads to tell a fixable wiring problem
+        # from a permanent boundary.
+        if cited_row is not None and cited_row.is_nora:
+            for item in verdict.discharge:
+                self._inc_discharge(
+                    kind=("commitment" if isinstance(item, _CommitmentClaim)
+                          else "person_claim"),
+                    outcome="self_cited",
+                )
+            log.info(
+                "note discharge: note %s closed on one of Nora's own rows; "
+                "the retirement stands and its %d item(s) carry no warrant",
+                note.id, len(verdict.discharge),
+            )
+            return
         for item in verdict.discharge:
             if isinstance(item, _CommitmentClaim):
                 await self._discharge_commitment(
@@ -1378,8 +1448,84 @@ def _parse_discharge_item(entry: object) -> _DischargeItem | None:
     return None
 
 
+def _own_sends(since: Sequence[TranscriptRow]) -> tuple[TranscriptRow, ...]:
+    """Nora's own rows that the send record says REACHED the room.
+
+    **Issue #199, and it is the narrowest crack in design 39 §1's brake that
+    closes the hole.** The brake says nothing Nora says can create, revise or
+    close a note, and it is enforced in three places: `since`'s
+    `is_nora == 0` predicate on the create path, the curator's own filter one
+    function up, and the curator having no create or revise verb at all. The
+    first two stay exactly as they are; the third is structural. What changes
+    is the word CLOSE.
+
+    A closing condition can name something only SHE can do — «Nora 成功送出路線
+    建議», written by a fold on a turn that had crashed, about a route she had
+    in fact sent seven seconds earlier. With her rows filtered out, nothing
+    that could ever satisfy that condition was visible to the pass whose job
+    is to retire it, so the note was unclosable by construction and the
+    proactive pass raised it at the operator the next morning.
+
+    **`SENT` only, and the status is the reason this is not self-attestation.**
+    R-74 refuses her words as evidence because «I'll book Yardbird» is an
+    intention she stated, not the group settling anything — the doer deciding
+    it is done. `delivery_status` is not her word: the sender writes it back
+    after the platform has accepted the message (A9's record-first, send-after
+    pair), so what this admits is a fact about the record, not a claim she
+    made. A `PENDING` or `FAILED` row is exactly the self-attestation R-74
+    names — an intention with nothing behind it — and is excluded.
+
+    Everything else about the pass is unchanged, so the brake still holds
+    where it was holding:
+
+    - **create** — the candidates adaptor reads `RecordStore.since`, whose SQL
+      excludes her rows. Untouched, and it is the only path that creates.
+    - **revise** — the curator has no revision verb; `_NoteStore` gives it
+      `read`, `supersede` and `record_wake` and nothing else.
+    - **expire** — `anchor_covered` is computed from the human evidence alone
+      and `_covers` fails closed on an empty one, so her rows cannot establish
+      that a window spans a moment, and «the moment went by unanswered» still
+      requires the room to have spoken.
+    - **the quiet-room reading** — `EvidenceState` is derived from the human
+      rows too, so a stretch in which only she spoke is still `self_only` and
+      still renders «nothing the group has said».
+    """
+    return tuple(
+        row for row in since
+        if row.is_nora and row.delivery_status is DeliveryStatus.SENT
+    )
+
+
+def _render_own_sends(
+    own_sends: Sequence[TranscriptRow], *, now: datetime,
+) -> str:
+    """Her delivered rows, rendered under a marker that says what they are.
+
+    **Telling the model what it is READING, not what to do** — the repo's own
+    measured lesson, and the reason this is a render rather than a paragraph
+    in `note-curation.md`. Three instruction rewrites of an adjacent gate
+    changed nothing or made it worse; rendering an age per row cut its error
+    rate by two thirds. So the block states the three facts the judgement
+    turns on: these are hers, they were delivered, and they are not the group
+    deciding anything.
+    """
+    lines = [
+        "your own messages since this note, newest last — each one DELIVERED "
+        "to that room (the send record says so, not me). These are evidence "
+        "that YOU did something: cite one to close a note whose closing "
+        "condition is an answer or a message from you. They are never the "
+        "group settling anything — an intention of yours is not a decision, "
+        "and nothing here can expire a note."
+    ]
+    for row in own_sends:
+        when = f"({age(row.ts, now)}) " if row.ts else ""
+        lines.append(f"[{row.id}] {when}you: {escape(row.body or '')}")
+    return "\n".join(lines)
+
+
 def _render_evidence(
     evidence: Sequence[TranscriptRow], state: EvidenceState, *, now: datetime,
+    own_sends: Sequence[TranscriptRow] = (),
 ) -> str:
     """The evidence portion of one note's block — `nora.language.
     note_revisitor`'s `_render_note`, split out because every note gets one
@@ -1393,6 +1539,14 @@ def _render_evidence(
     invites it to reason about our infrastructure instead of the note. That
     distinction is for the operator, and lives on the counter.
     """
+    # THE OWN-SENDS BLOCK RIDES ALONG, and it rides along on BOTH branches
+    # (issue #199). `self_only` is precisely the shape the incident produced —
+    # she had answered and nobody had spoken since — so a block that appeared
+    # only when the group had also spoken would be absent from the one case it
+    # was written for.
+    tail = (
+        "\n" + _render_own_sends(own_sends, now=now) if own_sends else ""
+    )
     if not evidence:
         return (
             "evidence: NONE — nothing the group has said since this note was "
@@ -1400,7 +1554,7 @@ def _render_evidence(
             if state == "self_only" else
             "evidence: NONE — nothing has been said in that conversation "
             "since this note was written."
-        )
+        ) + tail
     lines = ["evidence, newest last:"]
     for row in evidence:
         speaker = row.person_name or row.sender_name or row.sender_id
@@ -1410,7 +1564,7 @@ def _render_evidence(
         lines.append(
             f"[{row.id}] {when}{escape(speaker)}: {escape(row.body or '')}"
         )
-    return "\n".join(lines)
+    return "\n".join(lines) + tail
 
 
 def _now_block(today: int) -> str:

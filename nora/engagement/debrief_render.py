@@ -4,9 +4,9 @@ gap between "the type carries everything" and "something renders it" is how the
 fact tier failed: identity present on the row, dropped at the prompt, noticed
 months later (`21-substrate-contract.md` §7.1).
 
-**Six mappings, each one a defect another tier has already shipped.** They are
+**Seven mappings, each one a defect another tier has already shipped.** They are
 tested individually rather than through the whole block, because a render that
-gets five right and drops the sixth still looks correct:
+gets six right and drops the seventh still looks correct:
 
 - **`ts`** — local wall-clock time. Prevents the model reasoning about
   `1756012345`; *"you are not even including the timestamp"* is the fact
@@ -21,6 +21,16 @@ gets five right and drops the sixth still looks correct:
   worth reviewing; a render that omits it defeats the stage's own purpose.
 - **`prior`** — always present, **even when empty**. §4's non-negotiable: a
   fold that cannot see the prior position cannot correct it.
+- **`delivery_status`** — on Nora's OWN rows, as `(delivered)` /
+  `(not delivered)`, with a legend above the transcript saying what the mark
+  means. **Issue #199 is the defect this one exists for.** A tag turn died with
+  `llm_error`, the header said *"the model call failed; nothing was sent"*, and
+  the fold generalised a TURN outcome into a ROOM position — *"I have sent
+  nothing at all today"* — with her own delivered answer sitting two rows above
+  the tag in the very window it was reading. The row was present and carried
+  nothing that said it had reached anybody, so the header won. This is
+  `AGENTS.md`'s rule in its rarest form: the input DID carry the truth, and a
+  block that did not say what it was scoped to overrode it.
 
 **Wall-clock, not `prefill._age`'s relative form, and the difference is not
 cosmetic.** The prefill renders "2h ago" because the question a reply needs
@@ -49,10 +59,20 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, tzinfo
 from typing import Any
 
-from nora.domain.models import TranscriptRow
+from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.prompt import escape, escape_attr
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
+
+#: The scope clause every «sent nothing» gloss carries. ONE constant, spliced
+#: into all four of them, so the four cannot drift into saying four different
+#: things about the same boundary — and so reverting it is one edit a test can
+#: be pointed at.
+_THIS_TURN_ONLY = (
+    ". That is a fact about THIS TURN and nothing else: it says nothing about "
+    "what you sent on any other turn, and any reply of yours in the transcript "
+    "below was still delivered."
+)
 
 #: What each `outcome` MEANS, spelled out rather than left as a bare token.
 #: §2's whole argument is that a deliberate silence produced just as much
@@ -76,14 +96,28 @@ from nora.domain.tag_trace import TagTrace
 # never fired in production, and all 29 retained traces are `recovered` (15) or
 # `send_reply` (14). Latent, not active — which is why it is a note and not a
 # migration.
+#
+#: **Every gloss is scoped to THIS TURN, and issue #199 is why the scope is
+#: spelled out rather than implied.** `llm_error` read "the model call failed;
+#: nothing was sent" — true of the turn, silent about its scope — and the fold
+#: read it as a statement about the conversation: it wrote «I have not sent a
+#: single reply today» while a delivered answer of hers sat in the same
+#: transcript window, then proposed a note on the same false premise and the
+#: verdict blessed it. The four outcomes that sent nothing now say WHOSE
+#: nothing it is, in the same sentence, because a scope the reader has to infer
+#: is a scope the reader gets to choose.
 _OUTCOME_GLOSS: Mapping[str, str] = {
     "send_reply": "you replied, through the send_reply tool",
     "recovered": "you wrote a reply as prose without calling send_reply; "
                  "the pipeline delivered it for you",
-    "silent": "you chose to say nothing — no delivery was attempted (R-5)",
-    "vetoed": "you tried to reply and every attempt was refused by a guard",
-    "timeout": "the model call did not finish in time; nothing was sent",
-    "llm_error": "the model call failed; nothing was sent",
+    "silent": "you chose to say nothing on this turn — no delivery was "
+              "attempted for it (R-5)" + _THIS_TURN_ONLY,
+    "vetoed": "on this turn you tried to reply and every attempt was refused "
+              "by a guard" + _THIS_TURN_ONLY,
+    "timeout": "this turn's model call did not finish in time, so THIS TURN "
+               "sent nothing" + _THIS_TURN_ONLY,
+    "llm_error": "this turn's model call failed, so THIS TURN sent nothing"
+                 + _THIS_TURN_ONLY,
 }
 
 #: How much of one narration/tool-result block reaches the fold. The trace is
@@ -96,8 +130,43 @@ _OUTCOME_GLOSS: Mapping[str, str] = {
 _BLOCK_CHARS = 600
 
 
+#: The mark on one of Nora's OWN rows, and the LEGEND that says what it means.
+#: Issue #199: `is_nora` was rendered as a distinct speaker and stopped there,
+#: so a row of hers that had actually reached the room looked exactly like one
+#: that had not — and a turn-scoped «nothing was sent» header was free to
+#: explain it away. The mark binds to `messages.delivery_status`, the column the
+#: sender writes back after the platform accepts the message, so it is the
+#: record's own answer to «did this reach anybody» rather than an inference from
+#: the turn.
+_DELIVERED = "delivered"
+_NOT_DELIVERED = "not delivered"
+_TRANSCRIPT_LEGEND = (
+    "(How to read this: every line is a message that is IN THE RECORD. Lines "
+    f"from you are marked ({_DELIVERED}) or ({_NOT_DELIVERED}) from the send "
+    f"record itself — ({_DELIVERED}) means the room received it. A turn's "
+    "outcome describes only the turn it labels, so a delivered line of yours "
+    "here was delivered whatever any turn outcome says; another turn may have "
+    "sent it.)"
+)
+
+
+def _delivery(row: TranscriptRow) -> str:
+    """The delivery mark for one of Nora's rows — the seventh mapping.
+
+    Only her own rows carry it: `delivery_status` on an inbound row describes a
+    send that never happened, so marking those would put a word on a line that
+    means nothing there and teach the fold to read the mark as decoration.
+
+    `PENDING` renders as `not delivered` alongside `FAILED`, deliberately. The
+    honest reading of a row still pending is «not known to have reached the
+    room», and the fail-closed direction on a mark whose whole job is to stop a
+    false «I sent nothing» is to under-claim delivery, never to over-claim it.
+    """
+    return _DELIVERED if row.delivery_status is DeliveryStatus.SENT else _NOT_DELIVERED
+
+
 def _clock(ts_ms: int, tz: tzinfo | None) -> str:
-    """`ts` as a local wall-clock time — the first of the six mappings.
+    """`ts` as a local wall-clock time — the first of the seven mappings.
 
     `tz=None` means the host's own zone, matching every other clock in the
     prompt (`prefill._now_line`); it is a parameter so a test can pin one and
@@ -135,8 +204,32 @@ def _transcript(
         parent = by_ts.get(row.quoted_ts) if row.quoted_ts is not None else None
         if parent is not None and parent.id != row.id:
             who += f" (replying to {_clock(parent.ts, tz)})"
+        # THE DELIVERY MARK (issue #199). Hers only, and never escaped from the
+        # row's own text — it is the render's word about the record, not
+        # anybody's content, so it sits outside the `escape`d speaker.
+        if row.is_nora:
+            who += f" ({_delivery(row)})"
         lines.append(f"[{_clock(row.ts, tz)}] {who}: {escape(row.body or '')}")
     return "\n".join(lines)
+
+
+def _transcript_block(
+    rows: Sequence[TranscriptRow], *, display_name: str, tz: tzinfo | None,
+) -> str:
+    """`<transcript>` with its LEGEND — one function, so the mark and the
+    sentence that explains it can never ship apart.
+
+    Every renderer in this module goes through here. A delivery mark in the
+    tag fold's transcript and a bare one in the rollup's would be the same
+    token meaning two things to the same model, which is the drift the
+    `_speaker` docstring one function up already names for names.
+    """
+    return (
+        "  <transcript>\n"
+        f"  {_TRANSCRIPT_LEGEND}\n"
+        f"{_transcript(rows, display_name=display_name, tz=tz)}\n"
+        "  </transcript>"
+    )
 
 
 def _clip(text: str) -> str:
@@ -240,8 +333,7 @@ def render_debrief_turn(
     return (
         f'<turn outcome="{escape_attr(trace.outcome)}" at="{escape_attr(at)}">\n'
         f"  <what_happened>{escape(gloss)}</what_happened>\n"
-        f"  <transcript>\n{_transcript(rows, display_name=display_name, tz=tz)}\n"
-        f"  </transcript>\n"
+        f"{_transcript_block(rows, display_name=display_name, tz=tz)}\n"
         f"  <reasoning>\n{_reasoning(trace.messages)}\n  </reasoning>\n"
         f"</turn>"
     )
@@ -318,11 +410,10 @@ def render_rollup_input(
         else "<standing_prior>\n(no position yet — this is the first fold for "
              "this conversation)\n</standing_prior>"
     )
-    transcript = _transcript(rows, display_name=display_name, tz=tz)
+    block = _transcript_block(rows, display_name=display_name, tz=tz)
     return (
         f"{prior_block}\n\n"
-        f"<conversation>\n  <transcript>\n{transcript}\n  </transcript>\n"
-        f"</conversation>"
+        f"<conversation>\n{block}\n</conversation>"
     )
 
 
@@ -333,8 +424,5 @@ def render_rollup_verdict_input(
     prior (D4 — the verdict must not read the position it is about to write,
     and the two calls must not disagree about what happened).
     """
-    transcript = _transcript(rows, display_name=display_name, tz=tz)
-    return (
-        f"<conversation>\n  <transcript>\n{transcript}\n  </transcript>\n"
-        f"</conversation>"
-    )
+    block = _transcript_block(rows, display_name=display_name, tz=tz)
+    return f"<conversation>\n{block}\n</conversation>"

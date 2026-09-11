@@ -74,12 +74,45 @@ observation» is true of exactly one input and false of three. Stated
 precisely:
 
 *The note is the structural brake.* `since` excludes `is_nora` rows in its
-SQL predicate (`nora/infra/sql/audit.py:173`), the curator excludes them
-again (`note_curator.py:670`), and design 27 §11.3 states the rule — «her
-saying *I'll book Yardbird* is an intention she stated, not the group
-settling anything». Nothing Nora says can create, revise or close a note. A
-human replying to her message is a human row; that is how her proposal
-reaches the note.
+SQL predicate (`nora/infra/sql/audit.py`), the curator keeps them out of the
+evidence it derives every signal from (`note_curator.py::_gather_evidence`),
+and design 27 §11.3 states the rule — «her saying *I'll book Yardbird* is an
+intention she stated, not the group settling anything». Nothing Nora says can
+create or revise a note. A human replying to her message is a human row; that
+is how her proposal reaches the note.
+
+*NARROWED 2026-09-11 on evidence (issue #199), and the word that changed is
+CLOSE.* The brake read «create, revise or close». Closure was carrying the
+other two for free, and it cost a note: a closing condition can name something
+only SHE can do — «Nora successfully sends a route» — so with her rows
+filtered out, the one pass whose job is to retire that note could never see
+the thing that satisfied it. It stayed open with its condition already met and
+the proactive pass raised it at the operator the next morning, in the wrong
+room. The curator now also renders her DELIVERED rows, under a marker saying
+what they are, and a `closed` verdict may cite one. Create is untouched (the
+candidates path still reads `since`); revise is untouched (the curator has no
+revision verb); `expired`/`moot` are untouched (`anchor_covered` is computed
+from the human evidence alone and `_covers` fails closed on an empty one); the
+quiet-room reading is untouched (`EvidenceState` is derived from the human
+rows too); and DISCHARGE IS REFUSED on a self-citation, which is
+D7 in this same node. One evidence tuple serves both slots, so a row
+admitted to the citation allow-list necessarily reaches `_run_discharge`'s
+single `cited_row` resolution — the one the commitment route and the
+person-claim route share — and without a guard THERE a legal self-citation
+would make her the requester of a Gathering event and the subject of a
+Honcho person-claim. The guard sits past that resolution, covers both
+routes at once, and carries its own `self_cited` outcome rather than
+`refused` (which already means «the sender maps to nobody» — a roster gap
+an operator can close, where this boundary never closes). The retirement
+still lands. Keeping the evidence filter strict instead was measured and
+does not work: on the incident's own note her row was the ONLY row since
+the note was created, so the allow-list is empty and the `closed` verdict
+is dropped as `no_evidence` before any citation is read. The line is `delivery_status == SENT`: the sender writes that back
+after the platform accepted the message, so what is admitted is a fact about
+the record, not a claim she made. *The reading that would reopen it:* a
+retirement grounded on a row of hers whose closing condition was about the
+GROUP rather than about her — which is what `nora_note_retirements_total` and
+the `why` on each retirement are there to make findable.
 
 *Three inputs do carry her own words into the next decide turn, and the doc
 must not pretend otherwise:* Standing is folded from the transcript
@@ -97,7 +130,8 @@ verbatim window is where the self-echo would be loudest.
 
 | edge | brake | where | exists |
 |---|---|---|---|
-| Nora's message → note | excluded by predicate | `since` `is_nora == 0`; curator filter | yes |
+| Nora's message → note (create/revise) | excluded by predicate | `since` `is_nora == 0`; the curator has no create or revise verb | yes |
+| Nora's message → note (close) | only a DELIVERED row, only as a `closed` citation, never as the group speaking | `_own_sends`, issue #199 | **narrowed** |
 | act turn → another reminder | `remind` refuses inside a fire turn | `tools.py:6205-6212` «a reminder that can set a reminder is a loop with no bound» | yes |
 | decide turn → unbounded rows | per-requester cap, requester is the `ai_peer` id | `max_pending_per_requester = 20` (D5) | yes |
 | decide turn → its own note | no note-content writer declared; `record_wake` cannot reset its own strike | D6; `sql/notes.py:526-540` | yes |

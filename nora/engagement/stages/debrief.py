@@ -133,16 +133,16 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import tzinfo
+from datetime import datetime, tzinfo
 from typing import Any, NamedTuple, Protocol
 
 from nora.agent.dream_screen import screen
 from nora.agent.security import trace_safe
 from nora.agent.tools import note_handle
 from nora.domain.media_join import MediaJoin
-from nora.domain.models import TranscriptRow
+from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import NoteCreationProposal
 from nora.domain.ports import (
     DreamSink,
@@ -154,7 +154,7 @@ from nora.domain.ports import (
 from nora.domain.provenance import instruction_sha256
 from nora.domain.standing import STANDING_STORE_CALLS_PER_FOLD, Standing
 from nora.domain.tag_trace import TagTrace
-from nora.domain.turn_verdict import TurnVerdict
+from nora.domain.turn_verdict import UNSUPPORTED_MAX_ITEMS, TurnVerdict
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import annotate, annotate_generation, generation
 
@@ -472,6 +472,49 @@ def _verdict(
         return None
 
 
+def _with_room_scope_claim(
+    verdict: TurnVerdict | None, *, row: TranscriptRow, tag_id: str,
+    conversation_id: str, now_ms: int, tz: tzinfo | None,
+) -> TurnVerdict | None:
+    """The model's verdict with the deterministic claim folded in — or a
+    verdict built from the claim alone when the model produced none.
+
+    **`grounded` goes to False and stays there.** A model verdict of `true`
+    is OVERRIDDEN rather than trusted, because the whole reason this check
+    exists is that `true` is the only thing that call has ever returned.
+    Folding the claim into a `true` verdict without flipping the flag would
+    also be a `ValueError` from `TurnVerdict.__post_init__` — the domain type
+    refuses a grounded turn carrying unsupported claims — so the flip is both
+    the judgement and the only representable shape.
+
+    The claim goes FIRST. `UNSUPPORTED_MAX_ITEMS` truncates nothing (the
+    domain type refuses an over-long list outright), so an ungrounded model
+    verdict already carrying ten claims would take the whole verdict down with
+    a `ValueError`. The oldest of the model's own claims is dropped instead —
+    it is a model-authored sentence about a turn that broke, and this one is
+    a fact about a row.
+
+    Returns `None` only if the construction is refused, which keeps this
+    rider's promise: a verdict this function cannot build is «no verdict»,
+    never a raise on a turn that already delivered.
+    """
+    clock = datetime.fromtimestamp(row.ts / 1000, tz=tz).strftime("%H:%M")
+    claim = _ROOM_SCOPE_CLAIM.format(clock=clock)
+    existing = verdict.unsupported if verdict is not None else ()
+    claims = (claim, *existing)[:UNSUPPORTED_MAX_ITEMS]
+    try:
+        return TurnVerdict(
+            tag_id=tag_id, conversation_id=conversation_id,
+            grounded=False, unsupported=claims, created_at=now_ms,
+        )
+    except ValueError:
+        log.warning(
+            "debrief: the deterministic room-scope verdict was refused by the "
+            "domain type (tag=%s); keeping the model's verdict", tag_id,
+        )
+        return verdict
+
+
 @dataclass(frozen=True)
 class Wiring:
     """Everything the stage needs, as ONE object that is either present or
@@ -536,6 +579,100 @@ class Wiring:
     # bare handles the row actually carries. LAST, because a defaulted field
     # cannot precede the ones above it.
     media_join: MediaJoin | None = None
+
+
+#: The two outcomes on which the turn SENT NOTHING BECAUSE IT BROKE — issue
+#: #199's set, and the membership is the decision.
+#:
+#: `llm_error` and `timeout` are the turn that never produced an answer at all:
+#: no reply, and no completed reasoning to have sourced one from. `silent` and
+#: `vetoed` are deliberately NOT here even though they also sent nothing — a
+#: silence is a DECISION the fold is specifically told is worth reviewing (26
+#: §2), and a veto is a guard doing its job on reasoning that did finish. Both
+#: produce a turn there is something to say about; these two produce a turn
+#: there is not.
+#:
+#: One constant for two uses, because they are one fact: the deterministic
+#: verdict check below and the note-proposal refusal are both answering «did
+#: this turn actually happen».
+_BROKEN_TURN_OUTCOMES = frozenset({"llm_error", "timeout"})
+
+#: What the deterministic check writes into the verdict when it fires. Under
+#: `UNSUPPORTED_MAX_CHARS` (200) by construction — `TurnVerdict.__post_init__`
+#: refuses a longer one and would cost the whole verdict.
+_ROOM_SCOPE_CLAIM = (
+    "a claim that nothing was sent, from a turn that broke — a reply of yours "
+    "was delivered to this room at {clock} and this turn's outcome is not "
+    "evidence about it"
+)
+
+
+def _delivered_despite_the_outcome(
+    trace: TagTrace, batch: Sequence[TranscriptRow],
+) -> TranscriptRow | None:
+    """The row that makes a «nothing was sent» position UNSUPPORTED, or `None`.
+
+    **Issue #199, and it is a CODE check rather than a prompt line on
+    purpose.** The verdict call has never once returned `grounded=false` in
+    production across every row it has judged (#189). On the turn this check
+    exists for it returned `grounded: true` on a position asserting «I have
+    not sent a single reply today» — with her own delivered answer two rows
+    above the tag in the window the judge was reading. A judge that cannot
+    return false is not an instrument, and one more sentence in its objective
+    was not going to make it one.
+
+    **What it binds to, and why that is the real property rather than a
+    proxy.** Not the position's prose — a phrase list over free-form Cantonese
+    would be a guess at meaning wearing a measurement's clothes, and «a single
+    example decides nothing» is exactly how such a list gets written. It binds
+    to two facts the record answers on its own: this turn's `outcome` says it
+    broke without sending, and the turn's OWN window (`trace.transcript`, the
+    rows the tag path was reading when it died) holds a row of hers that the
+    send record marks `SENT`. Those two together are the incident's shape, and
+    a fold handed them has been handed a contradiction — whatever paragraph it
+    then wrote, the turn's sourcing is not clean and the position is worth
+    re-deriving. `nora_standing_rederivations_total{trigger="ungrounded"}` is
+    that re-derivation, and it is self-correcting: the next fold rebuilds from
+    the window rather than carrying the paragraph forward.
+
+    **Two narrow sets, never the whole batch, and the narrowing is the whole
+    reason this does not fire constantly.** The watermark batch is every row
+    since the last fold — on a conversation that has not folded since
+    yesterday it holds every reply she made in it, and a broken turn would
+    come back «ungrounded» on the strength of one from yesterday morning. So
+    only two kinds of row count, and both are contemporary with the turn by
+    construction:
+
+    - **the turn's own window** (`trace.transcript`) — the rows the tag path
+      was reading when it died. This is where the incident's row was: she had
+      answered seven seconds before the tag arrived, so her reply is the
+      second-to-last row of the window the dead turn was looking at.
+    - **anything delivered at or after the tag** — a batch row no older than
+      the turn's newest own row. That is the other half of the race: a
+      participation turn replying WHILE the tag turn ran records its row after
+      the turn captured its window, so it reaches the fold through the batch
+      and never through the trace.
+
+    A turn with no window of its own is not bounded by either rule, so it
+    returns `None` rather than reaching for the batch — this instrument only
+    ever ADDS an ungrounded verdict, so not firing is the conservative
+    direction.
+
+    Returns the ROW so the claim can name its clock; `None` when either half
+    does not hold.
+    """
+    if trace.outcome not in _BROKEN_TURN_OUTCOMES or not trace.transcript:
+        return None
+    own_ids = {row.id for row in trace.transcript}
+    tag_ts = trace.transcript[-1].ts
+    candidates = [
+        *trace.transcript,
+        *(row for row in batch if row.id not in own_ids and row.ts >= tag_ts),
+    ]
+    for row in sorted(candidates, key=lambda r: r.id, reverse=True):
+        if row.is_nora and row.delivery_status is DeliveryStatus.SENT:
+            return row
+    return None
 
 
 #: How many notes one fold may raise. The objective asks for at most two and
@@ -1165,6 +1302,27 @@ async def run(
                 conversation_id=trace.conversation_id,
                 now_ms=now_ms,
             )
+        # THE DETERMINISTIC HALF (issue #199), and it runs whatever the model
+        # half did — including when the model half never ran. A verdict this
+        # check writes on its own needs no completion, which is the point: it
+        # is the only path by which a turn can come back ungrounded without a
+        # model agreeing to say so, and the model has never once said so.
+        #
+        # It cannot COST the position: like every other rider below the
+        # `body is None` guard it only adds, and the position is written a few
+        # lines down regardless.
+        contradicted = _delivered_despite_the_outcome(trace, batch)
+        if contradicted is not None:
+            verdict = _with_room_scope_claim(
+                verdict, row=contradicted, tag_id=trace.tag_id,
+                conversation_id=trace.conversation_id, now_ms=now_ms, tz=tz,
+            )
+            log.info(
+                "debrief: this turn is labelled %s but a reply of yours was "
+                "delivered inside its own window (tag=%s); the verdict is "
+                "ungrounded and the position will be re-derived",
+                trace.outcome, trace.tag_id,
+            )
 
         if len(body) > max_chars:
             # The second refusal. Nothing is written and the PRIOR position
@@ -1395,7 +1553,46 @@ async def run(
         # 2026-08-28).
         workspace: str | None = None
         proposals: list[NoteCreationProposal] = []
-        if notes_sink is not None:
+        if notes_sink is not None and trace.outcome in _BROKEN_TURN_OUTCOMES:
+            # **A DEAD TURN DOES NOT RAISE NOTES** (issue #199). The turn that
+            # broke produced no reply and no completed reasoning; the only
+            # thing the fold knows about it is the failure header, and a note
+            # raised from that header is a note about the TURN wearing a
+            # question about the room. The live one read «Miles's route for
+            # tomorrow morning is unanswered / model call failed, Nora sent
+            # nothing», created 7 seconds after she had sent him the route,
+            # and it was still open ninety minutes later when the proactive
+            # pass raised it at him in a different room.
+            #
+            # **Refused HERE rather than at the create gate, and the smaller
+            # blast radius is the whole argument.** Carrying the outcome to
+            # the gate means a new field on `Proposal` — a port shared by the
+            # note candidates adaptor and the curator, with a contract suite
+            # over two implementations and a staging table underneath — for a
+            # fact only this one producer has. The gate would then have to
+            # decide what a missing outcome means, which is a third state
+            # nobody wants. This is one guard in the one stage that already
+            # owns «may this fold propose at all», beside the workspace
+            # refusal that answers the same question for a different reason.
+            #
+            # **The position is still revised**, and that asymmetry is
+            # deliberate: a turn that died IS worth folding — «I owe him an
+            # answer, my turn crashed» is exactly the kind of thing a position
+            # should carry. What it is not worth is a permanent index line.
+            #
+            # COUNTED, and counted BEFORE the parse rather than after: parsing
+            # increments `already_read`/`refused`/`over_cap` as it goes, and
+            # on a path where nothing could be proposed those series would
+            # describe proposals that never could have been made — the exact
+            # defect that moved this whole block below the position write.
+            metrics.inc("nora_debrief_note_proposals_total",
+                        outcome="broken_turn")
+            log.info(
+                "debrief: the turn ended %s, so no notes are raised from it "
+                "(tag=%s); the position is revised as usual",
+                trace.outcome, trace.tag_id,
+            )
+        elif notes_sink is not None:
             # **NEVER RAISES**, for the reason above: the resolver belongs to
             # the caller and this sits downstream of a write that has already
             # committed.
