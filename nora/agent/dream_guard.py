@@ -53,7 +53,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal, get_args
 
 from strands.hooks import (
     AfterToolCallEvent,
@@ -68,7 +68,7 @@ from .guards import _list_tool_names
 
 log = logging.getLogger("nora.dream_guard")
 
-__all__ = ["MEMORY_BUDGET_REASON", "DreamGuard"]
+__all__ = ["GUARD_RULES", "MEMORY_BUDGET_REASON", "DreamGuard", "GuardRule"]
 
 #: The pass-wide ledger's ONE key. It is not a tool name and cannot collide
 #: with one: the memory ledger is a second `CallLedger` INSTANCE whose only
@@ -76,12 +76,23 @@ __all__ = ["MEMORY_BUDGET_REASON", "DreamGuard"]
 #: per-tool count.
 _PASS_MEMORY = "<memory reads this pass>"  # noqa: S105 — a ledger key, not a secret
 
-#: The `rule` label a pass-budget refusal carries on
-#: `nora_dream_guard_vetoes_total`. Distinct from `R-7` because the two are
-#: different findings: `R-7` says the objective asked for something it was
-#: never granted, this one says the objective asked for MORE of something it
-#: was granted than a pass is worth.
-_MEMORY_RULE = "memory-budget"
+#: The `rule` label vocabulary on `nora_dream_guard_vetoes_total`, DERIVED off
+#: a `Literal` rather than written as a bare string at each call site
+#: (AGENTS.md: «Label vocabularies are DERIVED from the code, never
+#: hand-copied»). It had no vocabulary at all while there was one value; the
+#: second is where a typo would silently start a new series instead of an
+#: error, so it gets one now.
+#:
+#: The two are different FINDINGS and must not collapse into one label: `R-7`
+#: says the objective asked for something it was never granted — a config
+#: fault worth chasing — while `memory-budget` says it asked for MORE of
+#: something it WAS granted than a pass is worth, which is ordinary model
+#: behaviour the ceiling is there to absorb.
+GuardRule = Literal["R-7", "memory-budget"]
+GUARD_RULES: frozenset[str] = frozenset(get_args(GuardRule))
+
+_R7_RULE: GuardRule = "R-7"
+_MEMORY_RULE: GuardRule = "memory-budget"
 
 #: What a memory verb refused by the per-pass ceiling says, verbatim. A
 #: CONSTANT because two readers depend on the exact words — the model, which
@@ -160,9 +171,15 @@ class DreamGuard(HookProvider):
         # an ERROR `ToolResult`, and the whole point of this refusal is that it
         # is not an error. Keyed on the id so a parallel batch's refusals do not
         # answer each other's calls — `CallLedger.release`'s own lesson.
+        #
+        # An entry is dropped by `_after_tool`, which Strands fires for a
+        # cancelled call too; one that never fires leaves its entry behind. The
+        # guard lives ONE sample, so the worst case is bounded by that sample's
+        # `turns` x batch size — a few dozen short strings — which is why this
+        # is a dict rather than a cache with an eviction policy.
         self._budget_refusals: dict[str, str] = {}
 
-    def _veto(self, rule: str, message: str) -> str:
+    def _veto(self, rule: GuardRule, message: str) -> str:
         self._metrics.inc(
             "nora_dream_guard_vetoes_total", adaptor=self._adaptor, rule=rule,
         )
@@ -179,7 +196,7 @@ class DreamGuard(HookProvider):
         """
         if not self._ledger.knows(tool_name):
             return self._veto(
-                "R-7", f"The tool {tool_name!r} does not exist. "
+                _R7_RULE, f"The tool {tool_name!r} does not exist. "
                        f"Use {_list_tool_names(self._tool_names)}.",
             )
         # Finished PLUS admitted-and-still-running, so a parallel batch is
@@ -188,7 +205,7 @@ class DreamGuard(HookProvider):
         # batch reads to a model as a reason to retry.
         if self._ledger.at_ceiling(tool_name):
             return self._veto(
-                "R-7", f"You already called {tool_name} "
+                _R7_RULE, f"You already called {tool_name} "
                        f"{self._ledger.spent(tool_name)} time(s) and have that context. "
                        "Answer from what you already have.",
             )
@@ -205,6 +222,13 @@ class DreamGuard(HookProvider):
         answer left to give. Folding them would force one return type on both
         and the fold would be the veto's, which is the outcome #160 measured
         four objectives' worth of evidence against.
+
+        **The note does NOT offer her a way out, and that omission is
+        measured.** The objective rewrite that stated a ration in words cost
+        `d02` 5/5 -> 1/5 — told a hard cap, the model declines the work rather
+        than spending less — so a refusal ending «say so and decide nothing»
+        would deliver that same permission mid-pass, at the moment she is least
+        sure. It names what to do instead and tells her to finish.
 
         **`unavailable`, never `nothing_found` and never an error.** A spent
         budget is «I could not check», exactly the state R-27 reserves for a
@@ -231,10 +255,10 @@ class DreamGuard(HookProvider):
             "note": (
                 f"{MEMORY_BUDGET_REASON} — {spent} memory read(s) is the whole "
                 "pass's ration and you have made them. Nothing is broken and "
-                "there is nothing to retry: decide from what your prompt "
-                "already carries — the people index, the note bodies, and each "
-                "room's standing. If it genuinely is not there, say so and "
-                "decide nothing."
+                "there is nothing to retry: every further memory call will "
+                "answer exactly this. Finish the decision from what your "
+                "prompt already carries — the people index, the note bodies "
+                "and each room's standing — and return your envelope now."
             ),
         }
 
@@ -268,9 +292,21 @@ class DreamGuard(HookProvider):
                 # `tests/test_strands_api_contract.py`). The cancel message
                 # carries the same body so that a run where the rewrite somehow
                 # does not happen still reads as a spent budget rather than as
-                # a crash.
+                # a crash — which is also what an id-less call gets, below.
+                #
+                # **Stashed only when there IS an id.** `_budget_refusals[""]`
+                # would be one slot shared by every id-less refusal in a batch,
+                # so the second one would take the first's body and the first
+                # would reach the model as the SDK's raw error — the exact
+                # shape this refusal must never have. Strands always supplies a
+                # `toolUseId` (`strands.tools.executors._executor`), so this is
+                # the degraded path: the call is still refused, and the body
+                # still reaches the model, on an error result rather than a
+                # rewritten one. Refusing correctly matters more than rendering
+                # prettily.
                 body = json.dumps(refusal, ensure_ascii=False)
-                self._budget_refusals[ref] = body
+                if ref:
+                    self._budget_refusals[ref] = body
                 event.cancel_tool = body
                 return
             # ADMITTED. Held against the ceiling from here until `_after_tool`
@@ -284,6 +320,12 @@ class DreamGuard(HookProvider):
                 # own dictionaries — so a batch of three memory verbs emitted
                 # together is measured against itself, which is the failure
                 # `call_ledger`'s docstring records at the per-tool grain.
+                #
+                # An id-less call reserves here and is never released (see
+                # `_after_tool`), so it holds the ration for the rest of the
+                # pass. That is the FAIL-CLOSED direction and it is chosen: a
+                # ceiling that leaks upward on a missing id is a ceiling that
+                # is not one.
                 self._memory.reserve(_PASS_MEMORY, ref=ref)
         except Exception:
             # A guard bug must not kill an unattended run; worst case it fails
@@ -324,12 +366,23 @@ class DreamGuard(HookProvider):
             name = tool_use.get("name", "")
             ref = str(tool_use.get("toolUseId") or "")
             self._ledger.release(name, ref=ref)
-            if self._memory is not None:
+            if self._memory is not None and ref:
                 # An unknown `ref` releases nothing, so this is a no-op for
                 # every non-memory call and for a refused one — no branch on
                 # the tool name is needed or wanted here.
+                #
+                # **`and ref` is load-bearing, and its absence was a bug.**
+                # `CallLedger.release` only takes the id-keyed path `if ref`;
+                # with an empty one it falls through to the NAME-keyed path and
+                # decrements `_in_flight[_PASS_MEMORY]` — and this ledger's
+                # single key is the same for every tool, so an id-less call to
+                # ANY verb would hand a memory read's reservation back and
+                # reopen the ceiling by one. That is exactly the sibling-release
+                # defect `call_ledger.release` documents at the per-tool grain,
+                # and it is worse here because there the name at least told the
+                # two calls apart.
                 self._memory.release(_PASS_MEMORY, ref=ref)
-            body = self._budget_refusals.pop(ref, None)
+            body = self._budget_refusals.pop(ref, None) if ref else None
             if body is not None:
                 # OUR refusal. Replace the SDK's error result with R-27's third
                 # state, in the shape a memory verb's own `unavailable` reaches

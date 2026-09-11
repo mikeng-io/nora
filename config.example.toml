@@ -1463,6 +1463,11 @@ timeout_seconds = 240.0
 # the reading that says so is the decide suite losing recall at 2 that it keeps
 # at 3. Omit the key and every adaptor gets 2 by default — a ceiling by
 # omission, never an unbounded pass.
+#
+# It is PER SAMPLE, so an adaptor with `samples = N` may make N x this per
+# fire — the same grain the three token caps above have. Inert here (the
+# proactive adaptor takes one sample per fire) and stated so that it is not a
+# surprise the day it is not.
 max_memory_calls = 2
 
 

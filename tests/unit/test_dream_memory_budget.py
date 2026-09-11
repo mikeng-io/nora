@@ -27,7 +27,11 @@ from typing import Any, ClassVar
 from strands.models.model import Model
 
 from nora.agent import factory
-from nora.agent.dream_guard import MEMORY_BUDGET_REASON, DreamGuard
+from nora.agent.dream_guard import (
+    GUARD_RULES,
+    MEMORY_BUDGET_REASON,
+    DreamGuard,
+)
 from nora.agent.dreamer import (
     MEMORY_TOOLS,
     AdaptorBudget,
@@ -323,21 +327,80 @@ async def test_a_non_memory_verb_is_never_charged_to_the_memory_ration():
 
 
 async def test_the_ration_resets_for_the_next_pass():
-    """Per PASS, never per adaptor lifetime. The runtime is the SAME object
-    across both runs — a ledger built at construction, or held on the runtime,
-    would leave the second pass with nothing to spend and nothing saying so.
+    """Per PASS, never per adaptor lifetime.
+
+    ONE runtime, ONE model, TWO `run` calls on different workspaces — and the
+    single object is the whole test. A ledger built at `DreamerRuntime.__init__`
+    or hung off the runtime would leave the second pass with nothing to spend
+    and nothing saying so, and a test that built a second runtime for the second
+    pass could not tell that apart from a correct one. (It was written that way
+    first; it passed against every mutation, which is what a decorative test
+    does.)
     """
     tools = _Tools(["about", "ask_memory"])
-    first = _ScriptedModel(["about", "ask_memory", None])
-    runtime, _ = _runtime(first, tools)
+    model = _ScriptedModel(["about", "ask_memory", None, "about", "ask_memory", None])
+    runtime, metrics = _runtime(model, tools)
+
     await runtime.run(adaptor=_Adaptor(frozenset(tools.read_only())), key="f", batch=())
     assert tools.ran == ["about", "ask_memory"]
 
-    tools.ran.clear()
-    runtime2, _ = _runtime(_ScriptedModel(["about", "ask_memory", None]), tools)
-    await runtime2.run(adaptor=_Adaptor(frozenset(tools.read_only())), key="g", batch=())
+    outcome = await runtime.run(
+        adaptor=_Adaptor(frozenset(tools.read_only())), key="g", batch=(),
+    )
 
-    assert tools.ran == ["about", "ask_memory"], "the second pass gets its own ration"
+    assert tools.ran == ["about", "ask_memory", "about", "ask_memory"], (
+        "the second pass gets its own ration, on the same runtime"
+    )
+    assert outcome.status == "ok"
+    assert metrics.get(
+        "nora_dream_guard_vetoes_total", adaptor="proactive", rule="memory-budget",
+    ) == 0
+
+
+async def test_a_pass_that_keeps_asking_ends_visibly_rather_than_silently():
+    """THE PATHOLOGICAL ARM, pinned because it is reachable and because nothing
+    else in this file drives a model that does not stop.
+
+    The refusal charges neither ledger — a call that never ran spends no budget
+    (DEC-33) — so R-7's per-tool ceiling can never bind on a memory verb once
+    the ration is spent, and the only thing left bounding a model that keeps
+    asking is `AdaptorBudget.turns`. A pass that spends all of them on refusals
+    returns no envelope at all.
+
+    That is the honest cost of answering instead of vetoing, and the assertion
+    here is that it is LOUD: the run is `unavailable` (never `nothing_found`, so
+    no watermark advances and no quiet day is claimed), `stop_reason` names the
+    cap, and the refusal counter carries the count. An operator reading
+    `nora_dream_guard_vetoes_total{rule="memory-budget"}` climbing beside
+    `nora_dream_stop_reason_total{reason="limit_turns"}` is reading this exact
+    shape. Issue #205 is the live measurement of how often it happens.
+    """
+    turns = 5
+    tools = _Tools(["about", "ask_memory"])
+    model = _ScriptedModel(["about"] * (turns + 2))
+    runtime, metrics = _runtime(
+        model, tools,
+        budget=AdaptorBudget(
+            turns=turns, total_tokens=100_000, output_tokens=4_000,
+            timeout_seconds=10.0, max_memory_calls=2,
+        ),
+    )
+
+    outcome = await runtime.run(
+        adaptor=_Adaptor(frozenset(tools.read_only())), key="f", batch=(),
+    )
+
+    assert tools.ran == ["about", "about"], "the ration still bound at two"
+    assert outcome.status == "unavailable", (
+        "no envelope was ever returned, so nobody read this batch"
+    )
+    assert outcome.stop_reason == "limit_turns", "the cap is named, not inferred"
+    assert metrics.get(
+        "nora_dream_guard_vetoes_total", adaptor="proactive", rule="memory-budget",
+    ) >= 1
+    assert metrics.get(
+        "nora_dream_run_total", adaptor="proactive", status="nothing_found",
+    ) == 0, "a pass that never decided must not read as a quiet day"
 
 
 async def test_the_configured_ration_is_what_binds():
@@ -481,6 +544,80 @@ def test_a_refused_read_is_rewritten_into_an_unavailable_result():
     }
 
 
+def test_an_id_less_call_cannot_hand_back_a_memory_reservation():
+    """The sibling-release defect at the PASS grain, and it is worse here than
+    at the per-tool one.
+
+    `CallLedger.release` only takes its id-keyed path when there IS an id;
+    given an empty one it falls through to the NAME-keyed path. The pass
+    ledger's name is a single synthetic key shared by every tool in the run, so
+    an id-less after-hook for ANY verb — `note_read`, `now`, `weather` — would
+    decrement a memory read's reservation and reopen the ceiling by one. At the
+    per-tool grain the name at least told two calls apart; here it cannot.
+
+    Strands always supplies a `toolUseId`, so this is latent — but the guard
+    defends against the empty case explicitly, and a defence that is wrong is
+    worse than none.
+    """
+    guard = _guard()
+    for ref, name in (("t1", "about"), ("t2", "ask_memory")):
+        before = _Before(name, ref)
+        guard._before_tool(before)
+        assert before.cancel_tool is None
+    # Both reads are in flight; the ration is held.
+    guard._after_tool(_After("note_read", ""))
+
+    third = _Before("lookup_person", "t3")
+    guard._before_tool(third)
+    assert third.cancel_tool is not None, (
+        "an id-less call to an unrelated verb must not lend the ration back"
+    )
+
+
+def test_an_id_less_refusal_never_answers_another_call():
+    """`_budget_refusals[""]` would be one slot for every id-less refusal in a
+    batch: the second would take the first's body, and the first would reach
+    the model as the SDK's raw ERROR result — the one shape this refusal exists
+    not to be. Nothing is stashed without an id, so both get the body on the
+    cancel message instead and neither is answered with the other's."""
+    guard = _guard()
+    _run(guard, "about", "t1")
+    _run(guard, "ask_memory", "t2")
+
+    first, second = _Before("about", ""), _Before("ask_memory", "")
+    guard._before_tool(first)
+    guard._before_tool(second)
+    assert MEMORY_BUDGET_REASON in (first.cancel_tool or "")
+    assert MEMORY_BUDGET_REASON in (second.cancel_tool or "")
+    assert guard._budget_refusals == {}, "nothing is stashed under an empty id"
+
+
+def test_the_guard_rule_labels_come_from_one_vocabulary():
+    """`nora_dream_guard_vetoes_total{rule}` had no vocabulary while it had one
+    value. The second is where a typo starts a new series instead of raising,
+    so the label set is DERIVED off a `Literal` (AGENTS.md) and both emitters
+    are pinned to it — R-7 for a tool never granted, memory-budget for a ration
+    spent, and the two are different findings that must not collapse.
+    """
+    assert set(GUARD_RULES) == {"R-7", "memory-budget"}
+
+    m = Metrics()
+    guard = DreamGuard(
+        adaptor="proactive", budgets={"about": 1}, metrics=m,
+        memory_tools=MEMORY_TOOLS, memory_budget=1,
+    )
+    assert guard.evaluate("write_fact", {}) is not None       # R-7
+    _run(guard, "about", "t1")
+    assert guard.memory_refusal("about") is not None          # memory-budget
+
+    emitted = {
+        dict(labels)["rule"]
+        for (name, labels) in m.snapshot()
+        if name == "nora_dream_guard_vetoes_total"
+    }
+    assert emitted == GUARD_RULES, "a rule the guard emits is not in the vocabulary"
+
+
 def test_a_guard_with_no_memory_budget_refuses_nothing():
     """The pre-#160 posture, kept reachable: `memory_budget=None` is no ceiling
     at all. It is what every adaptor holding no memory verb gets, and what a
@@ -552,6 +689,34 @@ def test_every_counted_verb_is_one_the_decide_turn_actually_holds():
     assert set(MEMORY_TOOLS) == {
         "about", "ask_memory", "search_memory_workspace", "lookup_person",
     }
+
+
+def test_the_grader_counts_every_verb_the_ceiling_does():
+    """The cost instrument and the ceiling must bound the SAME set.
+
+    `_MEMORY_VERB_SERIES` is what `evals/proactive.py` grades `max_memory_calls`
+    on, and it is also what FAILS a `remind` case that made no memory read at
+    all. It was missing `lookup_person` — which is not a gap but a live false
+    FAIL: `d11` is the case that can only be decided by resolving a handle, so a
+    pass that spent its ration on the verb granted for exactly that (issue #145)
+    reported zero reads and failed for doing the right thing.
+
+    Read off the two mappings rather than asserted as a list, so a verb added to
+    one and not the other reddens here rather than in a live suite run someone
+    has to interpret.
+    """
+    from nora.app.eval_support import _MEMORY_VERB_SERIES
+
+    graded: set[str] = set()
+    for verbs in _MEMORY_VERB_SERIES.values():
+        graded |= set(verbs)
+
+    assert graded == set(MEMORY_TOOLS), (
+        "the eval grader and the pass ceiling disagree about what a memory "
+        "read is; the grader would measure a different pass from the one that "
+        f"ran (grader-only: {graded - set(MEMORY_TOOLS)}, "
+        f"ceiling-only: {set(MEMORY_TOOLS) - graded})"
+    )
 
 
 def test_note_read_is_not_a_memory_verb():

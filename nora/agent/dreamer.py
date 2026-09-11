@@ -148,13 +148,30 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
 #: `tests/unit/test_dream_memory_budget.py` pins this set against that one so
 #: the two cannot drift into disagreement in silence.
 #:
-#: `lookup_person` is in, and it is the inclusion worth defending: it was
-#: granted (issue #145) precisely because the pass had no verb answering «who
-#: is this handle», and one live run then spent six of ten calls on that
-#: question anyway. A ceiling that let the cheapest of those four run free
-#: would bound the symptom and not the behaviour. `note_read` is OUT — it
-#: reads a note the prompt INDEXED rather than a store the prompt summarised,
-#: and it is the verb the index deliberately sends her to for a body (39 D9).
+#: `lookup_person` is in, and it is the inclusion worth defending because it
+#: looks like the one that could STARVE a pass — a note involving three people
+#: cannot spend a ration of two looking each of them up. It cannot, and the
+#: reason is structural rather than a judgement call: **`lookup_person` and the
+#: `<people>` block read the same room through the same roster.** The block is
+#: built from `Room(platform, conversation_id, roster_source, persons).
+#: members()` at the composition root; `RegistryToolSource.build` hands the
+#: tools a `Room` on the same four values, and `lookup_person` is
+#: `view.find(name)` over `room.scope()`, which the port's own docstring calls
+#: «identical to `members()` when the roster is readable». So it can name
+#: nobody the block did not already render — a handle the index does not carry
+#: comes back `not_found`, not resolved. Its only margin over the rendered list
+#: is a fuzzier match on the SAME names, which is precisely the read #160 is
+#: about. Leaving it out would leave a free verb answering the question the
+#: prompt already answers.
+#:
+#: (It was granted in the first place — issue #145 — because the pass held no
+#: verb for «who is this handle». The SAME issue shipped the `<people>` index
+#: for the same question, and the index is the half that made the verb
+#: redundant here.)
+#:
+#: `note_read` is OUT — it reads a note the prompt INDEXED rather than a store
+#: the prompt summarised, and it is the verb the index deliberately sends her
+#: to for a body (39 D9).
 #:
 #: NOT `_TOOL_RESULT_CAPS`' keys, which is a different question about the same
 #: verbs (how big may one answer be, not how many answers may a pass have) and
@@ -192,6 +209,16 @@ class AdaptorBudget:
     #: together** (issue #160) — `MEMORY_TOOLS`, enforced by `DreamGuard` and
     #: reset by construction every sample, because the guard is built per
     #: sample and so is its ledger.
+    #:
+    #: **PER SAMPLE, so an adaptor with `AdaptorSchedule.samples = N` may make
+    #: N x this per FIRE.** That is the same grain the three token caps have
+    #: (each is one model call's limit, and N samples of a bounded call is what
+    #: sampling means) and it is stated because «per pass» reads as «per fire»:
+    #: an operator setting 2 on a 5-sample adaptor would get 10. Inert today —
+    #: the only adaptor that samples holds no tools at all — and the reading
+    #: that would change it is a sampling adaptor with memory verbs, where the
+    #: union of N samples makes N independent reads of one store worth paying
+    #: for exactly once.
     #:
     #: It is here, beside the three token caps, because it is the same KIND of
     #: number: what one run of one adaptor may spend. It is not a per-tool
