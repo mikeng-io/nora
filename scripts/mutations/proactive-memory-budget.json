@@ -1,0 +1,65 @@
+[
+  {
+    "name": "#160 the pass ceiling is wired into the guard at all",
+    "file": "nora/agent/dreamer.py",
+    "old": "            memory_tools=MEMORY_TOOLS,\n            memory_budget=budget.max_memory_calls,\n        )",
+    "new": "        )",
+    "target": "tests/unit/test_dream_memory_budget.py -k third_memory_read_is_answered_unavailable"
+  },
+  {
+    "name": "#160 the (N+1)th memory read is refused rather than admitted",
+    "file": "nora/agent/dream_guard.py",
+    "old": "            refusal = self.memory_refusal(name)\n            if refusal is not None:",
+    "new": "            refusal = None\n            if refusal is not None:",
+    "target": "tests/unit/test_dream_memory_budget.py -k third_memory_read_is_answered_unavailable"
+  },
+  {
+    "name": "#160 a completed memory read charges the pass ration",
+    "file": "nora/agent/dream_guard.py",
+    "old": "            if self._memory is not None and name in self._memory_tools:\n                self._memory.record(_PASS_MEMORY)",
+    "new": "            pass",
+    "target": "tests/unit/test_dream_memory_budget.py -k third_memory_read_is_answered_unavailable"
+  },
+  {
+    "name": "#160 the ration is spent by any memory verb, not by one of them",
+    "file": "nora/agent/dreamer.py",
+    "old": "MEMORY_TOOLS: frozenset[str] = frozenset({\n    \"about\", \"ask_memory\", \"search_memory_workspace\", \"lookup_person\",\n})",
+    "new": "MEMORY_TOOLS: frozenset[str] = frozenset({\"about\"})",
+    "target": "tests/unit/test_dream_memory_budget.py -k ceiling_counts_across_verbs"
+  },
+  {
+    "name": "#160 an admitted memory read holds the ration while it runs",
+    "file": "nora/agent/dream_guard.py",
+    "old": "            if self._memory is not None and name in self._memory_tools:\n                # The pass ledger holds its reservation on the SAME id, in its\n                # own dictionaries — so a batch of three memory verbs emitted\n                # together is measured against itself, which is the failure\n                # `call_ledger`'s docstring records at the per-tool grain.\n                self._memory.reserve(_PASS_MEMORY, ref=ref)",
+    "new": "            pass",
+    "target": "tests/unit/test_dream_memory_budget.py -k parallel_batch_of_memory_verbs"
+  },
+  {
+    "name": "#160 the refusal is R-27 unavailable, not the SDK's error result",
+    "file": "nora/agent/dream_guard.py",
+    "old": "                self._answer_unavailable(event, ref, body)\n                return",
+    "new": "                return",
+    "target": "tests/unit/test_dream_memory_budget.py -k refused_read_is_rewritten_into_an_unavailable"
+  },
+  {
+    "name": "#160 a refused read does not charge the per-tool budget",
+    "file": "nora/agent/dream_guard.py",
+    "old": "            body = self._budget_refusals.pop(ref, None)\n            if body is not None:",
+    "new": "            body = None\n            if body is not None:",
+    "target": "tests/unit/test_dream_memory_budget.py -k refused_read_is_rewritten_into_an_unavailable"
+  },
+  {
+    "name": "#160 a failed memory read does not spend the ration (DEC-33)",
+    "file": "nora/agent/dream_guard.py",
+    "old": "            if self._memory is not None:\n                # An unknown `ref` releases nothing, so this is a no-op for\n                # every non-memory call and for a refused one — no branch on\n                # the tool name is needed or wanted here.\n                self._memory.release(_PASS_MEMORY, ref=ref)",
+    "new": "            pass",
+    "target": "tests/unit/test_dream_memory_budget.py -k memory_read_that_failed_does_not_consume"
+  },
+  {
+    "name": "#160 the configured ration is the one that binds",
+    "file": "nora/app/composition.py",
+    "old": "    return AdaptorBudget(\n        turns=b.turns,\n        total_tokens=b.total_tokens,\n        output_tokens=b.output_tokens,\n        timeout_seconds=b.timeout_seconds,\n        max_memory_calls=b.max_memory_calls,\n    )",
+    "new": "    return AdaptorBudget(\n        turns=b.turns,\n        total_tokens=b.total_tokens,\n        output_tokens=b.output_tokens,\n        timeout_seconds=b.timeout_seconds,\n    )",
+    "target": "tests/unit/test_dream_memory_budget.py -k configured_memory_ceiling_reaches_the_runtime"
+  }
+]

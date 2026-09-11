@@ -1058,6 +1058,7 @@ def build_note_candidates_runtime(
             turns=fallback.turns, total_tokens=fallback.total_tokens,
             output_tokens=fallback.output_tokens,
             timeout_seconds=fallback.timeout_seconds,
+            max_memory_calls=fallback.max_memory_calls,
         ),
         retry=factory.build_retry_policy(timeout_seconds=cfg.llm.timeout_seconds),
         metrics=Metrics(), model_name=model,
@@ -1294,10 +1295,12 @@ def build_proactive_runtime(
         budgets={"proactive": AdaptorBudget(
             turns=budget.turns, total_tokens=budget.total_tokens,
             output_tokens=budget.output_tokens, timeout_seconds=budget.timeout_seconds,
+            max_memory_calls=budget.max_memory_calls,
         )},
         default_budget=AdaptorBudget(
             turns=budget.turns, total_tokens=budget.total_tokens,
             output_tokens=budget.output_tokens, timeout_seconds=budget.timeout_seconds,
+            max_memory_calls=budget.max_memory_calls,
         ),
         retry=factory.build_retry_policy(timeout_seconds=cfg.llm.timeout_seconds),
         metrics=Metrics(), model_name=model,

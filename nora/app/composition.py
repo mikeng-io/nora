@@ -53,7 +53,7 @@ from nora.agent.structured import (
     build_structured_model,
 )
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
-from nora.config import Config
+from nora.config import Config, DreamBudgetConfig
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.compute import ComputeJobStore
 from nora.domain.media_join import MediaJoin
@@ -229,6 +229,32 @@ def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
             f"start rather than failing on the first call that uses it"
         )
     return cast(ReasoningEffort, value)
+
+
+def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
+    """`DreamBudgetConfig` -> `AdaptorBudget`: the one place the two shapes meet.
+
+    They are two types carrying the same numbers because `nora.agent` may not
+    import `nora.config` (the layer contract), and this file is one of only two
+    allowed to read config — so the conversion has to happen here. What it did
+    NOT have before 2026-09-11 was a name: it was written out twice, inline, at
+    two construction sites, and `max_memory_calls` (issue #160) is the first
+    field DEFAULTED on both sides — meaning a site that forgot it would not
+    raise a `TypeError` the way an undefaulted field does, it would quietly
+    hand the runtime a number the operator did not choose.
+
+    One function, called from both sites, and
+    `tests/unit/test_dream_memory_budget.py` walks `DreamBudgetConfig`'s own
+    field list to assert every one of them arrives — so the next defaulted
+    field cannot be dropped in silence either.
+    """
+    return AdaptorBudget(
+        turns=b.turns,
+        total_tokens=b.total_tokens,
+        output_tokens=b.output_tokens,
+        timeout_seconds=b.timeout_seconds,
+        max_memory_calls=b.max_memory_calls,
+    )
 
 
 def _annotate_usage_triple(usage: tuple[int, int, int] | None) -> None:
@@ -2793,17 +2819,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         dream_grants: dict[str, AdaptorGrant] = {
             PROACTIVE_ADAPTOR_NAME: proactive_grant(),
         }
-        # `DreamBudgetConfig` -> `AdaptorBudget`: the same four numbers, across
-        # the `nora.agent` may-not-import-`nora.config` boundary. This file is
-        # one of only two allowed to read config, so THIS is the conversion
-        # point — a field added to one and not the other is a `TypeError` here,
-        # at startup, which is the failure worth having.
+        # `DreamBudgetConfig` -> `AdaptorBudget`, through the ONE named
+        # converter (`_adaptor_budget` above): the same five numbers across the
+        # `nora.agent` may-not-import-`nora.config` boundary, carried in one
+        # place rather than written out at each construction site.
         dream_budgets = {
-            name: AdaptorBudget(
-                turns=b.turns, total_tokens=b.total_tokens,
-                output_tokens=b.output_tokens, timeout_seconds=b.timeout_seconds,
-            )
-            for name, b in cfg.dreamer.budgets.items()
+            name: _adaptor_budget(b) for name, b in cfg.dreamer.budgets.items()
         }
         # An adaptor with no block of its own. `budget_for` returns a freshly
         # constructed default rather than a shared constant (DEC-13 forbids a
@@ -2815,11 +2836,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             instructions=dreamer_instructions,
             tools=dream_tools,
             budgets=dream_budgets,
-            default_budget=AdaptorBudget(
-                turns=fallback.turns, total_tokens=fallback.total_tokens,
-                output_tokens=fallback.output_tokens,
-                timeout_seconds=fallback.timeout_seconds,
-            ),
+            default_budget=_adaptor_budget(fallback),
             # The SAME derivation the tag path uses, so a throttle can never be
             # misreported as a timeout (`factory.build_retry_policy`).
             retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
