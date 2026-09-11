@@ -49,6 +49,20 @@ AUTHORED = ("identity", "voice", "conduct", "constraints")
 # identity, no voice, no constraints, on a path that speaks UNCALLED — and
 # deleting `tag` from identity/voice/constraints gutted her primary path. Both
 # passed the five tests in this file.
+#
+# HERS, so `relevance_gate` and `dreamer` are deliberately absent — they are
+# instruments, not turns she reads. That leaves the gate's own instruction with
+# NO non-degeneracy floor: a gutted `participation.md` is caught only by
+# `_has_body` in `nora/ingest/relevance_gate.py` (a "carries any prose" bar) and
+# by its repin-able sha. Given what a bad gate instruction measurably costs
+# (#144, over 40 labelled windows), that is a real gap. It is not closed here
+# because this file's subject is the doctrine SHE receives; the gate's
+# instrument wants its own floor next to the gate. Filed as issue #194 rather
+# than left as a comment somebody has to rediscover.
+#
+# `tag` and `proactive` assemble to byte-identical text today, so these are
+# four parameters over three distinct assemblies — not four independent checks.
+# They stay separate because the divergence is exactly what regression 2 was.
 HER_AUDIENCES: dict[str, tuple[str, ...]] = {
     "tag": (*AUTHORED, "silence"),
     "heartbeat": AUTHORED,
@@ -66,6 +80,18 @@ HER_AUDIENCES: dict[str, tuple[str, ...]] = {
 # headroom — enough that an honest edit does not trip this, and far above the
 # ~10 characters a heading-only file leaves. Characters, not bytes: `voice.md`
 # is Cantonese and a byte count would hold it to a third of the standard.
+#
+# It is a SHALLOW bar and it is meant to be: 94% of `conduct.md` can be deleted
+# and a 401-character remnant passes. It answers "did a section arrive empty",
+# which is the question #177's regression 4 asked, and it answers nothing about
+# whether what arrived is any good. Raising it toward the shipped sizes would
+# turn every honest tightening of a file into a failure, which is how a gate
+# gets deleted rather than obeyed.
+#
+# It is also the ONLY thing left standing after a legitimate edit: truncate
+# `voice.md`, bump its `version`, repin its sha, and the parity gate goes green
+# while all four cases below stay red. Measured 2026-09-11. That is why it is
+# here and not folded into the sha.
 MIN_BODY_CHARS = 400
 
 # A NEEDLE CANNOT CHECK POLARITY, AND THIS FILE DOES NOT PRETEND TO.
@@ -91,8 +117,25 @@ MIN_BODY_CHARS = 400
 # failed. A second sha pin here would duplicate that, and a duplicated pin is
 # two places to update and one place to forget.
 #
+# **AND THE SHA PIN ONLY CATCHES THE UNANNOUNCED INVERSION. SAYING SO IS THE
+# POINT OF THIS BLOCK.** A reviewer ran the same inversion WITH a `version:`
+# bump: the only red was the version literal in `PINNED`, which the author then
+# repins — that is the documented workflow, not an abuse of it. After the repin
+# NOTHING IN THIS REPO CATCHES AN INVERTED DOCTRINE RULE. That is sharpest on
+# `silence.md`, which is `change_policy: agent-may-edit`, so the agent inverting
+# the sentence is the same one filling in the paperwork that would have flagged
+# it.
+#
+# Recorded rather than fixed because the fix is not a test. Polarity is a
+# claim about MEANING; the instruments that could judge it are a human reading
+# a diff and the eval suite reading behaviour, and neither is a unit test. What
+# a unit test can do — refuse a silent edit, refuse an empty section, refuse a
+# wrong audience — is done here and next door. Do not read either gate as
+# "the rules cannot be reversed".
+#
 # What this file DOES own is ROUTING and NON-DEGENERACY: which sections reach
-# which audience, and that each arrives with a body. Wording is the sha's.
+# which audience, and that each arrives with a body. Wording is the sha's, and
+# meaning is nobody's.
 # DEC-88 rewrote the rule this needle points at — it used to be the flat
 # prohibition "never split one answer across several", which was the sentence
 # multi-message and mentions were later built to contradict. The needle moves
@@ -166,12 +209,38 @@ def _sections_in(store: DoctrineStore, audience: str) -> dict[str, str]:
     is simply absent here, and one that arrived empty has an empty body here.
     Both are invisible to `f'name="{x}"' in text`, which is what issue #177's
     four regressions all walked through.
+
+    **Fails closed on anything it cannot parse cleanly, and that is not
+    decoration.** Section BODIES are not escaped — only attributes are — so a
+    body containing a literal `</section>` followed by a second `<section …
+    name="voice" …>` re-anchors the scan, and a plain dict comprehension keeps
+    the LAST match for a duplicate name. Measured by a reviewer on this branch:
+    that shape serves `voice` as a ~10-character section and every assertion
+    below passes. Counting the matches against the open tags, and refusing a
+    repeated name, turns a silent pass into a loud failure. Hostile doctrine
+    prose is far-fetched; a body that quotes the prompt format while explaining
+    it is not.
+
+    The guard counts OPEN tags, so one direction is left: a stray `</section>`
+    with no opening partner truncates a parsed body rather than adding a
+    section, and the count still matches. That can only produce a false RED —
+    a body reading shorter than it was served — which is the safe direction,
+    and it is named here rather than left for the next reader to rediscover.
     """
     text = store.get(applies_to=audience).doctrine_text
-    return {
-        m["name"]: m["body"]
-        for m in _SECTION_RE.finditer(text)
-    }
+    matches = list(_SECTION_RE.finditer(text))
+    assert len(matches) == text.count("<section "), (
+        f"the {audience} assembly has {text.count('<section ')} open tags but "
+        f"{len(matches)} parseable sections — a body is carrying section markup "
+        f"and this helper can no longer say what was served"
+    )
+    sections: dict[str, str] = {}
+    for m in matches:
+        assert m["name"] not in sections, (
+            f'two sections named {m["name"]!r} in the {audience} assembly'
+        )
+        sections[m["name"]] = m["body"]
+    return sections
 
 
 @pytest.mark.parametrize("audience", sorted(HER_AUDIENCES))
@@ -240,6 +309,11 @@ def test_the_gate_instrument_is_not_in_the_participation_audience(doctrine_store
     because the reason is not readable from a set comparison, and because the
     confusable pair `participation` / `participation-conduct` is exactly where
     somebody will later "fix" the set by adding the wrong one of the two.
+
+    Reads `doctrine_text`, not `text`, so the `<runtime_context>` block is out
+    of scope. That block carries no section tags, so nothing is lost — but it
+    is a narrowing from what this assertion used to cover and is said rather
+    than left to be noticed in a diff.
     """
     text = doctrine_store.get(applies_to="participation").doctrine_text
     assert 'name="participation-conduct"' in text

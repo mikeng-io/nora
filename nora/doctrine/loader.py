@@ -170,6 +170,16 @@ class DoctrineSection:
     Hashing what is rendered rather than enumerating which frontmatter keys are
     "served" is deliberate: the enumeration is what went stale. A field added to
     `render_section` tomorrow is covered the day it is added.
+
+    **This digest is a REPO gate, not a runtime guard, and the difference
+    matters.** Nothing in production reads it — every runtime consumer takes
+    `Doctrine.sha256`, which is over the whole assembly and so already covered
+    `description` before #175. What it buys is that
+    `tests/test_doctrine_version_parity.py` can refuse a served edit that
+    reaches `master` without a version bump. An operator editing `nora/doctrine`
+    on the deploy host, where an edit IS a deploy and pytest never runs, is not
+    stopped by this; nor is an author who bumps the version and repins. The gate
+    is against the SILENT change, and that is all it claims.
     """
 
     name: str
