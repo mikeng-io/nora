@@ -438,6 +438,30 @@ started, and it can never ask for more, ask differently, or ask again».
 > rhythm into state. **Reopens if** `nora_proactive_pass_total{reason=
 > "changed"}` runs far outnumber `remind` decisions over a week: the
 > detector fires on noise, and a slot is the honest cadence.
+>
+> **REVISED AGAIN 2026-09-10 by the operator, on the second live day:** the
+> quiet condition reads the HOME ROOM, not every room of the workspace. A
+> proactive row fires into the home room and `policy.py` refuses it anywhere
+> else, so the home room is the only room the pass can interrupt; every
+> other room was a proxy for that, and on `friends` the proxy was the whole
+> gate. Zone 42 is a games room on Discord and the busiest of the three; the
+> note that moved (09:40Z) was raised in it, and four consecutive hourly
+> ticks held `held_quiet` on Zone 42's traffic rather than speak into the
+> Signal room where the row would have landed. Measured over the 14 days to
+> 2026-09-10, 337 hourly ticks on that workspace: quiet on every room 257
+> (76%), quiet on the home room alone 313 (93%); longest unbroken
+> workspace-busy run 6 hours — long enough to swallow a note anchored on the
+> day it was raised. **Reopens if** a `changed` pass is answered as a
+> barge-in: what this drops is «a sibling room is still settling the thing
+> she is about to raise», and the fix for that is a hold that follows the
+> room that CHANGED, which `_changed_since` does not report today.
+> **How coupled that is, stated rather than left to be discovered:**
+> `_changed_since` fires on a Standing rewrite of ANY room, and Standing is
+> written only after a tag turn — so a sibling room having just been active
+> is the ordinary cause of a `changed` pass, not an edge of it. The dropped
+> protection is therefore load-bearing more often than «sibling» suggests,
+> and the reopen condition above should be read as likely rather than
+> remote.
 
 `dream_loop` (`runtime.py:758`) is the Dreamer's one trigger and the sole
 caller of `DreamerRuntime.run`; `AdaptorSchedule(min_interval_seconds,

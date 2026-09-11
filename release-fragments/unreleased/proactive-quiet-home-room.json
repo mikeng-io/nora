@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "A proactive pass is no longer held back by a busy room she was never going to speak into.",
+  "details": [
+    "The quiet condition on a change-driven proactive pass now reads the group's home room — the room a proactive message actually lands in — instead of every room of the group.",
+    "On the live household this was the whole gate: the group's busiest room is a games channel, and a note that changed at 09:40 was held for four hours running while that channel talked, even though the message would have gone to a different room entirely."
+  ],
+  "limitations": [
+    "What this gives up is the case where another room of the same group is still settling the very thing she is about to raise; the pass does not yet know which room a change came from, so that protection is not narrowed, it is dropped."
+  ]
+}

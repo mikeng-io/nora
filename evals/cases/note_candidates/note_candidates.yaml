@@ -182,3 +182,50 @@
   batch:
     - {id: 1601, ts: "2026-09-07T09:00:00Z", person: cat, name: Cat, body: "如果禮拜六唔使返工，我可能去睇下個 hackathon"}
     - {id: 1602, ts: "2026-09-07T09:01:00Z", person: ada, name: Ada, body: "睇下啦"}
+
+# --- added 2026-09-10 from a LIVE miss, not a brainstorm. The `friends`
+# workspace's Discord room is a GAMES room, and on 2026-09-08 the adaptor read
+# five words of it — "Bath", "2200", "today no?", "I am reday" — as a social
+# arrangement and wrote «Bath gathering»: "Bath proposed; time 2200 mentioned;
+# unclear which bath or if happening today." Two days later it wrote a SECOND
+# note, «Bath gathering tonight», from a batch in which the word bath does not
+# appear at all — it took the subject from the notebook entry it was shown and
+# bound that day's «today only 3 people» and «2200» onto it.
+#
+# Neither case is a model that broke its instruction. Under the objective as
+# written, "three of us, tonight, 2200" IS committed with an open corner. What
+# neither the instruction nor the INPUT says is what room this is: in a games
+# room 2200 is when people log on, and it is not an arrangement that has to
+# survive the night. The suite could not see this shape because every room in
+# it is a room where plans are actually made.
+#
+# Both are `none`. n10 has nothing to settle; n11 must not create, and must not
+# "update" the entry either — the batch is not about that occasion, and calling
+# it one is how the stale subject got laundered forward in the first place.
+# Handles are the suite's own ada/ben/cat; the words are the live ones.
+
+- name: n10_games_room_shorthand_is_not_an_arrangement
+  expect: none
+  workspace: friends
+  batch:
+    - {id: 1701, ts: "2026-09-08T11:51:29Z", person: ben, name: Ben, body: null, media: true}
+    - {id: 1702, ts: "2026-09-08T13:14:29Z", person: cat, name: Cat, body: "Bath"}
+    - {id: 1703, ts: "2026-09-08T13:24:15Z", person: ada, name: Ada, body: "2200"}
+    - {id: 1704, ts: "2026-09-08T14:00:33Z", person: ada, name: Ada, body: "today no?"}
+    - {id: 1705, ts: "2026-09-08T14:00:47Z", person: ben, name: Ben, body: "I am reday"}
+
+- name: n11_notebook_subject_is_not_a_licence_to_rewrite_it
+  expect: none
+  workspace: friends
+  notebook:
+    - title: "Bath gathering"
+      description: "Bath proposed; time 2200 mentioned; unclear which bath or if happening today."
+      anchor_date: 20260908
+      body: "Cat said Bath. Ada said 2200 and asked if it is today. Ben said he is ready."
+  batch:
+    - {id: 1801, ts: "2026-09-10T09:27:46Z", person: ben, name: Ben, body: "今晚得番3個人？"}
+    - {id: 1802, ts: "2026-09-10T09:27:54Z", person: cat, name: Cat, body: "ys"}
+    - {id: 1803, ts: "2026-09-10T09:27:58Z", person: cat, name: Cat, body: "ap or cs"}
+    - {id: 1804, ts: "2026-09-10T09:28:13Z", person: cat, name: Cat, body: "or we can play some 3player on9 game?"}
+    - {id: 1805, ts: "2026-09-10T09:28:25Z", person: ben, name: Ben, body: "how to fish"}
+    - {id: 1806, ts: "2026-09-10T09:32:53Z", person: ada, name: Ada, body: "2200"}
