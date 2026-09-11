@@ -110,5 +110,12 @@
     "old": "            if isinstance(result, BaseException) or not result.reachable:\n                log.warning(\"proactive: roster-index recall failed for one member\")",
     "new": "            if isinstance(result, BaseException):\n                log.warning(\"proactive: roster-index recall failed for one member\")",
     "target": "tests/unit/test_proactive_adaptor.py -k unreachable_honcho_thins_the_index"
+  },
+  {
+    "name": "#210 — the proactive pass's declared store-call bound counts the new read",
+    "file": "nora/language/proactive.py",
+    "old": "STORE_CALLS_PER_TICK = 17",
+    "new": "STORE_CALLS_PER_TICK = 16",
+    "target": "tests/architecture/test_dream_store_calls_are_declared.py -k declared_count_is_the_count_the_source_holds"
   }
 ]

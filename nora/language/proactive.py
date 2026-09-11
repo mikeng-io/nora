@@ -178,7 +178,15 @@ WAKE_CLOCK_NAME = "proactive:wake"
 #: counted here they cannot be the thing that wedges a tick. They are counted
 #: anyway, because the number is «call sites this method holds» and a bound
 #: that quietly stopped matching the source is the defect this gate exists for.
-STORE_CALLS_PER_TICK = 16
+#:
+#: 16 -> 17 on 2026-09-11 (issue #210): `_roster_index`' `representation`, the
+#: depth the `<people>` index gained. ONE site and one added timeout's worth of
+#: hold even though it reads N members, because the reads are GATHERED — the
+#: number this constant feeds is a wall-clock bound, and a concurrent fan-out
+#: costs one round trip however many peers are in it. A per-member `await` in a
+#: loop would have been N and would have had to be counted as N; that is the
+#: reading that would move this number again.
+STORE_CALLS_PER_TICK = 17
 
 PassReason = Literal[
     "daily", "changed", "held_quiet", "unchanged", "unclocked",
