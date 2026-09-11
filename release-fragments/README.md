@@ -8,6 +8,16 @@ to reconstruct it from commit subjects at release time.
 The supported `type` values are `feature`, `fix`, `change`, `security`, and
 `none`. Use `none` only for internal-only work, with a concise `reason`.
 
+That list is closed. There is no `internal` type — two fragments invented one
+and sat unreadable on `master` until 2026-09-11 (#172). Internal-only work is
+`type: "none"` plus `reason`, and it takes no `summary`, `details` or
+`limitations`, because a `none` fragment renders nothing: put the prose in the
+`reason`.
+
+`details` and `limitations` are **arrays of strings**, one per rendered bullet
+— never one long string. Seven fragments wrote a paragraph there, and the
+renderer refused all seven.
+
 ```json
 {
   "type": "fix",

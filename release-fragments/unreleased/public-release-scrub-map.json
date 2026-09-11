@@ -1,15 +1,4 @@
 {
-  "type": "internal",
-  "summary": "The de-identification map for a public release, and the five dry runs that shaped it — including the one where a single '#' in a comment rewrote all 1,107,189 hash characters in the repo.",
-  "details": [
-    "scrub/replacements.txt is the single map, applied by git filter-repo as BOTH --replace-text and --replace-message so the tree and the history cannot drift apart. It is derived from identity.toml on the deployment (108 identifier values, 54 present in this repo), not from grepping the tree — grep alone missed eleven CJK aliases and an employer name.",
-    "The rule it implements (operator, 2026-09-10): project identity stays, application identity goes. Every commit keeps `Miles Novak <iam@mikeng.io>`; anything that is an identity inside the running system is replaced.",
-    "Verification is content-based: every blob and every commit message of the rewritten repo is dumped and checked against all 76 real values. The final dry run reports RESIDUE: NONE with 6,378 tests passing.",
-    "scrub/README.md records what each dry run bought, the three deliberate keeps (May Chan, Wong Tai Sin/Pok Fu Lam, and CONTRIBUTING.md's description of the trailer), and the three known post-rewrite fixups."
-  ],
-  "limitations": [
-    "Nothing is published by this change. The map and its notes land in the PRIVATE repo; the rewrite itself has only ever been run against a throwaway clone.",
-    "scrub/ must be in the rewrite's own deletion list — the map is the join between the pseudonyms and the real people, so publishing it would undo the scrub.",
-    "Three tests need a commit on top of the rewrite: two doctrine version pins whose bodies moved, and one test whose BOLD range is anchored to the length of a name that got shorter."
-  ]
+  "type": "none",
+  "reason": "Internal release engineering: the de-identification map for a prospective public repository, and the dry runs that shaped it. It rewrites history in a copy, never the running deployment, and changes nothing about how Nora behaves."
 }

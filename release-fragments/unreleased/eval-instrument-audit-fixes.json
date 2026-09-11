@@ -1,5 +1,11 @@
 {
   "type": "fix",
   "summary": "Seven measurement defects an audit found: the judge was replaying one cached answer, the gate suite passed a gate that was 100% wrong, and four architecture gates passed against no-op production code.",
-  "details": "All of the same kind — the instrument was not measuring what it claimed. The judge's majority-of-k was three replays of one cached answer because temperature 0 is what makes request bytes repeat. The relevance-gate suite computed accuracy and coverage and then never consulted them. The media-egress screen could be replaced with a no-op, the media join's result discarded, and a truncation check deleted with the word left in a log line, all with green tests. The no-trigger corpus was authored for a trigger no deployment runs, and four of its twelve near-misses actually tagged."
+  "details": [
+    "All of the same kind — the instrument was not measuring what it claimed.",
+    "The judge's majority-of-k was three replays of one cached answer, because temperature 0 is what makes request bytes repeat.",
+    "The relevance-gate suite computed accuracy and coverage and then never consulted them.",
+    "The media-egress screen could be replaced with a no-op, the media join's result discarded, and a truncation check deleted with the word left in a log line, all with green tests.",
+    "The no-trigger corpus was authored for a trigger no deployment runs, and four of its twelve near-misses actually tagged."
+  ]
 }

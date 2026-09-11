@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Release tooling only: ten malformed release fragments on master are corrected, and the loader now reports every bad one in a single run instead of raising on the first. Nothing a member of a room can observe. The fix mattered because the gate that proves a change is described had been unusable on every branch, and because reporting one problem at a time hid three of them behind the first seven (#172)."
+}
