@@ -49,6 +49,20 @@ when tagged. The other half acts when nobody asked. «佢一半嘅本體係點�
 
 ## 1. One loop, two entry points
 
+> **REVISED 2026-09-11 by `design/ambient-loop/00` (DEC-176).** This section
+> wrote the loop from the proactive adaptor's seat: tag as the "passive half"
+> entering at Act, proactive entering at Decide. The loop is the system's
+> second backbone; tag is the *other* backbone and **a writer of the loop's
+> held state** (its debrief writes Standing and proposes notes); and Decide has
+> **two** deciders — participation and proactive — which this section never
+> placed. The stage table and D1–D13 stand as an account of the proactive
+> decider. The brake table stands except one row, narrowed by DEC-179:
+> «Nora's message → note | curator filter» — her own sent row becomes
+> admissible as a note's closing *citation* and nothing else; the sentence
+> below, «Nothing Nora says can create, revise or close a note», therefore
+> reads *create or revise*, and *close* only by citing her own delivered
+> reply, never by grounding a discharge on it.
+
 Both halves run the same loop. It is an OODA loop — observe, orient, decide,
 act — and it is closed *through a human*.
 
