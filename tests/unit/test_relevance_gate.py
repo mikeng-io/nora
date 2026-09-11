@@ -16,6 +16,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from nora.domain.decision_log import (
+    REASON_MAX_CHARS,
+    RECENT_LIMIT,
+    DecisionLogRecorder,
+    DecisionRow,
+    render_decisions,
+)
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.standing import Standing
 from nora.ingest.relevance_gate import (
@@ -30,6 +37,7 @@ from nora.ingest.relevance_gate import (
     render_context,
 )
 from nora.obs.metrics import Metrics
+from nora.testing.decision_log import InMemoryDecisionLogStore
 from nora.testing.fakes import FakeRecordStore
 from nora.testing.standing_store import InMemoryStandingStore
 
@@ -211,14 +219,23 @@ async def test_the_prompt_is_exactly_the_instruction_plus_the_two_rendered_block
     )
 
 
-async def test_the_prompt_holds_exactly_two_untrusted_blocks():
-    """The structural half of the same claim: a third injected source would
-    have to arrive either inside one of these blocks or as a third one."""
+async def test_the_prompt_holds_exactly_three_untrusted_blocks():
+    """The structural half of the same claim: a fourth injected source would
+    have to arrive either inside one of these blocks or as a fourth one.
+
+    **Three since 2026-09-11** (issue #199), not two: `<loop_decisions>` joined
+    `<group_transcript>` and `<standing>`. The number is asserted rather than
+    the names because the property is «nothing else got in», and the number
+    moving is the event that has to be argued for — this test went red on the
+    change that added the block, which is what it is for. Design 36's bar is
+    unmoved: the new block carries what the LOOP did, never what Nora knows,
+    so the gate still cannot answer the turn's question.
+    """
     client = _Client('{"verdict": "no_go", "relevance_score": 0.0}')
     await _gate(client, standing=_standing("a position")).decide(
         platform="discord", conversation_id="g/1",
     )
-    assert client.prompts[0].count('untrusted="true"') == 2
+    assert client.prompts[0].count('untrusted="true"') == 3
 
 
 async def test_the_prompt_never_carries_doctrine_or_tools():
@@ -882,3 +899,248 @@ def test_a_standing_block_with_no_age_still_renders():
     rendered = render_context((), "a position")
     assert "<standing" in rendered
     assert "written=" not in rendered
+
+
+# --- the shared decision log (issue #199) ---------------------------------
+
+def _now_ms() -> int:
+    """WALL CLOCK, not a fixed instant, and that is not laziness.
+
+    `render_context` ages every row against `datetime.now(UTC)` — `decide`
+    takes no clock, by design: the gate is a live instrument and a threaded
+    clock would be a second seam to keep in step with the store's. So a row
+    written at a frozen epoch renders «20706d ago» here, and an age assertion
+    has to be anchored to the same clock the renderer reads.
+    """
+    return int(datetime.now(UTC).timestamp() * 1000)
+
+
+def _recorder(store=None, *, metrics=None, **kw):
+    """A real `DecisionLogRecorder` over the SHARED in-memory store (R-C,
+    issue #113), never an inline double: an inline fake is invisible to
+    `tests/contract/test_decision_log_store_contract.py` by construction, and
+    this file has already paid for that mistake once with its hand-rolled
+    `RecordStore`."""
+    return DecisionLogRecorder(
+        store=store if store is not None else InMemoryDecisionLogStore(),
+        metrics=metrics if metrics is not None else Metrics(),
+        clock=lambda: datetime.now(UTC),
+        **kw,
+    )
+
+
+def _logged(
+    *, writer="proactive_decide", verdict="remind", reason="",
+    conversation_id="g/1", ago_ms=0, row_id="r1",
+):
+    return DecisionRow(
+        id=row_id, writer=writer, platform="discord",
+        conversation_id=conversation_id, workspace="friends", note_id=None,
+        verdict=verdict, reason=reason, ts=_now_ms() - ago_ms,
+    )
+
+
+async def test_the_gate_logs_every_verdict_it_reaches():
+    """**The writer.** Design 36 gave the gate a counter and a trace attribute
+    and nothing durable, so the participation turn behind it, the tag turn a
+    second later and the proactive pass two hours later could each re-derive a
+    judgement the gate had already made (issue #199).
+
+    Falsification: delete the `record` call in `RelevanceGate._settle` and
+    this goes red.
+    """
+    store = InMemoryDecisionLogStore()
+    client = _Client('{"verdict": "go", "relevance_score": 0.8}')
+    await _gate(client, decisions=_recorder(store)).decide(
+        platform="discord", conversation_id="g/1",
+    )
+    rows = await store.recent(conversation_id="g/1", since_ms=0)
+    assert [(r.writer, r.verdict, r.reason) for r in rows] == [("gate", "go", "")]
+
+
+async def test_a_fail_closed_verdict_is_logged_with_its_error_kind():
+    """R-23's split, carried into the log: «the gate said no» and «the gate was
+    DOWN» are the same observable `no_go` and completely different facts. A
+    decider reading a window of `no_go — call_failed` is reading an outage, and
+    a log that collapsed them would put a broken gate's silence into the next
+    prompt as a quiet room.
+
+    Falsification: pass `reason=""` unconditionally in `_settle`.
+    """
+    store = InMemoryDecisionLogStore()
+    client = _Client(RuntimeError("provider down"))
+    await _gate(client, decisions=_recorder(store)).decide(
+        platform="discord", conversation_id="g/1",
+    )
+    rows = await store.recent(conversation_id="g/1", since_ms=0)
+    assert [(r.verdict, r.reason) for r in rows] == [("no_go", "call_failed")]
+
+
+async def test_a_verdict_that_never_reached_the_model_is_still_logged():
+    """`no_context` returns before the model is called at all. It is still a
+    decision the room received — the window was refused — so it is still a row.
+    A log that only recorded post-call verdicts would show a healthy estate
+    through a Postgres outage."""
+    store = InMemoryDecisionLogStore()
+    records = _Records([])
+
+    async def _boom(*, conversation_id: str, limit: int):
+        raise RuntimeError("db down")
+
+    records.recent = _boom            # type: ignore[method-assign]
+    client = _Client('{"verdict": "go"}')
+    await _gate(client, records=records, decisions=_recorder(store)).decide(
+        platform="discord", conversation_id="g/1",
+    )
+    rows = await store.recent(conversation_id="g/1", since_ms=0)
+    assert [(r.verdict, r.reason) for r in rows] == [("no_go", "no_context")]
+
+
+async def test_a_decision_log_that_is_down_never_fails_a_verdict():
+    """**The rule the whole recorder exists for: a log write must never fail a
+    turn.** `decide`'s contract is that it NEVER raises, because a gate that
+    propagates stops the entire ambient path on one bad call — so a store that
+    raises on every verb must cost a thinner prompt and a counter, nothing
+    else.
+
+    Falsification: remove the `try`/`except` from `DecisionLogRecorder.record`
+    (or from `read`) and this raises instead of returning a verdict.
+    """
+    class _Broken:
+        async def append(self, *, row):
+            raise RuntimeError("decision log down")
+
+        async def recent(self, *, conversation_id, since_ms, limit=20):
+            raise RuntimeError("decision log down")
+
+    metrics = Metrics()
+    client = _Client('{"verdict": "go", "relevance_score": 0.9}')
+    verdict = await _gate(
+        client, decisions=_recorder(_Broken(), metrics=metrics),
+    ).decide(platform="discord", conversation_id="g/1")
+    assert verdict.verdict == "go" and verdict.source == "model"
+    # A permanently failing log is LOUD in Prometheus and invisible to the room.
+    text = metrics.render()
+    assert 'stage="decision_log_write"' in text
+    assert 'stage="decision_log_read"' in text
+
+
+async def test_the_block_carries_the_proactive_rows_with_an_age_each():
+    """**The render.** Every question this block answers is a question about
+    WHEN — has this already been raised, how long ago — and the gate's own
+    measured lesson is that a temporal judgement made against undated lines
+    fails silently. An age per row cut this same gate's error rate by two
+    thirds over 40 labelled cases.
+
+    Falsification: drop `decisions=decisions` from `decide`'s `render_context`
+    call, or the `render_decisions(...)` term from `render_context` itself.
+    """
+    store = InMemoryDecisionLogStore()
+    await store.append(row=_logged(
+        writer="proactive_decide", verdict="remind",
+        reason="nobody has picked a date", ago_ms=7_200_000,
+    ))
+    client = _Client('{"verdict": "no_go", "relevance_score": 0.1}')
+    await _gate(client, decisions=_recorder(store)).decide(
+        platform="discord", conversation_id="g/1",
+    )
+    prompt = client.prompts[0]
+    assert "<loop_decisions" in prompt
+    assert "(2h ago) proactive_decide remind — nobody has picked a date" in prompt
+
+
+async def test_the_gate_never_reads_back_its_OWN_rows():
+    """A gate handed its own last verdict is a gate agreeing with itself: the
+    prior `no_go` would be the strongest signal in the block, it is not
+    evidence about the room, and 36's no_go bias already leans that way. The
+    participation and tag rows are excluded too — they are the turn BEHIND this
+    gate, so they move with the verdict rather than independently of it.
+
+    Falsification: drop the `row.writer in (...)` filter in `_read_decisions`.
+    """
+    store = InMemoryDecisionLogStore()
+    await store.append(row=_logged(writer="gate", verdict="no_go",
+                                   reason="quiet", row_id="g"))
+    await store.append(row=_logged(writer="participation",
+                                   verdict="silent", reason="declined",
+                                   row_id="p"))
+    await store.append(row=_logged(writer="tag", verdict="replied",
+                                   reason="send_reply", row_id="t"))
+    await store.append(row=_logged(writer="proactive_act",
+                                   verdict="spoke", reason="raised it",
+                                   row_id="a"))
+    client = _Client('{"verdict": "no_go"}')
+    await _gate(client, decisions=_recorder(store)).decide(
+        platform="discord", conversation_id="g/1",
+    )
+    block = client.prompts[0].split("<loop_decisions")[1]
+    assert "proactive_act spoke" in block
+    for forbidden in ("gate no_go", "participation silent", "tag replied"):
+        assert forbidden not in block
+
+
+async def test_another_rooms_decisions_never_reach_this_rooms_prompt():
+    """The inverse of the feature. The read is keyed on `conversation_id` and
+    a leak here is one room's decisions rendered as another's history."""
+    store = InMemoryDecisionLogStore()
+    await store.append(row=_logged(
+        conversation_id="g/2", reason="elsewhere", row_id="x",
+    ))
+    client = _Client('{"verdict": "no_go"}')
+    await _gate(client, decisions=_recorder(store)).decide(
+        platform="discord", conversation_id="g/1",
+    )
+    assert "elsewhere" not in client.prompts[0]
+
+
+async def test_no_identifier_reaches_the_rendered_block():
+    """R-18/R-28 on the one call that reads every opted-in room, over a wire to
+    a cheap external provider. A row carries a `conversation_id` and a
+    `note_id` so it can be READ back; neither may be rendered."""
+    store = InMemoryDecisionLogStore()
+    await store.append(row=DecisionRow(
+        id="r1", writer="proactive_decide", platform="discord",
+        conversation_id="g/1", workspace="friends", note_id="note-abc123",
+        verdict="remind", reason="dinner", ts=_now_ms(),
+    ))
+    client = _Client('{"verdict": "no_go"}')
+    await _gate(client, decisions=_recorder(store)).decide(
+        platform="discord", conversation_id="g/1",
+    )
+    block = client.prompts[0].split("<loop_decisions")[1]
+    assert "note-abc123" not in block
+    assert "g/1" not in block
+
+
+async def test_a_gate_with_no_decision_log_renders_the_block_empty():
+    """`None` is the dormant default, like `standing`'s: a deployment that has
+    not wired the log gates exactly as before and says so in the block rather
+    than omitting it — an absent block and an empty one are different facts and
+    only one of them is true here."""
+    client = _Client('{"verdict": "go"}')
+    await _gate(client).decide(platform="discord", conversation_id="g/1")
+    assert "(she has raised nothing here in this window)" in client.prompts[0]
+
+
+def test_the_block_stays_inside_the_gates_prompt_budget():
+    """~300 tokens at the CEILING — 20 rows, each with a reason at the
+    80-character cap — on a call made for every quiet window in every opted-in
+    room. The bound is the store's (`RECENT_LIMIT` x `REASON_MAX_CHARS`), so
+    this measures the render at that bound rather than at whatever a fixture
+    happened to contain.
+
+    Characters, not tokens, because nothing here tokenizes: 4 chars/token is
+    the conventional English ratio and the block is ASCII labels.
+    """
+    now = datetime.now(UTC)
+    rows = [
+        DecisionRow(
+            id=f"r{i}", writer="proactive_decide", platform="discord",
+            conversation_id="g/1", workspace="friends", note_id=None,
+            verdict="remind", reason="x" * REASON_MAX_CHARS,
+            ts=_now_ms() - i * 1000,
+        )
+        for i in range(RECENT_LIMIT)
+    ]
+    block = render_decisions([("", rows)], now=now)
+    assert len(block) / 4 < 800

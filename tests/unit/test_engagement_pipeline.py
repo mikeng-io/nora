@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import time
+from datetime import UTC, datetime
 from typing import ClassVar
 
 import pytest
@@ -34,6 +35,7 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.tools import note_handle
 from nora.app.runtime import BackgroundTasks
 from nora.doctrine.loader import Doctrine
+from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.errors import PartialReplyError
 from nora.domain.models import (
     ConversationTarget,
@@ -61,6 +63,7 @@ from nora.tag import Debounce
 from nora.testing import (
     FakeAgentRunner,
     FakeRecordStore,
+    InMemoryDecisionLogStore,
     FakeRosterSource,
     ScriptedTurn,
 )
@@ -276,6 +279,7 @@ def _build_pipeline(
     policy=None,
     tag_trace_store=None,
     debrief_wiring=None,
+    decisions=None,
 ):
     # Always a real (fake) store, never `None`: every scenario below can read
     # `pipeline._tag_trace_store.saved` (mirroring how `pipeline._slots` is
@@ -318,6 +322,7 @@ def _build_pipeline(
         policy=policy if policy is not None else permissive_policy(),
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
+        decisions=decisions,
         **extra,
     )
     return pipeline, metrics, audit, memory, background
@@ -2826,3 +2831,98 @@ async def test_a_queued_tag_with_no_carried_context_starts_its_own_trace(exporte
                    and s.attributes["nora.tag_id"] == "t2")
     assert t2_turn.parent is None, "an un-carried queued tag is its own root"
     assert t2_turn.context.trace_id != t1_root.context.trace_id
+
+
+# --- the shared decision log (issue #199) ---------------------------------
+
+
+def _decision_recorder(store=None, *, metrics=None):
+    """A real `DecisionLogRecorder` over the SHARED in-memory store, which
+    `tests/contract/test_decision_log_store_contract.py` judges against
+    Postgres — never an inline double."""
+    return DecisionLogRecorder(
+        store=store if store is not None else InMemoryDecisionLogStore(),
+        metrics=metrics if metrics is not None else Metrics(),
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+async def test_a_tag_turn_that_replies_is_written_to_the_decision_log():
+    """**The writer.** The tag path is the one decider never in doubt about
+    whether it should speak — somebody addressed her — so it reads nothing from
+    the log and only writes. What it writes is what the other two could not
+    see: issue #199's incident is a tag turn one second behind a participation
+    answer, re-deriving it from scratch and dying.
+
+    `reason` is the disposition `real_outcome` already derived, reused rather
+    than derived a second way — a second derivation is a third place the two
+    can disagree.
+
+    Falsification: delete the `self._decisions.record(...)` call in
+    `EngagementPipeline.run`.
+    """
+    store = InMemoryDecisionLogStore()
+    pipeline, _, _, _, background = _build_pipeline(
+        runner=ScriptedRunner(_reply_turns()),
+        decisions=_decision_recorder(store),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    rows = await store.recent(conversation_id="g1", since_ms=0)
+    assert [(r.writer, r.verdict, r.reason) for r in rows] == [
+        ("tag", "replied", "send_reply"),
+    ]
+
+
+async def test_a_tag_turn_that_says_NOTHING_is_written_too():
+    """The row that matters most, and the one a naive writer misses: it is
+    written BEFORE the `not delivered` return, so a turn that failed is logged
+    as loudly as one that replied. A log that recorded only successes would
+    answer «this room has been quiet» for a room she has failed in four times,
+    which is the opposite of the fact the next decider needs.
+
+    Falsification: move the `record` call below the `if not delivered: return`.
+    """
+    store = InMemoryDecisionLogStore()
+    pipeline, _, _, _, background = _build_pipeline(
+        runner=ScriptedRunner([ScriptedTurn(tool_calls=[], final_text="")]),
+        decisions=_decision_recorder(store),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    rows = await store.recent(conversation_id="g1", since_ms=0)
+    assert [(r.writer, r.verdict, r.reason) for r in rows] == [
+        ("tag", "failed", "silent"),
+    ]
+
+
+async def test_a_decision_log_that_is_down_never_fails_a_tag_reply():
+    """The rule the recorder exists for, on the path a person is actually
+    waiting on. A store that raises on every verb must cost a counter and
+    nothing else."""
+    class _Broken:
+        async def append(self, *, row):
+            raise RuntimeError("decision log down")
+
+        async def recent(self, *, conversation_id, since_ms, limit=20):
+            raise RuntimeError("decision log down")
+
+    adapter = _FakeAdapter()
+    metrics = Metrics()
+    pipeline, _, _, _, background = _build_pipeline(
+        metrics=metrics,
+        adapter=adapter, runner=ScriptedRunner(_reply_turns("今晚七點半得")),
+        decisions=_decision_recorder(_Broken(), metrics=metrics),
+    )
+
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert adapter.texts == ["今晚七點半得"]
+    assert metrics.get(
+        "nora_errors_total", stage="decision_log_write", platform="signal",
+    ) == 1

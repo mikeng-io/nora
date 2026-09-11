@@ -84,6 +84,7 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.compute import ComputeJob
+from nora.domain.decision_log import DecisionLogRecorder, DecisionWriter
 from nora.domain.events import Event, EventFactory
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
@@ -636,6 +637,7 @@ class FirePath:
         shadow_platform: str = "discord",
         gate_shadow_channel: str | None = None,
         gate_shadow_platform: str = "discord",
+        decisions: DecisionLogRecorder | None = None,
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -790,6 +792,12 @@ class FirePath:
         # turn drafts to mirror.
         self._gate_shadow_channel = gate_shadow_channel
         self._gate_shadow_platform = gate_shadow_platform
+        # The shared decision log (issue #199), written from `_determined` —
+        # the ONE method all four determination exits already converge on, so
+        # the writer cannot come apart from the record it writes. `None` is the
+        # dormant default: a deployment that has not wired it fires exactly as
+        # before.
+        self._decisions = decisions
 
     async def build_context(self, occasion: Event) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
@@ -1713,8 +1721,52 @@ class FirePath:
             window=window_from(ctx.transcript),
         )
         log_determination(log, d)
+        await self._log_decision(occasion, d)
         if occasion.kind == "participation":
             await self._mirror(occasion, ctx, doctrine, d)
+
+    async def _log_decision(self, occasion: Event, d: Determination) -> None:
+        """The determination as a DECISION-LOG row — a THIRD sink, and the only
+        one another decider can read (issue #199).
+
+        The log and the mirror are both write-only as far as a prompt is
+        concerned: one goes to a file, one goes to a channel an operator reads.
+        Neither is reachable from the gate deciding whether to admit the next
+        window in this room, or from the proactive pass deciding what to raise
+        in it tomorrow. That is the whole gap — three decision paths, one room,
+        and 2026-09-10's duplicate answered twice and raised a third time.
+
+        **`disposition`, never her words.** `Determination.texts` is her reply
+        or the draft she declined to send; it stays in the DEBUG half of the
+        determination log and in the audit rows. What goes in the row is the
+        four-way outcome — `spoke` / `held_shadow` / `held_cooldown` /
+        `declined` — which is a label this codebase derives rather than a
+        model authors. That is what lets the row ride into a cheap external
+        gate call without becoming an egress question.
+
+        Only the two occasions that CAN decline the floor are logged. A
+        reminder or a gathering firing is not a decision about whether to
+        speak — it was decided when the row was written — and putting it here
+        would dilute the block with rows no decider can act on.
+
+        `record` never raises and never blocks past its own timeout, so this
+        cannot change the turn's outcome, which is the property `_mirror` one
+        method down also holds and for the same stated reason.
+        """
+        if self._decisions is None:
+            return
+        writer: DecisionWriter | None = (
+            "participation" if occasion.kind == "participation"
+            else "proactive_act" if occasion.kind == "proactive"
+            else None
+        )
+        if writer is None:
+            return
+        await self._decisions.record(
+            writer=writer, platform=occasion.platform,
+            conversation_id=occasion.conversation_id,
+            verdict=d.verdict, reason=d.disposition,
+        )
 
     async def _mirror(
         self, occasion: Event, ctx: TagContext, doctrine: Any,

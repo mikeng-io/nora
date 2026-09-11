@@ -56,6 +56,7 @@ from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_
 from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.compute import ComputeJobStore
+from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import PersonRef
 from nora.domain.ports import (
@@ -97,6 +98,7 @@ from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.standing import SqlStandingStore
+from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
@@ -841,6 +843,37 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # the tier off, and the debrief's own `store_verdict is None` guard
     # is what makes it inert rather than a second flag to forget.
     turn_verdict_store = SqlTurnVerdictStore(engine)
+    # The shared decision log (issue #199). Built unconditionally beside
+    # `standing_store` and `turn_verdict_store` for their reason — it costs one
+    # attribute where nothing reads it — and there is a second reason here: the
+    # log has FOUR writers on three different paths, so a flag gating it would
+    # be four places to forget rather than one, and a half-wired log is worse
+    # than no log at all (a block that says «nothing happened in this room»
+    # while the gate has been deciding about it all day).
+    #
+    # ONE recorder for the whole process, handed to all four writers. That is
+    # not only tidiness: `DecisionLogRecorder._next_id` breaks a
+    # same-millisecond tie with a counter, and the counter is per recorder, so
+    # four recorders would be four independent sequences and one pass's own
+    # rows could still order arbitrarily. It is also the single place the
+    # fail-soft rule and the wall clock live, which is what makes «can a log
+    # write fail a turn?» a question about one method.
+    #
+    # `workspace_of` is the SAME `Policy` read `FirePath._workspace_for` and
+    # `TranscriptInjection._notes` make (DEC-105): two readers each carrying
+    # their own idea of a room's workspace disagree the first time a deployment
+    # runs two social units. A room with no entry leaves the column empty
+    # rather than guessing — the recorder's own refusal.
+    decision_log = DecisionLogRecorder(
+        store=SqlDecisionLogStore(engine),
+        metrics=metrics,
+        clock=lambda: datetime.now(UTC),
+        workspace_of=lambda platform, conversation_id: (
+            convo.workspace
+            if (convo := allowlist.conversation(platform, conversation_id))
+            is not None else None
+        ),
+    )
     # The Dreamer's CURSOR, REUSING `engine` for the same reason
     # `reminders`/`compute_jobs`/`tool_call_log_store` do above. UNLIKE those,
     # this one IS gated on the feature flag: `SqlLanguageStore` owns
@@ -2024,6 +2057,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         tool_call_log_store=tool_call_log_store,
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
+        # The shared decision log (issue #199). The tag path only
+        # WRITES: somebody addressed her, so it is never in doubt about
+        # whether to speak. What it writes is what the other two
+        # deciders could not see.
+        decisions=decision_log,
     )
     # The Dispatcher is built LATE, below the fire path — the participation
     # trigger it may carry needs `fire_path.speak`, which does not exist yet
@@ -2139,6 +2177,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # retaining a `TagTrace` at all (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
+            # The shared decision log (issue #199), written from
+            # `_determined` — the one method all four determination
+            # exits already converge on. Participation and proactive
+            # act turns only; a reminder firing is not a decision
+            # about whether to speak.
+            decisions=decision_log,
             # The note tier (design/dreamer-agent-loop/35 Phase 2) — S5's
             # precedent one tier later: the participation determination grounds
             # on «transcript + standing/notes», which Phase 1's header already
@@ -2338,6 +2382,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # `[standing] enabled = false`), so the gate and the turn behind
             # it see one room and not two.
             standing=standing_store if cfg.standing.enabled else None,
+            # The shared decision log (issue #199): the gate WRITES every
+            # verdict and READS back only the PROACTIVE half's rows for
+            # this room. Design 36's bar is intact — the block carries
+            # what the loop DID, never what Nora knows.
+            decisions=decision_log,
             transcript_limit=cfg.relevance_gate.transcript_rows,
             # The SAME join the turn behind it runs. Without it the gate reads
             # an image-only message as an EMPTY BODY, `render_context` drops
@@ -2709,6 +2758,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     clock_store=dream_schedule_clock,
                     records=audit,
                     quiet_seconds=cfg.dreamer.quiet_seconds,
+                    # The shared decision log (issue #199): this pass
+                    # writes its own decide verdicts and reads back the
+                    # gate / participation / tag rows of every room of
+                    # the workspace. Never its OWN rows — 39 sec.1's
+                    # self-echo brake, here as a predicate.
+                    decisions=decision_log,
                 ),
             )
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on

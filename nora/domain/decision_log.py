@@ -67,6 +67,7 @@ layers of the import contract.
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
@@ -229,6 +230,29 @@ class DecisionLogRecorder:
         self._timeout_seconds = timeout_seconds
         self._limit = limit
         self._window_ms = window_ms
+        # See `_next_id`. One counter per recorder, and the composition root
+        # builds exactly one recorder for the whole process.
+        self._seq = itertools.count()
+
+    def _next_id(self) -> str:
+        """`<ts>-<seq>-<random>`, and the middle field is load-bearing.
+
+        Both stores order on `(ts, id)`, so rows written in the SAME
+        millisecond are ordered by their id — and with a bare `uuid4` that is
+        random, which means one pass's own decisions render in arbitrary order.
+        Not hypothetical: a Dreamer `commit` walks an envelope of four items
+        with no `await` that yields between them, so all four land on one
+        millisecond, and «remind, then decline, because X» would render as
+        often backwards as forwards. A block whose rows are out of order is the
+        undated-transcript failure again, one axis over.
+
+        The leading timestamp keeps the id sorting the same way `ts` does, so
+        the two never disagree; the counter breaks a same-millisecond tie by
+        INSERTION order; the random tail keeps two processes from colliding on
+        the primary key. Zero-padded because this sorts as TEXT.
+        """
+        ts = int(self._clock().timestamp() * 1000)
+        return f"{ts:014d}-{next(self._seq):09d}-{uuid.uuid4().hex[:12]}"
 
     async def record(
         self,
@@ -248,7 +272,7 @@ class DecisionLogRecorder:
         now = self._clock()
         try:
             row = DecisionRow(
-                id=uuid.uuid4().hex,
+                id=self._next_id(),
                 writer=writer,
                 platform=platform,
                 conversation_id=conversation_id,

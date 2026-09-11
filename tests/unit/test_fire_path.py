@@ -28,6 +28,7 @@ from nora.app.fire import (
     reminder_occasion,
 )
 from nora.domain.compute import ComputeJob, ComputeJobState
+from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.events import Event
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.notes import Note, NoteRevision
@@ -38,6 +39,7 @@ from nora.persons import Persons
 from nora.policy import permissive_policy
 from nora.testing import (
     FakeAgentRunner,
+    InMemoryDecisionLogStore,
     InMemoryNoteStore,
     ScriptedTurn,
 )
@@ -310,9 +312,11 @@ def _fire_path(
     event_registry: dict | None = None,
     standing=None,
     standing_store_timeout_seconds: float = 5.0,
+    decisions=None,
 ) -> FirePath:
     extra = {"standing": standing,
-             "standing_store_timeout_seconds": standing_store_timeout_seconds}
+             "standing_store_timeout_seconds": standing_store_timeout_seconds,
+             "decisions": decisions}
     if event_registry is not None:
         extra["event_registry"] = event_registry
     return FirePath(
@@ -2166,3 +2170,128 @@ def test_the_proactive_doctrine_audience_carries_the_may_speak_rule(doctrine_sto
     for name in ("identity", "voice", "silence", "conduct", "constraints"):
         assert f'name="{name}"' in text, name
     assert 'name="participation-conduct"' not in text
+
+
+# --- the shared decision log (issue #199) ---------------------------------
+
+
+def _decision_recorder(store=None, *, metrics=None, workspace_of=None):
+    """A real `DecisionLogRecorder` over the SHARED in-memory store, which
+    `tests/contract/test_decision_log_store_contract.py` judges against
+    Postgres. The clock is `T0`, the same instant `_fire_path` runs at."""
+    return DecisionLogRecorder(
+        store=store if store is not None else InMemoryDecisionLogStore(),
+        metrics=metrics if metrics is not None else Metrics(),
+        clock=lambda: T0,
+        workspace_of=workspace_of,
+    )
+
+
+async def test_a_participation_turn_that_speaks_is_written_to_the_decision_log(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """**The writer.** Before this the participation determination reached a
+    log file and, where an operator had wired one, a mirror channel. Neither is
+    readable by the gate deciding whether to admit the next window in this
+    room, or by the proactive pass deciding what to raise in it tomorrow — the
+    gap issue #199 names.
+
+    `reason` is the DISPOSITION, never her words: her reply stays in the audit
+    rows and the DEBUG half of the determination log.
+
+    Falsification: delete the `_log_decision` call in `FirePath._determined`.
+    """
+    store = InMemoryDecisionLogStore()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner(_send_turns("咁啱嘅")),
+        decisions=_decision_recorder(store),
+    )
+
+    await path.speak(_participation())
+
+    rows = await store.recent(conversation_id="conv-1", since_ms=0)
+    assert [(r.writer, r.verdict, r.reason) for r in rows] == [
+        ("participation", "spoke", "spoke"),
+    ]
+    assert "咁啱嘅" not in str(rows)
+
+
+async def test_a_participation_turn_that_declines_is_written_too(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """Silence is the HEALTHY default (35 §6) and it is the row that matters
+    most: «she looked at this room an hour ago and had nothing to add» is
+    exactly what stops the next decider re-deriving the same judgement. A log
+    that recorded only the speech would answer «nothing has happened here» for
+    a room she has considered four times."""
+    store = InMemoryDecisionLogStore()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner([
+            ScriptedTurn(tool_calls=[], final_text="nothing to add here"),
+        ]),
+        decisions=_decision_recorder(store),
+    )
+
+    assert await path.speak(_participation()) == fire_module.SILENT
+
+    rows = await store.recent(conversation_id="conv-1", since_ms=0)
+    assert [(r.writer, r.verdict, r.reason) for r in rows] == [
+        ("participation", "silent", "declined"),
+    ]
+    # Her unrouted draft doubles as her reasoning and stays OUT of the row —
+    # it is a whole reply, and the row rides into a cheap external gate call.
+    assert "nothing to add here" not in str(rows)
+
+
+async def test_a_reminder_occasion_writes_no_decision_row(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """Only the two occasions that CAN decline the floor are decisions. A
+    reminder firing was decided when the row was written; logging it here
+    would dilute the block with rows no decider can act on.
+
+    Falsification: drop the `writer is None` guard in `_log_decision`.
+    """
+    store = InMemoryDecisionLogStore()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        runner=FakeAgentRunner(_send_turns("reminder text")),
+        decisions=_decision_recorder(store),
+    )
+
+    await path.speak(reminder_occasion([_reminder()]))
+
+    assert await store.recent(conversation_id="conv-1", since_ms=0) == ()
+
+
+async def test_a_decision_log_that_is_down_never_fails_a_fire_turn(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The rule the recorder exists for. A participation turn that SPOKE must
+    still answer `sent` when the log is unreachable — review and record traffic
+    must never be able to break the path it records, which is the same
+    judgement `_mirror` one method down already makes."""
+    class _Broken:
+        async def append(self, *, row):
+            raise RuntimeError("decision log down")
+
+        async def recent(self, *, conversation_id, since_ms, limit=20):
+            raise RuntimeError("decision log down")
+
+    adapter = _FireAdapter()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner(_send_turns("咁啱嘅")),
+        decisions=_decision_recorder(_Broken(), metrics=metrics),
+    )
+
+    assert await path.speak(_participation()) == fire_module.SENT
+    assert adapter.texts == ["咁啱嘅"]
+    assert metrics.get(
+        "nora_errors_total", stage="decision_log_write", platform="signal",
+    ) == 1

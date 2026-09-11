@@ -1,0 +1,16 @@
+{
+  "type": "change",
+  "summary": "Nora's three ambient deciders can now see each other's verdicts. A shared decision log records every gate verdict, participation determination, proactive decision and tag outcome, and the gate and the proactive pass each read the others' rows for the room they are judging.",
+  "details": [
+    "Issue #199: the Relevance Gate persisted nothing durable (metrics and trace attributes only), the proactive adaptor logged only its own reminder rows, and the determination log was written and read back into no prompt. Measured on 2026-09-10 — participation answered a question at 16:43, the tag turn one second later re-derived the whole answer and died, and the proactive decider raised the same question in another room at 18:03.",
+    "A new `decision_log` table (migration 0053), append-only, with one row per decision: which decider, which room, the verdict, a short clause of its own reasoning, and when. Four writers: the gate on every verdict (fail-closed ones carry their error kind, so «the gate said no» and «the gate was down» stay apart), the fire path on every participation and proactive act determination, the proactive decide turn on every decision including its declines, and the tag path on every turn including the ones that said nothing.",
+    "Two readers, each excluding its own rows. The gate's prompt gains a `<loop_decisions>` block carrying the PROACTIVE half's rows for its room; the proactive decide turn's prompt gains one carrying the gate, participation and tag rows for every room of its workspace. Bounded at 20 rows over 24 hours, with an age on every row — the same rendering that cut this gate's error rate by two thirds over 40 labelled cases.",
+    "Design 36's bar on the gate is unmoved: the block carries what the LOOP did, never what Nora knows. It holds no notes, no memory and nothing anybody said — only her own turns, so the gate still cannot answer the turn's question behind it.",
+    "No speech and no identifier ever reaches a row or a render. A row's reason is a derived label or one clause capped at 80 characters; her replies and drafts stay in the audit rows and the determination log, and a room appears in a block under its operator-authored policy label or not at all."
+  ],
+  "limitations": [
+    "The tag turn WRITES but does not READ: a tag one second behind a participation answer still re-derives it. That read is a separate, smaller change (it needs a 10-minute window rather than 24 hours) and is not in this branch.",
+    "Every writer and both reads are fail-soft and bounded on a 2-second wall clock: a decision log that is down costs a thinner prompt and a counter (`nora_errors_total{stage=\"decision_log_read\"}` / `{stage=\"decision_log_write\"}`), never a dropped reply — so a silently degraded log reads as a quiet estate unless those series are watched.",
+    "Whether the blocks actually change either decider's verdicts is unmeasured. The gate has a 40-case labelled suite and the proactive decide turn has its own; neither has been run against this change."
+  ]
+}
