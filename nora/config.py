@@ -197,6 +197,52 @@ class MemoryConfig(BaseModel):
     # conclusions (~1,080 chars, ~360 tokens) is ~7.2k of the 128k budget at
     # `turns = 20`. That is the honest price of not making her ask.
     tagger_card_conclusions: int = 8
+    # `<people_in_window>` on the PARTICIPATION turn (issue #210) — how many of
+    # HER CONCLUSIONS ABOUT EACH SPEAKER in the window ride in the prompt.
+    # 0 disables the block entirely.
+    #
+    # A THIRD knob rather than a reuse of `tagger_card_conclusions`, for that
+    # knob's own stated reason turned on itself: the two blocks have different
+    # lifetimes and different arithmetic. `<peer_history>` renders ONE person
+    # and is re-sent on every model call of a tag loop; this renders up to
+    # `people_in_window_speakers` of them on ONE fire turn. Eight each across
+    # four speakers is ~1,440 tokens of background on a turn nobody asked for,
+    # which is why the default here is 3 and not 8 — the participation turn is
+    # deciding WHETHER to speak, and the question it needs memory for («does
+    # this room mean her?») is answered by the top few conclusions or not at
+    # all.
+    people_in_window_conclusions: int = 3
+    # How many DISTINCT SPEAKERS of the window get a `<people_in_window>` entry,
+    # most recent speaker first. 0 disables the block.
+    #
+    # Bounded because the read is one Honcho round trip PER SPEAKER: a ten-person
+    # window would put ten concurrent `representation` calls on the front of a
+    # fire turn that is already holding the conversation's heartbeat slot. Four
+    # is the number of people who actually speak in a quiescence window on the
+    # deployment; the bound is on the READS, not just on the render, so raising
+    # it costs latency as well as tokens.
+    people_in_window_speakers: int = 4
+    # The PROACTIVE decide turn's roster index depth (design 39 D9: inject the
+    # index, call for depth) — how many conclusions per home-room member ride
+    # in `<people>`. 0 leaves the block exactly as it was: names and aliases.
+    #
+    # DELIBERATELY SMALLER than everything above, and that is the decision
+    # rather than an economy. #206 rations the decide pass to
+    # `max_memory_calls = 2` reads; the index exists so those two are spent on
+    # DEPTH («what did Aaron say about Saturday») instead of on «who is Aaron».
+    # An index that carried eight conclusions each would BE the depth, and the
+    # ration would have nothing left to buy.
+    roster_index_conclusions: int = 1
+    # The wall-clock bound on the participation turn's memory reads, in seconds.
+    #
+    # `HonchoClient.representation` already carries its own 3s transport
+    # timeout, so this is a BELT over the port rather than the only bound: the
+    # port is a Protocol, `MemoryStore` implementations are not obliged to time
+    # anything out, and these reads run while the heartbeat holds this
+    # conversation's slot — the exact shape of the unbounded read that wedged
+    # a conversation in `debrief.run` and then again in `FirePath`. One bound
+    # over the whole concurrent batch, not one per read.
+    read_timeout_seconds: float = Field(default=5.0, gt=0)
 
 
 class LimitsConfig(BaseModel):

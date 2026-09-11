@@ -6,7 +6,7 @@ tags: [nora, ambient, ooda, decisions, migration]
 timestamp: '2026-09-11'
 edges:
   - {dst: 00-overview, rel: summarises, provenance: asserted}
-version: 4
+version: 5
 ---
 
 # Decisions, Order, And What Moves
@@ -95,8 +95,9 @@ that is unmeasured cannot be tuned at all.
 
 ## 4. Migration — what is actually in flight, 2026-09-11 18:30
 
-Six branches, each in its own worktree, each with an Opus reviewer before its
-PR, merged in this order as they land:
+Seven branches, each in its own worktree, each with an Opus reviewer before its
+PR, merged in this order as they land (H landed after the first six, on the
+tree they left behind):
 
 | | branch | seam | issue |
 |---|---|---|---|
@@ -106,6 +107,14 @@ PR, merged in this order as they land:
 | E2 | a per-pass memory budget in code | inside the proactive decider | #160 |
 | G1 | the #199 journey case | the positive control | — |
 | D | the decision log store + both renders | Decide ↔ Decide | — |
+| H | **the participation turn reads memory** — `<self_card>` + `<people_in_window>` behind the blind gate, and the proactive `<people>` index gains one conclusion per member so #206's 2-read ration buys depth (39 D9) | the medium — the half `01 §1`'s memory column had WRONG, not the half DEC-178 defers | #210 |
+
+H is not a seam crossing and is listed here anyway, because it is the row that
+says what `01 §1`'s correction cost: the cell read «✓ peer card» while the turn
+held nothing, and the three `-known` halves of the participation suite had been
+scoring 0/5, 0/5, 1/5 against it. It does not touch DEC-178, which is about the
+NOTE tier and stays open with its experiment attached; it does not touch the
+gate, which stays exactly as 36 §6 decided it.
 
 **Not tonight:** E1 (the decide turn's bounded record window — D's log is
 tried first), F1 (fire into the thread's room, not the home room — a

@@ -78,7 +78,26 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_replies_total", "Delivery attempts, by outcome status.", ("status", "platform"),
     ),
     _CounterSpec(
-        "nora_errors_total", "Internal errors, by processing stage.", ("stage", "platform"),
+        "nora_errors_total",
+        "Internal errors, by processing stage. The stage vocabulary is open — "
+        "every call site names its own — but the four stages the AMBIENT "
+        "loop's memory reads raise are declared here by name, because they are "
+        "the only way an operator can see a block go missing: "
+        "stage=\"fire_self_card\" (the participation turn's <self_card> read "
+        "failed or Honcho was unreachable), stage=\"fire_people_in_window\" "
+        "(one speaker's <people_in_window> read did, counted once per failed "
+        "speaker), stage=\"fire_memory\" (the whole concurrent batch hit "
+        "[memory] read_timeout_seconds — a port that never answers, which is "
+        "not the same failure as one that raises), and "
+        "stage=\"proactive_roster_index\" (a <people> roster-index recall on "
+        "the decide pass). All four are issue #210 and all four are "
+        "fail-soft: the block is lost, never the turn, so absence is the only "
+        "symptom and this series is the only tell. The three fire_* stages "
+        "sit beside the pre-existing fire_peer_card / fire_standing / "
+        "fire_notes / fire_workspace for that set's own stated reason — an "
+        "operator asking WHICH half of the context went blind must not have "
+        "to guess.",
+        ("stage", "platform"),
     ),
     _CounterSpec(
         "nora_silent_failures_total",

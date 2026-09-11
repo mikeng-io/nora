@@ -1,12 +1,12 @@
 ---
 type: analysis
 title: "What Each Stage Reads Today, The Five Seams, And Which Of Them Are Real"
-description: "The corrected table of what each stage is handed (version 1 had three cells wrong and merged injected blocks with callable tools). Then the seams: two that are real and unwired (the two deciders cannot see each other; the debrief writes a room position from a turn outcome), two that are component bugs wearing seam clothing (#161 lever 1, #186), one that is an open measurement (memory into the note tier). Grounded on the code at 0a5933b4 and on #199."
+description: "The corrected table of what each stage is handed (version 1 had three cells wrong and merged injected blocks with callable tools; version 5 corrects a FOURTH — the participation turn's memory cell, which said «✓ peer card» for a turn that read no Honcho block at all, #210). Then the seams: two that are real and unwired (the two deciders cannot see each other; the debrief writes a room position from a turn outcome), two that are component bugs wearing seam clothing (#161 lever 1, #186), one that is an open measurement (memory into the note tier). Grounded on the code at 0a5933b4 and on #199."
 tags: [nora, ambient, ooda, seams, participation, proactive, notes, standing, honcho, debrief]
 timestamp: '2026-09-11'
 edges:
   - {dst: 00-overview, rel: depends_on, provenance: asserted}
-version: 4
+version: 5
 ---
 
 # What Each Stage Reads Today, And The Five Seams
@@ -24,16 +24,18 @@ wrong; the corrections are marked.
 | **Orient · note-curation** | **✓ per-note window, injected** (v1 said ✗) | ✗ | ✓ | ✗ | ✗ | — |
 | **Orient · Standing fold** (tag path) | the exchange, injected | prior | ✗ | ✗ | ✗ | **✗** (v1 said ✓; `render_debrief_turn` names no room) |
 | **Decide · gate** | ✓ with ages | ✓ with age | ✗ *by design 36 §6* | ✗ *by design 36 §6* | ✗ — and stays so | **✗** (v1 said ✓; the prompt names no room, label or platform) |
-| **Decide · participation turn** | ✓ | ✓ | **✓ `<notes>`** when `[notes] enabled` (on the deployment; not the shipped default) | ✓ peer card | ✗ | ✓ |
-| **Decide · proactive decide** | ✗ (39 D9) | ✓ per room, aged | ✓ | roster injected; Honcho **callable** (v1 called the `<people>` block Honcho — it is the roster) | own log only | home room |
+| **Decide · participation turn** | ✓ | ✓ | **✓ `<notes>`** when `[notes] enabled` (on the deployment; not the shipped default) | **was ✗ — NOTHING** (v1-v4 said «✓ peer card»; the card is keyed on a tagger the occasion does not have, `fire.py:509` `person_id=None` → `fire.py:854` `ref is None` → `peer_card=()`, and `<self_card>`/`<peer_history>` were assembled only by the tag path's `engagement/context.py:208`). **Now ✓ `<self_card>` + `<people_in_window>`** — 2026-09-11, #210, `fire.py:958`/`:974`, rendered `prefill.py:479` | ✗ | ✓ |
+| **Decide · proactive decide** | ✗ (39 D9) | ✓ per room, aged | ✓ | roster injected, **now with 1 conclusion per member** (2026-09-11, #210, `proactive.py:606`/`:636`); Honcho still **callable** for depth, which is what the #206 ration is now free to buy (v1 called the `<people>` block Honcho — it was the roster alone) | own log only | home room |
 | **Decide · proactive act** | home room's, injected | ✓ | ✓ | ✓ | ✗ | home room |
 
 Where each cell comes from: `relevance_gate.py:19-28` (the gate's deliberate
 blindness, quoted in §2.3), `:534` (the prompt is built from transcript and
 Standing alone — no room); `fire.py:551, :631` (the participation turn's
 `<notes>`; `:683` records that the block rendered on no fire occasion before
-the tier was wired); `proactive.py:449-479` (`inputs()`), `:481-513`
-(`_people_block` reads the roster, not memory); `note_candidates.py:492`
+the tier was wired); `fire.py:974-1010` (`_read_memory`, the participation-only
+gate on both Honcho reads — #210); `proactive.py:449-479` (`inputs()`), `:532`
+(`_people_block`, which read the roster and NOT memory until #210 gave it
+`:636` `_roster_index`); `note_candidates.py:492`
 (`room = workspace or key`); `note_curator.py:672` (the per-note transcript
 window); `debrief_render.py:240-247` (no room label, id-suppression at
 `:34-42`).
@@ -48,6 +50,18 @@ Three readings:
    one second earlier.
 3. **Memory reaches every stage that judges except two:** the gate (by
    design) and the note tier (#118 step 4, deferred).
+
+   **CORRECTED 2026-09-11 (#210).** That reading was derived from the
+   participation row's «✓ peer card», and that cell was wrong on master
+   (`c41b8b38`): the occasion is built `person_id=None`, so the card was `()`
+   and the two `representation` blocks were never assembled on this path at
+   all. So the true count was **three** stages, and the third was the one the
+   whole ambient loop turns on. The instrument said so and nobody read it: the
+   three `-known` halves of the participation suite scored 0/5, 0/5, 1/5 on
+   both arms the night before — exactly the knowledge-dependent cases — while
+   the table claimed the turn had memory. What is fixed is the turn; what
+   should have caught it earlier is that a cell in this table has to be read
+   off `build_context`, not off the design that specified it.
 
 ## 2. The five seams
 
@@ -135,8 +149,14 @@ commit path, and waits otherwise.
 > the participation turn behind the gate… A gate that started guessing the
 > second question would be the 35 design again in a cheaper coat.
 
-That is design 36 §6, and the turn behind the gate renders `<notes>` and the
-peer card. v1's flagship seam case ("a note closes in a window →
+That is design 36 §6, and the turn behind the gate renders `<notes>` and —
+since #210, 2026-09-11 — `<self_card>` and `<people_in_window>`. It renders no
+peer card and never did: this sentence used to say it did, on the same wrong
+cell §1 carried, and the card is keyed on a tagger a participation occasion
+does not have. **Nothing about the gate changed**: its prompt is still
+transcript + Standing, rebuilt byte-for-byte by
+`tests/unit/test_relevance_gate.py::test_the_prompt_is_exactly_the_instruction_plus_the_two_rendered_blocks`,
+and `nora/ingest/relevance_gate.py` holds no memory collaborator of any kind. v1's flagship seam case ("a note closes in a window →
 admit") already exists twice in the participation suite and passes. The gate
 is not missing notes; it is a cheap pre-filter *in front of* the decider that
 has them. Nothing here changes that. The one crossing input the gate does have
