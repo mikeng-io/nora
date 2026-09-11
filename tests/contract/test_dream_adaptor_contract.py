@@ -329,6 +329,8 @@ def _build_note_candidates() -> tuple[NoteCandidateAdaptor, InMemoryNoteStore]:
         NoteCandidateAdaptor(
             notes=store, candidates=store,
             workspace_for=lambda scope: _NOTE_WS if scope == KEY else None,
+            label_for=lambda scope: "Zone 42" if scope == KEY else None,
+            description_for=lambda _scope: None,
             metrics=Metrics(),
         ),
         store,

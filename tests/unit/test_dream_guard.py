@@ -280,9 +280,21 @@ def test_the_guard_has_no_terminal_verb_and_nothing_that_could_end_a_turn():
     `result_caps` (design/dreamer-agent-loop/32 §3.3 point 3) is on the
     signature deliberately: it shapes a tool RESULT, not a turn — it cannot
     cancel, relax, or end anything, so the negative below stays intact.
+
+    `memory_tools`/`memory_budget` (R-91, issue #160) join it on the same
+    terms, and the list is spelled out rather than loosened so that the next
+    parameter has to be argued for here too. A ceiling on how many MEMORY
+    reads one pass may make refuses a call and rewrites its result; it holds
+    no terminal verb, subscribes to no model-call hook, and a pass whose
+    ration is spent still runs until the model stops asking for tools —
+    `tests/unit/test_dream_memory_budget.py` asserts exactly that, because «a
+    budget that ends the turn» is the failure mode this negative is about.
     """
     params = inspect.signature(DreamGuard.__init__).parameters
-    assert set(params) == {"self", "adaptor", "budgets", "metrics", "result_caps"}
+    assert set(params) == {
+        "self", "adaptor", "budgets", "metrics", "result_caps",
+        "memory_tools", "memory_budget",
+    }
     assert all(
         p.kind is inspect.Parameter.KEYWORD_ONLY
         for name, p in params.items() if name != "self"

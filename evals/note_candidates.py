@@ -62,6 +62,21 @@ class NotebookEntry:
     body: str
 
 
+def _opt_str(value: Any) -> str | None:
+    """An optional room field off the YAML, typed at LOAD time. A bare `2200`
+    in the corpus parses as an int and would reach `escape_attr` as one — the
+    same «refuse a case that cannot be graded at load time rather than burning
+    a live run» rule `validate` states, applied to the two fields YAML is most
+    likely to get wrong."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(
+            f"room_label/room_description must be strings; got {value!r}"
+        )
+    return value.strip() or None
+
+
 @dataclass(frozen=True)
 class NoteCandidatesCase:
     name: str
@@ -72,6 +87,13 @@ class NoteCandidatesCase:
     anchor_date: int | None = None
     must_cite: tuple[int, ...] = ()
     updates: str | None = None
+    # The room this case is set in, as `policy.toml` supplies it live (issue
+    # #161): `room_label` is what the room is CALLED and is attributed on
+    # every rendered batch line; `room_description` is the operator's own
+    # sentence about what KIND of room it is. Both absent by default, which
+    # is what an unlabelled, undescribed room renders as in production.
+    room_label: str | None = None
+    room_description: str | None = None
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> NoteCandidatesCase:
@@ -95,6 +117,8 @@ class NoteCandidatesCase:
             anchor_date=(int(raw["anchor_date"]) if raw.get("anchor_date") is not None else None),
             must_cite=tuple(int(i) for i in raw.get("must_cite", ())),
             updates=raw.get("updates"),
+            room_label=_opt_str(raw.get("room_label")),
+            room_description=_opt_str(raw.get("room_description")),
         )
         case.validate()
         return case

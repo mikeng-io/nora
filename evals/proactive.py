@@ -160,10 +160,17 @@ class DecideResult:
     #: only the created ones; a quiet case must not pass because the closure
     #: refused what the model tried to write.
     remind_attempts: int = 0
-    #: Memory reads the turn made (`about`, `ask_memory`,
+    #: Memory reads the turn made (`about`, `ask_memory`, `lookup_person`,
     #: `search_memory_workspace`), any status. Objective version 2 requires
     #: one before any reminder; a `remind` case without one FAILS however
     #: well-timed the row, because the timing was not hers to know.
+    #:
+    #: `lookup_person` counts since 2026-09-11 and the omission was a live
+    #: false FAIL, not a gap: `d11` is the case that can only be decided by
+    #: resolving a handle, so a pass that spent its whole ration on the verb
+    #: granted for that (issue #145) reported zero reads and failed for doing
+    #: the right thing. A read the PASS CEILING refused (R-91, issue #160)
+    #: never reaches a tool and so is not here — see `memory_calls_from`.
     memory_calls: int = 0
 
 

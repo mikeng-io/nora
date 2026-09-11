@@ -1,0 +1,17 @@
+{
+  "type": "change",
+  "summary": "The proactive pass now has a ceiling on how much memory one run may read: two reads by default, across every memory verb together, and it is configurable per adaptor.",
+  "details": [
+    "Issue #160. The daily proactive pass was reading memory three to five times for a decision whose answer its own prompt already carried — the people index and the note bodies both named the handles it kept looking up. The per-tool budgets could not see it, because each of those reads was the first call of a different verb.",
+    "The new ceiling counts `about`, `ask_memory`, `search_memory_workspace` and `lookup_person` TOGETHER, across the whole pass, and defaults to 2. Set `[dreamer.budgets.<adaptor>] max_memory_calls` to widen it; a value below 1 is refused at startup, because the objective requires one memory read before any reminder.",
+    "A read past the ceiling is answered rather than failed: the tool returns `unavailable` with a reason the model can read, in the same shape it uses when memory genuinely cannot be reached. It is never an error and never a silently empty answer, so the pass narrows instead of breaking and still decides.",
+    "It cannot starve a pass about several people. `lookup_person` reads the same room through the same roster the people index is rendered from, so it can name nobody the prompt did not already list — which is why it is inside the ceiling rather than exempt from it. `note_read` is outside it: reading a note's body is what the index deliberately sends her to do."
+  ],
+  "limitations": [
+    "The ceiling bounds the COST of a pass, not its quality. Whether two reads is the right number for a real workspace is a measurement the proactive decide suite has yet to make at a sample size that could settle it (issue #158); 2 is the number that suite's `d11` case grades at, not a measured optimum.",
+    "The same suite can no longer see how much a pass WANTED to read, because a refused read never reaches the tool whose counter it grades on. Its cost assertion is now a check that the ceiling is wired; the wanted count is on a metric the suite does not reach. Issue #205.",
+    "A pass that keeps asking after its ration is spent is bounded only by its turn budget, and one that spends every turn on refused reads returns no decision for that day. It is loud rather than silent — the run reports unavailable, the stop reason names the cap, and the refusal counter carries the count — but how often it happens on the deployed model is unmeasured. Issue #205.",
+    "The ration is per model call, so an adaptor configured to take several samples per run may make that many times the reads. No shipped adaptor both samples and holds a memory verb.",
+    "It applies to every Dreamer adaptor, not only the proactive one. The other shipped adaptors hold no memory verb, so it is inert for them today."
+  ]
+}

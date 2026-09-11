@@ -27,6 +27,19 @@ The gaps are not cosmetic. No retry means one transient 429 is a fail-closed
 JSON parser — the R-27 substitution, an ERROR reported as a PASS. No usage
 means the cost of the highest-frequency model call in the system is invisible.
 
+**Where that left things, and where they are now.** `4448c737` moved three of
+the four onto the SDK and this file dropped to two entries. On 2026-09-11 one
+of the three came back: the relevance gate, on a measurement rather than an
+argument — the SDK's structured-output transport breached its suite's safety
+bar (1/6 held, against 6/6 raw, 40 labelled cases, one instruction) at 2.4x the
+prompt tokens, because Strands converts the schema into a tool specification
+and OmniRoute drops the assistant turn's reasoning out of the resulting
+three-message exchange. Issue #186;
+`tests/architecture/test_the_gate_does_not_form_its_verdict_through_the_sdk.py`
+is what keeps it off that transport, and THIS file is what makes it carry the
+machinery again now that it is raw. The debrief and the standing fold stay on
+the SDK: neither decides whether Nora may speak.
+
 **A STATIC read, and an INVERTED allowlist.** The question is «was a raw call
 forgotten», and a hand-written list of the four cannot answer that about a
 fifth. `test_media_join_reaches_every_transcript.py` learned this the hard way
@@ -39,6 +52,7 @@ from __future__ import annotations
 
 import ast
 import copy
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -50,11 +64,15 @@ ROOT = Path(__file__).resolve().parents[2]
 #: a module-level grep would pass on a file where some OTHER function has a
 #: timeout, which is the proxy-for-identity failure this repo keeps hitting.
 #:
-#: `retry` is the exception — it is a property of the client object, not of
-#: the call site — so it is satisfied by an explicit `max_retries` anywhere in
-#: the module that builds the client, and its absence is what the audit found
-#: everywhere. Listed here so a fifth client cannot inherit the OpenAI SDK's
-#: default of 2 by accident and call it a decision.
+#: `retry` is NOT here, and the reason is a gap rather than a decision. It is
+#: a property of the client object rather than of the call site, so it would
+#: have to be read off whoever builds the client — and nothing does: no test
+#: reads it, and `nora/agent/factory.py::create_client` passes no
+#: `max_retries`, so every raw caller inherits the OpenAI SDK's default of 2.
+#: That is the state the relevance gate's 6/6 arm was measured in, so it is
+#: not a regression; it is an unchosen setting, named here rather than implied
+#: by a facet list that reads as exhaustive. An earlier version of this
+#: comment described a `max_retries` check as if it ran.
 FACETS = ("timeout", "finish_reason", "usage")
 
 
@@ -97,11 +115,22 @@ def _enclosing_functions_with_raw_calls(
 #: the reason is written next to it — never omitted to make the gate green.
 #: Reducing a requirement here is a design change and reads as one in review.
 REQUIRED: dict[str, tuple[str, ...]] = {
-    # `nora/app/composition.py` is GONE from this list, and that is the point
-    # of the whole convention: the relevance gate, the debrief and the
-    # standing fold now call the model through `nora.agent.structured`, so
-    # they inherit the SDK's machinery instead of each hand-rolling a
-    # different subset of it. Two raw call sites remain, both below.
+    # **Back on this list as of 2026-09-11, for ONE call site and on
+    # evidence** — `_RelevanceGateModelClient`. The relevance gate decides
+    # whether Nora speaks into a room she was not invited into, and measured
+    # over 40 labelled cases with the instruction held fixed, the SDK's
+    # structured-output transport breached the suite's safety bar (1/6 vs 6/6
+    # held raw) at 2.4x the prompt tokens: a forged `[assistant]:` row was
+    # believed. Issue #186. The debrief and the standing fold stay on the SDK
+    # — neither produces a security-relevant verdict — so this module is a raw
+    # call site again for exactly one of the three clients it holds, and this
+    # entry is what makes that one carry its own machinery rather than
+    # quietly reacquiring the three-different-subsets problem.
+    #
+    # All three facets, none exempted: `nora.app` may import `nora.obs`, the
+    # call runs while the conversation's slot is held, and a truncated verdict
+    # still parses as JSON into something shorter and wrong.
+    "nora/app/composition.py": ("timeout", "finish_reason", "usage"),
     # NOT `usage`, and the reason is structural rather than an oversight:
     # `nora.infra` may not import `nora.obs` (the layered-architecture
     # contract, enforced by `lint-imports`), so a raw client in this layer
@@ -155,7 +184,11 @@ def test_every_raw_model_call_is_classified() -> None:
         f"EXEMPT with the reason they are not a production model call."
     )
 
-    stale = classified - discovered - {"nora/ingest/relevance_gate.py"}
+    # No subtrahend beyond `discovered`: this used to except
+    # `nora/ingest/relevance_gate.py`, a path in neither REQUIRED nor EXEMPT,
+    # so the term could never remove anything. A carve-out that cannot fire is
+    # a reader's false impression that something needed one.
+    stale = classified - discovered
     assert not stale, (
         f"these are listed but no longer call the model: {sorted(stale)}. "
         f"A list that outlives what it describes stops being a gate."
@@ -207,8 +240,10 @@ def _names_called(node: ast.AST) -> set[str]:
     return out
 
 
-def _on_the_call_path(rel: str, fn_name: str, token: str) -> bool:
-    """Whether `token` appears anywhere on the call path through `fn_name`.
+def _on_the_call_path(
+    rel: str, fn: ast.FunctionDef | ast.AsyncFunctionDef, token: str,
+) -> bool:
+    """Whether `token` appears anywhere on the call path through `fn`.
 
     BOTH DIRECTIONS, and each was learned from a false positive this gate
     raised against correct code:
@@ -221,45 +256,76 @@ def _on_the_call_path(rel: str, fn_name: str, token: str) -> bool:
       Requiring the token inside the calling function would have been a gate
       that punishes the deduplication it exists to encourage.
 
+    **The walk starts from a NODE, not from a name**, and that is not tidiness.
+    Keyed by name, a module holding two classes with a `complete` method has
+    one of them silently overwrite the other, and the gate then reads the wrong
+    function's body: `nora/app/composition.py` holds two model-client classes
+    with a `complete` each (the debrief's serves the standing fold too), and
+    when the relevance gate returned to a raw call on 2026-09-11 (#186) this
+    reported its correctly-bounded `complete` as unbounded because the name
+    resolved to the debrief's. A gate that answers about a different function
+    than the one it names is worse than no gate — it is the proxy-for-identity
+    failure this file's per-function check exists to avoid, reproduced inside
+    the check itself. Same-named functions are still expanded TOGETHER once the
+    walk is under way, which only widens the path and cannot move its start.
+
     Still not a module-level grep: the path is walked through the module's own
     call graph from THIS function, so a `wait_for` around something unrelated,
     or a `finish_reason` read in a function nothing here reaches, does not
-    satisfy it. That is the proxy-for-identity failure the per-function check
-    existed to avoid, and it survives.
+    satisfy it.
     """
     tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
-    funcs = {
-        n.name: n for n in ast.walk(tree)
-        if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
-    }
-    if fn_name not in funcs:                                   # pragma: no cover
+    by_name: dict[str, list[ast.FunctionDef | ast.AsyncFunctionDef]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            by_name.setdefault(node.name, []).append(node)
+    every = [n for group in by_name.values() for n in group]
+
+    # `fn` was parsed from the same source by `_enclosing_functions_with_raw_calls`,
+    # so it is an equal-but-distinct node; match it back by position, which is
+    # what makes two same-named methods distinguishable at the START.
+    here = [
+        n for n in by_name.get(fn.name, [])
+        if (n.lineno, n.col_offset) == (fn.lineno, fn.col_offset)
+    ]
+    if not here:                                               # pragma: no cover
         return False
 
-    callees: dict[str, set[str]] = {
-        name: _names_called(node) & set(funcs) for name, node in funcs.items()
-    }
-    callers: dict[str, set[str]] = {}
-    for name, targets in callees.items():
-        for t in targets:
-            callers.setdefault(t, set()).add(name)
-
-    def _closure(graph: dict[str, set[str]]) -> set[str]:
-        seen, frontier = {fn_name}, [fn_name]
+    def _closure(
+        step: Callable[
+            [ast.FunctionDef | ast.AsyncFunctionDef],
+            list[ast.FunctionDef | ast.AsyncFunctionDef],
+        ],
+    ) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+        seen = {id(n): n for n in here}
+        frontier = list(here)
         while frontier:
-            for nxt in graph.get(frontier.pop(), set()):
-                if nxt not in seen:
-                    seen.add(nxt)
+            for nxt in step(frontier.pop()):
+                if id(nxt) not in seen:
+                    seen[id(nxt)] = nxt
                     frontier.append(nxt)
-        return seen
+        return list(seen.values())
+
+    def _down(node):  # type: ignore[no-untyped-def]
+        return [
+            target
+            for name in _names_called(node)
+            for target in by_name.get(name, [])
+        ]
+
+    def _up(node):  # type: ignore[no-untyped-def]
+        return [n for n in every if node.name in _names_called(n)]
 
     return any(
-        token in _code_of(funcs[name])
-        for name in _closure(callees) | _closure(callers)
+        token in _code_of(node) for node in _closure(_down) + _closure(_up)
     )
 
 
 @pytest.mark.parametrize(
-    "rel", sorted(r for r, facets in REQUIRED.items() if facets),
+    # Selected on the FACET NAME, like its two siblings. `if facets` selected
+    # on "has any facet at all", which happened to give the same list and
+    # would have kept selecting an entry that dropped `timeout` specifically.
+    "rel", sorted(r for r, facets in REQUIRED.items() if "timeout" in facets),
 )
 def test_a_raw_call_bounds_itself(rel: str) -> None:
     """A bound on the call path.
@@ -268,7 +334,7 @@ def test_a_raw_call_bounds_itself(rel: str) -> None:
     while the conversation's slot is HELD, so an unbounded one is not a slow
     background job — it is a room that stops answering."""
     for fn in _enclosing_functions_with_raw_calls()[rel]:
-        assert _on_the_call_path(rel, fn.name, "wait_for"), (
+        assert _on_the_call_path(rel, fn, "wait_for"), (
             f"{rel}::{fn.name} calls the model with no bound on its path"
         )
 
@@ -280,9 +346,21 @@ def test_a_raw_call_reads_finish_reason(rel: str) -> None:
     """A raw completion does not raise on a cut-off the way a Strands agent's
     `MaxTokensReachedException` does — it returns `finish_reason="length"` and
     a silently truncated body, which can still parse as JSON into something
-    shorter and wrong. That is an ERROR reported as a PASS."""
+    shorter and wrong. That is an ERROR reported as a PASS.
+
+    **This is a presence check, not a value check, and the difference is real.**
+    An external review (2026-09-11) replaced the gate's
+    `finish_reason=choice.finish_reason or ""` with a literal
+    `finish_reason="stop"` and every test in this file stayed green: the token
+    still appears, and what it appears in is no longer the provider's answer.
+    Closing that here would mean dataflow analysis in an AST gate; what closes
+    it instead is a unit test per client that makes the provider report a
+    cut-off and asserts it comes back —
+    `tests/unit/test_gate_model_client_trace.py::test_the_gate_reports_the_providers_own_finish_reason`.
+    So read this file as «the machinery is wired», never as «the machinery is
+    correct»; the second claim is one layer up and is made per call site."""
     for fn in _enclosing_functions_with_raw_calls()[rel]:
-        assert _on_the_call_path(rel, fn.name, "finish_reason"), (
+        assert _on_the_call_path(rel, fn, "finish_reason"), (
             f"{rel}::{fn.name} never reads `finish_reason`, so a truncated "
             f"body is indistinguishable from a complete one"
         )
@@ -296,12 +374,13 @@ def test_the_facet_lists_are_not_silently_empty() -> None:
     the facet had never run at all."""
     for facet in FACETS:
         covered = [r for r, facets in REQUIRED.items() if facet in facets]
-        if facet == "usage":
-            # The only raw caller left is in `nora/infra`, which cannot import
-            # `nora.obs` to annotate a span. Stated here so an empty list is a
-            # RECORDED exemption rather than an invisible skip.
-            assert not covered, "a usage-carrying entry returned; re-enable its test"
-            continue
+        # The `usage` list was EMPTY between 2026-09-09 and 2026-09-11, when
+        # the only raw caller left was in `nora/infra` (which cannot import
+        # `nora.obs` to annotate a span at all). That was a recorded exemption
+        # rather than an invisible skip, and it is now retired: the relevance
+        # gate is a raw call site again and it lives in `nora.app`, so the
+        # facet's test has something to run against. Every facet is covered
+        # again, which is why there is no longer a branch here.
         assert covered, f"no REQUIRED entry carries {facet!r} — its test cannot run"
 
 
@@ -313,7 +392,7 @@ def test_a_raw_call_records_its_token_usage(rel: str) -> None:
     a generation reporting zero tokens is what Langfuse then shows forever.
     Read back live on 2026-09-08: both real gate verdicts cost zero."""
     for fn in _enclosing_functions_with_raw_calls()[rel]:
-        assert _on_the_call_path(rel, fn.name, "usage"), (
+        assert _on_the_call_path(rel, fn, "usage"), (
             f"{rel}::{fn.name} never reads `response.usage`, so this call "
             f"exports to Langfuse costing nothing"
         )

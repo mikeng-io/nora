@@ -23,6 +23,18 @@
 # Timestamps are ISO-8601 UTC. 2026-09-07 is a Monday; «今個禮拜六» from it is
 # 2026-09-12. Message ids are per-case and only need to be distinct within
 # the batch; the adaptor's own membership check reads the ids it rendered.
+#
+# `room_label` and `room_description` are what `policy.toml` supplies live
+# (issue #161): what the room is CALLED, attributed on every rendered line,
+# and what the operator says the room IS, rendered once above the batch. A
+# case that names NEITHER renders what an unlabelled, undescribed room renders
+# in production — the room's workspace name on every line and a `<room>` block
+# with no prose in it. Both spellings are deliberately in this corpus: n10/n11
+# are the incident as it happened, with nothing told to the model, and
+# n10b/n11b are the same two batches with the room described. They are a
+# CONTROLLED PAIR — identical input, one variable — so a live run answers
+# «does the description change the judgement» rather than «is the number
+# better than last month's».
 
 - name: p1_group_dinner_date_set_venue_open
   expect: create
@@ -214,6 +226,20 @@
     - {id: 1704, ts: "2026-09-08T14:00:33Z", person: ada, name: Ada, body: "today no?"}
     - {id: 1705, ts: "2026-09-08T14:00:47Z", person: ben, name: Ben, body: "I am reday"}
 
+# The room, described. Same batch as n10, one variable changed: the operator
+# has said what this room is. `2200` is the log-on time, not an appointment.
+- name: n10b_a_described_games_room_is_still_not_an_arrangement
+  expect: none
+  workspace: friends
+  room_label: "Zone 42"
+  room_description: "a games room; 2200 is when people log on, not an appointment"
+  batch:
+    - {id: 1901, ts: "2026-09-08T11:51:29Z", person: ben, name: Ben, body: null, media: true}
+    - {id: 1902, ts: "2026-09-08T13:14:29Z", person: cat, name: Cat, body: "Bath"}
+    - {id: 1903, ts: "2026-09-08T13:24:15Z", person: ada, name: Ada, body: "2200"}
+    - {id: 1904, ts: "2026-09-08T14:00:33Z", person: ada, name: Ada, body: "today no?"}
+    - {id: 1905, ts: "2026-09-08T14:00:47Z", person: ben, name: Ben, body: "I am reday"}
+
 - name: n11_notebook_subject_is_not_a_licence_to_rewrite_it
   expect: none
   workspace: friends
@@ -229,3 +255,25 @@
     - {id: 1804, ts: "2026-09-10T09:28:13Z", person: cat, name: Cat, body: "or we can play some 3player on9 game?"}
     - {id: 1805, ts: "2026-09-10T09:28:25Z", person: ben, name: Ben, body: "how to fish"}
     - {id: 1806, ts: "2026-09-10T09:32:53Z", person: ada, name: Ada, body: "2200"}
+
+# The pair for n11: the same batch and the same notebook entry, with the room
+# described. The notebook still holds the note the un-described run wrote, so
+# this also asks whether a description stops a standing subject being a licence
+# to bind today's numbers onto it.
+- name: n11b_a_described_games_room_does_not_rewrite_the_notebook_subject
+  expect: none
+  workspace: friends
+  room_label: "Zone 42"
+  room_description: "a games room; 2200 is when people log on, not an appointment"
+  notebook:
+    - title: "Bath gathering"
+      description: "Bath proposed; time 2200 mentioned; unclear which bath or if happening today."
+      anchor_date: 20260908
+      body: "Cat said Bath. Ada said 2200 and asked if it is today. Ben said he is ready."
+  batch:
+    - {id: 1901801, ts: "2026-09-10T09:27:46Z", person: ben, name: Ben, body: "今晚得番3個人？"}
+    - {id: 1901802, ts: "2026-09-10T09:27:54Z", person: cat, name: Cat, body: "ys"}
+    - {id: 1901803, ts: "2026-09-10T09:27:58Z", person: cat, name: Cat, body: "ap or cs"}
+    - {id: 1901804, ts: "2026-09-10T09:28:13Z", person: cat, name: Cat, body: "or we can play some 3player on9 game?"}
+    - {id: 1901805, ts: "2026-09-10T09:28:25Z", person: ben, name: Ben, body: "how to fish"}
+    - {id: 1901806, ts: "2026-09-10T09:32:53Z", person: ada, name: Ada, body: "2200"}
