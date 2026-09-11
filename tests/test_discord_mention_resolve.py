@@ -15,7 +15,13 @@ import logging
 import pytest
 from aiohttp import web
 
-from nora.platform.discord.mention_resolve import fetch_named_members, resolve_outbound_mentions
+from nora.domain.ports import Mention
+from nora.domain.utf16 import utf16_len
+from nora.platform.discord.mention_resolve import (
+    fetch_named_members,
+    resolve_outbound_mentions,
+    splice_composed_mentions,
+)
 
 GUILD = "100000000000000203"
 
@@ -182,4 +188,65 @@ def test_text_with_no_at_sign_is_returned_unchanged():
     text, ids = resolve_outbound_mentions("no mentions here", {"Miles Novak": "111"})
 
     assert text == "no mentions here"
+    assert ids == ()
+
+
+# ---------------------------------------------------------------------------
+# splice_composed_mentions — the composer already resolved the id (#211);
+# this only converts UTF-16 offsets and splices.
+# ---------------------------------------------------------------------------
+
+
+def test_a_composed_mention_at_offset_zero_is_spliced_in():
+    text = "@Tyler Cortez 柯屎係你嘅 escape plan"
+    mention = Mention(
+        start=0, length=utf16_len("@Tyler Cortez"), recipient="100000000000000002",
+    )
+
+    spliced, ids = splice_composed_mentions(text, (mention,))
+
+    assert spliced == "<@100000000000000002> 柯屎係你嘅 escape plan"
+    assert ids == ("100000000000000002",)
+    assert spliced.count("<@100000000000000002>") == 1
+
+
+def test_a_composed_mention_after_an_emoji_is_positioned_by_utf16_units():
+    """The failure a Python-character (not UTF-16-unit) splice would ship: 😅
+    is ONE Python character but TWO UTF-16 units, so slicing on the raw
+    offset number would cut the mention one character short."""
+    text = "😅 @Tyler hi"
+    mention = Mention(
+        start=utf16_len("😅 "), length=utf16_len("@Tyler"), recipient="9",
+    )
+
+    spliced, ids = splice_composed_mentions(text, (mention,))
+
+    assert spliced == "😅 <@9> hi"
+    assert ids == ("9",)
+
+
+def test_two_composed_mentions_are_spliced_right_to_left():
+    """Splicing the FIRST mention first would shift the Python string index
+    the SECOND mention's offset depends on, by however many characters
+    '@Grant' and '<@11111111111111>' differ in length. Right-to-left keeps
+    an earlier offset valid across a later splice, which is the only order
+    that cannot corrupt one mention while resolving another."""
+    text = "@Grant 同 @Miles 你哋幾高?"
+    grant = Mention(
+        start=0, length=utf16_len("@Grant"), recipient="11111111111111",
+    )
+    miles = Mention(
+        start=utf16_len("@Grant 同 "), length=utf16_len("@Miles"), recipient="22",
+    )
+
+    spliced, ids = splice_composed_mentions(text, (grant, miles))
+
+    assert spliced == "<@11111111111111> 同 <@22> 你哋幾高?"
+    assert ids == ("11111111111111", "22")
+
+
+def test_no_mentions_leaves_the_text_untouched():
+    spliced, ids = splice_composed_mentions("no mentions here", ())
+
+    assert spliced == "no mentions here"
     assert ids == ()

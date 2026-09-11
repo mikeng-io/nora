@@ -291,6 +291,92 @@ async def test_a_person_with_no_id_form_on_this_platform_is_unresolved():
     assert metrics.get("nora_outbound_mentions_total", outcome="unresolved") == 1
 
 
+# --------------------------------------------------------- discord platform (#211)
+
+TYLER_SNOWFLAKE = "100000000000000002"
+DISCORD_CONVERSATION = "100000000000000203/100000000000000204"
+
+
+def _tyler() -> PersonRef:
+    return PersonRef(
+        person_id="tyler_cortez", name="Tyler Cortez", honcho_peer_id="tyler_cortez",
+        first_name="Tyler",
+    )
+
+
+def _discord_persons(**extra: PersonRef) -> Persons:
+    by_person = {"tyler_cortez": _tyler(), **extra}
+    index = {("discord", TYLER_SNOWFLAKE): "tyler_cortez"}
+    return Persons(by_person=by_person, index=index)
+
+
+def _discord_composer(
+    *, roster: object, persons: Persons | None = None, metrics: Metrics | None = None,
+) -> OutboundComposer:
+    return OutboundComposer(
+        platform="discord", conversation_id=DISCORD_CONVERSATION,
+        persons=persons if persons is not None else _discord_persons(),
+        metrics=metrics or Metrics(),
+        roster_source=roster,
+    )
+
+
+async def test_a_discord_snowflake_is_accepted_as_the_preferred_recipient_form():
+    """#211's mechanism: `_preferred_recipient` used to accept only a UUID or
+    an E.164 number, so a Discord snowflake was refused even though the
+    person WAS mapped in `identity.toml` and the roster DID confirm them —
+    every such mention counted `unresolved` and the composer never emitted a
+    `Mention` on Discord at all.
+
+    PROBE: revert `_preferred_recipient`'s discord branch and this goes red —
+    `out.mentions` comes back empty and the outcome counts `unresolved`
+    instead of `sent`.
+    """
+    metrics = Metrics()
+    roster = FakeRosterSource(
+        groups={DISCORD_CONVERSATION: (frozenset({TYLER_SNOWFLAKE}),)},
+    )
+    composer = _discord_composer(roster=roster, metrics=metrics)
+    text = "@Tyler Cortez 柯屎係你嘅 escape plan"
+
+    out = await composer.compose(_draft(text))
+
+    (mention,) = out.mentions
+    assert mention.recipient == TYLER_SNOWFLAKE
+    assert mention.start == 0
+    assert mention.length == utf16_len("@Tyler Cortez")
+    assert out.text == text                       # unchanged — see module docstring
+    assert metrics.get("nora_outbound_mentions_total", outcome="sent") == 1
+
+
+async def test_a_discord_person_not_in_this_room_is_not_tagged():
+    """The same resolve-WITHIN-scope rule as Signal's roster gate, exercised on
+    Discord: `identity.toml` mapping Tyler is not enough on its own."""
+    metrics = Metrics()
+    roster = FakeRosterSource(groups={DISCORD_CONVERSATION: (frozenset({"999999999999999999"}),)})
+    composer = _discord_composer(roster=roster, metrics=metrics)
+
+    out = await composer.compose(_draft("@Tyler Cortez hi"))
+
+    assert out.mentions == ()
+    assert metrics.get("nora_outbound_mentions_total", outcome="not_in_room") == 1
+
+
+async def test_an_unknown_handle_on_discord_stays_plain_text():
+    """A handle the persons index does not know at all — never guessed, on
+    either platform."""
+    metrics = Metrics()
+    roster = FakeRosterSource(
+        groups={DISCORD_CONVERSATION: (frozenset({TYLER_SNOWFLAKE}),)},
+    )
+    composer = _discord_composer(roster=roster, metrics=metrics)
+
+    out = await composer.compose(_draft("@Someone Unmapped hi"))
+
+    assert out.mentions == ()
+    assert out.text == "@Someone Unmapped hi"
+
+
 # ------------------------------------------------------------------ the parser
 
 async def test_a_handle_glued_to_a_word_is_not_a_mention():

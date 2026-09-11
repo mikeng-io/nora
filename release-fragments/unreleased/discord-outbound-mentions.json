@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "Discord @-mentions now ping for real instead of going out as plain text (#211).",
+  "details": [
+    "nora/agent/outbound.py: _preferred_recipient is now platform-aware — a Discord snowflake (a bare digit string) is a valid recipient form on `platform=\"discord\"`, where before it matched neither the UUID nor the E.164 pattern and every Discord mention was refused as `unresolved`. Signal's ACI-over-E164 rule is unchanged.",
+    "nora/domain/utf16.py gains utf16_index(text, offset): the reverse of utf16_len, converting a UTF-16 code-unit offset back to a Python string index — needed because Discord has no out-of-band mention range and the id has to be spliced directly into `content`.",
+    "nora/platform/discord/mention_resolve.py gains splice_composed_mentions: splices `<@id>` over each `Mention` the composer already resolved against identity.toml and the room's live roster, right-to-left so an earlier offset survives a later splice.",
+    "nora/platform/discord/send.py: DiscordSender.send now honours the `mentions` parameter — composed mentions are spliced first and their ids added to `allowed_mentions.users` (de-duplicated); the existing name-based (guild-nickname) fallback runs only over the text segments BETWEEN spliced `<@id>` chips, never over a chip itself — a naive whole-string check would otherwise re-fetch the guild's member list on every composed mention and let an all-digit guild nickname corrupt an already-spliced id (found in review), since a chip like `<@100000000000000002>` both contains an `@` and starts with a digit run."
+  ],
+  "limitations": [
+    "The name-based fallback (matching a raw guild nickname) is unchanged and still runs for handles unmapped in identity.toml or unconfirmed by the room roster — it is not itself hardened by this fix.",
+    "No change to Discord's inbound mention handling or to Signal's send path."
+  ]
+}
