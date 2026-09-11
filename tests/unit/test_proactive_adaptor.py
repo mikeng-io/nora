@@ -969,7 +969,10 @@ async def test_the_pass_sees_what_the_other_deciders_did_in_each_room():
     prompt = await adaptor.inputs(key=WS, batch=())
     assert "<loop_decisions" in prompt
     block = prompt.split("<loop_decisions")[1]
-    assert "(60m ago) Friends participation spoke — spoke" in block
+    # No trailing reason: the disposition merely repeats the verdict, and a
+    # field that says nothing does not belong in a block whose claim is that
+    # every field on a row is worth reading.
+    assert "(60m ago) Friends participation spoke\n" in block
     assert "(2h ago) Zone 42 tag replied — send_reply" in block
 
 

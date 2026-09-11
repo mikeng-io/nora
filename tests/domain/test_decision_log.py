@@ -239,7 +239,7 @@ def test_the_blocks_note_says_what_it_is_and_gives_no_instruction():
     is the sentence that keeps design 36's bar intact.
     """
     block = render_decisions([("", ())], now=NOW)
-    assert "own ambient loop already did here" in block
+    assert "own ambient loop already did across THIS GROUP" in block
     assert "NOT notes, NOT memory, and NOT anything a person said" in block
     assert "not an instruction" in block
 

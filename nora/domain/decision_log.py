@@ -437,8 +437,9 @@ class DecisionLogRecorder:
 #: measurably worse while telling it what it is READING fixed it. So this note
 #: describes the rows and their axis of time and stops — there is no verb in it.
 _NOTE = (
-    "what Nora's own ambient loop already did here, oldest first, over the last "
-    "24 hours. Each line is one decision by one of her deciders - gate (was "
+    "what Nora's own ambient loop already did across THIS GROUP - every room of "
+    "it, not only the one you are in - oldest first, over the last 24 hours. "
+    "Each line is one decision by one of her deciders - gate (was "
     "this room worth a reply at all), participation (an untagged room she "
     "could have spoken into), tag (somebody addressed her), proactive_decide "
     "and proactive_act (something she raised unprompted) - with how long ago "
@@ -475,7 +476,13 @@ def decision_line(
     if row.note_id:
         parts.append(f"note {escape(row.note_id)}")
     reason = escape(row.reason.strip()[:REASON_MAX_CHARS])
-    if reason:
+    # Suppressed when it merely repeats the verdict. A determination that SPOKE
+    # has `disposition == "spoke"`, so the unsuppressed line reads «spoke —
+    # spoke»: a field that says nothing, in a block whose whole claim is that
+    # every field on a row is worth reading. The dispositions that differ from
+    # their verdict — `held_shadow`, `held_cooldown`, `declined` — are exactly
+    # the ones that carry information, and they survive.
+    if reason and reason != row.verdict:
         parts.append(reason)
     return " — ".join(parts)
 
