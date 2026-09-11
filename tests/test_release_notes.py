@@ -164,3 +164,77 @@ def test_a_details_string_says_what_to_do_about_it(tmp_path: Path):
 
     assert "it is a single string" in result.stderr
     assert "split it into the sentences it already is" in result.stderr
+
+
+def test_one_fragment_with_two_faults_reports_both_not_the_first(tmp_path: Path):
+    """Aggregation has to hold WITHIN a file, not just across the directory.
+
+    `_problems` used to return on the `type` check, so a fragment that was
+    both mistyped and carried `details` as a string reported one fault; you
+    fixed the type, ran again, and met the second. That is the loop this
+    change exists to end, surviving one level below where it was fixed — and
+    it was not hypothetical: `gate-transport-measurement` and
+    `retire-watchdog` each carried both faults, so the run that was meant to
+    report every problem on `master` reported eight where ten were waiting.
+    """
+    (tmp_path / "a.json").write_text(
+        json.dumps({"type": "internal", "summary": "A.", "details": "a paragraph"})
+    )
+
+    result = _run(str(RENDER), "--dir", str(tmp_path))
+
+    assert result.returncode == 2
+    assert "2 release-fragment problem(s)" in result.stderr, result.stderr
+    assert "type must be one of" in result.stderr
+    assert "details must be an array" in result.stderr
+
+
+def test_a_none_fragment_may_not_carry_a_bullet_nobody_will_read(tmp_path: Path):
+    """A `none` renders nothing, so a NON-EMPTY `details` is prose that never
+    reaches a reader — on a file that looks complete.
+
+    The bar is emptiness, not absence: eight `none` fragments in the tree
+    carry a `summary` and empty arrays and lose nothing by it, so banning the
+    key would redden eight honest files to enforce a preference. Measured
+    before the rule was chosen: 8 of 20 carry the keys, 0 of 20 carry content
+    in them.
+    """
+    (tmp_path / "loud.json").write_text(
+        json.dumps({
+            "type": "none", "reason": "internal.",
+            "details": ["a bullet the release notes will never render"],
+        })
+    )
+    (tmp_path / "quiet.json").write_text(
+        json.dumps({
+            "type": "none", "reason": "internal.",
+            "summary": "a label for whoever opens the file.",
+            "details": [], "limitations": [],
+        })
+    )
+
+    result = _run(str(RENDER), "--dir", str(tmp_path))
+
+    assert result.returncode == 2
+    assert "1 release-fragment problem(s)" in result.stderr, result.stderr
+    assert "loud.json" in result.stderr
+    assert "quiet.json" not in result.stderr, "an empty array was refused"
+
+
+def test_an_unreadable_fragment_is_named_and_does_not_hide_the_others(tmp_path: Path):
+    """A file that cannot be DECODED used to escape the per-file `except`,
+    unwind the whole loop, and surface as a bare codec message with no path
+    in it — taking every other finding with it. With 85 fragments in the
+    tree, that is a gate that says something is wrong and not what.
+    """
+    (tmp_path / "bad-bytes.json").write_bytes(b'{"type": "fix", "summary": "\xff\xfe"}')
+    (tmp_path / "also-bad.json").write_text(
+        json.dumps({"type": "fix", "summary": "B.", "details": "a string"})
+    )
+
+    result = _run(str(RENDER), "--dir", str(tmp_path))
+
+    assert result.returncode == 2
+    assert "2 release-fragment problem(s)" in result.stderr, result.stderr
+    assert "bad-bytes.json" in result.stderr
+    assert "also-bad.json" in result.stderr, "the decode error hid the other file"

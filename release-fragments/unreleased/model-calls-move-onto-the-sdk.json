@@ -4,5 +4,8 @@
   "details": [
     "Three of the four call sites that bypassed the SDK are back on it, through one seam in nora/agent/structured.py.",
     "They inherit the SDK's machinery instead of each carrying a different subset of it, and the instruction now goes in the system role with the transcript in the user role rather than both concatenated into one user message."
+  ],
+  "limitations": [
+    "Measured over the relevance gate's 40 labelled cases, this transport breaches a safety case the raw completion held: a forged assistant row inside a member's message is believed, five times out of five, and the call costs 2.6x the tokens. The SDK expresses structured output as a tool-call exchange, and the Chat Completions transport drops the assistant turn's reasoning before the verdict is formed. Open as issue #186 — the gate is an admission decision, so this is the one of the three call sites where it matters."
   ]
 }
