@@ -80,12 +80,17 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, TypeVar, get_args
 
 from ..domain.models import TranscriptRow
-from ..domain.ports import DreamAdaptor, Proposal, RosterSource
+from ..domain.ports import (
+    DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
+    DreamAdaptor,
+    Proposal,
+    RosterSource,
+)
 from ..obs.metrics import Metrics
 from . import factory
 from .dream_guard import DreamGuard
@@ -93,6 +98,16 @@ from .dream_screen import screen
 from .registry import ToolRegistry
 
 log = logging.getLogger("nora.dreamer")
+
+_T = TypeVar("_T")
+
+#: Which half of an adaptor's tick a store timeout happened in — the label
+#: vocabulary for `nora_dream_store_timeout_total{phase}`, DERIVED off the
+#: `Literal` rather than hand-copied into three call sites and a help string.
+#: A typo in a bare literal creates a NEW series rather than an error, and the
+#: old one silently goes flat.
+StorePhase = Literal["inputs", "commit"]
+STORE_PHASES: frozenset[str] = frozenset(get_args(StorePhase))
 
 # The envelope's bounds. Both are REJECT-shaped rather than truncate-shaped for
 # the text and DROP-shaped for the items, and the difference is deliberate: a
@@ -838,6 +853,7 @@ class DreamerRuntime:
         schedules: Mapping[str, AdaptorSchedule] | None = None,
         tool_budget_overrides: Mapping[str, int] | None = None,
         grants: Mapping[str, AdaptorGrant] | None = None,
+        store_timeout_seconds: float = DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
     ) -> None:
         self._models = models
         self._instructions = instructions
@@ -877,9 +893,91 @@ class DreamerRuntime:
         # re-check below cannot disagree about who holds what. Empty by
         # omission, which is the whole pre-DEC-162 ceiling for every adaptor.
         self._grants = dict(grants or {})
+        # `[dreamer] store_timeout_seconds` — the per-CALL-SITE allowance,
+        # multiplied by the adaptor's own declared `store_calls_per_tick`
+        # (issue #60). A plain float through `__init__` for the same reason
+        # `tool_budget_overrides` is one: `nora.agent` may not import
+        # `nora.config`.
+        self._store_timeout_seconds = store_timeout_seconds
 
     def budget_for(self, adaptor_name: str) -> AdaptorBudget:
         return self._budgets.get(adaptor_name, self._default_budget)
+
+    def store_bound_for(self, adaptor: DreamAdaptor) -> float:
+        """The wall clock `inputs` and `commit` each run under.
+
+        `store_calls_per_tick` is a count of awaited collaborator CALL SITES,
+        declared in the adaptor's own module and pinned there by
+        `tests/architecture/test_dream_store_calls_are_declared.py`; the
+        config value is the allowance PER SITE. A site inside a per-item loop
+        runs once per item, so this is not a latency budget — it is the wall
+        clock that turns «this store call never returns» into a counted
+        `unavailable` instead of a `(adaptor, key)` that is never ticked
+        again. `nora/config.py`'s `[standing] max_slot_hold_seconds` and its
+        startup gate are the same shape one tier over.
+        """
+        return adaptor.store_calls_per_tick * self._store_timeout_seconds
+
+    async def _bounded_store_call(
+        self, *, adaptor: DreamAdaptor, key: str, phase: StorePhase,
+        call: Callable[[], Coroutine[Any, Any, _T]],
+    ) -> _T:
+        """Run one adaptor store phase under `store_bound_for`, and COUNT a
+        timeout rather than letting it read as an ordinary failure.
+
+        Re-raises: the caller's own `except Exception` maps it to R-27's
+        `unavailable` — «nobody read this batch» — which is already the right
+        outcome and already holds the watermark. What was missing is the
+        counter: `nora_dream_run_total{status="unavailable"}` is also what a
+        429 and a prose reply produce, so a wedged store was indistinguishable
+        from a bad afternoon at the provider. `nora_dream_store_timeout_total`
+        is the series that separates them, and `phase` says which half.
+
+        **`asyncio.timeout` and `cm.expired()`, not `wait_for`'s bare
+        `except TimeoutError`.** Since 3.10 `socket.timeout IS TimeoutError`,
+        so an aiohttp read timeout, an asyncpg `command_timeout` or any other
+        collaborator's OWN clock raises the same class this handler catches.
+        Counting those as «the runtime cut it off» puts a false reading on the
+        one series an operator would page on, and the log line said so in
+        words. `expired()` is the only thing that can tell the two apart; an
+        inner `TimeoutError` is re-raised untouched and reaches `unavailable`
+        by the ordinary path.
+
+        **`call` is a FACTORY, not a coroutine.** Built eagerly, a coroutine
+        whose bound could not be computed (an adaptor object that is not a
+        `DreamAdaptor`) is never awaited — a `RuntimeWarning` and an
+        `unavailable` whose real cause is two frames away from what it says.
+
+        **What this does NOT bound, stated rather than implied.**
+        `asyncio.timeout` cancels and then WAITS for the cancellation to
+        complete, so a collaborator that swallows `CancelledError`, or a
+        driver whose own cancel needs the database that just stopped
+        answering, can outlive this — and a SYNCHRONOUS blocking call inside
+        an `async def` is not interrupted at all, because it never yields. No
+        shipped collaborator does either today. The claim this makes is
+        «the unit is released when the phase can be cancelled», which is
+        strictly more than the nothing that was here before, and strictly less
+        than «a hang cannot happen».
+        """
+        bound = self.store_bound_for(adaptor)
+        try:
+            async with asyncio.timeout(bound) as cm:
+                return await call()
+        except TimeoutError:
+            if not cm.expired():
+                # The COLLABORATOR's own clock, not ours. Untouched, uncounted
+                # on this series, and `unavailable` by the ordinary path.
+                raise
+            self._metrics.inc(
+                "nora_dream_store_timeout_total",
+                adaptor=adaptor.name, phase=phase,
+            )
+            log.error(
+                "dream %s timed out after %.0fs (adaptor=%s key=%s) — a store "
+                "call did not return; the unit is released rather than held",
+                phase, bound, adaptor.name, key,
+            )
+            raise
 
     def grant_for(self, adaptor_name: str) -> AdaptorGrant:
         """This adaptor's allowance — `AdaptorGrant()` (nothing) for an
@@ -946,7 +1044,16 @@ class DreamerRuntime:
             # below the blank check reads `tools`, and nothing in `inputs`
             # reads them either: an adaptor's inputs are its stores, never
             # its tools.
-            prompt = await adaptor.inputs(key=key, batch=batch)
+            #
+            # BOUNDED (issue #60). `inputs` is a read against this adaptor's
+            # own stores and the engine sets no `command_timeout`, so before
+            # this a connection hanging mid-query left `dream_loop` holding
+            # `<adaptor>:<key>` in `running` forever — that unit never ticked
+            # again and the only symptom was an absence.
+            prompt = await self._bounded_store_call(
+                adaptor=adaptor, key=key, phase="inputs",
+                call=lambda: adaptor.inputs(key=key, batch=batch),
+            )
             if not prompt.strip():
                 # **THE FIRE CONDITION, and it is general rather than the fact
                 # tier's.** A blank `inputs` means the adaptor has nothing to
@@ -970,8 +1077,11 @@ class DreamerRuntime:
                 # `nothing_found` — «I looked and there was nothing» — because
                 # that is what happened; `unavailable` would hold a watermark
                 # over a batch that was genuinely empty.
-                written = await adaptor.commit(
-                    key=key, proposals=(), now_ms=int(time.time() * 1000),
+                written = await self._bounded_store_call(
+                    adaptor=adaptor, key=key, phase="commit",
+                    call=lambda: adaptor.commit(
+                        key=key, proposals=(), now_ms=int(time.time() * 1000),
+                    ),
                 )
                 return self._finish(
                     adaptor, "nothing_found", written, sha, None, started,
@@ -1065,6 +1175,30 @@ class DreamerRuntime:
         kept, _rejected = screen(
             adaptor=adaptor.name, items=items, metrics=self._metrics,
         )
+        if items and not kept:
+            # **TOTAL REJECTION, named rather than inferred** (issue #63).
+            # This is the shape that made three adaptors inert in production
+            # while every test passed: an objective that asks the model to
+            # echo a row id back gets every item dropped by `dream_screen` —
+            # `_UUID` matches any hyphenated uuid — so the tick spends a model
+            # call, `accept` receives `()`, `commit` writes nothing, and the
+            # run reports `ok`. The per-item `nora_dream_screened_total` was
+            # already firing; what nobody could ask it is «was that ALL of
+            # them», because a run's item count is not on that series.
+            #
+            # The STATUS deliberately does not move. `ok` here is R-27 read
+            # correctly rather than in spite of it: `nothing_found` is the
+            # claim «there was nothing», and a run whose model returned items
+            # is not entitled to make it — the same rule that stops a bus
+            # catalogue's empty answer becoming 「冇呢條線」. Collapsing the two
+            # would also make a WORKING screen indistinguishable from a silent
+            # model, which is the reading an operator needs most on the day an
+            # adaptor starts echoing an identifier. So the distinction is a
+            # counter, structurally zero while every adaptor keeps identifiers
+            # out of its envelope.
+            self._metrics.inc(
+                "nora_dream_empty_after_screen_total", adaptor=adaptor.name,
+            )
 
         try:
             payloads = await adaptor.accept(key=key, items=kept)
@@ -1087,8 +1221,29 @@ class DreamerRuntime:
             # sink may act on it — the curator records its wakes on one,
             # because decay is time-driven. Skipping the call would drop decay
             # silently.
-            written = await adaptor.commit(
-                key=key, proposals=proposals, now_ms=now_ms,
+            # BOUNDED (issue #60), and the cancellation this can deliver is a
+            # DELIBERATE trade: a `commit` cut off mid-sequence leaves the
+            # tier's own live state — a PENDING candidate row, a note retired
+            # but not yet woken — which the next tick re-selects, because a
+            # store fault is `unavailable` and never a verdict. A commit that
+            # never returns leaves the UNIT dead instead, and nothing
+            # re-selects that.
+            #
+            # **The trade holds only where the tier ORDERED its writes for
+            # it, and that is a property of each adaptor rather than of this
+            # line.** Cold review found the proactive pass stamping its daily
+            # clock FIRST — so a cancelled commit recorded the day as done
+            # with nothing written and orphaned the rows the model loop had
+            # already created; the stamp moved to the end, with a named test.
+            # The note curator's discharge step still has the shape (it
+            # retires, then writes the content) and is issue #195; it is off
+            # by default. An adaptor added later has to answer the same
+            # question rather than inherit an answer.
+            written = await self._bounded_store_call(
+                adaptor=adaptor, key=key, phase="commit",
+                call=lambda: adaptor.commit(
+                    key=key, proposals=proposals, now_ms=now_ms,
+                ),
             )
         except Exception:
             log.exception(

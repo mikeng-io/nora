@@ -648,6 +648,9 @@ class _StubAdaptor:
         self.objective = "note-curation"
         self.envelope_key = "observations"
         self.tools: frozenset[str] = frozenset()
+        # `DreamAdaptor.store_calls_per_tick` (issue #60): required, so a
+        # stub that omitted it would not satisfy the protocol.
+        self.store_calls_per_tick = 1
 
     async def inputs(self, *, key, batch):        # pragma: no cover - unused
         return ""

@@ -1505,6 +1505,33 @@ class Proposal:
     candidate_id: str | None = None
 
 
+#: The per-CALL-SITE allowance `DreamerRuntime` multiplies by an adaptor's own
+#: `store_calls_per_tick` to bound `inputs` and `commit` (issue #60), and the
+#: default for `[dreamer] store_timeout_seconds`.
+#:
+#: **It lives HERE, in one place, because it had two homes for an afternoon**
+#: — a literal in `nora.config` and another in `nora.agent.dreamer`'s
+#: `__init__` default — and two copies of a number is how the standing tier's
+#: own hold came to be understated by 2x. `nora.agent` may not import
+#: `nora.config`, and both already import `nora.domain`, so this is the one
+#: module both sides can read. `DEFAULT_STANDING_STORE_TIMEOUT_SECONDS` in
+#: `nora.domain.standing` is the same arrangement for the same reason.
+#:
+#: **15s is sized against the CURATOR's degraded worst case, not against one
+#: healthy call.** The number multiplies SITES, and a site inside a per-note
+#: loop runs once per note: `NoteCuratorAdaptor.inputs` renders up to
+#: `max_expired_per_tick` + `max_revisits_per_tick` notes (20 + 10 on the
+#: shipped config) and each one costs a `record.recent` plus a
+#: `MediaJoin.enrich` that carries its OWN 3s bound (`[media]
+#: join_timeout_seconds`). A degraded-but-not-hung media store therefore
+#: spends 30 x 3 = 90s inside one legitimate `inputs`, and at 5s x 10 sites
+#: the bound would have fired at 50s — turning a slow tick into a counted
+#: store timeout and, for a daily-slotted adaptor, a lost day. 15 x 10 = 150s
+#: clears that with room and still sits under `[dreamer] tick_seconds = 300`.
+#: Raise it only against a reading of that kind, never to quiet an alarm.
+DEFAULT_DREAM_STORE_TIMEOUT_SECONDS = 15.0
+
+
 @runtime_checkable
 class DreamAdaptor(Protocol):
     """One Dreamer objective: what to research, over what, with which tools,
@@ -1611,6 +1638,40 @@ class DreamAdaptor(Protocol):
     `ToolRegistry.read_only_tools()`, so this field is a narrowing of the
     ceiling and can never widen it: an adaptor asking for an act verb fails to
     build rather than quietly receiving one."""
+
+    store_calls_per_tick: int
+    """How many awaited collaborator CALL SITES this adaptor's `inputs` and
+    `commit` paths hold together — the number the runtime multiplies by
+    `[dreamer] store_timeout_seconds` to bound them (issue #60).
+
+    **Declared rather than measured at run time, and required rather than
+    defaulted.** `DreamerRuntime` wraps `inputs` and `commit` in
+    `asyncio.wait_for`; before that, a wedged store call left `dream_loop`
+    holding `<adaptor>:<key>` in its `running` set forever, so that unit never
+    ticked again and the only symptom was an absence. A default here would
+    silently fit the first adaptor that forgot to think about it, which is the
+    failure this field exists to make impossible: an adaptor that does not
+    declare it is not a `DreamAdaptor` (this protocol is `runtime_checkable`,
+    so `isinstance` reads the attribute) and fails the contract suite.
+
+    **SITES, not dynamic calls, and the difference is where the arithmetic
+    bites.** A site inside a per-item loop runs once per item, so the real
+    fan-out is the site count times the adaptor's own per-tick cap:
+    `NoteCandidateAdaptor.commit` can reach 64 items (`MAX_ITEMS`) x 6 sites,
+    and `NoteCuratorAdaptor.inputs` renders up to 30 notes x 2 evidence
+    calls. `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS` above is therefore sized
+    against the widest of those degraded cases and NOT against one healthy
+    call — an earlier draft of this paragraph divided a per-PHASE bound by a
+    per-CALL latency, claimed three orders of magnitude of headroom, and was
+    under 1x against the curator.
+
+    The count's job is narrower and is the one the issue named: `tests/
+    architecture/test_dream_store_calls_are_declared.py` counts the sites off
+    each adaptor's own AST and fails when the two disagree, so adding a store
+    call fails a test rather than silently widening the hold — the shape
+    `STANDING_STORE_CALLS_PER_FOLD` and
+    `Config._the_standing_slot_hold_fits_its_budget` already use one tier
+    over."""
 
     async def inputs(self, *, key: str, batch: Sequence[TranscriptRow]) -> str:
         """The records this objective reasons over, rendered for the prompt.

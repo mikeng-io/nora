@@ -137,6 +137,25 @@ PROACTIVE_TOOLS: frozenset[str] = frozenset({
 PASS_CLOCK_NAME = "proactive:pass"  # noqa: S105 — a table row name, not a secret
 WAKE_CLOCK_NAME = "proactive:wake"
 
+#: How many awaited collaborator CALL SITES `inputs` and `commit` hold between
+#: them — the number `DreamerRuntime` multiplies by `[dreamer]
+#: store_timeout_seconds` to bound each of them (issue #60). It lives HERE, in
+#: the module that makes the calls, on `STANDING_STORE_CALLS_PER_FOLD`'s own
+#: argument: a bound derived from a number kept somewhere else drifts in
+#: silence, because a hold that is too wide looks exactly like a healthy one
+#: until something wedges.
+#:
+#: This is the WIDEST of the three shipped adaptors, and the reason is its
+#: render: `inputs` reads the note index, each note's last revision, the home
+#: room's quiet window, the standing position (twice — once for the block,
+#: once per changed note), the decision log, the self card, and both
+#: `dream_schedule_state` clocks; `commit` records the pass fire, then per
+#: woken note a read, a wake and a second fire.
+#: `tests/architecture/test_dream_store_calls_are_declared.py` counts them off
+#: this module's AST and reddens when a call is added without this number
+#: moving.
+STORE_CALLS_PER_TICK = 14
+
 PassReason = Literal[
     "daily", "changed", "held_quiet", "unchanged", "unclocked",
     "no_home_room", "nothing_shown",
@@ -282,6 +301,8 @@ class ProactiveAdaptor:
     objective = "proactive"
     envelope_key = "decisions"
     tools: frozenset[str] = PROACTIVE_TOOLS
+    #: `DreamAdaptor.store_calls_per_tick` — see `STORE_CALLS_PER_TICK` above.
+    store_calls_per_tick = STORE_CALLS_PER_TICK
 
     def __init__(
         self,
@@ -771,18 +792,12 @@ class ProactiveAdaptor:
         without a wake is charged one. The window starts at the pass clock this
         tick READ (`_Shown.since_ms`), not at this pass, so rows orphaned by an
         `unavailable` run are covered by the next `commit`: that run never
-        stamped the clock, so the window still reaches over them.
+        stamped the clock, so the window still reaches over them. **That
+        guarantee is why the pass clock is stamped LAST** — see the comment at
+        the stamp; stamped first it was false for a `commit` the runtime's
+        own wall clock cancelled.
         """
         shown = self._shown.get(key) or _Shown({}, {})
-        if shown.rendered and self._clock_store is not None:
-            # This pass RENDERED (a model was called, whatever it answered):
-            # stamp it, so the next tick measures change against now. A
-            # blank tick never reaches here with `rendered`, and a run the
-            # runtime reported `unavailable` never reaches `commit` at all —
-            # so it is retried at the next tick rather than counted as seen.
-            await self._clock_store.record_fire(
-                adaptor_name=PASS_CLOCK_NAME, key=key, at_ms=now_ms,
-            )
         seen: set[str] = set()
         wakes = 0
         for proposal in proposals:
@@ -807,6 +822,34 @@ class ProactiveAdaptor:
             self._inc("nora_proactive_reconciled_total")
             if await self._wake(key, note_id, shown=shown, now_ms=now_ms):
                 wakes += 1
+        if shown.rendered and self._clock_store is not None:
+            # This pass RENDERED (a model was called, whatever it answered):
+            # stamp it, so the next tick measures change against now. A blank
+            # tick never reaches here with `rendered`, and a run the runtime
+            # reported `unavailable` never reaches `commit` at all — so it is
+            # retried at the next tick rather than counted as seen.
+            #
+            # **LAST, and it was FIRST until 2026-09-11 (cold review of the
+            # issue-#60 bound).** `DreamerRuntime` now runs `commit` under a
+            # wall clock, so a store that stops answering CANCELS this method
+            # part-way — and stamped first, the pass was recorded as fired
+            # with zero wakes written. The next tick then reads `last = now`,
+            # finds the workspace unchanged for the rest of the local day, and
+            # does not render; the `remind` rows already written inside the
+            # model loop are orphaned permanently, because the reconciliation
+            # window above starts at the pass clock and that clock has moved
+            # past them. The docstring's own guarantee — «that run never
+            # stamped the clock, so the window still reaches over them» — was
+            # false in exactly the case the bound introduces.
+            #
+            # Stamped last, every cancellation leaves the slot open: the next
+            # tick re-renders, `_raised_since` reaches back over the orphaned
+            # rows, and `_may_wake_today` still stops a second raise. The cost
+            # is one re-render after a genuine timeout, which is the cheap
+            # direction.
+            await self._clock_store.record_fire(
+                adaptor_name=PASS_CLOCK_NAME, key=key, at_ms=now_ms,
+            )
         return wakes
 
     async def _wake(

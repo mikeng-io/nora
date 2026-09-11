@@ -5,15 +5,16 @@ Shipped with ONE implementation — a fake — for the reason
 port declared with nothing exercising it is a shape nobody has checked is
 satisfiable. Another joins by adding one `IMPLEMENTATIONS` entry.
 
-**It is back to one, and that is a KNOWN GAP rather than the shipped state.**
-The knowledge tier's three adaptors were the real entries here and went with
-that tier; the note tier's two (`NoteCandidateAdaptor`,
-`NoteCuratorAdaptor`) have never been in this map. A contract suite
-exercising only its own fake measures the SHAPE and no
-production behaviour — CLAUDE.md's "if reverting the code under test doesn't
-turn the test red, the test is decorative" — so the note adaptors joining is
-the next thing this file needs, and it is written here rather than left for a
-reader to notice from a one-entry dict.
+**THE GAP THIS FILE USED TO DECLARE IS CLOSED (2026-09-11, issue #63).** The
+knowledge tier's three adaptors were the real entries here and went with that
+tier, leaving one fake; the note tier's two — `NoteCandidateAdaptor` and
+`NoteCuratorAdaptor` — had never been in this map at all, so the suite
+measured the SHAPE and no production behaviour, which is CLAUDE.md's "if
+reverting the code under test doesn't turn the test red, the test is
+decorative" written as a dict with one key. All three shipped adaptors are
+entries now, and `test_every_registered_implementation_is_exercised` is what
+stops the map shrinking back in silence — a shrink leaves the suite green and
+faster, which is the only kind nobody notices.
 
 **The rule this file is built against, inherited from the sink suite where it
 was learned four times over:** anything the shared suite needs that is not on
@@ -60,12 +61,18 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from nora.agent.dream_screen import screen
 from nora.agent.dreamer import AdaptorGrant, proactive_grant
 from nora.agent.registry import ToolRegistry
 from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.notes import anchor_bounds_ms
 from nora.domain.ports import DreamAdaptor, Proposal
+from nora.language.note_candidates import NoteCandidateAdaptor
+from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.proactive import ProactiveAdaptor, WorkspaceRoom
+from nora.obs.metrics import Metrics
 from nora.testing import InMemoryNoteStore
+from nora.testing.fakes import FakeRecordStore
 from nora.testing.reminders import FakeReminderStore
 
 DREAMER_DIR = Path(__file__).resolve().parents[2] / "nora" / "dreamer"
@@ -128,6 +135,11 @@ class _FakeAdaptor:
     objective = "note-curation"
     envelope_key = "observations"
     tools = frozenset({"load_transcript", "now"})
+    #: `DreamAdaptor.store_calls_per_tick` (issue #60) — the runtime reads it
+    #: to bound `inputs` and `commit`. One sink call in `commit`, none in
+    #: `inputs`; declared rather than defaulted because the port requires it
+    #: and `test_an_implementation_satisfies_the_protocol` reads it.
+    store_calls_per_tick = 1
 
     def __init__(self, sink: _CountingSink) -> None:
         self._sink = sink
@@ -266,6 +278,187 @@ def _proactive_written(_adaptor: object, notes: object) -> int:
     return sum(1 for n in notes.notes.values() if n.last_wake_revision_id is not None)
 
 
+# -- the note tier's two adaptors (design/dreamer-agent-loop/33, /34) --------
+#
+# **They joined on 2026-09-11 and this file's own docstring had been asking for
+# them since the knowledge tier went.** A contract suite exercising one fake
+# measures the SHAPE and no production behaviour; worse for THIS port, the two
+# properties an adaptor is most likely to get wrong — the handle scheme and the
+# egress screen — are exactly the ones a fake cannot have.
+#
+# Both are keyed on `KEY` so the workspace an entry seeds is the workspace the
+# shared tests tick. `NoteCandidateAdaptor` is scope-keyed and translates
+# through `workspace_for`; `NoteCuratorAdaptor` is workspace-keyed and the two
+# are the same string here, which is legal and keeps the fixtures readable.
+
+_NOTE_WS = KEY
+_NOTE_ROOM = "conv-1"
+#: An anchor safely in the past, and deliberately not a plausible near date —
+#: a fixture pinned to next month goes quiet the month after (the note
+#: curator's own suite makes this argument and it is inherited here).
+_PASSED_ANCHOR = 20260101
+_CURATOR_TODAY = 20261001
+
+
+def _after(anchor_date: int) -> int:
+    """The first instant after `anchor_date`'s last — what `_covers` needs
+    before an `expired`/`moot` verdict can ever be grounded."""
+    bounds = anchor_bounds_ms(anchor_date)
+    assert bounds is not None
+    return bounds[1] + 1
+
+
+def _evidence_row(row_id: int, body: str, *, ts: int) -> dict[str, object]:
+    """One `FakeRecordStore` row in the store's own dict shape, in the room
+    the seeded notes name — so it is in scope as evidence for them."""
+    return {
+        "id": row_id, "platform": "signal", "conversation_id": _NOTE_ROOM,
+        "sender_id": "p1", "sender_name": "Ada", "person_id": "ada",
+        "ts": ts, "body": body, "is_nora": False,
+        "delivery_status": DeliveryStatus.SENT, "raw_json": None,
+        "quoted_ts": None, "media_json": "[]",
+    }
+
+
+# -- note-candidates --------------------------------------------------------
+
+
+def _build_note_candidates() -> tuple[NoteCandidateAdaptor, InMemoryNoteStore]:
+    store = InMemoryNoteStore()
+    return (
+        NoteCandidateAdaptor(
+            notes=store, candidates=store,
+            workspace_for=lambda scope: _NOTE_WS if scope == KEY else None,
+            metrics=Metrics(),
+        ),
+        store,
+    )
+
+
+async def _prepare_note_candidates(adaptor: object) -> None:
+    """Render `inputs` over the batch whose ids `make_items` cites.
+
+    `accept` drops any candidate naming a `message_ids` entry outside THIS
+    run's batch — invented provenance is worse than missing provenance — so
+    the render is not scene-setting, it is the half that makes the parse
+    possible at all. Same reason `prepare` exists for the proactive adaptor.
+    """
+    assert isinstance(adaptor, NoteCandidateAdaptor)
+    rows = tuple(
+        TranscriptRow(
+            id=n, sender_id="p1", sender_name="Ada", ts=1_000 + n,
+            body=body, is_nora=False,
+            delivery_status=DeliveryStatus.SENT, raw_json=None,
+        )
+        for n, body in ((1, "邊度食好"), (2, "九月十九號個婚禮仲未揀場"))
+    )
+    await adaptor.inputs(key=KEY, batch=rows)
+
+
+def _note_candidate_items() -> tuple[Mapping[str, object], ...]:
+    """Two candidates on DIFFERENT anchor dates.
+
+    Same date would be one occasion by the create gate's own rule — the second
+    would land as a revision to the first's note rather than a second note —
+    and `test_commit_writes_what_it_was_given` would then be asserting the
+    update arm while reading as the create one.
+    """
+    return (
+        {
+            "title": "Where dinner is",
+            "description": "Three places named, nobody picked one.",
+            "body": "Ada suggested two, Ben a third. Nobody has booked.",
+            "closing_condition": "somebody names the place",
+            "anchor_date": 20260919,
+            "message_ids": [1],
+        },
+        {
+            "title": "Wedding venue",
+            "description": "The September wedding has no venue yet.",
+            "body": "Two venues shortlisted, neither called.",
+            "closing_condition": "a venue is booked and confirmed",
+            "anchor_date": 20260920,
+            "message_ids": [2],
+        },
+    )
+
+
+def _note_candidate_malformed_item() -> Mapping[str, object]:
+    #  `anchor_date` below the eight-digit floor AND a non-string title: the
+    #  parse drops the whole item rather than filling either in.
+    return {
+        "title": 7, "description": None, "body": "",
+        "closing_condition": "", "anchor_date": 1, "message_ids": [],
+    }
+
+
+def _note_candidate_written(_adaptor: object, store: object) -> int:
+    assert isinstance(store, InMemoryNoteStore)
+    return len(store.notes)
+
+
+# -- note-curation ----------------------------------------------------------
+
+
+def _build_note_curator() -> tuple[NoteCuratorAdaptor, InMemoryNoteStore]:
+    store = InMemoryNoteStore()
+    record = FakeRecordStore()
+    record.rows.append(
+        _evidence_row(1, "冇人講落", ts=_after(_PASSED_ANCHOR)),
+    )
+    return (
+        NoteCuratorAdaptor(
+            notes=store, record=record,
+            today=lambda: _CURATOR_TODAY,
+            max_expired_per_tick=10,
+            metrics=Metrics(),
+            clock=lambda: _after(_PASSED_ANCHOR),
+        ),
+        store,
+    )
+
+
+async def _prepare_note_curator(adaptor: object) -> None:
+    """Two notes whose anchor has passed, then the render that hands them
+    ordinal handles.
+
+    The handles are what `make_items` speaks, and that is the whole point:
+    the model is shown `### note 1`, never a uuid, because the runtime's own
+    egress screen drops any item carrying one. A fixture that passed ids would
+    be exercising a path production cannot take — which is exactly how this
+    adaptor passed eighteen tests while every real item was rejected.
+    """
+    assert isinstance(adaptor, NoteCuratorAdaptor)
+    notes = adaptor._notes
+    assert isinstance(notes, InMemoryNoteStore)
+    for n, title in enumerate(("Dinner, 1 Jan", "Wedding venue")):
+        await notes.create(
+            workspace=_NOTE_WS, title=title, description="one line",
+            uncertainty="undecided", closing_condition="somebody decides",
+            established_in=_NOTE_ROOM, body="as it stands",
+            established_by="tag:miles", now_ms=1_000 + n,
+            anchor_date=_PASSED_ANCHOR, anchor_entity_ids=("ada",),
+        )
+    await adaptor.inputs(key=_NOTE_WS, batch=())
+
+
+def _note_curator_items() -> tuple[Mapping[str, object], ...]:
+    return (
+        {"note_id": "1", "verdict": "moot", "why": "the date has passed"},
+        {"note_id": "2", "verdict": "moot", "why": "the date has passed"},
+    )
+
+
+def _note_curator_malformed_item() -> Mapping[str, object]:
+    #  `maybe` is not one of the four verdicts, and `why` is not a string.
+    return {"note_id": "1", "verdict": "maybe", "why": 7}
+
+
+def _note_curator_written(_adaptor: object, store: object) -> int:
+    assert isinstance(store, InMemoryNoteStore)
+    return sum(1 for n in store.notes.values() if not n.is_standing)
+
+
 IMPLEMENTATIONS: dict[str, _Impl] = {
     "fake": _Impl(
         build=_build_fake,
@@ -284,6 +477,29 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
         empty_commits=None,
         prepare=_prepare_proactive,
         grant=proactive_grant(),
+    ),
+    "note-candidates": _Impl(
+        build=_build_note_candidates,
+        make_items=_note_candidate_items,
+        make_malformed_item=_note_candidate_malformed_item,
+        written=_note_candidate_written,
+        # `commit` over an empty batch reaches no sink at all: it resolves the
+        # workspace and loops over nothing. The decay argument the field
+        # documents does not apply — this tier's time-driven work is the
+        # curator's, not this one's.
+        empty_commits=None,
+        prepare=_prepare_note_candidates,
+    ),
+    "note-curation": _Impl(
+        build=_build_note_curator,
+        make_items=_note_curator_items,
+        make_malformed_item=_note_curator_malformed_item,
+        written=_note_curator_written,
+        # Same: an empty `commit` still records wakes for the notes this run
+        # rendered, but it reaches no `DreamSink.propose`, so there is no
+        # empty-propose counter to read.
+        empty_commits=None,
+        prepare=_prepare_note_curator,
     ),
 }
 
@@ -567,3 +783,135 @@ async def test_inputs_renders_an_empty_batch_without_raising(adaptor):
     one whenever the room was quiet. An `inputs` that raised on it would take
     the tick down on the most ordinary condition in the loop."""
     assert isinstance(await adaptor.inputs(key=KEY, batch=()), str)
+
+
+# ---------------------------------------------------------------------------
+# the egress screen — the step every adaptor suite in this repo used to skip
+# ---------------------------------------------------------------------------
+#
+# `DreamerRuntime.run` does `screen(...)` and hands only the KEPT items to
+# `accept`. Every unit suite called `accept` directly, so the real screen never
+# ran — and `dream_screen._offence` walks every string reachable in an item
+# while `egress._UUID` matches any hyphenated uuid. An adaptor whose objective
+# asks the model to echo a row id back therefore has EVERY item dropped: the
+# tick fires, spends a model call, `accept` receives `()`, `commit` writes 0,
+# and the run reports `ok`. THREE adaptors shipped that way (issue #63), and
+# eighteen tests passed over one of them.
+#
+# The wrong fix, stated so nobody reaches for it: the adaptor path is not
+# exempted from `dream_screen`. That screen is the R-18/R-28 floor — nothing
+# carrying an identifier or a coordinate reaches a store that is read back into
+# every later prompt — and widening it for one tier is how the rule dies. The
+# fix is the ordinal handle, and this is the gate that keeps every adaptor on
+# it.
+
+
+def _screened(adaptor, items):
+    """`screen()` exactly as the runtime calls it — same function, same
+    argument order, a real `Metrics` so a drop is counted rather than
+    swallowed."""
+    return screen(adaptor=adaptor.name, items=items, metrics=Metrics())
+
+
+async def test_a_legal_batch_survives_the_runtimes_own_egress_screen(
+    adaptor, backing, impl
+):
+    """**The test that would have caught it**, parameterised over every
+    registered adaptor rather than written once per tier.
+
+    Driven in the RUNTIME's order — screen, then `accept`, then `commit` —
+    because surviving the screen is worthless if the items no longer resolve
+    afterwards, and resolving is worthless if they never survive. The pair is
+    the property; either alone is half a pipeline.
+    """
+    items = impl.make_items()
+
+    kept, rejected = _screened(adaptor, items)
+
+    assert not rejected, (
+        f"{adaptor.name}: the egress screen rejected its own legal items "
+        f"{[(r.reason, r.path) for r in rejected]} — in production this "
+        f"adaptor spends a model call, writes nothing, and reports `ok`"
+    )
+    assert len(kept) == len(items)
+
+    payloads = await adaptor.accept(key=KEY, items=kept)
+    assert len(payloads) == len(items), (
+        "items survived the screen but no longer parse — a handle that "
+        "survives and does not resolve is the same inert tier one step over"
+    )
+    written = await adaptor.commit(
+        key=KEY, proposals=_proposals(payloads), now_ms=1_000)
+    assert written == impl.written(adaptor, backing)
+    assert written > 0
+
+
+async def test_inputs_renders_nothing_the_egress_screen_would_reject(
+    adaptor, impl
+):
+    """The half that catches the NEXT adaptor rather than the ones here.
+
+    `make_items` is hand-written per entry, so an author who invents a clean
+    item can satisfy the test above while their objective still asks the model
+    to echo a uuid. This one does not read their items at all: it reads what
+    `inputs` RENDERS, because a model can only echo what it was shown. A row
+    id that reaches the prompt is a row id the model will put in an envelope,
+    and `screen` will drop that envelope.
+
+    **It is only as good as the double behind it, and that is a real bound on
+    this test.** `InMemoryNoteStore` mints uuid-SHAPED ids exactly because of
+    this defect (`_shaped_id`'s own comment: it minted `note-1` until
+    2026-08-28 and that one divergence hid the whole thing). A future adaptor
+    whose store double mints `row-1` would pass here and fail in production —
+    so the rule the fakes already follow is load-bearing, and this docstring is
+    where it is written down for whoever adds the next one.
+    """
+    row = TranscriptRow(
+        id=41, sender_id="p1", sender_name="Ada", ts=1_000, body="big walk 今晚?",
+        is_nora=False, delivery_status=DeliveryStatus.SENT, raw_json=None,
+    )
+
+    rendered = await adaptor.inputs(key=KEY, batch=(row,))
+
+    assert rendered.strip(), (
+        f"{adaptor.name} rendered NOTHING, so screening it asserts nothing. "
+        f"`screen(({{'prompt': ''}},))` rejects nothing for any adaptor at "
+        f"all — an entry whose `build()` seeds an empty store and declares no "
+        f"`prepare` passes this test vacuously. Seed the state this adaptor "
+        f"reads."
+    )
+
+    _, rejected = _screened(adaptor, ({"prompt": rendered},))
+    assert not rejected, (
+        f"{adaptor.name} renders {[(r.reason, r.path) for r in rejected]} "
+        f"into its prompt. Whatever the prompt shows, the model can echo — "
+        f"and an echoed identifier is dropped by the SAME screen, silently, "
+        f"with the run still reporting `ok`. Render an ordinal handle and "
+        f"keep the id in the adaptor's own map (issue #63)."
+    )
+
+
+def test_the_screen_would_catch_an_identifier_if_one_were_there():
+    """**The positive control, and without it the two tests above are
+    decorative.** `not rejected` is also what a screen that rejects nothing
+    produces — a `screen` stubbed out, an import that silently resolved to a
+    no-op, a `Rejection` tuple nobody fills. So one item carrying a uuid4 must
+    actually be dropped, through the same helper, before an empty rejection
+    list means anything."""
+    items = ({"note_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7"},)
+
+    kept, rejected = _screened(_FakeAdaptor(_CountingSink()), items)
+
+    assert kept == ()
+    assert [r.reason for r in rejected] == ["identifier"]
+
+
+def test_every_registered_implementation_is_exercised():
+    """The run-that-ran control for the map itself. This suite spent the
+    period after the knowledge tier's deletion with ONE entry — a fake — and
+    its own docstring flagged that as a known gap rather than the shipped
+    state. A silently shrinking map makes every test in this file vacuous, and
+    the shrink is invisible: the suite stays green, faster."""
+    assert set(IMPLEMENTATIONS) >= {
+        "fake", "proactive", "note-candidates", "note-curation",
+    }, sorted(IMPLEMENTATIONS)

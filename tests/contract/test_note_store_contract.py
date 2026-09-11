@@ -1897,3 +1897,37 @@ async def test_the_database_accepts_a_body_between_the_two_numbers(
         assert stored == 16000, "and it is stored whole, not truncated"
     finally:
         await engine.dispose()
+
+
+async def test_a_minted_id_is_shaped_the_way_the_egress_screen_reads(
+    notes: _Harness,
+) -> None:
+    """**A double may be simpler than the real store; it may not DIFFER on a
+    property something downstream branches on.**
+
+    `nora.agent.dream_screen` walks every string in a Dreamer envelope item and
+    `nora.agent.egress`'s `_UUID` drops any hyphenated uuid. So «is a minted
+    note id identifier-shaped» is not cosmetic — it decides whether an adaptor
+    that echoes one is inert in production, and it is the property
+    `tests/contract/test_dream_adaptor_contract.py::
+    test_inputs_renders_nothing_the_egress_screen_would_reject` rests its whole
+    power on.
+
+    `InMemoryNoteStore` minted `note-1` and `rev-2` until 2026-08-28, and that
+    single divergence hid the defect that made the whole curator inert:
+    production rejected every item while the double's ids sailed through, and
+    eighteen tests passed over it. The comment on `_shaped_id` records the fix;
+    this is the gate, asserted against BOTH implementations so a future double
+    cannot quietly reintroduce it.
+    """
+    from nora.agent.egress import scan_identifiers
+
+    note = await _make(notes.store)
+
+    assert scan_identifiers(note.id) is not None, (
+        f"this store mints {note.id!r}, which the Dreamer's egress screen does "
+        f"NOT recognise as an identifier. The real store mints uuid4, which it "
+        f"does — so every test written over this double is measuring the wrong "
+        f"branch of the one condition that decides whether an adaptor works."
+    )
+    assert scan_identifiers(note.head_revision_id) is not None
