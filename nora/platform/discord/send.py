@@ -35,6 +35,15 @@ match, server-side, right before the POST. A handle neither path resolves goes
 out exactly as the model wrote it — never guessed. See that module's
 docstring for the full reasoning and the fail-closed contract on both paths.
 
+**A spliced `<@id>` chip is never handed to that second pass** (external
+review, 2026-09-11) — `<@100000000000000002>` contains an `@` itself, so a
+naive `"@" in resolved_text` check after the splice would (a) fire a live
+member-list fetch on every composed-mention send even when nothing is left
+to resolve, and (b) let an all-digit guild nickname `str.replace` a match
+INSIDE an already-spliced id. `_SPLICED_MENTION_RE.split` below keeps every
+chip out of both the "is there more to resolve" check and the replacement
+itself — see the comment at the call site.
+
 **`attachments` is the payload and IS supported: a multipart upload.**
 When `attachments` are present, the message is sent as a Discord multipart
 form — `payload_json` carries the message fields, `files[i]` carries each
@@ -49,6 +58,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 import aiohttp
 
@@ -71,6 +81,13 @@ from .snowflake import timestamp_ms
 log = logging.getLogger("nora.discord.send")
 
 DEFAULT_API_BASE = "https://discord.com/api/v10"
+
+# A chip `splice_composed_mentions` just wrote. `re.split` with a CAPTURING
+# group keeps every chip in the result (at the odd indices) so the name
+# fallback below can skip them by construction rather than by a second
+# "does this look like a chip" check — see the comment at the call site for
+# why a chip must never reach `resolve_outbound_mentions`.
+_SPLICED_MENTION_RE = re.compile(r"(<@\d+>)")
 
 
 class DiscordSender:
@@ -131,24 +148,35 @@ class DiscordSender:
         # `mentions` first: these ranges came out of `OutboundComposer`, which
         # already resolved a handle against `identity.toml` AND this room's
         # live roster, so there is nothing left to guess — just a splice at
-        # the exact span it measured. Splicing consumes the `@Name` text a
-        # `Mention` covers (it becomes `<@id>`), which is what makes the
-        # SECOND pass below safe: `resolve_outbound_mentions` runs only over
-        # whatever `@` the composer did NOT already resolve, because the
-        # covered text is no longer there to match.
+        # the exact span it measured.
         resolved_text = text
         allowed_users: list[str] = []
         if mentions:
             resolved_text, composed_users = splice_composed_mentions(resolved_text, mentions)
             allowed_users.extend(composed_users)
-        if "@" in resolved_text:
+        # The SECOND pass runs `resolve_outbound_mentions` only over whatever
+        # `@` the composer did NOT already resolve — but a splice just wrote
+        # `<@100000000000000002>` into `resolved_text`, and that chip has an
+        # `@` in it too. A plain `"@" in resolved_text"` check (review finding,
+        # #211) would therefore fire a member-list fetch on EVERY composed
+        # mention even when nothing is left to resolve, and worse: an all-
+        # digit guild nickname could `str.replace` a match INSIDE a chip
+        # already-spliced id, corrupting it. `_SPLICED_MENTION_RE.split`
+        # below keeps every `<@id>` chip out of both the "is there more to
+        # resolve" check and the replacement itself — only the text BETWEEN
+        # chips (the odd-indexed-out, even-indexed `split` groups) is ever
+        # examined or rewritten by the fallback.
+        segments = _SPLICED_MENTION_RE.split(resolved_text)
+        if any("@" in segment for segment in segments[0::2]):
             named_members = await fetch_named_members(
                 self._token, base_url=self._base_url, guild_id=guild_id,
                 client_timeout=self._timeout,
             )
-            resolved_text, fallback_users = resolve_outbound_mentions(
-                resolved_text, named_members,
-            )
+            fallback_users: list[str] = []
+            for i in range(0, len(segments), 2):
+                segments[i], ids = resolve_outbound_mentions(segments[i], named_members)
+                fallback_users.extend(ids)
+            resolved_text = "".join(segments)
             allowed_users.extend(fallback_users)
         # De-duplicated, order preserved: the composer emits one `Mention` per
         # OCCURRENCE of a handle, so the same recipient can legitimately
