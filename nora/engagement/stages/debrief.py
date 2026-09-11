@@ -258,7 +258,8 @@ STORE_CALLS_PER_FOLD = STANDING_STORE_CALLS_PER_FOLD
 
 
 async def _complete(
-    client: ModelClient, *, prompt: tuple[str, str], call: str, trace: TagTrace,
+    client: ModelClient, *, prompt: tuple[str, str], call: str,
+    tag_id: str, conversation_id: str,
 ) -> Completion:
     """The fold's model call, as a GENERATION span (issue #64).
 
@@ -284,6 +285,16 @@ async def _complete(
     It is a CHILD of `engagement.debrief` by context, not by wiring — the
     pipeline opens that span around `debrief.run`, and `asyncio.wait_for` keeps
     the context whether it awaits in place or wraps a task.
+
+    **`tag_id`/`conversation_id`, not a `TagTrace`** (issue #209). The tag
+    path's three call sites have a whole `TagTrace` in hand and the event fold
+    (`nora.ingest.stages.standing_event`) has neither a tag nor the messages/
+    transcript/outcome a `TagTrace` requires — it folds a row-id watermark
+    batch, not a turn. Taking only the two attributes this function actually
+    reads is the honest surface for both callers: the tag path passes
+    `trace.tag_id`/`trace.conversation_id`, and the event fold passes its
+    conversation id with `tag_id=""` — an empty tag id being the true
+    statement, not a fabricated one.
     """
     system, user = prompt
     # Both halves on the trace, joined, so the digest still reconstructs the
@@ -293,13 +304,14 @@ async def _complete(
     with generation(
         f"engagement.debrief.{call}",
         model=client.model,
-        # NOT `root=True`: this hangs under `engagement.debrief`, which hangs
-        # under the turn's own root, and a `nora.trace_kind` on a non-root is
-        # inert under `ParentBased`. The turn's root already declared it.
+        # NOT `root=True`: this hangs under `engagement.debrief` on the tag
+        # path, or under `standing.event_fold` on the event path — both hang
+        # under a root that already declared `nora.trace_kind`, and it is
+        # inert on a non-root under `ParentBased`.
         prompt=body,
         attributes={
-            "nora.tag_id": trace.tag_id,
-            "nora.conversation_id": trace.conversation_id,
+            "nora.tag_id": tag_id,
+            "nora.conversation_id": conversation_id,
             # The reference the withheld case still re-derives from: this digest
             # plus the retained `TagTrace` for `nora.tag_id` reconstructs the
             # exact prompt without the trace ever having carried it.
@@ -1274,10 +1286,14 @@ async def run(
                 one would pair a position with notes about a draft nobody
                 kept.
                 """
-                reply = await _complete(client, call="fold", trace=trace, prompt=_prompt(
-                    instructions=instructions, rendered=rendered,
-                    max_chars=max_chars,
-                ))
+                reply = await _complete(
+                    client, call="fold",
+                    tag_id=trace.tag_id, conversation_id=trace.conversation_id,
+                    prompt=_prompt(
+                        instructions=instructions, rendered=rendered,
+                        max_chars=max_chars,
+                    ),
+                )
                 first = _check(reply, trace.tag_id)
                 if first[0] is None or len(first[0]) <= max_chars:
                     return first[0], first[1], reply.content
@@ -1288,7 +1304,8 @@ async def run(
                 # not explain its output — the shape §4.0's consolidate exists to
                 # make legible.
                 retry = await _complete(
-                    client, call="consolidate", trace=trace,
+                    client, call="consolidate",
+                    tag_id=trace.tag_id, conversation_id=trace.conversation_id,
                     prompt=_consolidate_prompt(
                         instructions=instructions, rendered=rendered,
                         max_chars=max_chars, over=first[0],
@@ -1315,7 +1332,8 @@ async def run(
                     return None, "skipped"
                 try:
                     reply = await _complete(
-                        client, call="verdict", trace=trace,
+                        client, call="verdict",
+                        tag_id=trace.tag_id, conversation_id=trace.conversation_id,
                         prompt=_verdict_prompt(
                             instructions=verdict_instructions,
                             rendered=rendered_verdict,
