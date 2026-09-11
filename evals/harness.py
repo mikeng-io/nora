@@ -46,6 +46,7 @@ import logging
 import tempfile
 import tomllib
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -464,11 +465,17 @@ async def run_case(
     # determination runs through the real `FirePath.speak` once the harness
     # clock settles the window. The verdict is read off `Trajectory.sent`.
     participation = case.expect is not None
+    # ONE read of the wall clock for the whole case (issue #213), the same
+    # "interpret once" discipline `build_prefill` uses for its own clock: the
+    # seeded transcript's base AND the judged line's own timestamp below come
+    # from this SAME `now_ms`, so the ordering between them is by
+    # CONSTRUCTION rather than by two reads of the clock happening to agree.
+    now_ms = int(datetime.now(UTC).timestamp() * 1000)
     if case.seed is not None:
         # Per-case seed (§9 gap 2) — built nora-side so every tier row lands in
         # the eval workspace (the footgun: workspace-keyed rows seeded anywhere
         # else silently never render).
-        seed = seed_from_dict(case.seed)
+        seed = seed_from_dict(case.seed, now_ms=now_ms)
 
     cfg = load_eval_config((REPO_ROOT / "config.toml", REPO_ROOT / "config.example.toml"))
     # The eval measures the DETERMINATION (does the model decide speak/silence
@@ -610,7 +617,20 @@ async def run_case(
             # raw signal-cli-shaped event the same way SignalAdapter.listen() would
             # internally (Trap B moved that step off IngestPipeline and onto the
             # adapter), then dispatch only if it parsed to something.
-            message = await adapter.parse(group_event(body=body))
+            #
+            # `ts=` is EXPLICIT for a participation case (issue #213) — never
+            # `group_event`'s bare `ts=1` default. Stamped at the SAME `now_ms`
+            # `seed_from_dict` above ended its own window one step before, so
+            # the untagged line under judgement lands strictly after every
+            # seeded row: the newest thing `FakeRecordStore.recent`'s
+            # `(ts, id)` sort sees, rendered LAST, never `#1` sorted above a
+            # window it is 56 years older than. A non-participation case
+            # (`tool_calls`/tag-suite driven) keeps the bare default: nothing
+            # here renders an age for those, and `ts=1` is what the rest of
+            # `tests/` and `evals/` already assume of `group_event`.
+            message = await adapter.parse(
+                group_event(body=body, ts=now_ms if participation else 1)
+            )
             if message is not None:
                 await dispatcher.on_message(message)
             if participation and trigger is not None:

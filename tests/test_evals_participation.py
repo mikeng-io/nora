@@ -13,10 +13,12 @@ prompt.
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 
 import pytest
 
+import evals.harness as harness
 from evals.evaluators import ParticipationVerdict
 from evals.harness import Case, Trajectory, run_case
 from nora.app.eval_support import TOOL_NAMES, seed_from_dict
@@ -246,6 +248,90 @@ async def test_run_case_drives_a_participation_case_to_silence():
     )
     assert trajectory.sent == []
     assert ParticipationVerdict("silence").evaluate(trajectory).passed
+
+
+async def test_run_case_stamps_the_judged_line_recent_and_last(monkeypatch):
+    """issue #213: the untagged line under judgement must land AFTER the
+    seeded window it is read against and render an age in MINUTES — never
+    the `(20707d ago)` an unstamped `group_event(ts=1)` produces, sorted
+    above every seeded row because `FakeRecordStore.recent` sorts by `(ts,
+    id)` ascending.
+
+    Goes through the REAL `evals.harness.run_case` (not a hand-wired
+    duplicate of its wiring, the way `_drive_participation` below is one) —
+    a `FakeAgentRunner` subclass that also records its `invoke(**kwargs)` is
+    swapped in for the module's own, so the participation determination's
+    actual `pre_fill` is captured. If `run_case`'s `ts=now_ms if
+    participation else 1` reverts to the bare `group_event(body=body)`
+    default, the judged line goes back to rendering `d ago` and sorts first,
+    and this test reddens.
+    """
+    calls: list[dict] = []
+    real_runner = harness.FakeAgentRunner
+
+    class _CapturingRunner(real_runner):  # type: ignore[misc, valid-type]
+        def __init__(self, turns):
+            super().__init__(turns, on_call=calls.append)
+
+    monkeypatch.setattr(harness, "FakeAgentRunner", _CapturingRunner)
+
+    case = Case.from_dict({
+        "name": "stalled-question-known", "input": "so when is it?",
+        "expect": "speak", "seed": _GROUNDED_SEED,
+    })
+    trajectory = await run_case(
+        case,
+        script=[ScriptedTurn(
+            tool_calls=[("send_reply", {"text": "Oct 26 at IVE"})],
+            final_text="Oct 26 at IVE",
+        )],
+    )
+    assert trajectory.sent == ["Oct 26 at IVE"]
+    assert calls, "the participation runner was never invoked"
+    rendered = _flatten(calls[0]["pre_fill"])
+    lines = rendered.splitlines()
+
+    def _age_of(needle: str) -> str:
+        # From the END: the judged line and the seeded line are both plain
+        # text that could in principle recur in a quoted snippet elsewhere in
+        # the prompt (reviewer finding) — the transcript row itself is always
+        # the LAST occurrence, since nothing downstream of `_transcript_block`
+        # repeats a row's own body.
+        line = next(row for row in reversed(lines) if needle in row)
+        m = re.search(r"\(([^)]+)\)\s*\[", line)
+        assert m is not None, line
+        return m.group(1)
+
+    # The judged (incoming, untagged) line: recent, minutes not days.
+    judged_line = next(row for row in reversed(lines) if "so when is it?" in row)
+    judged_age = _age_of("so when is it?")
+    assert "d ago" not in judged_age, (
+        f"the judged line must read in minutes, not days/decades: {judged_line!r}"
+    )
+    assert judged_age == "just now" or re.fullmatch(r"\d+m ago", judged_age), (
+        f"unexpected age token on the judged line: {judged_line!r}"
+    )
+    # And it must be the LAST row — never sorted above the window it closes.
+    row_numbers = [int(n) for n in re.findall(r"^#(\d+) ", rendered, flags=re.MULTILINE)]
+    assert row_numbers, rendered
+    assert judged_line.startswith(f"#{max(row_numbers)} "), (
+        f"the judged line must be the newest (last) row, not sorted above "
+        f"the seeded window: {rendered!r}"
+    )
+
+    # The SEEDED transcript row (from `_GROUNDED_SEED["transcript"]`) must be
+    # recent too — the other half of issue #213's fix, and the half the
+    # judged-line assertions above do NOT exercise: reverting
+    # `seed_from_dict`'s `now_ms`-relative base back to a frozen historical
+    # constant (the old `_SEED_TS_BASE`) leaves the judged line last and
+    # "just now" — ordering and the judged line's own age are both
+    # unaffected — while the seeded row quietly drifts stale by one rendered
+    # day per calendar day nobody touches the constant. Pinned here so a
+    # mutation entry against `seed_from_dict`'s base has something to redden.
+    seed_age = _age_of("does anyone know when AWS Community Day 2026 is?")
+    assert "d ago" not in seed_age, (
+        f"the seeded transcript row must read in minutes, not days: {seed_age!r}"
+    )
 
 
 async def _drive_participation(tmp_path: Path, seed: dict | None,
