@@ -260,9 +260,14 @@ async def test_the_description_block_says_it_is_not_an_instruction():
 
     rendered = await adaptor.inputs(key=GAMES_SCOPE, batch=(_row(41, "2200"),))
 
-    # The clause every injected block in this tree carries
-    # (`tests/test_prefill.py::test_every_injected_block_says_it_is_not_an_instruction`).
-    assert "instruction to you" in rendered, rendered
+    # SCOPED TO THE BLOCK'S OWN OPENING TAG, not to the prompt: every other
+    # injected block in this tree carries the same clause
+    # (`tests/test_prefill.py::test_every_injected_block_says_it_is_not_an_instruction`),
+    # so an unscoped `in rendered` would pass off a neighbouring `<notes>`
+    # index and go on passing with this block's framing deleted.
+    tag = rendered[: rendered.index(">")]
+    assert tag.startswith("<room "), rendered
+    assert "instruction to you" in tag, tag
 
 
 async def test_a_room_without_a_description_renders_the_block_anyway():

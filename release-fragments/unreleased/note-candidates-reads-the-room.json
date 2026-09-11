@@ -9,6 +9,8 @@
   ],
   "limitations": [
     "The `description` ships empty. It changes nothing on a deployment until the operator writes one per room; a room with none is described by nothing rather than by a guess.",
-    "A room the operator left unlabelled still falls back to its workspace name, which is the old behaviour for that room. The fallback is never the conversation id."
+    "A room the operator left unlabelled still falls back to its workspace name, which is the old behaviour for that room. The fallback is never the conversation id.",
+    "The <room> block renders on EVERY note-candidates prompt, described or not, so it is a prompt change for every existing eval case. The 20-case suite has not been re-run on this branch: two controlled cases (n10b/n11b — the incident's own batches, with the room described) are added so one live run answers whether the description changes the judgement, and no number from before this branch is comparable until it does.",
+    "`nora/dreamer/objectives/note-candidates.md` still tells the model it is reading 'a batch of messages from one group chat' and the notebook, and does not mention the new block. That file is `change_policy: operator-only`, so it is the operator's edit to make — and it is the half of this change most likely to decide whether the description is actually read."
   ]
 }

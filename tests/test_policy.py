@@ -146,14 +146,14 @@ def test_a_room_description_is_read_verbatim(tmp_path):
     body = TOML + '''
 [[conversations]]
 platform    = "discord"
-id          = "100000000000000203/100000000000000204"
+id          = "123456789012345678/1234567890123456789"
 label       = "Zone 42"
 persons     = ["miles"]
 description = "a games room; 2200 is when people log on, not an appointment"
 '''
     policy = load_policy(_write(tmp_path, body))
 
-    convo = policy.conversation("discord", "100000000000000203/100000000000000204")
+    convo = policy.conversation("discord", "123456789012345678/1234567890123456789")
     assert convo is not None
     assert convo.description == (
         "a games room; 2200 is when people log on, not an appointment"
@@ -166,13 +166,13 @@ def test_a_blank_room_description_is_absent_not_empty(tmp_path):
     body = TOML + '''
 [[conversations]]
 platform    = "discord"
-id          = "100000000000000203/100000000000000204"
+id          = "123456789012345678/1234567890123456789"
 persons     = ["miles"]
 description = "   "
 '''
     policy = load_policy(_write(tmp_path, body))
 
-    convo = policy.conversation("discord", "100000000000000203/100000000000000204")
+    convo = policy.conversation("discord", "123456789012345678/1234567890123456789")
     assert convo is not None
     assert convo.description is None
 
