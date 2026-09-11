@@ -188,6 +188,44 @@ async def test_inputs_renders_the_index_the_rooms_the_log_and_the_self_card():
     assert "not a description of who you are" in text
 
 
+async def test_the_home_room_block_carries_the_operators_description():
+    """Issue #161, folded in: the `<home_room>` attributes say what the room
+    is FOR; the operator's `policy.toml` `description` says what it IS, and
+    only they can state it. The SAME field the note-candidates pass reads, so
+    the two passes cannot hold two ideas of what a room is."""
+    rooms = (
+        WorkspaceRoom(
+            platform="signal", conversation_id="sig-1", label="Zone 42",
+            home=True,
+            description="a games room; 2200 is when people log on, not an appointment",
+        ),
+    )
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    adaptor = _adaptor(notes=notes, rooms=rooms)
+
+    text = await adaptor.inputs(key=WS, batch=())
+
+    assert "a games room; 2200 is when people log on" in text
+    assert "</home_room>" in text
+    assert "instruction to you" in text
+
+
+async def test_a_home_room_with_no_description_renders_what_it_always_has():
+    """The shipped state. Nothing in `policy.toml` describes a room yet, so
+    this pass's graded wording must be untouched until an operator opts in:
+    the block stays self-closing and says only what it always said."""
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    adaptor = _adaptor(notes=notes)
+
+    text = await adaptor.inputs(key=WS, batch=())
+
+    assert '<home_room platform="signal" label="Friends"' in text
+    assert "a reminder you set fires into it.\"/>" in text
+    assert "</home_room>" not in text
+
+
 async def test_strikes_and_a_due_revisit_are_said_on_the_line():
     notes = InMemoryNoteStore()
     note = await _note(notes)

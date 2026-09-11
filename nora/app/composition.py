@@ -2618,6 +2618,24 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         for conv in allowlist.conversations
                         if conv.primary_id and conv.workspace
                     }.get,
+                    # THE ROOM, off the SAME allowlist read and keyed the same
+                    # way (issue #161). `label_for` is what the room is called
+                    # — the string that reaches every rendered batch line, so
+                    # two rooms of one workspace stop reading as one room.
+                    # `description_for` is the operator's sentence about what
+                    # kind of room it is, rendered once above the batch.
+                    # A room with neither is simply absent from the map; the
+                    # adaptor falls back without ever rendering an id.
+                    label_for={
+                        conv.primary_id: conv.label
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.label
+                    }.get,
+                    description_for={
+                        conv.primary_id: conv.description
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.description
+                    }.get,
                     metrics=metrics,
                     # The ROOM's zone for each rendered message's moment —
                     # the same `[reminders] timezone` the curator's `_today`
@@ -2652,6 +2670,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     WorkspaceRoom(
                         platform=conv.platform, conversation_id=conv.primary_id,
                         label=conv.label or conv.primary_id, home=conv.home_room,
+                        # The operator's own description of the room (issue
+                        # #161) — the SAME `policy.toml` field the note
+                        # candidates pass reads, so the two passes cannot hold
+                        # two ideas of what a room is.
+                        description=conv.description,
                     ),
                 )
             dream_schedules = {

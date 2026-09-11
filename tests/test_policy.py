@@ -130,6 +130,53 @@ def test_an_unknown_key_is_refused(tmp_path):
         load_policy(_write(tmp_path, body))
 
 
+def test_a_room_description_is_optional_and_absent_by_default(policy):
+    """Issue #161's lever 2 ships EMPTY: the deployment's policy.toml has
+    never heard of `description`, and `extra = "forbid"` means a schema that
+    demanded it would refuse to start. Absent is `None`, not `""`."""
+    convo = policy.conversation("signal", GROUP)
+    assert convo is not None
+    assert convo.description is None
+
+
+def test_a_room_description_is_read_verbatim(tmp_path):
+    """What the operator says the room IS, as opposed to what `label` says it
+    is called — the sentence the note-candidates pass renders above a batch
+    so a games room's shorthand is read as a games room's shorthand."""
+    body = TOML + '''
+[[conversations]]
+platform    = "discord"
+id          = "100000000000000203/100000000000000204"
+label       = "Zone 42"
+persons     = ["miles"]
+description = "a games room; 2200 is when people log on, not an appointment"
+'''
+    policy = load_policy(_write(tmp_path, body))
+
+    convo = policy.conversation("discord", "100000000000000203/100000000000000204")
+    assert convo is not None
+    assert convo.description == (
+        "a games room; 2200 is when people log on, not an appointment"
+    )
+
+
+def test_a_blank_room_description_is_absent_not_empty(tmp_path):
+    """Two spellings of "the operator wrote nothing" is how a block ends up
+    rendered with nothing in it. `description = ""` normalises to `None`."""
+    body = TOML + '''
+[[conversations]]
+platform    = "discord"
+id          = "100000000000000203/100000000000000204"
+persons     = ["miles"]
+description = "   "
+'''
+    policy = load_policy(_write(tmp_path, body))
+
+    convo = policy.conversation("discord", "100000000000000203/100000000000000204")
+    assert convo is not None
+    assert convo.description is None
+
+
 def test_a_bad_wildcard_string_is_refused(tmp_path):
     body = (
         f'default = "deny"\n[[conversations]]\nplatform="signal"\nid="{GROUP}"\n'
