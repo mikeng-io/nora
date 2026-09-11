@@ -1068,7 +1068,8 @@ def build_note_candidates_runtime(
 async def run_note_candidates_case(
     runtime: DreamerRuntime, *, cfg: Config, workspace: str, scope: str,
     batch: Sequence[dict[str, Any]], notebook: Sequence[dict[str, Any]],
-    now_ms: int,
+    now_ms: int, room_label: str | None = None,
+    room_description: str | None = None,
 ) -> NoteCandidatesDrive:
     """One case: seed the notebook, hand the batch to the real adaptor through
     the real runtime, snapshot the notebook on both sides.
@@ -1078,7 +1079,9 @@ async def run_note_candidates_case(
     tag path's own `create` shape (`established_by="tag:eval"`), so the
     standing notes the adaptor renders look exactly like ones a person made.
     `cfg` supplies the room's zone (`[reminders] timezone`) exactly as
-    composition does, so a rendered moment reads the same here as live.
+    composition does, so a rendered moment reads the same here as live, and
+    `room_label`/`room_description` supply what `policy.toml` supplies live
+    (issue #161) so a case can measure a games room as a games room.
     """
     store = InMemoryNoteStore()
     for entry in notebook:
@@ -1090,6 +1093,14 @@ async def run_note_candidates_case(
         )
     adaptor = NoteCandidateAdaptor(
         notes=store, candidates=store, workspace_for=lambda _key: workspace,
+        # The room a case is set in, exactly as composition supplies it from
+        # `policy.toml` (issue #161): `room_label` is what the room is called
+        # and reaches every rendered batch line; `room_description` is the
+        # operator's sentence about what kind of room it is. A case that
+        # names neither renders what an unlabelled, undescribed room renders
+        # live — the honest default, not a nicer one.
+        label_for=lambda _key: room_label,
+        description_for=lambda _key: room_description,
         metrics=Metrics(), timezone=ZoneInfo(cfg.reminders.timezone),
     )
     rows = [

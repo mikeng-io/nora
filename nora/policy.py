@@ -110,6 +110,23 @@ class Conversation:
     # while this flag is on — moving a home room means clearing this on the
     # old one, the same way withdrawing a person from `persons` is.
     proactive: bool = False
+    # WHAT KIND OF ROOM THIS IS, in the operator's own words (issue #161).
+    # `None` — not `""` — when the operator wrote nothing, so "absent" and
+    # "present but blank" are one state rather than two.
+    #
+    # `label` says what the room is CALLED; this says what it IS, and only the
+    # operator can state it. A background pass reading a games room's batch
+    # sees 「2200」 and 「today no?」 and has nothing in its prompt that would
+    # tell it 2200 is when people log on rather than an appointment — so it
+    # wrote «Bath gathering» twice from a fortnight of shorthand. This is the
+    # sentence that was missing, and it is deliberately POLICY rather than
+    # config: it is about a room's people, it lives beside the room's trust
+    # flags, and the deployment's copy of this file is the only place the
+    # truth about a real room is written down.
+    #
+    # It is rendered as DATA the model reads about the batch, never as an
+    # instruction to it — see `nora.language.note_candidates.ROOM_BLOCK_NOTE`.
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -241,6 +258,23 @@ class _ConversationEntry(BaseModel):
     # See `Conversation.proactive` (39 D5): may a proactive row fire HERE.
     # Default False — unprompted speech is granted per room, never inherited.
     proactive: bool = False
+    # See `Conversation.description` (issue #161): what kind of room this is,
+    # in the operator's own words. Absent is the default and the shipped
+    # state — `extra = "forbid"` is in force here, so this entry is what makes
+    # the key legal at all, and a policy.toml that has never heard of it loads
+    # exactly as before.
+    description: str | None = None
+
+    @field_validator("description")
+    @classmethod
+    def _blank_description_is_absent(cls, value: str | None) -> str | None:
+        """`description = ""` is the operator writing nothing, and it must
+        arrive as `None` rather than as an empty string: the render asks
+        «is there a description» and two spellings of "no" is how a block
+        ends up printed with nothing in it."""
+        if value is None:
+            return None
+        return value.strip() or None
 
     @field_validator("persons")
     @classmethod
@@ -301,6 +335,7 @@ def load_policy(path: Path) -> Policy:
             primary_id=entry.id, workspace=entry.workspace,
             relevance_gate=entry.relevance_gate,
             home_room=entry.home_room, proactive=entry.proactive,
+            description=entry.description,
         )
         conversations.append(convo)
         for cid in ids:

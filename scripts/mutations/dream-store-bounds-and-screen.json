@@ -44,8 +44,8 @@
   {
     "name": "#60 the declared count must match the source (store call added)",
     "file": "nora/language/note_candidates.py",
-    "old": "        workspace = self._workspace_for(key)\n        room = workspace or key",
-    "new": "        workspace = self._workspace_for(key)\n        await self._notes.standing(workspace=workspace or key)\n        room = workspace or key",
+    "old": "        room = self._label_for(key) or workspace or UNNAMED_ROOM",
+    "new": "        await self._notes.standing(workspace=workspace or key)\n        room = self._label_for(key) or workspace or UNNAMED_ROOM",
     "target": "tests/architecture/test_dream_store_calls_are_declared.py -k declared_count_is_the_count"
   },
   {
