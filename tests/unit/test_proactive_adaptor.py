@@ -438,6 +438,25 @@ async def test_a_change_is_held_while_the_home_room_is_still_talking():
     assert metrics.get("nora_proactive_pass_total", reason="held_quiet") == 1
 
 
+async def test_a_home_room_the_quiet_check_cannot_see_is_not_read_as_quiet():
+    """`_quiet` iterating no rooms must FAIL CLOSED.
+
+    `inputs` returns `no_home_room` before `_pass_reason` is reached, so on
+    the live path the filtered sequence is never empty — a single-caller
+    invariant, and that is exactly why the empty case is asserted here rather
+    than left to the loop. An empty `for` falls through to `return True`,
+    which reads as QUIET and opens the gate on precisely the wiring gap the
+    `no_home_room` guard exists to catch. Every other failure in this method
+    holds the pass (a missing record store, a failed read); this one did not.
+
+    Driven at `_quiet` directly because `inputs` cannot reach it with an
+    empty home set — which is the point.
+    """
+    adaptor = _adaptor(records=_Records({}))
+
+    assert await adaptor._quiet((), now_ms=int(NOW.timestamp() * 1000)) is False
+
+
 async def test_a_change_is_not_held_by_a_sibling_room_still_talking():
     """The live defect this rule was changed for (2026-09-10, design 39 D10).
     A proactive row fires into the HOME room, so a sibling room's traffic

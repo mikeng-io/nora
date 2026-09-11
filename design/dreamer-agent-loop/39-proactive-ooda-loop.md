@@ -425,8 +425,8 @@ started, and it can never ask for more, ask differently, or ask again».
 > deterministic check decides whether a tick renders: the daily floor
 > (07:00 HK, no rendered pass yet that day), or a change since the last
 > rendered pass — a note created, revised on the tag path, or newly past
-> its `revisit_at`, or a room's Standing rewritten — once the workspace's
-> HOME ROOM has been quiet for `[dreamer] quiet_seconds`. A tick that does
+> its `revisit_at`, or a room's Standing rewritten — once every room of the
+> workspace has been quiet for `[dreamer] quiet_seconds`. A tick that does
 > not render is one store read and no model call, which is the same shape
 > the note tier's watermark and the curator's blank render already have.
 > «Last rendered pass» is durable in `dream_schedule_state`
@@ -455,6 +455,13 @@ started, and it can never ask for more, ask differently, or ask again».
 > barge-in: what this drops is «a sibling room is still settling the thing
 > she is about to raise», and the fix for that is a hold that follows the
 > room that CHANGED, which `_changed_since` does not report today.
+> **How coupled that is, stated rather than left to be discovered:**
+> `_changed_since` fires on a Standing rewrite of ANY room, and Standing is
+> written only after a tag turn — so a sibling room having just been active
+> is the ordinary cause of a `changed` pass, not an edge of it. The dropped
+> protection is therefore load-bearing more often than «sibling» suggests,
+> and the reopen condition above should be read as likely rather than
+> remote.
 
 `dream_loop` (`runtime.py:758`) is the Dreamer's one trigger and the sole
 caller of `DreamerRuntime.run`; `AdaptorSchedule(min_interval_seconds,

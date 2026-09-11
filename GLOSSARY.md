@@ -182,8 +182,9 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
 - **pass** — one tick of the proactive adaptor. It ticks hourly and RENDERS
   (calls the model) only on the daily floor (07:00 HK, once) or on a change
   since the last rendered pass — a note created, revised by a person, or
-  newly due, or a room's Standing rewritten — once every room of the
-  workspace has been quiet for `[dreamer] quiet_seconds`.
+  newly due, or a room's Standing rewritten — once the workspace's HOME ROOM
+  has been quiet for `[dreamer] quiet_seconds`. Every room, until 2026-09-10:
+  a row can only fire into the home room, so the others were a proxy.
   `nora_proactive_pass_total{reason}` says which.
 
 - **decision log** — Nora's own reminder rows (`requester = "nora"`) over

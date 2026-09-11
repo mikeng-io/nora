@@ -145,9 +145,10 @@ PASS_REASONS: frozenset[str] = frozenset(get_args(PassReason))
 
 #: Local hour (in `timezone`) after which the daily floor may render.
 DEFAULT_DAILY_HOUR = 7
-#: How long every room of the workspace must have been silent before a
-#: change is acted on — `[dreamer] quiet_seconds`' meaning, threaded as a
-#: value.
+#: How long the workspace's HOME ROOM must have been silent before a change
+#: is acted on — `[dreamer] quiet_seconds`' meaning, threaded as a value.
+#: Every room, until 2026-09-10; the home room is the only one a proactive
+#: row can interrupt, so the rest were a proxy (`_quiet`).
 DEFAULT_QUIET_SECONDS = 1800.0
 
 DecisionAction = Literal["remind", "decline"]
@@ -577,9 +578,17 @@ class ProactiveAdaptor:
         """
         if self._records is None:
             return True
-        # `render` returns `no_home_room` before `_pass_reason` is reached, so
-        # this sequence is never empty in the live path.
-        for room in (r for r in rooms if r.home):
+        # `inputs` returns `no_home_room` before `_pass_reason` is reached, so
+        # this is never empty on the live path — and it is a single-caller
+        # invariant with no test of its own, which is why the empty case is
+        # written out rather than left to the loop. An empty loop would fall
+        # through to `return True` and read as QUIET, opening the gate on
+        # exactly the wiring gap the guard exists to catch; the rest of this
+        # method fails closed and so does this.
+        homes = [r for r in rooms if r.home]
+        if not homes:
+            return False
+        for room in homes:
             try:
                 rows = await self._records.recent(
                     conversation_id=room.conversation_id, limit=1,

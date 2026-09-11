@@ -2671,7 +2671,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 # daily 07:00 HK slot 39 D10 first chose: the adaptor's own
                 # deterministic check decides whether a tick RENDERS — a
                 # daily floor at 07:00 HK, or a change in the workspace's
-                # notes/Standing once its rooms are quiet — and a tick that
+                # notes/Standing once its HOME ROOM is quiet — and a tick that
                 # does not render is one SQL read and no model call. The
                 # slot is therefore the ceiling on how soon a change is seen,
                 # and the reversal condition is on
