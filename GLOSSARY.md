@@ -161,7 +161,9 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
 - **proactive** — Nora's other half (design/dreamer-agent-loop/39, DEC-162).
   The passive half answers when tagged; the active half acts when nobody
   asked. Both run one **OODA loop** — observe (human rows), orient (notes,
-  Standing), decide, act — closed through a human. The active half is a
+  Standing), decide, act — closed through a human; that loop is the
+  **ambient loop** above, and the proactive adaptor is one of its two
+  deciders. The active half is a
   Dreamer adaptor whose **decide turn** reads a workspace's open notes, each
   room's Standing with its age, its own **decision log** (what it scheduled
   before and how each went) and its self card, asks memory about the people
@@ -225,6 +227,16 @@ A capability claim in an authored file now **fails to load**.
 - **ambient** — a message Nora records but does not answer. The default. (An
   untagged message in a participation-opted-in room is still ambient — it is
   only NOTED, and may later close a quiescence window; see **participation**.)
+- **ambient loop** — Nora's second backbone (design/ambient-loop, DEC-176).
+  The tag path answers when she is called; the ambient loop is how she is
+  present when she is not. One observe–orient–decide–act loop, closed through
+  a human: **Observe** is the ingest path, **Orient** is the memory layer
+  (notes, Standing, Honcho), **Decide** is two deciders — **participation**
+  (this window closed: is it hers?) and **proactive** (across the workspace:
+  anything worth raising, and when?) — and **Act** is the fire path. The loop
+  is the system's, not the proactive adaptor's; the components are its
+  stages, and each seam between two of them carries a contract
+  (design/ambient-loop/01).
 - **tag** — a message that triggers her. One tag = one turn.
 - **turn** — everything from admission to reply. Contains several **model
   calls**; each call is a **round trip** (~4s) and each retained tool result is

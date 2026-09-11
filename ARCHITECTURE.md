@@ -128,7 +128,9 @@ Signal group
 
 The boundary is still two senders (R-1b): ① never speaks, ④ never speaks, and
 ③'s occasions are enumerated — a reminder, a gathering, an announcement, a
-compute job, a relay, participation and proactive.
+compute job, a relay, participation and proactive. Of those five, **participation and proactive are the two deciders of the
+   ambient loop** (design/ambient-loop, DEC-176/177): the same stage asked
+   two questions on two triggers, over the same held state.
 
 
 ## 4. Solution strategy
