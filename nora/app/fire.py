@@ -84,7 +84,11 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.compute import ComputeJob
-from nora.domain.decision_log import DecisionLogRecorder, DecisionWriter
+from nora.domain.decision_log import (
+    DecisionLogRecorder,
+    DecisionRow,
+    DecisionWriter,
+)
 from nora.domain.events import Event, EventFactory
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
@@ -892,8 +896,13 @@ class FirePath:
         # The workspace-keyed tier resolves the workspace ONCE per turn, and
         # the read is skipped entirely when it is not wired (the dormant
         # default must not count a gap it does not have).
+        # Resolved ONCE per turn and now read by two tiers, so the `notes`
+        # guard is no longer the whole condition: the decision log is
+        # workspace-scoped too (issue #199), and a turn that skipped the
+        # lookup because the note tier was off would render no decisions block
+        # for a reason unrelated to decisions.
         workspace: str | None = None
-        if self._notes is not None:
+        if self._notes is not None or self._decisions is not None:
             workspace = self._workspace_for(occasion)
 
         return TagContext(
@@ -905,7 +914,72 @@ class FirePath:
             started_at=time.perf_counter(),
             standing=await self._read_standing(occasion),
             notes=await self._read_notes(occasion, workspace),
+            decisions=await self._read_decisions(occasion, workspace),
         )
+
+    async def _read_decisions(
+        self, occasion: Event, workspace: str | None,
+    ) -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
+        """What her PROACTIVE half already did across this WORKSPACE, for the
+        participation turn only (issue #199). `(room label, rows)` groups.
+
+        **Workspace-scoped, and «this room» would have missed the incident it
+        exists for.** A `kind="proactive"` row fires into the workspace's home
+        room and nowhere else (39 D2/D3); on 2026-09-10 that was a Discord
+        room while the thread was on Signal. A participation turn in the
+        Signal room reading «this room, last 24 hours» sees nothing and speaks
+        anyway. The room a decision was made in is rendered as its policy
+        LABEL instead, which is what a reader actually needs from it.
+
+        **Participation only, and the restriction is the decision.** This is
+        the turn deciding whether to speak into a room nobody addressed her in,
+        so «she raised this two hours ago in another room» is the fact that
+        changes the answer. A reminder or a gathering firing was decided when
+        its row was written; handing it this block would cost a read and change
+        nothing.
+
+        **Her own participation rows are excluded.** A turn reading back its
+        own last verdict is a turn agreeing with itself, and on the ambient
+        path that is the direction design 35's silence bias already leans. The
+        tag rows are excluded too: a tag is somebody asking, so what it
+        answered belongs in the transcript underneath, where it already is.
+
+        **A turn with no workspace renders NO block, rather than falling back
+        to this room.** No workspace is the wiring gap `_workspace_for` already
+        refuses to guess past, and a narrower read presented under a block that
+        says «across this group» would be a claim the rows cannot support.
+
+        Fail-soft with no `except` here — `DecisionLogRecorder.read_workspace`
+        answers `()` on every failure and counts it. `None` is the dormant
+        default.
+        """
+        if (
+            self._decisions is None
+            or occasion.kind != "participation"
+            or not workspace
+        ):
+            return ()
+        rows = await self._decisions.read_workspace(
+            platform=occasion.platform, workspace=workspace,
+        )
+        return tuple(
+            (self._room_label(row), (row,))
+            for row in rows
+            if row.writer in ("proactive_decide", "proactive_act")
+        )
+
+    def _room_label(self, row: DecisionRow) -> str:
+        """The operator-authored policy label for the room a decision was made
+        in, or `""`. NEVER the conversation id (R-18/R-28) — an unlabelled room
+        renders with no prefix rather than with an identifier."""
+        if self._policy is None:
+            return ""
+        try:
+            convo = self._policy.conversation(row.platform, row.conversation_id)
+        except Exception:
+            log.exception("policy read failed while labelling a decision row")
+            return ""
+        return convo.label if convo is not None else ""
 
     def _workspace_for(self, occasion: Event) -> str | None:
         """The workspace this occasion's room belongs to, or `None`.

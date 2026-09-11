@@ -159,7 +159,7 @@ async def test_rows_come_back_oldest_first(store):
     assert [r.reason for r in rows] == ["first", "second", "third"]
 
 
-async def test_the_limit_takes_the_NEWEST_rows(store):
+async def test_the_limit_takes_the_newest_rows(store):
     """**The property a `LIMIT` gets wrong by default.** Order oldest-first and
     limit, and a busy room answers its OLDEST rows — a block about yesterday,
     rendered as if it were the state of the room now, with nothing saying so.
@@ -219,7 +219,7 @@ async def test_a_workspace_read_takes_the_newest_and_honours_the_window(store):
     assert [r.reason for r in rows] == ["r4", "r5"]
 
 
-async def test_rows_in_the_same_millisecond_come_back_in_ONE_order(store):
+async def test_rows_in_the_same_millisecond_come_back_in_one_order(store):
     """Two decisions in one millisecond are reachable — the tag turn one second
     after a participation answer is issue #199's own example, and one
     millisecond is the same shape. Without a deterministic tie-break Postgres

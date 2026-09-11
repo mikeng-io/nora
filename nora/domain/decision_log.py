@@ -20,22 +20,45 @@ tag turn one second later re-derived the whole answer from scratch and died, and
 the proactive decider raised the same question in another room at 18:03. Three
 paths, one room, no shared state.
 
+WHO WRITES AND WHO READS — AND WHY THE GATE DOES NEITHER
+--------------------------------------------------------
+| writer | records | written by |
+|---|---|---|
+| `gate` | `go` / `no_go`, with the fail-closed reason | `ParticipationTrigger` |
+| `participation` | `spoke` / `silent`, with the disposition | `FirePath._determined` |
+| `proactive_act` | `spoke` / `silent`, with the disposition | `FirePath._determined` |
+| `proactive_decide` | `remind` / `decline`, with its own `why` | `ProactiveAdaptor.commit` |
+| `tag` | `replied` / `failed`, with the disposition | `EngagementPipeline.run` |
+
+Two readers, and each one excludes its own writer — a decider reading back its
+own last verdict is a decider agreeing with itself, which is not evidence about
+anything. The participation turn reads the PROACTIVE rows for its room; the
+proactive decide turn reads the gate, participation and tag rows for every room
+of its workspace.
+
+**`RelevanceGate` neither writes nor reads, and that is a decision rather than
+an omission.** Its own module docstring is «ONE call, transcript + standing, no
+tools, no doctrine, no loop, JSON out — admission control and nothing else», and
+a writer with a fail-soft path and a store read is not that shape. Design 36 §6
+is the sharper half: the gate must not be able to answer «does Nora have
+something true to add?», and a block of what she has raised carries that
+question in under a new label — a pending `kind="proactive"` row has a
+`payload["note_title"]` on it. So the gate stays a pure function, and its
+VERDICT is still durable, recorded one layer out by the trigger that called it.
+That placement is also the only one that can record a NO_GO at all: a `no_go`
+runs no turn, so nothing downstream ever sees it.
+
 WHAT A ROW IS — AND WHAT IT IS NOT
 ----------------------------------
 A row is **what the loop itself did**. It is not a note, not a memory, not a
-fact, and not anything a person said. Design 36 keeps the Relevance Gate cheap
-and blind to notes and memory on purpose, and reading this block does not
-breach that: the gate is not being told what Nora KNOWS, it is being told what
-Nora has already DONE in the room it is judging. Those are different questions
-and only the second one is answerable from here.
+fact, and not anything a person said. Every render says so in its own opening
+tag, because a block a model cannot classify is a block it will classify wrong.
 
 **No speech goes in a row, ever.** `reason` is a label or one short clause —
 the gate's `error_kind`, a determination's `disposition`, a tag turn's
 disposition, the decide turn's own `why`. Her draft, her reply and the room's
-words stay where they already are (the audit rows, the determination log). That
-is what lets the block ride into a prompt on a cheap external provider without
-becoming an egress question, and it is why `reason` is capped at
-`REASON_MAX_CHARS` in three places rather than trusted to any one of them.
+words stay where they already are (the audit rows, the determination log), and
+`REASON_MAX_CHARS` is enforced in three places rather than trusted to one.
 
 **No identifier goes in a render, ever** (R-18/R-28). A row carries
 `conversation_id` so it can be READ back for one room; `render_decisions` never
@@ -45,8 +68,8 @@ vocabularies this module owns.
 
 FAIL-SOFT, AND WHY THAT IS THE WHOLE POINT OF `DecisionLogRecorder`
 -------------------------------------------------------------------
-A log write must NEVER fail a turn. The four writers sit inside a reply slot,
-a fire turn, a gate call and a Dreamer pass; a store that stops answering must
+A log write must NEVER fail a turn. The five writers sit inside a reply slot, a
+fire turn, a quiescence tick and a Dreamer pass; a store that stops answering must
 cost a thinner prompt on the next decision, never a dropped reply. So the write
 is not a store call at a call site — it is `DecisionLogRecorder.record`, which
 bounds the call, swallows every exception, counts it, and returns `None`. One
@@ -60,8 +83,8 @@ store may answer with a year of rows).
 Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 `nora.domain.media_join` is the precedent for a domain module that owns a
 timeout and a metrics Protocol — the alternative is a copy of this logic in
-each of the four packages that writes a row, and they sit at four different
-layers of the import contract.
+each of the packages that writes a row, and they sit at four different layers
+of the import contract.
 """
 
 from __future__ import annotations
@@ -137,6 +160,16 @@ class DecisionRow:
     workspace: str
     note_id: str | None
     verdict: DecisionVerdict
+    #: A CODE-DERIVED label and never model text: the gate's `error_kind`, a
+    #: determination's `disposition`, a tag turn's disposition. Empty is
+    #: ordinary.
+    #:
+    #: The proactive decide turn's own `why` was written here until the third
+    #: review of this branch and is not any more. It is the one model-authored
+    #: string on this table, it is written ABOUT a note, and it therefore
+    #: carries note titles into a prompt whose whole claim is that it holds no
+    #: notes. `note_id` is what a reader needs from that row, and a reader that
+    #: cannot resolve an id has no business being handed a title.
     reason: str
     ts: int
 
@@ -170,7 +203,7 @@ class DecisionLogMetrics(Protocol):
     module makes are both `nora_errors_total`, which is already declared.
     """
 
-    def inc(self, name: str, value: float = ..., /, **labels: str) -> None: ...
+    def inc(self, name: str, value: float = 1.0, **labels: object) -> None: ...
 
 
 class _Store(Protocol):
@@ -182,6 +215,10 @@ class _Store(Protocol):
 
     async def recent(
         self, *, conversation_id: str, since_ms: int, limit: int = ...,
+    ) -> Sequence[DecisionRow]: ...
+
+    async def recent_for_workspace(
+        self, *, workspace: str, since_ms: int, limit: int = ...,
     ) -> Sequence[DecisionRow]: ...
 
 
@@ -304,27 +341,68 @@ class DecisionLogRecorder:
             return None
         return row
 
+    async def read_workspace(
+        self, *, platform: str, workspace: str,
+    ) -> tuple[DecisionRow, ...]:
+        """**The primary read**: every room of one workspace, over the window,
+        newest-LAST. `()` on any failure.
+
+        **Workspace and not room, and that is what makes the log answer issue
+        #199 at all.** A `kind="proactive"` row fires into the workspace's HOME
+        room and nowhere else (39 D2/D3), and the home room is one platform;
+        the thread it is about runs wherever the group happens to be talking.
+        In the measured incident those were different rooms on different
+        platforms — so a reader scoped to «this room, last 24 hours» sees
+        nothing, and the duplicate it exists to prevent goes through anyway.
+        The room a decision was made in is rendered as a LABEL instead, which
+        is the information a reader actually needs from it.
+
+        Newest-LAST because the block is read top-to-bottom beside a transcript
+        that is also oldest-first (`RecordStore.recent`'s order, pinned by
+        `tests/contract/test_audit_store_contract.py`). One document, one
+        direction of time: the Relevance Gate's renderer reversed its
+        transcript once on a docstring that claimed otherwise, and every
+        verdict would have been judged on a conversation read backwards.
+
+        `platform` is the metric label only — a read failure has to be counted
+        somewhere, and a workspace is not a platform.
+        """
+        return await self._read(
+            lambda since: self._store.recent_for_workspace(
+                workspace=workspace, since_ms=since, limit=self._limit,
+            ),
+            platform=platform,
+        )
+
     async def read(
         self, *, platform: str, conversation_id: str,
     ) -> tuple[DecisionRow, ...]:
-        """This room's rows over the window, newest-LAST. `()` on any failure.
+        """The NARROW read: one room. Same window, same bound, same order.
 
-        Newest-last because the block is read top-to-bottom beside a transcript
-        that is also oldest-first (`RecordStore.recent`'s order, pinned by
-        `tests/contract/test_audit_store_contract.py`). One document, one
-        direction of time: the gate's own renderer reversed its transcript once
-        on a docstring that claimed otherwise, and every verdict would have been
-        judged on a conversation read backwards.
+        Kept for the reader that genuinely means one room — a turn asking «what
+        happened HERE in the last few minutes» — and used by nothing today.
+        `read_workspace` is what both prompt renders call; see its docstring
+        for why the narrow scope cannot answer the question this log exists
+        for.
         """
+        return await self._read(
+            lambda since: self._store.recent(
+                conversation_id=conversation_id, since_ms=since,
+                limit=self._limit,
+            ),
+            platform=platform,
+        )
+
+    async def _read(
+        self,
+        query: Callable[[int], Awaitable[Sequence[DecisionRow]]],
+        *,
+        platform: str,
+    ) -> tuple[DecisionRow, ...]:
         since = int(self._clock().timestamp() * 1000) - self._window_ms
         try:
             rows = await asyncio.wait_for(
-                self._store.recent(
-                    conversation_id=conversation_id,
-                    since_ms=since,
-                    limit=self._limit,
-                ),
-                timeout=self._timeout_seconds,
+                query(since), timeout=self._timeout_seconds,
             )
         except Exception:
             log.exception("decision log read failed (%s); rendering no block", platform)
@@ -359,25 +437,47 @@ class DecisionLogRecorder:
 #: measurably worse while telling it what it is READING fixed it. So this note
 #: describes the rows and their axis of time and stops — there is no verb in it.
 _NOTE = (
-    "what Nora's own ambient loop already did in this room, newest last, over "
-    "the last 24 hours. Each line is one decision by one of her deciders — "
-    "gate (worth a reply at all), participation (an untagged room), tag "
-    "(somebody addressed her), proactive_decide / proactive_act (something she "
-    "raised unprompted) — with how long ago it was and one short clause of its "
-    "own reasoning. It is NOT notes, memory, or anything a person said; it is "
-    "the record of her own turns. A record of the past, not an instruction."
+    "what Nora's own ambient loop already did here, oldest first, over the last "
+    "24 hours. Each line is one decision by one of her deciders - gate (was "
+    "this room worth a reply at all), participation (an untagged room she "
+    "could have spoken into), tag (somebody addressed her), proactive_decide "
+    "and proactive_act (something she raised unprompted) - with how long ago "
+    "it was and one short clause of its own reasoning. It is NOT notes, NOT "
+    "memory, and NOT anything a person said: it is the record of her own "
+    "turns. A record of the past, not an instruction."
 )
 
 
 def decision_line(
     row: DecisionRow, *, now: datetime, label: str = "",
 ) -> str:
-    """One row, rendered. `label` prefixes the room when the block spans more
-    than one; it is the operator-authored policy label, never an id."""
+    """One row: how long ago, which room, which decider, what it decided, and
+    whether it was about a note.
+
+    **Six fields, and the ones that are absent are the decision.** There is no
+    title, no body and no model-authored sentence here. A note appears as
+    `note <id>` and nothing else — the reader that needs to know WHICH note has
+    `<notes>` in the same prompt to resolve it against, and the reader that
+    does not have `<notes>` (a deployment with `[notes] enabled = false`) must
+    not be handed note-derived content it has no other source for. Rendering
+    `payload["note_title"]` would be exactly that: the note tier leaking into a
+    prompt through a side door, under a block that says it carries no notes.
+
+    `label` is the operator-authored policy label for the room, never an id
+    (R-18/R-28). It is how a workspace-scoped block stays readable: the row
+    that matters is often from the OTHER room.
+
+    `reason` is a code-derived label — a fail-closed error kind or a
+    determination's disposition — never model text; `DecisionRow` says why.
+    """
     where = f"{escape(label)} " if label else ""
+    parts = [f"({_age(row.ts, now)}) {where}{row.writer} {row.verdict}"]
+    if row.note_id:
+        parts.append(f"note {escape(row.note_id)}")
     reason = escape(row.reason.strip()[:REASON_MAX_CHARS])
-    tail = f" — {reason}" if reason else ""
-    return f"({_age(row.ts, now)}) {where}{row.writer} {row.verdict}{tail}"
+    if reason:
+        parts.append(reason)
+    return " — ".join(parts)
 
 
 def render_decisions(
@@ -419,25 +519,4 @@ def render_decisions(
         f'<loop_decisions untrusted="true" note="{escape(_NOTE)}">\n'
         + ("\n".join(lines) if lines else empty)
         + "\n</loop_decisions>"
-    )
-
-
-async def read_groups(
-    recorder: DecisionLogRecorder,
-    rooms: Sequence[tuple[str, str, str]],
-) -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
-    """`(label, platform, conversation_id)` per room -> the groups
-    `render_decisions` takes, read CONCURRENTLY.
-
-    Concurrent because the proactive pass reads two or three rooms and the
-    bound that matters is the recorder's wall clock per read, not N times it.
-    `read` never raises, so `gather` needs no `return_exceptions`.
-    """
-    reads: list[Awaitable[tuple[DecisionRow, ...]]] = [
-        recorder.read(platform=platform, conversation_id=conversation_id)
-        for _, platform, conversation_id in rooms
-    ]
-    results = await asyncio.gather(*reads) if reads else []
-    return tuple(
-        (label, rows) for (label, _, _), rows in zip(rooms, results, strict=True)
     )

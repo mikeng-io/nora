@@ -63,8 +63,8 @@ from nora.tag import Debounce
 from nora.testing import (
     FakeAgentRunner,
     FakeRecordStore,
-    InMemoryDecisionLogStore,
     FakeRosterSource,
+    InMemoryDecisionLogStore,
     ScriptedTurn,
 )
 from nora.testing.scripted_agent import _invoke_tool
@@ -2876,7 +2876,7 @@ async def test_a_tag_turn_that_replies_is_written_to_the_decision_log():
     ]
 
 
-async def test_a_tag_turn_that_says_NOTHING_is_written_too():
+async def test_a_tag_turn_that_said_nothing_is_written_too():
     """The row that matters most, and the one a naive writer misses: it is
     written BEFORE the `not delivered` return, so a turn that failed is logged
     as loudly as one that replied. A log that recorded only successes would

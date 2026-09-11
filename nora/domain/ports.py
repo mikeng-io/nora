@@ -2157,6 +2157,7 @@ class TurnVerdictStore(Protocol):
         ...
 
 
+@runtime_checkable
 class DecisionLogStore(Protocol):
     """Where every ambient decision is written, and where the NEXT decider
     reads what the others already did (issue #199).
@@ -2169,13 +2170,16 @@ class DecisionLogStore(Protocol):
     key, so a duplicate is a caller reusing an id rather than a second decision,
     and Postgres says so.
 
-    **Two reads and not one, because they answer different questions.** `recent`
-    is «what has happened in THIS ROOM» — the read both renders make, and the
-    one an index has to serve. `recent_for_workspace` is «what has happened
-    across this social unit», which is what a workspace-keyed decider asks when
-    it has no room yet. Collapsing them would make one of the two an unindexed
-    scan, and AGENTS.md's rule is that something must measure the COST, not just
-    the answer.
+    **Two reads, and `recent_for_workspace` is the PRIMARY one.** A
+    `kind="proactive"` row fires into the workspace's home room and nowhere
+    else (39 D2/D3); the thread it is about runs wherever the group is
+    talking, which in the measured incident was a different room on a different
+    platform. So a reader scoped to one room sees nothing and the duplicate it
+    exists to prevent goes through anyway. `recent` — one room — is the narrow
+    read, kept for a caller that genuinely means one room. They are two reads
+    and not one filter because they need two indexes: collapsing them would
+    make the workspace case an unindexed scan, and AGENTS.md's rule is that
+    something must measure the COST, not just the answer.
 
     **Both reads are bounded by the store, twice** — `since_ms` and `limit` —
     rather than by the caller slicing what came back. A block that rides into a
@@ -2191,6 +2195,22 @@ class DecisionLogStore(Protocol):
 
     async def append(self, *, row: DecisionRow) -> None:
         """Write one decision. Raises if the `id` already exists.
+
+        **A row is written at turn COMPLETION** — after the message went out,
+        or after the decision to stay silent was taken — never when the turn
+        starts. That is what closes issue #199's ordering: the send at 16:43:57
+        is durable before the tag turn at 16:44:04 reads anything, so the
+        second turn can see the first one's answer. The gate's verdict is the
+        one row with no turn behind it and is written when the verdict is
+        reached, which is its completion.
+
+        **It does NOT close a mid-turn race, and nothing here should be read as
+        claiming otherwise.** A tag that lands while a participation turn is
+        still running reads a log that does not yet contain it, and both turns
+        answer. Serialising that is `ConversationSlots`' job — one turn per
+        room at a time — and this log is a record, not a lock. What it removes
+        is the SEQUENTIAL duplicate; the concurrent one is out of its reach by
+        construction.
 
         Callers reach this through `nora.domain.decision_log.
         DecisionLogRecorder`, never directly: the recorder is where the bound

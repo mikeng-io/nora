@@ -242,7 +242,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 _STORE_MODULES: frozenset[str] = frozenset(
     {
         "announcements.py", "audit.py", "compute_jobs.py",
-        "dream_schedule.py",
+        "decision_log.py", "dream_schedule.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py", "presence.py",

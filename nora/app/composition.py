@@ -86,6 +86,7 @@ from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
@@ -98,7 +99,6 @@ from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.standing import SqlStandingStore
-from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
@@ -2382,11 +2382,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # `[standing] enabled = false`), so the gate and the turn behind
             # it see one room and not two.
             standing=standing_store if cfg.standing.enabled else None,
-            # The shared decision log (issue #199): the gate WRITES every
-            # verdict and READS back only the PROACTIVE half's rows for
-            # this room. Design 36's bar is intact — the block carries
-            # what the loop DID, never what Nora knows.
-            decisions=decision_log,
             transcript_limit=cfg.relevance_gate.transcript_rows,
             # The SAME join the turn behind it runs. Without it the gate reads
             # an image-only message as an EMPTY BODY, `render_context` drops
@@ -2424,6 +2419,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             gate_shadow=(
                 fire_path.post_gate_verdict if cfg.relevance_gate.shadow else None
             ),
+            # The shared decision log (issue #199). The verdict is recorded
+            # HERE and not inside `RelevanceGate`: the gate is a pure
+            # function — one call, transcript + standing, JSON out — and it
+            # neither writes this log nor reads it. This is also the only
+            # writer that can record a NO_GO, since a no_go runs no turn.
+            decisions=decision_log,
         )
     elif cfg.participation.enabled:
         # The CONVERSE of `_the_gate_needs_something_behind_it` (nora/config.py),

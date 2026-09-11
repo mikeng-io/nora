@@ -869,14 +869,20 @@ async def test_the_decide_turn_logs_every_decision_including_the_declines():
         now_ms=NOW_MS,
     )
     rows = await store.recent(conversation_id="sig-1", since_ms=0)
-    assert [(r.writer, r.verdict, r.reason) for r in rows] == [
-        ("proactive_decide", "remind", "nobody has picked a venue"),
-        ("proactive_decide", "decline", "still three weeks out"),
+    assert [(r.writer, r.verdict) for r in rows] == [
+        ("proactive_decide", "remind"),
+        ("proactive_decide", "decline"),
     ]
+    # The note it was about rides on the row so a reader can match it; the
+    # model's own `why` does NOT. It is the one model-authored string that
+    # would reach this table, it is written about a note, and it would carry
+    # note titles into a block whose whole claim is that it holds no notes.
     assert all(r.note_id is not None for r in rows)
+    assert [r.reason for r in rows] == ["", ""]
+    assert "venue" not in str(rows)
 
 
-async def test_the_decide_turns_rows_land_in_the_HOME_room():
+async def test_the_decide_turns_rows_land_in_the_home_room():
     """A proactive row fires into the home room (39 D2/D3), so that is the room
     a later decider has to weigh the decision against. Logging it against the
     workspace's other room would put the decision where it will never fire."""
@@ -938,7 +944,7 @@ async def test_a_decision_log_that_is_down_never_fails_a_pass():
     assert 'stage="decision_log_write"' in metrics.render()
 
 
-async def test_the_pass_sees_what_the_OTHER_deciders_did_in_each_room():
+async def test_the_pass_sees_what_the_other_deciders_did_in_each_room():
     """**The render.** Issue #199's incident, as the property: participation
     answered a question at 16:43 and this pass raised the same question in
     another room at 18:03, because nothing told it the answer had been given.
@@ -967,7 +973,7 @@ async def test_the_pass_sees_what_the_OTHER_deciders_did_in_each_room():
     assert "(2h ago) Zone 42 tag replied — send_reply" in block
 
 
-async def test_the_pass_never_reads_back_its_OWN_proactive_rows():
+async def test_the_pass_never_reads_back_its_own_proactive_rows():
     """39 §1's self-echo brake, applied to the new input rather than weakened.
     Three inputs already carry her own words into this turn and the brake on
     them is framing, not a predicate. Here a predicate is available: a decide

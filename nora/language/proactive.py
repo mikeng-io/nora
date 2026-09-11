@@ -89,11 +89,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from zoneinfo import ZoneInfo
 
-from nora.domain.decision_log import (
-    DecisionLogRecorder,
-    read_groups,
-    render_decisions,
-)
+from nora.domain.decision_log import DecisionLogRecorder, render_decisions
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import (
     Note,
@@ -153,13 +149,22 @@ WAKE_CLOCK_NAME = "proactive:wake"
 #: This is the WIDEST of the three shipped adaptors, and the reason is its
 #: render: `inputs` reads the note index, each note's last revision, the home
 #: room's quiet window, the standing position (twice — once for the block,
-#: once per changed note), the decision log, the self card, and both
-#: `dream_schedule_state` clocks; `commit` records the pass fire, then per
-#: woken note a read, a wake and a second fire.
+#: once per changed note), her reminder log, the SHARED DECISION LOG (one
+#: `read` site, gathered across the workspace's rooms), the self card, and both
+#: `dream_schedule_state` clocks; `commit` records the pass fire, one decision
+#: -log `record` per envelope item, then per woken note a read, a wake and a
+#: second fire.
 #: `tests/architecture/test_dream_store_calls_are_declared.py` counts them off
 #: this module's AST and reddens when a call is added without this number
 #: moving.
-STORE_CALLS_PER_TICK = 14
+#:
+#: 14 -> 16 on 2026-09-11 (issue #199): `_loop_decisions`' read and
+#: `_log_decision`'s write. Both are `DecisionLogRecorder` calls, which carry
+#: their OWN 2s wall clock and never raise — so unlike every other call
+#: counted here they cannot be the thing that wedges a tick. They are counted
+#: anyway, because the number is «call sites this method holds» and a bound
+#: that quietly stopped matching the source is the defect this gate exists for.
+STORE_CALLS_PER_TICK = 16
 
 PassReason = Literal[
     "daily", "changed", "held_quiet", "unchanged", "unclocked",
@@ -486,7 +491,7 @@ class ProactiveAdaptor:
             + "\n</rooms>"
         )
         parts.append(await self._decision_log(rooms, now=now))
-        parts.append(await self._loop_decisions(rooms, now=now))
+        parts.append(await self._loop_decisions(key, rooms, home, now=now))
         self_card = await self._self_card(key, platform=home.platform)
         if self_card:
             parts.append(self_card)
@@ -709,7 +714,8 @@ class ProactiveAdaptor:
         )
 
     async def _loop_decisions(
-        self, rooms: Sequence[WorkspaceRoom], *, now: datetime,
+        self, key: str, rooms: Sequence[WorkspaceRoom],
+        home: WorkspaceRoom, *, now: datetime,
     ) -> str:
         """`<loop_decisions>` — what the OTHER half of the loop did in each of
         this workspace's rooms over the last 24 hours (issue #199).
@@ -743,20 +749,23 @@ class ProactiveAdaptor:
         """
         if self._decisions is None:
             return ""
-        groups = await read_groups(
-            self._decisions,
-            [(room.label, room.platform, room.conversation_id) for room in rooms],
+        # ONE workspace-scoped read, not one per room. The pass is
+        # workspace-keyed, the bound is 20 rows over the whole unit rather than
+        # 20 per room, and `idx_decision_log_workspace_ts` serves it — see
+        # `DecisionLogRecorder.read_workspace` for why the room-scoped read
+        # cannot answer this question at all.
+        rows = await self._decisions.read_workspace(
+            platform=home.platform, workspace=key,
         )
+        labels = {(room.platform, room.conversation_id): room.label for room in rooms}
         return render_decisions(
             [
                 (
-                    label,
-                    tuple(
-                        row for row in rows
-                        if row.writer in ("gate", "participation", "tag")
-                    ),
+                    labels.get((row.platform, row.conversation_id), ""),
+                    (row,),
                 )
-                for label, rows in groups
+                for row in rows
+                if row.writer in ("gate", "participation", "tag")
             ],
             now=now,
             empty="(nothing happened in these rooms in this window)",
@@ -941,10 +950,16 @@ class ProactiveAdaptor:
         against. A decision with no home room never reaches here — `inputs`
         returns `""` and the pass does not run.
 
-        `why` is the model's own clause and it is what the recorder truncates
-        to `REASON_MAX_CHARS`; the cap is a prompt budget and a decision
-        recorded short beats a decision not recorded because its clause ran
-        long.
+        **The model's own `why` is NOT written, and that is a reversal from
+        this branch's first cut.** It is the one model-authored string that
+        would have reached this table, it is written ABOUT a note, and it
+        therefore carries note titles into a block whose whole claim is that it
+        holds no notes. `note_id` is what a reader needs from a decide row —
+        the participation turn has `<notes>` in the same prompt to resolve it
+        against — and a reader that cannot resolve an id has no business being
+        handed a title. So the row carries the verdict and the note it was
+        about; the reasoning stays in the Langfuse trace, where it is
+        re-derivable and not in front of a model.
         """
         if self._decisions is None:
             return
@@ -955,7 +970,7 @@ class ProactiveAdaptor:
             writer="proactive_decide", platform=home.platform,
             conversation_id=home.conversation_id,
             verdict="remind" if decision.action == "remind" else "decline",
-            reason=decision.why, note_id=decision.note_id,
+            note_id=decision.note_id,
         )
 
     async def _wake(

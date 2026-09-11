@@ -26,7 +26,6 @@ from nora.domain.decision_log import (
     WRITERS,
     DecisionLogRecorder,
     DecisionRow,
-    read_groups,
     render_decisions,
 )
 from nora.obs.metrics import Metrics
@@ -150,7 +149,7 @@ async def test_a_long_reason_is_truncated_rather_than_dropped():
     ) == REASON_MAX_CHARS
 
 
-async def test_two_decisions_in_one_millisecond_keep_their_INSERTION_order():
+async def test_two_decisions_in_one_millisecond_keep_their_insertion_order():
     """**Found by writing a test, not by review.** Both stores order on
     `(ts, id)`, and with a bare `uuid4` id that tie-break is RANDOM — so one
     Dreamer `commit` walking a four-item envelope with no `await` that yields
@@ -182,7 +181,7 @@ async def test_the_workspace_comes_from_policy_and_is_never_guessed():
     assert (await store.recent(conversation_id="g1", since_ms=0))[0].workspace == "friends"
 
 
-async def test_an_unknown_or_unreadable_room_leaves_the_workspace_EMPTY():
+async def test_an_unknown_or_unreadable_room_leaves_the_workspace_empty():
     """A room with no policy entry is a WIRING GAP, and guessing a workspace
     would put one social unit's decisions in another's prompt —
     `FirePath._workspace_for`'s refusal, one layer down. A lookup that RAISES
@@ -218,22 +217,6 @@ async def test_the_read_window_is_24_hours_and_the_recorder_applies_it():
     assert [r.reason for r in rows] == ["today"]
 
 
-async def test_read_groups_reads_every_room_and_keeps_the_labels_aligned():
-    """`zip(..., strict=True)`: a group whose label and rows came apart would
-    render one room's decisions under another room's name, which is worse than
-    rendering nothing."""
-    store = InMemoryDecisionLogStore()
-    await store.append(row=_row(id="a", conversation_id="g1", reason="in g1"))
-    await store.append(row=_row(id="b", conversation_id="g2", reason="in g2"))
-    groups = await read_groups(
-        _recorder(store),
-        [("Friends", "signal", "g1"), ("Zone 42", "discord", "g2")],
-    )
-    assert [(label, [r.reason for r in rows]) for label, rows in groups] == [
-        ("Friends", ["in g1"]), ("Zone 42", ["in g2"]),
-    ]
-
-
 # --- the render ------------------------------------------------------------
 
 
@@ -245,7 +228,7 @@ def test_the_block_names_itself_and_every_row_carries_an_age():
     assert "(2h ago) gate no_go — quiet room" in block
 
 
-def test_the_blocks_note_says_what_it_IS_and_gives_no_instruction():
+def test_the_blocks_note_says_what_it_is_and_gives_no_instruction():
     """AGENTS.md's measured rule: telling a model what it CAN DO made this same
     gate worse over 40 labelled cases; telling it what it is READING fixed it.
     So the note describes the rows, their axis of time, and what they are not —
@@ -256,8 +239,8 @@ def test_the_blocks_note_says_what_it_IS_and_gives_no_instruction():
     is the sentence that keeps design 36's bar intact.
     """
     block = render_decisions([("", ())], now=NOW)
-    assert "own ambient loop already did in this room" in block
-    assert "NOT notes, memory, or anything a person said" in block
+    assert "own ambient loop already did here" in block
+    assert "NOT notes, NOT memory, and NOT anything a person said" in block
     assert "not an instruction" in block
 
 
@@ -270,17 +253,34 @@ def test_a_room_label_prefixes_the_row_when_the_block_spans_rooms():
     assert "Zone 42 gate go" in block
 
 
-def test_no_identifier_is_ever_rendered():
-    """R-18/R-28. A row carries `conversation_id` and `note_id` so it can be
-    READ back for one room; neither may reach a prompt, which for the gate is a
-    wire to a cheap external provider."""
+def test_no_person_or_room_identifier_is_ever_rendered():
+    """R-18/R-28. A row carries a `conversation_id` so it can be READ back;
+    that never reaches a prompt. The room is named by its operator-authored
+    policy LABEL or by nothing at all."""
     block = render_decisions(
-        [("Friends", (_row(conversation_id="+85298765432",
-                           note_id="note-abc123"),))],
-        now=NOW,
+        [("Friends", (_row(conversation_id="+85298765432"),))], now=NOW,
     )
     assert "+85298765432" not in block
-    assert "note-abc123" not in block
+    assert "Friends" in block
+
+
+def test_a_note_is_rendered_by_id_and_never_by_title():
+    """**The one identifier that IS rendered, and the reason it is the right
+    one.** A reader that needs to know WHICH note has `<notes>` in the same
+    prompt to resolve the id against. A reader that does NOT have `<notes>` —
+    a deployment with `[notes] enabled = false` — must not be handed a title,
+    because that would be note-derived content reaching a prompt that has no
+    other source for it, under a block whose own note says it carries no notes.
+
+    The row has no title field at all, which is the structural half: the only
+    model-authored string that could have carried one (the decide turn's `why`)
+    is not written. This asserts the render half.
+
+    Falsification: drop the `note {id}` term from `decision_line` and a reader
+    can no longer match a row to the thread it concerns.
+    """
+    block = render_decisions([("", (_row(note_id="n-7"),))], now=NOW)
+    assert "note n-7" in block
 
 
 def test_a_model_authored_reason_cannot_forge_a_row_or_close_the_block():

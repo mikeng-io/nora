@@ -11,11 +11,15 @@ never a sleep — the same discipline `Debounce`'s own tests keep.
 from __future__ import annotations
 
 import contextlib
+from datetime import UTC, datetime
 
 from nora.app.fire import SENT, SILENT
 from nora.app.participation import ParticipationTrigger
+from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.models import NormalizedMessage
 from nora.engagement.slots import ConversationSlots
+from nora.obs.metrics import Metrics
+from nora.testing import InMemoryDecisionLogStore
 
 SETTLE = 10.0
 COOLDOWN = 600.0
@@ -255,6 +259,10 @@ class _Verdict:
     def __init__(self, admits: bool, score: float) -> None:
         self.admits, self.score = admits, score
         self.verdict = "go" if admits else "no_go"
+        # A CHOSEN verdict carries no error kind — the fail-closed half is
+        # the gate's own, and a fake without this field could not stand in
+        # for it at the one call site that reads it (issue #199).
+        self.error_kind = None
 
 
 class _ShadowPost:
@@ -524,3 +532,122 @@ async def test_a_quiet_room_still_closes_on_the_timeout_arm():
     clock.now += SETTLE + 1
     assert await trigger.close_due_windows() == 1
     assert len(gate.asked) == 1
+
+
+# --- the shared decision log (issue #199) ---------------------------------
+
+
+def _recorder(store=None, *, metrics=None):
+    """A real `DecisionLogRecorder` over the SHARED in-memory store, which
+    `tests/contract/test_decision_log_store_contract.py` judges against
+    Postgres."""
+    return DecisionLogRecorder(
+        store=store if store is not None else InMemoryDecisionLogStore(),
+        metrics=metrics if metrics is not None else Metrics(),
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+async def test_the_trigger_logs_the_gates_verdict_not_the_gate_itself():
+    """**The writer, and where it deliberately is NOT.** `RelevanceGate` is
+    «ONE call, transcript + standing, no tools, no doctrine, no loop, JSON
+    out» — a writer with a fail-soft path and a store read is not that shape,
+    and design 36 §6 forbids it reading a block of what she has already raised
+    (a pending proactive row carries a `note_title`). So the verdict is
+    recorded one layer OUT, here, where the participation path already holds
+    it.
+
+    Falsification: delete the `record` call in `ParticipationTrigger._admitted`
+    and this goes red; move it into `RelevanceGate` and the gate stops being a
+    pure function.
+    """
+    store = InMemoryDecisionLogStore()
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=True)
+    trigger = ParticipationTrigger(
+        speak=speak,
+        slots=ConversationSlots(maxlen=1, spawn=lambda coro: None),
+        settle_seconds=SETTLE, cooldown_seconds=COOLDOWN, clock=clock,
+        gate=gate, decisions=_recorder(store),
+    )
+    trigger.note_message(_msg())
+    clock.now += SETTLE + 1
+    await trigger.close_due_windows()
+
+    rows = await store.recent(conversation_id="g1", since_ms=0)
+    assert [(r.writer, r.verdict, r.reason) for r in rows] == [("gate", "go", "")]
+
+
+async def test_a_no_go_is_logged_even_though_no_turn_runs():
+    """**The row only this writer can record.** A `no_go` runs no turn, so
+    `FirePath` never sees it — and without this row the log would answer
+    «nothing happened in this room» for a room the gate looked at and declined
+    twenty times today, which is the exact false reading the log exists to
+    stop.
+
+    Falsification: gate the `record` call on `verdict.admits`.
+    """
+    store = InMemoryDecisionLogStore()
+    speak, clock, gate = _Speak(), _Clock(), _Gate(admits=False)
+    trigger = ParticipationTrigger(
+        speak=speak,
+        slots=ConversationSlots(maxlen=1, spawn=lambda coro: None),
+        settle_seconds=SETTLE, cooldown_seconds=COOLDOWN, clock=clock,
+        gate=gate, decisions=_recorder(store),
+    )
+    trigger.note_message(_msg())
+    clock.now += SETTLE + 1
+    await trigger.close_due_windows()
+
+    assert speak.calls == []
+    rows = await store.recent(conversation_id="g1", since_ms=0)
+    assert [(r.writer, r.verdict) for r in rows] == [("gate", "no_go")]
+
+
+async def test_the_score_is_never_written_to_the_log():
+    """The relevance score is REFERENCE ONLY (36 decision 5). A number rendered
+    into another decider's prompt reads as a threshold to whatever sees it
+    next, which is exactly what that decision refuses."""
+    store = InMemoryDecisionLogStore()
+    speak, clock = _Speak(), _Clock()
+    trigger = ParticipationTrigger(
+        speak=speak,
+        slots=ConversationSlots(maxlen=1, spawn=lambda coro: None),
+        settle_seconds=SETTLE, cooldown_seconds=COOLDOWN, clock=clock,
+        gate=_Gate(admits=True, score=0.87), decisions=_recorder(store),
+    )
+    trigger.note_message(_msg())
+    clock.now += SETTLE + 1
+    await trigger.close_due_windows()
+
+    rows = await store.recent(conversation_id="g1", since_ms=0)
+    assert "0.87" not in str(rows)
+    assert rows[0].reason == ""
+
+
+async def test_a_decision_log_that_is_down_never_costs_a_window():
+    """A log write must never fail a turn — here, never fail the EVALUATION of
+    one. A store that raises on every verb must leave the window running
+    exactly as it would have."""
+    class _Broken:
+        async def append(self, *, row):
+            raise RuntimeError("decision log down")
+
+        async def recent(self, *, conversation_id, since_ms, limit=20):
+            raise RuntimeError("decision log down")
+
+    metrics = Metrics()
+    speak, clock = _Speak(), _Clock()
+    trigger = ParticipationTrigger(
+        speak=speak,
+        slots=ConversationSlots(maxlen=1, spawn=lambda coro: None),
+        settle_seconds=SETTLE, cooldown_seconds=COOLDOWN, clock=clock,
+        gate=_Gate(admits=True), decisions=_recorder(_Broken(), metrics=metrics),
+    )
+    trigger.note_message(_msg())
+    clock.now += SETTLE + 1
+
+    assert await trigger.close_due_windows() == 1
+    assert len(speak.calls) == 1
+    assert metrics.get(
+        "nora_errors_total", stage="decision_log_write", platform="signal",
+    ) == 1

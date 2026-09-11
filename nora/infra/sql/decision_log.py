@@ -18,6 +18,8 @@ replacing would lose a decision that happened.
 
 from __future__ import annotations
 
+from typing import Any
+
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -25,7 +27,7 @@ from nora.domain.decision_log import RECENT_LIMIT, DecisionRow
 from nora.infra.sql.schema import DECISION_LOG
 
 
-def _row(record: sa.Row[object]) -> DecisionRow:
+def _row(record: sa.Row[tuple[Any, ...]]) -> DecisionRow:
     return DecisionRow(
         id=record.id,
         writer=record.writer,

@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from nora.agent.prefill import build_prefill
 from nora.agent.registry import ToolRegistry
 from nora.app import fire as fire_module
 from nora.app.fire import (
@@ -28,7 +29,7 @@ from nora.app.fire import (
     reminder_occasion,
 )
 from nora.domain.compute import ComputeJob, ComputeJobState
-from nora.domain.decision_log import DecisionLogRecorder
+from nora.domain.decision_log import DecisionLogRecorder, DecisionRow
 from nora.domain.events import Event
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.notes import Note, NoteRevision
@@ -36,7 +37,7 @@ from nora.domain.ports import JobResult, JobStatus, PlatformIdentity, SendResult
 from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
-from nora.policy import permissive_policy
+from nora.policy import Conversation, Policy, permissive_policy
 from nora.testing import (
     FakeAgentRunner,
     InMemoryDecisionLogStore,
@@ -313,10 +314,13 @@ def _fire_path(
     standing=None,
     standing_store_timeout_seconds: float = 5.0,
     decisions=None,
+    policy=None,
 ) -> FirePath:
     extra = {"standing": standing,
              "standing_store_timeout_seconds": standing_store_timeout_seconds,
              "decisions": decisions}
+    if policy is not None:
+        extra["policy"] = policy
     if event_registry is not None:
         extra["event_registry"] = event_registry
     return FirePath(
@@ -2295,3 +2299,137 @@ async def test_a_decision_log_that_is_down_never_fails_a_fire_turn(
     assert metrics.get(
         "nora_errors_total", stage="decision_log_write", platform="signal",
     ) == 1
+
+
+async def test_a_participation_turn_sees_what_she_already_raised_in_this_room(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """**The read.** This is the turn deciding whether to speak into a room
+    nobody addressed her in, so «she raised this two hours ago» is the fact
+    that changes the answer — the third leg of issue #199's duplicate.
+
+    Rendered as `<loop_decisions>` with an age on every row: every question the
+    block answers is a question about WHEN, and this repo has measured what an
+    undated block costs a temporal judgement.
+
+    Falsification: drop `decisions=await self._read_decisions(occasion)` from
+    `FirePath.build_context`, or the `_decisions_block` term from
+    `nora.agent.prefill.build_prefill`.
+    """
+    store = InMemoryDecisionLogStore()
+    await store.append(row=DecisionRow(
+        id="r1", writer="proactive_decide", platform="discord",
+        # The HOME room, on the other platform — the shape of issue #199's own
+        # incident. A room-scoped read would answer nothing here.
+        conversation_id="home-1", workspace="friends", note_id="n-1",
+        verdict="remind", reason="",
+        ts=int(T0.timestamp() * 1000) - 7_200_000,
+    ))
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner([]),
+        decisions=_decision_recorder(store),
+        policy=_decision_policy(),
+    )
+
+    ctx = await path.build_context(_participation())
+    prefill = build_prefill(
+        ctx, display_name="Nora", context_window=40, now=T0,
+    )
+    rendered = "\n".join(str(m) for m in prefill)
+
+    assert "<loop_decisions" in rendered
+    # The room LABEL, the writer, the verdict, the note by ID, and an age. No
+    # title, no model text, no conversation id.
+    assert "(2h ago) Friends HQ proactive_decide remind — note n-1" in rendered
+    block = rendered.split("<loop_decisions")[1].split("</loop_decisions>")[0]
+    assert "home-1" not in block
+
+
+async def test_a_participation_turn_never_reads_back_its_own_rows(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """A turn handed its own last verdict is a turn agreeing with itself, and
+    on the ambient path that is the direction design 35's silence bias already
+    leans. The tag rows are excluded too: a tag is somebody asking, so what it
+    answered is in the transcript underneath, where it already is.
+
+    Falsification: drop the `row.writer in (...)` filter in
+    `FirePath._read_decisions`.
+    """
+    store = InMemoryDecisionLogStore()
+    ts = int(T0.timestamp() * 1000)
+    for row_id, writer, verdict, reason in (
+        ("a", "participation", "silent", "declined"),
+        ("b", "tag", "replied", "send_reply"),
+        ("c", "gate", "go", ""),
+        ("d", "proactive_act", "spoke", "spoke"),
+    ):
+        await store.append(row=DecisionRow(
+            id=row_id, writer=writer, platform="signal",
+            conversation_id="conv-1", workspace="friends", note_id=None,
+            verdict=verdict, reason=reason, ts=ts,
+        ))
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        runner=FakeAgentRunner([]), participation_runner=FakeAgentRunner([]),
+        decisions=_decision_recorder(store), policy=_decision_policy(),
+    )
+
+    ctx = await path.build_context(_participation())
+
+    assert [row.writer for _, rows in ctx.decisions for row in rows] == [
+        "proactive_act",
+    ]
+
+
+async def test_only_the_participation_occasion_reads_the_decision_log(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """A reminder or a gathering firing was decided when its row was written,
+    so the block would cost a read and change nothing. Asserted as the pair, so
+    deleting the `kind` check cannot pass by making both sides empty."""
+    store = InMemoryDecisionLogStore()
+    await store.append(row=DecisionRow(
+        id="r1", writer="proactive_act", platform="signal",
+        conversation_id="conv-1", workspace="friends", note_id=None,
+        verdict="spoke", reason="spoke", ts=int(T0.timestamp() * 1000),
+    ))
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        runner=FakeAgentRunner([]), participation_runner=FakeAgentRunner([]),
+        decisions=_decision_recorder(store), policy=_decision_policy(),
+    )
+
+    assert (await path.build_context(_participation())).decisions != ()
+    assert (await path.build_context(reminder_occasion([_reminder()]))).decisions == ()
+
+
+def _decision_policy() -> Policy:
+    """A two-room workspace: the Signal room the window closed in, and the
+    Discord HOME room a proactive row fires into.
+
+    A REAL `Policy`, not a stub, because the shape under test is issue #199's
+    own: the decision was made in the other room on the other platform, and a
+    room-scoped read would answer nothing. `permissive_policy` cannot stand in
+    — it holds no conversations, so it resolves no workspace and no label.
+    """
+    rooms = (
+        Conversation(
+            platform="signal", ids=frozenset({"conv-1"}), persons=None,
+            label="Friends", primary_id="conv-1", workspace="friends",
+        ),
+        Conversation(
+            platform="discord", ids=frozenset({"home-1"}), persons=None,
+            label="Friends HQ", primary_id="home-1", workspace="friends",
+            home_room=True,
+        ),
+    )
+    # `_by_id` is built by `load_policy`, which reads a file; this is the same
+    # index over the same rooms, so `Policy.conversation` resolves exactly as
+    # it does in production rather than answering `None` for everything.
+    return Policy(
+        conversations=rooms,
+        _by_id={(c.platform, i): c for c in rooms for i in c.ids},
+    )
