@@ -29,16 +29,17 @@ edges:
   - {src: 02-doctrine-and-measurement, dst: 01-stages-and-seams, rel: depends_on, provenance: asserted}
   - {src: 03-decisions, dst: 00-overview, rel: summarises, provenance: asserted}
 external_edges:
-  - {dst: "dreamer-agent-loop/39-proactive-ooda-loop", rel: supersedes, provenance: asserted}
-  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: revises, provenance: asserted}
-  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: revises, provenance: asserted}
+  - {dst: "dreamer-agent-loop/39-proactive-ooda-loop", rel: revises, provenance: asserted}
+  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: depends_on, provenance: asserted}
+  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: depends_on, provenance: asserted}
   - {dst: "dreamer-agent-loop/26-standing", rel: depends_on, provenance: asserted}
+  - {dst: "dreamer-agent-loop/33-note-dreamer-schedule", rel: depends_on, provenance: asserted}
   - {dst: "live-threads", rel: relates_to, provenance: asserted}
 decisions:
   reserved: "DEC-176 .. DEC-180"
   index: 03-decisions.md
 governance:
-  reviewed_by: "adversarial Opus review of version 1, 2026-09-11 — DO NOT LAND; eight blockers, all folded into version 2"
+  reviewed_by: "two adversarial Opus reviews, 2026-09-11 — v1 DO NOT LAND (eight blockers), v2 DO NOT LAND (nine, two of them v1 blockers re-introduced under new labels); all folded into v3"
 open_questions:
   - "OPERATOR — DEC-163 (#173): whether «then you're done» changes. This bundle names the Act → Orient edge and does not decide what flows across it"
   - "OPERATOR — the room descriptions in policy.toml (#161 lever 2): one sentence per room"

@@ -140,8 +140,9 @@ the stores, pre-filled into each fresh agent's context:
 | her own position on where each room's conversation stands | Postgres `standing` | Standing (design 26; folded after each tag turn) |
 
 See `design/01-ambient-ingest.md`, `design/02-tagging-path.md`,
-`design/03-strands-reuse.md`, and the `design/dreamer-agent-loop/` bundle for
-the background tier.
+`design/03-strands-reuse.md`, the `design/dreamer-agent-loop/` bundle for the
+Dreamer runtime the ambient loop's Orient stage and proactive decider run on,
+and `design/ambient-loop/` for the loop itself.
 
 ## Configuration
 

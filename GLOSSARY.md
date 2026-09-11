@@ -237,7 +237,11 @@ A capability claim in an authored file now **fails to load**.
   is the system's, not the proactive adaptor's; the components are its
   stages, and each seam between two of them carries a contract
   (design/ambient-loop/01). The tag path is the *other* backbone and feeds
-  this one: its debrief writes Standing and proposes notes.
+  this one: its debrief writes Standing and proposes notes. The **shared
+  decision log** (DEC-179, a new store) is what lets the participation turn,
+  the proactive turns and the tag path see each other's recent verdicts; it is
+  not the proactive adaptor's own **decision log** of its reminder rows,
+  which keeps that name in code.
 - **tag** — a message that triggers her. One tag = one turn.
 - **turn** — everything from admission to reply. Contains several **model
   calls**; each call is a **round trip** (~4s) and each retained tool result is

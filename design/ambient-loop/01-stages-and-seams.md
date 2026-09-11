@@ -6,7 +6,7 @@ tags: [nora, ambient, ooda, seams, participation, proactive, notes, standing, ho
 timestamp: '2026-09-11'
 edges:
   - {dst: 00-overview, rel: depends_on, provenance: asserted}
-version: 2
+version: 3
 ---
 
 # What Each Stage Reads Today, And The Five Seams
@@ -23,18 +23,20 @@ wrong; the corrections are marked.
 | **Orient · note-candidates** | batch, injected | ✗ | index, injected | ✗ | ✗ | **✗ — workspace name** (bug, #161) |
 | **Orient · note-curation** | **✓ per-note window, injected** (v1 said ✗) | ✗ | ✓ | ✗ | ✗ | — |
 | **Orient · Standing fold** (tag path) | the exchange, injected | prior | ✗ | ✗ | ✗ | **✗** (v1 said ✓; `render_debrief_turn` names no room) |
-| **Decide · gate** | ✓ with ages | ✓ with age | ✗ *by design 36* | ✗ *by design 36* | ✗ | **✗** (v1 said ✓; the prompt names no room, label or platform) |
-| **Decide · participation turn** | ✓ | ✓ | **✓ `<notes>`** | ✓ peer card | ✗ | ✓ |
+| **Decide · gate** | ✓ with ages | ✓ with age | ✗ *by design 36 §6* | ✗ *by design 36 §6* | ✗ — and stays so | **✗** (v1 said ✓; the prompt names no room, label or platform) |
+| **Decide · participation turn** | ✓ | ✓ | **✓ `<notes>`** when `[notes] enabled` (on the deployment; not the shipped default) | ✓ peer card | ✗ | ✓ |
 | **Decide · proactive decide** | ✗ (39 D9) | ✓ per room, aged | ✓ | roster injected; Honcho **callable** (v1 called the `<people>` block Honcho — it is the roster) | own log only | home room |
 | **Decide · proactive act** | home room's, injected | ✓ | ✓ | ✓ | ✗ | home room |
 
-Where each cell comes from: `relevance_gate.py:14-27` (the gate's deliberate
-blindness, quoted in §2.3), `:525-531` (no room in the prompt); `fire.py:319,
-:551, :631` (the participation turn's `<notes>`); `proactive.py:449-479`
-(`inputs()`), `:481-513` (`_people_block` reads the roster, not memory);
-`note_candidates.py:491-495` (`room = workspace or key`); `note_curator.py:670`
-(the per-note transcript window); `debrief_render.py:240-247` (no room label,
-id-suppression at `:34-42`).
+Where each cell comes from: `relevance_gate.py:19-28` (the gate's deliberate
+blindness, quoted in §2.3), `:534` (the prompt is built from transcript and
+Standing alone — no room); `fire.py:551, :631` (the participation turn's
+`<notes>`; `:683` records that the block rendered on no fire occasion before
+the tier was wired); `proactive.py:449-479` (`inputs()`), `:481-513`
+(`_people_block` reads the roster, not memory); `note_candidates.py:492`
+(`room = workspace or key`); `note_curator.py:672` (the per-note transcript
+window); `debrief_render.py:240-247` (no room label, id-suppression at
+`:34-42`).
 
 Three readings:
 
@@ -51,9 +53,12 @@ Three readings:
 
 ### 2.1 Decide ↔ Decide — *real, unwired, needs a store*
 
-Three decision paths, none aware of the others: the gate + participation turn,
-the proactive decide + act turns, and the tag path. The gate persists
-**nothing durable** — metrics and trace attributes only (`relevance_gate.py:698-711`).
+Three decision paths, none aware of the others: the participation turn, the
+proactive decide + act turns, and the tag path. (The gate in front of the
+participation turn persists **nothing durable** — metrics and trace attributes
+only, `relevance_gate.py:698-711` — and that is correct: `:14-15` calls it
+«admission control and nothing else». It stays out of this seam on both
+sides.)
 The proactive adaptor keeps a private log over its own reminder rows. The
 determination log (`obs/determination.py`, written at `fire.py:1682`) is
 write-only and read back into no prompt. v1 said "a `writer` column on a table
@@ -61,11 +66,13 @@ that exists". No such table exists. **This is the one new store the loop
 needs** (`03` DEC-179), and it is being built tonight.
 
 What crosses it, once it exists: the proactive decider sees participation
-admitted and spoke in this room at 14:02, so it does not schedule a 16:00
-reminder about the same thing; the gate sees a `kind="proactive"` row is
-pending for 18:00 about tonight's dinner, so a 17:40 window that settles it is
-admitted *and* the row is cancelled; the tag turn sees participation answered
-one second ago, so it does not re-derive the route and die doing it (#199).
+spoke in this room at 14:02, so it does not schedule a 16:00 reminder about
+the same thing; the participation *turn* — which already holds `<notes>` —
+sees a `kind="proactive"` row is pending for 18:00 about tonight's dinner,
+so when a 17:40 window that settles it is admitted the turn can cancel the
+row; the tag turn sees participation answered one second ago, so it does not
+re-derive the route and die doing it (#199). Written by the participation
+turn, the proactive turns and the tag path; read by the same. Never the gate.
 
 ### 2.2 Act → Orient — *real, and #199 is its exact shape*
 
@@ -79,29 +86,47 @@ closing condition her own row had already met.
 
 Design 39 §1's brake — *nothing Nora says can create, revise or close a note* —
 holds for her **words**. It does not hold for her **turn outcomes**, which the
-debrief writes as held state, and it cuts the other way: her own row cannot
-close a note whose closing condition it satisfies. What already exists on this
-edge and must not be duplicated: `record_wake` / `strikes` / `revisit_at`
-(`schema.py:1805-1809`, 39 D6) stamp *raised by her, unanswered*. v1's
-`last_moved_at` would have been a second copy of that.
+debrief writes as held state. And it cuts the other way: her own row cannot
+close a note whose closing condition it satisfies, because
+`note_curator.py:685-691` excludes `is_nora` rows from the evidence window
+with a comment that closing on them would be *self-attestation deciding a
+retirement*, and renders the result as the `self_only` state (`:693`,
+`:1389-1400`). That exclusion is doing two jobs: it stops her words being
+evidence (right), and it stops her sent reply being what it is — the thing
+that met the closing condition (the #199 note's condition was *Nora sends
+the route*, and she had).
+
+**The narrowing, stated exactly.** Her own sent row becomes admissible to the
+**closing citation slot only**. It is excluded from discharge grounding:
+`_discharge` resolves `cited_row` once and grounds every commitment and
+person claim on it (`:1199-1220`), so an `is_nora` closing citation would
+make her the grounding sender for a Gathering event — 39 D7 broken in code.
+The contract is therefore *closure may cite her; discharge may not*, and it
+is only a contract if a test proves an `is_nora` citation cannot reach
+`_discharge_commitment`. What already exists on this edge and must not be
+duplicated: `record_wake` / `strikes` / `revisit_at` (`schema.py:1805-1809`,
+39 D6) stamp *raised by her, unanswered*. v1's `last_moved_at` would have
+been a second copy of that.
 
 **Contract.** The outcome header is scoped to the turn; a `Nora:` row after
 the tag is legible to the fold as a delivered reply regardless of outcome; the
 verdict can see the contradiction from the transcript alone; a dead turn does
-not propose notes; closure — not content — may be satisfied by her own row.
-Fixes A1–A4 on #199, landing tonight.
+not propose notes; her own row may be a note's closing citation and nothing
+else. Fixes A1–A3 on #199 are landing tonight; A4 lands only if the
+citation/discharge split above can be proved by mutation inside the current
+commit path, and waits otherwise.
 
 ### 2.3 Orient → Decide — *by design where the gate is concerned; real for the proactive decider*
 
-**The gate.** `relevance_gate.py:18-27`, verbatim:
+**The gate.** `relevance_gate.py:19-28`, verbatim:
 
 > "Does NORA hold something true to add?" It never sees notes, facts or the
 > peer card, so it cannot — and must not pretend to. That question belongs to
 > the participation turn behind the gate… A gate that started guessing the
 > second question would be the 35 design again in a cheaper coat.
 
-That is design 36 decision 5, and the turn behind the gate renders `<notes>`
-and the peer card. v1's flagship seam case ("a note closes in a window →
+That is design 36 §6, and the turn behind the gate renders `<notes>` and the
+peer card. v1's flagship seam case ("a note closes in a window →
 admit") already exists twice in the participation suite and passes. The gate
 is not missing notes; it is a cheap pre-filter *in front of* the decider that
 has them. Nothing here changes that. The one crossing input the gate does have
@@ -145,9 +170,12 @@ DEC-178 is an open question with the experiment attached, not a decision.
 
 ## 3. Which of v1's seams were not seams
 
-- **#186** — the gate's verdict is formed on a transport that drops the
-  decider's *own* reasoning. That is inside the gate. One-file fix, measured
-  6/6 vs 1/6. Landing tonight.
+- **#186** — a **safety breach** in the gate: on the Agent SDK transport a
+  forged `[assistant]:` row inside a member's message is believed, and a false
+  GO there is an unauthenticated turn. Raw completion holds the safety bar 6/6;
+  the transport production runs breaches it 1/6, at 2.4x the tokens. The
+  mechanism (the transport drops the assistant turn's reasoning before the
+  verdict forms) is inside the gate. One-file fix. Landing tonight.
 - **#161 lever 1** — above. Inside the note tier.
 
 Both are real, both matter, neither needs another stage. Keeping them out of

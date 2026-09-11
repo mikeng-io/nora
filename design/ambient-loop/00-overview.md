@@ -10,7 +10,7 @@ edges:
   - {dst: "dreamer-agent-loop/35-ambient-participation", rel: depends_on, provenance: asserted}
   - {dst: "dreamer-agent-loop/26-standing", rel: depends_on, provenance: asserted}
   - {dst: "dreamer-agent-loop/33-note-dreamer-schedule", rel: depends_on, provenance: asserted}
-version: 2
+version: 3
 ---
 
 # The Ambient Loop Is Nora's Second Backbone
@@ -37,7 +37,8 @@ circular rule, and they are worth naming here because each is a way this
 framing can go wrong again:
 
 1. The relevance gate is blind to notes and memory **on purpose** — design 36
-   decision 5 — and the participation *turn* behind it already reads both. v1
+   §6, «the only two things» — and the participation *turn* behind it already
+   reads both. v1
    called that a seam. It is a two-layer Decide, and the layers are the design.
 2. Two of v1's "seams" were component bugs: #186 is a one-file transport swap
    inside the gate; #161's `key` is already the room and the note tier throws
@@ -88,7 +89,7 @@ closer than v1 allowed: tag *does* enter, at Orient, as a writer.
 |---|---|---|
 | **Observe** | every human row lands in the record, marked with its room, its time and who sent it, and is fed to memory | `nora/ingest/` |
 | **Orient** | rows become held state: what is unsettled (notes), where each room stands (Standing), who these people are (Honcho). Written by the note tier, the curator, and **the tag path's debrief** | `note_candidates.py`, `note_curator.py`, `debrief.py`, Honcho |
-| **Decide** | **two deciders, each two-layer.** *Participation:* the gate (cheap — transcript + Standing, blind to notes and memory by design 36) admits a closed window; the turn behind it (everything) decides whether she holds anything to add. *Proactive:* the decide turn (notes, Standing, people, own log — no transcript, 39 D9) schedules a time; the act turn (the home room's transcript) speaks or declines | `relevance_gate.py` + `fire.py` participation; `proactive.py` + `fire.py` proactive |
+| **Decide** | **two deciders, each two-layer.** *Participation:* the gate (cheap — transcript + Standing, blind to notes and memory by design 36 §6, a pure function that writes nothing) admits a closed window; the turn behind it (everything, including `<notes>` when the tier is enabled) decides whether she holds anything to add. *Proactive:* the decide turn (notes, Standing, roster, own log — no transcript, 39 D9) schedules a time; the act turn (the home room's transcript) speaks or declines | `relevance_gate.py` + `fire.py` participation; `proactive.py` + `fire.py` proactive |
 | **Act** | say it, in a room, under the room's policy, or decline | `FirePath.speak` |
 | **feedback** | her rows land; the debrief folds them into Standing; `record_wake`/`strikes` stamp a note she raised | the Act → Observe edge, with 39 §1's brakes |
 
@@ -138,9 +139,21 @@ and it needed to happen before it could be made honestly.
 - **It does not change the architecture.** No new process, no new occasion
   kind. It adds **one store** — the shared decision log (`03` DEC-179) — which
   v1 wrongly claimed already existed.
-- **It does not reverse design 36.** The gate stays cheap and blind to notes
-  and memory. What the gate gains is the loop's own decisions, which are
-  neither.
+- **It does not reverse design 36 §6.** The gate stays cheap, blind to notes
+  and memory, and a pure function — it neither reads nor writes the decision
+  log. The participation *turn* behind it does both. Version 2 gave the gate
+  a `<decisions>` block; a pending proactive row carries a note title
+  (`fire.py:317`), so that was 36's second question under another name.
+- **It narrows one brake and says so.** Design 39 §1's row «Nora's message
+  → note | curator filter» (`note_curator.py:691`, whose comment calls a
+  closure on her own row *self-attestation deciding a retirement*) is narrowed,
+  not kept: her own sent row becomes admissible to a note's **closing
+  citation slot only**, and is excluded from discharge grounding, because
+  `_discharge` grounds every commitment and person claim on the cited row
+  (`:1199-1220`) and 39 D7 forbids her citing herself as the state of the
+  world. The `self_only` state stays for the case where her row is the only
+  evidence. Whether that narrowing is even buildable inside the current commit
+  path is being tested on branch A tonight; if it is not, it waits.
 - **It does not decide DEC-163** (#173). §3's Act → Orient seam is the
   structural half of "keeps track between turns"; whether she is *finished*
   when she has answered is a sentence in `identity.md` and is the operator's.

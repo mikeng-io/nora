@@ -6,7 +6,7 @@ tags: [nora, ambient, ooda, decisions, migration]
 timestamp: '2026-09-11'
 edges:
   - {dst: 00-overview, rel: summarises, provenance: asserted}
-version: 2
+version: 3
 ---
 
 # Decisions, Order, And What Moves
@@ -37,9 +37,10 @@ reason the list is now honest.
 
 Participation (gate → turn) and proactive (decide → act) are one stage asked
 two questions on two triggers. **The gate's layer stays exactly as design 36
-decided it:** cheap, transcript + Standing, blind to notes and memory; the
-turn behind it holds everything. What the deciders gain is sight of each
-other's recent verdicts — and so does the tag path.
+§6 decided it:** cheap, transcript + Standing, blind to notes and memory, a
+pure function that writes nothing. The **turn** behind it holds everything.
+What gains sight of the other decider's recent verdicts is the participation
+turn, the proactive turns, and the tag path — never the gate.
 
 *Evidence:* `01 §1`'s empty "other decider" column; #199's tag turn
 re-deriving a route participation had sent one second earlier. *Reopens if*
@@ -58,14 +59,15 @@ cases. Decided by that number, not by argument. Not landing tonight.
 
 | seam | contract | what it takes |
 |---|---|---|
-| Decide ↔ Decide | one decision log, written by the gate, the participation turn, the proactive decide and act turns, and the tag path; read by all of them for the last 24h of their room | **a new store** — table, port, SQL + in-memory, contract suite. v1 said a column on an existing table; there is none |
-| Act → Orient | the debrief's outcome header is turn-scoped; a `Nora:` row after the tag reads as a delivered reply; the verdict can see the contradiction; a dead turn proposes no note; her own row may satisfy closure | renders, one deterministic check, one predicate — and reconciliation with `record_wake`/`strikes`, which already exist |
+| Decide ↔ Decide | one decision log, written by the participation turn, the proactive decide and act turns, and the tag path; read by the same for the last 24h of their room. **The gate neither reads nor writes it** | **a new store** — table, port, SQL + in-memory, contract suite. v1 said a column on an existing table; there is none. Note: the proactive adaptor's private `_decision_log` (its own reminder rows) is a different thing and keeps its name in code; this is *the shared decision log* |
+| Act → Orient | the debrief's outcome header is turn-scoped; a `Nora:` row after the tag reads as a delivered reply; the verdict can see the contradiction; a dead turn proposes no note; her own row is admissible as a closing **citation** and excluded from discharge **grounding** (`note_curator.py:691` narrowed, `:1199-1220` untouched) | renders, one deterministic check, one predicate split with a mutation that proves an `is_nora` citation cannot reach `_discharge_commitment` — conditional on A4 |
 | Orient → Decide (proactive) | the decide turn can check a note against the record — the shared log first, a bounded window second | the store above, then a render |
 | Observe → Orient | a batch names its room and carries the operator's description | a bug fix and a `policy.toml` field |
 | the medium | DEC-178 | a measurement |
 
-*Reopens if* a stamped closure by her own row starts driving retirement on
-its own — that is the stamp becoming a strike, which `record_wake` already is.
+*Reopens if* an `is_nora` row ever grounds a discharge (39 D7), or if closure
+by her own row starts driving retirement on its own — that is the stamp
+becoming a strike, which `record_wake` already is.
 
 ### DEC-180 — The seam cases and the positive control are a precondition for tuning any single stage again
 
@@ -78,9 +80,9 @@ that is unmeasured cannot be tuned at all.
 
 | where | says | becomes |
 |---|---|---|
-| design 39 §1 | "one loop, two entry points", tag at Act | framing revised by `00 §2`; D1–D13 and the brake table stand |
+| design 39 §1 | "one loop, two entry points", tag at Act | framing revised by `00 §2`; D1–D13 stand; the brake table stands **except one row narrowed** — «Nora's message → note \| curator filter», per DEC-179 |
 | design 39 D9 | `load_transcript` dropped from the decide turn | **stands, with its reversal condition now fired by #199** — the smallest answer is the shared log, not the transcript |
-| design 36 decision 5 | the gate is blind to notes and memory | **stands.** v1 tried to reverse it and was wrong |
+| design 36 §6 | the gate is transcript + Standing, «the only two things» | **stands, untouched.** v1 tried to reverse it with notes; v2 tried again with a `<decisions>` block that carried note titles. Neither lands |
 | design 35 | participation as the fifth Event | stands as the mechanism; the *role* is the participation decider |
 | GLOSSARY *ambient*, *proactive* | a message she records; the loop as the adaptor's | an `ambient loop` entry names the backbone; *proactive* points at it |
 | ARCHITECTURE "two paths, and a background tier" | | two backbones; the two deciders named among the seven occasions |
@@ -112,15 +114,16 @@ For re-derivation. All 2026-09-11 HKT; workspace `ridgeline`.
 |---|---|---|
 | 16:42:43 | Observe | `messages`: Miles, Signal, untagged |
 | 16:42:54 | Decide · gate | Langfuse `91c6ea6a` — admitted |
-| 16:43:57 | Act | `messages` `is_nora=1 delivery_status=sent`; Langfuse `0b7fce09` |
+| 16:43:00 | Act · participation turn | Langfuse `0b7fce09` |
+| 16:43:57 | Act | `messages` `is_nora=1 delivery_status=sent`; `nora.signal.send` «sent 210 chars» |
 | 16:43:57 | Observe | `messages`: `@Nora`, replying to 16:42 |
-| 16:44:04–16:45:13 | tag path | Langfuse `0631322d`: `saved_places`, `route` ×2, six `reasoningContent` warnings, `APIError`, `llm_error` |
+| 16:44:04–16:45:13 | tag path | Langfuse `0631322d`: `saved_places`, `skills`, `route` ×2, six `reasoningContent` warnings, `APIError`, `llm_error` |
 | 16:45:14 | Orient · fold | same trace, `engagement.debrief.fold`: input header unscoped, transcript row `[16:43] Nora:` present; output *«我今日冇出過任何回覆»* + note proposal |
 | 16:45:14 | Orient · verdict | `grounded: true, unsupported: []` |
 | 16:45 | Orient · note | `note 589863b9` *路線未覆*, closing condition *Nora 成功送出路線建議* |
-| 18:03:33 | Decide · proactive | Langfuse `340373cd`: `note_read` ×3, `about`, `search_memory_workspace`, `ask_memory`, `remind` ×2; *«got no route at all»* |
+| 18:03:33 | Decide · proactive | Langfuse `340373cd`: `note_read` ×3, `about`, `search_memory_workspace`, `ask_memory`, then `remind` ×2 at 18:04:06 (the second is the dinner row; from the trace, not the issue); *«got no route at all»* |
 | 18:11:33 | Act | Langfuse `4df78f31`; `reminders bf1333d4` done; Discord |
-| 18:23 | mitigation | note retired by hand |
+| 18:23 | mitigation | `note.retired_at` set by hand (DB time; the issue comment says ~18:30) |
 
 ## 6. Open issues, re-read as seams
 
@@ -130,7 +133,7 @@ For re-derivation. All 2026-09-11 HKT; workspace `ridgeline`.
 | #186 | inside the gate | B, tonight |
 | #161 | Observe → Orient | C, tonight |
 | #160 | inside the proactive decider | E2, tonight |
-| #163 | the ambient Decide — **now live** (the gate admitted at 16:42:54); the timeout arm is #186's transport | parked; re-read after B |
+| #163 | the ambient Decide — **now live** (the gate admitted at 16:42:54, Langfuse `91c6ea6a`); the 19.5% timeout arm is `TimeoutError` out of the same `ask_structured` call #186 replaces — a *candidate* cause, not established | parked; re-read after B |
 | #159, #162 | Orient → Decide — a note's owed date is closing state | after D |
 | #173 (DEC-163) | Act → Observe, the wide half | operator |
 | #118 step 4 | the medium | DEC-178's experiment |
@@ -146,3 +149,5 @@ For re-derivation. All 2026-09-11 HKT; workspace `ridgeline`.
   model what it is reading, never what to do; if that line moves, it is the
   failure `AGENTS.md` names.
 - A1's scoped header making the fold worse on the existing debrief suite.
+- An `is_nora` row reaching `_discharge_commitment` — then "citation, not
+  grounding" was a phrase, and A4 reverts.
