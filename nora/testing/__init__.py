@@ -102,6 +102,10 @@ from nora.testing.fakes import (
     FakeTranscriber,
     transcript_rows,
 )
+from nora.testing.decision_log import (
+    DuplicateDecisionError,
+    InMemoryDecisionLogStore,
+)
 from nora.testing.note_store import InMemoryNoteStore, NoteCandidate
 from nora.testing.scripted_agent import (
     TOOL_CHOICE_FIRST_CALL,
@@ -128,6 +132,7 @@ __all__ = [
     "CannedStreetParkingProvider",
     "CannedTransitSource",
     "CannedWeatherProvider",
+    "DuplicateDecisionError",
     "DuplicateVerdictError",
     "FakeAdapter",
     "FakeAgentRunner",
@@ -150,6 +155,7 @@ __all__ = [
     "InMemoryDreamScheduleClock",
     "InMemoryNoteStore",
     "InMemoryStandingStore",
+    "InMemoryDecisionLogStore",
     "InMemoryTurnVerdictStore",
     "NoteCandidate",
     "ScriptedModel",

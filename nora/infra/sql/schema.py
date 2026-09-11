@@ -59,6 +59,7 @@ import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql as pg
 
+from nora.domain.decision_log import REASON_MAX_CHARS, VERDICTS, WRITERS
 from nora.domain.facts import (
     FACT_PREDICATE_CEILING_CHARS,
     FACT_TERM_CEILING_CHARS,
@@ -2255,4 +2256,82 @@ IDX_TURN_VERDICT_UNGROUNDED = sa.Index(
     # compares CHECK predicates and index ordering, NOT partial-index
     # predicates, so nothing catches it.
     postgresql_where=TURN_VERDICT.c.grounded == sa.false(),
+)
+
+
+def _in_list(values: tuple[str, ...]) -> str:
+    """A closed vocabulary as a SQL `IN` list, derived from the Literal rather
+    than typed out. AGENTS.md's rule for metric labels — «label vocabularies are
+    DERIVED from the code, never hand-copied» — is the same rule: a CHECK that
+    restates a `Literal` by hand is two copies tied by a comment, and the one
+    that drifts is the one nobody re-reads. The MIGRATION spells them out, as
+    every migration in this tree does (a frozen historical statement must not
+    read a live constant), and `tests/infra/test_schema_parity.py` compares the
+    two — so a value added here and not there fails the gate loudly."""
+    return ", ".join(f"'{value}'" for value in values)
+
+
+#: The shared decision log (issue #199): one row per ambient decision, so the
+#: three deciders that can take a room's floor can see each other's verdicts.
+#: Append-only by construction — `SqlDecisionLogStore` has an `append` and two
+#: reads and nothing else, and `id` being the PRIMARY KEY is what makes a reused
+#: id a duplicate-key error rather than a silently replaced decision.
+DECISION_LOG = sa.Table(
+    "decision_log",
+    METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("writer", sa.Text, nullable=False),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    # Empty, never NULL: a room with no policy entry is a WIRING GAP, and the
+    # recorder leaves the column empty rather than guessing a workspace — the
+    # same refusal `FirePath._workspace_for` already makes. One spelling for
+    # "not known" so a workspace read cannot half-match.
+    sa.Column("workspace", sa.Text, nullable=False, server_default=""),
+    # NULLable, and the only nullable column here: solely the proactive decide
+    # turn decides ABOUT a note; every other writer decides about a room.
+    sa.Column("note_id", sa.Text, nullable=True),
+    sa.Column("verdict", sa.Text, nullable=False),
+    sa.Column("reason", sa.Text, nullable=False, server_default=""),
+    sa.Column("ts", sa.BigInteger, nullable=False),
+    # The two closed vocabularies, enforced where a writer that bypassed
+    # `DecisionRow.__post_init__` still meets them. Not tidiness: a row wearing
+    # an unknown `writer` is a decision that both renders silently drop — it is
+    # recorded, never read, and nothing says so.
+    sa.CheckConstraint(
+        f"writer in ({_in_list(WRITERS)})",
+        name="decision_log_writer_is_known_check",
+    ),
+    sa.CheckConstraint(
+        f"verdict in ({_in_list(VERDICTS)})",
+        name="decision_log_verdict_is_known_check",
+    ),
+    # The prompt budget, as DDL. `reason` rides into the Relevance Gate's
+    # prompt on every quiet window in every opted-in room, so an unbounded one
+    # is a per-window token cost paid forever; capped in BOTH places like every
+    # other injected model text in this schema.
+    sa.CheckConstraint(
+        f"length(reason) <= {REASON_MAX_CHARS}",
+        name="decision_log_reason_fits_the_block_check",
+    ),
+)
+
+#: The read BOTH renders make: one room, newest first, inside a window.
+#: `ts DESC` is declared with `sa.text` for `idx_messages_conv_ts`'s reason —
+#: autogenerate cannot see per-column ordering — and
+#: `tests/infra/test_schema_parity.py` asserts the DESC bit off `pg_index`.
+#: `id` rides along as the tie-break so two rows in one millisecond order the
+#: same way the fake orders them.
+IDX_DECISION_LOG_CONV_TS = sa.Index(
+    "idx_decision_log_conv_ts",
+    DECISION_LOG.c.conversation_id, sa.text("ts DESC"), sa.text("id DESC"),
+)
+
+#: The workspace-keyed read. A SECOND index rather than a filter over the one
+#: above, because `recent_for_workspace` does not name a conversation at all and
+#: would otherwise scan: AGENTS.md's «instruments measure the RESULT; something
+#: must measure the COST — check the PLAN or the bound, never the answer».
+IDX_DECISION_LOG_WORKSPACE_TS = sa.Index(
+    "idx_decision_log_workspace_ts",
+    DECISION_LOG.c.workspace, sa.text("ts DESC"), sa.text("id DESC"),
 )

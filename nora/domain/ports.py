@@ -202,6 +202,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
+from nora.domain.decision_log import DecisionRow as DecisionRow
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBlob as MediaBlob
@@ -2153,4 +2154,67 @@ class TurnVerdictStore(Protocol):
         `None` when nothing here has been judged ungrounded, which is the
         ordinary state and is not a reason to re-derive.
         """
+        ...
+
+
+class DecisionLogStore(Protocol):
+    """Where every ambient decision is written, and where the NEXT decider
+    reads what the others already did (issue #199).
+
+    **Append-only, and the absent verbs are the point.** There is no `update`,
+    no `delete` and no upsert: a decision happened, and a log whose rows can be
+    rewritten is not a record of what happened — it is a record of what somebody
+    later wanted to have happened. The same move `TurnVerdictStore` makes by
+    having no `write` and `DreamSink` by having no delete. `id` is the primary
+    key, so a duplicate is a caller reusing an id rather than a second decision,
+    and Postgres says so.
+
+    **Two reads and not one, because they answer different questions.** `recent`
+    is «what has happened in THIS ROOM» — the read both renders make, and the
+    one an index has to serve. `recent_for_workspace` is «what has happened
+    across this social unit», which is what a workspace-keyed decider asks when
+    it has no room yet. Collapsing them would make one of the two an unindexed
+    scan, and AGENTS.md's rule is that something must measure the COST, not just
+    the answer.
+
+    **Both reads are bounded by the store, twice** — `since_ms` and `limit` —
+    rather than by the caller slicing what came back. A block that rides into a
+    cheap gate call on every quiet window cannot be allowed to grow with a busy
+    room's history, and a bound applied after the rows arrive is a bound on the
+    string, not on the query.
+
+    **`limit` takes the NEWEST rows and the result is oldest-first.** Those are
+    two separate statements and a store that gets the first one wrong looks
+    correct: it answers a busy room's oldest 20 decisions, rendered under a
+    «last 24 hours» note, with nothing saying the block is about yesterday.
+    """
+
+    async def append(self, *, row: DecisionRow) -> None:
+        """Write one decision. Raises if the `id` already exists.
+
+        Callers reach this through `nora.domain.decision_log.
+        DecisionLogRecorder`, never directly: the recorder is where the bound
+        and the fail-soft rule live, and a log write must never fail a turn.
+        """
+        ...
+
+    async def recent(
+        self, *, conversation_id: str, since_ms: int, limit: int = ...,
+    ) -> Sequence[DecisionRow]:
+        """This room's decisions at or after `since_ms`, the NEWEST `limit` of
+        them, returned OLDEST-FIRST.
+
+        Oldest-first to match `RecordStore.recent`, which the same prompt
+        renders beside it — one document, one direction of time. Ties on `ts`
+        break on `id` so two implementations answer the same rows in the same
+        order; two decisions in one millisecond are reachable, and issue #199's
+        own incident is a tag turn one second behind a participation answer.
+        """
+        ...
+
+    async def recent_for_workspace(
+        self, *, workspace: str, since_ms: int, limit: int = ...,
+    ) -> Sequence[DecisionRow]:
+        """The same read across every room of one workspace. Same bounds, same
+        order, same tie-break."""
         ...
