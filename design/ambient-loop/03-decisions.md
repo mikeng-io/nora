@@ -111,10 +111,19 @@ tree they left behind):
 
 H is not a seam crossing and is listed here anyway, because it is the row that
 says what `01 §1`'s correction cost: the cell read «✓ peer card» while the turn
-held nothing, and the three `-known` halves of the participation suite had been
-scoring 0/5, 0/5, 1/5 against it. It does not touch DEC-178, which is about the
-NOTE tier and stays open with its experiment attached; it does not touch the
-gate, which stays exactly as 36 §6 decided it.
+held nothing. It does not touch DEC-178, which is about the NOTE tier and stays
+open with its experiment attached; it does not touch the gate, which stays
+exactly as 36 §6 decided it.
+
+**H landed MEASURED, NOT SHIPPED.** Both arms of `make eval-participation`
+(2026-09-11, 5 samples per case) returned 10/15, false-speaks none, and every
+`-known` half at 0/5 — the two new Honcho-cut pairs included. The ship rule was
+not met and the cases were not weakened to meet it. What the run did establish:
+the blocks reach the live model (a captured prefill), and on `asked-before-known`
+3 of 5 branch runs cite the seeded fact against 0 of 5 on master — a delta the
+verdict metric cannot see, because the model declines on staleness and its prose
+is never routed. #213 is the instrument defect behind that, and it is the
+precondition for reading this suite's speak side at all.
 
 **Not tonight:** E1 (the decide turn's bounded record window — D's log is
 tried first), F1 (fire into the thread's room, not the home room — a

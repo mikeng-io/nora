@@ -103,7 +103,11 @@ from nora.domain.notes import (
     default_revisit_at,
     is_tag_path_revision,
 )
-from nora.domain.ports import Proposal, Recollection
+from nora.domain.ports import (
+    DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
+    Proposal,
+    Recollection,
+)
 from nora.domain.prompt import escape, escape_attr
 from nora.domain.reminders import Reminder
 from nora.domain.standing import Standing
@@ -180,12 +184,14 @@ WAKE_CLOCK_NAME = "proactive:wake"
 #: that quietly stopped matching the source is the defect this gate exists for.
 #:
 #: 16 -> 17 on 2026-09-11 (issue #210): `_roster_index`' `representation`, the
-#: depth the `<people>` index gained. ONE site and one added timeout's worth of
-#: hold even though it reads N members, because the reads are GATHERED — the
-#: number this constant feeds is a wall-clock bound, and a concurrent fan-out
-#: costs one round trip however many peers are in it. A per-member `await` in a
-#: loop would have been N and would have had to be counted as N; that is the
-#: reading that would move this number again.
+#: depth the `<people>` index gained. ONE, because this constant counts CALL
+#: SITES — `tests/architecture/test_dream_store_calls_are_declared.py` reads
+#: them off this module's AST, so the number is a property of the source and
+#: not of a run. The gather behind that site fans out to N members; what bounds
+#: THAT is `[memory] roster_index_members` and `read_timeout_seconds` inside
+#: `_roster_index`, not this number. A per-member `await` in a loop would be N
+#: sites and would have to be counted as N; that is the reading that moves this
+#: number again.
 STORE_CALLS_PER_TICK = 17
 
 PassReason = Literal[
@@ -214,6 +220,24 @@ DEFAULT_HISTORY_LIMIT = 400
 DEFAULT_HISTORY_SHOWN = 40
 #: `<self_card>` conclusions, DEC-96's shipped number.
 DEFAULT_SELF_CARD_CONCLUSIONS = 8
+#: How many home-room members `_roster_index` will READ memory for (issue #210).
+#:
+#: The bound is on the READS and NOT on the render, and the split is the whole
+#: point: every member still gets their name and aliases, because a member
+#: missing from the index is invisible to her and invisible is
+#: indistinguishable from absent (`_notes_block`'s argument in
+#: `nora/agent/prefill.py`, which is why THAT block has no cap at all). What is
+#: capped is the Honcho fan-out — one concurrent `representation` per member,
+#: and a forty-person Discord home room is forty concurrent calls on the front
+#: of a pass.
+#:
+#: The participation turn bounds its own reads on both axes and states that the
+#: bound is on the reads; a reviewer pointed out on 2026-09-11 that the same
+#: argument had not been applied here. It is the roster's ORDER that decides
+#: who is read — `Room.members()`' order, which is the roster's own — so this
+#: is a cheap bound rather than a good one; a home room past it wants a
+#: relevance order, which is a different change.
+DEFAULT_ROSTER_INDEX_MEMBERS = 12
 #: How much of a Standing body reaches the prompt. Standing is capped at 1200
 #: chars by its own tier; this is a second, per-room bound so N rooms cannot
 #: crowd the notes out of the window.
@@ -390,6 +414,13 @@ class ProactiveAdaptor:
         # aliases, no memory read at all, which is what a composition with no
         # `memory` degrades to anyway.
         roster_index_conclusions: int = 0,
+        #: How many members the index READS for, and the wall clock over the
+        #: whole batch. Both are belts: `DreamerRuntime` already bounds
+        #: `inputs` at `store_calls_per_tick x [dreamer] store_timeout_seconds`,
+        #: but that bound is shared with sixteen other call sites and says
+        #: nothing about how many concurrent Honcho calls one of them may make.
+        roster_index_members: int = DEFAULT_ROSTER_INDEX_MEMBERS,
+        read_timeout_seconds: float = DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
         metrics: Metrics | None = None,
         clock_store: _PassClock | None = None,
         records: _TranscriptSource | None = None,
@@ -420,6 +451,8 @@ class ProactiveAdaptor:
         self._history_shown = history_shown
         self._self_card_conclusions = self_card_conclusions
         self._roster_index_conclusions = roster_index_conclusions
+        self._roster_index_members = roster_index_members
+        self._read_timeout_seconds = read_timeout_seconds
         self._metrics = metrics
         # The durable pass/wake clock (module docstring). `None` renders every
         # tick and counts `unclocked` — the contract fake and the eval drive;
@@ -654,32 +687,58 @@ class ProactiveAdaptor:
         other members are not on the hook for it — counted once per failure on
         its own stage.
 
-        `{}` when the knob is 0 or there is no memory port at all, which is the
-        pre-#210 block byte-for-byte.
+        BOUNDED on both axes, for the reason `FirePath._read_memory` is: the
+        fan-out is one concurrent Honcho call PER MEMBER, and a forty-person
+        home room is forty of them on the front of a pass.
+        `[memory] roster_index_members` caps how many are READ (never how many
+        are rendered — see `DEFAULT_ROSTER_INDEX_MEMBERS`), and
+        `read_timeout_seconds` bounds the whole batch.
+
+        `{}` when either knob is 0 or there is no memory port at all, which is
+        the pre-#210 block byte-for-byte.
         """
-        if self._memory is None or self._roster_index_conclusions <= 0:
+        if (
+            self._memory is None
+            or self._roster_index_conclusions <= 0
+            or self._roster_index_members <= 0
+        ):
             return {}
         targets = tuple(dict.fromkeys(
             person.honcho_peer_id for person in people if person.honcho_peer_id
-        ))
+        ))[:self._roster_index_members]
         if not targets:
             return {}
-        results = await asyncio.gather(*(
-            self._memory.representation(
-                peer_id=self._ai_peer,
-                target=target,
-                # The pass is about what this group has NOT SETTLED, so the
-                # index is curated to that question rather than to a message
-                # (there is none — 39 D9 drops the transcript from this turn).
-                search_query="what is still open with this person in this group",
-                max_conclusions=self._roster_index_conclusions,
+        try:
+            results = await asyncio.wait_for(asyncio.gather(*(
+                self._memory.representation(
+                    peer_id=self._ai_peer,
+                    target=target,
+                    # The pass is about what this group has NOT SETTLED, so the
+                    # index is curated to that question rather than to a message
+                    # (there is none — 39 D9 drops the transcript from this turn).
+                    search_query="what is still open with this person in this group",
+                    max_conclusions=self._roster_index_conclusions,
+                )
+                for target in targets
+            ), return_exceptions=True), timeout=self._read_timeout_seconds)
+        except Exception:
+            # A port that never ANSWERS, which the per-member handling below
+            # cannot see: that catches a raise. Costs the whole index and
+            # nothing else — the names still render.
+            log.exception("proactive: the roster index exceeded its bound")
+            self._inc(
+                "nora_errors_total", stage=STAGE_PROACTIVE_ROSTER_INDEX,
+                platform=platform,
             )
-            for target in targets
-        ), return_exceptions=True)
+            return {}
         index: dict[str, tuple[str, ...]] = {}
         for target, result in zip(targets, results, strict=True):
             if isinstance(result, BaseException) or not result.reachable:
-                log.warning("proactive: roster-index recall failed for one member")
+                log.warning(
+                    "proactive: roster-index recall failed for one member (%s)",
+                    "unreachable" if not isinstance(result, BaseException)
+                    else type(result).__name__,
+                )
                 self._inc(
                     "nora_errors_total", stage=STAGE_PROACTIVE_ROSTER_INDEX,
                     platform=platform,

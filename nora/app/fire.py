@@ -2390,11 +2390,15 @@ def _window_query(transcript: Sequence[TranscriptRow]) -> str:
     already gave is the loudest self-echo there is (39 §1's argument for
     dropping `load_transcript` from the decide turn, one path over).
     """
+    # FILTER, then slice. It sliced first until a reviewer read it on
+    # 2026-09-11: a window whose newest six rows are four of her own replies
+    # then yielded a two-row retrieval key, which is not «the window's newest
+    # rows» — it is however many of them she did not write.
     bodies = [
-        row.body.strip() for row in tuple(transcript)[-_QUERY_ROWS:]
+        row.body.strip() for row in transcript
         if not row.is_nora and row.body and row.body.strip()
     ]
-    return "\n".join(bodies)[:_QUERY_CHARS]
+    return "\n".join(bodies[-_QUERY_ROWS:])[:_QUERY_CHARS]
 
 
 def _synthetic_message(

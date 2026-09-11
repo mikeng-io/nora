@@ -24,18 +24,18 @@ wrong; the corrections are marked.
 | **Orient · note-curation** | **✓ per-note window, injected** (v1 said ✗) | ✗ | ✓ | ✗ | ✗ | — |
 | **Orient · Standing fold** (tag path) | the exchange, injected | prior | ✗ | ✗ | ✗ | **✗** (v1 said ✓; `render_debrief_turn` names no room) |
 | **Decide · gate** | ✓ with ages | ✓ with age | ✗ *by design 36 §6* | ✗ *by design 36 §6* | ✗ — and stays so | **✗** (v1 said ✓; the prompt names no room, label or platform) |
-| **Decide · participation turn** | ✓ | ✓ | **✓ `<notes>`** when `[notes] enabled` (on the deployment; not the shipped default) | **was ✗ — NOTHING** (v1-v4 said «✓ peer card»; the card is keyed on a tagger the occasion does not have, `fire.py:509` `person_id=None` → `fire.py:854` `ref is None` → `peer_card=()`, and `<self_card>`/`<peer_history>` were assembled only by the tag path's `engagement/context.py:208`). **Now ✓ `<self_card>` + `<people_in_window>`** — 2026-09-11, #210, `fire.py:958`/`:974`, rendered `prefill.py:479` | ✗ | ✓ |
-| **Decide · proactive decide** | ✗ (39 D9) | ✓ per room, aged | ✓ | roster injected, **now with 1 conclusion per member** (2026-09-11, #210, `proactive.py:606`/`:636`); Honcho still **callable** for depth, which is what the #206 ration is now free to buy (v1 called the `<people>` block Honcho — it was the roster alone) | own log only | home room |
+| **Decide · participation turn** | ✓ | ✓ | **✓ `<notes>`** when `[notes] enabled` (on the deployment; not the shipped default) | **was ✗ — NOTHING** (v1-v4 said «✓ peer card»; the card is keyed on a tagger the occasion does not have, `fire.py:562` `person_id=None` → `fire.py:926` `if ref is not None` → `peer_card=()`, and `<self_card>`/`<peer_history>` were assembled only by the tag path's `engagement/context.py:208`). **Now ✓ `<self_card>` + `<people_in_window>`** — 2026-09-11, #210, `fire.py:958`/`:974`, rendered `prefill.py:479` | ✗ | ✓ |
+| **Decide · proactive decide** | ✗ (39 D9) | ✓ per room, aged | ✓ | roster injected, **now with 1 conclusion per member** (2026-09-11, #210, `proactive.py:600` `_people_block` / `:677` `_roster_index`); Honcho still **callable** for depth, which is what the #206 ration is now free to buy (v1 called the `<people>` block Honcho — it was the roster alone) | own log only | home room |
 | **Decide · proactive act** | home room's, injected | ✓ | ✓ | ✓ | ✗ | home room |
 
 Where each cell comes from: `relevance_gate.py:19-28` (the gate's deliberate
 blindness, quoted in §2.3), `:534` (the prompt is built from transcript and
 Standing alone — no room); `fire.py:551, :631` (the participation turn's
 `<notes>`; `:683` records that the block rendered on no fire occasion before
-the tier was wired); `fire.py:974-1010` (`_read_memory`, the participation-only
-gate on both Honcho reads — #210); `proactive.py:449-479` (`inputs()`), `:532`
+the tier was wired); `fire.py:974` (`_read_memory`, the participation-only
+gate on both Honcho reads — #210); `proactive.py:479` (`inputs()`), `:600`
 (`_people_block`, which read the roster and NOT memory until #210 gave it
-`:636` `_roster_index`); `note_candidates.py:492`
+`:677` `_roster_index`); `note_candidates.py:492`
 (`room = workspace or key`); `note_curator.py:672` (the per-note transcript
 window); `debrief_render.py:240-247` (no room label, id-suppression at
 `:34-42`).
@@ -56,12 +56,20 @@ Three readings:
    (`c41b8b38`): the occasion is built `person_id=None`, so the card was `()`
    and the two `representation` blocks were never assembled on this path at
    all. So the true count was **three** stages, and the third was the one the
-   whole ambient loop turns on. The instrument said so and nobody read it: the
-   three `-known` halves of the participation suite scored 0/5, 0/5, 1/5 on
-   both arms the night before — exactly the knowledge-dependent cases — while
-   the table claimed the turn had memory. What is fixed is the turn; what
-   should have caught it earlier is that a cell in this table has to be read
-   off `build_context`, not off the design that specified it.
+   whole ambient loop turns on. A cell in this table has to be read off
+   `build_context`, not off the design that specified it.
+
+   **What the numbers do and do not say.** The three `-known` halves of the
+   participation suite scored 0/5, 0/5, 1/5 on both arms the night before, and
+   v5 of this node first wrote that down as the instrument having said so while
+   nobody read it. That attribution is not supported and is withdrawn: when
+   #210's blocks were built and both arms re-run (2026-09-11, 5 samples each),
+   the five `-known` halves stayed at 0/5 on the branch too, and the model's own
+   prose gave its reason on nearly every run — the window is «a week old». The
+   message under judgement renders at the epoch and sorts above the seeded
+   window (#213), so the suite's speak side cannot currently separate «she does
+   not know» from «none of this looks live». The wrong cell was real and is
+   fixed; it is not what those scores measured.
 
 ## 2. The five seams
 

@@ -631,3 +631,46 @@ def test_the_tag_path_renders_no_people_in_window_block() -> None:
     ))
 
     assert "people_in_window" not in rendered
+
+
+async def test_the_query_takes_the_newest_human_rows_not_what_is_left_after_hers(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """It sliced the window and THEN dropped her own rows, so a window whose
+    newest six rows were four of her replies yielded a two-row retrieval key —
+    not «the window's newest rows» but however many of them she did not write.
+    Caught in review, 2026-09-11."""
+    store = FakeRecordStore()
+    ts = int(T0.timestamp() * 1000)
+    await store.append(
+        message=NormalizedMessage(
+            "signal", "conv-1", "group", "+85211", "Miles", ts, "OLDEST HUMAN", {},
+        ),
+        person_id=None,
+    )
+    for i in range(6):
+        await store.append(
+            message=NormalizedMessage(
+                "signal", "conv-1", "group", "", "Nora", ts + (i + 1) * 1000,
+                f"HER ROW {i}", {},
+            ),
+            is_nora=True, person_id=None,
+        )
+    await store.append(
+        message=NormalizedMessage(
+            "signal", "conv-1", "group", "+85211", "Miles", ts + 9000,
+            "NEWEST HUMAN", {},
+        ),
+        person_id=None,
+    )
+    memory = FakeMemoryStore(conclusions={"miles": ["x"]})
+    path = _path(persons, store, memory, doctrine_store, metrics)
+
+    await path.build_context(participation_occasion(
+        platform="signal", conversation_id="conv-1",
+    ))
+
+    query = next(q for _, _, q in memory.queries)
+    assert "NEWEST HUMAN" in query
+    assert "OLDEST HUMAN" in query          # both survive; only SIX rows are kept
+    assert "HER ROW" not in query

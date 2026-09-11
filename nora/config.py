@@ -175,6 +175,14 @@ class MemoryConfig(BaseModel):
     # continuity, so a promise she made last night survives falling out of the
     # transcript window. 0 disables the block entirely.
     #
+    # It drives TWO turns since issue #210, and the comment below was written
+    # for one of them: the tag turn, and the participation turn behind the
+    # ambient gate. The arithmetic is the tag loop's and is the binding one
+    # (`turns = 20` against a participation turn's single pass), so 8 is if
+    # anything conservative on the ambient path — but it is deliberately NOT
+    # the number `people_in_window_conclusions` takes, because that one is
+    # multiplied by up to four speakers and this one is not.
+    #
     # Small on purpose. This is a PER-TAG block, so unlike the doctrine it is
     # not in the cached static head and is re-sent on every model call of the
     # loop: her live representation measured 2,459 chars (~820 tokens) at 25
@@ -211,7 +219,7 @@ class MemoryConfig(BaseModel):
     # deciding WHETHER to speak, and the question it needs memory for («does
     # this room mean her?») is answered by the top few conclusions or not at
     # all.
-    people_in_window_conclusions: int = 3
+    people_in_window_conclusions: int = Field(default=3, ge=0)
     # How many DISTINCT SPEAKERS of the window get a `<people_in_window>` entry,
     # most recent speaker first. 0 disables the block.
     #
@@ -221,7 +229,7 @@ class MemoryConfig(BaseModel):
     # is the number of people who actually speak in a quiescence window on the
     # deployment; the bound is on the READS, not just on the render, so raising
     # it costs latency as well as tokens.
-    people_in_window_speakers: int = 4
+    people_in_window_speakers: int = Field(default=4, ge=0)
     # The PROACTIVE decide turn's roster index depth (design 39 D9: inject the
     # index, call for depth) — how many conclusions per home-room member ride
     # in `<people>`. 0 leaves the block exactly as it was: names and aliases.
@@ -232,7 +240,13 @@ class MemoryConfig(BaseModel):
     # DEPTH («what did Aaron say about Saturday») instead of on «who is Aaron».
     # An index that carried eight conclusions each would BE the depth, and the
     # ration would have nothing left to buy.
-    roster_index_conclusions: int = 1
+    roster_index_conclusions: int = Field(default=1, ge=0)
+    # How many home-room members the proactive index READS memory for. The
+    # render is uncapped — every member keeps their name and aliases, because a
+    # member missing from the index is invisible to her — so this bounds the
+    # Honcho FAN-OUT only: one concurrent read per member, and a forty-person
+    # Discord home room is forty of them on the front of a pass.
+    roster_index_members: int = Field(default=12, ge=0)
     # The wall-clock bound on the participation turn's memory reads, in seconds.
     #
     # `HonchoClient.representation` already carries its own 3s transport

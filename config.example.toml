@@ -31,9 +31,16 @@ base_url = "http://whatsapp-bridge:18081"  # the containerized Baileys bridge;
 [memory]
 base_url = "http://127.0.0.1:8000"
 workspace_id = "nora"
-# `<self_card>` — how many of HER OWN conclusions ride in the per-tag prefill,
-# so a promise she made last night survives falling out of the transcript
-# window. 0 turns the block off. From `representation`, never from the peer
+# `<self_card>` — how many of HER OWN conclusions ride in the prefill, so a
+# promise she made last night survives falling out of the transcript window.
+# 0 turns the block off.
+#
+# TWO turns since issue #210: the tag turn, and the participation turn behind
+# the ambient gate. The arithmetic below is the tag loop's and is the binding
+# one (`turns = 20` against a participation turn's single pass), so 8 is if
+# anything conservative on the ambient path. It is deliberately NOT the number
+# `people_in_window_conclusions` takes: that one is multiplied by up to four
+# speakers and this one is not. From `representation`, never from the peer
 # CARD: read live 2026-08-11 her card asserts «Kind: AI chatbot/assistant» and
 # «Owner: 主人 with admin authority» — both distilled from her own output, both
 # contradicting identity.md, and both would WIN against the doctrine because a
@@ -83,6 +90,16 @@ people_in_window_speakers = 4
 # on «who is Aaron». An index carrying eight conclusions each WOULD be the depth,
 # and the ration would have nothing left to buy.
 roster_index_conclusions = 1
+# How many home-room members that index READS memory for. The render is
+# uncapped — every member keeps their name and aliases, because a member
+# missing from the index is invisible to her and invisible is indistinguishable
+# from absent — so this bounds the Honcho FAN-OUT only: `_roster_index` issues
+# one concurrent read per member, and a forty-person Discord home room would be
+# forty of them on the front of a pass. Members past the cap keep their names
+# and get no «·» line; the order is the roster's own, which makes this a cheap
+# bound rather than a good one (a home room past it wants a relevance order,
+# which is a different change).
+roster_index_members = 12
 # The wall-clock bound on the participation turn's memory reads, over the WHOLE
 # concurrent batch. `HonchoClient.representation` already carries its own 3s
 # transport timeout, so this is a belt over the PORT: an implementation is not

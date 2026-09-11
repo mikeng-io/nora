@@ -2884,6 +2884,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     # numbers come from, so «how much memory may a prompt hold»
                     # has one operator-visible home rather than two.
                     roster_index_conclusions=cfg.memory.roster_index_conclusions,
+                    roster_index_members=cfg.memory.roster_index_members,
+                    read_timeout_seconds=cfg.memory.read_timeout_seconds,
                     metrics=metrics,
                     # The SAME schedule-state store the runtime's slots use,
                     # for the pass and wake clocks (issue #136); the audit

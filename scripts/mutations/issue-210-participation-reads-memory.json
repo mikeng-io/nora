@@ -72,7 +72,7 @@
   {
     "name": "#210 — the proactive roster index carries memory, not just names",
     "file": "nora/language/proactive.py",
-    "old": "        if self._memory is None or self._roster_index_conclusions <= 0:\n            return {}",
+    "old": "        if (\n            self._memory is None\n            or self._roster_index_conclusions <= 0\n            or self._roster_index_members <= 0\n        ):\n            return {}",
     "new": "        if True:\n            return {}",
     "target": "tests/unit/test_proactive_adaptor.py -k people_index_carries_one_line_of_what_she_remembers"
   },
@@ -86,8 +86,8 @@
   {
     "name": "#210 — a failed roster recall costs that member and is counted",
     "file": "nora/language/proactive.py",
-    "old": "            for target in targets\n        ), return_exceptions=True)",
-    "new": "            for target in targets\n        ))",
+    "old": "                for target in targets\n            ), return_exceptions=True), timeout=self._read_timeout_seconds)",
+    "new": "                for target in targets\n            )), timeout=self._read_timeout_seconds)",
     "target": "tests/unit/test_proactive_adaptor.py -k failed_roster_recall_costs_that_member"
   },
   {
@@ -107,8 +107,8 @@
   {
     "name": "#210 — an unreachable Honcho is counted, not read as «nothing known»",
     "file": "nora/language/proactive.py",
-    "old": "            if isinstance(result, BaseException) or not result.reachable:\n                log.warning(\"proactive: roster-index recall failed for one member\")",
-    "new": "            if isinstance(result, BaseException):\n                log.warning(\"proactive: roster-index recall failed for one member\")",
+    "old": "            if isinstance(result, BaseException) or not result.reachable:\n                log.warning(\n                    \"proactive: roster-index recall failed for one member (%s)\",",
+    "new": "            if isinstance(result, BaseException):\n                log.warning(\n                    \"proactive: roster-index recall failed for one member (%s)\",",
     "target": "tests/unit/test_proactive_adaptor.py -k unreachable_honcho_thins_the_index"
   },
   {
@@ -117,5 +117,26 @@
     "old": "STORE_CALLS_PER_TICK = 17",
     "new": "STORE_CALLS_PER_TICK = 16",
     "target": "tests/architecture/test_dream_store_calls_are_declared.py -k declared_count_is_the_count_the_source_holds"
+  },
+  {
+    "name": "#210 — the roster index's Honcho fan-out is BOUNDED by member count",
+    "file": "nora/language/proactive.py",
+    "old": "        ))[:self._roster_index_members]",
+    "new": "        ))",
+    "target": "tests/unit/test_proactive_adaptor.py -k roster_index_reads_no_more_members_than_the_bound"
+  },
+  {
+    "name": "#210 — a roster index that never answers is bounded and counted",
+    "file": "nora/language/proactive.py",
+    "old": "            ), return_exceptions=True), timeout=self._read_timeout_seconds)",
+    "new": "            ), return_exceptions=True), timeout=3600)",
+    "target": "tests/unit/test_proactive_adaptor.py -k roster_index_that_never_answers_is_bounded"
+  },
+  {
+    "name": "#210 — the retrieval key filters her own rows BEFORE it slices",
+    "file": "nora/app/fire.py",
+    "old": "    bodies = [\n        row.body.strip() for row in transcript\n        if not row.is_nora and row.body and row.body.strip()\n    ]\n    return \"\\n\".join(bodies[-_QUERY_ROWS:])[:_QUERY_CHARS]",
+    "new": "    bodies = [\n        row.body.strip() for row in tuple(transcript)[-_QUERY_ROWS:]\n        if not row.is_nora and row.body and row.body.strip()\n    ]\n    return \"\\n\".join(bodies)[:_QUERY_CHARS]",
+    "target": "tests/unit/test_people_in_window.py -k query_takes_the_newest_human_rows"
   }
 ]
