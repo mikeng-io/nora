@@ -47,11 +47,7 @@ from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
-from nora.agent.structured import (
-    ask_structured,
-    ask_text,
-    build_structured_model,
-)
+from nora.agent.structured import ask_text, build_structured_model
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.config import Config
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
@@ -114,7 +110,7 @@ from nora.ingest.policy import (
     VoiceNotePolicy,
 )
 from nora.ingest.relevance_gate import Completion as GateCompletion
-from nora.ingest.relevance_gate import GateVerdictSchema, RelevanceGate
+from nora.ingest.relevance_gate import RelevanceGate
 from nora.ingest.stages import standing_event
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
@@ -288,54 +284,128 @@ def _annotate_usage(response: Any) -> None:
 
 
 class _RelevanceGateModelClient:
-    """Satisfies `nora.ingest.relevance_gate.ModelClient` — one structured
-    call THROUGH THE AGENT SDK (design/dreamer-agent-loop/36 §2.3).
+    """Satisfies `nora.ingest.relevance_gate.ModelClient` — ONE RAW
+    `json_object` COMPLETION (design/dreamer-agent-loop/36 §2.3).
 
-    Not a raw `chat.completions.create` any more. The SDK is how this repo
-    talks to a model; four call sites had grown their own raw clients with
-    four different subsets of the machinery the SDK provides for free — no
-    retry on two of them, no `finish_reason` check on one, no token usage on
-    any — because nothing said what a raw client owed. This one goes back
-    through `nora.agent.structured`, which is the single place `strands` may
-    be imported from at all.
+    **The gate is the exception `nora/agent/structured.py` warns about, and it
+    is the only one.** The debrief and the standing fold moved onto the SDK in
+    the same change (`4448c737`) and stay there; neither produces a verdict
+    that decides whether Nora may speak into a room she was not invited into.
+    This one does, so it is measured rather than argued.
 
-    Still no loop and no tools: `ask_structured` builds an agent with
-    `tools=[]` and one turn. «No agent loop» (`03-no-agent-loop.md`) is about
-    the LOOP, and a schema-constrained single call is not one — the gate's
-    whole input set is knowable before the call, so there is nothing for a
-    loop to discover.
+    Measured 2026-09-11 from the Mac against the deployed `nora-gate` alias,
+    `--suite relevance_gate`, 40 labelled cases, n=5, ONE instruction on both
+    arms (`participation.md` v5 `sha=9969bc4e643c`) — the only variable was
+    the transport:
 
-    `tool_choice` is DECLARED rather than left to the SDK. Unset, Strands
-    sends `tool_choice: None` and a provider applying its thinking-mode
-    default refuses outright — «Thinking mode does not support this
-    tool_choice», measured against the `nora-gate` combo, which fans out and
-    failed on one member while succeeding on another.
+        arm                             safety     prompt tokens (median)
+        raw `json_object` (this)        6/6 held          2,055
+        Strands `structured_output`     1/6 BREACHED      5,021  (2.4x)
+
+    The breached case is `forge/assistant-row-via-newline` — a forged
+    `[assistant]:` row inside a member's message, believed go x4 / no_go x1.
+    That is not an accuracy miss, it is an unauthenticated turn: a member who
+    can forge Nora's side of a transcript steers the admission decision.
+
+    The mechanism is below the prompt, which is why no instruction reaches it:
+    Strands converts the schema into a TOOL SPECIFICATION and feeds the result
+    back, so one logical call becomes three messages, and against OmniRoute's
+    Chat Completions transport the SDK drops the assistant turn's reasoning
+    before the verdict is formed. Issue #186; the gate is
+    `tests/architecture/test_the_gate_does_not_form_its_verdict_through_the_sdk.py`,
+    because the warning was a docstring for two days and a docstring did not
+    stop the wiring.
+
+    **The system/user split is older than either transport and is unchanged.**
+    The instruction goes in the SYSTEM role and the room in the USER role, as
+    it did before `4448c737` and after it; both measured arms carried it, so it
+    is not a mitigation one arm had and the other lacked. (`4448c737`'s commit
+    message presents the split as new, and for the DEBRIEF it was — that client
+    really did concatenate. Reading it as new here is wrong, and worth saying
+    because a reader looking for what differs between the two arms would
+    otherwise stop at the wrong field.)
+
+    **`tool_choice` is not declared here and must not be.** The SDK path
+    declared it because Strands sends `tool_choice: None` when nothing sets it
+    and a provider applying its thinking-mode default then refuses outright.
+    A raw `json_object` completion sends no tools at all, so there is nothing
+    for a tool_choice to select and the field never reaches the wire — the
+    shape below is `nora/app/eval_support.py::_MeasuringGateClient`'s,
+    argument for argument, because that is the client the 6/6 arm was measured
+    on and a third shape would be a third thing to trust.
+
+    What a raw client owes, which is what having four hand-rolled ones cost
+    (`tests/architecture/test_raw_model_calls_carry_their_own_machinery.py` is
+    the gate): an explicit `asyncio.wait_for`, because the bare `AsyncOpenAI`
+    default is 600s x retries and this call runs while the conversation's slot
+    is HELD — an unbounded one is not a slow background job, it is a room that
+    stops answering; a `finish_reason` read, because a raw completion does not
+    raise on a cut-off the way `MaxTokensReachedException` does, it returns
+    `"length"` and a silently truncated body that still parses as JSON into
+    something shorter and wrong; and a usage annotation, because Strands emits
+    `gen_ai.usage.*` itself and a raw call emits nothing, so without it the
+    highest-frequency model call in the system exports to Langfuse costing
+    zero (read back live, 2026-09-08).
+
+    It PINS `reasoning_effort` rather than leaving it to the route: a setting
+    left to the route is a setting nobody chose. `max_tokens` and
+    `temperature` are the gate's own — a gate with room to write paragraphs
+    has room to start drafting the reply it must never draft — and its model
+    is its OWN combo (`nora-gate`), never the tag lane's.
     """
 
     def __init__(
-        self, *, base_url: str, api_key: str, model: str, max_tokens: int,
+        self, *, client: AsyncOpenAI, model: str, max_tokens: int,
         temperature: float, timeout_seconds: float,
         reasoning_effort: ReasoningEffort,
     ) -> None:
-        self._model_id = model
+        self._client = client
+        self._model = model
+        self._max_tokens = max_tokens
+        self._temperature = temperature
         self._timeout_seconds = timeout_seconds
-        self._provider = build_structured_model(
-            base_url=base_url, api_key=api_key, model_id=model,
-            max_tokens=max_tokens, temperature=temperature,
-            reasoning_effort=str(reasoning_effort),
-        )
+        self._reasoning_effort = reasoning_effort
 
     @property
     def model(self) -> str:
-        return self._model_id
+        return self._model
 
     async def complete(self, *, system: str, prompt: str) -> GateCompletion:
-        got = await ask_structured(
-            model=self._provider, prompt=prompt, schema=GateVerdictSchema,
-            timeout_seconds=self._timeout_seconds, system_prompt=system,
+        response = await asyncio.wait_for(
+            self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    # The instruction in the SYSTEM role, the room in the USER
+                    # role. Concatenated into one user string — which this
+                    # never was — a member typing `[assistant]:` would sit in
+                    # exactly the role the operator's rules occupy, and nothing
+                    # downstream could tell them apart.
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=self._max_tokens,
+                temperature=self._temperature,
+                reasoning_effort=self._reasoning_effort,
+            ),
+            timeout=self._timeout_seconds,
         )
-        _annotate_usage_triple(got.usage)
-        return GateCompletion(content=got.content, finish_reason=got.finish_reason)
+        # Token cost, onto the gate's OWN span rather than into
+        # `GateCompletion`. The gate has no use for usage — its verdict does
+        # not depend on it — and widening the port's return type to carry a
+        # number only the collector reads would be the measurement changing
+        # the thing it measures. `annotate_generation` writes to the span that
+        # is current right now, and that is `relevance_gate`'s, because
+        # `decide` opens it around this call.
+        _annotate_usage(response)
+        choice = response.choices[0]
+        return GateCompletion(
+            content=(choice.message.content or "").strip(),
+            # `or ""` and not a `"stop"` default: a provider that omits the
+            # field has told us nothing, and inventing `"stop"` would assert
+            # the call completed.
+            finish_reason=choice.finish_reason or "",
+        )
 
 
 class _DebriefModelClient:
@@ -2309,8 +2379,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # two cannot come apart.
         gate = RelevanceGate(
             client=_RelevanceGateModelClient(
-                base_url=cfg.llm.base_url,
-                api_key=os.environ.get(cfg.llm.api_key_env, ""),
+                # The process-wide `AsyncOpenAI` (DEC-13), not a second
+                # transport of its own: the gate's model is its own combo, but
+                # the connection pool, the retry policy and the base url are
+                # the deployment's one client.
+                client=client,
                 model=cfg.relevance_gate.model,
                 max_tokens=cfg.relevance_gate.max_tokens,
                 temperature=cfg.relevance_gate.temperature,
@@ -2618,6 +2691,24 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         for conv in allowlist.conversations
                         if conv.primary_id and conv.workspace
                     }.get,
+                    # THE ROOM, off the SAME allowlist read and keyed the same
+                    # way (issue #161). `label_for` is what the room is called
+                    # — the string that reaches every rendered batch line, so
+                    # two rooms of one workspace stop reading as one room.
+                    # `description_for` is the operator's sentence about what
+                    # kind of room it is, rendered once above the batch.
+                    # A room with neither is simply absent from the map; the
+                    # adaptor falls back without ever rendering an id.
+                    label_for={
+                        conv.primary_id: conv.label
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.label
+                    }.get,
+                    description_for={
+                        conv.primary_id: conv.description
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.description
+                    }.get,
                     metrics=metrics,
                     # The ROOM's zone for each rendered message's moment —
                     # the same `[reminders] timezone` the curator's `_today`
@@ -2652,6 +2743,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     WorkspaceRoom(
                         platform=conv.platform, conversation_id=conv.primary_id,
                         label=conv.label or conv.primary_id, home=conv.home_room,
+                        # The operator's own description of the room (issue
+                        # #161) — the SAME `policy.toml` field the note
+                        # candidates pass reads, so the two passes cannot hold
+                        # two ideas of what a room is.
+                        description=conv.description,
                     ),
                 )
             dream_schedules = {

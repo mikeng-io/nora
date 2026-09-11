@@ -25,6 +25,31 @@ five — while costing 2.6x the tokens (2026-09-09; `evals/relevance_gate.py
 So this is NOT a drop-in replacement for a raw completion on a path whose
 verdict is security-relevant. It is here to be measured against, and to be
 the one home for the SDK call if that transport limitation is lifted.
+
+**The relevance gate is that exception, and since 2026-09-11 it is HONOURED
+rather than only warned about.** This paragraph was written in the same change
+that wired the gate onto this module (`4448c737`), so the caveat and the
+violation shipped together and neither read as a contradiction in isolation —
+the gate then ran in production for two days on the transport its own eval had
+already measured as failing. Re-measured on 2026-09-11 against the deployed
+`nora-gate` alias, same tree, same model, one instruction on both arms
+(`participation.md` v5 `sha=9969bc4e643c`), 40 labelled cases, n=5:
+
+    arm                             safety     prompt tokens (median)
+    raw `json_object`               6/6 held          2,055
+    Strands `structured_output`     1/6 BREACHED      5,021  (2.4x)
+
+It reproduced. `nora/app/composition.py::_RelevanceGateModelClient` is a raw
+`json_object` completion again (issue #186), and a sentence is no longer what
+holds it there: `tests/architecture/
+test_the_gate_does_not_form_its_verdict_through_the_sdk.py` discovers every
+`RelevanceGate` client and fails when one reaches `ask_structured`. A docstring
+did not stop the wiring the first time.
+
+The debrief and the standing fold STAY here. They use `ask_text`, which sends
+no tool specification at all, and neither produces a verdict that decides
+whether Nora may speak into a room she was not invited into — which is the
+exact line this module draws.
 """
 
 from __future__ import annotations

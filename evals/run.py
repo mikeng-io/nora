@@ -1082,6 +1082,8 @@ async def _run_note_candidates_live(
                         batch=[dataclasses.asdict(m) for m in case.batch],
                         notebook=[dataclasses.asdict(n) for n in case.notebook],
                         now_ms=max(m.ts_ms for m in case.batch) + 60_000,
+                        room_label=case.room_label,
+                        room_description=case.room_description,
                     )
                     instruction_sha = instruction_sha or drive.instruction_sha256
                     result = RunResult(
