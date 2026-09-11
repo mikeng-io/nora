@@ -69,9 +69,8 @@ from nora.domain.tag_trace import TagTrace
 #: things about the same boundary — and so reverting it is one edit a test can
 #: be pointed at.
 _THIS_TURN_ONLY = (
-    ". That is a fact about THIS TURN and nothing else: it says nothing about "
-    "what you sent on any other turn, and any reply of yours in the transcript "
-    "below was still delivered."
+    ". That is a fact about THIS TURN and nothing else — it does not describe "
+    "what any other turn of yours sent."
 )
 
 #: What each `outcome` MEANS, spelled out rather than left as a bare token.
@@ -141,12 +140,12 @@ _BLOCK_CHARS = 600
 _DELIVERED = "delivered"
 _NOT_DELIVERED = "not delivered"
 _TRANSCRIPT_LEGEND = (
-    "(How to read this: every line is a message that is IN THE RECORD. Lines "
-    f"from you are marked ({_DELIVERED}) or ({_NOT_DELIVERED}) from the send "
-    f"record itself — ({_DELIVERED}) means the room received it. A turn's "
-    "outcome describes only the turn it labels, so a delivered line of yours "
-    "here was delivered whatever any turn outcome says; another turn may have "
-    "sent it.)"
+    "Every line below is a message that is IN THE RECORD. Lines from you are "
+    f"marked ({_DELIVERED}) or ({_NOT_DELIVERED}), read off the send record "
+    f"itself: ({_DELIVERED}) means the room received it. A turn's outcome "
+    "describes only the turn it labels, so a line of yours marked "
+    f"({_DELIVERED}) was delivered whatever any turn outcome says — another "
+    "turn may have sent it."
 )
 
 
@@ -223,10 +222,18 @@ def _transcript_block(
     tag fold's transcript and a bare one in the rollup's would be the same
     token meaning two things to the same model, which is the drift the
     `_speaker` docstring one function up already names for names.
+
+    **The legend is a SIBLING of `<transcript>`, never a line inside it**, and
+    that is not cosmetic. Everything between those two tags is a message
+    somebody sent; a sentence of ours in there is a line the model — and
+    anything else that splits the block on newlines — has to work out is not
+    one. Putting an explanation where the evidence goes is a smaller version of
+    the defect this whole module is being changed for.
     """
     return (
+        f"  <how_to_read_the_transcript>{_TRANSCRIPT_LEGEND}"
+        "</how_to_read_the_transcript>\n"
         "  <transcript>\n"
-        f"  {_TRANSCRIPT_LEGEND}\n"
         f"{_transcript(rows, display_name=display_name, tz=tz)}\n"
         "  </transcript>"
     )

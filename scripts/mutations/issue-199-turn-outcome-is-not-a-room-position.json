@@ -9,7 +9,7 @@
  {
   "name": "#199 A1 the scope clause denies the room reading outright",
   "file": "nora/engagement/debrief_render.py",
-  "old": "_THIS_TURN_ONLY = (\n    \". That is a fact about THIS TURN and nothing else: it says nothing about \"\n    \"what you sent on any other turn, and any reply of yours in the transcript \"\n    \"below was still delivered.\"\n)",
+  "old": "_THIS_TURN_ONLY = (\n    \". That is a fact about THIS TURN and nothing else — it does not describe \"\n    \"what any other turn of yours sent.\"\n)",
   "new": "_THIS_TURN_ONLY = \"\"",
   "target": "tests/unit/test_debrief_render.py -k a_sent_nothing_header_denies_the_room_reading_outright"
  },
@@ -30,7 +30,7 @@
  {
   "name": "#199 A1 the transcript carries the legend that explains the mark",
   "file": "nora/engagement/debrief_render.py",
-  "old": "        f\"  {_TRANSCRIPT_LEGEND}\\n\"\n",
+  "old": "        f\"  <how_to_read_the_transcript>{_TRANSCRIPT_LEGEND}\"\n        \"</how_to_read_the_transcript>\\n\"\n",
   "new": "",
   "target": "tests/unit/test_debrief_render.py -k the_transcript_says_what_the_delivery_mark_means"
  },

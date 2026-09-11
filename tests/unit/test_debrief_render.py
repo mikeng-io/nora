@@ -347,9 +347,15 @@ def test_the_transcript_says_what_the_delivery_mark_means():
     out = _render(trace=_trace(rows=(
         _row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True),
     )))
-    assert "every line is a message that is IN THE RECORD" in out
+    assert "Every line below is a message that is IN THE RECORD" in out
     assert "another turn may have sent it" in out
-    assert out.index("How to read this") < out.index("路線係咁")
+    # A SIBLING of `<transcript>`, never a line inside it: everything between
+    # those tags is a message somebody sent, and a sentence of ours in there
+    # is one more thing the reader has to work out is not one.
+    assert "<how_to_read_the_transcript>" in out
+    body = out.split("<transcript>")[1].split("</transcript>")[0]
+    assert "How to read" not in body and "read off the send record" not in body
+    assert out.index("<how_to_read_the_transcript>") < out.index("路線係咁")
 
 
 def test_a_crashed_turns_header_says_it_is_this_turn_that_sent_nothing():
@@ -367,10 +373,18 @@ def test_a_sent_nothing_header_denies_the_room_reading_outright():
     constant so they cannot drift into saying four different things about one
     boundary. Saying «this turn» is not enough on its own — the failure was a
     generalisation, so the block denies the generalisation in words."""
-    out = _render(trace=_trace(outcome="timeout"))
-    assert "a fact about THIS TURN and nothing else" in out
-    assert "says nothing about what you sent on any other turn" in out
-    assert "was still delivered" in out
+    header = out = _render(trace=_trace(outcome="timeout"))
+    header = header.split("<what_happened>")[1].split("</what_happened>")[0]
+    assert "a fact about THIS TURN and nothing else" in header
+    assert "does not describe what any other turn of yours sent" in header
+    # **The header talks about the TURN and nothing else**, including about
+    # the transcript. It carried a clause about delivered replies until the
+    # journey control (#199's own positive control) scored it as widening the
+    # claim past the turn — which it was, in a header whose one job is to not
+    # widen. The transcript's legend owns everything about the transcript.
+    assert "delivered" not in header
+    assert "How to read" not in header
+    assert "read off the send record" in out
 
 
 def test_the_rollup_render_marks_and_explains_the_same_way():
@@ -382,4 +396,4 @@ def test_the_rollup_render_marks_and_explains_the_same_way():
         rows=(_row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True),),
     )
     assert "Nora (delivered): 路線係咁" in out
-    assert "How to read this" in out
+    assert "<how_to_read_the_transcript>" in out

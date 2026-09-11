@@ -2319,7 +2319,7 @@ async def test_a_dead_turn_never_becomes_a_claim_that_she_never_answered():
     fold_prompt = next(
         p for p in client.prompts if p.startswith("OBJECTIVE-TEXT"))
     assert "this turn's model call failed, so THIS TURN sent nothing" in fold_prompt
-    assert "says nothing about what you sent on any other turn" in fold_prompt
+    assert "does not describe what any other turn of yours sent" in fold_prompt
     assert "Nora (delivered): 聽朝 10 點到數碼港" in fold_prompt
 
     verdict = await verdicts.read(tag_id="2301f72a")
