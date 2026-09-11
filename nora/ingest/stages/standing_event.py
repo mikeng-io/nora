@@ -83,12 +83,16 @@ from nora.engagement.stages.debrief import (
     _check as _debrief_check,
 )
 from nora.engagement.stages.debrief import (
+    _complete as _debrief_complete,
+)
+from nora.engagement.stages.debrief import (
     _prompt as _debrief_prompt,
 )
 from nora.engagement.stages.debrief import (
     _verdict_prompt as _debrief_verdict_prompt,
 )
 from nora.obs.metrics import Metrics
+from nora.obs.tracing import TRACE_KIND, attached, span
 
 log = logging.getLogger("nora.ingest.standing_event")
 
@@ -228,72 +232,92 @@ async def _event_fold(*, key: Key, wiring: Wiring, metrics: Metrics) -> None:
     until caught up or the bound. A refused fold (malformed, overflow,
     screened, write failure) stops the loop — the watermark did not advance, so
     the next message's check retries the same stretch.
+
+    **Its own ROOT span** (issue #209), opened under `attached(None)` — never
+    a child of whatever the caller had current. `spawn` copies the context of
+    the task that calls it (`nora.obs.tracing.capture_context`'s docstring),
+    and this coroutine is spawned from two different places: the ingest
+    path's own `plumbing` root (`_check`, dropped at the sampler — R-76), and
+    `ConversationSlots.release_and_dispatch`'s `finally`, which may run with
+    no span in context at all or with some unrelated turn's span current.
+    Either way the fold's two model calls (`engagement.debrief.fold` and
+    `.verdict`, via `debrief._complete`) must reach the collector under a
+    trace named for what they are, not vanish under a dropped root or surface
+    as an unnamed child of somebody else's turn.
     """
     platform, conversation_id = key
     try:
-        for _ in range(wiring.rollup_max_folds):
-            try:
-                prior = await asyncio.wait_for(
-                    wiring.store.read(platform=platform, conversation_id=conversation_id),
-                    timeout=wiring.store_timeout_seconds,
-                )
-            except Exception:
-                log.exception(
-                    "standing event fold: could not read the prior (%s); "
-                    "stopping this rollup", key,
-                )
-                break
-            after_id = (
-                prior.last_folded_row_id
-                if prior is not None and prior.last_folded_row_id is not None else 0
-            )
-            try:
-                rows = await asyncio.wait_for(
-                    wiring.record_store.since_including_nora(
-                        conversation_id=conversation_id,
-                        after_id=after_id,
-                        limit=wiring.fold_batch,
-                    ),
-                    timeout=wiring.store_timeout_seconds,
-                )
-            except Exception:
-                log.exception(
-                    "standing event fold: could not read the batch (%s); "
-                    "stopping this rollup", key,
-                )
-                break
-            if not rows:
-                break  # caught up — nothing left since the watermark
-            if wiring.media_join is not None:
-                # The same join the tag path and the debrief run: this fold
-                # renders these rows for a model, so it must see what a photo
-                # showed or the position it forms is built on a bare handle.
-                #
-                # BOUNDED, like its two siblings above and for a harder reason
-                # than symmetry: this loop holds the conversation's slot until
-                # `finally: slots.release_and_dispatch(key)`, and `enrich`
-                # catches EXCEPTIONS, not hangs. A wedged `media_objects` would
-                # hold that room's rollup slot indefinitely. It was the only
-                # unbounded await on a slot-held path in the repo — the debrief
-                # got this right in the same commit because it has an AST
-                # validator deriving its receiver set from `run`'s parameters,
-                # and this module had none. It has one now
-                # (`tests/architecture/test_slot_held_awaits_are_bounded.py`).
+        with attached(None), span(
+            "standing.event_fold",
+            **{
+                TRACE_KIND: "generation",
+                "nora.platform": platform,
+                "nora.conversation_id": conversation_id,
+            },
+        ):
+            for _ in range(wiring.rollup_max_folds):
                 try:
-                    rows = list(await asyncio.wait_for(
-                        wiring.media_join.enrich(rows, path="standing_event"),
+                    prior = await asyncio.wait_for(
+                        wiring.store.read(platform=platform, conversation_id=conversation_id),
                         timeout=wiring.store_timeout_seconds,
-                    ))
+                    )
                 except Exception:
                     log.exception(
-                        "standing event fold: media join failed (%s); folding "
-                        "on the bare handles", key,
+                        "standing event fold: could not read the prior (%s); "
+                        "stopping this rollup", key,
                     )
-            if not await _fold_batch(
-                prior=prior, rows=rows, key=key, wiring=wiring, metrics=metrics,
-            ):
-                break  # refused — the watermark did not advance
-            metrics.inc("nora_standing_rollup_folds_total")
+                    break
+                after_id = (
+                    prior.last_folded_row_id
+                    if prior is not None and prior.last_folded_row_id is not None else 0
+                )
+                try:
+                    rows = await asyncio.wait_for(
+                        wiring.record_store.since_including_nora(
+                            conversation_id=conversation_id,
+                            after_id=after_id,
+                            limit=wiring.fold_batch,
+                        ),
+                        timeout=wiring.store_timeout_seconds,
+                    )
+                except Exception:
+                    log.exception(
+                        "standing event fold: could not read the batch (%s); "
+                        "stopping this rollup", key,
+                    )
+                    break
+                if not rows:
+                    break  # caught up — nothing left since the watermark
+                if wiring.media_join is not None:
+                    # The same join the tag path and the debrief run: this fold
+                    # renders these rows for a model, so it must see what a photo
+                    # showed or the position it forms is built on a bare handle.
+                    #
+                    # BOUNDED, like its two siblings above and for a harder reason
+                    # than symmetry: this loop holds the conversation's slot until
+                    # `finally: slots.release_and_dispatch(key)`, and `enrich`
+                    # catches EXCEPTIONS, not hangs. A wedged `media_objects` would
+                    # hold that room's rollup slot indefinitely. It was the only
+                    # unbounded await on a slot-held path in the repo — the debrief
+                    # got this right in the same commit because it has an AST
+                    # validator deriving its receiver set from `run`'s parameters,
+                    # and this module had none. It has one now
+                    # (`tests/architecture/test_slot_held_awaits_are_bounded.py`).
+                    try:
+                        rows = list(await asyncio.wait_for(
+                            wiring.media_join.enrich(rows, path="standing_event"),
+                            timeout=wiring.store_timeout_seconds,
+                        ))
+                    except Exception:
+                        log.exception(
+                            "standing event fold: media join failed (%s); folding "
+                            "on the bare handles", key,
+                        )
+                if not await _fold_batch(
+                    prior=prior, rows=rows, key=key, wiring=wiring, metrics=metrics,
+                ):
+                    break  # refused — the watermark did not advance
+                metrics.inc("nora_standing_rollup_folds_total")
     finally:
         wiring.slots.release_and_dispatch(key)
 
@@ -333,7 +357,16 @@ async def _fold_batch(
         system, user = _debrief_prompt(
             instructions=instructions, rendered=rendered, max_chars=wiring.max_chars,
         )
-        reply = await wiring.client.complete(system=system, prompt=user)
+        # Through `debrief._complete` (issue #209), the same GENERATION
+        # wrapper the tag path's fold call uses, so this renders as
+        # `engagement.debrief.fold` with a model, a prompt digest and a
+        # `finish_reason` instead of an unwrapped `client.complete`. No tag
+        # exists on this path, so `tag_id=""` — the honest value, not a
+        # borrowed or fabricated one.
+        reply = await _debrief_complete(
+            wiring.client, call="fold", tag_id="", conversation_id=conversation_id,
+            prompt=(system, user),
+        )
         # `conversation_id` stands in for the tag id in the refusal logs: a
         # rollup fold has no tag, and the parse rules are the tag path's.
         return _debrief_check(reply, conversation_id)
@@ -342,7 +375,10 @@ async def _fold_batch(
         system, user = _debrief_verdict_prompt(
             instructions=verdict_instructions, rendered=rendered_verdict,
         )
-        return await wiring.client.complete(system=system, prompt=user)
+        return await _debrief_complete(
+            wiring.client, call="verdict", tag_id="", conversation_id=conversation_id,
+            prompt=(system, user),
+        )
 
     try:
         (body, refusal), _verdict = await asyncio.wait_for(
