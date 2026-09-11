@@ -2258,7 +2258,12 @@ async def test_a_reminder_occasion_writes_no_decision_row(
     reminder firing was decided when the row was written; logging it here
     would dilute the block with rows no decider can act on.
 
-    Falsification: drop the `writer is None` guard in `_log_decision`.
+    **What actually enforces it is that `_turn` calls `_determined` from the
+    participation and proactive branches only** — the `writer is None` guard in
+    `_log_decision` is a second belt for a future occasion routed through it,
+    and a mutation of that guard alone leaves this green. Stated rather than
+    dressed up: the mutation table names the occasion MAPPING instead, which is
+    the line a wrong edit would actually touch.
     """
     store = InMemoryDecisionLogStore()
     path = _fire_path(
