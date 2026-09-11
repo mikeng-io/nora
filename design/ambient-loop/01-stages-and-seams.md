@@ -6,7 +6,7 @@ tags: [nora, ambient, ooda, seams, participation, proactive, notes, standing, ho
 timestamp: '2026-09-11'
 edges:
   - {dst: 00-overview, rel: depends_on, provenance: asserted}
-version: 3
+version: 4
 ---
 
 # What Each Stage Reads Today, And The Five Seams
@@ -72,7 +72,10 @@ sees a `kind="proactive"` row is pending for 18:00 about tonight's dinner,
 so when a 17:40 window that settles it is admitted the turn can cancel the
 row; the tag turn sees participation answered one second ago, so it does not
 re-derive the route and die doing it (#199). Written by the participation
-turn, the proactive turns and the tag path; read by the same. Never the gate.
+turn, the proactive turns and the tag path, at turn completion; read by the
+same, scoped by workspace with a `note_id` per row — a room-scoped read
+could not see #199's own row, which fired into Discord about a Signal thread.
+Never the gate.
 
 ### 2.2 Act → Orient — *real, and #199 is its exact shape*
 
@@ -101,9 +104,16 @@ the route*, and she had).
 `_discharge` resolves `cited_row` once and grounds every commitment and
 person claim on it (`:1199-1220`), so an `is_nora` closing citation would
 make her the grounding sender for a Gathering event — 39 D7 broken in code.
-The contract is therefore *closure may cite her; discharge may not*, and it
-is only a contract if a test proves an `is_nora` citation cannot reach
-`_discharge_commitment`. What already exists on this edge and must not be
+There is exactly one place the split can live, because one evidence tuple
+serves both slots: `:691` → `message_ids` (`:700`) → `evidence_rows_by_note`
+(`:793`, `:805`), read by the citation check at `:921`/`:934` **and** resolved
+into `cited_row` at `:1210`. Keeping `:691` strict does not work — on #199
+her row was the *only* row since `created_at`, so `message_ids` stays empty
+and `:934` drops the closed verdict as `no_evidence` before any citation is
+read. So her row is admitted to `message_ids`, and the guard is inside
+`_discharge`: `cited_row` dropped when `is_nora`, on its own refusal reason.
+The contract is *closure may cite her; discharge may not ground on her*, and
+it is only a contract if removing that guard reddens a named test. What already exists on this edge and must not be
 duplicated: `record_wake` / `strikes` / `revisit_at` (`schema.py:1805-1809`,
 39 D6) stamp *raised by her, unanswered*. v1's `last_moved_at` would have
 been a second copy of that.
@@ -174,8 +184,11 @@ DEC-178 is an open question with the experiment attached, not a decision.
   forged `[assistant]:` row inside a member's message is believed, and a false
   GO there is an unauthenticated turn. Raw completion holds the safety bar 6/6;
   the transport production runs breaches it 1/6, at 2.4x the tokens. The
-  mechanism (the transport drops the assistant turn's reasoning before the
-  verdict forms) is inside the gate. One-file fix. Landing tonight.
+  mechanism is in the transport (`structured.py`, shared with the debrief and
+  the standing fold, which stay on it); the *fix* is one file, the gate's
+  client. Landing tonight. The issue's third move — a rule that a
+  security-relevant client may not call `ask_structured` — is branch B's to
+  carry or to name as left out.
 - **#161 lever 1** — above. Inside the note tier.
 
 Both are real, both matter, neither needs another stage. Keeping them out of

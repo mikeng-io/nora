@@ -1,7 +1,7 @@
 ---
 type: proposal
 title: "The Ambient Loop Is Nora's Second Backbone — One OODA Loop, Named As The System's"
-description: "Nora has two backbones. The tag path answers when called. The ambient loop is how she is present when not called — one observe–orient–decide–act loop whose stages are the ingest path, the memory layer, two deciders (participation and proactive) and the shared fire path. The loop exists in the tree and had only been named as the proactive adaptor's. Version 2: rewritten against an adversarial review that refuted four of version 1's claims, and against a live incident (#199) that crossed five of the loop's seams in ninety minutes."
+description: "Nora has two backbones. The tag path answers when called. The ambient loop is how she is present when not called — one observe–orient–decide–act loop whose stages are the ingest path, the memory layer, two deciders (participation and proactive) and the shared fire path. The loop exists in the tree and had only been named as the proactive adaptor's. Version 4: three adversarial reviews folded in, grounded on a live incident (#199) that crossed five of the loop's seams in ninety minutes and on the journey case (PR #201) that reproduces it red."
 tags: [nora, ambient, ooda, backbone, participation, proactive, notes, standing, memory]
 timestamp: '2026-09-11'
 edges:
@@ -10,7 +10,7 @@ edges:
   - {dst: "dreamer-agent-loop/35-ambient-participation", rel: depends_on, provenance: asserted}
   - {dst: "dreamer-agent-loop/26-standing", rel: depends_on, provenance: asserted}
   - {dst: "dreamer-agent-loop/33-note-dreamer-schedule", rel: depends_on, provenance: asserted}
-version: 3
+version: 4
 ---
 
 # The Ambient Loop Is Nora's Second Backbone
@@ -37,8 +37,8 @@ circular rule, and they are worth naming here because each is a way this
 framing can go wrong again:
 
 1. The relevance gate is blind to notes and memory **on purpose** — design 36
-   §6, «the only two things» — and the participation *turn* behind it already
-   reads both. v1
+   §6 (`sees: transcript + standing`) — and the participation *turn* behind
+   it already reads both. v1
    called that a seam. It is a two-layer Decide, and the layers are the design.
 2. Two of v1's "seams" were component bugs: #186 is a one-file transport swap
    inside the gate; #161's `key` is already the room and the note tier throws
@@ -66,7 +66,8 @@ They share the doctrine substrate, the tool registry, the deliverer chain and
 the conversation slot. They do not share a trigger, an obligation, or a scope.
 
 **And they share held state in both directions.** The tag path's debrief is
-the principal writer of Standing and proposes notes (`debrief.py:551-608`);
+the principal writer of Standing (the fold, `debrief.py`) and proposes notes
+(`_note_proposals`, `debrief.py:550-615`);
 the loop's deciders read both. So the tag path is not a stage of the loop and
 not merely a consumer of it — it is the other backbone, and the loop's Orient
 stage is fed by it. Design 39's "tag is the passive half, entering at Act" was
@@ -148,10 +149,10 @@ and it needed to happen before it could be made honestly.
   → note | curator filter» (`note_curator.py:691`, whose comment calls a
   closure on her own row *self-attestation deciding a retirement*) is narrowed,
   not kept: her own sent row becomes admissible to a note's **closing
-  citation slot only**, and is excluded from discharge grounding, because
-  `_discharge` grounds every commitment and person claim on the cited row
-  (`:1199-1220`) and 39 D7 forbids her citing herself as the state of the
-  world. The `self_only` state stays for the case where her row is the only
+  citation slot only**, and is excluded from discharge grounding — the guard
+  lives inside `_discharge` (`:1210`), because one evidence tuple feeds both
+  the citation check and the grounding, and 39 D7 forbids her citing herself
+  as the state of the world. The `self_only` state stays for the case where her row is the only
   evidence. Whether that narrowing is even buildable inside the current commit
   path is being tested on branch A tonight; if it is not, it waits.
 - **It does not decide DEC-163** (#173). §3's Act → Orient seam is the

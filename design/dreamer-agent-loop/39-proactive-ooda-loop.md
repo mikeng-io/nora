@@ -58,7 +58,10 @@ when tagged. The other half acts when nobody asked. «佢一半嘅本體係點�
 > placed. The stage table and D1–D13 stand as an account of the proactive
 > decider. The brake table stands except one row, narrowed by DEC-179:
 > «Nora's message → note | curator filter» — her own sent row becomes
-> admissible as a note's closing *citation* and nothing else.
+> admissible as a note's closing *citation* and nothing else; the sentence
+> below, «Nothing Nora says can create, revise or close a note», therefore
+> reads *create or revise*, and *close* only by citing her own delivered
+> reply, never by grounding a discharge on it.
 
 Both halves run the same loop. It is an OODA loop — observe, orient, decide,
 act — and it is closed *through a human*.

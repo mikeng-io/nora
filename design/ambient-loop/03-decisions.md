@@ -6,7 +6,7 @@ tags: [nora, ambient, ooda, decisions, migration]
 timestamp: '2026-09-11'
 edges:
   - {dst: 00-overview, rel: summarises, provenance: asserted}
-version: 3
+version: 4
 ---
 
 # Decisions, Order, And What Moves
@@ -59,8 +59,8 @@ cases. Decided by that number, not by argument. Not landing tonight.
 
 | seam | contract | what it takes |
 |---|---|---|
-| Decide ↔ Decide | one decision log, written by the participation turn, the proactive decide and act turns, and the tag path; read by the same for the last 24h of their room. **The gate neither reads nor writes it** | **a new store** — table, port, SQL + in-memory, contract suite. v1 said a column on an existing table; there is none. Note: the proactive adaptor's private `_decision_log` (its own reminder rows) is a different thing and keeps its name in code; this is *the shared decision log* |
-| Act → Orient | the debrief's outcome header is turn-scoped; a `Nora:` row after the tag reads as a delivered reply; the verdict can see the contradiction; a dead turn proposes no note; her own row is admissible as a closing **citation** and excluded from discharge **grounding** (`note_curator.py:691` narrowed, `:1199-1220` untouched) | renders, one deterministic check, one predicate split with a mutation that proves an `is_nora` citation cannot reach `_discharge_commitment` — conditional on A4 |
+| Decide ↔ Decide | one decision log, written by the participation turn, the proactive decide and act turns, and the tag path **at turn completion** (after the send or the silent decision — a tag landing mid-turn is a race the log does not close, and the port says so); read by the same, scoped by **workspace** — not by room, because a proactive row fires into the home room about a thread that may live in another room (#199's Discord row about a Signal thread) — with `note_id` on the row so a reader matches it to the thread; rendered as writer / verdict / room label / age / note id, **never a note title**. **The gate neither reads nor writes it** | **a new store** — table, port, SQL + in-memory, contract suite. v1 said a column on an existing table; there is none. The proactive adaptor's private `_decision_log` (its own reminder rows) is a different thing and keeps its name in code; this is *the shared decision log* |
+| Act → Orient | the debrief's outcome header is turn-scoped; a `Nora:` row after the tag reads as a delivered reply; the verdict can see the contradiction; a dead turn proposes no note; her own row is admissible as a closing **citation** and excluded from discharge **grounding** | renders, one deterministic check, and a split that has exactly one place to live: one evidence tuple (`note_curator.py:691` → `message_ids` `:700` → `evidence_rows_by_note` `:793/:805`) feeds both the citation check (`:921`/`:934`) and `_discharge`'s `cited_row` (`:1210`). So her row is admitted to `message_ids` — keeping `:691` strict is dead on #199, where hers was the only row since `created_at` and `:934` drops the verdict as `no_evidence` — and the guard lives **inside `_discharge`**: `cited_row` dropped when `is_nora`, on its own refusal reason, not `:1255`'s. The mutation is «an `is_nora` citation cannot **ground** a discharge», proved by removing that guard. Conditional on A4 |
 | Orient → Decide (proactive) | the decide turn can check a note against the record — the shared log first, a bounded window second | the store above, then a render |
 | Observe → Orient | a batch names its room and carries the operator's description | a bug fix and a `policy.toml` field |
 | the medium | DEC-178 | a measurement |
@@ -71,8 +71,14 @@ becoming a strike, which `record_wake` already is.
 
 ### DEC-180 — The seam cases and the positive control are a precondition for tuning any single stage again
 
-`02 §4`'s table states what each needs; none is free. S1 (#199) is being
-built tonight and is red on master at the debrief step. #158 already shows
+`02 §4`'s table states what each needs; none is free. S1 (#199) is built
+(PR #201, `tests/integration/test_ambient_loop_positive_control.py`) and is
+**measured red on master at the debrief step**: `pytest --runxfail` → 5
+failed, 5 passed — `3a` the header is unscoped, `3a2` her delivered row is not
+marked, `3b` the verdict returns `grounded=True`, `3c` a note is proposed from
+the dead turn, `3d` the proactive decider is shown the false premise. The
+five carry `xfail(strict=True)` citing #199, so the fix that lands must flip
+them or the gate goes red. #158 already shows
 the decide suite cannot separate a prompt change from noise at n=5; a seam
 that is unmeasured cannot be tuned at all.
 
@@ -82,7 +88,7 @@ that is unmeasured cannot be tuned at all.
 |---|---|---|
 | design 39 §1 | "one loop, two entry points", tag at Act | framing revised by `00 §2`; D1–D13 stand; the brake table stands **except one row narrowed** — «Nora's message → note \| curator filter», per DEC-179 |
 | design 39 D9 | `load_transcript` dropped from the decide turn | **stands, with its reversal condition now fired by #199** — the smallest answer is the shared log, not the transcript |
-| design 36 §6 | the gate is transcript + Standing, «the only two things» | **stands, untouched.** v1 tried to reverse it with notes; v2 tried again with a `<decisions>` block that carried note titles. Neither lands |
+| design 36 §6 | the gate sees transcript + Standing and nothing else | **stands, untouched.** v1 tried to reverse it with notes; v2 tried again with a `<decisions>` block that carried note titles. Neither lands |
 | design 35 | participation as the fifth Event | stands as the mechanism; the *role* is the participation decider |
 | GLOSSARY *ambient*, *proactive* | a message she records; the loop as the adaptor's | an `ambient loop` entry names the backbone; *proactive* points at it |
 | ARCHITECTURE "two paths, and a background tier" | | two backbones; the two deciders named among the seven occasions |
