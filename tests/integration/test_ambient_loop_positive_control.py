@@ -888,6 +888,24 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
         "just that it exists — it reads:\n"
         + journey.fold_input.split("<transcript>")[1].split("</transcript>")[0]
     )
+    # AND THE ROW ITSELF CARRIES IT. Measured 2026-09-11: with the per-row
+    # marker stripped and only the legend left standing, every assertion in
+    # this file passed — the legend contains the words "delivered" and "was
+    # sent", so the haystack above is satisfied by an explanation of a mark
+    # that is not there. A legend explaining a marker nobody rendered is
+    # precisely the block-that-does-not-say-what-it-is defect this case
+    # exists to catch, one level up.
+    window = journey.fold_input.split("<transcript>")[1].split("</transcript>")[0]
+    her_row = next(
+        line for line in window.splitlines()
+        if line.strip().startswith("[16:43]") and "Nora" in line
+    )
+    assert any(
+        token in her_row.lower() for token in ("delivered", "was sent", "went out")
+    ), (
+        "her row must say on the row that it went out; the legend alone is an "
+        f"explanation of a mark that is not there. The row reads: {her_row!r}"
+    )
 
 
 async def test_3b_the_verdict_refuses_a_position_that_claims_no_reply(

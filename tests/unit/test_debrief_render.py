@@ -21,6 +21,7 @@ from nora.engagement.debrief_render import (
     render_debrief_input,
     render_debrief_turn,
     render_rollup_input,
+    render_rollup_verdict_input,
     render_verdict_input,
 )
 
@@ -397,3 +398,48 @@ def test_the_rollup_render_marks_and_explains_the_same_way():
     )
     assert "Nora (delivered): 路線係咁" in out
     assert "<how_to_read_the_transcript>" in out
+
+
+def test_the_rollup_verdict_render_sees_the_same_marked_transcript():
+    """The event path's TWO calls — the rollup position and its judge — read
+    the same batch, and D4's whole point is that they must never disagree
+    about what happened. Routing the position call through `_transcript_block`
+    and leaving the judge on a bare `_transcript` would give the two exactly
+    that disagreement about the one thing this branch adds: whether a line of
+    hers went out. It was guarded by nothing until this existed — this
+    renderer had no test at all."""
+    rows = (_row(1, 1_756_000_920_000, "Miles", "去邊食"),
+            _row(2, 1_756_000_980_000, None, "路線係咁", is_nora=True))
+    verdict = render_rollup_verdict_input(rows=rows, display_name="Nora", tz=UTC)
+    position = render_rollup_input(
+        prior=None, rows=rows, display_name="Nora", tz=UTC)
+    assert "Nora (delivered): 路線係咁" in verdict
+    assert "<how_to_read_the_transcript>" in verdict
+    # The judge's block IS the position call's block, minus the prior.
+    assert verdict.split("<conversation>")[1] == position.split("<conversation>")[1]
+
+
+def test_every_gloss_that_sent_nothing_scopes_itself_to_the_turn():
+    """**Four outcomes send nothing, not two**, and two of them were scoped by
+    a clause no test read. `silent` and `vetoed` say «no delivery was
+    attempted» and «every attempt was refused by a guard» — both true of the
+    turn, both silent about the room, which is the exact shape that produced
+    #199 on `llm_error`. Their scoping was measured unguarded: restoring
+    master's wording on either left the suite green."""
+    for outcome, scoped in (
+        ("silent", "you chose to say nothing on this turn"),
+        ("vetoed", "on this turn you tried to reply"),
+        ("timeout", "this turn's model call did not finish in time"),
+        ("llm_error", "this turn's model call failed"),
+    ):
+        out = _render(trace=_trace(outcome=outcome))
+        header = out.split("<what_happened>")[1].split("</what_happened>")[0]
+        assert scoped in header, f"{outcome}: {scoped!r} not in {header!r}"
+        assert "a fact about THIS TURN and nothing else" in header, outcome
+    # And the two that DID send something carry no scope clause at all —
+    # there is nothing to scope, and a clause on every outcome would be noise
+    # the reader learns to skip.
+    for outcome in ("send_reply", "recovered"):
+        out = _render(trace=_trace(outcome=outcome))
+        header = out.split("<what_happened>")[1].split("</what_happened>")[0]
+        assert "a fact about THIS TURN" not in header, outcome

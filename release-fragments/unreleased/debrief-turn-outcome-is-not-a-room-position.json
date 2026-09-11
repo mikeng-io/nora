@@ -8,8 +8,9 @@
     "A note whose closing condition is something only she can do can now be closed by her having done it. Her delivered messages reach the tidy-up pass under a marker saying what they are, and may be cited to close a note. Nothing else changed: her words still cannot create or revise a note, still cannot expire one, still do not count as the group having spoken, and a message that never actually reached the room is still not evidence of anything."
   ],
   "limitations": [
-    "The new ungrounded check looks at the window the broken turn itself was reading, plus anything delivered at or after the message that triggered it. A reply delivered earlier in a long unreviewed stretch is outside it — deliberately, because that stretch can be a whole day and the check would then fire on almost every failure.",
+    "The new ungrounded check looks only at replies delivered within a few minutes of the broken turn — its own window is a count of messages, not a stretch of time, so on a quiet room it reaches back days and a reply from last week is not evidence about this turn. A reply delivered earlier in a long unreviewed stretch is therefore outside it, deliberately.",
     "What the review is told changed; what it then concludes is still a model's judgement. The scoped header and the delivery marks remove the contradiction it was reading, they do not guarantee the paragraph it writes.",
-    "The rest of the chain this incident crossed is untouched: the background pass still decides without reading the transcript, it still speaks in the home room rather than the room the thread is in, and the two paths that both decided to answer at 16:43 still cannot see each other."
+    "The rest of the chain this incident crossed is untouched: the background pass still decides without reading the transcript, it still speaks in the home room rather than the room the thread is in, and the two paths that both decided to answer at 16:43 still cannot see each other.",
+    "The tidy-up pass now reads her delivered messages as well as the room's, so on a room where she talks a lot it reads more of the same fixed window than it used to. Nothing new is fetched. One reading moves with it: a note left standing because only she had spoken since it was written is now counted under \"the moment has not passed\" rather than under \"nobody has said anything\"."
   ]
 }

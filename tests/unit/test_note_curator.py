@@ -929,7 +929,7 @@ async def test_a_reply_she_actually_delivered_can_close_a_note():
 
     rendered = await curator.inputs(key=WS, batch=())
     assert "969P from Tin Shui Chi" in rendered
-    assert "each one DELIVERED" in rendered
+    assert "Each was DELIVERED" in rendered
 
     assert await _close_on(curator, note, cited=7) == 1
     assert store.notes[note.id].retire_reason == NoteSupersedeReason.RETIRED_CLOSED
@@ -2176,3 +2176,31 @@ def test_every_evidence_row_says_when_it_was_said():
         delivery_status=DeliveryStatus.SENT, raw_json=None, person_name="Miles",
     )
     assert "(3h ago) Miles: I'll sort it" in _render_evidence((row,), "present", now=now)
+
+
+async def test_her_delivered_row_is_shown_beside_the_group_and_not_instead_of_it():
+    """**The own-sends block rides on BOTH branches of the evidence render**,
+    and until this test ran, only the empty-evidence branch was guarded —
+    dropping the tail from the other one left the whole suite green. That is
+    the branch a real room is usually on: somebody said something since the
+    note AND she answered. Without the tail there, her row is in the citation
+    allow-list but rendered nowhere, so the model has an id it was never
+    shown and the note is unclosable again — the exact defect A4 removes,
+    reachable through the ordinary case rather than the quiet one."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Route", anchor=None, entities=("miles",),
+                       revisit_at=NOW - 1)
+    record = FakeRecordStore()
+    record.rows.append(_row(7, "969P from Tin Shui Chi", ts=NOW + 1,
+                            is_nora=True))
+    record.rows.append(_row(8, "thanks", ts=NOW + 2))
+    curator = _curator(store, record=record)
+
+    rendered = await curator.inputs(key=WS, batch=())
+    # Both blocks, and the group's one still reads as the group's.
+    assert "evidence, newest last:" in rendered
+    assert "thanks" in rendered
+    assert "your own messages since this note" in rendered
+    assert "969P from Tin Shui Chi" in rendered
+
+    assert await _close_on(curator, note, cited=7) == 1

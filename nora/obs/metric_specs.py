@@ -1308,6 +1308,26 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "between the two is a fold that keeps failing, not a latch.",
         ("trigger",),
     ),
+    # Issue #199's deterministic half, and it exists because the check it
+    # counts would otherwise make `nora_turn_verdict_total` unreadable.
+    # #189's finding — the judge has never once returned false — is read off
+    # that series, and from now on a `false` there may be code-authored. The
+    # `model_verdict` label says what the MODEL had said at the moment the
+    # code overrode it: `grounded` is the incident's own shape (the judge
+    # blessed a contradicted position), `ungrounded` means both halves agreed,
+    # `absent` means the judge produced nothing usable and this is the only
+    # verdict the turn has. A rising `grounded` is the reading that says the
+    # prompt half is still not seeing what the record does.
+    _CounterSpec(
+        "nora_debrief_room_scope_overrides_total",
+        "Turns the debrief's deterministic check forced to ungrounded — the "
+        "turn broke without sending while a reply of hers was delivered "
+        "contemporaneously — by what the model's own verdict had said: "
+        "grounded, ungrounded, or absent. Subtract nothing from "
+        "nora_turn_verdict_total; read the two together, because a false "
+        "there no longer implies the judge convicted.",
+        ("model_verdict",),
+    ),
     _CounterSpec(
         "nora_turn_verdict_total",
         "Per-turn debrief verdicts by grounding: true, false, absent (no "

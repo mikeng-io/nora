@@ -950,10 +950,18 @@ class NoteCuratorAdaptor:
         `open` is always grounded — there is nothing to check, and it is the
         ordinary answer.
 
-        `closed`, `expired` and `moot` all require the note's evidence window
-        to be non-empty (`no_evidence`): a room that has said nothing since
-        the note was written establishes that nobody has spoken, never that a
-        question went answered OR unanswered. Past that:
+        `closed`, `expired` and `moot` all require the note's CITATION
+        ALLOW-LIST to be non-empty (`no_evidence`) — nothing at all in the
+        window since the note was written, from anybody including Nora.
+
+        **That gate used to carry more than it does** (issue #199). It read a
+        human-only set, so it also enforced «the GROUP must have spoken» for
+        `expired`/`moot`. The allow-list now includes her delivered rows, so a
+        window holding only those reaches the next gate instead of stopping
+        here — and the group-must-have-spoken half is enforced by
+        `anchor_covered` alone, which is computed from the human evidence and
+        fails closed on an empty one. Behaviour is unchanged; the samples
+        move, from `no_evidence` to `anchor_not_covered`. Past that:
 
         - `closed` needs a `cited_message_id` that is actually one of the ids
           this run showed for THAT note (`citation_missing` /
@@ -1489,6 +1497,11 @@ def _own_sends(since: Sequence[TranscriptRow]) -> tuple[TranscriptRow, ...]:
     - **the quiet-room reading** — `EvidenceState` is derived from the human
       rows too, so a stretch in which only she spoke is still `self_only` and
       still renders «nothing the group has said».
+    - **discharge** — `_run_discharge` refuses every item on a note closed by
+      citing one of these rows (design 39 D7). Her row settles the note; it
+      never grounds a commitment or a person-claim, because every item's
+      warrant is the closing citation's SENDER and she is not the person who
+      settled anything.
     """
     return tuple(
         row for row in since
@@ -1505,17 +1518,22 @@ def _render_own_sends(
     measured lesson, and the reason this is a render rather than a paragraph
     in `note-curation.md`. Three instruction rewrites of an adjacent gate
     changed nothing or made it worse; rendering an age per row cut its error
-    rate by two thirds. So the block states the three facts the judgement
-    turns on: these are hers, they were delivered, and they are not the group
-    deciding anything.
+    rate by two thirds.
+
+    **So every clause below is a fact about the rows, and none of them is an
+    imperative.** The first draft read «cite one to close a note whose closing
+    condition is…» and «they are NEVER the group settling anything», which is
+    instruction wearing a render's clothes — in a module that argues against
+    exactly that one paragraph up. An independent review caught it. What the
+    block says now is what the rows ARE: whose they are, that the send record
+    marks them delivered, and that no message here was written by anybody else
+    in the room. Whether that closes a given note is the judgement, and the
+    judgement is the model's.
     """
     lines = [
-        "your own messages since this note, newest last — each one DELIVERED "
-        "to that room (the send record says so, not me). These are evidence "
-        "that YOU did something: cite one to close a note whose closing "
-        "condition is an answer or a message from you. They are never the "
-        "group settling anything — an intention of yours is not a decision, "
-        "and nothing here can expire a note."
+        "your own messages since this note, newest last. Each was DELIVERED "
+        "to that room — that is the send record's own answer, not mine. "
+        "Nobody else in the room wrote any of them."
     ]
     for row in own_sends:
         when = f"({age(row.ts, now)}) " if row.ts else ""

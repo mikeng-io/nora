@@ -2476,3 +2476,125 @@ async def test_a_turn_that_actually_replied_is_not_convicted_by_its_own_reply():
     verdict = await verdicts.read(tag_id="2301f72a")
     assert verdict is not None and verdict.grounded is True
     assert _counter(metrics, "nora_turn_verdict_total", grounded="true") == 1
+
+
+# --- issue #199, round two: the lines the mutation sweep could not reach ----
+
+
+async def test_a_reply_from_days_ago_in_the_window_is_not_this_turns_business():
+    """**`trace.transcript` is a ROW window, not a time window**, and that is
+    the defect an independent review measured on the first version of this
+    check: `recent(limit=40)` on a room that says a handful of things a day
+    reaches back DAYS, so every broken turn came back ungrounded on the
+    strength of a reply from last Tuesday — discarding the position and
+    writing a claim whose bare clock read as though it were today. The repo's
+    own time-grounding lesson, reappearing inside the fix for it.
+
+    One floor over both sources, `_CONTEMPORARY_MS` wide."""
+    trace = _incident_trace()
+    stale = dataclasses.replace(
+        trace.transcript[0], ts=trace.transcript[1].ts - 86_400_000)
+    _, metrics, verdicts = await _run(
+        trace=dataclasses.replace(trace, transcript=(stale, trace.transcript[1])),
+        client=_Client(_ok("a position"), _grounded()))
+    verdict = await verdicts.read(tag_id="2301f72a")
+    assert verdict is not None and verdict.grounded is True
+    assert _counter(metrics, "nora_debrief_room_scope_overrides_total",
+                    model_verdict="grounded") == 0
+
+
+async def test_a_batch_reply_from_before_the_turn_is_not_this_turns_business():
+    """The same floor on the other source. The watermark batch is every row
+    since the last fold, which on a conversation that has not folded since
+    yesterday is everything she said yesterday — so the batch half needs the
+    bound just as much as the trace half, and it may not be a bare `>= the
+    newest row's ts` either: her send and the tag share a wall-clock second in
+    this incident, so that comparison is a millisecond coin-flip."""
+    trace = dataclasses.replace(
+        _incident_trace(),
+        transcript=(TranscriptRow(
+            id=133, sender_id="+852111", sender_name="Miles",
+            ts=1_757_666_637_000, body="@Nora 點去", is_nora=False,
+            delivery_status=DeliveryStatus.SENT, raw_json=None),),
+    )
+    record = FakeRecordStore()
+    await record.append(
+        message=NormalizedMessage(
+            "signal", "g1", "group", "nora", None,
+            1_757_666_637_000 - 86_400_000, "yesterday's answer", {}),
+        is_nora=True, delivery_status=DeliveryStatus.SENT,
+    )
+    _, _, verdicts = await _run(
+        trace=trace, record_store=record,
+        client=_Client(_ok("a position"), _grounded()))
+    verdict = await verdicts.read(tag_id="2301f72a")
+    assert verdict is not None and verdict.grounded is True
+
+
+async def test_the_override_says_what_the_model_had_said():
+    """**The check destroys a reading unless it is counted.**
+    `nora_turn_verdict_total{grounded="false"}` is where #189's finding — the
+    judge has never once convicted — is read from, and a `false` there can now
+    be code-authored with nothing able to tell which. The label answers it:
+    what the model had said at the moment the code overrode it. A rising
+    `grounded` here is the reading that says the prompt half still cannot see
+    what the record does."""
+    _, metrics, _ = await _run(
+        trace=_incident_trace(),
+        client=_Client(_ok("a position"), _grounded(grounded=True)))
+    assert _counter(metrics, "nora_debrief_room_scope_overrides_total",
+                    model_verdict="grounded") == 1
+
+    _, metrics, _ = await _run(
+        trace=_incident_trace(),
+        client=_Client(_ok("a position"), RuntimeError("judge down")))
+    assert _counter(metrics, "nora_debrief_room_scope_overrides_total",
+                    model_verdict="absent") == 1
+
+
+async def test_a_verdict_the_domain_refuses_costs_the_verdict_and_not_the_position():
+    """This rider runs below the fold's guards but ABOVE the position write,
+    so anything it lets escape reaches `run`'s `BaseException` handler with
+    `outcome` unset and NOTHING WRITTEN — on a turn that had already delivered
+    its reply. The stage says twice that a rider must never cost the position;
+    this is the test that means it, driven through the one refusal the domain
+    type can actually produce here (`TurnVerdict` needs a `tag_id`).
+
+    **And the fallback is `None`, never the model's verdict.** We have just
+    established this turn is contradicted, so its `grounded=true` is the one
+    answer known to be wrong; re-writing it would launder a failed override
+    into a blessing. `except ValueError` returning `verdict` was the first
+    shape and it did exactly that."""
+    trace = dataclasses.replace(_incident_trace(), tag_id="  ")
+    store, metrics, verdicts = await _run(
+        trace=trace, client=_Client(_ok("a position"), _grounded()))
+    position = await store.read(platform="signal", conversation_id="g1")
+    assert position is not None and position.body == "a position"
+    assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
+    assert (await verdicts.read(tag_id="  ")) is None
+    assert _counter(metrics, "nora_turn_verdict_total", grounded="true") == 0
+
+
+@pytest.mark.parametrize("outcome", ["send_reply", "recovered", "silent", "vetoed"])
+async def test_only_a_turn_that_broke_is_refused_the_note_path(outcome: str):
+    """`_BROKEN_TURN_OUTCOMES`'s MEMBERSHIP is the decision, and until this ran
+    over every outcome it was guarded by nothing — widening the set to include
+    `silent` and `vetoed` left the whole suite green. A silence is a decision
+    26 §2 says is the case most worth reviewing, and a veto is a guard doing
+    its job on reasoning that finished; both produce a turn there is something
+    to say about."""
+    sink = _FakeSink()
+    _, metrics, verdicts = await _run(
+        trace=_incident_trace(outcome=outcome),
+        client=_Client(_ok_with_note("a position"), _grounded()),
+        notes_sink=sink)
+    assert len(sink.batches) == 1
+    assert _counter(
+        metrics, "nora_debrief_note_proposals_total", outcome="proposed") == 1
+    assert _counter(
+        metrics, "nora_debrief_note_proposals_total", outcome="broken_turn") == 0
+    # The verdict half of the same membership: a turn that did not break is
+    # never convicted by a delivered reply sitting in its own window, which is
+    # what every healthy turn ends with.
+    verdict = await verdicts.read(tag_id="2301f72a")
+    assert verdict is not None and verdict.grounded is True

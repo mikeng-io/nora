@@ -494,25 +494,55 @@ def _with_room_scope_claim(
     it is a model-authored sentence about a turn that broke, and this one is
     a fact about a row.
 
-    Returns `None` only if the construction is refused, which keeps this
-    rider's promise: a verdict this function cannot build is «no verdict»,
-    never a raise on a turn that already delivered.
+    **Every failure is `None`, and `None` means NO VERDICT — never the model's
+    one.** Two things are being got right here at once.
+
+    The first is that this function must not raise. It runs below the fold's
+    guards but ABOVE the position write, so an escape reaches `run`'s
+    `BaseException` handler with `outcome` unset and nothing written — on a
+    turn that already delivered its reply. `except Exception` and not
+    `except ValueError`: the reachable refusal today is the domain type's
+    (`TurnVerdict` needs a `tag_id`), but `datetime.fromtimestamp` raises
+    `OverflowError`/`OSError` rather than `ValueError` on an out-of-range
+    `ts`, and a narrow `except` chosen against today's reachable set is how a
+    guard stops guarding when the code around it moves.
+
+    The second is that falling back to the model's verdict would be worse than
+    writing nothing: we have just established the turn is contradicted, so its
+    `grounded=true` is the one answer we know to be wrong, and re-writing it
+    would launder a failed override into a blessing. `except ValueError`
+    returning `verdict` was the first shape and did exactly that.
+
+    **The RETURN VALUE of that branch is not observable today, and the
+    mutation table says so by having no entry for it.** `_verdict` builds its
+    `TurnVerdict` with the same `tag_id` and `conversation_id` this one does,
+    so every invariant that refuses here has already refused there and
+    `verdict` is `None` by the time we arrive — swapping `None` for `verdict`
+    changes nothing a test can see. What IS guarded is that the branch exists
+    at all: `test_a_verdict_the_domain_refuses_costs_the_verdict_and_not_the_position`
+    reddens the moment this function is allowed to raise. The value is written
+    for the day the two constructions stop sharing their invariants.
     """
-    clock = datetime.fromtimestamp(row.ts / 1000, tz=tz).strftime("%H:%M")
-    claim = _ROOM_SCOPE_CLAIM.format(clock=clock)
-    existing = verdict.unsupported if verdict is not None else ()
-    claims = (claim, *existing)[:UNSUPPORTED_MAX_ITEMS]
     try:
+        clock = datetime.fromtimestamp(row.ts / 1000, tz=tz).strftime(
+            "%Y-%m-%d %H:%M")
+        claim = _ROOM_SCOPE_CLAIM.format(clock=clock)
+        existing = verdict.unsupported if verdict is not None else ()
+        # The code claim goes FIRST and the list is cut to the cap, so the
+        # model's LAST claim is the one dropped when it already carries ten —
+        # `TurnVerdict` refuses an over-long list outright rather than
+        # truncating, so without this the whole verdict would be lost.
+        claims = (claim, *existing)[:UNSUPPORTED_MAX_ITEMS]
         return TurnVerdict(
             tag_id=tag_id, conversation_id=conversation_id,
             grounded=False, unsupported=claims, created_at=now_ms,
         )
-    except ValueError:
-        log.warning(
-            "debrief: the deterministic room-scope verdict was refused by the "
-            "domain type (tag=%s); keeping the model's verdict", tag_id,
+    except Exception:
+        log.exception(
+            "debrief: the deterministic room-scope verdict could not be built "
+            "(tag=%s); no verdict is written for this turn", tag_id,
         )
-        return verdict
+        return None
 
 
 @dataclass(frozen=True)
@@ -597,9 +627,36 @@ class Wiring:
 #: this turn actually happen».
 _BROKEN_TURN_OUTCOMES = frozenset({"llm_error", "timeout"})
 
+#: How far before the turn's own newest row a delivered reply still counts as
+#: CONTEMPORARY with it — the recency bound on the check below.
+#:
+#: **It exists because `trace.transcript` is a ROW window, not a time window**,
+#: and an independent review measured the difference: `recent(limit=40)` on a
+#: room that says a handful of things a day reaches back DAYS, so without this
+#: every broken turn came back ungrounded on the strength of a reply from last
+#: Tuesday — forcing a re-derivation and throwing away the position, on a
+#: claim whose rendered clock made it read as though it were today. That is
+#: this repo's own time-grounding lesson reappearing inside the fix for it.
+#:
+#: Five minutes, and the number is the RACE it has to cover: the incident's
+#: reply and the tag that followed it are the same wall-clock second, a person
+#: tagging her while her answer was in flight. Anything slower than a few
+#: minutes is not that race — it is a reply to something else.
+#:
+#: It also settles a millisecond coin-flip the review found: her send and the
+#: tag share a second, so a bound at exactly the newest row's `ts` would admit
+#: or refuse the batch half depending on which of the two landed first.
+_CONTEMPORARY_MS = 5 * 60 * 1000
+
 #: What the deterministic check writes into the verdict when it fires. Under
 #: `UNSUPPORTED_MAX_CHARS` (200) by construction — `TurnVerdict.__post_init__`
 #: refuses a longer one and would cost the whole verdict.
+#:
+#: The clock is rendered WHOLE, date and all. A bare `%H:%M` was ambiguous
+#: about which day it named, and this string is durable: it is written to
+#: `turn_verdict` and read back by a re-derivation pass that has no idea when
+#: it was written. `_CONTEMPORARY_MS` makes the row same-day in every case but
+#: a midnight crossing, which is exactly the case a bare clock would get wrong.
 _ROOM_SCOPE_CLAIM = (
     "a claim that nothing was sent, from a turn that broke — a reply of yours "
     "was delivered to this room at {clock} and this turn's outcome is not "
@@ -635,39 +692,47 @@ def _delivered_despite_the_outcome(
     that re-derivation, and it is self-correcting: the next fold rebuilds from
     the window rather than carrying the paragraph forward.
 
-    **Two narrow sets, never the whole batch, and the narrowing is the whole
-    reason this does not fire constantly.** The watermark batch is every row
-    since the last fold — on a conversation that has not folded since
-    yesterday it holds every reply she made in it, and a broken turn would
-    come back «ungrounded» on the strength of one from yesterday morning. So
-    only two kinds of row count, and both are contemporary with the turn by
-    construction:
+    **CONTEMPORARY with the turn, and that is a clock bound rather than a
+    window bound** — `_CONTEMPORARY_MS` above says why the first version of
+    this was wrong. Two sources, one floor over both:
 
     - **the turn's own window** (`trace.transcript`) — the rows the tag path
       was reading when it died. This is where the incident's row was: she had
       answered seven seconds before the tag arrived, so her reply is the
-      second-to-last row of the window the dead turn was looking at.
-    - **anything delivered at or after the tag** — a batch row no older than
-      the turn's newest own row. That is the other half of the race: a
-      participation turn replying WHILE the tag turn ran records its row after
-      the turn captured its window, so it reaches the fold through the batch
-      and never through the trace.
+      second-to-last row of the window the dead turn was looking at. But that
+      window is `recent(limit=40)`, a count and not a duration, so its oldest
+      rows can be days old and are not this turn's business.
+    - **the watermark batch** — a participation turn replying WHILE the tag
+      turn ran records its row after the turn captured its window, so it
+      reaches the fold through the batch and never through the trace. The
+      batch is every row since the last fold, which on a conversation that has
+      not folded since yesterday is everything she said yesterday.
 
-    A turn with no window of its own is not bounded by either rule, so it
-    returns `None` rather than reaching for the batch — this instrument only
-    ever ADDS an ungrounded verdict, so not firing is the conservative
+    Both are filtered by the same floor, so neither can smuggle in a reply
+    that is merely IN THE WINDOW rather than part of this exchange.
+
+    A turn with no window of its own has no clock to bound anything against,
+    so it returns `None` rather than reaching for the batch — this instrument
+    only ever ADDS an ungrounded verdict, so not firing is the conservative
     direction.
 
-    Returns the ROW so the claim can name its clock; `None` when either half
-    does not hold.
+    Returns the ROW so the claim can name its clock; `None` when nothing
+    qualifies.
     """
     if trace.outcome not in _BROKEN_TURN_OUTCOMES or not trace.transcript:
         return None
+    # The newest row the turn itself was reading — NOT necessarily the tag.
+    # In this incident's own race her reply and the tag share a second, so
+    # which of them is last is a millisecond detail; the floor is measured
+    # from whichever it was, and `_CONTEMPORARY_MS` is wide enough that the
+    # answer does not matter.
+    newest_ts = trace.transcript[-1].ts
+    floor = newest_ts - _CONTEMPORARY_MS
     own_ids = {row.id for row in trace.transcript}
-    tag_ts = trace.transcript[-1].ts
     candidates = [
-        *trace.transcript,
-        *(row for row in batch if row.id not in own_ids and row.ts >= tag_ts),
+        *(row for row in trace.transcript if row.ts >= floor),
+        *(row for row in batch
+          if row.id not in own_ids and row.ts >= floor),
     ]
     for row in sorted(candidates, key=lambda r: r.id, reverse=True):
         if row.is_nora and row.delivery_status is DeliveryStatus.SENT:
@@ -1313,6 +1378,20 @@ async def run(
         # lines down regardless.
         contradicted = _delivered_despite_the_outcome(trace, batch)
         if contradicted is not None:
+            # **COUNTED, and labelled with what the MODEL said**, because
+            # otherwise this check destroys the only reading that made #189
+            # measurable. `nora_turn_verdict_total{grounded="false"}` is where
+            # «the judge has never once convicted» is read from, and after
+            # this lands a `false` there can be code-authored — with nothing
+            # able to tell which. The label answers it directly: how often the
+            # code overrode, and what the model had said when it did.
+            metrics.inc(
+                "nora_debrief_room_scope_overrides_total",
+                model_verdict=(
+                    "absent" if verdict is None
+                    else "grounded" if verdict.grounded else "ungrounded"
+                ),
+            )
             verdict = _with_room_scope_claim(
                 verdict, row=contradicted, tag_id=trace.tag_id,
                 conversation_id=trace.conversation_id, now_ms=now_ms, tz=tz,
