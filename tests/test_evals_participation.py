@@ -289,16 +289,26 @@ async def test_run_case_stamps_the_judged_line_recent_and_last(monkeypatch):
     assert trajectory.sent == ["Oct 26 at IVE"]
     assert calls, "the participation runner was never invoked"
     rendered = _flatten(calls[0]["pre_fill"])
-    judged_line = next(
-        line for line in rendered.splitlines() if "so when is it?" in line
-    )
-    age_m = re.search(r"\(([^)]+)\)\s*\[", judged_line)
-    assert age_m is not None, judged_line
-    age_text = age_m.group(1)
-    assert "d ago" not in age_text, (
+    lines = rendered.splitlines()
+
+    def _age_of(needle: str) -> str:
+        # From the END: the judged line and the seeded line are both plain
+        # text that could in principle recur in a quoted snippet elsewhere in
+        # the prompt (reviewer finding) — the transcript row itself is always
+        # the LAST occurrence, since nothing downstream of `_transcript_block`
+        # repeats a row's own body.
+        line = next(row for row in reversed(lines) if needle in row)
+        m = re.search(r"\(([^)]+)\)\s*\[", line)
+        assert m is not None, line
+        return m.group(1)
+
+    # The judged (incoming, untagged) line: recent, minutes not days.
+    judged_line = next(row for row in reversed(lines) if "so when is it?" in row)
+    judged_age = _age_of("so when is it?")
+    assert "d ago" not in judged_age, (
         f"the judged line must read in minutes, not days/decades: {judged_line!r}"
     )
-    assert age_text == "just now" or re.fullmatch(r"\d+m ago", age_text), (
+    assert judged_age == "just now" or re.fullmatch(r"\d+m ago", judged_age), (
         f"unexpected age token on the judged line: {judged_line!r}"
     )
     # And it must be the LAST row — never sorted above the window it closes.
@@ -307,6 +317,20 @@ async def test_run_case_stamps_the_judged_line_recent_and_last(monkeypatch):
     assert judged_line.startswith(f"#{max(row_numbers)} "), (
         f"the judged line must be the newest (last) row, not sorted above "
         f"the seeded window: {rendered!r}"
+    )
+
+    # The SEEDED transcript row (from `_GROUNDED_SEED["transcript"]`) must be
+    # recent too — the other half of issue #213's fix, and the half the
+    # judged-line assertions above do NOT exercise: reverting
+    # `seed_from_dict`'s `now_ms`-relative base back to a frozen historical
+    # constant (the old `_SEED_TS_BASE`) leaves the judged line last and
+    # "just now" — ordering and the judged line's own age are both
+    # unaffected — while the seeded row quietly drifts stale by one rendered
+    # day per calendar day nobody touches the constant. Pinned here so a
+    # mutation entry against `seed_from_dict`'s base has something to redden.
+    seed_age = _age_of("does anyone know when AWS Community Day 2026 is?")
+    assert "d ago" not in seed_age, (
+        f"the seeded transcript row must read in minutes, not days: {seed_age!r}"
     )
 
 
