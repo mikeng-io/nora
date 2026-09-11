@@ -23,6 +23,8 @@ reproducing `stop()`'s real `after`-firing behaviour.
 from __future__ import annotations
 
 import asyncio
+import threading
+from collections.abc import Callable
 from unittest.mock import patch
 
 import discord
@@ -229,37 +231,154 @@ async def test_a_natural_after_firing_without_a_preceding_stop_schedules_on_fini
     assert finished.is_set() is True
 
 
+async def _run_the_stale_completion_race(
+    supersede: Callable[[DiscordVoiceSession], None],
+) -> list[str]:
+    """Drives the race the two tests below assert on, and returns what
+    `on_finished` recorded.
+
+    The hand-off is the REAL one: `discord.py` fires `after` from the
+    `AudioPlayer`'s own thread, never the loop's, so this drives it from a
+    real thread too — that is what makes `run_coroutine_threadsafe` actually
+    cross threads here instead of being a same-thread `call_soon`. The loop
+    is parked in `Thread.join()` while that happens, so the completion is
+    provably QUEUED AND NOT RUN when `supersede` is called: the loop has had
+    no turn at all.
+
+    **The wait is on a condition, not on a count of scheduler turns.** The
+    marker coroutine is handed to the loop through the same
+    `run_coroutine_threadsafe` path immediately after the completion, and
+    `loop.call_soon_threadsafe` callbacks run in registration order, so the
+    marker cannot have run until the completion has already had its turn.
+    Waiting two `await asyncio.sleep(0)`s instead — which is what this test
+    did until issue #179 — was a guess about scheduler behaviour rather than
+    an observation of the code, and it is why a genuine, deterministic,
+    every-platform failure was carried for weeks as "flaky on Apple
+    Silicon"."""
+    loop = asyncio.get_running_loop()
+    voice_client = _FakeVoiceClient()
+    calls: list[str] = []
+    drained = asyncio.Event()
+
+    async def on_finished() -> None:
+        calls.append("finished")
+
+    async def marker() -> None:
+        drained.set()
+
+    session = DiscordVoiceSession(
+        voice_client, loop=loop,
+        on_finished=on_finished, audio_source_factory=lambda url: _FakeAudioSource(url),
+    )
+    session.play("https://cdn.example/a")
+
+    def audio_player_thread() -> None:
+        # The track ends on its own: `AudioPlayer.run`'s `finally` calls
+        # `after`, which queues `on_finished` on the loop.
+        voice_client.stop()
+        asyncio.run_coroutine_threadsafe(marker(), loop)
+
+    thread = threading.Thread(target=audio_player_thread, name="fake-audio-player")
+    thread.start()
+    thread.join()
+
+    # `MusicPlayer.skip()`'s own advance, landing before the queued
+    # completion got a turn -- the exact ordering `skip()` produces (its
+    # call chain has no `await` between the natural end and the advance).
+    supersede(session)
+
+    # Generous, and a DEADLOCK guard rather than a measurement: the marker is
+    # behind the completion in the loop's own queue, so it arrives as soon as
+    # the loop turns at all.
+    await asyncio.wait_for(drained.wait(), timeout=5.0)
+    return calls
+
+
 async def test_a_pending_natural_finish_is_cancelled_by_a_stop_that_beats_it_to_running() -> None:
     """The race a subagent review found: `_after` schedules `on_finished`
     via `run_coroutine_threadsafe` (queued, not yet run) when a track ends
     naturally; if `MusicPlayer.skip()` reaches `voice.stop()` before that
     scheduled coroutine gets a turn, the stale notification must never
     fire — or `skip()`'s own advance and this one both run, skipping two
-    tracks for one skip command."""
+    tracks for one skip command.
+
+    `stop()` is `skip()`'s path when the queue is EMPTY."""
+    calls = await _run_the_stale_completion_race(lambda session: session.stop())
+
+    assert calls == [], (
+        f"a completion superseded by stop() still reached on_finished "
+        f"({len(calls)} call(s), expected 0): MusicPlayer.skip()'s own advance "
+        f"plus this one advances the queue twice for one skip command"
+    )
+
+
+async def test_a_pending_natural_finish_is_cancelled_by_a_play_that_beats_it_to_running() -> None:
+    """The same race down `skip()`'s OTHER path, and the commoner one:
+    `MusicPlayer.skip()` deliberately does NOT call `voice.stop()` when a
+    next track exists — `_advance()`'s own `voice.play()` supersedes the
+    audible track instead. A completion queued by the outgoing track's
+    natural end must not survive that `play()` either.
+
+    Measured through the real `MusicPlayer` for issue #179 with a queue of
+    A/B/C: one `/music skip` after A's natural end left **C** playing."""
+    calls = await _run_the_stale_completion_race(
+        lambda session: session.play("https://cdn.example/b"),
+    )
+
+    assert calls == [], (
+        f"a completion superseded by play() still reached on_finished "
+        f"({len(calls)} call(s), expected 0): the track skip() just started "
+        f"is immediately skipped again"
+    )
+
+
+async def test_a_completion_already_suspended_inside_on_finished_is_cancelled_by_a_stop() -> None:
+    """The OTHER half of `_supersede_pending_finish`, and the half the epoch
+    cannot do.
+
+    Once a completion has started, it has already passed the epoch check —
+    only `Future.cancel()` can still stop it. That is not hypothetical: the
+    completion's first real `await` in production is
+    `MusicPlayerManager.on_track_finished`'s per-guild lock, which
+    `MusicPlayer.skip()` is holding at exactly that moment. Here the gate
+    stands in for that lock.
+
+    The wait is on the CONDITION that the completion has started and reached
+    its await; the deadline is a deadlock guard."""
+    loop = asyncio.get_running_loop()
     voice_client = _FakeVoiceClient()
-    calls: list[str] = []
+    started = asyncio.Event()
+    completed: list[str] = []
+    gate = asyncio.Event()
 
     async def on_finished() -> None:
-        calls.append("finished")
+        started.set()
+        await gate.wait()          # stands in for the per-guild lock
+        completed.append("advanced")
 
     session = DiscordVoiceSession(
-        voice_client, loop=asyncio.get_running_loop(),
+        voice_client, loop=loop,
         on_finished=on_finished, audio_source_factory=lambda url: _FakeAudioSource(url),
     )
     session.play("https://cdn.example/a")
 
-    # The track ends naturally -- `_after` schedules `on_finished` but the
-    # loop has not run it yet.
-    voice_client.stop()
-    # `MusicPlayer.skip()`'s own `voice.stop()` call, reaching here with no
-    # intervening `await` -- the exact ordering `skip()` produces in
-    # practice (no yield point before it in the real call chain).
-    session.stop()
+    thread = threading.Thread(target=voice_client.stop, name="fake-audio-player")
+    thread.start()
+    thread.join()
 
+    # Let the completion start and reach its await -- this is the case the
+    # epoch is powerless against.
+    await asyncio.wait_for(started.wait(), timeout=5.0)
+
+    session.stop()               # skip() supersedes it while it waits
+    gate.set()                   # the lock it was waiting on is released
     await asyncio.sleep(0)
     await asyncio.sleep(0)
 
-    assert calls == []
+    assert completed == [], (
+        f"a completion superseded while suspended mid-advance still finished "
+        f"its work: {completed}"
+    )
 
 
 async def test_a_natural_finish_that_already_ran_is_unaffected_by_a_later_stop() -> None:

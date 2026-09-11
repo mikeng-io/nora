@@ -5,6 +5,13 @@ received only the minimal non-tag sections: no identity, no voice, no
 conduct, no constraints — and `LeakGuard`'s verbatim-leak corpus (R-6) would
 have been far thinner on the very path that first speaks unprompted.
 
+**What this file owns, after issue #177.** Two things, and stating the second
+is the point of the issue: which sections reach which audience (ROUTING), and
+that each one arrives carrying a body (NON-DEGENERACY). It does NOT own the
+WORDING of any rule — a needle is a containment test and containment cannot see
+polarity, so the inversion of a sentence is invisible here by construction. See
+the block above `SILENCE` for the measurement and for where polarity IS pinned.
+
 The split that makes a second audience possible is smaller than it looks.
 `# Silence is the default` was not homogeneous: its first three sentences are
 FALSE on a turn nobody called, and its last sentence is DEC-40's multi-message
@@ -17,9 +24,118 @@ below still holds in both audiences and only its needle moved.
 
 import re
 
+import pytest
+
 from nora.doctrine.loader import DoctrineStore
 
 AUTHORED = ("identity", "voice", "conduct", "constraints")
+
+# Every audience of HERS, and exactly what the ASSEMBLY must resolve to.
+#
+# Not a restatement of `test_doctrine_content.EXPECTED`'s `applies_to` column.
+# That one reads the FILES and pins what each one declares; this reads the
+# assembled prompt and pins what a turn actually receives. The two can disagree
+# — a routing change in `DoctrineStore.get`, an `always`, a duplicate `name`
+# losing a file to the dedupe — and when they do, this is the side that says
+# what the model was handed.
+#
+# `==`, not a subset, in both directions. A file silently GAINING an audience
+# is the same class of defect as one losing it: `participation.md` is the
+# Relevance Gate's instruction and must never resolve into a turn she reads.
+#
+# Issue #177: this table replaced two tests that covered `heartbeat` and
+# `participation` only. Deleting `proactive` from identity/voice/conduct/
+# constraints left that audience resolving to `sections=['silence']` — no
+# identity, no voice, no constraints, on a path that speaks UNCALLED — and
+# deleting `tag` from identity/voice/constraints gutted her primary path. Both
+# passed the five tests in this file.
+#
+# HERS, so `relevance_gate` and `dreamer` are deliberately absent — they are
+# instruments, not turns she reads. That leaves the gate's own instruction with
+# NO non-degeneracy floor: a gutted `participation.md` is caught only by
+# `_has_body` in `nora/ingest/relevance_gate.py` (a "carries any prose" bar) and
+# by its repin-able sha. Given what a bad gate instruction measurably costs
+# (#144, over 40 labelled windows), that is a real gap. It is not closed here
+# because this file's subject is the doctrine SHE receives; the gate's
+# instrument wants its own floor next to the gate. Filed as issue #194 rather
+# than left as a comment somebody has to rediscover.
+#
+# `tag` and `proactive` assemble to byte-identical text today, so these are
+# four parameters over three distinct assemblies — not four independent checks.
+# They stay separate because the divergence is exactly what regression 2 was.
+HER_AUDIENCES: dict[str, tuple[str, ...]] = {
+    "tag": (*AUTHORED, "silence"),
+    "heartbeat": AUTHORED,
+    "participation": (*AUTHORED, "silence", "participation-conduct"),
+    "proactive": (*AUTHORED, "silence"),
+}
+
+# A section tag with nothing behind it is not doctrine. `voice.md` truncated to
+# its front matter plus a bare `# 你係邊個` still emits `name="voice"`, so every
+# `f'name="{name}" in text'` assertion in this file passed while the audience
+# was carrying an empty persona (issue #177, regression 4).
+#
+# 400 is a floor, not a target. Measured 2026-09-11, the shipped bodies run
+# 948 (`silence`) to 7061 (`conduct`) characters, so the tightest file has 2.4x
+# headroom — enough that an honest edit does not trip this, and far above the
+# ~10 characters a heading-only file leaves. Characters, not bytes: `voice.md`
+# is Cantonese and a byte count would hold it to a third of the standard.
+#
+# It is a SHALLOW bar and it is meant to be: 94% of `conduct.md` can be deleted
+# and a 401-character remnant passes. It answers "did a section arrive empty",
+# which is the question #177's regression 4 asked, and it answers nothing about
+# whether what arrived is any good. Raising it toward the shipped sizes would
+# turn every honest tightening of a file into a failure, which is how a gate
+# gets deleted rather than obeyed.
+#
+# It is also the ONLY thing left standing after a legitimate edit: truncate
+# `voice.md`, bump its `version`, repin its sha, and the parity gate goes green
+# while all four cases below stay red. Measured 2026-09-11. That is why it is
+# here and not folded into the sha.
+MIN_BODY_CHARS = 400
+
+# A NEEDLE CANNOT CHECK POLARITY, AND THIS FILE DOES NOT PRETEND TO.
+#
+# `SILENCE` below is a substring of its own inversion — write "it is never true
+# that silence is a complete answer — a success, not a failure" into
+# `silence.md` and every assertion here still passes, because the needle is
+# still in the haystack. That is structural: `in` is a containment test and
+# containment is blind to the words wrapped around it. Lengthening the needle
+# moves the blind spot, it does not close it.
+#
+# Deliberately NOT fixed here, and this is the "everything unenforced says so,
+# in place" note rather than a silent gap. Polarity is pinned by
+# `tests/test_doctrine_version_parity.py`: it holds a sha over every doctrine
+# file's served section, so ANY edit to a body — inversion, negation, a deleted
+# "not" — turns it red unless the author also bumps the file's `version` and
+# repins, which is the deliberate act that gate exists to force.
+#
+# Measured, not assumed (2026-09-11): with that inversion applied to
+# `silence.md`, this file reported 5 passed, and the `[silence]` case of
+# `test_doctrine_version_parity.py`'s
+# `test_the_served_section_has_not_moved_without_the_version_moving`
+# failed. A second sha pin here would duplicate that, and a duplicated pin is
+# two places to update and one place to forget.
+#
+# **AND THE SHA PIN ONLY CATCHES THE UNANNOUNCED INVERSION. SAYING SO IS THE
+# POINT OF THIS BLOCK.** A reviewer ran the same inversion WITH a `version:`
+# bump: the only red was the version literal in `PINNED`, which the author then
+# repins — that is the documented workflow, not an abuse of it. After the repin
+# NOTHING IN THIS REPO CATCHES AN INVERTED DOCTRINE RULE. That is sharpest on
+# `silence.md`, which is `change_policy: agent-may-edit`, so the agent inverting
+# the sentence is the same one filling in the paperwork that would have flagged
+# it.
+#
+# Recorded rather than fixed because the fix is not a test. Polarity is a
+# claim about MEANING; the instruments that could judge it are a human reading
+# a diff and the eval suite reading behaviour, and neither is a unit test. What
+# a unit test can do — refuse a silent edit, refuse an empty section, refuse a
+# wrong audience — is done here and next door. Do not read either gate as
+# "the rules cannot be reversed".
+#
+# What this file DOES own is ROUTING and NON-DEGENERACY: which sections reach
+# which audience, and that each arrives with a body. Wording is the sha's, and
+# meaning is nobody's.
 # DEC-88 rewrote the rule this needle points at — it used to be the flat
 # prohibition "never split one answer across several", which was the sentence
 # multi-message and mentions were later built to contradict. The needle moves
@@ -79,13 +195,83 @@ def _bodies(store: DoctrineStore, audience: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
-def test_the_heartbeat_audience_is_not_degenerate(doctrine_store):
-    """All four authored files must reach a non-tag turn. Without this she
-    delivers with no persona and no constraints, and LeakGuard's verbatim-leak
-    corpus is missing the identity and conduct rules."""
-    text = doctrine_store.get(applies_to="heartbeat").text
-    for name in AUTHORED:
-        assert f'name="{name}"' in text, f"{name} missing from the heartbeat audience"
+_SECTION_RE = re.compile(
+    r'<section [^>]*\bname="(?P<name>[^"]+)"[^>]*>\n(?P<body>.*?)\n</section>',
+    re.DOTALL,
+)
+
+
+def _sections_in(store: DoctrineStore, audience: str) -> dict[str, str]:
+    """`name` -> that section's body, as the audience actually receives it.
+
+    Parsed out of the ASSEMBLED text rather than read off the files, because
+    the assembly is what reaches the model: a section that never got selected
+    is simply absent here, and one that arrived empty has an empty body here.
+    Both are invisible to `f'name="{x}"' in text`, which is what issue #177's
+    four regressions all walked through.
+
+    **Fails closed on anything it cannot parse cleanly, and that is not
+    decoration.** Section BODIES are not escaped — only attributes are — so a
+    body containing a literal `</section>` followed by a second `<section …
+    name="voice" …>` re-anchors the scan, and a plain dict comprehension keeps
+    the LAST match for a duplicate name. Measured by a reviewer on this branch:
+    that shape serves `voice` as a ~10-character section and every assertion
+    below passes. Counting the matches against the open tags, and refusing a
+    repeated name, turns a silent pass into a loud failure. Hostile doctrine
+    prose is far-fetched; a body that quotes the prompt format while explaining
+    it is not.
+
+    The guard counts OPEN tags, so one direction is left: a stray `</section>`
+    with no opening partner truncates a parsed body rather than adding a
+    section, and the count still matches. That can only produce a false RED —
+    a body reading shorter than it was served — which is the safe direction,
+    and it is named here rather than left for the next reader to rediscover.
+    """
+    text = store.get(applies_to=audience).doctrine_text
+    matches = list(_SECTION_RE.finditer(text))
+    assert len(matches) == text.count("<section "), (
+        f"the {audience} assembly has {text.count('<section ')} open tags but "
+        f"{len(matches)} parseable sections — a body is carrying section markup "
+        f"and this helper can no longer say what was served"
+    )
+    sections: dict[str, str] = {}
+    for m in matches:
+        assert m["name"] not in sections, (
+            f'two sections named {m["name"]!r} in the {audience} assembly'
+        )
+        sections[m["name"]] = m["body"]
+    return sections
+
+
+@pytest.mark.parametrize("audience", sorted(HER_AUDIENCES))
+def test_no_audience_of_hers_is_degenerate(doctrine_store, audience: str):
+    """Every audience she reads gets the full authored set, and every section
+    it gets arrives with a body.
+
+    The argument is the same one `heartbeat` and `participation` each needed
+    when they were added, now stated once for all four: without the authored
+    files she delivers with no persona and no constraints, and `LeakGuard`'s
+    verbatim-leak corpus (R-6) is built from whatever the audience resolves to,
+    so a thin audience is a thin corpus on exactly the path that speaks.
+
+    `proactive` is the sharpest case and was the unguarded one: it speaks
+    UNCALLED, off her own earlier intention, and it resolved to
+    `sections=['silence']` under a four-line edit that this suite passed.
+    """
+    sections = _sections_in(doctrine_store, audience)
+
+    assert set(sections) == set(HER_AUDIENCES[audience]), (
+        f"the {audience} audience resolved to {sorted(sections)}, expected "
+        f"{sorted(HER_AUDIENCES[audience])} — a file's `applies_to` moved, or "
+        f"`get()` stopped selecting it"
+    )
+    for name, body in sorted(sections.items()):
+        assert len(body.strip()) >= MIN_BODY_CHARS, (
+            f"{name} reaches the {audience} audience as {len(body.strip())} "
+            f"characters (floor {MIN_BODY_CHARS}). A section tag with nothing "
+            f"behind it is not doctrine — the audience is degenerate even "
+            f"though the tag is emitted."
+        )
 
 
 def test_silence_reaches_called_and_offered_turns_only(doctrine_store):
@@ -113,20 +299,25 @@ def test_silence_reaches_called_and_offered_turns_only(doctrine_store):
     assert SILENCE not in _bodies(doctrine_store, "heartbeat")
 
 
-def test_the_participation_audience_is_not_degenerate(doctrine_store):
-    """The same argument the heartbeat audience needed (above), one audience
-    later: a participation turn must carry the full persona, conduct and
-    constraint set — LeakGuard's verbatim-leak corpus is built from whatever
-    the audience resolves to, and a thin corpus on the path that speaks
-    UNCALLED is the worst version of thin."""
-    text = doctrine_store.get(applies_to="participation").text
-    for name in (*AUTHORED, "silence"):
-        assert f'name="{name}"' in text, f"{name} missing from the participation audience"
-    # And NOT the gate's instruction. `participation.md` describes an
-    # instrument, not a person: it tells a cheap upstream call how to decide
-    # whether her turn happens. Injected into HER prompt it would read as a
-    # rulebook about her own worth to the room.
-    assert 'name="participation"' not in text
+def test_the_gate_instrument_is_not_in_the_participation_audience(doctrine_store):
+    """`participation.md` describes an instrument, not a person: it tells a
+    cheap upstream call how to decide whether her turn happens. Injected into
+    HER prompt it would read as a rulebook about her own worth to the room.
+
+    `test_no_audience_of_hers_is_degenerate` already forbids it by asserting
+    the exact section set. This stays as the NAMED statement of that one rule,
+    because the reason is not readable from a set comparison, and because the
+    confusable pair `participation` / `participation-conduct` is exactly where
+    somebody will later "fix" the set by adding the wrong one of the two.
+
+    Reads `doctrine_text`, not `text`, so the `<runtime_context>` block is out
+    of scope. That block carries no section tags, so nothing is lost — but it
+    is a narrowing from what this assertion used to cover and is said rather
+    than left to be noticed in a diff.
+    """
+    text = doctrine_store.get(applies_to="participation").doctrine_text
+    assert 'name="participation-conduct"' in text
+    assert 'name="participation"' not in text.replace('name="participation-conduct"', "")
 
 
 def test_the_gate_instruction_reaches_no_audience_of_hers(doctrine_store):
