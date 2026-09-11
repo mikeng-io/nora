@@ -115,6 +115,14 @@ class GateVerdictSchema(BaseModel):
     `parse_verdict` reads back — declared once so the structured path and the
     raw path answer the same question rather than two similar ones.
 
+    Production does not use it: the gate forms its verdict through a raw
+    `json_object` completion, because the SDK's structured output breached the
+    suite's safety bar on this exact call (#186). Its one caller is the eval
+    harness's `--via-sdk` arm, which is what MEASURES that — so this stays
+    here, beside `parse_verdict`, rather than moving into the harness: the
+    comparison is only worth reading while both arms are asked the same
+    question.
+
     `relevance_score` defaults to the `-1.0` sentinel `parse_verdict` already
     uses for absent, because the score is optional by design: a gate that must
     invent a number to answer at all is a gate reporting confidence it does
