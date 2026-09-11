@@ -2165,6 +2165,10 @@ class DreamBudgetConfig(BaseModel):
     shape and the same rule: the composition root builds the domain value from
     this one, and the DEFAULTS on both are the same numbers on purpose.
 
+    Four caps and a clock since 2026-09-11: `max_memory_calls` joined them
+    (issue #160) and is the only one that is not a token number — see its own
+    comment for why a ceiling on READS could not be a per-tool budget.
+
     `turns`/`total_tokens`/`output_tokens` are `LimitsConfig`'s three caps —
     R-8's, applied to a Dreamer run instead of a tag turn — and are three
     fields for `LimitsConfig`'s own reason: Strands' `_check_limits` SKIPS a
@@ -2202,6 +2206,28 @@ class DreamBudgetConfig(BaseModel):
     total_tokens: int = Field(default=40_000, ge=1)
     output_tokens: int = Field(default=4_000, ge=1)
     timeout_seconds: float = Field(default=120.0, gt=0)
+    #: **The per-PASS memory ceiling** (issue #160): how many reads a single
+    #: run may make across `nora.agent.dreamer.MEMORY_TOOLS` TOGETHER — `about`,
+    #: `ask_memory`, `search_memory_workspace`, `lookup_person`. The per-tool
+    #: budgets above it (`[llm.budgets]`, `NativeTool.budget`) bound each verb
+    #: on its own, which a pass spends by asking four verbs the same question:
+    #: the decide turn's live trace held two notes whose two handles its own
+    #: `<people>` block already carried and still made six held-state reads.
+    #:
+    #: Four rewrites of the objective moved that count between 3 and 8 and
+    #: never landed it at 2, and one of them — stating the cap in words — cost
+    #: a different case 5/5 -> 1/5, because a model told it has a hard cap
+    #: declines the work rather than spending less. So this is CODE and not
+    #: instruction, and it fails closed: the (N+1)th read is answered
+    #: `unavailable` with a reason, never an error and never a silent empty.
+    #:
+    #: **`ge=1`, and 0 is refused rather than read as "off".** The proactive
+    #: objective requires one memory read before any `remind` and the decide
+    #: suite FAILS a reminder set without one, so a ceiling of 0 is a
+    #: configuration under which the adaptor can never legitimately do its job
+    #: — a boot failure is the honest answer to it, the same posture
+    #: `output_tokens = 0` gets by being `ge=1` above.
+    max_memory_calls: int = Field(default=2, ge=1)
 
 
 class DreamerConfig(BaseModel):

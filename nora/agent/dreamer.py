@@ -140,6 +140,47 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
     "ask_memory": MAX_MEMORY_RESULT_CHARS,
 }
 
+#: THE VERBS THE PER-PASS MEMORY CEILING COUNTS (issue #160) — every read that
+#: answers «what is already known about this person», whichever store it goes
+#: to. The four are the memory cluster of `nora.language.proactive.
+#: PROACTIVE_TOOLS`; they are spelled HERE rather than imported because
+#: `nora.agent` may not import `nora.language` (the layer contract), and
+#: `tests/unit/test_dream_memory_budget.py` pins this set against that one so
+#: the two cannot drift into disagreement in silence.
+#:
+#: `lookup_person` is in, and it is the inclusion worth defending because it
+#: looks like the one that could STARVE a pass — a note involving three people
+#: cannot spend a ration of two looking each of them up. It cannot, and the
+#: reason is structural rather than a judgement call: **`lookup_person` and the
+#: `<people>` block read the same room through the same roster.** The block is
+#: built from `Room(platform, conversation_id, roster_source, persons).
+#: members()` at the composition root; `RegistryToolSource.build` hands the
+#: tools a `Room` on the same four values, and `lookup_person` is
+#: `view.find(name)` over `room.scope()`, which the port's own docstring calls
+#: «identical to `members()` when the roster is readable». So it can name
+#: nobody the block did not already render — a handle the index does not carry
+#: comes back `not_found`, not resolved. Its only margin over the rendered list
+#: is a fuzzier match on the SAME names, which is precisely the read #160 is
+#: about. Leaving it out would leave a free verb answering the question the
+#: prompt already answers.
+#:
+#: (It was granted in the first place — issue #145 — because the pass held no
+#: verb for «who is this handle». The SAME issue shipped the `<people>` index
+#: for the same question, and the index is the half that made the verb
+#: redundant here.)
+#:
+#: `note_read` is OUT — it reads a note the prompt INDEXED rather than a store
+#: the prompt summarised, and it is the verb the index deliberately sends her
+#: to for a body (39 D9).
+#:
+#: NOT `_TOOL_RESULT_CAPS`' keys, which is a different question about the same
+#: verbs (how big may one answer be, not how many answers may a pass have) and
+#: includes `search_memory`, the room-scoped sibling no workspace-keyed adaptor
+#: holds.
+MEMORY_TOOLS: frozenset[str] = frozenset({
+    "about", "ask_memory", "search_memory_workspace", "lookup_person",
+})
+
 DreamStatus = Literal["ok", "nothing_found", "unavailable"]
 
 
@@ -164,6 +205,37 @@ class AdaptorBudget:
     total_tokens: int
     output_tokens: int
     timeout_seconds: float
+    #: **How many MEMORY reads one pass may make, across every memory verb
+    #: together** (issue #160) — `MEMORY_TOOLS`, enforced by `DreamGuard` and
+    #: reset by construction every sample, because the guard is built per
+    #: sample and so is its ledger.
+    #:
+    #: **PER SAMPLE, so an adaptor with `AdaptorSchedule.samples = N` may make
+    #: N x this per FIRE.** That is the same grain the three token caps have
+    #: (each is one model call's limit, and N samples of a bounded call is what
+    #: sampling means) and it is stated because «per pass» reads as «per fire»:
+    #: an operator setting 2 on a 5-sample adaptor would get 10. Inert today —
+    #: the only adaptor that samples holds no tools at all — and the reading
+    #: that would change it is a sampling adaptor with memory verbs, where the
+    #: union of N samples makes N independent reads of one store worth paying
+    #: for exactly once.
+    #:
+    #: It is here, beside the three token caps, because it is the same KIND of
+    #: number: what one run of one adaptor may spend. It is not a per-tool
+    #: budget — those live with the tool (`NativeTool.budget`, DEC-10) and
+    #: bound each verb on its own, which is exactly what a turn spends by
+    #: asking four verbs the same question.
+    #:
+    #: **Defaulted, so a ceiling exists by omission rather than by
+    #: configuration.** 2 is the number `evals/cases/proactive/decide.yaml`'s
+    #: `d11` grades at — one read the objective requires before any `remind`,
+    #: plus one — and it is a STARTING POINT, not a measurement: what was
+    #: measured is that four objective rewrites moved the live count between 3
+    #: and 8 and never landed it. Raise it in
+    #: `[dreamer.budgets.<adaptor>] max_memory_calls` where a pass genuinely
+    #: needs more; the reading that would move the default is the decide suite
+    #: losing recall at 2 that it keeps at 3.
+    max_memory_calls: int = 2
 
 
 @dataclass(frozen=True)
@@ -1276,13 +1348,18 @@ class DreamerRuntime:
         first sample's tool calls count against the second's budget. The
         TOKEN budget (`budget`) is deliberately per sample too — it is the
         model's own limit for one call, and N samples of a bounded call is
-        what sampling means.
+        what sampling means. **`max_memory_calls` inherits that**, which is
+        what makes it a per-PASS ceiling rather than a per-adaptor-lifetime
+        one: a guard built here cannot carry yesterday's reads, or the
+        previous workspace's, or the previous sample's.
         """
         guard = DreamGuard(
             adaptor=adaptor.name,
             budgets=dict(tool_budgets),
             metrics=self._metrics,
             result_caps=_TOOL_RESULT_CAPS,
+            memory_tools=MEMORY_TOOLS,
+            memory_budget=budget.max_memory_calls,
         )
         try:
             agent = factory.create_dream_agent(

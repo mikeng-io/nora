@@ -1132,13 +1132,33 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "limit_total_tokens, limit_output_tokens, timeout.",
         ("adaptor", "reason"),
     ),
-    # R-7 default-deny in the background loop. A veto here means the model
-    # asked for a tool its adaptor never granted — which under a read-only
-    # ceiling is not a leak, but IS the tell that an objective and its tool
-    # subset disagree about what the job needs.
+    # TWO findings on one series, separated by `rule`
+    # (`nora.agent.dream_guard.GuardRule`), and reading them as one is how this
+    # help text was wrong for a day:
+    #
+    #   rule="R-7"           — the model asked for a tool its adaptor never
+    #                          granted, or spent that tool's own ceiling. Under
+    #                          a read-only ceiling that is not a leak, but it IS
+    #                          the tell that an objective and its tool subset
+    #                          disagree about what the job needs. A CONFIG
+    #                          fault: it should be near zero, and a steady rate
+    #                          is something to go and fix.
+    #   rule="memory-budget" — the pass spent its whole memory ration and asked
+    #                          again (R-91, issue #160). Ordinary model
+    #                          behaviour that the ceiling absorbs, not a fault;
+    #                          the pass is answered `unavailable` and carries
+    #                          on. A NON-ZERO rate here is the ceiling doing its
+    #                          job. What is worth an alert is the pathological
+    #                          arm — a pass that spends its whole `turns` budget
+    #                          on refusals — which shows as this series climbing
+    #                          alongside `nora_dream_stop_reason_total
+    #                          {reason="limit_turns"}` and a `run_total`
+    #                          `unavailable` for the same adaptor.
     _CounterSpec(
         "nora_dream_guard_vetoes_total",
-        "Tool calls refused by DreamGuard, by adaptor and rule.",
+        "Tool calls refused by DreamGuard, by adaptor and rule: R-7 is a tool "
+        "never granted or past its own ceiling, memory-budget is the pass's "
+        "memory ration spent.",
         ("adaptor", "rule"),
     ),
     _CounterSpec(

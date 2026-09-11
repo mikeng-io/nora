@@ -104,6 +104,25 @@ workspace = "family"         # the same humans as the Signal group above
 label     = "Zone 42 #general"
 persons  = ["miles", "ada"]
 # location = true            # same switch as Signal, same meaning — see below.
+description = "a games room; 2200 is when people log on, not an appointment"
+                             # (optional, no default) WHAT KIND OF ROOM THIS IS, in your own
+                             # words. `label` says what the room is CALLED; this says what it
+                             # IS, and you are the only one who can say it. A background pass
+                             # reading this room's messages sees 「2200」 and 「today no?」 and,
+                             # without this line, has nothing telling it those are people
+                             # arranging to log on rather than making an appointment — it
+                             # wrote the same imaginary gathering into the notebook twice
+                             # before this field existed. It is rendered above the batch,
+                             # verbatim, as context for reading it and never as an instruction
+                             # to her.
+                             #
+                             # One or two plain sentences about the ROOM, not about Nora and
+                             # not about what you want her to do: what the room is for, what
+                             # its regular shorthand means, what a stranger reading a week of
+                             # it would misunderstand. Omit it entirely if you have nothing to
+                             # say — a room with no description is described by nothing, never
+                             # by a guess. It also reaches the proactive pass's `<home_room>`
+                             # block on whichever room is `home_room = true`.
 
 # WhatsApp (design/whatsapp-adoption/): the id is the group JID exactly as the
 # bridge reports it, `...@g.us`. Find it in the audit DB or in the bridge's

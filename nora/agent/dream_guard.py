@@ -18,6 +18,21 @@ So this is a SEPARATE guard rather than a weakened `ReplyGuard`. What it keeps:
   holds — reused as code, so a parallel tool batch is measured against itself
   and not merely between model turns (`nora.agent.call_ledger`).
 
+What it ADDS, and the tag path has no equivalent:
+
+* **a per-PASS ceiling on MEMORY reads** (issue #160). The per-tool budgets
+  bound each verb on its own, which a turn spends by asking four different
+  memory verbs the same question: the proactive decide turn's live trace
+  (Langfuse `340373cd`, 2026-09-10) held two notes whose two handles were
+  already rendered in its own `<people>` index and still spent `about`,
+  `search_memory_workspace` and `ask_memory` on them. The objective was
+  rewritten four ways to ration it; the count moved every time and never
+  landed, which is the signal to stop persuading and enforce. So: N reads
+  across the whole pass, whichever verbs they are, and the (N+1)th is
+  ANSWERED rather than vetoed — R-27's `unavailable` with a reason, in the
+  same shape a memory verb's own wiring gap produces, because a corrective
+  sentence invites the retry and a state does not.
+
 What it drops, and each is absent BY CONSTRUCTION rather than merely unused —
 there is no `Deliverer` to hold, no `terminal` parameter, no turn-ending latch,
 no `tool_choice` relaxation, no forced-first-tool pin, no DEC-93 recovery flag:
@@ -35,9 +50,10 @@ hook methods are the thin translation layer (RK-2).
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal, get_args
 
 from strands.hooks import (
     AfterToolCallEvent,
@@ -52,7 +68,54 @@ from .guards import _list_tool_names
 
 log = logging.getLogger("nora.dream_guard")
 
-__all__ = ["DreamGuard"]
+__all__ = ["GUARD_RULES", "MEMORY_BUDGET_REASON", "DreamGuard", "GuardRule"]
+
+#: The pass-wide ledger's ONE key. It is not a tool name and cannot collide
+#: with one: the memory ledger is a second `CallLedger` INSTANCE whose only
+#: entry this is, so the per-tool ledger never sees it and it never sees a
+#: per-tool count.
+_PASS_MEMORY = "<memory reads this pass>"  # noqa: S105 — a ledger key, not a secret
+
+#: The `rule` label vocabulary on `nora_dream_guard_vetoes_total`, DERIVED off
+#: a `Literal` rather than written as a bare string at each call site
+#: (AGENTS.md: «Label vocabularies are DERIVED from the code, never
+#: hand-copied»). It had no vocabulary at all while there was one value; the
+#: second is where a typo would silently start a new series instead of an
+#: error, so it gets one now.
+#:
+#: The two are different FINDINGS and must not collapse into one label: `R-7`
+#: says the objective asked for something it was never granted — a config
+#: fault worth chasing — while `memory-budget` says it asked for MORE of
+#: something it WAS granted than a pass is worth, which is ordinary model
+#: behaviour the ceiling is there to absorb.
+GuardRule = Literal["R-7", "memory-budget"]
+GUARD_RULES: frozenset[str] = frozenset(get_args(GuardRule))
+
+_R7_RULE: GuardRule = "R-7"
+_MEMORY_RULE: GuardRule = "memory-budget"
+
+#: What a memory verb refused by the per-pass ceiling says, verbatim. A
+#: CONSTANT because two readers depend on the exact words — the model, which
+#: must be able to tell this from an outage, and
+#: `tests/unit/test_dream_memory_budget.py`, which is the only thing that can
+#: say the sentence still reaches the model at all.
+MEMORY_BUDGET_REASON = "memory budget for this pass is spent"
+
+#: Strands' `ToolResult.status` vocabulary — `"success" | "error"` — which is
+#: the TRANSPORT's word for «this call completed», and is a different axis from
+#: R-27's `ok` / `nothing_found` / `unavailable`, which lives INSIDE the
+#: result's text. A tool answering `unavailable` still rides a `success`
+#: `ToolResult` (`strands.tools.decorator._wrap_tool_result` JSON-encodes the
+#: returned dict onto one), and that is the shape `_answer_unavailable`
+#: reproduces.
+#:
+#: NAMED rather than written inline because
+#: `tests/test_output_contracts.py::test_no_agent_module_returns_a_status_
+#: outside_the_vocabulary` scans `nora.agent` for `{"status": <literal>}` and
+#: reads every hit as an R-27 status a tool can hand the model — which is the
+#: right reading for a tool's own return, and the wrong one for this envelope.
+#: A constant keeps the scan honest instead of teaching it an exception.
+_SDK_RESULT_OK = "success"
 
 
 class DreamGuard(HookProvider):
@@ -69,6 +132,8 @@ class DreamGuard(HookProvider):
     def __init__(
         self, *, adaptor: str, budgets: Mapping[str, int], metrics: Metrics,
         result_caps: Mapping[str, int] | None = None,
+        memory_tools: frozenset[str] = frozenset(),
+        memory_budget: int | None = None,
     ) -> None:
         self._adaptor = adaptor
         self._metrics = metrics
@@ -83,8 +148,38 @@ class DreamGuard(HookProvider):
         # callers; the Dreamer's were not, and one unbounded page fetch could
         # spend the run's whole token budget on context.
         self._result_caps = result_caps or {}
+        # THE PER-PASS MEMORY CEILING (issue #160). A second `CallLedger` with
+        # one synthetic key, rather than a bare integer, and the reuse is the
+        # argument: the ledger already separates «finished» from «admitted and
+        # still running», which is the half that makes a ceiling hold WITHIN a
+        # parallel batch rather than only between model turns, and it already
+        # releases a reservation on every never-ran path (DEC-33). A hand-rolled
+        # counter here would be a second copy of both rules, and the copy that
+        # gets fixed is never both.
+        #
+        # `None` (or an empty verb set) keeps the pre-#160 behaviour exactly:
+        # no ceiling, nothing counted, nothing refused. An adaptor holding no
+        # memory verb is unaffected either way.
+        self._memory_tools = frozenset(memory_tools)
+        self._memory: CallLedger | None = (
+            CallLedger({_PASS_MEMORY: memory_budget})
+            if memory_budget is not None and self._memory_tools
+            else None
+        )
+        # `toolUseId` -> the R-27 body `_after_tool` must put in its place.
+        # Held between the two hooks because the SDK's own cancel path builds
+        # an ERROR `ToolResult`, and the whole point of this refusal is that it
+        # is not an error. Keyed on the id so a parallel batch's refusals do not
+        # answer each other's calls — `CallLedger.release`'s own lesson.
+        #
+        # An entry is dropped by `_after_tool`, which Strands fires for a
+        # cancelled call too; one that never fires leaves its entry behind. The
+        # guard lives ONE sample, so the worst case is bounded by that sample's
+        # `turns` x batch size — a few dozen short strings — which is why this
+        # is a dict rather than a cache with an eviction policy.
+        self._budget_refusals: dict[str, str] = {}
 
-    def _veto(self, rule: str, message: str) -> str:
+    def _veto(self, rule: GuardRule, message: str) -> str:
         self._metrics.inc(
             "nora_dream_guard_vetoes_total", adaptor=self._adaptor, rule=rule,
         )
@@ -101,7 +196,7 @@ class DreamGuard(HookProvider):
         """
         if not self._ledger.knows(tool_name):
             return self._veto(
-                "R-7", f"The tool {tool_name!r} does not exist. "
+                _R7_RULE, f"The tool {tool_name!r} does not exist. "
                        f"Use {_list_tool_names(self._tool_names)}.",
             )
         # Finished PLUS admitted-and-still-running, so a parallel batch is
@@ -110,11 +205,62 @@ class DreamGuard(HookProvider):
         # batch reads to a model as a reason to retry.
         if self._ledger.at_ceiling(tool_name):
             return self._veto(
-                "R-7", f"You already called {tool_name} "
+                _R7_RULE, f"You already called {tool_name} "
                        f"{self._ledger.spent(tool_name)} time(s) and have that context. "
                        "Answer from what you already have.",
             )
         return None
+
+    def memory_refusal(self, tool_name: str) -> dict[str, str] | None:
+        """The R-27 body this memory verb gets because the PASS's memory budget
+        is spent, or None to let the call through.
+
+        Pure and SDK-free like `evaluate`, and a SEPARATE method rather than a
+        branch inside it because the two produce different things: `evaluate`
+        returns a corrective SENTENCE for a call that should not have been made,
+        this returns a tool RESULT for a call that was reasonable and has no
+        answer left to give. Folding them would force one return type on both
+        and the fold would be the veto's, which is the outcome #160 measured
+        four objectives' worth of evidence against.
+
+        **The note does NOT offer her a way out, and that omission is
+        measured.** The objective rewrite that stated a ration in words cost
+        `d02` 5/5 -> 1/5 — told a hard cap, the model declines the work rather
+        than spending less — so a refusal ending «say so and decide nothing»
+        would deliver that same permission mid-pass, at the moment she is least
+        sure. It names what to do instead and tells her to finish.
+
+        **`unavailable`, never `nothing_found` and never an error.** A spent
+        budget is «I could not check», exactly the state R-27 reserves for a
+        wiring gap; `nothing_found` would assert that memory holds nothing about
+        the person, which this cannot know, and an error invites the retry the
+        ceiling exists to stop. The note says what to do INSTEAD, because a
+        refusal a model cannot act on is a refusal it argues with.
+        """
+        if self._memory is None or tool_name not in self._memory_tools:
+            return None
+        if not self._memory.at_ceiling(_PASS_MEMORY):
+            return None
+        spent = self._memory.spent(_PASS_MEMORY)
+        self._metrics.inc(
+            "nora_dream_guard_vetoes_total",
+            adaptor=self._adaptor, rule=_MEMORY_RULE,
+        )
+        log.info(
+            "dream memory budget spent (adaptor=%s tool=%s reads=%d): "
+            "answering unavailable", self._adaptor, tool_name, spent,
+        )
+        return {
+            "status": "unavailable",
+            "note": (
+                f"{MEMORY_BUDGET_REASON} — {spent} memory read(s) is the whole "
+                "pass's ration and you have made them. Nothing is broken and "
+                "there is nothing to retry: every further memory call will "
+                "answer exactly this. Finish the decision from what your "
+                "prompt already carries — the people index, the note bodies "
+                "and each room's standing — and return your envelope now."
+            ),
+        }
 
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
         """Tool hooks ONLY — see the module docstring. Registering
@@ -131,16 +277,56 @@ class DreamGuard(HookProvider):
             tool_input = tool_use.get("input") or {}
             if not name:
                 return
+            ref = str(tool_use.get("toolUseId") or "")
             message = self.evaluate(name, tool_input)
             if message:
                 event.cancel_tool = message
+                return
+            refusal = self.memory_refusal(name)
+            if refusal is not None:
+                # REFUSED, not vetoed. `cancel_tool` is the only way to stop a
+                # call from running, and the SDK turns it into an ERROR
+                # `ToolResult` — so the body is stashed here and `_after_tool`
+                # puts it in place of that error, which is the one hook that
+                # can (`AfterToolCallEvent._can_write("result")`, pinned in
+                # `tests/test_strands_api_contract.py`). The cancel message
+                # carries the same body so that a run where the rewrite somehow
+                # does not happen still reads as a spent budget rather than as
+                # a crash — which is also what an id-less call gets, below.
+                #
+                # **Stashed only when there IS an id.** `_budget_refusals[""]`
+                # would be one slot shared by every id-less refusal in a batch,
+                # so the second one would take the first's body and the first
+                # would reach the model as the SDK's raw error — the exact
+                # shape this refusal must never have. Strands always supplies a
+                # `toolUseId` (`strands.tools.executors._executor`), so this is
+                # the degraded path: the call is still refused, and the body
+                # still reaches the model, on an error result rather than a
+                # rewritten one. Refusing correctly matters more than rendering
+                # prettily.
+                body = json.dumps(refusal, ensure_ascii=False)
+                if ref:
+                    self._budget_refusals[ref] = body
+                event.cancel_tool = body
                 return
             # ADMITTED. Held against the ceiling from here until `_after_tool`
             # releases it, so the rest of a parallel batch is measured against
             # this call too. The mutation lives HERE and not in `evaluate` on
             # purpose: `evaluate` is pure so every rule stays testable without
             # strands, and this hook is the layer that owns lifecycle.
-            self._ledger.reserve(name, ref=str(tool_use.get("toolUseId") or ""))
+            self._ledger.reserve(name, ref=ref)
+            if self._memory is not None and name in self._memory_tools:
+                # The pass ledger holds its reservation on the SAME id, in its
+                # own dictionaries — so a batch of three memory verbs emitted
+                # together is measured against itself, which is the failure
+                # `call_ledger`'s docstring records at the per-tool grain.
+                #
+                # An id-less call reserves here and is never released (see
+                # `_after_tool`), so it holds the ration for the rest of the
+                # pass. That is the FAIL-CLOSED direction and it is chosen: a
+                # ceiling that leaks upward on a missing id is a ceiling that
+                # is not one.
+                self._memory.reserve(_PASS_MEMORY, ref=ref)
         except Exception:
             # A guard bug must not kill an unattended run; worst case it fails
             # open, logged. Same posture as `ReplyGuard._before_tool`.
@@ -178,17 +364,63 @@ class DreamGuard(HookProvider):
         try:
             tool_use = getattr(event, "tool_use", None) or {}
             name = tool_use.get("name", "")
-            self._ledger.release(name, ref=str(tool_use.get("toolUseId") or ""))
+            ref = str(tool_use.get("toolUseId") or "")
+            self._ledger.release(name, ref=ref)
+            if self._memory is not None and ref:
+                # An unknown `ref` releases nothing, so this is a no-op for
+                # every non-memory call and for a refused one — no branch on
+                # the tool name is needed or wanted here.
+                #
+                # **`and ref` is load-bearing, and its absence was a bug.**
+                # `CallLedger.release` only takes the id-keyed path `if ref`;
+                # with an empty one it falls through to the NAME-keyed path and
+                # decrements `_in_flight[_PASS_MEMORY]` — and this ledger's
+                # single key is the same for every tool, so an id-less call to
+                # ANY verb would hand a memory read's reservation back and
+                # reopen the ceiling by one. That is exactly the sibling-release
+                # defect `call_ledger.release` documents at the per-tool grain,
+                # and it is worse here because there the name at least told the
+                # two calls apart.
+                self._memory.release(_PASS_MEMORY, ref=ref)
+            body = self._budget_refusals.pop(ref, None) if ref else None
+            if body is not None:
+                # OUR refusal. Replace the SDK's error result with R-27's third
+                # state, in the shape a memory verb's own `unavailable` reaches
+                # the model in (`strands.tools.decorator._wrap_tool_result`
+                # JSON-encodes a returned dict into ONE text block on a
+                # `success` result) — so the model cannot tell this refusal
+                # apart from the tool answering «I could not check», which is
+                # exactly what it is. No budget is charged: the call never ran.
+                self._answer_unavailable(event, ref, body)
+                return
             if getattr(event, "exception", None) is not None:
                 return                       # a failed call does not consume budget
             if getattr(event, "cancel_message", None) is not None:
                 return                       # a vetoed call never ran
             self._ledger.record(name)
+            if self._memory is not None and name in self._memory_tools:
+                self._memory.record(_PASS_MEMORY)
             cap = self._result_caps.get(name)
             if cap is not None:
                 self._clamp_result(event, name, cap)
         except Exception:
             log.exception("DreamGuard._after_tool raised; ignoring")
+
+    def _answer_unavailable(self, event: Any, ref: str, body: str) -> None:
+        """Put R-27's `unavailable` where the SDK put its cancellation error.
+
+        `AfterToolCallEvent.result` is one of exactly two writable fields on a
+        hook event (`_can_write`, verified against the installed SDK and pinned
+        in `tests/test_strands_api_contract.py`); everything else raises
+        `AttributeError`. A fresh dict rather than an in-place edit, because the
+        thing being replaced is the WHOLE result — status included — and a
+        half-rewritten error result is the worst of both.
+        """
+        event.result = {
+            "toolUseId": ref,
+            "status": _SDK_RESULT_OK,
+            "content": [{"text": body}],
+        }
 
     def _clamp_result(self, event: Any, name: str, cap: int) -> None:
         """Cut a capped tool's result text down to its cap, IN PLACE.

@@ -65,6 +65,15 @@ OMNIROUTE_API_KEY=… uv run python -m evals.run --suite note_candidates \
 # the Relevance Gate's four measurements (design 36): determinism first
 OMNIROUTE_API_KEY=… uv run python -m evals.run --suite relevance_gate
 
+# the SAME 40 cases through the Agent SDK's structured output instead of a raw
+# json_object completion. `--via-sdk` swaps the TRANSPORT and nothing else —
+# same instruction, same schema, same parser — so the two runs are comparable
+# and the difference is attributable. This is the reading that would reopen
+# ADR 0011: production is the raw arm because the SDK arm held 1 of 6 safety
+# cases against its 6 of 6 (2026-09-11, n=5, issue #186), and if a re-run ever
+# shows the SDK arm holding 6/6 the decision is back on the table.
+OMNIROUTE_API_KEY=… uv run python -m evals.run --suite relevance_gate --via-sdk
+
 # the proactive adaptor's two suites (design 39 §5, DEC-162): DECIDE grades
 # which rows the real DreamerRuntime + real tool source wrote and in which
 # due windows (a quiet case FAILS on a refused `remind` attempt, and a remind
