@@ -126,6 +126,16 @@ _NOT_A_LINE = {
         "`test_the_mirrors_collapse_agrees_with_the_shared_one_exactly` pins the "
         "two equal over every separator Python knows."
     ),
+    (
+        "nora/domain/blocks.py", "render", "self.body",
+    ): (
+        "ALREADY collapsed, per row, at the only thing that builds a body: "
+        "`render_rows` applies `one_line` to every row before joining them, and "
+        "`tests/unit/test_blocks.py` pins that under every `RowStyle` in the "
+        "parity table. `ContextBlock.body` is the JOINED result, so collapsing "
+        "it here would destroy the line structure the collapse exists to "
+        "protect — it would render an N-row transcript as one line."
+    ),
 }
 
 
