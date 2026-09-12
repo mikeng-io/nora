@@ -90,11 +90,12 @@ firing early or late costs one revision and corrupts nothing.
 - **Whether the gate ever reads culture.** Owned by the gate, unhelped by
   #220, sequenced last, and with #144/#147 and #216 as evidence against
   assuming it. `02-measurement §5`.
-- **The block's `placement` value.** #219/#220 owns the vocabulary; this
-  bundle says "volatile tier, room-keyed" and lets the field land. The
-  reasoning — a room-keyed block in the shared static head fragments a
-  95–99%-hit prefix per room, permanently — belongs to that work and is
-  recorded in `01-the-adaptor §5`.
+- **The block's rendering.** #219/#220 owns the vocabulary. Its `key` axis
+  landed 2026-09-13, so the declaration is now pinned rather than described:
+  `placement="turn"`, `key="room"`, per `01-the-adaptor §5`. The rule that
+  field encodes — anything keyed narrower than `global` belongs in `turn`
+  whatever its cadence, because the shared static head fragments per room —
+  belongs to that work, not this bundle.
 - **`participation.md` from taxonomy to contrast, and `silence.md`.** Doctrine
   is `change_policy: operator-only`, and this repo's own worked example is
   three prompt rewrites judged by eye, each worse than the last.
