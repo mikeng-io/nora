@@ -65,6 +65,7 @@ from nora.domain.models import TranscriptRow
 from nora.domain.ports import RecordStore
 from nora.domain.prompt import age as _age
 from nora.domain.prompt import escape_attr
+from nora.domain.prompt import one_line as _one_line
 from nora.domain.provenance import instruction_sha256
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import annotate, generation
@@ -334,18 +335,14 @@ def build_system_prompt(instruction: str, capabilities: str = "") -> str:
     return f"{text}\n\n{block}"
 
 
-_WHITESPACE_RUN = re.compile(r"\s*[\r\n\u2028\u2029]+\s*")
-
-
-def _one_line(body: str) -> str:
-    """One transcript row is one line, whatever the sender typed.
-
-    Every line separator the renderer treats as structural — `\n`, `\r`, and
-    the Unicode line/paragraph separators, which a client will happily send —
-    collapses to a single space, so a row's content can never produce a second
-    row. See `render_context`'s docstring for the forgery this closes.
-    """
-    return _WHITESPACE_RUN.sub(" ", body).strip()
+# `_one_line` is `nora.domain.prompt.one_line`, imported under this module's own
+# name because its call sites and its two tests read it. It was BORN here, as a
+# private copy, and that is precisely what went wrong: the gate was one of six
+# renderers with this hole and the only one that got the fix, so the tag path
+# kept forging rows for two more days while this file's tests stayed green. The
+# shared version also widens the separator set to everything `str.splitlines`
+# breaks on — a superset of the four this copy collapsed, so both tests below
+# still pin exactly what they pinned.
 
 
 def render_context(

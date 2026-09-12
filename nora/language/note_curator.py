@@ -139,7 +139,7 @@ from nora.domain.notes import (
     default_revisit_at,
 )
 from nora.domain.ports import Proposal
-from nora.domain.prompt import age, escape, escape_attr
+from nora.domain.prompt import age, escape, escape_attr, one_line
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.curator")
@@ -1537,7 +1537,11 @@ def _render_own_sends(
     ]
     for row in own_sends:
         when = f"({age(row.ts, now)}) " if row.ts else ""
-        lines.append(f"[{row.id}] {when}you: {escape(row.body or '')}")
+        # ONE ROW, ONE LINE. These are HER sends rather than a member's, and
+        # the collapse still applies for `relevance_gate`'s reason: the block
+        # one line up asserts «nobody else in the room wrote any of them», so a
+        # second line forged out of one of her bodies inherits that assertion.
+        lines.append(f"[{row.id}] {when}you: {escape(one_line(row.body or ''))}")
     return "\n".join(lines)
 
 
@@ -1579,8 +1583,11 @@ def _render_evidence(
         # WHEN it was said. «has this closed?» and «has the room moved on?»
         # are questions about time, and the rows carried none.
         when = f"({age(row.ts, now)}) " if row.ts else ""
+        # ONE ROW, ONE LINE. The curator decides whether a note has CLOSED
+        # from these rows; a member who can forge one can retire somebody
+        # else's open question by writing the line that closes it.
         lines.append(
-            f"[{row.id}] {when}{escape(speaker)}: {escape(row.body or '')}"
+            f"[{row.id}] {when}{escape(speaker)}: {escape(one_line(row.body or ''))}"
         )
     return "\n".join(lines) + tail
 

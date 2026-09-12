@@ -110,6 +110,7 @@ from nora.domain.ports import (
     RosterSource,
     StandingStore,
 )
+from nora.domain.prompt import one_line
 from nora.domain.reminders import Recurrence, Reminder, remaining_occurrences
 from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -2087,7 +2088,12 @@ class FirePath:
         else:
             named = self._persons.name_transcript(tuple(raw), platform=platform)
             for row in reversed(named):
-                body = (row.body or "").strip()
+                # ONE ROW, ONE LINE. This builds ONE line of the review post
+                # (`{room} — {last} — go — {score}` below), so a newline in a
+                # member's message breaks the column an operator reads the
+                # verdicts off. `one_line` strips as well, so it replaces the
+                # `.strip()` this was rather than wrapping it.
+                body = one_line(row.body or "")
                 if body:
                     # `person_name or sender_name or "unknown"` — the canonical
                     # order (DEC-80, `prefill._label`). This line read

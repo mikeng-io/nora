@@ -125,7 +125,7 @@ from nora.domain.notes import (
     default_revisit_at,
 )
 from nora.domain.ports import DreamSink, Proposal
-from nora.domain.prompt import escape, escape_attr
+from nora.domain.prompt import escape, escape_attr, one_line
 from nora.language.note_render import render_notes
 from nora.obs.metrics import Metrics
 
@@ -419,7 +419,15 @@ def _render_line(row: TranscriptRow, *, room: str, tz: _dt.tzinfo) -> str:
     `tz` is the operator's `[reminders] timezone`, the same zone the curator
     reads «today» from — the room's day, not the process's."""
     name = row.person_name or row.sender_name or row.sender_id
-    body = row.body or _media_placeholder(row)
+    # ONE ROW, ONE LINE (`nora.domain.prompt.one_line`), and this line is the
+    # reason the docstring above can say «attributed on every line». Joined with
+    # `\n` by the caller, a newline in a member's own message writes a SECOND
+    # line carrying an id, a moment, a name and a room it chose — and what this
+    # adaptor decides from these lines is whether a note gets CREATED, so a
+    # forged arrangement is minted into durable state under somebody else's
+    # name. The `escape` below was added 2026-09-10 and closed the TAG axis;
+    # this is the line axis, which `escape` cannot see.
+    body = one_line(row.body or _media_placeholder(row))
     ts = _dt.datetime.fromtimestamp(row.ts / 1000, tz=tz).strftime(_LINE_TIME_FORMAT)
     # ESCAPED, per R-13 (added 2026-09-10). These lines are members' own typed
     # messages, and the `<notes>` index is appended to the SAME prompt below

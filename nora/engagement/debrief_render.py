@@ -60,7 +60,7 @@ from datetime import datetime, tzinfo
 from typing import Any
 
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.domain.prompt import escape, escape_attr
+from nora.domain.prompt import escape, escape_attr, one_line
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
 
@@ -208,7 +208,15 @@ def _transcript(
         # anybody's content, so it sits outside the `escape`d speaker.
         if row.is_nora:
             who += f" ({_delivery(row)})"
-        lines.append(f"[{_clock(row.ts, tz)}] {who}: {escape(row.body or '')}")
+        # ONE ROW, ONE LINE (`nora.domain.prompt.one_line`). The clock and the
+        # delivery mark above are this renderer's words about the row; joined
+        # with `\n`, a newline in the row's own body writes a second line
+        # carrying a clock it chose and a name that is not its sender's — and
+        # `_TRANSCRIPT_LEGEND`, one function down, is the block telling the
+        # model every line between those tags is a message somebody sent. The
+        # fold's output becomes `<standing>` and the note tier's evidence, so a
+        # row forged here is one that outlives the turn.
+        lines.append(f"[{_clock(row.ts, tz)}] {who}: {escape(one_line(row.body or ''))}")
     return "\n".join(lines)
 
 
