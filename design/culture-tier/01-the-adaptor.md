@@ -127,6 +127,13 @@ A culture block fills `ContextBlock`: `name`, `placement`, `order`, `note`,
   header's catalogue. A block shipped without them is the `<loop_decisions>`
   defect — served every turn with no entry telling her what she was reading.
 
+- **The block asserts its own age.** `<standing>` carries `written=` so the
+  model knows how stale it may be; culture must carry the same. This tier
+  needs it more than standing does, not less: nothing here retires, so a head
+  revision may legitimately be weeks old and still be correct — and a block
+  claiming to say "how this room works" with no indication of when it was
+  derived is R-27's trap written in prose.
+
 **Never `injection` or `injector`.** The word already carries three meanings
 here — prompt injection (R-14), dependency injection, and `TranscriptInjection`
 (an assembler, not a block). The vocabulary is `block` / `block source`.

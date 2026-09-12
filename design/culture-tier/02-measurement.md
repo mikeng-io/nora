@@ -108,7 +108,63 @@ errors out of 40, so loosening moves the instrument toward that baseline
 unless new `no_go` cases land beside it. The six `forge/*` safety cases are
 untouched by anything here — none is `members_only`.
 
-## 6. What the suite has never had
+## 6. Validating the block itself, in three tiers
+
+An earlier draft proposed the obvious check — *same window + same instruction
+hash + same model should re-derive a compatible account*. **That premise is
+false and this repo has already measured it.** `proactive_decide` recall runs
+0.20–0.50 on an identical prompt, and DEC-75 records a temp-0 judge catching
+1/3 on a re-run of cases it had caught 3/3, with a "pro beats flash"
+conclusion that turned out to be single-sample noise. An equivalence notion
+built on re-derivation is built on a distribution whose spread is wider than
+the difference it would be trying to detect. Related, from the operator: *if a
+gate gives a 50/50 answer for the same input, it is not a gate.*
+
+What replaces it, weakest first.
+
+**Tier 1 — the negative properties are still exact.** Content varies; shape
+does not. One block; escaped; collapsed; carries its `note` and `header`;
+non-empty when it claims content; no identifier egress (`scan_identifiers`).
+All byte-checkable, all fail-closed. This is most of what a byte diff would
+have bought.
+
+Including the one that is easy to forget: **the block must assert its own
+scope.** `<standing>` carries `written=` so the model knows how stale it may
+be. A block saying "how this room works" while carrying no indication of when
+it was last derived is R-27's trap in prose form — and this tier is
+specifically one whose head revision may legitimately be weeks old, because
+nothing here retires.
+
+**Tier 2 — grounding, not equivalence.** Do not ask *is this the same account
+as last time*. Ask *is any claim here unsupported by the window it came
+from*. DEC-75 is the worked example including its failure mode: the judge
+caught 0/3 blind and 3/3 once given the source, and still passed a fabricated
+**attribution** that carried a grounded **value**. So grade value-grounding
+and attribution as two independent checks, bind the majority of k=3, and
+expect detection to fall on diverse fabrications (3/5, not 3/3) rather than on
+a narrow corpus.
+
+**Tier 3 — measure the decision, not the block.** If culture has a purpose it
+is that some downstream judgement is better with it than without. That is a
+labelled-case A/B on that judgement's error rate. Prose quality is
+unfalsifiable; a moved metric on held-out cases is not — and this is exactly
+what settled the Relevance Gate, where rendering an age per row cut the error
+rate by two thirds over 40 labelled cases after three instruction rewrites had
+changed nothing or made it worse.
+
+**Tier 3 is not optional for this block, and the prior runs against it.**
+#144/#147 measured the gate getting *worse* with more context, and `CMS.md`
+records a capability list making that same gate measurably worse while context
+framing fixed it. A culture block is more context. **If it cannot move a
+labelled metric, the honest conclusion is that it does not ship into that
+prompt** — and designing tier 3 in from the start is what makes that
+discoverable cheaply instead of after it is wired to five consumers.
+
+Practical shape: freeze the window, generate the block k times, run the
+downstream suite against each. One run yields the decision's error rate *and*
+the block's own variance, and "compatible" never has to be defined.
+
+## 7. What the suite has never had
 
 The 40 labelled cases are 1–4 clean lines with the askable line last.
 Production windows are up to 40 rows with the askable line buried and chatter

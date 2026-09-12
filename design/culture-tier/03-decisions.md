@@ -126,3 +126,10 @@ which claims were tested rather than argued.
 6. **A room-keyed block belongs in the cached head because it changes slowly.**
    Backwards: the head is shared across rooms, so a room key fragments it
    permanently.
+7. **"Same window + same instruction hash + same model re-derives a compatible
+   account" is a usable check.** It is not: `proactive_decide` recall runs
+   0.20–0.50 on an identical prompt and DEC-75 records a temp-0 judge scoring
+   1/3 on a re-run of a 3/3. The spread is wider than anything it could
+   detect. Replaced by `02-measurement §6`, whose third tier — move a labelled
+   metric or do not ship into that prompt — is the only one that can falsify
+   this tier's value.
