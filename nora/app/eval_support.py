@@ -599,12 +599,6 @@ async def build_production_seed(
                           notes=tuple(notes))
 
 
-#: Timestamp base for case-file seeds — 2026-08-31 08:00 HKT, matching
-#: `evals.run._BODY_TS_BASE` so a per-case transcript ticks forward the same
-#: way a journey's does.
-_SEED_TS_BASE = 1_788_480_000_000
-
-
 def _seed_id(n: int, kind: str) -> str:
     """UUID-SHAPED, like the real stores' ids — the same rule
     `InMemoryNoteStore._shaped_id` states: the shape is what R-18's
@@ -613,7 +607,7 @@ def _seed_id(n: int, kind: str) -> str:
     return f"{n:08x}-0000-4000-8000-{ord(kind[0]):012x}"
 
 
-def seed_from_dict(raw: dict[str, Any]) -> ProductionSeed:
+def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> ProductionSeed:
     """Build a `ProductionSeed` from a case file's `seed:` mapping
     (`evals/cases/participation/`) — the per-case seed `Case.from_dict`
     gained for the participation suite (design/dreamer-agent-loop/35 §9
@@ -653,10 +647,35 @@ def seed_from_dict(raw: dict[str, Any]) -> ProductionSeed:
 
     `nora` is the observer-equals-observed key: `cfg.memory.ai_peer` on every
     shipped config, and `<self_card>` is the block it feeds.
+
+    **`now_ms` (issue #213).** Every seeded timestamp is rendered as an age
+    (`nora.agent.prefill._age`, since 2026-09-10), so the base they walk
+    forward from has to be a REAL recent instant — the same discipline
+    `_gate_records` uses for the Relevance Gate fixture, and for the same
+    reason: a frozen historical constant (the old `_SEED_TS_BASE`,
+    2026-08-31) only looks safe. It does not raise, does not fail a test, and
+    the age it prints keeps growing every calendar day the constant sits
+    untouched — the slow version of the `ts=1` defect this parameter exists
+    to close for good. Defaults to `datetime.now(UTC)` so every OTHER caller
+    (the two direct-call tests in `tests/test_evals_participation.py`) keeps
+    working unchanged; `evals.harness.run_case` passes the SAME `now_ms` it
+    then stamps the judged (incoming, untagged) line with, so the transcript
+    ends strictly BEFORE that line — oldest to newest, judged line last —
+    instead of the two being computed from two independent reads of the
+    clock a few lines apart.
     """
+    if now_ms is None:
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
     recents: list[TranscriptRow] = []
     speakers: dict[str, tuple[str, str]] = {}   # name -> (sender_id, person-ish id)
-    for i, entry in enumerate(raw.get("transcript") or []):
+    transcript_entries = raw.get("transcript") or []
+    # The window ends ONE STEP before `now_ms` (last entry at `now_ms -
+    # 60_000`), leaving the judged line — stamped at `now_ms` by `run_case` —
+    # strictly the newest thing `FakeRecordStore.recent`'s `(ts, id)` sort
+    # sees, so it renders LAST rather than sorting above the window it is
+    # read against.
+    ts_base = now_ms - len(transcript_entries) * 60_000
+    for i, entry in enumerate(transcript_entries):
         if isinstance(entry, str):
             name, body = "Miles", entry
         else:
@@ -672,7 +691,7 @@ def seed_from_dict(raw: dict[str, Any]) -> ProductionSeed:
         recents.extend(transcript_rows(
             [body], sender_id=sender_id, sender_name=name,
             person_id=person_id or None,
-            ts_base=_SEED_TS_BASE + i * 60_000, id_start=1000 + i,
+            ts_base=ts_base + i * 60_000, id_start=1000 + i,
         ))
 
     standing = None
@@ -682,7 +701,7 @@ def seed_from_dict(raw: dict[str, Any]) -> ProductionSeed:
         # `--seed-production` snapshot.
         standing = Standing(
             platform="", conversation_id="", body=raw["standing"],
-            fold_count=1, updated_at=_SEED_TS_BASE,
+            fold_count=1, updated_at=now_ms,
         )
 
     notes: list[tuple[Note, NoteRevision]] = []
@@ -694,13 +713,13 @@ def seed_from_dict(raw: dict[str, Any]) -> ProductionSeed:
             title=entry["title"], description=entry["description"],
             uncertainty=entry.get("uncertainty", "open"),
             closing_condition=entry.get("closing_condition", "the room settles it"),
-            established_in="g1", created_at=_SEED_TS_BASE + n,
+            established_in="g1", created_at=now_ms + n,
             head_revision_id=revision_id,
             anchor_date=entry.get("anchor_date", 20260901),
         )
         revision = NoteRevision(
             id=revision_id, note_id=note_id, body=entry["body"],
-            parent_revision_id=None, written_at=_SEED_TS_BASE + n,
+            parent_revision_id=None, written_at=now_ms + n,
             established_by="case-seed",
         )
         notes.append((note, revision))

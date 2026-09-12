@@ -232,6 +232,13 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    ("scrub/README.md", "docs/ai-thinkathon-2026-09.md"): (
+        "the note was removed from HEAD once its event had happened, and the "
+        "scrub rewrites HISTORY, where the file still is — so the citation "
+        "still points at the scrub's actual subject. The entry it sits in is "
+        "the lesson that path deletion misses renames; repointing it at a live "
+        "path would delete the example"
+    ),
     ("docs/CONVENTIONS.md", "tests/fixtures/presence_corpus_sample.py"): (
         "the war-story's subject: 11,431 real GPS fixes, deleted from the tree by "
         "a32acc90 and the whole point of the entry. The dangling path IS the "
