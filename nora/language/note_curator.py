@@ -127,6 +127,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from typing import Any, ClassVar, Literal, Protocol, get_args
 
+from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.bounds import over_fetch
 from nora.domain.gatherings import AmbiguousOpenGatheringsError
 from nora.domain.media_join import MediaJoin
@@ -139,7 +140,7 @@ from nora.domain.notes import (
     default_revisit_at,
 )
 from nora.domain.ports import Proposal
-from nora.domain.prompt import age, escape, escape_attr, one_line
+from nora.domain.prompt import escape, escape_attr
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.curator")
@@ -1509,6 +1510,13 @@ def _own_sends(since: Sequence[TranscriptRow]) -> tuple[TranscriptRow, ...]:
     )
 
 
+#: The curator's two grammars. `row_id` and not `index`, because the grounding
+#: check cites these ids back — they are the note tier's real handles, unlike
+#: the transcript's per-render `#n`.
+_OWN_SENDS_STYLE = RowStyle(handle="row_id", time="age", self_name="you")
+_EVIDENCE_STYLE = RowStyle(handle="row_id", time="age")
+
+
 def _render_own_sends(
     own_sends: Sequence[TranscriptRow], *, now: datetime,
 ) -> str:
@@ -1535,14 +1543,18 @@ def _render_own_sends(
         "to that room — that is the send record's own answer, not mine. "
         "Nobody else in the room wrote any of them."
     ]
-    for row in own_sends:
-        when = f"({age(row.ts, now)}) " if row.ts else ""
-        # ONE ROW, ONE LINE. These are HER sends rather than a member's, and
-        # the collapse still applies for `relevance_gate`'s reason: the block
-        # one line up asserts «nobody else in the room wrote any of them», so a
-        # second line forged out of one of her bodies inherits that assertion.
-        lines.append(f"[{row.id}] {when}you: {escape(one_line(row.body or ''))}")
-    return "\n".join(lines)
+    # ONE ROW, ONE LINE, and the collapse is `render_rows`' rather than this
+    # function's. These are HER sends rather than a member's, and it still
+    # applies for `relevance_gate`'s reason: the block one line up asserts
+    # «nobody else in the room wrote any of them», so a second line forged out
+    # of one of her bodies inherits that assertion.
+    rows = render_rows(
+        own_sends, style=_OWN_SENDS_STYLE,
+        speaker=lambda r: "you", body=lambda r: r.body,
+        timestamp=lambda r: r.ts or None, row_id=lambda r: r.id,
+        is_self=lambda r: True, now=now,
+    )
+    return "\n".join(lines + ([rows] if rows else []))
 
 
 def _render_evidence(
@@ -1577,25 +1589,16 @@ def _render_evidence(
             "evidence: NONE — nothing has been said in that conversation "
             "since this note was written."
         ) + tail
-    lines = ["evidence, newest last:"]
-    for row in evidence:
-        # `or "unknown"`, NOT `or row.sender_id` (DEC-80, R-18). The raw id is
-        # an E.164 or an ACI, and this block is a prompt — so an unmapped
-        # sender's phone number went out to the model provider on every tick
-        # that had one in the window. `app/fire._gate_verdict_text` carried the
-        # identical line and its fix comment records what it cost there. Five
-        # renderers already end this chain in "unknown"; ending it in a third
-        # thing is also DEC-80's own bug, which is one name space per prompt.
-        speaker = row.person_name or row.sender_name or "unknown"
-        # WHEN it was said. «has this closed?» and «has the room moved on?»
-        # are questions about time, and the rows carried none.
-        when = f"({age(row.ts, now)}) " if row.ts else ""
-        # ONE ROW, ONE LINE. The curator decides whether a note has CLOSED
-        # from these rows; a member who can forge one can retire somebody
-        # else's open question by writing the line that closes it.
-        lines.append(
-            f"[{row.id}] {when}{escape(speaker)}: {escape(one_line(row.body or ''))}"
-        )
+    # ONE ROW, ONE LINE — `render_rows`'. The curator decides whether a note has
+    # CLOSED from these rows; a member who can forge one can retire somebody
+    # else's open question by writing the line that closes it.
+    rendered = render_rows(
+        evidence, style=_EVIDENCE_STYLE,
+        speaker=lambda r: r.person_name or r.sender_name or "unknown",
+        body=lambda r: r.body, timestamp=lambda r: r.ts or None,
+        row_id=lambda r: r.id, now=now,
+    )
+    lines = ["evidence, newest last:", rendered]
     return "\n".join(lines) + tail
 
 

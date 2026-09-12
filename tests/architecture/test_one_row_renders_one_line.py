@@ -43,7 +43,18 @@ ROOT = Path(__file__).resolve().parents[2]
 #: imports it as `_one_line` because its call sites and its two tests read that
 #: name, and `nora.agent.prefill` does the same for `age`; a gate that only knew
 #: the public spelling would read that module as un-collapsed.
-_COLLAPSERS = {"one_line", "_one_line", "_snippet"}
+_COLLAPSERS = {"one_line", "_one_line", "_snippet", "render_rows"}
+
+#: `render_rows` is in that set because it IS the collapse now (#220): it
+#: applies `one_line` to every row unconditionally and there is no `RowStyle`
+#: that turns it off, which `tests/unit/test_blocks.py` pins under every style
+#: in its parity table. A renderer that goes through it cannot forget.
+#:
+#: THIS FILE'S JOB SHRINKS AS THAT MIGRATION PROCEEDS, and that is the intended
+#: end: when every renderer calls `render_rows`, one unit test on one function
+#: replaces this whole gate and the file should be DELETED rather than kept as
+#: a formality. `test_the_collapse_is_reachable_from_every_layer_that_renders`
+#: is the tripwire for that moment.
 
 #: Interpolations that render a `.body` and do NOT collapse it, each with the
 #: reason. Keyed by (module, enclosing function, the interpolated expression as

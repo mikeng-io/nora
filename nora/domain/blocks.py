@@ -60,6 +60,23 @@ Row = TypeVar("Row")
 #: live there, which meant no two tags ever shared a prefix past it.
 Placement = Literal["header", "turn"]
 
+#: What the block's content VARIES BY. Placement says where a block goes; this
+#: says how many distinct versions of the prefix exist once it is there, and the
+#: two together are what actually decide the cache — neither alone does.
+#:
+#: `_notes_block`'s docstring is the worked example and the reason this field
+#: exists: it is kept OUT of the static head even though it changes slowly,
+#: because «a workspace-wide block in the cached head would fragment the prefix
+#: across every workspace instead of every room». A `room`-keyed block in
+#: `header` fragments it per room, permanently — which costs far more than any
+#: slow-changing block saves, however rarely it is rewritten.
+#:
+#: So the rule this encodes: anything keyed narrower than `global` belongs in
+#: `turn`, whatever its rewrite frequency. Raised by the culture-tier session
+#: 2026-09-13, which reached for `header` on the grounds that its block changes
+#: only daily — true, and not the axis that matters.
+BlockKey = Literal["global", "workspace", "room", "person", "turn"]
+
 #: How the handle at the head of a line is written, or that there is none.
 #:
 #: `index` is the transcript's `#n` and is a per-render position, not a row id:
@@ -149,6 +166,11 @@ class ContextBlock:
     #: is not part of that catalogue (`<tag_message>`, `<replying_to>`).
     header: str
     body: str
+    #: What the content varies by — see `BlockKey`. Defaulted to `turn` because
+    #: that is the safe end: a block wrongly declared `turn` costs nothing but a
+    #: cache line it never had, and one wrongly declared `global` silently
+    #: fragments a 13-17k-token prefix that measures 95-99% hit.
+    key: BlockKey = "turn"
     #: Everything built from what people typed carries it. Default True because
     #: the one block that ever lacked it was the one nobody had decided about.
     untrusted: bool = True
