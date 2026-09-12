@@ -16,7 +16,7 @@ from ..domain.decision_log import (
     render_decisions,
 )
 from ..domain.models import TagContext, TranscriptRow
-from ..domain.prompt import age, escape
+from ..domain.prompt import escape
 from ..domain.prompt import escape_attr as _escape_attr
 from ..language.note_render import render_notes
 from ..language.standing_render import render_standing
@@ -221,14 +221,6 @@ def _context_header(context_window: int, header: str = TAG_HEADER) -> str:
     )
 
 
-def _age(ts_ms: int, now: datetime) -> str:
-    """`nora.domain.prompt.age`. Kept as a name here because this module's
-    call sites and its tests read it, and moved to `domain` because
-    `nora.language` renders prompt blocks too and cannot import `nora.agent`
-    — one implementation, two layers that need it."""
-    return age(ts_ms, now)
-
-
 def _label(row: TranscriptRow, display_name: str) -> str:
     """The one string a row is ever called by.
 
@@ -391,7 +383,7 @@ def _transcript_block(ctx: TagContext, display_name: str, now: datetime) -> str:
         parent = _parent_of(row, by_ts)
         if parent is None:
             return ""
-        return f" ↳ {escape(_label(parent, display_name))}{_snippet(parent.body)}"
+        return f"↳ {escape(_label(parent, display_name))}{_snippet(parent.body)}"
 
     rows = render_rows(
         ctx.transcript,

@@ -317,18 +317,41 @@ def test_every_exemption_carries_a_reason():
 
 def test_the_collapse_is_reachable_from_every_layer_that_renders():
     """`one_line` lives in `nora.domain.prompt` rather than beside any one
-    renderer, and this is what says that placement is still load-bearing: the
-    renderers are spread across six packages that cannot import each other, so
-    a collapse living in any of them would be a second copy in the other five.
-    That is not hypothetical — it is what happened."""
+    renderer, and this is what says that placement is still load-bearing.
+
+    **Counts CALLS, parsed, not the substring.** The first version of this
+    scanned each file's source text for `"one_line"` — which a COMMENT
+    satisfies. A review proved it green after deleting the collapse from
+    `nora/app/fire.py`, because the line above the deletion mentions `one_line`
+    in prose; and it was already propped up at HEAD by `nora/agent/prefill.py`,
+    which by then mentioned the name three times in docstrings and called it
+    zero times. A guard a comment can satisfy measures documentation.
+
+    `nora/domain` is excluded because the collapse and the shared renderer both
+    live there — counting it is a tautology.
+    """
+    import ast
     import collections
 
-    packages = collections.Counter()
+    packages: collections.Counter[str] = collections.Counter()
     for path in _modules():
-        src = path.read_text(encoding="utf-8")
-        if "one_line" in src and "nora/domain/prompt.py" not in path.as_posix():
-            packages[path.relative_to(ROOT).parts[1]] += 1
-    assert len(packages) >= 5, (
-        f"only {sorted(packages)} render rows; if that is now one package, "
-        "`one_line` may move to it — but check every caller first"
+        rel = path.relative_to(ROOT)
+        if rel.parts[1] == "domain":
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:                                # pragma: no cover
+            continue
+        calls = sum(
+            isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            and n.func.id in _COLLAPSERS
+            for n in ast.walk(tree)
+        )
+        if calls:
+            packages[rel.parts[1]] += calls
+    assert len(packages) >= 4, (
+        f"only {sorted(packages)} CALL the collapse outside nora/domain. If that "
+        "is now one package, `one_line` may move to it — but check every caller "
+        "first. If it is zero, the migration is complete and this whole file "
+        "should be deleted rather than kept as a formality."
     )

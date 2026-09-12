@@ -294,9 +294,12 @@ A capability claim in an authored file now **fails to load**.
   first, and every other renderer becomes a configuration of it rather than a
   new function (#220).
 - **row style** — the parameters for turning one record into one line: whether
-  it carries a handle, which time format, how the speaker is written, any
-  suffix, how a reply is marked. Escaping and the one-line collapse are NOT
-  parameters — they are always on, which is the point of having one renderer.
+  it carries a handle, which time format, whether the speaker is bracketed,
+  and what her own rows are called. Four fields, all of them plain data;
+  anything that READS a row (the speaker, the body, a room label, a reply
+  mark) is an accessor passed alongside, not a field. Escaping and the
+  one-line collapse are NOT parameters — they are always on, which is the
+  point of having one renderer.
 - **placement** — where a block goes: `header` (the static, cache-hit prefix)
   or `turn` (rebuilt every turn). Deliberately not called a *tier* — a tier in
   this file is a cognition layer with its own store and background pass, and

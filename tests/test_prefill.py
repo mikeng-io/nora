@@ -602,7 +602,10 @@ def test_transcript_lines_carry_their_age():
     """`TranscriptRow.ts` was carried all along and never rendered, so every
     message looked equally recent — a five-day-old line was indistinguishable
     from a five-minute-old one."""
-    from nora.agent.prefill import _age
+    # `nora.domain.prompt.age` directly: the `prefill._age` shim this used to
+    # import had no production caller left after the #220 migration and these
+    # two tests were the only thing keeping it alive.
+    from nora.domain.prompt import age as _age
     now = _at("2026-08-06T12:00:00")
     ms = lambda iso: int(_at(iso).timestamp() * 1000)  # noqa: E731
     assert _age(ms("2026-08-06T11:59:30"), now) == "just now"
@@ -613,7 +616,10 @@ def test_transcript_lines_carry_their_age():
 
 def test_a_future_timestamp_does_not_go_negative():
     """Clock skew between the sender's device and this host is ordinary."""
-    from nora.agent.prefill import _age
+    # `nora.domain.prompt.age` directly: the `prefill._age` shim this used to
+    # import had no production caller left after the #220 migration and these
+    # two tests were the only thing keeping it alive.
+    from nora.domain.prompt import age as _age
     now = _at("2026-08-06T12:00:00")
     assert _age(int(_at("2026-08-06T12:05:00").timestamp() * 1000), now) == "just now"
 

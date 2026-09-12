@@ -2102,7 +2102,11 @@ class FirePath:
                     # E.164 into a delivered message: R-18 then refused the
                     # whole post at the Deliverer, so unmapped senders' GO
                     # verdicts silently never reached the review channel.
-                    who = row.person_name or row.sender_name or "unknown"
+                    # COLLAPSED for the same reason `body` is, one line down:
+                    # this builds ONE line of the review post, and a newline in
+                    # a profile name forges a whole verdict row for a room that
+                    # never produced one.
+                    who = one_line(row.person_name or row.sender_name or "unknown")
                     last = f"{who}: {body}"
                     break
             else:

@@ -241,7 +241,15 @@ def window_from(rows: Any) -> tuple[WindowRow, ...]:
     """
     return tuple(
         WindowRow(
-            sender_name=row.sender_name,
+            # THE NAME IS COLLAPSED TOO, and the `person_name` projection is
+            # preferred over the self-set platform one (DEC-80) — `render_mirror`
+            # puts this on a line of its own beside a body, so a newline in a
+            # profile name forges a window row, and the raw profile name is a
+            # second name for somebody the verdict line above already called
+            # something else.
+            sender_name=_one_line(
+                getattr(row, "person_name", None) or row.sender_name or ""
+            ) or None,
             body=None if row.body is None else _one_line(row.body),
         )
         for row in list(rows)[-WINDOW_ROWS:]

@@ -212,7 +212,7 @@ def _transcript(
         parent = by_ts.get(row.quoted_ts)
         if parent is None or parent.id == row.id:
             return ""
-        return f" (replying to {_clock(parent.ts, tz)})"
+        return f"(replying to {_clock(parent.ts, tz)})"
 
     def _mark(row: TranscriptRow) -> str:
         """THE DELIVERY MARK (issue #199). Hers only, and never escaped from the

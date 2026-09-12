@@ -56,10 +56,14 @@ def _speaker_chains() -> dict[tuple[str, str], str]:
     """Every `row.person_name or …` chain under `nora/`, by (module, function).
 
     The discovery key is `person_name` appearing in a `BoolOp` of `or`s, which is
-    what a speaker label IS in this codebase — nine of them are spelled exactly
-    this way. A renderer that invents a different spelling is not caught here,
-    and `test_every_renderer_resolves_a_name_at_all` below is the crude backstop
-    for that.
+    what a speaker label IS in this codebase. A renderer that spells it some
+    other way is invisible here, and
+    `test_no_renderer_names_a_speaker_outside_the_discovered_set` below is the
+    backstop — WRITTEN, unlike the version of this sentence that shipped on
+    2026-09-12, which cited a test by name that did not exist anywhere in the
+    tree. A docstring claiming a failure mode is covered, when it is not, is
+    worse than silence: it is the one thing in this file a review called
+    genuinely decorative.
     """
     found: dict[tuple[str, str], str] = {}
     for path in sorted((ROOT / "nora").rglob("*.py")):
@@ -125,12 +129,85 @@ def test_the_projection_is_preferred_over_the_profile_name():
         )
 
 
+#: Modules that name a speaker WITHOUT an `or`-chain through `person_name`, each
+#: with the reason. Every entry is invisible to the three assertions above, so
+#: this list is the exact size of this gate's blind spot — stated, rather than
+#: left for a review to find.
+_NAMES_A_SPEAKER_ANOTHER_WAY = {
+    "nora/obs/determination.py": (
+        "reads the projection through `getattr(row, 'person_name', None)` "
+        "because `window_from` is duck-typed over anything with the two fields "
+        "and this module may import no `nora.*` — so the chain is a call, not "
+        "an attribute, and the AST discovery cannot see it. Its fallback is "
+        "`None` rather than `\"unknown\"` on purpose: `render_mirror` has always "
+        "rendered an unnamed sender as nothing, and it is an operator surface."
+    ),
+}
+
+
+def test_no_renderer_names_a_speaker_outside_the_discovered_set():
+    """The backstop the docstring above used to CITE without anybody writing it.
+
+    Any module that reads `sender_name` in a rendering position but has no
+    discovered `person_name` chain is naming a speaker in a way the three
+    assertions above cannot check. That is allowed, and it is declared here with
+    the reason — which is the difference between a known blind spot and an
+    unknown one.
+    """
+    import ast
+
+    # NO skip list keyed on "this function has a chain somewhere". Two earlier
+    # cuts of this test had one — first per file, then per function — and
+    # NEITHER bound: `fire._gate_verdict_text` holds the canonical chain AND
+    # could render a bare `row.sender_name` on the very next line, and both
+    # versions waved it through on the strength of the chain above it.
+    #
+    # What is actually wrong is rendering the RAW attribute into a line, whether
+    # or not a correct chain exists nearby. So that is what this looks for, and
+    # the only exits are the declared blind spots.
+    offenders = {}
+    for path in sorted((ROOT / "nora").rglob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel in _NAMES_A_SPEAKER_ANOTHER_WAY:
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:                                # pragma: no cover
+            continue
+        for fn in (n for n in ast.walk(tree)
+                   if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)):
+            for node in ast.walk(fn):
+                if not isinstance(node, ast.JoinedStr):
+                    continue
+                if any(
+                    isinstance(n, ast.Attribute) and n.attr == "sender_name"
+                    for part in node.values if isinstance(part, ast.FormattedValue)
+                    for n in ast.walk(part)
+                ):
+                    offenders[f"{rel}::{fn.name}"] = node.lineno
+    assert not offenders, (
+        "these render a speaker from `sender_name` with no `person_name` chain, "
+        "so every assertion in this file skips them. Give them the canonical "
+        "chain, or declare them in `_NAMES_A_SPEAKER_ANOTHER_WAY` with a "
+        f"reason:\n{offenders}"
+    )
+
+
+def test_every_declared_blind_spot_still_exists():
+    """A stale entry is a module this file claims to have classified and has not
+    looked at since — the same inverse the exemption list two files over uses."""
+    for rel in _NAMES_A_SPEAKER_ANOTHER_WAY:
+        assert (ROOT / rel).exists(), f"declared blind spot is gone: {rel}"
+
+
 def test_the_discovered_set_covers_the_renderers_we_know_about():
     """The non-degeneracy guard. Every assertion above passes trivially if the
     discovery finds nothing, and a refactor that renames `person_name` or moves
     these chains behind a helper would do exactly that — silently.
 
-    The floor is the count at the time of writing (2026-09-12, nine). A shared
+    The floor is the DISCOVERED count at the time of writing — seven chains,
+    not the nine RENDERERS, and the first version of this sentence confused the
+    two in a file whose whole purpose is non-degeneracy. A shared
     renderer (issue #219) will legitimately take it DOWN, and that is the moment
     to delete this file rather than lower the number: one renderer needs no gate
     saying the other eight agree with it.

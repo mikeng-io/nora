@@ -1550,7 +1550,10 @@ def _render_own_sends(
     # of one of her bodies inherits that assertion.
     rows = render_rows(
         own_sends, style=_OWN_SENDS_STYLE,
-        speaker=lambda r: "you", body=lambda r: r.body,
+        # No `speaker` accessor: `is_self` is always true here and
+        # `_OWN_SENDS_STYLE.self_name` wins over it in `render_rows`, so one
+        # would be unreachable. These rows are hers by construction.
+        speaker=lambda r: "", body=lambda r: r.body,
         timestamp=lambda r: r.ts or None, row_id=lambda r: r.id,
         is_self=lambda r: True, now=now,
     )
