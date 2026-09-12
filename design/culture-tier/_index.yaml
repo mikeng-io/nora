@@ -1,53 +1,66 @@
 kind: design_index
-title: "The Culture Tier — what is normally true in a room, and where she stands in it"
+title: "The Culture Tier — a Dreamer adaptor that asks the memory system what a room is like"
 description: >
-  The Relevance Gate has judged 35 quiet windows in production and admitted
-  zero. Not one. It is not mistuned: it is a reasoning-less classifier being
-  asked a question its input cannot ground, holding a taxonomy of five shapes
-  where the room needed a baseline. This bundle names the layer that is
-  missing between `standing` (volatile, per-turn, keeps nothing) and Honcho
-  (accurate, per-person, unaffordable per window): a slow, per-room and
-  per-workspace record of what is normally true here and where she stands in
-  it. It also states, for the first time, a measurement for "act" that is not
-  a model agreeing with its own instruction.
+  The Relevance Gate admitted one window in 149 over four days. It is not
+  mistuned: it is a reasoning-less classifier holding a taxonomy where the room
+  needed a baseline. The layer that would supply one is an account of how a
+  room works and why — and the memory system can already produce exactly that,
+  through the dialectic endpoint, in 17-30s against a 20s gate timeout. So this
+  tier derives nothing. It is a Dreamer adaptor that asks once a day, keeps
+  every answer, and lets the chain of answers be the evolution a single call
+  cannot express. The bundle also states a measurement for "act" that is not a
+  model agreeing with its own instruction.
 status: proposed
 origin: >
-  Working session with miles, 2026-09-12, opened by a finding written against
-  Ora's copy of `participation.md` and closed somewhere else entirely. Every
-  number in 00-overview §1 was read live off norty during that session —
-  Prometheus counters, `decision_log`, `note`, `standing`, `room_portrait` and
-  `config.toml`. The operator's framing is the spine of the bundle: you cannot
-  define when Nora should intervene, so stop trying to; give her the baseline
-  and let the deviation speak. Grounded on reads of the tree at 434282db.
+  Working session with miles, 2026-09-12/13, opened by a finding written against
+  Ora's copy of `participation.md`. Three corrections shaped the result: the
+  operator caught the first draft re-inventing the memory system at room and
+  workspace scope; caught it importing `standing`'s retirement lifecycle into a
+  thing that evolves rather than sunsets; and named the distinction the whole
+  design turns on - a chronicle of what happened is not a culture. A live probe
+  then falsified the first draft's own headline numbers. Every measurement in
+  00-overview was read off norty; the Honcho behaviour in section 4 was probed
+  against the live instance, not read from docs. Tree at 434282db.
 members:
   - 00-overview.md
-  - 01-the-tier.md
+  - 01-the-adaptor.md
   - 02-measurement.md
   - 03-decisions.md
   - 04-phase-two-note.md
 edges:
-  - {src: 01-the-tier, dst: 00-overview, rel: depends_on, provenance: asserted}
-  - {src: 02-measurement, dst: 01-the-tier, rel: depends_on, provenance: asserted}
+  - {src: 01-the-adaptor, dst: 00-overview, rel: depends_on, provenance: asserted}
+  - {src: 02-measurement, dst: 00-overview, rel: depends_on, provenance: asserted}
   - {src: 03-decisions, dst: 00-overview, rel: summarises, provenance: asserted}
   - {src: 04-phase-two-note, dst: 02-measurement, rel: depends_on, provenance: asserted}
 external_edges:
   - {dst: "ambient-loop/00-overview", rel: depends_on, provenance: asserted}
-  - {dst: "ambient-loop/02-doctrine-and-measurement", rel: revises, provenance: asserted}
-  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: revises, provenance: asserted}
-  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: revises, provenance: asserted}
+  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
+  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
   - {dst: "dreamer-agent-loop/26-standing", rel: relates_to, provenance: asserted}
-  - {dst: "proposed/24-honcho-integration-v2", rel: relates_to, provenance: asserted}
+  - {dst: "proposed/24-honcho-integration-v2", rel: depends_on, provenance: asserted}
 decisions:
-  reserved: "DEC-181 .. DEC-186 — CLAIMED AT MERGE, NOT NOW"
+  reserved: "DEC-181 .. DEC-185 — CLAIMED AT MERGE, NOT NOW; DEC-163..175 is an unexplained gap, find its holder first"
   index: 03-decisions.md
 governance:
-  reviewed_by: "none yet — this bundle has had no adversarial review"
+  reviewed_by: >
+    Three adversarial Opus reviews of the FIRST draft, 2026-09-12 - architecture,
+    measurement and data model. The measurement review falsified 00-overview's
+    headline numbers and was right; most of the data-model findings are moot
+    because the schema they attacked is deleted. The architecture review's
+    central finding (a third block is forbidden) was itself wrong and is
+    recorded as correction 3 in 03-decisions. THIS revision has had no review.
   measured: >
-    §1 of 00-overview is measurement, read off the live deploy 2026-09-12.
-    Everything from §3 onward is design and is NOT measured.
+    00-overview sections 1 and 4 are measurement, read off the live deploy and the
+    live Honcho instance 2026-09-12/13. Everything else is design and is NOT
+    measured.
+  synced_with: >
+    The #219/#220 block-abstraction session, 2026-09-13 - it owns the block
+    vocabulary, corrected this bundle's cache reasoning, and confirmed the row
+    renderer does not open the gate's block set.
 open_questions:
-  - "OPERATOR — DEC-181: the key. `room_portrait` used `scope_id`, `note` uses `workspace`, `standing` uses `(platform, conversation_id)`. Three keys for three tiers is what #202 already cost once. This must be settled before the first line of code, not after"
-  - "OPERATOR — whether `standing` is repaired in place or superseded. This bundle says repaired, separately, and does not do it"
-  - "UNMEASURED — whether a cheap model at `reasoning_effort = none` can reliably emit the three-section body at all. Three sections is a guess at its ceiling, not a reading"
-  - "UNMEASURED — the whole of 02-measurement. Every threshold in it is a placeholder until the gate's verdicts are attributable to a room, which today they are not"
-  - "PHASE 2 — 04-phase-two-note is deliberately not executable. It waits on Phase 1's instruments"
+  - "OPERATOR - DEC-181: the store key. The scope scheduler hands a bare primary_id; standing and decision_log key rooms as (platform, conversation_id). A mismatch makes the adaptor never fire, silently. Blocks implementation"
+  - "OPERATOR - whether `standing` is repaired (#222) or superseded. HOLDING's second arm depends on it and does not compute today"
+  - "UNMEASURED - whether the gate should ever read culture. Owned by the gate, sequenced last, with #144/#147 and #216 as evidence against assuming it"
+  - "UNMEASURED - every threshold in 02-measurement. None can be measured until #221 lands"
+  - "OPEN - the `placement` value set is still moving in #219/#220; this bundle says «volatile tier, room-keyed» in prose and pins nothing"
+  - "PHASE 2 - 04-phase-two-note is not executable and waits on Phase 1's instruments plus #210"

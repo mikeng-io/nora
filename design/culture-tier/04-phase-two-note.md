@@ -1,110 +1,113 @@
 # Phase 2 — a note, not a plan
 
-**This document is deliberately not executable.** It records what Phase 2 is,
-why it cannot be specified yet, and what Phase 1 must produce before anyone
-tries. Do not implement from it.
+**Deliberately not executable.** It records what Phase 2 is, why it cannot be
+specified yet, and what Phase 1 must produce first. Do not implement from it.
 
-## 1. What Phase 2 is
+## 1. What it is
 
-Phase 1 is participation as *answering*: there is something she can supply, and
-she supplies it.
+Phase 1 is participation as *answering*: something is hers to supply, and she
+supplies it.
 
 Phase 2 is participation as *being in the circle*. The operator's example, from
-the room:
+a real room:
 
 > 「六七小隊已經升級做六七集團」
 > 「我哋而家有埋秘書添」
 
-Nobody names her. If the room's culture has been accumulating, she should
-work out that she is the 秘書 — and that the right move may be to play along,
-not to answer anything.
+Nobody names her. If the room's culture has accumulated, she should work out
+that she is the 秘書 — and that the right move may be to play along rather than
+to answer anything.
 
 > 慢慢昇華 Nora，由一個 AI assistant 變成一個有 cognition 嘅 AI agent。
 
+Two things make this reachable that were not obvious at the start:
+
+- The dialectic **already produces this shape of understanding**. Asked about
+  a real room it returned self-naming with its origin, the register, and her
+  own evolving place in it — unprompted, in one call (`00-overview §4`).
+- The 秘書 case is not a lookup. It is the room assigning a role and her
+  noticing. Culture is the only artifact that could carry it, because a
+  chronicle of `[when] what happened` structurally cannot.
+
 ## 2. It is not proactive
 
-Proactive means actively pushing the room forward — a reminder, a note coming
-due. It exists, it is workspace-keyed, it fires into the home room.
-
-Phase 2 extends **participation**, not proactive. Three things, not two:
+Three things, not two:
 
 | | |
 |---|---|
 | Participation | she supplies something she holds |
-| Proactive | she raises something that is due |
+| Proactive | she raises something that is due — already built, different axis |
 | Phase 2 | she is a member and can take a role the room gives her |
 
-Borrowing the proactive name would blur a boundary the operator has drawn
-repeatedly. Phase 2 has no name yet; `ambient` is the least-bad candidate.
+Phase 2 extends participation. Borrowing the proactive name would blur a
+boundary the operator has drawn repeatedly. It has no name yet; `ambient`
+collides with `design/ambient-loop/`, the loop Phase 2 runs inside.
 
-## 3. The capability is not blocked by intelligence
+## 3. What is actually missing, corrected
 
-The gate cannot do this and never will: `reasoning_effort = "none"`,
-`max_tokens = 512`. Realising the room has handed you a role is inference.
+An earlier draft of this document said the material was "already wired" and
+only admission was missing. **Both halves were false**, and the correction is
+the useful content here.
 
-But it does not have to. The split:
+**#210, verified against the tree:** `fire.py:339` sets `person_id=None` for
+the participation occasion; `fire.py:817` documents *"`ctx.tagger is None`, so
+`peer_card` is `()` — she remembers nothing"*; and `self_card=` appears at
+exactly one site, `nora/engagement/context.py:208`, the **tag path**. The
+participation turn renders no Honcho block at all — no card, no history, no
+self card. It knows the people in the window by display name.
 
-| | gate | participation turn |
-|---|---|---|
-| budget | none, 512 tokens | full model, full doctrine |
-| sees | transcript + standing (+ culture) | notes, `self_card`, memory, tools |
-| answers | is this window worth her attention? | who am I here, and what now? |
+So Phase 2 needs three things, not one:
 
-`prefill.py` already builds a `<self_card>` block, and per #208 the
-participation turn runs through the same `prefill.py`. **The material for the
-秘書 realisation is already wired.**
+1. admission at a non-zero rate (Phase 1),
+2. **memory reaching the participation turn at all** (#210),
+3. culture accumulated long enough to have a history.
 
-What is missing is admission. The participation turn has run **zero times**, so
-none of its context has ever been observed in production. Phase 2 is not
-blocked by her not being clever enough; it is blocked by her never being let
-in. Fix Phase 1 and the question becomes reachable for the first time.
+And the participation turn has run **once, ever**, so none of its context has
+been observed in production. Every claim about what it sees is a claim about
+code, not about behaviour.
 
-## 4. Why this cannot be specified yet
+## 4. Why it cannot be specified
 
-**Measurement collapses at this altitude.** Every instrument in
-`02-measurement` assumes there is something she could *supply*. Open-ended
-participation has no supply — a friend riffing about a secretary is not asking
-for anything, and there is no correct answer to score against.
+**Measurement collapses here.** Every instrument in `02-measurement` assumes
+something she could *supply*. Open-ended participation has no supply — a
+friend riffing about a secretary is not asking for anything, and there is no
+correct answer to score against.
 
-The only grounded signal left is **uptake**: she said something, did anyone
-engage. It is slow, noisy, and confounded by everything.
+The only grounded signal left is **uptake**: she said something; did anyone
+engage. Slow, noisy, confounded by everything — and #216 shows the current
+turn false-speaking on 4 of 5 silence twins, which uptake would score as
+failure only after the room had already been interrupted.
 
-This is recorded now, before anyone builds, because the alternative is to
-invent a precise-looking measurement for something unmeasurable and discover in
-three months that it was 虛偽 — which is the exact failure this bundle exists
-to correct one layer down. A single weak signal, named as weak, is the honest
-position.
+This is written down before anyone builds, because the alternative is to
+invent a precise-looking measurement for something unmeasurable and find out in
+three months that it was 虛偽 — the exact failure this bundle corrects one
+layer down.
 
-**And a room's culture cannot be back-tested.** Phase 1's `HOLDING` and
-`override` can be computed retroactively from data already in the database.
-Uptake against a culture that does not exist yet cannot. Phase 2 has no
-retrospective baseline available to it at all.
+**And culture cannot be back-tested.** Phase 1's measures can be computed
+retroactively from data already in the database. Uptake against a culture that
+does not exist yet cannot. Phase 2 has no retrospective baseline available to
+it at all.
 
 ## 5. What Phase 1 must produce first
 
-1. The gate admits at a non-zero rate, and the rate is attributable per room
-   (DEC-186).
-2. Room culture has accumulated real revisions, with the lore sections written
-   from day one (`01-the-tier §8`) so `shifted` has a history rather than a
-   cold start.
-3. `standing_in_it` has enough `decision_log` support to be more than a
-   sentence about nothing — which needs `participation` to have a non-zero row
-   count, which needs (1).
-4. An uptake measure exists and has run long enough to have a base rate on the
-   *tag* path, where she already speaks, so Phase 2's uptake has something to
-   be compared against.
+1. Refusals attributable per room (#221), and a non-zero admission rate.
+2. Memory reaching the participation turn (#210).
+3. Culture with real revisions behind it — the chain, not one snapshot, is
+   what carries 演變.
+4. An uptake measure with a base rate taken on the **tag** path, where she
+   already speaks, so Phase 2's uptake has something to be compared against.
 
-Item 4 is the one most likely to be skipped and is the one that makes the rest
+Item 4 is the one most likely to be skipped and the one that makes the rest
 interpretable.
 
-## 6. Open, and deliberately unanswered
+## 6. Open, deliberately
 
-- What does `silence.md` become when silence is no longer the near-universal
-  correct answer? It currently says most unasked-for turns end in silence, and
-  under Phase 2 that stops being true — but by how much is a measurement, not
-  an opinion.
-- Does taking a role the room assigned require an operator grant, the way
-  pushing does? The prior position was that pushing is the operator's call.
-- What stops a room's culture from being poisoned by a member who talks about
-  her constantly? `support_count` and the revision chain make it visible; they
-  do not make it safe.
+- What does `silence.md` become when silence stops being the near-universal
+  correct answer? It currently says most unasked-for turns end in silence —
+  and `nora_participation_silence_total` has no series at all, so that claim
+  has never once been exercised.
+- Does taking a role the room assigned need an operator grant, the way pushing
+  does? The prior position was that pushing is the operator's call.
+- What stops a room's culture being skewed by one member who talks about her
+  constantly? The revision chain makes it visible; it does not make it safe.
+  There is no `support_count` in this design and no proposal for one.
