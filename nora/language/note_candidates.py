@@ -418,7 +418,11 @@ def _render_line(row: TranscriptRow, *, room: str, tz: _dt.tzinfo) -> str:
 
     `tz` is the operator's `[reminders] timezone`, the same zone the curator
     reads «today» from — the room's day, not the process's."""
-    name = row.person_name or row.sender_name or row.sender_id
+    # `or "unknown"`, NOT `or row.sender_id` — see `note_curator._render_evidence`
+    # for the whole argument. Same two defects in one expression: a raw platform
+    # identifier egressing to the model provider (R-18), and a third name for one
+    # person inside a prompt that also renders `group_members` (DEC-80).
+    name = row.person_name or row.sender_name or "unknown"
     # ONE ROW, ONE LINE (`nora.domain.prompt.one_line`), and this line is the
     # reason the docstring above can say «attributed on every line». Joined with
     # `\n` by the caller, a newline in a member's own message writes a SECOND

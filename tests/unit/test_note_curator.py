@@ -2229,3 +2229,32 @@ async def test_her_delivered_row_is_shown_beside_the_group_and_not_instead_of_it
     assert "969P from Tin Shui Chi" in rendered
 
     assert await _close_on(curator, note, cited=7) == 1
+
+
+def test_an_unmapped_sender_in_the_evidence_is_unknown_not_their_phone_number():
+    """R-18 and DEC-80, on the block the curator RETIRES notes from (issue #219).
+
+    Same defect and same fix as `note_candidates._render_line` — see that test for
+    the argument. Worse here only in what reads it: the curator is the note tier's
+    one destructive writer, so this block is the evidence behind discharging a
+    claim into memory.
+    """
+    row = TranscriptRow(
+        id=7, sender_id="+85291234567", sender_name=None, ts=0,
+        body="booked", is_nora=False, delivery_status=DeliveryStatus.SENT,
+        raw_json=None, person_name=None,
+    )
+    rendered = _render_evidence(
+        (row,), "present", now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    assert "91234567" not in rendered and "+852" not in rendered
+    assert "unknown: booked" in rendered
+    # POSITIVE control — the identity name still wins over the profile name.
+    named = _render_evidence(
+        (TranscriptRow(
+            id=8, sender_id="+85291234567", sender_name="Chi Ming", ts=0,
+            body="booked", is_nora=False, delivery_status=DeliveryStatus.SENT,
+            raw_json=None, person_name="Grant Carver",
+        ),), "present", now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    assert "Grant Carver: booked" in named and "Chi Ming" not in named

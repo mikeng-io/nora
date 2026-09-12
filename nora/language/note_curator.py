@@ -1579,7 +1579,14 @@ def _render_evidence(
         ) + tail
     lines = ["evidence, newest last:"]
     for row in evidence:
-        speaker = row.person_name or row.sender_name or row.sender_id
+        # `or "unknown"`, NOT `or row.sender_id` (DEC-80, R-18). The raw id is
+        # an E.164 or an ACI, and this block is a prompt — so an unmapped
+        # sender's phone number went out to the model provider on every tick
+        # that had one in the window. `app/fire._gate_verdict_text` carried the
+        # identical line and its fix comment records what it cost there. Five
+        # renderers already end this chain in "unknown"; ending it in a third
+        # thing is also DEC-80's own bug, which is one name space per prompt.
+        speaker = row.person_name or row.sender_name or "unknown"
         # WHEN it was said. «has this closed?» and «has the room moved on?»
         # are questions about time, and the rows carried none.
         when = f"({age(row.ts, now)}) " if row.ts else ""
