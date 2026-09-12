@@ -106,21 +106,26 @@ bundle declares the fields a culture block fills and pins no rendering.
 
 Per that work (confirmed with the session doing it):
 
-- **`placement`: the volatile tier, room-keyed.** Not the cached head — and
-  the reason is the correction that matters. Daily change is *not* the
-  problem; a once-a-day prefix miss is nothing. The problem is that the static
-  head is **shared across rooms**, so a room-keyed block in it fragments the
-  ~13–17k prefix per room, permanently, against a 95–99% hit rate.
-  `_notes_block` is already held out of the head for exactly this reason at
-  workspace granularity. **Culture's daily cadence is a production win — one
-  dialectic call a day instead of per turn — not a cache win**, and that is
-  the honest argument for it.
+A culture block fills `ContextBlock`: `name`, `placement`, `order`, `note`,
+`header`, `body`, `key`, `untrusted`.
+
+- **`placement = "turn"`, `key = "room"`.** Not the cached head, and the
+  reason is the correction that matters. Daily change is *not* the problem; a
+  once-a-day prefix miss is nothing. The problem is that the static head is
+  **shared across rooms**, so a room-keyed block in it fragments the ~13–17k
+  prefix per room, permanently, against a 95–99% hit rate. `_notes_block` is
+  already held out of the head for exactly this reason at workspace
+  granularity, and the rule `BlockKey` now encodes is that **anything keyed
+  narrower than `global` belongs in `turn`, whatever its cadence.**
+
+  So **culture's daily cadence is a production win — one dialectic call a day
+  instead of per turn — not a cache win.** That is the honest argument for the
+  design, and it is the one this bundle originally got backwards.
+
 - **`note`** and **`header`** are this tier's to write, because nothing else
   can: what the block *is*, in the second person, and its line in the context
   header's catalogue. A block shipped without them is the `<loop_decisions>`
   defect — served every turn with no entry telling her what she was reading.
-- The value set of `placement` is still moving; this bundle says "volatile
-  tier, room-keyed" in prose and lets the field land.
 
 **Never `injection` or `injector`.** The word already carries three meanings
 here — prompt injection (R-14), dependency injection, and `TranscriptInjection`

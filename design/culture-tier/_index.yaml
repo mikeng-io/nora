@@ -56,11 +56,12 @@ governance:
   synced_with: >
     The #219/#220 block-abstraction session, 2026-09-13 - it owns the block
     vocabulary, corrected this bundle's cache reasoning, and confirmed the row
-    renderer does not open the gate's block set.
+    renderer does not open the gate's block set. Its `BlockKey` field was added
+    in response to this bundle's cache question.
 open_questions:
   - "OPERATOR - DEC-181: the store key. The scope scheduler hands a bare primary_id; standing and decision_log key rooms as (platform, conversation_id). A mismatch makes the adaptor never fire, silently. Blocks implementation"
   - "OPERATOR - whether `standing` is repaired (#222) or superseded. HOLDING's second arm depends on it and does not compute today"
   - "UNMEASURED - whether the gate should ever read culture. Owned by the gate, sequenced last, with #144/#147 and #216 as evidence against assuming it"
   - "UNMEASURED - every threshold in 02-measurement. None can be measured until #221 lands"
-  - "OPEN - the `placement` value set is still moving in #219/#220; this bundle says «volatile tier, room-keyed» in prose and pins nothing"
+  - "SETTLED 2026-09-13 - the block is `placement=turn`, `key=room`. #219/#220 added `key` after this bundle asked the question; the rule it encodes is that anything keyed narrower than `global` belongs in `turn`, whatever its cadence"
   - "PHASE 2 - 04-phase-two-note is not executable and waits on Phase 1's instruments plus #210"
