@@ -283,6 +283,31 @@ A capability claim in an authored file now **fails to load**.
   paragraph is the one thing that differs between a tag and a fire turn:
   "somebody just called you" versus "nobody has, and here is why you are awake"
   — and between the two fire occasions, which is why the occasion carries it.
+- **block** — one labelled unit of context in a prompt: `<group_transcript>`,
+  `<notes>`, `<standing>`, `<peer_card>`. The context side's counterpart to
+  doctrine's **section**: a section is operator-authored and static, a block is
+  data and is built per turn. Not called a *data block* — "block" already means
+  the data one throughout this file and the code (`_notes_block`,
+  `_peer_card_block`), and the pairing with `section` carries the rest.
+- **block source** — the thing that builds one block. `ContextBlock` is the
+  rendered result; `BlockSource` is what produces it. The transcript is the
+  first, and every other renderer becomes a configuration of it rather than a
+  new function (#220).
+- **row style** — the parameters for turning one record into one line: whether
+  it carries a handle, which time format, how the speaker is written, any
+  suffix, how a reply is marked. Escaping and the one-line collapse are NOT
+  parameters — they are always on, which is the point of having one renderer.
+- **placement** — where a block goes: `header` (the static, cache-hit prefix)
+  or `turn` (rebuilt every turn). Deliberately not called a *tier* — a tier in
+  this file is a cognition layer with its own store and background pass, and
+  this is a position in one prompt. One volatile byte placed in `header` ends
+  the 95-99% prefix-cache hit for everything after it.
+
+**Never `injection` or `injector` for any of the above.** The word already
+carries three unrelated meanings here: prompt injection (the attack, R-14),
+dependency injection (the test-seam policy), and `TranscriptInjection` (the tag
+path's whole context assembler, a runtime rather than a block). The verb
+"injected" stays fine in prose; it is the type name that would collide.
 
 ## Reminders
 
