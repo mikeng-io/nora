@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Docs only. Removes `docs/ai-thinkathon-2026-09.md` (a one-off planning note for an event that happened on 2026-09-12; what it was for is now issue #218, the Ora fold-back) and `docs/plans/`, whose last survivor was the 2026-08-11 voice-register plan — its intent landed in `nora/doctrine/voice.md`, now at version 19, and the rest of that directory went with `docs/specs` on 2026-09-07. Deleting from HEAD does not remove either file from history, so `scrub/README.md`'s citation of the hackathon note stays correct and untouched: the scrub rewrites history, which is where the file still lives. Nothing a member of a room can observe."
+}
