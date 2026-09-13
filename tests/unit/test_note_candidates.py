@@ -468,13 +468,16 @@ def _as_the_index_rendered_it(note) -> str:
     Lifted out of `render_notes`' own output rather than by calling `escape`
     directly: the contract `note_handle` has to satisfy is a round trip
     through THE INDEX, and an assertion against `escape(...)` would stay green
-    if `_render_entry` ever changed how it writes a title. The line shape is
+    if `_render_entry` ever changed how it writes a title. Reads `.body`
+    because `render_notes` returns a `ContextBlock` (or `None`) since #243 —
+    binding to the real renderer is what made this notice. The line shape is
     `- <title> — <description> (about …)`, so the title is what sits between
     the bullet and the first em-dash separator — which is why every fixture
     that uses this keeps that separator out of its own title.
     """
-    body = render_notes((note,))
-    line = next(ln for ln in body.splitlines() if ln.startswith("- "))
+    block = render_notes((note,))
+    assert block is not None, "a standing note must render an index entry"
+    line = next(ln for ln in block.body.splitlines() if ln.startswith("- "))
     return line[2:].split(" — ", 1)[0]
 
 
