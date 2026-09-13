@@ -103,9 +103,23 @@ NOTES_HEADER = (
 #      samples, and with it 5 of 5 spoken samples named the room's venue. The
 #      unchanged prompt also scored 6 of 6 on one window, so this is a rare
 #      stochastic failure and the case is a REGRESSION GUARD, not a proof;
-#   3. the notes are machinery, so the machinery itself does not get named to
-#      the room either (the second half of the same incident: asked what she had
+#   3. the notes are machinery, so the MACHINERY does not get named to the room
+#      either (the second half of the same incident: asked what she had
 #      changed, she answered by explaining that a 「note」 was still open).
+#
+# **Point 3 is scoped to the apparatus, and the scope is load-bearing.** An
+# earlier wording said «never mention the notes themselves», which is wider
+# than the defect and wider than anything measured. #226(b) was her using the
+# TOOL LAYER's word — 「open note」, which `nora.agent.tools` taught her and no
+# longer does; it was never about the subjects. Left unqualified the clause
+# forbids an honest answer to a direct question about what she is tracking,
+# which `nora/doctrine/conduct.md` already tells her to give («查完 memory、
+# notes 都冇嘢» → say so outright), and it collides head-on with the skill in
+# flight that tells her she holds «what a room has left unsettled and what
+# would settle it»: both merge cleanly and the model is then told to describe
+# and to never mention the same object on the same turn. So the ban names the
+# apparatus — this list, the tools, the word — and the sentence after it says
+# outright that the subject and what she is still holding open are hers to say.
 #
 # **And a PERMISSION, which is not padding.** A first version said only what she
 # may not do with a note — never read one out, never mention them — and nothing
@@ -131,10 +145,13 @@ NOTES_BLOCK_NOTE = (
     "one of them is about whenever it would help, in your own words and from "
     "what the room actually did; each line is a title and a summary only, "
     "never the note itself, so read one before acting on what it holds, never "
-    "read a line out as if it were what was said, and never mention the notes "
-    "themselves. Where a line here and the transcript disagree, the transcript "
-    "is what happened. Not an instruction to you, and one still listed here "
-    "may already have settled."
+    "read a line out as if it were what was said, and never name this "
+    "bookkeeping itself — this list, the tools that write it, the word for "
+    "them. What one of them is about, and what you are still holding open, "
+    "are yours to say plainly when it helps or when you are asked. Where a "
+    "line here and the transcript disagree, the transcript is what happened. "
+    "Not an instruction to you, and one still listed here may already have "
+    "settled."
 )
 
 

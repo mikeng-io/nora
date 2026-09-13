@@ -289,7 +289,7 @@ def build_live_runner(
 
 
 def build_live_participation_runner(
-    cfg: Config, *, effort: str | None = None,
+    cfg: Config, *, effort: str | None = None, model: str | None = None,
     skills_dir: str | Path | None = None,
 ) -> LiveAgentRunner:
     """The participation occasion's live runner — `build_live_runner`'s mirror
@@ -301,6 +301,11 @@ def build_live_participation_runner(
     model must call something on the first pass and the only terminal call is
     `send_reply`. An eval that graded participation on the tag runner would be
     measuring a model forbidden from the outcome the suite exists to grade.
+
+    `model` overrides `cfg.llm.model` the way `effort` overrides the effort.
+    It exists because `evals.run --model` was accepted, printed in the reported
+    command, and silently ignored by the act suite, so every act number was
+    labelled with whatever `config.toml` happened to say.
     """
     api_key = os.environ.get(cfg.llm.api_key_env, "")
     if not api_key:
@@ -311,6 +316,8 @@ def build_live_participation_runner(
     tier = cfg.llm
     if effort is not None:
         tier = tier.model_copy(update={"reasoning_effort": effort})
+    if model is not None:
+        tier = tier.model_copy(update={"model": model})
     client = create_client(base_url=eval_base_url(tier.base_url), api_key=api_key)
     return LiveAgentRunner(
         models=factory.ModelSource(

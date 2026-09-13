@@ -3,12 +3,16 @@
   "summary": "Nora no longer reads her own note summaries back to a room, and no longer names her note-keeping machinery in a message.",
   "details": [
     "The <notes> block now says whose words the index is in — her own notes, written by her for herself — and that a claim about what a room actually did comes from the transcript in front of her, never from a line of the index.",
+    "The block's ban is scoped to the apparatus — the index, the tools, the word for them — and says outright, in the same breath, that what a note is about and what she is still holding open are hers to say. An earlier wording forbade mentioning the notes at all, which would also have forbidden an honest answer to someone asking what she is tracking.",
     "The proactive turn's opening paragraph now rules out the whole apparatus rather than one sentence about reminders: never the reminder, never the note, never the note's own words.",
     "The note tools' schemas no longer teach her the phrase \"open note\".",
     "The proactive act eval suite gained two cases and a negative check for them: a reply must not carry her bookkeeping's vocabulary, and must not repeat a note summary the transcript in the same prompt contradicts."
   ],
   "limitations": [
     "Prompt wording is measured, not enforced: nothing at the send path rejects a message that names a note or repeats a summary.",
-    "Whether these wordings change how often she speaks at all is not established. The act suite's speak cases are too noisy to tell: the unchanged prompt scored between 5/15 and 12/15 on the same case across four windows of one session."
+    "Whether these wordings change how often she speaks at all is not established, and the measurement is too noisy to settle it either way. One window an arm put recall at 4 of 8 graded speak samples on this branch against 7 of 9 on the reverted prompt — the branch lower, but a Fisher exact two-sided p of 0.34 and a band the unchanged prompt alone has spanned before (5 of 15 to 12 of 15 on one case across four windows of a single session).",
+    "A green act-suite run no longer implies the two new guards were exercised. Both grade the message rather than the decision, so a sample where she stayed quiet is UNMEASURED — neither a pass nor an error — and a case that was quiet on every sample does not redden the gate, because reddening on the option the case itself calls defensible would be a false alarm. The gate line prints the unmeasured count separately from the error count, which is what says whether the guards actually ran.",
+    "Neither new eval case discriminates between the old wording and the new one. An A/B at five samples a case, with the three prompt files reverted for the control arm, put both of them at PASS on the unchanged prompt too. They are regression guards: they say this wording does not produce the defect, not that the previous wording did. The defect is rare and stochastic and each case yields one to three spoken samples an arm, from which no rate that low is separable from zero (issue #158).",
+    "The decide turn's objective still uses the phrase \"open note\", and the intent it writes is handed to the turn that speaks. That file is operator-only and changing it is a decide-suite change, so it is filed as issue #242 rather than made here; whether the phrase actually survives into a message by that path is not yet observed."
   ]
 }

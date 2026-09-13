@@ -26,6 +26,7 @@ This module holds the parts that need no model; `evals.run`'s two
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -42,12 +43,28 @@ DECIDE_EXPECTS: tuple[str, ...] = ("none", "remind")
 #: anything. It exists because grading the decision on such a case measures the
 #: threshold instead — measured on the two #226 cases, 2/5 and 3/5 spoken over
 #: identical prompts, so a `speak` label there would have reported her mood and
-#: nothing about the defect. A silent sample is ERROR, never PASS: the case
+#: nothing about the defect. A silent sample is UNMEASURED, never PASS: the case
 #: measured nothing, and an unmeasured sample that reads as a pass is exactly
 #: R-27's forbidden substitution.
 ACT_EXPECTS: tuple[str, ...] = ("silent", "speak", "either")
 
-Verdict = Literal["PASS", "FAIL", "ERROR"]
+#: Four states, not three, and the fourth was bought with a red gate.
+#:
+#: `either` + silence was first graded ERROR, on the argument that an outage and
+#: a non-measurement are the same shape. They are not, and R-27 is the rule that
+#: says so: ERROR means «I could not check» — a timeout, a refused send, a
+#: budget cut — and something is WRONG when one appears. UNMEASURED means «there
+#: was nothing to check», and on an `either` case that is the model taking an
+#: option the case's own YAML declares defensible. Collapsing them cost both
+#: halves at once: the gate went red on a case behaving as declared (because
+#: `majority_pass` has no graded sample to hold a majority over), and the gate
+#: LINE reported `errors 9` on a run with zero outages, inverting the one thing
+#: its docstring promises — that an outage cannot read as a quiet model.
+#:
+#: The two never mix again: `CaseTally.errors` counts outages only, the rates
+#: skip both, and `act_case_ok` is the single place that says what a fully
+#: unmeasured case does to the verdict.
+Verdict = Literal["PASS", "FAIL", "ERROR", "UNMEASURED"]
 
 
 def _iso(value: str) -> datetime:
@@ -268,7 +285,9 @@ class ActCase:
     #: repeating a note's summary where the transcript in the same prompt says
     #: otherwise. Graded on whatever the room HEARD, so a `silent` case
     #: satisfies it vacuously and the substrings must be chosen to appear only
-    #: when the reply is actually wrong.
+    #: when the reply is actually wrong. `_banned_hits` is what holds a term to
+    #: that bar — bare `note` as a plain substring did not, and banned «noted»,
+    #: «notebook» and «denote» with it.
     must_not_cite: tuple[str, ...] = ()
     note_moved: bool = False
 
@@ -329,12 +348,55 @@ class ActResult:
     silent_failures: int = 0
 
 
+def _banned_hits(heard: str, banned: Sequence[str]) -> list[str]:
+    """Which `must_not_cite` terms a reply actually carries.
+
+    Case-INSENSITIVE, unlike `must_cite`: a ban list is the negative half of
+    the measurement and «Note» must not pass where «note» fails. `must_cite`
+    stays exact — it names a word the room used, and case is part of it.
+
+    A term whose FIRST or LAST character is an ASCII word character is anchored
+    at that end against an adjacent ASCII word character. Bare `note` as a
+    plain substring failed the bar `ActCase.must_not_cite` sets for itself —
+    «appear only when the reply is actually wrong» — because it also fires on
+    «noted», «notebook» and «denote», all of which an entirely correct reply
+    may use. The anchor is applied per END, so a multi-word term like «my note»
+    is still held on both of its outer edges.
+
+    **Anchored on an ASCII class, NOT on `\\b`, and that is the whole point.**
+    `\\b` is defined over `\\w`, which every CJK character satisfies, so
+    `\\bnote\\b` would refuse to match 「我個note仲未close」 — an ASCII word
+    pressed against Chinese with no space, which is exactly how this room
+    writes. The anchor has to ask «is the neighbour an English letter or
+    digit», and 個 is not. A reply that names the apparatus in running
+    Cantonese is caught; «noted» and «notebook» are not.
+
+    A term with a CJK edge gets no anchor at that end — there is nothing to
+    anchor on, Chinese having no inter-word space — so it is a plain substring
+    and has to be chosen tightly enough to survive that, which is why the ban
+    list carries 「提醒自己」 and not 「提醒」.
+    """
+    def ascii_word(ch: str) -> bool:
+        return ch.isascii() and (ch.isalnum() or ch == "_")
+
+    hits: list[str] = []
+    for term in banned:
+        if not term:
+            continue
+        left = r"(?<![A-Za-z0-9_])" if ascii_word(term[0]) else ""
+        right = r"(?![A-Za-z0-9_])" if ascii_word(term[-1]) else ""
+        if re.search(left + re.escape(term) + right, heard, re.IGNORECASE):
+            hits.append(term)
+    return hits
+
+
 def grade_act(case: ActCase, result: ActResult) -> Grade:
     """`speak`: the room heard something, every `must_cite` substring is in
     it and no `must_not_cite` one is. `silent`: the room heard nothing — a
     row the screen cancelled before any model call counts as silent, which
     is the point of the screen. `failed_*` is ERROR: a turn that timed out
-    is not a decision.
+    is not a decision. `either` + silence is UNMEASURED, which is the
+    fourth state and NOT an error — see `Verdict`.
 
     `must_not_cite` is checked on ANYTHING that was heard, before the
     positive half and on either expectation, because the reply it catches is
@@ -351,11 +413,7 @@ def grade_act(case: ActCase, result: ActResult) -> Grade:
         )
     heard = bool(result.sent)
     joined = "\n".join(result.sent)
-    # Case-INSENSITIVE, unlike `must_cite`: a ban list is the negative half of
-    # the measurement and «Note» must not pass where «note» fails. `must_cite`
-    # stays exact — it names a word the room used, and case is part of it.
-    lowered = joined.lower()
-    banned = [c for c in case.must_not_cite if c.lower() in lowered]
+    banned = _banned_hits(joined, case.must_not_cite)
     if heard and banned:
         return Grade("FAIL", f"reply said {banned}: {joined[:120]!r}")
     if case.expect == "silent":
@@ -364,13 +422,14 @@ def grade_act(case: ActCase, result: ActResult) -> Grade:
         return Grade("PASS")
     if case.expect == "either":
         # Silence is not wrong here and it is not a pass either — there was no
-        # message, so the thing this case measures did not happen. ERROR keeps
-        # it out of both rates and out of `majority_pass`'s denominator, so a
-        # case that was quiet every sample reports as unmeasured rather than as
-        # clean.
+        # message, so the thing this case measures did not happen. UNMEASURED
+        # keeps it out of both rates and out of `majority_pass`'s denominator
+        # WITHOUT claiming an outage: this case's YAML says staying quiet is
+        # defensible on this input, so the run is intact and the sample is
+        # simply empty. `act_case_ok` decides what that does to the verdict.
         if not heard:
-            return Grade("ERROR", "the room heard nothing — this case grades the "
-                                  "message, so the sample measured nothing")
+            return Grade("UNMEASURED", "the room heard nothing — defensible here, "
+                                       "so this sample measured nothing")
         missing = [c for c in case.must_cite if c not in joined]
         return Grade("FAIL", f"reply did not cite {missing}") if missing else Grade("PASS")
     if not heard:
@@ -400,12 +459,28 @@ class CaseTally:
 
     @property
     def errors(self) -> int:
+        """OUTAGES only. UNMEASURED is deliberately not counted here: a run
+        where every `either` case stayed quiet is a healthy run that measured
+        less, and folding it in here inverted `_print_proactive_gate`'s own
+        promise — «an outage cannot read as a quiet model» — into a quiet model
+        reading as nine outages."""
         return sum(1 for v in self.verdicts if v == "ERROR")
 
     @property
+    def unmeasured(self) -> int:
+        return sum(1 for v in self.verdicts if v == "UNMEASURED")
+
+    @property
     def majority_pass(self) -> bool:
-        graded = [v for v in self.verdicts if v != "ERROR"]
+        graded = [v for v in self.verdicts if v not in ("ERROR", "UNMEASURED")]
         return bool(graded) and self.passes * 2 > len(graded)
+
+    @property
+    def fully_unmeasured(self) -> bool:
+        """No graded sample, and the reason is non-measurement rather than
+        outage. A case with one ERROR among its silences is NOT this — that run
+        had something go wrong in it and must not be waved through."""
+        return bool(self.verdicts) and all(v == "UNMEASURED" for v in self.verdicts)
 
 
 #: The expectations that mean «do nothing», per suite.
@@ -418,18 +493,54 @@ QUIET: frozenset[str] = frozenset({"none", "silent"})
 UNLABELLED_DECISION: frozenset[str] = frozenset({"either"})
 
 
+def act_case_ok(tally: CaseTally) -> bool:
+    """Does this act case let the gate stay green?
+
+    The ONE place the act suite's verdict is decided, extracted out of
+    `evals.run` so it can be pinned by a unit test — it is the function that
+    flips PASS/FAIL and it had no guard.
+
+    - Any `FAIL` sample is fatal on EVERY expectation. On `silent` that is one
+      speak in N: the room heard it, and a majority cannot un-hear it. On
+      `either` it is one message carrying her own bookkeeping, which is the
+      same argument about the same room.
+    - `speak` binds on the majority: one quiet sample out of five is the
+      model's threshold, not a defect.
+    - `either` with no graded sample at all is UNMEASURED, and UNMEASURED is
+      not a failure. This case's YAML declares silence defensible on this
+      input; reddening the gate because she took the option we ourselves
+      labelled defensible would be a lie about what went wrong. It is not a
+      silent pass either: `summarise` counts it, `_print_proactive_gate`
+      prints the count, and `_tally_line` marks the case `[UNMEASURED]`. What
+      a run cannot do is read healthy while it measured nothing.
+    - One ERROR among those silences and `fully_unmeasured` is False, so the
+      case falls through to `majority_pass` and reddens. An outage is still an
+      outage.
+    """
+    if "FAIL" in tally.verdicts:
+        return False
+    if tally.expect == "either" and tally.fully_unmeasured:
+        return True
+    return tally.majority_pass
+
+
 def summarise(tallies: Sequence[CaseTally]) -> dict[str, Any]:
     """Over SAMPLES. `false_positive_rate` — a quiet case that acted — is
     the primary number (39 §5); `recall` is the positive cases that acted as
-    expected. Errors are excluded from both and reported apart: an outage is
-    not a miss and not a false positive."""
+    expected.
+
+    Three things are excluded from both rates and reported apart, and they are
+    three DIFFERENT things: an outage (`errors`) is not a miss and not a false
+    positive; a non-measurement (`unmeasured`) is not an outage; and an
+    `either` case belongs to neither rate at all, because it never labelled a
+    decision to be right or wrong about."""
     quiet_graded = quiet_acted = 0
     positive_graded = positive_hit = 0
     for t in tallies:
         if t.expect in UNLABELLED_DECISION:
             continue
         for v in t.verdicts:
-            if v == "ERROR":
+            if v in ("ERROR", "UNMEASURED"):
                 continue
             if t.expect in QUIET:
                 quiet_graded += 1
@@ -442,8 +553,10 @@ def summarise(tallies: Sequence[CaseTally]) -> dict[str, Any]:
         "quiet_cases": sum(1 for t in tallies if t.expect in QUIET),
         "message_only_cases": sum(1 for t in tallies if t.expect in UNLABELLED_DECISION),
         "majority_pass": sum(1 for t in tallies if t.majority_pass),
+        "unmeasured_cases": sum(1 for t in tallies if t.fully_unmeasured),
         "samples": sum(len(t.verdicts) for t in tallies),
         "errors": sum(t.errors for t in tallies),
+        "unmeasured": sum(t.unmeasured for t in tallies),
         "false_positive_rate": (quiet_acted / quiet_graded) if quiet_graded else None,
         "recall": (positive_hit / positive_graded) if positive_graded else None,
         "verdicts": dict(Counter(v for t in tallies for v in t.verdicts)),

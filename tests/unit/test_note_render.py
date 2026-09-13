@@ -107,17 +107,46 @@ def test_the_note_keeps_the_machinery_out_of_the_room():
     changed, she answered by explaining the mechanism — that the room's 「open
     note」 was still unsettled and the deadline near. 「open note」 is the tool
     layer's phrase, never the room's. The block she reads on every turn is
-    where the tier says its own vocabulary stays inside it."""
-    assert "never mention the notes themselves" in NOTES_BLOCK_NOTE
+    where the tier says its own vocabulary stays inside it.
+
+    Scoped to the APPARATUS, and both halves are asserted, because the ban on
+    its own is wider than the defect. #226(b) was the tool layer's WORD, not
+    the subject; an unqualified «never mention the notes» would forbid the
+    honest answer `nora/doctrine/conduct.md` already requires when she has
+    looked and found nothing, and would contradict, on the same turn, a skill
+    that tells her she holds what a room has left unsettled. The permission
+    sentence is what keeps the ban readable as a ban on the machinery."""
+    assert "never name this bookkeeping itself" in NOTES_BLOCK_NOTE
+    assert "this list, the tools that write it, the word for them" in NOTES_BLOCK_NOTE
+    # And the scope, in the same breath: the subject is hers to raise.
+    assert ("what one of them is about, and what you are still holding open, "
+            "are yours to say plainly") in NOTES_BLOCK_NOTE.lower()
 
 
 def test_the_note_still_invites_her_to_raise_what_a_note_is_about():
-    """MEASURED, and it is the reason this assertion exists. A first wording
-    said only what she may not do with a note — never read one out, never
-    mention them — and over the act suite's ten cases at five samples it cut
-    recall from 0.60 to 0.12: she stopped raising the subjects too, which is
-    the whole point of the tier. The permission is load-bearing and a later
-    tightening that drops it will reproduce that number."""
+    """Why the permission is here, said at the strength the instrument
+    supports and no higher.
+
+    A first wording of this work said only what she may NOT do with a note —
+    never read one out, never name the apparatus — and nothing about raising
+    the subject, which is the entire purpose of the tier. Stacking those
+    prohibitions across this block, the fire header and the tool schemas read
+    2/15 and 3/15 on the act suite's `a01`, the case that measures whether she
+    still speaks at all.
+
+    **That is not a demonstrated regression, and no number here is a
+    prediction.** The same UNCHANGED prompt read 5/15, 8/15, 10/15 and 12/15
+    across four windows of one session, so a 2-3/15 reading sits inside a band
+    the instrument cannot separate from noise, and nothing attributes it to
+    this clause rather than the other two. Issue #158 is the general form: this
+    suite's n does not support a per-clause causal claim, and a docstring that
+    made one would be telling the next author a fact nothing measured.
+
+    So the clause stays on an argument, not a number: it costs one sentence,
+    and what it guards against — three prohibitions reading as «leave the notes
+    alone» — is the tier's whole point going quiet. A later tightening that
+    drops it is making the same unmeasured bet in the other direction, and
+    should re-run the suite rather than trust either figure above."""
     note = NOTES_BLOCK_NOTE.lower()
     assert "raise what one of them is about whenever it would help" in note
 

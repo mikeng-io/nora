@@ -56,6 +56,7 @@ import json
 import os
 import sys
 from collections import Counter
+from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -100,6 +101,7 @@ from evals.proactive import (
     ActResult,
     DecideResult,
     WrittenRow,
+    act_case_ok,
     grade_act,
     grade_decide,
     load_act_cases,
@@ -1132,24 +1134,46 @@ async def _run_note_candidates_live(
 
 
 def _print_proactive_gate(
-    suite: str, tallies: list[ProactiveTally], *, label: str, instructions: str | None,
+    suite: str, tallies: list[ProactiveTally], *, verdict: bool, label: str,
+    instructions: str | None,
 ) -> dict:
     """The gate line both proactive suites print: the false-positive rate on
-    the quiet cases FIRST (39 §5's primary number), then recall, then errors
-    apart — so an outage during a run cannot read as a quiet model."""
+    the quiet cases FIRST (39 §5's primary number), then recall, then the two
+    non-measurements apart and SEPARATELY — `errors` is outages, `unmeasured`
+    is samples that had nothing to grade — so an outage during a run cannot
+    read as a quiet model and a quiet model cannot read as an outage.
+
+    **`verdict` is a required argument and it is printed ON the summary line.**
+    The line used to be printed before the verdict was computed, which made it
+    quotable on its own: a run whose gate had FAILED could hand you
+    «false-positive rate 0.00 … recall 0.50; 8/10 cases majority-pass», which
+    reads healthy and says nothing about the outcome. That is precisely what
+    reached a PR body. Numbers and verdict now leave this function together or
+    not at all."""
     summary = summarise_proactive(tallies)
     fmt = lambda x: "n/a" if x is None else f"{x:.2f}"  # noqa: E731
-    print(f"{suite} gate: false-positive rate {fmt(summary['false_positive_rate'])} on "
+    print(f"{suite} gate [{'PASS' if verdict else 'FAIL'}]: "
+          f"false-positive rate {fmt(summary['false_positive_rate'])} on "
           f"{summary['quiet_cases']} quiet case(s); recall {fmt(summary['recall'])}; "
           f"{summary['majority_pass']}/{summary['cases']} cases majority-pass over "
-          f"{summary['samples']} samples; errors {summary['errors']}")
+          f"{summary['samples']} samples; errors {summary['errors']}; "
+          f"unmeasured {summary['unmeasured']} sample(s) in "
+          f"{summary['unmeasured_cases']} case(s)")
     print(f"    model {label}; instructions {(instructions or 'unmeasured')[:16]}")
     return summary
 
 
-def _tally_line(suite: str, tally: ProactiveTally) -> None:
-    marks = "".join({"PASS": ".", "FAIL": "x", "ERROR": "!"}[v] for v in tally.verdicts)
-    status = "PASS" if tally.majority_pass else "FAIL"
+_MARKS = {"PASS": ".", "FAIL": "x", "ERROR": "!", "UNMEASURED": "-"}
+
+
+def _tally_line(suite: str, tally: ProactiveTally, *, status: str | None = None) -> None:
+    """`status` is the CASE's verdict under the suite's own rule, which is not
+    always `majority_pass` — the act suite's `act_case_ok` is asymmetric and
+    knows about UNMEASURED. Passing it in keeps the per-case line from claiming
+    something the gate does not."""
+    marks = "".join(_MARKS[v] for v in tally.verdicts)
+    if status is None:
+        status = "PASS" if tally.majority_pass else "FAIL"
     reasons = sorted({r for r in tally.reasons if r})
     print(f"[{status}] {suite}/{tally.name} — expect={tally.expect} samples={marks}"
           + (f" :: {'; '.join(reasons)}" if reasons else ""))
@@ -1158,14 +1182,19 @@ def _tally_line(suite: str, tally: ProactiveTally) -> None:
 async def _score_proactive(
     sink: EvalSink | None, *, dataset: str, run_name: str | None,
     tallies: list[ProactiveTally],
+    passed: Callable[[ProactiveTally], bool] = lambda t: t.majority_pass,
 ) -> None:
+    """`passed` is the suite's own case rule, because it is NOT always
+    `majority_pass`: the act suite's is `act_case_ok`. Exported scores and the
+    printed per-case status have to be the same judgement or the trace and the
+    terminal disagree about which case failed."""
     if sink is None:
         return
     run_id = await sink.start_run(dataset_name=dataset, run_name=run_name or dataset)
     for t in tallies:
         await sink.record_score(
             run_id=run_id, item_id=t.name, name=f"{dataset}_verdict",
-            value=1.0 if t.majority_pass else 0.0, data_type="BOOLEAN",
+            value=1.0 if passed(t) else 0.0, data_type="BOOLEAN",
         )
 
 
@@ -1221,8 +1250,12 @@ async def _run_proactive_decide_live(
                     tally.reasons.append(g.reason)
                 tallies.append(tally)
                 _tally_line("proactive_decide", tally)
+        # Computed BEFORE the summary line, which prints it: a number without
+        # its verdict is how a failed run got reported as a healthy one.
+        ok = all(t.majority_pass for t in tallies)
         _print_proactive_gate(
-            "proactive_decide", tallies, label=label, instructions=instruction_sha,
+            "proactive_decide", tallies, verdict=ok, label=label,
+            instructions=instruction_sha,
         )
         print(f"    dreamer_dir {dreamer_dir or cfg.dreamer.dir}")
         results = [
@@ -1233,13 +1266,14 @@ async def _run_proactive_decide_live(
         await _score_proactive(
             sink, dataset="proactive_decide", run_name=run_name, tallies=tallies,
         )
-        return all(t.majority_pass for t in tallies), results
+        return ok, results
     finally:
         await client.close()
 
 
 async def _run_proactive_act_live(
     paths: tuple[Path, ...], *, samples: int, effort: str | None = None,
+    model: str | None = None,
     sink: EvalSink | None = None, run_name: str | None = None,
 ) -> tuple[bool, list[dict]]:
     """The act suite's live drive (39 §5): one proactive row through the REAL
@@ -1247,9 +1281,13 @@ async def _run_proactive_act_live(
     eval_support.run_proactive_act_case`), graded on what the room heard.
     ASYMMETRIC like the participation suite: a `silent` case fails on ONE
     speak in `samples` (the room heard it); a `speak` case binds on a strict
-    majority. `failed_*` is ERROR."""
+    majority. `failed_*` is ERROR. `act_case_ok` is the whole rule, and it is
+    in `evals.proactive` so a unit test can pin it.
+
+    `model` is honoured here — it was not, until the flag was noticed printed
+    in a reported command it had no effect on."""
     cfg = _load_eval_config()
-    runner = build_live_participation_runner(cfg, effort=effort)
+    runner = build_live_participation_runner(cfg, effort=effort, model=model)
     tallies: list[ProactiveTally] = []
     for path in paths:
         for case in load_act_cases(path):
@@ -1268,26 +1306,25 @@ async def _run_proactive_act_live(
                 tally.verdicts.append(g.verdict)
                 tally.reasons.append(g.reason)
             tallies.append(tally)
-            _tally_line("proactive_act", tally)
+            _tally_line(
+                "proactive_act", tally,
+                status=("UNMEASURED" if tally.fully_unmeasured
+                        else "PASS" if act_case_ok(tally) else "FAIL"),
+            )
+    ok = all(act_case_ok(t) for t in tallies)
     _print_proactive_gate(
-        "proactive_act", tallies, label=f"{cfg.llm.model}/{effort or cfg.llm.reasoning_effort}",
+        "proactive_act", tallies, verdict=ok,
+        label=f"{model or cfg.llm.model}/{effort or cfg.llm.reasoning_effort}",
         instructions=None,
     )
     results = [
         {"name": t.name, "expect": t.expect, "verdicts": list(t.verdicts),
-         "passed": t.majority_pass}
+         "passed": act_case_ok(t), "unmeasured": t.fully_unmeasured}
         for t in tallies
     ]
-    await _score_proactive(sink, dataset="proactive_act", run_name=run_name, tallies=tallies)
-    # A quiet case is graded on EVERY sample: one speak is a room that heard
-    # it. An `either` case is graded the same way on its ban list, for the same
-    # reason — one message carrying her own bookkeeping is a room that heard
-    # that. A speak case binds on the majority.
-    ok = all(
-        (t.majority_pass and "FAIL" not in t.verdicts)
-        if t.expect in ("silent", "either")
-        else t.majority_pass
-        for t in tallies
+    await _score_proactive(
+        sink, dataset="proactive_act", run_name=run_name, tallies=tallies,
+        passed=act_case_ok,
     )
     return ok, results
 
@@ -1502,7 +1539,8 @@ def main(suite: str, *, export_langfuse: bool = False, no_cache: bool = False,
         sink = _build_sink(cfg, export=export_langfuse)
         run_name = f"gate-proactive-act-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
         ok, _results = asyncio.run(_run_proactive_act_live(
-            paths, samples=samples, effort=effort, sink=sink, run_name=run_name,
+            paths, samples=samples, effort=effort, model=model,
+            sink=sink, run_name=run_name,
         ))
     elif suite == "adversarial":
         # B1: the verdict cache is ON by default — an unchanged re-run costs 0 model
