@@ -595,27 +595,47 @@ def test_the_identity_grounding_corpus_is_diversified():
     assert sum(1 for n in names if n.startswith("grounded")) >= 2   # ≥2 controls
 
 
-def test_a_failing_axis_is_named_on_the_printed_line():
+async def test_a_failing_axis_is_named_on_the_printed_line(
+        fake_env, monkeypatch, capsys, tmp_path):
     """W3: a `being_contradicted` FAIL printed `safety=PASS scope=None` and never
-    said which axis refused it — fail-closed and undiagnosable, which is how a real
-    failure gets re-run instead of read.
+    said which axis refused it — fail-closed and undiagnosable, which is how a
+    real failure gets re-run instead of read.
 
-    Reverting `_axes_line` (or the `f"{_axes_line(result)}"` in either print) turns
-    this red.
+    Asserted on what is actually PRINTED, both times it is printed, rather than on
+    the helper: a renderer the print does not call is exactly the decorative shape
+    this is here to stop. Reverting either `f"{_axes_line(result)}"` turns it red.
     """
-    axis = "contradiction_handled_correctly"
-    failing = {"name": "c", "criteria_verdicts": {axis: "FAIL"}, "scope_verdict": None}
-    assert run._axes_line(failing) == f"{axis}=FAIL"
+    async def _caved(model, system_prompt, message, *, role):
+        return "係喎，我搞錯咗" if role == "reply" else CONTRADICTED_BAD
 
-    # Both axes on one case, sorted so the line is stable between runs.
-    both = {"criteria_verdicts": {axis: "PASS", "source_scope_read_correctly": "FAIL"},
-            "scope_verdict": "FAIL"}
-    assert run._axes_line(both) == (
-        f"{axis}=PASS source_scope_read_correctly=FAIL")
+    monkeypatch.setattr(run, "_invoke_agent", _caved)
+    cache = tmp_path / "adversarial.json"
+    corpus = (CORPUS / "being_contradicted.yaml",)
 
-    # A result cached before `criteria_verdicts` existed carries only the old key,
-    # and must still name its axis rather than printing nothing.
-    assert run._axes_line({"scope_verdict": "FAIL"}) == "source_scope_read_correctly=FAIL"
+    ok, _ = await run._run_adversarial_live(corpus, verdict_cache_path=cache)
+    assert not ok
+    live = capsys.readouterr().out
+    assert "contradiction_handled_correctly=FAIL" in live
+    assert "scope=None" not in live, "the old line named an axis nobody asked for"
 
-    # A case that opted into nothing says so, rather than printing a bare `None`.
+    # And again off the cache, which is the other print and had the same defect.
+    ok, _ = await run._run_adversarial_live(corpus, verdict_cache_path=cache)
+    cached = capsys.readouterr().out
+    assert not ok
+    assert "[cached]" in cached
+    assert "contradiction_handled_correctly=FAIL" in cached
+
+
+def test_the_axes_line_folds_in_a_verdict_cached_before_the_map_existed():
+    """`scope_verdict` is its own key and predates `criteria_verdicts`, so a
+    result written by an older run carries only the old one and must still name
+    its axis rather than printing nothing. A case that opted into no axis prints
+    `-`, not a bare `None`."""
+    assert run._axes_line({"scope_verdict": "FAIL"}) == (
+        "source_scope_read_correctly=FAIL")
     assert run._axes_line({"safety_verdict": "PASS"}) == "-"
+    # Sorted, so the line is stable between runs.
+    both = {"criteria_verdicts": {"contradiction_handled_correctly": "PASS",
+                                  "source_scope_read_correctly": "FAIL"}}
+    assert run._axes_line(both) == (
+        "contradiction_handled_correctly=PASS source_scope_read_correctly=FAIL")
