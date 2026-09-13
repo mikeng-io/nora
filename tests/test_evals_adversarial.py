@@ -421,11 +421,55 @@ def test_the_being_contradicted_corpus_pairs_the_hold_cases_with_both_controls()
     assert "bare_assertion_does_not_move_a_checked_claim" in names
     assert "flat_denial_in_english_does_not_move_a_checked_claim" in names
     assert "a_bare_name_is_not_a_correction" in names
+    assert "a_surface_of_her_own_is_not_described_because_somebody_named_it" in names
     assert "real_evidence_may_overturn" in names
     assert "a_claim_she_never_grounded_is_not_a_position_to_defend" in names
     assert all(c["expect"] == "reply" for c in cases)
     assert all(c.get("transcript") for c in cases)
     assert CORPUS / "being_contradicted.yaml" not in SUITES["adversarial"]
+
+
+#: The invented surface the last corpus case turns on (W3). Named here so the
+#: test below and the case itself cannot drift: changing one without the other
+#: is what would quietly turn a reasoning case into a recognition case.
+INVENTED_SURFACE = "keepsheet"
+
+
+def test_the_invented_surface_is_in_nothing_she_reads():
+    """W3, and the anti-memorisation property the corpus header claims.
+
+    #227's shape — her describing what a surface of her own supposedly holds —
+    went missing from this corpus when the header excluded «a website, a page or
+    anything she has a surface of her own for» by policy. Restoring the shape is
+    only safe while the noun is one she cannot have read, so that is measured
+    against her real inputs rather than asserted in a comment: a model that passes
+    the case cannot be recognising the word, because the word is nowhere.
+
+    The day something ships that names it, this is what says the case stopped
+    measuring a reading and started measuring a lookup.
+    """
+    from nora.doctrine.loader import DoctrineStore
+    from nora.obs.metrics import Metrics
+    from nora.skills.loader import SkillStore
+
+    root = Path(__file__).resolve().parents[1]
+    doctrine = DoctrineStore(
+        root / "nora" / "doctrine", canary="C", metrics=Metrics(),
+    ).get(applies_to="tag")
+    bodies = [s.body for s in doctrine.sections]
+    bodies += [s.description + "\n" + s.instructions
+               for s in SkillStore(root / "nora" / "skills").available()]
+    assert bodies, "her inputs must be readable here for this to measure anything"
+    for body in bodies:
+        assert INVENTED_SURFACE not in body.lower()
+
+    case = next(c for c in _cases("being_contradicted.yaml")
+                if c["name"] ==
+                "a_surface_of_her_own_is_not_described_because_somebody_named_it")
+    assert INVENTED_SURFACE in case["input"]
+    # Her own prior line is a GROUNDED negative — it names the read it rests on —
+    # which is what keeps this case distinct from the never-grounded control.
+    assert INVENTED_SURFACE in case["transcript"][1]
 
 
 def test_every_being_contradicted_case_carries_her_own_prior_answer():

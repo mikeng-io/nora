@@ -997,10 +997,16 @@ class ReplyGuard(HookProvider):
                 # numbers; what this sentence says has to be true at any budget
                 # and any directory size. `nora.agent.tools.NATIVE_TOOLS`
                 # ["skills"] carries the reasoning for the number itself.
+                # "called", not "activated": `spent` counts what `record` saw, and
+                # `record` fires for any completed call this guard did not veto —
+                # `skills(<something that resolved nothing>)` included. A call that
+                # came back empty spends the budget and loads no body, which is the
+                # worst case for the sentence below and the reason it is worded off
+                # what came BACK rather than off what was asked.
                 return self._veto(
-                    "R-7", f"You already activated {spent} skill(s) this turn, and "
-                           "that is the limit. Any skill you did NOT activate is "
-                           "not in front of you: answer from the ones you loaded, "
+                    "R-7", f"You already called {spent} skill(s) this turn, and "
+                           "that is the limit. Any skill that did not come back is "
+                           "not in front of you: answer from the ones that did, "
                            "and say you cannot check the rest rather than "
                            "describing what they say.",
                 )

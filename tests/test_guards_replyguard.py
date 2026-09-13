@@ -488,10 +488,16 @@ def test_the_skills_veto_does_not_claim_she_holds_a_skill_she_never_loaded():
     # The false half, gone: it must not tell her she holds what she did not load.
     assert "have that context" not in message
     assert "from what you already have" not in message
-    # And the true half, said: the ones she did not activate are not in front of
-    # her, and the honest move is to say so rather than fill the gap.
+    # And the true half, said: what did not come back is not in front of her, and
+    # the honest move is to say so rather than fill the gap.
     assert "not in front of you" in message
     assert "cannot check" in message
+    # "called", not "activated" (review nit): `spent` is `record`'s count, and
+    # `record` fires for any completed call this guard did not veto — including a
+    # `skills(<unknown>)` that resolved nothing. A call is what was spent; an
+    # activation is not what every one of them bought.
+    assert "already called" in message
+    assert "activated" not in message
 
 
 def test_the_skills_budget_is_smaller_than_the_directory_it_rations():

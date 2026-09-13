@@ -402,13 +402,13 @@ RETRY_POLICIES: frozenset[str] = frozenset({"safe", "unsafe_without_key", "never
 # research-heavy turn — surveying a few sources — does not hit the R-7 ceiling
 # mid-answer. The per-tool number comments below describe the RELATIVE sizing,
 # which a uniform doubling preserves (a tool sized "2, like route" is still
-# twice group_members). FIVE are deliberately HELD at their original value, for
+# twice group_members). FOUR are deliberately HELD at their original value, for
 # reasons a bigger budget cannot help (review 2026-08-08): `send_reply` is the
 # messages-per-reply spam cap, not a lookup — held at 3 then, moved to 6 by
 # DEC-95 for the burst, and still sized by what the GROUP should receive rather
 # than by what a call costs; `ask_memory` (1) is a ~14-19s
 # dialectic call whose second invocation blows the turn's wall-clock; and
-# and `group_members` / `saved_places` (1) each return a per-tag CACHED,
+# `group_members` / `saved_places` (1) each return a per-tag CACHED,
 # provably-identical result, so a second call only crowds out `send_reply`.
 # (`skills` was on that list and is not: it was raised to 2 in 2026-09-03, and
 # its repeat call is the one on this table that returns DIFFERENT content —
