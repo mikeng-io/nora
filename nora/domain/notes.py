@@ -38,6 +38,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from xml.sax.saxutils import unescape
 
 #: The injected index carries one line per note on EVERY tag (§5.1), so these
 #: are prompt-budget decisions, not cosmetic ones. They are enforced in
@@ -216,6 +217,50 @@ def default_revisit_at(
     return now_ms + dateless_horizon_days * MS_PER_DAY
 
 
+def note_handle(title: str) -> str:
+    """The key a note is addressed BY, normalised — §16.1's decision made
+    mechanical.
+
+    A note has no model-reachable id: every index that renders notes carries
+    title and description and nothing else, so the title is the handle
+    (DEC-105's shape for `send_to`, which takes a room's operator-written
+    label for the same reason — «an id is not something a person says in a
+    chat»). This function is what makes that handle comparable.
+
+    **It lives in the DOMAIN because there are now four readers and they must
+    agree exactly** — `nora.agent.tools`' `note_read`/`note_update` resolve a
+    title against the standing set, `ReplyGuard`'s R-55 latch keys on the very
+    same string, the debrief's note-read latch reads it back, and since
+    2026-09-13 `nora.language.note_candidates`' create gate resolves the title
+    the model names for an update (#228). That fourth reader is what moved it:
+    `nora.language` sits BELOW `nora.agent` in the layered import contract, so
+    the only alternative to moving it down was a second copy — and two copies
+    of a `casefold()` is how a latch silently stops matching the tool it
+    guards.
+
+    `casefold`, not `lower`, and `strip` before it: the database's own
+    uniqueness is `(workspace, lower(title)) WHERE retired_at IS NULL`, so case
+    is already not part of a note's identity, and a model that types the index
+    line back with a trailing space has not named a different note.
+
+    **And UNESCAPED, for the same reason one step further on.** The handle is
+    the title as the model SAW it, and every index escapes what it renders
+    (R-13): `note_render` and the proactive `<open_notes>` both put the title
+    through `escape`. So a note called «Dinner & drinks» reaches the model as
+    «Dinner &amp;amp; drinks», and the tool docstrings tell it to type that back
+    «exactly as `<notes>` shows it» — which then failed to match the stored
+    title and answered «No note in `<notes>` has that title».
+
+    The decision was unlinkable after that, not merely refused: a proactive
+    `remind` written without its `note_id` falls through `ProactiveScreen` to
+    the flag-only path, so the note-moved cancellation D11 exists for never
+    runs. Normalising here rather than at the call sites is the same argument
+    the paragraph above makes about `casefold` — the readers must agree
+    exactly.
+    """
+    return unescape(title.strip()).casefold()
+
+
 def _required(value: str, what: str) -> str:
     """Non-empty after stripping, or refuse. `'   '` is non-empty to `if not x`,
     which is the hole `fact_model_is_named_check` closes with `btrim` — the same
@@ -256,10 +301,12 @@ class Note:
     replaced_by: str | None = None
     # WHY it was retired — `NoteSupersedeReason`'s vocabulary, written by
     # `DreamSink.supersede`. A closed vocabulary rather than free text because
-    # "how many notes did the curator merge this week" is the reading that
-    # justifies the curator existing, and prose does not aggregate. `None`
-    # until retired; the `retired_at is None` invariant below is what pairs
-    # them.
+    # "how many notes did the curator retire this week, and on what ground"
+    # is the reading that justifies the curator existing, and prose does not
+    # aggregate. (It was written as "how many did it merge"; merge was
+    # deleted 2026-09-08 and `NoteSupersedeReason.ALL` no longer names it.)
+    # `None` until retired; the `retired_at is None` invariant below is what
+    # pairs them.
     retire_reason: str | None = None
     revisit_at: int | None = None
     strikes: int = 0
@@ -606,15 +653,17 @@ def tag_path_progressed_since_wake(
     **It used to ask who wrote the CURRENT HEAD**, and that is a different
     question with a different answer on the sequence that matters:
 
-        wake at R5 → the room revises (R6, `tag:miles`) → the curator merges or
-        the debrief appends (R7, a run id)
+        wake at R5 → the room revises (R6, `tag:miles`) → a background pass
+        appends (R7, a run id)
 
     The head is R7, background-authored, so the old test said «no progress»,
     charged a strike, and LEFT THE WATERMARK AT R5 — so the same R6 could never
     count on any later tick either. A note the room is actively working, that a
     background pass also touches each cycle, never resets and marches to the
-    strike ceiling. `merge` writes exactly such a revision, so a merged
-    survivor's head is background-authored BY CONSTRUCTION.
+    strike ceiling. The curator's `merge` wrote exactly such a revision and
+    is gone (2026-09-08); the note-candidates gate's appended revision
+    (`nora.language.note_candidates`, #228) writes one on the same shape, so
+    the sequence is live and this walk still earns its keep.
 
     Both implementations agreed on the wrong answer, which is why the contract
     suite could not see it: they shared a belief, not a check.
@@ -745,8 +794,8 @@ class StaleNoteHeadError(Exception):
     **Why a refusal and not a merge, an overwrite, or a silent no-op.** A note's
     value is the *arrangement* — the writer read one body, reasoned over it, and
     is now appending prose that only makes sense against that body. If the head
-    moved (the curator merged the note mid-turn, or a parallel turn in the other
-    room of the same workspace revised it), the text being appended is an answer
+    moved (the note-candidates gate appended to it mid-turn, or a parallel turn
+    in the other room of the same workspace revised it), the text being appended is an answer
     to a question that has changed. Writing it on top destroys the intervening
     revision's arrangement with nothing recording that it happened; returning 0
     and carrying on reports «nothing to do» for what was actually «I could not

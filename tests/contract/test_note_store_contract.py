@@ -1052,8 +1052,11 @@ async def test_supersede_refuses_a_source_rather_than_dropping_it(
 async def test_supersede_refuses_a_reason_outside_the_tier_vocabulary(
     notes: _Harness,
 ) -> None:
-    """Free text would make "how many did the curator merge this week"
-    unanswerable, which is the reading that justifies the curator existing."""
+    """Free text would make "how many notes did the curator retire this week,
+    and on what ground" unanswerable, which is the reading that justifies the
+    curator existing. (This said "how many did the curator merge this week"
+    until 2026-09-13; merge was deleted 2026-09-08 and
+    `NoteSupersedeReason.ALL` no longer names it.)"""
     note = await _make(notes.store)
 
     with pytest.raises(ValueError):

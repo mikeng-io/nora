@@ -1431,6 +1431,25 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # only on the first sighting of an occasion (a re-observation refreshes
     # the row without being a second "recording", exactly as a repeated miss
     # is not a second miss).
+    #
+    # **UNTIL 2026-09-13 `trigger="create"` OVER-COUNTED, and the code had
+    # been contradicting the sentence above since #98 shipped (fixed in
+    # #228).** The guard was `row.attempts == 0` alone, and `attempts` counts
+    # GATE attempts, not sightings: a candidate handed back a row the gate had
+    # already SETTLED comes back with `attempts == 0` every time, so every
+    # re-observation of a settled occasion counted as a fresh arrival. Not a
+    # double-count with a factor — unbounded in the number of ticks the room
+    # keeps mentioning the same thing. The guard is now `row.attempts == 0 and
+    # row.status == CANDIDATE_PENDING`. Anything read off this series BEFORE
+    # that date is an upper bound on arrivals and nothing more; in particular
+    # `nora_note_candidates_total` minus `nora_note_candidate_gate_total` was
+    # not the count of proposals that never reached a decision, which is what
+    # it looks like and what `nora_note_candidate_staging_total` below now
+    # actually answers. Prometheus keeps ~4 days on this deployment, so the
+    # contaminated window closes on its own; the note is here because a reader
+    # of a longer-range export would have no other way to know. No in-repo
+    # consumer read it — no recording rule, no alert, no dashboard — which is
+    # why this is a spec comment rather than a release fragment.
     _CounterSpec(
         "nora_note_candidates_total",
         "Note candidates recorded by what raised them. trigger=\"miss\": a "
@@ -1450,19 +1469,63 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_note_candidate_gate_total",
         "The note-candidates adaptor's deterministic gate, by outcome: "
-        "created (materialized as a brand new note), updated (APPENDED as a "
-        "revision to a standing note anchored to the same calendar day "
-        "— the gate compares the DATE alone since 2026-09-08, and appends "
-        "rather than replaces since 2026-09-13, issue #228), refused (a "
+        "created (the model named no standing note, so a brand new one was "
+        "written), updated (APPENDED as a revision to the standing note the "
+        "model NAMED in its updates field — resolved by title since "
+        "2026-09-13, the anchor date having been the key from 2026-09-08 "
+        "until it merged two unrelated occasions twice out of two firings, "
+        "and appending rather than replacing since the same day, issue "
+        "#228), unresolved (the model named a title NO standing note answers "
+        "to — mistyped or invented — so a new note was written; its own "
+        "action rather than part of created because this is the rate the "
+        "whole design rests on being low, and it was invisible inside "
+        "created, with no log either, until 2026-09-13), ambiguous (the "
+        "named title answers to MORE than one standing note, so a NEW note "
+        "was written rather than a guess at which one was meant — a "
+        "duplicate overwrites nothing and a reader can see both, appending "
+        "to the wrong note is neither; nothing MERGES the duplicate "
+        "afterwards, and issue #236 carries that bound), refused (a "
         "duplicate with nothing new, or a malformed proposal the domain type "
         "itself rejected), full (the appended body would pass the note body "
         "ceiling, so the revision was refused rather than truncated — a rate "
         "here reads as the curator not retiring, never as a model fault), "
-        "or deferred (a transient failure — a raced CAS, a "
-        "store exception, a note that moved or retired between the read and "
-        "the write, or a candidate already settled by an earlier tick — left "
-        "PENDING for the next tick to retry, never a decision).",
+        "or deferred (a transient failure — a raced CAS, a store exception, "
+        "or a note that moved or retired between the read and the write — "
+        "left PENDING for the next tick to retry, never a decision). A "
+        "candidate handed back a row an EARLIER tick already settled reaches "
+        "no action here at all; nora_note_candidate_staging_total is where "
+        "that is counted.",
         ("action",),
+    ),
+    # The SETTLED-ROW branch of `_settle`, which the gate's own vocabulary
+    # deliberately does not cover — nothing is decided there, so folding it in
+    # would stop the gate's sum being the number of candidates decided.
+    #
+    # It gets a series at all because the two things that reach it are a
+    # benign no-op and a DESTROYED proposal, and until 2026-09-13 they were
+    # indistinguishable from outside: measured against the real adaptor, two
+    # different same-day candidates with no people named and one occasion
+    # re-observed a tick later produced the SAME arrivals count, the same gate
+    # total and the same note count. `nora_note_candidates_total` minus
+    # `nora_note_candidate_gate_total` therefore could not say whether a
+    # proposal had been destroyed — R-27's `unavailable`-reported-as-
+    # `nothing_found` one layer down, and the reason this is declared before
+    # the collision itself is fixed (issue #235). The drop must not be silent
+    # even while it stands.
+    _CounterSpec(
+        "nora_note_candidate_staging_total",
+        "A note candidate handed back a staging row the gate had ALREADY "
+        "settled, by what that means. reobserved: the same arrangement seen "
+        "again across ticks — the benign case the staging table exists to "
+        "absorb, and nothing is lost. displaced: a DIFFERENT arrangement "
+        "that collided on the staging key (workspace, anchor date, named "
+        "people) and was dropped before the gate ever saw it — one proposal "
+        "destroyed, no note written, no gate action counted, issue #235. The "
+        "two are told apart by the title, so two arrangements sharing the "
+        "key AND a title read as reobserved; everywhere else the counter "
+        "errs toward displaced, which is the direction a loss counter has to "
+        "fail in.",
+        ("outcome",),
     ),
     # A DELIBERATE second series over calls already counted, on
     # `_record_created`'s precedent (`nora.agent.tools`) rather than against

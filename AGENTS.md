@@ -179,8 +179,11 @@ is #115. Nothing under `design/dreamer-agent-loop/` numbered 20, 21, 23, 24, 25,
 curator's merge half.** With nothing minting entities, `note_entity` could never
 be populated and merge was inert by construction; the registry store, the
 resolution pass and the merge verb are deleted (their tables stay). The
-curator only retires; the create gate in `note_candidates` matches on anchor
-date alone. R-75 in the decision index says which clauses survive.
+curator only retires. R-75 in the decision index says which clauses survive.
+The create gate in `note_candidates` matched on anchor date alone from that
+day until **2026-09-13**, when two firings in production merged two unrelated
+occasions twice (#228); it now resolves the note title the MODEL names, and
+the date is only when the thing happens.
 
 ## The three config files
 

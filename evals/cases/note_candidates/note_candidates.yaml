@@ -8,9 +8,10 @@
 # `DreamerRuntime` + real `NoteCandidateAdaptor` have run against the live
 # model (`nora.app.eval_support.run_note_candidates_case`). No judge:
 #
-#   create  — exactly one NEW standing note exists afterwards. `anchor_date`
-#             (when given) must match it; `must_cite` ids must be in the
-#             staged candidate's `message_ids`.
+#   create  — exactly `creates` NEW standing notes exist afterwards (default
+#             one), and NOTHING standing was revised. `anchor_date` (when
+#             given) must match; `must_cite` ids must be in the staged
+#             candidate's `message_ids`.
 #   update  — no new note; the note named by `updates` has a new head
 #             revision.
 #   none    — the notebook is unchanged: no new note, no new revision. A
@@ -277,3 +278,35 @@
     - {id: 1901804, ts: "2026-09-10T09:28:13Z", person: cat, name: Cat, body: "or we can play some 3player on9 game?"}
     - {id: 1901805, ts: "2026-09-10T09:28:25Z", person: ben, name: Ben, body: "how to fish"}
     - {id: 1901806, ts: "2026-09-10T09:32:53Z", person: ada, name: Ada, body: "2200"}
+
+# --- added 2026-09-13 with issue #228. The tier's identity rule was the
+# anchor DATE alone: two proposals landing on one calendar day became one
+# note. It fired twice in production and merged two genuinely different
+# occasions both times. The rule is now the TITLE the model names in its
+# `updates` field — so this case, which the old key could not pass, is what
+# says the new one works: one room, one evening, one date, two arrangements
+# that share nothing else.
+#
+# It is a `create` case with `creates: 2`, and the grade also refuses any
+# revision of a standing note — a second note plus a conflated first would
+# otherwise read as a pass on the count alone.
+#
+# Note what it also measures, deliberately: `note_candidate`'s STAGING key is
+# still `(workspace, anchor_date, anchor_entity_ids)`, so the two proposals
+# reach two rows only if the model names different people for them. The
+# objective asks for exactly that when two same-day entries are in one batch.
+# A run that produces one note here is telling you which of the two layers
+# conflated them, and the staged rows in the result say which.
+- name: p8_two_unrelated_arrangements_on_one_date
+  expect: create
+  creates: 2
+  workspace: friends
+  must_cite: [2101, 2104]
+  room_label: "Friends"
+  batch:
+    - {id: 2101, ts: "2026-09-07T13:02:00Z", person: ada, name: Ada, body: "11號截止報名嗰個工作坊，我今晚 email 主辦問下仲有冇位"}
+    - {id: 2102, ts: "2026-09-07T13:02:40Z", person: ben, name: Ben, body: "ok 你問到再同我講，我未決定去唔去"}
+    - {id: 2103, ts: "2026-09-07T13:03:10Z", person: ada, name: Ada, body: "好"}
+    - {id: 2104, ts: "2026-09-07T20:41:00Z", person: cat, name: Cat, body: "另外 11 號晚上打機幾點開？五個人定四個？"}
+    - {id: 2105, ts: "2026-09-07T20:42:00Z", person: ben, name: Ben, body: "我梗係打，等 Cat 話幾點"}
+    - {id: 2106, ts: "2026-09-07T20:43:00Z", person: cat, name: Cat, body: "我今晚睇下人數先"}

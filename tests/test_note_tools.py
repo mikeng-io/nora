@@ -382,8 +382,8 @@ async def test_a_head_that_moved_under_her_is_unavailable_never_applied_on_top()
     tools = _tools(notes=store)
     await tools["note_read"](title="Dinner, 9 Sept")
 
-    # The curator merges it mid-turn, or a parallel turn in the other room of
-    # the same workspace revises it.
+    # The note-candidates gate appends to it mid-turn, or a parallel turn in
+    # the other room of the same workspace revises it.
     moved = await store.append_revision(
         workspace=WORKSPACE, note_id=note.id, body="Ada booked it.",
         parent_revision_id=note.head_revision_id, established_by="curator",

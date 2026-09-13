@@ -118,9 +118,10 @@ three gates above encode, and precisely what a clock cannot express.
 
 ## 3.1 And Nora's own corpus already specifies one
 
-The Honcho comparison is external. The note tier's curator — specced, unbuilt —
-already declares exactly the trigger this seam argues for, **inside this
-repo**, and goes one better on the property that matters most.
+The Honcho comparison is external. The note tier's curator — specced, ~~unbuilt~~
+**shipped 2026-08-28** — already declares exactly the trigger this seam argues
+for, **inside this repo**, and goes one better on the property that matters
+most.
 
 It declares a fire condition of three OR'd clauses (accumulation, change-plus-
 quiet, and age), and singles out the third:

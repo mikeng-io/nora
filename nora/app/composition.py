@@ -2608,7 +2608,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # today, but only because the tier is still empty. An operator who
         # had `curator_enabled` on gains the revisitor's due-selection and
         # wake bookkeeping under the SAME flag they already used to accept
-        # "this pass merges and retires".
+        # "this pass merges and retires" — the wording `config.example.toml`
+        # carried at the time. Merge went on 2026-09-08 and that file now
+        # says "retires"; the flag and its argument are unchanged.
         #
         # It takes `audit` for its evidence read (inherited from the
         # revisitor), and that is the whole reason this adaptor needs no

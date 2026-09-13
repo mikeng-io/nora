@@ -57,14 +57,23 @@ def test_the_corpus_loads_and_is_balanced():
     #161 was FIXED: n10b/n11b are n10/n11's controlled pair — the same two
     batches with the room named and described in `policy.toml` — so one live
     run answers «does telling the model what room it is reading change the
-    judgement» on identical input rather than across a corpus."""
+    judgement» on identical input rather than across a corpus. Twenty-one
+    from 2026-09-13, when the tier's identity rule moved off the anchor date
+    (#228): p8 is one room, one evening, one date and two unrelated
+    arrangements — the shape the old key could not get right and the new one
+    is for."""
     cases = load_note_candidates_cases(CORPUS)
-    assert len(cases) == 20
+    assert len(cases) == 21
     by_expect = {}
     for c in cases:
         by_expect.setdefault(c.expect, []).append(c.name)
     assert len(by_expect["none"]) == 13, by_expect
-    assert len(by_expect["create"]) + len(by_expect["update"]) == 7, by_expect
+    assert len(by_expect["create"]) + len(by_expect["update"]) == 8, by_expect
+    two_notes = [c for c in cases if c.creates > 1]
+    assert [c.name for c in two_notes] == ["p8_two_unrelated_arrangements_on_one_date"], (
+        "the #228 case, and the only one that asks for more than one note"
+    )
+    assert two_notes[0].creates == 2
     assert "n6_stated_then_cancelled" in by_expect["none"], (
         "the adversarial negative: every surface feature of a positive, and "
         "the plan is called off in the same batch"
@@ -177,9 +186,35 @@ def test_create_passes_on_exactly_one_new_note_with_the_date_and_the_citation():
     assert "cite" in grade(
         _case(), _result(after=[N2], staged=[StagedCandidate("x", 20260919, (7,), "created")])
     ).reason
-    assert "expected one" in grade(
+    assert "expected 1" in grade(
         _case(), _result(after=[N2, NoteSnapshot("n3", "dup", 20260919, "r")], staged=staged)
     ).reason
+
+
+def test_a_create_case_may_ask_for_more_than_one_note():
+    """Issue #228's own shape: one room, one date, two unrelated arrangements.
+    `creates` is the count, and one note is now a FAIL for that case rather
+    than the only passing answer."""
+    two = [
+        NoteSnapshot("n2", "Sign-up deadline", 20260911, "r9"),
+        NoteSnapshot("n3", "Game session", 20260911, "r8"),
+    ]
+    case = _case(creates=2, anchor_date=None, must_cite=[])
+    assert grade(case, _result(after=two)).passed
+    assert "expected 2" in grade(case, _result(after=two[:1])).reason
+
+
+def test_a_create_that_also_revised_a_standing_note_is_a_fail():
+    """A new note plus a conflated standing one is #228's failure wearing a
+    correct count — the grade has to see the revision, not only the total."""
+    g = grade(
+        _case(),
+        _result(
+            before=[N1], after=[N1_MOVED, N2],
+            staged=[StagedCandidate("Dinner 19 Sept", 20260919, (1,), "created")],
+        ),
+    )
+    assert g.verdict == "FAIL" and "revised" in g.reason
 
 
 def test_none_passes_only_on_an_unchanged_notebook():
@@ -291,16 +326,49 @@ def test_a_scripted_empty_envelope_leaves_the_seeded_notebook_alone(monkeypatch,
     assert drive.staged == ()
 
 
-def test_a_scripted_same_date_candidate_revises_instead_of_creating(monkeypatch, example_config):
+def test_a_scripted_candidate_naming_a_notebook_entry_revises_instead_of_creating(
+    monkeypatch, example_config,
+):
+    """The end-to-end shape of #228's second half, through the REAL runtime
+    and adaptor: the candidate names the notebook entry in `updates` and the
+    entry's head moves. Before 2026-09-13 the same candidate reached the same
+    note through the anchor date alone, and would have reached ANY note
+    sharing that date."""
     case = _case("update")
     raw = json.dumps({"candidates": [{
         "title": "Dinner", "description": "Dinner on the 19th, now booked.",
         "body": "Ada booked Luk Fook for 7:30pm on the 19th, four people.",
         "closing_condition": "everyone turns up", "anchor_date": 20260919,
+        "updates": "Dinner",
         "message_ids": [1],
     }]})
     drive = _drive(monkeypatch, example_config, case, raw)
     assert drive.status == "ok"
-    assert len(drive.after) == 1, "no second note on the same date"
+    assert len(drive.after) == 1, "no second note; the named entry was revised"
     assert drive.before[0][3] != drive.after[0][3], "the head moved"
     assert drive.staged[0][3] == "created"
+
+
+def test_a_scripted_candidate_naming_nothing_creates_beside_a_same_date_entry(
+    monkeypatch, example_config,
+):
+    """The falsifying twin of the test above, and the whole of #228's second
+    half in one assertion: the identical candidate WITHOUT `updates` leaves
+    the notebook entry untouched and writes a second note, even though the
+    two share a calendar day. Under the date-only key this was impossible."""
+    case = _case("create", anchor_date=None, must_cite=[], notebook=[
+        {"title": "Dinner", "description": "d", "anchor_date": 20260919, "body": "b"}])
+    raw = json.dumps({"candidates": [{
+        "title": "Game session", "description": "Which night the game runs.",
+        "body": "Cat asked what time; nobody has said.",
+        "closing_condition": "a time is set", "anchor_date": 20260919,
+        "anchor_entity_ids": ["Cat"],
+        "message_ids": [1],
+    }]})
+    drive = _drive(monkeypatch, example_config, case, raw)
+    assert drive.status == "ok"
+    assert len(drive.after) == 2, "one date, two arrangements, two notes"
+    heads = {n[0]: n[3] for n in drive.after}
+    assert heads[drive.before[0][0]] == drive.before[0][3], (
+        "the standing note was never named and must not have moved"
+    )

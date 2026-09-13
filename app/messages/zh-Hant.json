@@ -95,7 +95,7 @@
       "notes": {
         "title": "Notes",
         "domain": "未解決嘅問題",
-        "description": "未解決嘅問題，專登 track 住。每條 note 有 closing condition — 咩會 settle 佢。背景 curator 會 merge、retire、promote。"
+        "description": "未解決嘅問題，專登 track 住。每條 note 有 closing condition — 咩會 settle 佢。背景 curator 會 retire 佢哋，settle 咗嘅就 promote。"
       },
       "knowledge": {
         "title": "Knowledge",

@@ -13,12 +13,26 @@ resolved entity set was empty was refused by design (a date alone is not an
 occasion — «Dinner, 9 Sept» beside «Ada's flight to Tokyo»). Merge was
 therefore inert by construction, and the whole chain — the registry store,
 the resolution pass, `merge_groups`/`merge`, this module's merge half — was
-removed rather than left wired-and-inert. Duplicate arrangements are handled
-where a duplicate is first SEEN: `nora.language.note_candidates`' create gate
-matches a proposed note against standing notes by anchor date and updates
-rather than creates. *The reading that would reopen merge here:* a tier that
-mints canonical entities again, at which point a resolved anchor is
-comparable and the two-weddings argument applies as it did.
+removed rather than left wired-and-inert.
+
+**What this paragraph used to say next was that duplicates are handled where
+a duplicate is first SEEN — `nora.language.note_candidates`' create gate
+matching a proposed note against standing notes by ANCHOR DATE and updating
+rather than creating. That mechanism was deleted on 2026-09-13 (#228)**, on
+its own evidence: the date arm had fired twice since the tier shipped and
+conflated two unrelated occasions both times. The gate now asks the MODEL
+which standing note a proposal updates and resolves the title it names; a
+proposal that names nothing, or names something no note answers to, is
+written as a NEW note. That is deliberately the side that overwrites no
+text — and it means **nothing merges a duplicate anywhere in this tier any
+more.** What bounds one is the retire half below, on its own anchor and its
+own evidence, never its duplicate-ness. Stated here rather than left to be
+rediscovered; **issue #236 carries the bound**, and
+`nora_note_candidate_gate_total{action="ambiguous"|"unresolved"}` is what
+makes the rate readable in the meantime. *The reading that would reopen
+merge here:* a tier that mints canonical entities again, at which point a
+resolved anchor is comparable and the two-weddings argument applies as it
+did.
 
 The retire half is the half that answers «the notebook only grows».
 
@@ -51,7 +65,8 @@ new:
 **What did NOT move**: the reaching-a-person half (`schedule_reminder`) was
 never built here either — deferred to the proactive adapter
 (design/dreamer-agent-loop/33 §8), which is a different tier's job. This
-module still only merges and retires; it never speaks.
+module still only retires (and, on a grounded close, discharges); it never
+speaks.
 
 ## Selection: SQL-only, TWO reads, and their union
 
@@ -159,9 +174,12 @@ _VERDICTS = frozenset({"closed", "open", "moot", "expired"})
 #: one already had, silently: `retire_failed` and `retire_stale` were emitted
 #: for a round before the help text knew about them. `tests/unit/
 #: test_note_curator.py` asserts the help text names exactly this set, and it
-#: is enforced at RUNTIME rather than by types because `nora/language` is
-#: outside `make gate`'s mypy scope (#61) — a `Literal` alone would be checked
-#: by nothing here.
+#: is enforced at RUNTIME rather than by types because the metric call this
+#: value reaches (`Metrics.inc`/`.observe`, `nora/obs/metrics.py`) takes
+#: `**labels: object` — mypy cannot check a string passed through an `object`
+#: parameter no matter which module it runs on, so a `Literal` alone would be
+#: checked by nothing here. (`nora/language` is not out of mypy's scope: issue
+#: #61 closed 2026-09-11 and `make typecheck` names this package explicitly.)
 CURATOR_ACTIONS: frozenset[str] = frozenset({
     # `merge` / `merge_refused` / `merge_failed` were here until 2026-09-08,
     # when the merge half was removed (module docstring).
@@ -294,9 +312,14 @@ MAX_PERSON_CLAIM_CHARS = 65535
 
 #: One item's evidence-availability, DERIVED from the type rather than
 #: hand-copied beside it (`nora_note_curator_candidates_total`'s help text
-#: reads `get_args` off this). Two enforcers, because `nora/language` is
-#: outside `make gate`'s mypy scope (#61): the `Literal` is a type error here,
-#: `_Evidence`'s construction is a runtime error in every test that builds one.
+#: reads `get_args` off this). Two enforcers, because the value that reaches
+#: the metric (`self._inc(..., evidence=state)`) crosses `Metrics.inc`'s
+#: `**labels: object` boundary — mypy checks `state`'s own assignment against
+#: `EvidenceState`, but not the string that lands in the metric, so a runtime
+#: check is still what catches a drift there; `_Evidence`'s construction is a
+#: runtime error in every test that builds one. (`nora/language` is not out of
+#: mypy's scope: issue #61 closed 2026-09-11 and `make typecheck` names this
+#: package explicitly.)
 EvidenceState = Literal["present", "absent", "self_only", "unavailable"]
 EVIDENCE_STATES: tuple[str, ...] = get_args(EvidenceState)
 
