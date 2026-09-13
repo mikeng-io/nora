@@ -9,7 +9,9 @@ edges:
   - {dst: 01-live-state, rel: motivated_by, provenance: asserted}
 ---
 
-> **PARTLY DEPRECATED 2026-09-07 — the knowledge tier (the "fact tier") and the language tier have both been deprecated and their code deleted.** Every claim below about either tier is retained as a record of the reasoning; **none of it describes code that exists.** The note tier, Standing, the relevance gate and the Dreamer runtime itself are unaffected; **recognition** ([31](31-recognition.md)) went with the two tiers whose rows it marked.
+> **PARTLY DEPRECATED 2026-09-07 — the knowledge tier (the "fact tier") and the language tier have both been deprecated and their code deleted.** Every claim below about either tier is retained as a record of the reasoning; **none of it describes code that exists.** Standing, the relevance gate and the Dreamer runtime itself are unaffected; **recognition** ([31](31-recognition.md)) went with the two tiers whose rows it marked.
+>
+> **The note tier is NOT wholly unaffected, and this line said it was until 2026-09-13.** The curator's MERGE half went on 2026-09-08 with the entity chain its key depended on, and the create gate's anchor-DATE match — which had taken the duplicate-handling job over — went on 2026-09-13 (#228) after conflating two unrelated occasions both times it fired. So the note flow's step 7 below, *"merges, retirements, promotions"*, names one verb that no longer exists: the pass returns retirements and, through the discharge route, promotions. **Nothing merges a duplicate anywhere in that tier** — a known, recorded limitation, bounded by issue #236. R-75 in `design/09-decision-index.md` carries the current reading.
 > Their tables are **not** dropped by that change: the code goes, the schema stays, and dropping them is a separate explicit decision.
 > The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
 

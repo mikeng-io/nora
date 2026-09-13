@@ -305,9 +305,8 @@ class Note:
     # is the reading that justifies the curator existing, and prose does not
     # aggregate. (It was written as "how many did it merge"; merge was
     # deleted 2026-09-08 and `NoteSupersedeReason.ALL` no longer names it.)
-    # `None`
-    # until retired; the `retired_at is None` invariant below is what pairs
-    # them.
+    # `None` until retired; the `retired_at is None` invariant below is what
+    # pairs them.
     retire_reason: str | None = None
     revisit_at: int | None = None
     strikes: int = 0

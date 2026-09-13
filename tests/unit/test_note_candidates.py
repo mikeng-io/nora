@@ -1253,6 +1253,32 @@ def test_gate_actions_vocabulary_matches_the_metric_help_text():
         )
 
 
+def test_both_label_vocabularies_are_enforced_at_runtime_not_only_in_a_test():
+    """A vocabulary read only by a test is a claim, not a guard.
+
+    `GATE_ACTIONS`' own header says it is enforced at RUNTIME because
+    `nora/language` sits outside `make gate`'s mypy scope (#61), and
+    `STAGING_OUTCOMES`' says it is derived "for the same reason" — but
+    `_VOCABULARIES` named only the gate counter until 2026-09-13, so a typo
+    in an `outcome` label reached the registry unchecked and opened a new
+    series while the real one silently went flat. Both are pinned here, and
+    the positive control is that every LEGITIMATE value still passes: an
+    over-strict guard that rejects the code's own vocabulary would fail this
+    test in exactly the same place.
+    """
+    adaptor, _ = _adaptor()
+
+    for name, label, vocabulary in (
+        ("nora_note_candidate_gate_total", "action", GATE_ACTIONS),
+        ("nora_note_candidate_staging_total", "outcome", STAGING_OUTCOMES),
+    ):
+        for legitimate in vocabulary:
+            adaptor._inc(name, **{label: legitimate})
+
+        with pytest.raises(ValueError, match="vocabulary"):
+            adaptor._inc(name, **{label: "reobsevred"})  # a plausible typo
+
+
 def test_staging_outcomes_vocabulary_matches_the_metric_help_text():
     """The same guard for the settled-row series (#235): the value is emitted
     from `_settle`, and a help text that does not name it is a dashboard

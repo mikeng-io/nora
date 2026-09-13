@@ -86,7 +86,14 @@ duplicates, and never because it is a duplicate — and in a room that goes
 quiet after the anchor, `_covers` refuses both copies and both stand. The
 `<notes>` index is UNCAPPED by deliberate decision
 (`nora.language.note_render`), so every live duplicate renders on every tag
-until then. **Duplicates are bounded in TIME and not at all in COUNT.**
+until then. **Duplicates are bounded in COUNT by nothing at all, and in TIME
+only where the room keeps talking.** The TIME half read «bounded in TIME»
+flat until 2026-09-13, one sentence after the sentence that disproves it:
+`_covers` (`nora.language.note_curator`) returns `False`
+on `bounds is None or not evidence`, and requires `evidence[-1].ts >= end`
+— so a room that falls silent after the anchor retires nothing, and silence
+after an arrangement is exactly what produces the duplicates. A duplicate in
+a quiet room is bounded by neither axis and stands until somebody speaks.
 
 That is the real cost, stated rather than assumed away, and the reason it is
 still the side to fail toward is that it is VISIBLE and ADDITIVE where the
@@ -365,6 +372,20 @@ STAGING_OUTCOMES: frozenset[str] = frozenset({
                         # direction a loss counter has to fail in.
 })
 
+#: **What this series does NOT see, stated because a loss counter that reads
+#: as total is worse than none.** It only fires on a SETTLED row. A different
+#: arrangement landing on a key whose row is still `pending` — left that way
+#: by a `deferred` outcome — overwrites the first proposal's `title`,
+#: `description`, `body` and `closing_condition` in place and increments
+#: nothing here: `SqlNoteStore.record_create_candidate`'s upsert sets those
+#: columns from `excluded` under `where status = 'pending'`
+#: (`nora.infra.sql.notes`), and `nora.testing.note_store` matches it. So the
+#: `displaced` residue is two holes, not one — two arrangements sharing the
+#: key AND a title, and a collision on a row the gate has not reached yet.
+#: Both are #235's collision seen from different sides, both are narrow and
+#: both pre-date #228; neither is fixed here. The counter is a floor on the
+#: loss, never a measure of it.
+
 
 class _NoteStore(DreamSink, Protocol):
     """`SqlNoteStore`, seen from here: `DreamSink`'s two verbs (the create/
@@ -495,6 +516,17 @@ def _parse_candidate(item: Mapping[str, object]) -> _CreateCandidate | None:
     # as an update, which is the side that overwrites nothing and is counted
     # (`created`); the worst case of refusing it is a note that is never
     # written at all, counted nowhere.
+    #
+    # **And `created` is where it stops: `""` is indistinguishable afterwards
+    # from a model that omitted the field, so THIS change's own rate is not
+    # readable.** Deliberate, not an oversight. The two spellings mean the
+    # same thing — «this is new» — so a series that told them apart would
+    # measure the model's JSON style rather than anything the gate decided,
+    # and it would break the one invariant `GATE_ACTIONS` rests on (exactly
+    # one action per settled candidate, so the sum is the number decided).
+    # What IS readable is the thing that would say this went wrong:
+    # `unresolved` and `ambiguous` are the failure modes an over-eager
+    # «absent» reading would inflate, and both are counted.
     #
     # Present and genuinely unusable — not a string, or past
     # `MAX_UPDATES_CHARS` — is still the model having TRIED to name a note and
@@ -802,6 +834,7 @@ class NoteCandidateAdaptor:
 
     _VOCABULARIES: ClassVar[dict[str, tuple[str, frozenset[str]]]] = {
         "nora_note_candidate_gate_total": ("action", GATE_ACTIONS),
+        "nora_note_candidate_staging_total": ("outcome", STAGING_OUTCOMES),
     }
 
     def __init__(
@@ -1035,6 +1068,18 @@ class NoteCandidateAdaptor:
                 else "displaced"
             )
             if outcome == "displaced":
+                # WARNING, and it carries both titles — a deliberate choice,
+                # reviewed 2026-09-13. A destroyed proposal is the one event
+                # in this branch an operator has to be able to find, and the
+                # two titles are the only thing that says WHICH proposal went
+                # and what it collided with; a warning naming neither is a
+                # line nobody can act on. The text is note titles the pass
+                # itself composed, the same class the `ambiguous` `log.info`
+                # below already emits, and it goes to this deployment's own
+                # docker log driver — there is no third-party log aggregator
+                # wired (traces go to Langfuse, counts to Prometheus, and
+                # neither carries this line). If one is ever wired, this is
+                # the call site to revisit first.
                 log.warning(
                     "note-candidates: %r was dropped before the gate — the "
                     "staging key (anchor_date=%s, %d entities) already holds "

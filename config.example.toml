@@ -1051,14 +1051,20 @@ timezone = "Asia/Hong_Kong"   # the wall clock a recurrence KEEPS. An IANA zone
 # never tidied — fine at this scale, and the thing to watch before it is not.
 #
 # 2026-08-28: the curator's MERGE and RETIRE halves landed — see
-# curator_enabled below. Promote-to-event is still absent (it needs the Events
-# tier). Fact-coherence rewriting is GONE rather than pending: the knowledge
-# tier it would have written into was deleted (2026-09-07).
+# curator_enabled below. MERGE went again on 2026-09-08; only RETIRE runs.
+# Promote-to-event ARRIVED 2026-09-08 as the discharge pipeline's commitment
+# route (discharge_enabled below) rather than as a verb of its own: a
+# grounded "closed" verdict whose discharge names a commitment writes an
+# Event through the Events tier's own API. Fact-coherence rewriting is GONE
+# rather than pending: the knowledge tier it would have written into was
+# deleted (2026-09-07).
 enabled = false
 
 # The CURATOR, on its own gate and behind the tier's. Three flags have to be on
-# for a note ever to be merged or retired: [dreamer] (the runtime exists),
-# [notes] enabled (the tier is on), and this one.
+# for a note ever to be retired: [dreamer] (the runtime exists), [notes]
+# enabled (the tier is on), and this one. (It read "merged or retired" until
+# 2026-09-13; the merge half went on 2026-09-08 and this line had not
+# followed it.)
 #
 # Three rather than two because this is a DIFFERENT RISK from the other two.
 # The tag path only reads and appends; the curator is the one thing in this
@@ -1072,8 +1078,14 @@ enabled = false
 #             people half was read from note_entity, which nothing could
 #             fill once the knowledge tier stopped minting entities, so
 #             every pair was refused by construction and the verb was
-#             removed. Duplicates are now caught at the create gate, on
-#             the anchor date, before a second note exists.)
+#             removed. Duplicates moved to the create gate, matched on the
+#             anchor DATE — and THAT went too, on 2026-09-13: the date arm
+#             had fired twice since the tier shipped and conflated two
+#             unrelated occasions both times, so a date is no longer
+#             identity. The gate now asks the model which standing note a
+#             proposal updates; anything it cannot name is written as a NEW
+#             note. Nothing merges a duplicate anywhere in this tier now —
+#             a known, recorded limitation, bounded by issue #236.)
 #   RETIRE  — a note whose anchor date has passed, where the model reading the
 #             body says the question is answered ("closed") or can no longer be
 #             answered ("moot"). "Open" is the common answer and writes nothing.
@@ -1132,12 +1144,15 @@ candidates_enabled = false
 
 # The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
 # schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH gate, on its
-# own rather than riding curator_enabled: that pass merges and retires NOTES,
-# this one WRITES to two other tiers entirely (an Event, a Honcho conclusion
-# about a named person) the moment a note it was already retiring turns out to
-# hold a settled commitment or person-claim. An operator who accepted "this
-# pass merges and retires notes" has not thereby accepted "this pass also
-# creates calendar events and writes permanent memories about people".
+# own rather than riding curator_enabled: that pass retires NOTES, this one
+# WRITES to two other tiers entirely (an Event, a Honcho conclusion about a
+# named person) the moment a note it was already retiring turns out to hold a
+# settled commitment or person-claim. An operator who accepted "this pass
+# retires notes" has not thereby accepted "this pass also creates calendar
+# events and writes permanent memories about people". (Both sentences said
+# "merges and retires" until 2026-09-13, five days after merge was deleted —
+# an operator-facing gate argument is not allowed to name a verb that is
+# gone.)
 #
 # There was a THIRD route, a world-claim into the knowledge tier's fact store.
 # That tier was deleted (2026-09-07) and the route went with it; the objective

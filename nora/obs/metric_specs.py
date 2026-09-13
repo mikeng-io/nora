@@ -1431,6 +1431,25 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # only on the first sighting of an occasion (a re-observation refreshes
     # the row without being a second "recording", exactly as a repeated miss
     # is not a second miss).
+    #
+    # **UNTIL 2026-09-13 `trigger="create"` OVER-COUNTED, and the code had
+    # been contradicting the sentence above since #98 shipped (fixed in
+    # #228).** The guard was `row.attempts == 0` alone, and `attempts` counts
+    # GATE attempts, not sightings: a candidate handed back a row the gate had
+    # already SETTLED comes back with `attempts == 0` every time, so every
+    # re-observation of a settled occasion counted as a fresh arrival. Not a
+    # double-count with a factor — unbounded in the number of ticks the room
+    # keeps mentioning the same thing. The guard is now `row.attempts == 0 and
+    # row.status == CANDIDATE_PENDING`. Anything read off this series BEFORE
+    # that date is an upper bound on arrivals and nothing more; in particular
+    # `nora_note_candidates_total` minus `nora_note_candidate_gate_total` was
+    # not the count of proposals that never reached a decision, which is what
+    # it looks like and what `nora_note_candidate_staging_total` below now
+    # actually answers. Prometheus keeps ~4 days on this deployment, so the
+    # contaminated window closes on its own; the note is here because a reader
+    # of a longer-range export would have no other way to know. No in-repo
+    # consumer read it — no recording rule, no alert, no dashboard — which is
+    # why this is a spec comment rather than a release fragment.
     _CounterSpec(
         "nora_note_candidates_total",
         "Note candidates recorded by what raised them. trigger=\"miss\": a "
