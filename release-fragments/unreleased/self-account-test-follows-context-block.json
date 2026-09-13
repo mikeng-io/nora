@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Test-only. `render_notes` has returned a `ContextBlock | None` since #243; a self-account skill-content test still asserted its empty-input result equalled `\"\"`, so it broke on this branch's base the moment #243 landed underneath it. The assertion now reads `render_notes(()) is None`, matching the renderer's actual contract (no block to inject, rather than an empty one) that the surrounding property — a turn with no `<notes>` reads the same whether the tier is off or merely has nothing to say — was already about. Nothing a member of a room can observe."
+}
