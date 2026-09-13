@@ -1,5 +1,6 @@
 import inspect
 import re
+from datetime import UTC, datetime
 
 from nora.agent.prefill import build_prefill, build_tag_message, escape
 from nora.domain.decision_log import DecisionRow
@@ -17,12 +18,13 @@ from nora.domain.standing import Standing
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
          quote=None, platform="signal", tagger_card=(), notes=(),
-         standing=None, decisions=()) -> TagContext:
+         standing=None, decisions=(), people_in_window=()) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     kwargs = {"tagger_card": tuple(tagger_card),
               "notes": tuple(notes), "standing": standing,
-              "decisions": tuple(decisions)}
+              "decisions": tuple(decisions),
+              "people_in_window": tuple(people_in_window)}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       tuple(self_card), **kwargs)
 
@@ -148,16 +150,27 @@ _DECLARED_BLOCKS = (
 
 
 def _served_blocks(body: str) -> tuple[str, ...]:
-    """Every block tag the volatile message ACTUALLY renders, in order.
+    """Every block tag the volatile message actually renders, in order.
 
-    `replying_to` and `tag_message` are not in here and do not belong: they are
-    `build_tag_message`'s, a separate message from the one under test.
+    **TOP-LEVEL tags only, counted by depth — not an exclusion list.** Two
+    earlier cuts kept one: first `m` (a message inside `group_transcript`), and
+    `person` (a speaker inside `people_in_window`) would have had to join it.
+    A list of things-that-are-not-blocks grows once per new inner element and is
+    wrong in the gap between somebody adding one and somebody remembering this
+    file — the same shape as the hand-written catalogue this test replaced.
+
+    `replying_to` and `tag_message` are absent for a different reason: they
+    belong to `build_tag_message`, in the message after this one.
     """
-    # `m` is excluded: it is one MESSAGE inside `group_transcript`, not a block
-    # of its own. Everything else that opens a tag in this message is a block.
-    found = dict.fromkeys(re.findall(r"<([a-z_]+)[ >]", body))
-    found.pop("m", None)
-    return tuple(found)
+    depth, names = 0, []
+    for match in re.finditer(r"<(/?)([a-z_]+)(?:\s[^>]*)?>", body):
+        if match.group(1):
+            depth -= 1
+        else:
+            if depth == 0:
+                names.append(match.group(2))
+            depth += 1
+    return tuple(dict.fromkeys(names))
 
 
 def _full_prefill_body() -> str:
@@ -167,6 +180,7 @@ def _full_prefill_body() -> str:
         _rows("hello"), peer_card=("likes espresso",), self_card=("nora said a thing",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
         notes=(_note(),), standing=_standing(), decisions=_decisions(),
+        people_in_window=(("Grant", ("asked about dinner",)),),
     )
     return build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
 
@@ -230,7 +244,8 @@ def test_every_block_she_is_served_is_named_in_the_header():
         _ctx(_rows("hello"), peer_card=("likes espresso",),
              self_card=("nora said a thing",), tagger_card=("asked",),
              tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-             standing=_standing(), decisions=_decisions()),
+             standing=_standing(), decisions=_decisions(),
+             people_in_window=(("Grant", ("asked about dinner",)),)),
         display_name="Nora", context_window=40,
     )
     header, body = msgs[0]["content"][0]["text"], msgs[1]["content"][0]["text"]
@@ -249,7 +264,8 @@ def test_the_header_names_no_block_she_is_never_served():
         _ctx(_rows("hello"), peer_card=("likes espresso",),
              self_card=("nora said a thing",), tagger_card=("asked",),
              tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-             standing=_standing(), decisions=_decisions()),
+             standing=_standing(), decisions=_decisions(),
+             people_in_window=(("Grant", ("asked about dinner",)),)),
         display_name="Nora", context_window=40,
     )
     header, body = msgs[0]["content"][0]["text"], msgs[1]["content"][0]["text"]
@@ -1052,7 +1068,8 @@ def test_the_order_she_meets_the_blocks_is_the_order_the_catalogue_lists_them():
     msgs = build_prefill(
         _ctx(_rows("hi"), peer_card=("c",), self_card=("s",),
              tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-             standing=_standing(), decisions=_decisions()),
+             standing=_standing(), decisions=_decisions(),
+             people_in_window=(("Grant", ("asked about dinner",)),)),
         display_name="Nora", context_window=40,
     )
     header, body = msgs[0]["content"][0]["text"], msgs[1]["content"][0]["text"]
@@ -1072,3 +1089,76 @@ def test_a_block_declared_without_a_catalogue_line_is_refused():
         assert header.startswith(f"{name}:"), (
             f"{name}'s catalogue line must name the block it introduces: {header!r}"
         )
+
+
+def test_every_declared_block_actually_renders_in_the_full_fixture():
+    """**The gate that would have caught #215, and did not.**
+
+    `<people_in_window>` shipped on master rendering on every participation
+    turn with NO entry in «What you can see:» — the fifth hand-written-catalogue
+    miss in this repo, and the second after `<loop_decisions>`. The derived
+    catalogue test could not see it for the same reason it could not see
+    `loop_decisions`: `_full_prefill_body` did not populate it, so the block
+    never rendered, so nothing compared it to anything.
+
+    A derived catalogue is only as complete as the fixture it derives from.
+    This closes that: every name in `_BLOCKS` must actually render here, so a
+    new block forces its own fixture wiring in the same commit that declares it.
+    """
+    from nora.agent.prefill import _BLOCKS
+
+    served = set(_served_blocks(_full_prefill_body()))
+    missing = {name for name, *_ in _BLOCKS} - served
+    assert not missing, (
+        f"declared but not rendered by the fixture: {sorted(missing)}. Wire "
+        "them into `_ctx`/`_full_prefill_body`, or the catalogue tests are "
+        "silently skipping them."
+    )
+
+
+def test_the_newest_message_is_last_and_carries_the_smallest_age():
+    """#213's property, asserted DIRECTLY rather than inferred from an eval.
+
+    The judged line — the untagged message a participation turn decides about —
+    must be positionally LAST and must read as the most recent. #213 had to
+    restore that once: an unstamped `group_event(ts=1)` rendered `(20707d ago)`
+    and sorted above every seeded row.
+
+    The structured format moves exactly the bytes that carried it: `n` is an
+    attribute rather than a `#n` prefix, and the age is an attribute rather than
+    a `(…)` on the line. An eval aggregate cannot tell you when this breaks —
+    it can only tell you something got worse, which is #213's own lesson.
+    """
+    now = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
+    base = int(now.timestamp() * 1000)
+    rows = [_row(1, "Blake", "oldest", base - 7_200_000),
+            _row(2, "Grant", "middle", base - 3_600_000),
+            _row(3, "Tyler", "the judged line", base - 60_000)]
+    body = build_prefill(_ctx(rows), display_name="Nora",
+                         context_window=40, now=now)[1]["content"][0]["text"]
+    window = body.split('<group_transcript untrusted="true">\n', 1)[1]
+    window = window.split("\n</group_transcript>", 1)[0]
+
+    handles = [int(h) for h in re.findall(r'<m n="(\d+)"', window)]
+    assert handles == sorted(handles), f"handles out of order: {handles}"
+    assert window.rstrip().endswith("the judged line</m>")
+    ages = re.findall(r'age="([^"]+)"', window)
+    assert ages[-1] == "just now" and "d ago" not in ages[-1], ages
+
+
+def test_a_reply_only_ever_points_at_a_handle_in_this_window():
+    """`replying_to` replaced `↳ Name「…」`, so what used to be
+    ambiguous-but-self-contained is now a REFERENCE — and a reference naming a
+    handle the window does not contain is worse than none at all."""
+    now = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
+    base = int(now.timestamp() * 1000)
+    rows = [_row(1, "Grant", "去邊食", base - 3_600_000),
+            _row(2, "Tyler", "好呀", base - 60_000, quoted_ts=base - 3_600_000),
+            _row(3, "Miles", "unrelated", base - 30_000, quoted_ts=base - 99_999_999)]
+    body = build_prefill(_ctx(rows), display_name="Nora",
+                         context_window=40, now=now)[1]["content"][0]["text"]
+    handles = set(re.findall(r'<m n="(\d+)"', body))
+    targets = set(re.findall(r'replying_to="(\d+)"', body))
+    assert targets, "the in-window reply lost its reference"
+    assert targets <= handles, f"dangling: {targets - handles}"
+    assert len(targets) == 1, "the out-of-window pointer rendered a reference"

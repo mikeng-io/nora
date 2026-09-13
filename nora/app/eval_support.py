@@ -629,6 +629,24 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
           standing: "where the conversation had got to"
           notes:
             - {title, description, body, uncertainty?, closing_condition?}
+          conclusions:                # Honcho, keyed by HONCHO PEER ID
+            nora: ["..."]             #   -> <self_card> (observer == observed)
+            miles_novak: ["..."]          #   -> <people_in_window> / <peer_history>
+
+    **`conclusions` is keyed by `PersonRef.honcho_peer_id`, which IS the
+    person id** (`nora.domain.models.PersonRef`: "== person_id, by
+    construction"), and the harness identity maps exactly one — `miles_novak`, the
+    sender `+852111` every seeded `"plain body"` row speaks as. A key that is
+    not a peer id, or a speaker who is not in `_IDENTITY_TOML`, seeds a
+    conclusion nothing can ever read: `FakeMemoryStore.representation` looks up
+    `target or peer_id` and an unknown peer is `reachable=True, conclusions=()`
+    — reachable, knowing nothing — so the case would grade a prompt missing the
+    block it is about and its knowledge-cut twin would pass for the wrong
+    reason. That is the same footgun the workspace note above describes, on the
+    one tier whose key is a PERSON rather than a workspace.
+
+    `nora` is the observer-equals-observed key: `cfg.memory.ai_peer` on every
+    shipped config, and `<self_card>` is the block it feeds.
 
     **`now_ms` (issue #213).** Every seeded timestamp is rendered as an age
     (`nora.agent.prefill._age`, since 2026-09-10), so the base they walk
@@ -706,8 +724,19 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
         )
         notes.append((note, revision))
 
+    # Honcho, straight through: `ProductionSeed.conclusions` is already the
+    # shape `FakeMemoryStore(conclusions=...)` takes, keyed by the OBSERVED
+    # peer. Nothing is derived or defaulted — a case that seeds no conclusions
+    # gets an empty dict, which is the knowledge cut for the memory tier and
+    # is exactly what the `-unknown` twin of an issue-#210 pair needs.
+    conclusions = {
+        str(peer): [str(line) for line in (lines or [])]
+        for peer, lines in (raw.get("conclusions") or {}).items()
+    }
+
     return ProductionSeed(
         recents=tuple(recents), standing=standing, notes=tuple(notes),
+        conclusions=conclusions,
     )
 
 
@@ -1483,6 +1512,11 @@ async def run_proactive_decide_case(
         # a handle in a note body and the suite grades whether she reads it off
         # the index or spends a tool call on it.
         people_of=_eval_home_room_people,
+        # The roster index's depth, as `config.example.toml` ships it (issue
+        # #210). A suite measuring a pass whose index carried no memory would
+        # be measuring a prompt no deployment builds — the #145 lesson, one
+        # field over.
+        roster_index_conclusions=1,
         ai_peer="nora", clock=lambda: now, timezone=ZoneInfo("Asia/Hong_Kong"),
         metrics=Metrics(),
     )

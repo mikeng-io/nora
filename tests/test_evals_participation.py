@@ -185,18 +185,40 @@ EXPECTED_VERDICTS = {
     "status-update": "silence", "private-exchange": "silence",
     "acknowledgment": "silence", "inside-joke": "silence",
     "other-service-command": "silence",
+    # Issue #210 — the two HONCHO-cut pairs. Every pair above cuts a tier the
+    # participation turn already read; these cut her memory, which that turn
+    # read nothing of at all until #210.
+    "admin-joke-known": "speak",
+    "admin-joke-unknown": "silence",
+    "asked-before-known": "speak",
+    "asked-before-unknown": "silence",
+}
+
+#: The twin stems, and WHICH seed key each one's cut lives in. A pair whose cut
+#: key is not actually different between its halves is a pair that cannot flip,
+#: and a case that cannot flip measures nothing — the exact reason the
+#: `fact-lookup` and `correction` pairs were deleted with the knowledge tier
+#: rather than rewritten onto another tier's seed.
+_TWINS = {
+    "stalled-question": "notes",
+    "commitment-followup": "standing",
+    "planning-context": "notes",
+    "admin-joke": "conclusions",
+    "asked-before": "conclusions",
 }
 
 
-def test_the_corpus_is_the_11_cases_with_their_verdicts():
-    """§9's suite, pinned: 3 relevance-Yes, their 3 knowledge-cut twins, 5
+def test_the_corpus_is_the_15_cases_with_their_verdicts():
+    """§9's suite, pinned: 5 relevance-Yes, their 5 knowledge-cut twins, 5
     pure-No. Every case carries its seed (the twins' seeds differ from their
     speak twin ONLY by the cut tier) and a verdict `ParticipationVerdict`
     accepts.
 
-    It was 15. The `fact-lookup` and `correction` pairs were grounded in the
-    KNOWLEDGE TIER and went with it — a pair with no grounding to cut cannot
-    flip, and a case that cannot flip measures nothing."""
+    It was 15, then 11, and is 15 again. The `fact-lookup` and `correction`
+    pairs were grounded in the KNOWLEDGE TIER and went with it — a pair with no
+    grounding to cut cannot flip. The two that replace them are grounded in
+    Honcho (issue #210), which is the tier the participation turn could not
+    read at all until this branch."""
     from evals.harness import load_cases
 
     cases = load_cases(CORPUS)
@@ -208,11 +230,16 @@ def test_the_corpus_is_the_11_cases_with_their_verdicts():
     # The twin structure: each -unknown case's transcript+input equals its
     # -known twin's — ONLY the seed's tier content differs.
     by_name = {c.name: c for c in cases}
-    for stem in ("stalled-question", "commitment-followup",
-                 "planning-context"):
+    for stem, cut in _TWINS.items():
         known, unknown = by_name[f"{stem}-known"], by_name[f"{stem}-unknown"]
         assert known.input == unknown.input
         assert (known.seed or {}).get("transcript") == (unknown.seed or {}).get("transcript")
+        # The cut is REAL and it is the named key: the -known half holds
+        # something under it and the -unknown half holds nothing. Asserted
+        # because «only the seed differs» above is satisfied by two seeds that
+        # differ in a key nothing reads.
+        assert (known.seed or {}).get(cut), f"{stem}-known seeds no {cut}"
+        assert not (unknown.seed or {}).get(cut), f"{stem}-unknown still seeds {cut}"
 
 
 # ── The offline drive path (§9 gap 1) ───────────────────────────────────────
@@ -368,6 +395,12 @@ async def _drive_participation(tmp_path: Path, seed: dict | None,
             notes_store.notes[note.id] = note
             notes_store.revisions[revision.id] = revision
 
+    # The Honcho half of the seed (issue #210), injected exactly as `run_case`
+    # does: `FakeMemoryStore(conclusions=...)`, keyed by the OBSERVED peer.
+    memory = FakeMemoryStore(
+        conclusions=dict(seed_from_dict(seed).conclusions) if seed is not None else {},
+    )
+
     identity_path = tmp_path / "identity.toml"
     identity_path.write_text(_IDENTITY_TOML)
 
@@ -377,7 +410,7 @@ async def _drive_participation(tmp_path: Path, seed: dict | None,
     participation_runner = FakeAgentRunner(script, on_call=calls.append)
     try:
         dispatcher, _, background, trigger = build_offline_pipeline(
-            cfg, adapter=adapter, audit=audit, memory=FakeMemoryStore(),
+            cfg, adapter=adapter, audit=audit, memory=memory,
             persons=load_persons(identity_path), doctrine_store=doctrine_store,
             runner=FakeAgentRunner([ScriptedTurn(final_text="tag")]),
             metrics=metrics, notes=notes_store, standing=standing_store,
@@ -428,6 +461,59 @@ async def test_the_seeded_grounding_reaches_the_participation_prompt(tmp_path):
     assert adapter2.texts == []
     assert metrics2.get("nora_participation_silence_total", platform="signal") == 1
     assert metrics2.get("nora_participation_spoke_total") == 0
+
+
+async def test_the_seeded_conclusions_reach_the_participation_prompt(tmp_path):
+    """Issue #210's own knowledge-cut mechanism, and the reason it needed
+    building: the three pairs above cut a NOTE or a POSITION, both of which the
+    participation turn already rendered. A memory-cut pair could not have
+    flipped on master at all — `participation_occasion` builds `person_id=None`,
+    so `peer_card` was `()` and `self_card`/`<peer_history>` were assembled only
+    by the TAG path's assembler. A twin that fails for that reason is measuring
+    the wiring, not the model.
+
+    So both halves are pinned here: seeded, the conclusions render under the
+    two blocks that carry them; cut, the SAME message renders neither.
+    """
+    seeded = {
+        "transcript": ["哈哈 我哋個管理員好忙"],
+        "conclusions": {
+            "nora": ["the room jokingly calls nora the channel's 管理員"],
+            "miles_novak": ["miles_novak calls nora 管理員 as a running joke"],
+        },
+    }
+    _adapter, _metrics, calls = await _drive_participation(
+        tmp_path, seeded,
+        [ScriptedTurn(tool_calls=[("send_reply", {"text": "得，我睇下"})],
+                      final_text="得，我睇下")],
+    )
+    assert calls, "the participation runner was never invoked"
+    rendered = _flatten(calls[0]["pre_fill"])
+
+    assert "<self_card" in rendered
+    assert "the room jokingly calls nora the channel's 管理員" in rendered
+    assert "<people_in_window" in rendered
+    assert '<person name="Miles">' in rendered
+    assert "miles_novak calls nora 管理員 as a running joke" in rendered
+    # The hedge travels with the content, or the content is a directive (A2).
+    assert "Every line is undated and none of it is current" in rendered
+
+    _a2, _m2, calls2 = await _drive_participation(
+        tmp_path,
+        {"transcript": ["哈哈 我哋個管理員好忙"]},
+        [ScriptedTurn(final_text="")],
+    )
+    assert calls2
+    cut = _flatten(calls2[0]["pre_fill"])
+    assert "管理員 as a running joke" not in cut
+    # The BLOCK, not the string. Since 2026-09-13 the context header's
+    # catalogue is DERIVED from the block table and lists every declared
+    # block whether or not it rendered — it lives in the cached prefix, so a
+    # catalogue that varied per turn would end the 95-99% hit for everything
+    # after it. So the name appears in the header on every turn; what must
+    # not appear is the opening tag.
+    assert "<people_in_window" not in cut
+    assert "<self_card" not in cut
 
 
 # ── What the harness can see about a silence (2026-09-08) ───────────────────

@@ -1533,6 +1533,25 @@ class Proposal:
 DEFAULT_DREAM_STORE_TIMEOUT_SECONDS = 15.0
 
 
+#: The wall-clock bound on the participation turn's Honcho reads
+#: (`FirePath._read_memory`, issue #210), and the default for
+#: `[memory] read_timeout_seconds`.
+#:
+#: It lives HERE for `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS`' reason above, which
+#: is the same arrangement `DEFAULT_STANDING_STORE_TIMEOUT_SECONDS` has in
+#: `nora.domain.standing`: `nora.app` may not import `nora.config`'s default
+#: past the config object, both sides already import `nora.domain`, and two
+#: copies of a timeout is how the standing tier's hold came to be understated
+#: by 2x.
+#:
+#: **5s over the WHOLE concurrent batch, not per read.** `HonchoClient` already
+#: bounds a single `representation` at 3s, so this is a belt over the PORT — a
+#: `MemoryStore` implementation is not obliged to time anything out, and these
+#: reads run while the heartbeat holds this conversation's slot. One bound over
+#: the gather means adding a speaker costs concurrency, never hold time.
+DEFAULT_MEMORY_READ_TIMEOUT_SECONDS = 5.0
+
+
 @runtime_checkable
 class DreamAdaptor(Protocol):
     """One Dreamer objective: what to research, over what, with which tools,
