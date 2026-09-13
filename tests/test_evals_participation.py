@@ -298,7 +298,7 @@ async def test_run_case_stamps_the_judged_line_recent_and_last(monkeypatch):
         # the LAST occurrence, since nothing downstream of `_transcript_block`
         # repeats a row's own body.
         line = next(row for row in reversed(lines) if needle in row)
-        m = re.search(r"\(([^)]+)\)\s*\[", line)
+        m = re.search(r'age="([^"]+)"', line)
         assert m is not None, line
         return m.group(1)
 
@@ -312,9 +312,9 @@ async def test_run_case_stamps_the_judged_line_recent_and_last(monkeypatch):
         f"unexpected age token on the judged line: {judged_line!r}"
     )
     # And it must be the LAST row — never sorted above the window it closes.
-    row_numbers = [int(n) for n in re.findall(r"^#(\d+) ", rendered, flags=re.MULTILINE)]
+    row_numbers = [int(n) for n in re.findall(r'<m n="(\d+)"', rendered)]
     assert row_numbers, rendered
-    assert judged_line.startswith(f"#{max(row_numbers)} "), (
+    assert judged_line.startswith(f'<m n="{max(row_numbers)}"'), (
         f"the judged line must be the newest (last) row, not sorted above "
         f"the seeded window: {rendered!r}"
     )

@@ -95,7 +95,7 @@ RULE_TESTS = {
     # hardened instruction, so the brake is the renderer's. `nora.domain.prompt.
     # one_line` is the collapse and the architecture gate beside this file is
     # what keeps it on all six renderers.
-    "R-13c": "test_a_transcript_row_cannot_forge_another_row",
+    "R-13c": "test_a_message_cannot_forge_another_message",
     "R-15": "test_no_redundant_read_fails_when_prefill_was_sufficient",
     "R-16": "test_secret_never_logged_in_the_message",
     "R-18": "test_a_reply_carrying_someones_phone_number_is_refused",

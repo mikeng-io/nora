@@ -171,13 +171,20 @@ class ContextBlock:
     #: room), and it is data here rather than the order of `+` operators in one
     #: expression.
     order: int
-    #: The `note=` attribute: what this block IS, in the second person. A block
-    #: handed to a model without one is a block it decides the meaning of.
-    note: str
-    #: The «- name: …» line for the context header. Empty only for a block that
-    #: is not part of that catalogue (`<tag_message>`, `<replying_to>`).
+    #: The «- name: …» line for the context header, without the dash. Empty only
+    #: for a block that is not part of that catalogue.
     header: str
-    body: str
+    #: The block's OWN rendered bytes, tag included. A field rather than
+    #: something this class always builds, because three packages render blocks
+    #: — `nora.agent.prefill`, `nora.language.note_render`,
+    #: `nora.language.standing_render` — and the value of DECLARING a block is
+    #: the name, the order, the placement and the catalogue line, not who writes
+    #: the angle brackets. `render()` builds one for a block with no renderer of
+    #: its own; a block that has one passes its own text.
+    text: str = ""
+    #: For `render()` only — the framing and body of a block this class builds.
+    note: str = ""
+    body: str = ""
     #: What the content varies by — see `BlockKey`. Defaulted to `turn` because
     #: that is the safe end: a block wrongly declared `turn` costs nothing but a
     #: cache line it never had, and one wrongly declared `global` silently
@@ -195,6 +202,36 @@ class ContextBlock:
             f"{self.body}\n"
             f"</{self.name}>"
         )
+
+
+def assemble(blocks: Sequence[ContextBlock], placement: Placement) -> str:
+    """The blocks for one placement, in `order`, concatenated.
+
+    Ordering is DATA here. It used to be the order of `+` operators in one
+    expression in `build_prefill`, with a fifteen-line comment above it arguing
+    the sequence — an argument nothing could check and nothing could read.
+    """
+    chosen = sorted(
+        (b for b in blocks if b.placement == placement), key=lambda b: b.order,
+    )
+    return "".join(b.text for b in chosen)
+
+
+def catalogue(blocks: Sequence[ContextBlock]) -> str:
+    """The «What you can see:» list, DERIVED from the blocks themselves.
+
+    **This is the whole point of `ContextBlock` carrying a `header`.** That list
+    has gone stale three times in this repo — `conduct.md`'s tool list (four of
+    seven), the second one inside `_context_header` (deleted by DEC-29/DEC-150
+    for a derived section), and the block list itself, which was missing
+    `<loop_decisions>` while that block shipped on every turn. A catalogue
+    written beside the thing it describes drifts from it; one derived from the
+    thing cannot.
+
+    In `order` — the same sequence she then meets them in — so the list is a
+    reading order rather than a second, unrelated arrangement.
+    """
+    return "".join(f"- {b.header}\n" for b in sorted(blocks, key=lambda b: b.order) if b.header)
 
 
 class BlockSource(Protocol):
@@ -351,3 +388,60 @@ def _when(
     if style == "clock":
         return f"[{moment:%H:%M}] "
     return f"[{moment:%Y-%m-%d %a %H:%M}] "
+
+
+def render_messages(
+    rows: Sequence[Row],
+    *,
+    speaker: Callable[[Row], str],
+    body: Callable[[Row], str | None],
+    timestamp: Callable[[Row], int | None],
+    replying_to: Callable[[Row], int | None] = lambda _: None,
+    tag: str = "m",
+    now: datetime | None = None,
+) -> str:
+    """A conversation as one TAG PER MESSAGE, not one line per message.
+
+    **This is what every real chat serialiser does, and `render_rows` is the
+    thing it replaces.** ChatML and the chat templates under it delimit each
+    message with special TOKENS (`<|im_start|>` … `<|im_end|>`) which content
+    cannot produce; LangChain keeps messages as objects and never joins them to
+    a string at all; Anthropic's own guidance is to «nest tags when content has
+    a natural hierarchy — documents inside `<documents>`, each inside
+    `<document index="n">`». Three different stacks, one rule, and this repo had
+    already written it down in `relevance_gate`'s docstring without applying it
+    to the row: **the separator has to be something a row's content cannot
+    contain.**
+
+    A newline is not a separator here, so:
+
+    * **The body keeps its shape.** A member's paragraph breaks, list and pasted
+      block survive intact. `one_line` is NOT applied and is not needed —
+      collapsing was always a workaround for a flat format, not a safety
+      property of its own. The safety property is the delimiter, and `escape`
+      already makes a forged `</m>` unwritable (R-13b, pinned since the first
+      prefill).
+    * **The handle, the age and the name are ATTRIBUTES**, so they cannot be
+      confused with content and content cannot forge them. `escape_attr` closes
+      the quote; the names keep their punctuation, because `]` and `:` stop
+      being delimiters the moment the format stops being `[who]: body`.
+    * **`replying_to` is an INDEX, not a quoted snippet.** The 14-character
+      snippet existed because `↳ Grant` could not say WHICH of Grant's
+      messages was meant. An index says exactly which, costs ~4 tokens against
+      the snippet's ~7 per reply line, and discloses nothing.
+
+    Speaker names are still collapsed: a newline inside an attribute cannot
+    break out, but it makes the tag unreadable for no gain.
+    """
+    out = []
+    for i, row in enumerate(rows, 1):
+        attrs = [f'n="{i}"']
+        ts = timestamp(row)
+        if ts is not None:
+            attrs.append(f'age="{escape_attr(age(ts, now or datetime.now().astimezone()))}"')
+        attrs.append(f'from="{escape_attr(one_line(speaker(row)))}"')
+        parent = replying_to(row)
+        if parent is not None:
+            attrs.append(f'replying_to="{parent}"')
+        out.append(f"<{tag} {' '.join(attrs)}>{escape(body(row) or '')}</{tag}>")
+    return "\n".join(out)
