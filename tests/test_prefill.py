@@ -1105,12 +1105,13 @@ def test_the_notes_index_says_which_day_each_note_is_about():
     readers are asked to judge against it.
 
     The note-candidates pass is told not to propose «something already in the
-    notebook you were shown», and the code's identity rule for «the same
-    arrangement» is the anchor date ALONE (`_find_anchor_match`, which refuses
-    title and refuses entities). It was asked to judge sameness on the one
-    property the block did not carry. And this block's own hedge tells the tag
-    path's reader a listed note «may already have settled» — unanswerable from
-    the block itself.
+    notebook you were shown». Its identity rule was the anchor date ALONE
+    until 2026-09-13 (#228) — so it was asked to judge sameness on the one
+    property the block did not carry. The key is the title the model names
+    now, and the date stays on the line for the two things it still answers:
+    which of two similarly-titled notes this is, and this block's own hedge
+    that a listed note «may already have settled», unanswerable from the
+    block without it.
     """
     import dataclasses
 

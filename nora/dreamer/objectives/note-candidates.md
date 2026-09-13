@@ -1,7 +1,7 @@
 ---
 name: note-candidates
 kind: objective
-version: 5
+version: 6
 applies_to: [note_candidate_adaptor]
 description: >-
   The note tier's create path. Read a batch of a room's messages and propose
@@ -9,8 +9,15 @@ description: >-
   written down in the notebook you are shown — an undecided plan, a
   commitment, a follow-up, an arrangement with a settled half and an
   unsettled corner. Deliberately tool-free: you propose, code decides
-  whether it is genuinely new, an update to something already tracked, or
-  nothing at all.
+  whether the note you named exists. Version 6 (operator, 2026-09-13,
+  issue #228): this text told you to mark an update by giving "that entry's
+  own anchor date", because code matched a proposal to a standing note on
+  the calendar day alone. It had done that twice in production and both
+  times it merged two unrelated occasions from one evening in one room. So
+  the date is no longer how code recognises an entry, and the answer you
+  were already being asked for is: a candidate that updates something names
+  it, in a new `updates` field, by its title exactly as the notebook shows
+  it. Name nothing and it is a new entry.
 change_policy: operator-only
 ---
 You are reading a batch of messages from one group chat, and you are shown the group's
@@ -81,10 +88,16 @@ back with a decision in it.
 
 **Updating what is already in the notebook is the exception, and it does not need `open`.** If a
 message settles part of something the notebook already tracks — the venue is booked, the date
-moved, the person answered — propose it with that entry's own anchor date and the arrangement as
-it now stands. It is the same occasion, so code will recognise it and revise rather than
-duplicate. This is the one case where a `committed: true, open: []` message still belongs in
-your answer.
+moved, the person answered — propose the arrangement as it now stands and set `updates` to that
+entry's title, **copied from the notebook exactly as it is shown to you**. That title is the only
+thing that tells code which entry you mean: nothing else about your proposal is matched against
+the notebook, so an entry you do not name is a new entry, and a title you mistype is a new entry
+too. This is the one case where a `committed: true, open: []` message still belongs in your
+answer.
+
+Only ever name an entry that is actually listed in the notebook you were shown. If what the batch
+settles is not in there, it is not an update — leave `updates` out and propose it as new, or say
+nothing.
 
 ```json
 {"verdicts": [
@@ -116,15 +129,44 @@ your answer.
 - `closing_condition` — what would settle this. Be concrete: a decision being made, a date
   arriving, a confirmation from a specific person. "It gets sorted out" is not a closing
   condition.
-- `anchor_date` — the calendar date this entry is about, as an eight-digit number `YYYYMMDD`
-  (20260930 for 30 September 2026). Required. If several dates are in play (three restaurants,
-  different weekends), use the one the arrangement is actually anchored to — usually the date
-  of the event or deadline itself, not the date somebody is speaking.
+- `anchor_date` — **when the thing happens**: the calendar date this entry is about, as an
+  eight-digit number `YYYYMMDD` (20260930 for 30 September 2026). Required. If several dates are
+  in play (three restaurants, different weekends), use the one the arrangement is actually
+  anchored to — usually the date of the event or deadline itself, not the date somebody is
+  speaking. It is when, and only when; two entries may share a date and still be two entries.
+- `updates` — optional, and it is how you say **this is not new**: the title of the notebook
+  entry this proposal revises, copied exactly as the notebook shows it. Leave it out entirely for
+  anything new. Never invent a title here — only one that is listed above.
 - `anchor_entity_ids` — optional: the names of the people this entry is about, in the room's own
-  words. Leave it out if it does not help identify the occasion.
+  words. Leave it out if it does not help identify the occasion. **When this batch gives you two
+  different entries that land on the same date, name the people for each** — that is what keeps
+  the two apart on their way in, and two same-day entries that both leave it out are handled as
+  one.
 - `message_ids` — the integer ids of the messages that establish this entry, exactly as they
   appear in the batch you were given. Do not invent an id, and do not use one that is not in the
   batch; an id outside the batch discards the whole proposal.
+
+An update looks exactly the same, with one more key. If the notebook you were shown carries the
+line `- Wedding venue — Three venues proposed; nobody has picked one yet. (about Wed 30 Sep, in 12
+days)` and this batch settles the venue:
+
+```json
+{"verdicts": [
+  {"id": 4831, "ahead": true, "committed": true, "open": ["how many people"]}
+],
+ "candidates": [
+  {"title": "Wedding venue",
+   "description": "The September wedding is at the beach club; the head count is still open.",
+   "body": "Ada booked the beach club for the 30th. Ben and Cat are in. Nobody has counted heads yet.",
+   "closing_condition": "The head count is given to the venue.",
+   "anchor_date": 20260930,
+   "updates": "Wedding venue",
+   "message_ids": [4831]}
+]}
+```
+
+The `updates` value is the title from that line and nothing else — not the whole line, not the
+summary after the dash, not the date in brackets.
 
 If nothing in this batch belongs in the notebook and is not already there, `candidates` is
 `[]` — and the verdicts still come first, one for every message. That will often be the right

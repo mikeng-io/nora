@@ -24,8 +24,8 @@ from nora.language.note_candidates import (
     _adds_information,
     _appended,
     _CreateCandidate,
-    _find_anchor_match,
     _parse_candidate,
+    _resolve_updates,
 )
 from nora.obs.metrics import Metrics
 from nora.testing.note_store import InMemoryNoteStore
@@ -357,6 +357,48 @@ def test_parse_candidate_drops_an_empty_message_ids_list():
     assert _parse_candidate(_item(message_ids=[])) is None
 
 
+def test_parse_candidate_leaves_updates_unset_when_the_model_omits_it():
+    """The common and correct answer: nothing named, so nothing to resolve."""
+    candidate = _parse_candidate(_item())
+    assert candidate is not None and candidate.updates is None
+    explicit_null = _parse_candidate(_item(updates=None))
+    assert explicit_null is not None and explicit_null.updates is None
+
+
+def test_parse_candidate_keeps_the_named_title_verbatim():
+    """Unnormalised on the way in — `note_handle` normalises at resolution
+    time, and a log line about a title that resolved to nothing has to show
+    what the model actually wrote."""
+    candidate = _parse_candidate(_item(updates="  Dinner &amp; Drinks  "))
+    assert candidate is not None
+    assert candidate.updates == "Dinner &amp; Drinks", "stripped, not folded"
+
+
+@pytest.mark.parametrize("bad", [7, True, [], {}, "", "   ", "x" * 400])
+def test_parse_candidate_drops_a_malformed_updates_rather_than_creating(bad):
+    """Present and unusable is the model having TRIED to say this is an
+    update. Treating that as absent would turn a garbled answer into a silent
+    create — a duplicate arriving with no tell that anything went wrong — so
+    the whole candidate goes, exactly as a bad `anchor_entity_ids` does."""
+    assert _parse_candidate(_item(updates=bad)) is None
+
+
+def test_parse_candidate_accepts_an_escaped_title_longer_than_the_title_cap():
+    """`MAX_UPDATES_CHARS` is deliberately not `TITLE_MAX_CHARS`: the value is
+    the title as the INDEX showed it, and the index escapes what it renders
+    (R-13), so 「&」 costs five characters there. Capping at the title's own
+    limit would refuse exactly the notes whose titles carry punctuation."""
+    from nora.domain.notes import TITLE_MAX_CHARS
+    from nora.domain.prompt import escape
+
+    stored = "&" * TITLE_MAX_CHARS
+    as_rendered = escape(stored)
+    assert len(as_rendered) > TITLE_MAX_CHARS, "the fixture proves nothing otherwise"
+
+    candidate = _parse_candidate(_item(updates=as_rendered))
+    assert candidate is not None and candidate.updates == as_rendered
+
+
 def test_parse_candidate_accepts_free_text_anchor_entities():
     candidate = _parse_candidate(_item(anchor_entity_ids=["Ada", "Ben"]))
     assert candidate is not None
@@ -391,74 +433,79 @@ async def test_accept_keeps_a_candidate_whose_ids_are_all_in_the_batch():
 # ---------------------------------------------------------------------------
 
 
-def test_find_anchor_match_finds_the_note_sharing_the_date():
-    """The gate compares the anchor DATE alone (module docstring: the resolved
-    entity half was removed with the entity registry on 2026-09-08)."""
+def _note(**overrides):
+    """One standing note, as either store returns it."""
     from nora.domain.notes import Note
 
-    existing = Note(
-        id="n1", workspace=WS, title="Wedding venue", description="d",
-        uncertainty="u", closing_condition="c", established_in="conv-1",
-        created_at=NOW, head_revision_id="r1", anchor_date=20260919,
-    )
-    other_day = replace(existing, id="n2", anchor_date=20260920)
-
-    match = _find_anchor_match(
-        anchor_date=20260919, standing=(existing, other_day),
-    )
-
-    assert match is existing
+    base = {
+        "id": "n1", "workspace": WS, "title": "Wedding venue",
+        "description": "d", "uncertainty": "u", "closing_condition": "c",
+        "established_in": "conv-1", "created_at": NOW,
+        "head_revision_id": "r1", "anchor_date": 20260919,
+    }
+    base.update(overrides)
+    return Note(**base)
 
 
-def test_find_anchor_match_never_matches_on_title_alone():
-    """M10: two notes could share a title and have nothing to do with each
-    other, or one could have several spellings — the key is the anchor date,
-    never `title`."""
-    from nora.domain.notes import Note
+def test_the_named_note_resolves_to_exactly_that_note():
+    """Issue #228: the model says which note it means, and code says whether
+    that note exists. Nothing else about the candidate is compared."""
+    wanted = _note(title="Sign-up deadline", anchor_date=20260911)
+    other = _note(id="n2", title="Which night the game session is",
+                  anchor_date=20260911)
 
-    same_title_different_day = Note(
-        id="n1", workspace=WS, title="Wedding venue", description="d",
-        uncertainty="u", closing_condition="c", established_in="conv-1",
-        created_at=NOW, head_revision_id="r1", anchor_date=20261225,
-    )
-
-    match = _find_anchor_match(
-        anchor_date=20260919, standing=(same_title_different_day,),
-    )
-
-    assert match is None
+    assert _resolve_updates(
+        updates="Sign-up deadline", standing=(wanted, other),
+    ) == (wanted,)
 
 
-def test_find_anchor_match_never_reads_the_written_entities():
-    """Two notes on one date match whatever free text their writers typed
-    for entities — the strings are not a key in either direction (three
-    spellings of one wedding; two unrelated 「wedding」s)."""
-    from nora.domain.notes import Note
+def test_no_named_note_resolves_to_nothing_whatever_the_dates_say():
+    """`anchor_date` is when the thing happens, not who the thing IS. A
+    candidate that names no note is new even when a standing note is anchored
+    to the very same day — which is what `_find_anchor_match` decided the
+    other way until 2026-09-13, twice in production, wrongly both times."""
+    same_day = _note(title="Sign-up deadline", anchor_date=20260911)
 
-    existing = Note(
-        id="n1", workspace=WS, title="Wedding venue", description="d",
-        uncertainty="u", closing_condition="c", established_in="conv-1",
-        created_at=NOW, head_revision_id="r1", anchor_date=20260919,
-        anchor_entity_ids=("Gabe's wedding",),
-    )
-
-    assert _find_anchor_match(anchor_date=20260919, standing=(existing,)) is existing
+    assert _resolve_updates(updates=None, standing=(same_day,)) == ()
 
 
-def test_find_anchor_match_takes_the_oldest_note_on_the_date():
-    """`standing` is oldest-first from either store, and the first match is
-    the one taken — so a re-observation lands on one stable note across
-    ticks rather than on whichever happened to be listed first."""
-    from nora.domain.notes import Note
+def test_a_title_nothing_answers_to_resolves_to_nothing():
+    """A model naming an entry that is not in the index it was shown gets a
+    CREATE, not an error and not a guess."""
+    assert _resolve_updates(
+        updates="A note nobody wrote", standing=(_note(),),
+    ) == ()
 
-    older = Note(
-        id="n1", workspace=WS, title="Dinner", description="d",
-        uncertainty="u", closing_condition="c", established_in="conv-1",
-        created_at=NOW, head_revision_id="r1", anchor_date=20260919,
-    )
-    newer = replace(older, id="n2", created_at=NOW + 1, head_revision_id="r2")
 
-    assert _find_anchor_match(anchor_date=20260919, standing=(older, newer)) is older
+def test_an_ambiguous_title_resolves_to_every_match_never_the_first():
+    """`nora.agent.tools._resolve`'s own argument, and the reason this
+    returns a tuple: `standing()` is ordered, so "the first one" would be a
+    stable, plausible, wrong answer."""
+    first = _note(id="n1", anchor_date=20260919)
+    second = _note(id="n2", anchor_date=20261225)
+
+    assert _resolve_updates(
+        updates="Wedding venue", standing=(first, second),
+    ) == (first, second)
+
+
+def test_a_named_title_resolves_through_the_index_escaping():
+    """`note_handle`'s whole reason, reached from this caller: the index
+    ESCAPES what it renders (R-13), so the title the model reads back is not
+    the title the store holds. A raw `==` here would refuse every note whose
+    title carries punctuation — and the model would be right and ignored."""
+    from nora.domain.prompt import escape
+
+    note = _note(title="Dinner & drinks")
+    as_the_model_saw_it = escape(note.title)
+
+    assert as_the_model_saw_it != note.title, "the fixture proves nothing otherwise"
+    assert _resolve_updates(
+        updates=as_the_model_saw_it, standing=(note,),
+    ) == (note,)
+    assert _resolve_updates(
+        updates="  dinner &amp; DRINKS  ", standing=(note,),
+    ) == (note,), "case and surrounding space are not identity"
 
 
 # ---------------------------------------------------------------------------
@@ -564,14 +611,13 @@ async def test_commit_stages_the_candidate_row_before_deciding():
     assert row.status == "created"
 
 
-async def test_commit_updates_the_standing_note_sharing_its_date():
-    """A candidate on a date a standing note already carries becomes a
-    REVISION of that note, not a second note — the gate compares the anchor
-    date alone (2026-09-08), and this body adds something the head lacks.
-    Until then this test pinned the opposite: the gate's entity half was
-    always empty, it failed closed on that, and every candidate was a
-    create."""
-    adaptor, store = _adaptor()
+async def test_commit_updates_the_standing_note_the_model_named():
+    """A candidate naming a standing note in `updates` becomes a REVISION of
+    THAT note, not a second note — and the body is appended, not swapped in.
+    The date it carries is irrelevant to the choice; only the name decided
+    it."""
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
     await store.create(
         workspace=WS, title="Wedding venue", description="d",
         uncertainty="u", closing_condition="c", established_in="conv-1",
@@ -583,24 +629,240 @@ async def test_commit_updates_the_standing_note_sharing_its_date():
         key=SCOPE,
         proposals=(_proposal(_CreateCandidate(
             title="Wedding venue (again)", description="d2",
-            body="a second sighting of the same date",
-            closing_condition="c", anchor_date=20260919,
+            body="a second sighting of the same arrangement",
+            closing_condition="c", anchor_date=20261225,
             anchor_entity_ids=(), message_ids=(2,),
+            updates="Wedding venue",
         )),),
         now_ms=NOW + 1,
     )
 
     assert written == 1
     standing = await store.standing(workspace=WS)
-    assert len(standing) == 1, "same date -> a revision, never a second note"
+    assert len(standing) == 1, "the named note -> a revision, never a second note"
     [note] = standing
     head = await store.read(workspace=WS, note_id=note.id)
     assert head is not None
     assert head[1].body == (
-        "original arrangement\n\na second sighting of the same date"
+        "original arrangement\n\na second sighting of the same arrangement"
     ), "a revision APPENDS to the head; it does not replace it"
     [row] = store.create_candidates.values()
     assert row.status == "created"
+    assert metrics.get("nora_note_candidate_gate_total", action="updated") == 1
+
+
+async def test_the_named_note_wins_over_a_note_sharing_the_date():
+    """The one assertion that separates this gate from the one it replaces.
+    Two standing notes: one shares the candidate's anchor date and is NOT
+    named, the other is named and is anchored elsewhere. The date-only gate
+    took the first; this one takes the second."""
+    adaptor, store = _adaptor()
+    await store.create(
+        workspace=WS, title="Sign-up deadline", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        body="the deadline half", established_by="tag:miles", now_ms=NOW,
+        anchor_date=20260911,
+    )
+    await store.create(
+        workspace=WS, title="Hiking on the 20th", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        body="the hiking half", established_by="tag:miles", now_ms=NOW + 1,
+        anchor_date=20260920,
+    )
+
+    await adaptor.commit(
+        key=SCOPE,
+        proposals=(_proposal(_CreateCandidate(
+            title="Hiking on the 20th", description="d2",
+            body="a car is booked for four",
+            closing_condition="c", anchor_date=20260911,
+            anchor_entity_ids=(), message_ids=(2,),
+            updates="Hiking on the 20th",
+        )),),
+        now_ms=NOW + 2,
+    )
+
+    notes = {n.title: n for n in await store.standing(workspace=WS)}
+    assert len(notes) == 2, "no third note; no note lost"
+    hiking = await store.read(workspace=WS, note_id=notes["Hiking on the 20th"].id)
+    deadline = await store.read(workspace=WS, note_id=notes["Sign-up deadline"].id)
+    assert hiking is not None and deadline is not None
+    assert hiking[1].body == "the hiking half\n\na car is booked for four"
+    assert deadline[1].body == "the deadline half", (
+        "the note sharing the date was not named and must not have moved"
+    )
+
+
+async def test_two_unrelated_arrangements_on_one_date_become_two_notes():
+    """Issue #228's own reversal condition, as a test. One room, one calendar
+    day, two arrangements that share nothing but the date: the second names
+    no standing note, so it is a second note. Under the date-only key it was
+    a revision of the first, which is how the update arm merged two genuinely
+    different occasions both times it ever fired."""
+    adaptor, store = _adaptor()
+    await store.create(
+        workspace=WS, title="Sign-up deadline", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        body="one of them answered; nobody has committed to going",
+        established_by="tag:miles", now_ms=NOW, anchor_date=20260911,
+    )
+
+    written = await adaptor.commit(
+        key=SCOPE,
+        proposals=(_proposal(_CreateCandidate(
+            title="Which night the game session is",
+            description="d2",
+            body="tonight was floated and turned down; no time settled",
+            closing_condition="c", anchor_date=20260911,
+            anchor_entity_ids=("games",), message_ids=(2,),
+        )),),
+        now_ms=NOW + 1,
+    )
+
+    assert written == 1
+    standing = await store.standing(workspace=WS)
+    assert sorted(n.title for n in standing) == [
+        "Sign-up deadline", "Which night the game session is",
+    ], "two unrelated arrangements on one date are two notes"
+    deadline = next(n for n in standing if n.title == "Sign-up deadline")
+    head = await store.read(workspace=WS, note_id=deadline.id)
+    assert head is not None
+    assert head[1].body == "one of them answered; nobody has committed to going", (
+        "the untouched note must not have gained a word"
+    )
+
+
+async def test_two_same_day_candidates_are_kept_apart_by_their_entity_lists():
+    """The path the eval corpus's two-arrangements case rides on. The gate
+    decides both are new; the STAGING key — `(workspace, anchor_date,
+    anchor_entity_ids)`, unchanged by #228 — keeps them as two rows because
+    the entity lists differ, and two rows are two notes."""
+    adaptor, store = _adaptor()
+
+    written = await adaptor.commit(
+        key=SCOPE,
+        proposals=(
+            _proposal(_CreateCandidate(
+                title="Sign-up deadline", description="d", body="the sign-up half",
+                closing_condition="c", anchor_date=20260911,
+                anchor_entity_ids=("Ada",), message_ids=(1,),
+            )),
+            _proposal(_CreateCandidate(
+                title="Which night the game session is", description="d",
+                body="the games half", closing_condition="c",
+                anchor_date=20260911, anchor_entity_ids=("Ben", "Cat"),
+                message_ids=(2,),
+            )),
+        ),
+        now_ms=NOW,
+    )
+
+    assert written == 2
+    assert sorted(n.title for n in await store.standing(workspace=WS)) == [
+        "Sign-up deadline", "Which night the game session is",
+    ]
+
+
+async def test_two_same_day_candidates_with_no_entities_still_collide_at_staging():
+    """**A STATED BOUND on what #228 delivers, pinned so nobody discovers it
+    by surprise and nobody closes it by accident.**
+
+    The GATE no longer conflates two arrangements on one date — that is this
+    branch. The STAGING key still does: `note_candidate`'s uniqueness is
+    `(workspace, anchor_date, anchor_entity_ids)` and a candidate with no
+    entities named collides with any other same-day candidate that also named
+    none. The second is returned the first's row, already settled, and is
+    dropped before the gate ever sees it — one note, exactly the conflation
+    the gate stopped making, one layer earlier and with a different cause.
+
+    It is NOT fixed here: the staging key reverses its own recorded review
+    finding (M10 applied to staging), and changing it takes a migration, a
+    contract-suite reversal and both store implementations — a second
+    decision, with its own evidence to gather. What this test does is make it
+    a measured fact rather than a surprise, and the objective now tells the
+    model to name the people whenever two same-day entries are in one batch,
+    which is what routes around it. Tracked separately; when it IS fixed,
+    this test is the one that must be deliberately inverted."""
+    adaptor, store = _adaptor()
+
+    written = await adaptor.commit(
+        key=SCOPE,
+        proposals=(
+            _proposal(_CreateCandidate(
+                title="Sign-up deadline", description="d", body="the sign-up half",
+                closing_condition="c", anchor_date=20260911,
+                anchor_entity_ids=(), message_ids=(1,),
+            )),
+            _proposal(_CreateCandidate(
+                title="Which night the game session is", description="d",
+                body="the games half", closing_condition="c",
+                anchor_date=20260911, anchor_entity_ids=(), message_ids=(2,),
+            )),
+        ),
+        now_ms=NOW,
+    )
+
+    assert written == 1, "the bound, not the goal"
+    assert [n.title for n in await store.standing(workspace=WS)] == [
+        "Sign-up deadline",
+    ]
+    assert len(store.create_candidates) == 1, (
+        "one staged row for two proposals — the collision is at the staging "
+        "key, not at the gate"
+    )
+
+
+async def test_an_ambiguous_title_creates_rather_than_guessing():
+    """Two standing notes answer to one title. Appending to the wrong one
+    conflates two arrangements — the failure this whole change removes; a
+    duplicate is recoverable and the curator merges. So the gate creates, and
+    counts it `ambiguous` rather than folding it into `created`, so the rate
+    of it is readable."""
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
+    # Two DIFFERENT stored titles that `note_handle` normalises to one. The
+    # store's own uniqueness is `lower(title)` and does not stop this, and the
+    # index would render both lines as the same word.
+    for i, (stored, anchor) in enumerate(
+        (("Dinner", 20260919), ("dinner ", 20261225))
+    ):
+        await store.create(
+            workspace=WS, title=stored, description="d",
+            uncertainty="u", closing_condition="c", established_in="conv-1",
+            body=f"body {i}", established_by="tag:miles", now_ms=NOW + i,
+            anchor_date=anchor,
+        )
+    assert len({n.title for n in await store.standing(workspace=WS)}) == 2
+
+    written = await adaptor.commit(
+        key=SCOPE,
+        proposals=(_proposal(_CreateCandidate(
+            title="Dinner somewhere new", description="d2",
+            body="a third thing entirely",
+            closing_condition="c", anchor_date=20260919,
+            anchor_entity_ids=(), message_ids=(2,),
+            updates="Dinner",
+        )),),
+        now_ms=NOW + 9,
+    )
+
+    assert written == 1
+    standing = await store.standing(workspace=WS)
+    assert len(standing) == 3, (
+        "a third note, never a guess at which of the two was meant"
+    )
+    for note in standing:
+        if note.title == "Dinner somewhere new":
+            continue
+        head = await store.read(workspace=WS, note_id=note.id)
+        assert head is not None
+        assert "a third thing entirely" not in head[1].body, (
+            "nothing standing may be appended to on an ambiguous name"
+        )
+    assert metrics.get("nora_note_candidate_gate_total", action="ambiguous") == 1
+    assert metrics.get("nora_note_candidate_gate_total", action="created") == 0, (
+        "counted apart from created, or the rate is invisible"
+    )
 
 
 async def test_an_unrelated_candidate_on_the_same_date_cannot_destroy_the_head():
@@ -611,9 +873,12 @@ async def test_an_unrelated_candidate_on_the_same_date_cannot_destroy_the_head()
     about its own subject in the body, fell back to the index description
     and told the room something false.
 
-    The date-only key is a separate decision (still open on #228): what this
-    pins is that a collision may CONFLATE two arrangements but may never
-    lose one. The head's own text has to survive the revision verbatim.
+    The key itself narrowed in the same issue's second half, so the collision
+    this pins now needs the model to have NAMED the wrong note — which is
+    exactly the judgement the gate now trusts it to make. What this pins is
+    that trusting it costs at most a CONFLATION and never a loss: the head's
+    own text has to survive the revision verbatim. It is the ground the gate
+    above it stands on.
     """
     adaptor, store = _adaptor()
     await store.create(
@@ -631,6 +896,7 @@ async def test_an_unrelated_candidate_on_the_same_date_cannot_destroy_the_head()
             body="tonight was floated and turned down; no time settled",
             closing_condition="c", anchor_date=20260911,
             anchor_entity_ids=(), message_ids=(2,),
+            updates="Sign-up deadline",
         )),),
         now_ms=NOW + 1,
     )
@@ -667,6 +933,7 @@ async def test_a_revision_past_the_body_ceiling_is_refused_not_truncated():
             body="a new sighting that does not fit",
             closing_condition="c", anchor_date=20260919,
             anchor_entity_ids=(), message_ids=(2,),
+            updates="Wedding venue",
         )),),
         now_ms=NOW + 1,
     )

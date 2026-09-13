@@ -10,6 +10,14 @@ suite is the instrument that can: ten batches (five that must produce a note,
 five that must not), each run N times through the REAL runtime and adaptor
 against the live model, graded on what the notebook holds afterwards.
 
+**One case counts notes rather than asserting one** (`creates`, added
+2026-09-13 for issue #228). The tier's identity rule moved from the anchor
+date to the title the model names, and the shape that reversal is ABOUT — one
+room, one calendar day, two unrelated arrangements — is a `create` case whose
+correct answer is two notes. Under the old key it was one. It is a field on
+the case rather than a fourth `expect` because nothing else about the grade
+differs.
+
 **Structural grading, no judge.** The adaptor's output is a notebook state,
 and a notebook state is a fact: a new note exists or it does not; a head
 moved or it did not. Grading that with a second model would be a stochastic
@@ -87,6 +95,14 @@ class NoteCandidatesCase:
     anchor_date: int | None = None
     must_cite: tuple[int, ...] = ()
     updates: str | None = None
+    #: How many NEW notes a `create` case must leave behind. One, for every
+    #: case written before 2026-09-13. It is a field rather than a fourth
+    #: `expect` value because the grade is otherwise identical — and because
+    #: the shape it exists for (issue #228: one room, one calendar day, two
+    #: unrelated arrangements) is a `create` case in every other respect. A
+    #: case asking for more than one note names no `anchor_date`: the field
+    #: identifies THE created note, and with two there is no such thing.
+    creates: int = 1
     # The room this case is set in, as `policy.toml` supplies it live (issue
     # #161): `room_label` is what the room is CALLED and is attributed on
     # every rendered batch line; `room_description` is the operator's own
@@ -117,6 +133,7 @@ class NoteCandidatesCase:
             anchor_date=(int(raw["anchor_date"]) if raw.get("anchor_date") is not None else None),
             must_cite=tuple(int(i) for i in raw.get("must_cite", ())),
             updates=raw.get("updates"),
+            creates=int(raw.get("creates", 1)),
             room_label=_opt_str(raw.get("room_label")),
             room_description=_opt_str(raw.get("room_description")),
         )
@@ -148,6 +165,15 @@ class NoteCandidatesCase:
             raise ValueError(f"{self.name}: `updates` only makes sense with expect: update")
         if self.expect == "none" and (self.anchor_date is not None or self.must_cite):
             raise ValueError(f"{self.name}: a `none` case has no anchor_date or must_cite")
+        if self.creates < 1:
+            raise ValueError(f"{self.name}: `creates` is a count of notes, got {self.creates}")
+        if self.creates != 1 and self.expect != "create":
+            raise ValueError(f"{self.name}: `creates` only makes sense with expect: create")
+        if self.creates > 1 and self.anchor_date is not None:
+            raise ValueError(
+                f"{self.name}: `anchor_date` identifies THE created note; a case "
+                f"expecting {self.creates} of them cannot name one"
+            )
 
 
 def _iso_to_ms(value: str) -> int:
@@ -232,15 +258,27 @@ def grade(case: NoteCandidatesCase, result: RunResult) -> Grade:
     if case.expect == "create":
         if not new_notes:
             return Grade("FAIL", "no note was created")
-        if len(new_notes) > 1:
-            return Grade("FAIL", f"{len(new_notes)} notes created, expected one")
-        note = new_notes[0]
-        if case.anchor_date is not None and note.anchor_date != case.anchor_date:
-            return Grade("FAIL", f"anchor_date {note.anchor_date} != expected {case.anchor_date}")
+        if len(new_notes) != case.creates:
+            return Grade(
+                "FAIL", f"{len(new_notes)} notes created, expected {case.creates}",
+            )
+        if moved:
+            # A create case that also REVISED something has conflated a new
+            # arrangement into a standing one — issue #228's own failure, and
+            # invisible to a count of new notes alone.
+            return Grade("FAIL", f"a standing note was revised: {[n.title for n in moved]}")
+        anchors = {n.anchor_date for n in new_notes}
+        if case.anchor_date is not None and anchors != {case.anchor_date}:
+            return Grade(
+                "FAIL", f"anchor_date {sorted(anchors)} != expected {case.anchor_date}",
+            )
         if case.must_cite:
+            # Scoped to the anchors actually created, so a citation is
+            # attributed to a note this case asked for rather than to any
+            # staged row that happened to land.
             created = [
                 s for s in result.staged
-                if s.status == "created" and s.anchor_date == note.anchor_date
+                if s.status == "created" and s.anchor_date in anchors
             ]
             cited = set().union(*(set(s.message_ids) for s in created)) if created else set()
             missing = [c for c in case.must_cite if c not in cited]

@@ -100,13 +100,19 @@ def _render_entry(note: Note, *, today: int | None = None) -> str:
 
     The date was on the row and rendered nowhere, in the one block two
     different readers are asked to judge against it. The note-candidates pass
-    is told not to propose «something already in the notebook you were shown»,
-    and the code's identity rule for «the same arrangement» is the anchor date
-    ALONE (`_find_anchor_match`, which explicitly refuses title and entities).
-    So it was asked to judge sameness on the one property the block did not
-    carry, using the one property the gate rejects. And the tag path's reader
-    was told a listed note «may already have settled» with no way to tell
-    which — the block's own hedge, unanswerable from the block.
+    is told not to propose «something already in the notebook you were shown»
+    and, since 2026-09-13 (#228), to NAME the entry it updates by the title on
+    this line — so this block is that gate's whole ballot, and a note missing
+    from it is a note nothing can update. Until then the code's identity rule
+    for «the same arrangement» was the anchor date ALONE, which the block did
+    not carry: the pass was asked to judge sameness on the one property it
+    could not see, using the one property the gate rejected. And the tag
+    path's reader was told a listed note «may already have settled» with no
+    way to tell which — the block's own hedge, unanswerable from the block.
+
+    The date stays on the line now that it is no longer the key: it is what
+    separates two notes whose titles read alike, and it is still the only
+    answer to that hedge.
 
     `today` absent renders the bare date rather than a distance, which is what
     a caller with no clock gets; `None` anchor renders neither.
