@@ -1,0 +1,69 @@
+kind: design_index
+title: "The Culture Tier — a Dreamer adaptor that asks the memory system what a room is like"
+description: >
+  The Relevance Gate admitted one window in 149 over four days. It is not
+  mistuned: it is a reasoning-less classifier holding a taxonomy where the room
+  needed a baseline. The layer that would supply one is an account of how a
+  room works and why — and the memory system can already produce exactly that,
+  through the dialectic endpoint, in 17-30s against a 20s gate timeout. So this
+  tier derives nothing. It is a Dreamer adaptor that asks once a day, keeps
+  every answer, and lets the chain of answers be the evolution a single call
+  cannot express. The bundle also states a measurement for "act" that is not a
+  model agreeing with its own instruction.
+status: proposed
+origin: >
+  Working session with miles, 2026-09-12/13, opened by a finding written against
+  Ora's copy of `participation.md`. Three corrections shaped the result: the
+  operator caught the first draft re-inventing the memory system at room and
+  workspace scope; caught it importing `standing`'s retirement lifecycle into a
+  thing that evolves rather than sunsets; and named the distinction the whole
+  design turns on - a chronicle of what happened is not a culture. A live probe
+  then falsified the first draft's own headline numbers. Every measurement in
+  00-overview was read off norty; the Honcho behaviour in section 4 was probed
+  against the live instance, not read from docs. Tree at 434282db.
+members:
+  - 00-overview.md
+  - 01-the-adaptor.md
+  - 02-measurement.md
+  - 03-decisions.md
+  - 04-phase-two-note.md
+edges:
+  - {src: 01-the-adaptor, dst: 00-overview, rel: depends_on, provenance: asserted}
+  - {src: 02-measurement, dst: 00-overview, rel: depends_on, provenance: asserted}
+  - {src: 03-decisions, dst: 00-overview, rel: summarises, provenance: asserted}
+  - {src: 04-phase-two-note, dst: 02-measurement, rel: depends_on, provenance: asserted}
+external_edges:
+  - {dst: "ambient-loop/00-overview", rel: depends_on, provenance: asserted}
+  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
+  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
+  - {dst: "dreamer-agent-loop/26-standing", rel: relates_to, provenance: asserted}
+  - {dst: "proposed/24-honcho-integration-v2", rel: depends_on, provenance: asserted}
+decisions:
+  reserved: "DEC-182 .. DEC-185 (DEC-181 withdrawn) — CLAIMED AT MERGE, NOT NOW; DEC-163..175 is an unexplained gap, find its holder first"
+  index: 03-decisions.md
+governance:
+  reviewed_by: >
+    Three adversarial Opus reviews of the FIRST draft, 2026-09-12 - architecture,
+    measurement and data model. The measurement review falsified 00-overview's
+    headline numbers and was right; most of the data-model findings are moot
+    because the schema they attacked is deleted. The architecture review's
+    central finding (a third block is forbidden) was itself wrong and is
+    recorded as correction 3 in 03-decisions. THIS revision has had no review.
+  measured: >
+    00-overview sections 1 and 4 are measurement, read off the live deploy and the
+    live Honcho instance 2026-09-12/13. Everything else is design and is NOT
+    measured.
+  synced_with: >
+    The #219/#220 block-abstraction session, 2026-09-13 - it owns the block
+    vocabulary, corrected this bundle's cache reasoning, and confirmed the row
+    renderer does not open the gate's block set. Its `BlockKey` field was added
+    in response to this bundle's cache question.
+open_questions:
+  - "WITHDRAWN 2026-09-13 - DEC-181 was not a choice. The key follows from which scheduler hands it: Dreamer-written stores key primary_id, ingest/tag-written stores key (platform, conversation_id). GLOSSARY carries the rule (PR #230); the latent divergence is #229"
+  - "OPERATOR - whether `standing` is repaired (#222) or superseded. HOLDING's second arm depends on it and does not compute today"
+  - "UNMEASURED - whether the gate should ever read culture. Owned by the gate, sequenced last, with #144/#147 and #216 as evidence against assuming it"
+  - "UNMEASURED - every threshold in 02-measurement. None can be measured until the gate metric carries a conversation_id, which is this bundle's own step 1 (was #221, folded in)"
+  - "MEASURED 2026-09-13 - the decision check works but needs n=20 per case per arm, ~100 live calls and ~45min per arm. Affordable as a ship gate, not for iteration. Cost recorded in 02-measurement section 6"
+  - "STALE - #216 is an n=5 reading cited four times here; marked in place, owed a re-take at n=20"
+  - "SETTLED 2026-09-13 - the block is `placement=turn`, `key=room`. #219/#220 added `key` after this bundle asked the question; the rule it encodes is that anything keyed narrower than `global` belongs in `turn`, whatever its cadence"
+  - "PHASE 2 - 04-phase-two-note is not executable and waits on Phase 1's instruments plus #210"

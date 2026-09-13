@@ -1,0 +1,281 @@
+# The Culture Tier — overview
+
+## 0. What this bundle became
+
+The first version of this bundle proposed a new tier with its own store, its
+own derivation, a three-section body under a CHECK constraint, and two
+synthesizers. Almost all of that is now deleted. What survives is much smaller:
+
+> **A Dreamer adaptor that asks the memory system a question it can already
+> answer, on a slow clock, and keeps every answer.**
+
+The path to that is worth recording, because two of the three corrections came
+from the operator catching a category error, and the third came from a probe
+that falsified this document's own first draft.
+
+## 1. What was measured, 2026-09-12/13
+
+Read live off norty. **Reset-aware over the full ~4 days Prometheus retains**,
+60s step, summing positive deltas and treating a counter drop as all-new — the
+first draft of this document used an *instant* query and was wrong because of
+it (§1.1).
+
+| series | total |
+|---|---|
+| `nora_relevance_gate_total{verdict="no_go"}` | ~148 (discord 67, signal 81) |
+| `nora_relevance_gate_total{verdict="go"}` | **>= 2** |
+| `nora_relevance_gate_errors_total{kind="call_failed"}` | 13 |
+| `nora_participation_spoke_total` | 1 (signal) |
+
+**Admission is under 2%.** The exact numerator is not settled and the table
+should not be read as though it were — see §1.1, which is now about two
+errors rather than one.
+
+**The gate was in `shadow = true` for the first ~10 hours of this window**
+(`config.toml` flipped 2026-09-09 17:10 UTC). While shadow is on, a `go`
+short-circuits and **no turn runs at all**. So the admissions before that
+point could not produce a turn, and one of them is recorded in Prometheus as
+a *failed send* (`stage="relevance_gate_shadow"`).
+
+An earlier draft concluded from the absent `nora_participation_silence_total`
+series that "she has never been admitted and then chosen silence, so
+`silence.md`'s healthy default has never been exercised." **That conclusion is
+withdrawn.** The absence is explained by configuration, and the number of
+admissions on which silence was even reachable is 1 — a doctrinal claim drawn
+from n=1, which is the thing `CMS.md` exists to forbid.
+
+The one `go`, in full:
+
+```
+08:42:43  a member, untagged:  <asks how to get somewhere by 10:00 tomorrow>
+08:43:17  GATE:                go
+08:43:57  Nora:                <a correct route with times and a departure time>
+```
+
+2026-09-11. The ambient loop worked end to end, once.
+
+### 1.1 The correction this document exists to not repeat
+
+The first draft of §1 claimed *"the `go` counter has never been incremented"*
+and *"the participation turn has never run."* Both false. Both series were
+incremented on 2026-09-11 morning and vanished at a process restart, because
+Prometheus labels counters lazily and the new process never re-created a label
+it had not yet used. An instant query 19 hours later read absence-of-series as
+never-happened.
+
+**And the replacement was wrong too, by the same class of error.** The second
+draft said `go` = 1. It is at least 2: a sample lived under 30 seconds inside a
+46-minute hole, so a step-60 grid point falls either before it or after its
+staleness marker and positive-delta summation adds nothing. The same aliasing
+hid a 2→1→2 reset on `call_failed`, which is 13 rather than 11.
+
+So the rule this section exists to state needs all three clauses, not one:
+
+1. **Raw samples, not a grid** — `query?query=metric[5d]`, because
+   `query_range` at any step can step over a sample shorter than the step.
+2. **Reset-aware summation**, treating a drop as all-new.
+3. **Prove the target was scraped during every absence** — check `up{job=...}`.
+   Absence of a series means zero increments only if the scrape was alive.
+
+Clause 3 does hold here (`up` is continuous over the window bar 11 failed
+scrapes) but the earlier drafts did not check it, and without it "absence =
+zero" is the exact inference this section condemns.
+
+Related but distinct: `nora_relevance_gate_errors_total` is counted
+*separately* and fail-closed refusals are **not** in the 149
+(`relevance_gate.py:707-717`), so 149 is verdicts, not evaluations.
+
+## 2. Why 0.67% is not a tuning problem
+
+`participation.md` v5 is a taxonomy — five `go` shapes and a `no_go` list —
+read by a model configured `reasoning_effort = "none"`, `max_tokens = 512`,
+against up to 40 rows of real chat.
+
+A reasoning-less model handed a taxonomy pattern-matches; a pattern-matcher
+handed ambiguity takes the safe label. The operator's framing:
+
+> 其實你係冇可能 define Nora 幾時去介入。
+
+So stop defining it. A window judged against nothing is judged in a vacuum —
+"nobody picked this up" means nothing until you know whether this room normally
+picks things up. **A baseline is what turns a window into a deviation**, and a
+deviation is readable by a model with no reasoning budget, because the
+reasoning already happened offline.
+
+That is the reconciliation between `reasoning_effort = "none"` and the
+judgement we want: the reasoning moves out of the model.
+
+Two existing issues carry the rest of this and are not restated here: #163
+(the same admission measurement, taken 2026-09-10), #194 (the gate instruction
+has no non-degeneracy floor), #216 (**n=5, not re-taken** — when the turn *does* run it false-speaks on
+4 of 5 silence twins — the strongest reason to fix measurement before doctrine).
+
+## 3. Chronicle is not culture
+
+The memory system already models entities. It was not obvious why that is not
+enough, and the operator's analogy is what made it precise:
+
+> 你唔會同我講，中國漢朝原來「漢人」呢一個 term 係會 retire 同 sunset 嘅，唔會嘛?
+
+Honcho's `representation` returns exactly one shape, verified live:
+
+```
+## Explicit Observations
+[2026-09-12 16:30:59] <peer> responded with the message 'GFS'.
+[2026-08-30 20:11:21] <peer> wrote the message 'try try try again'
+```
+
+`[when] what happened`. Every row pinned to an instant, every row independent
+of every other. That is a **chronicle** — and a chronicle of dynasties and
+their dates is not a culture. The format has no slot for continuity or
+causation, so 「漢人」 — a term that outlived its dynasty, meant something
+different each century, and is *why* people still say it — cannot be expressed
+in it. `times_derived` ranks by frequency, and frequency is not continuity.
+
+Culture is an **account**: what this is, and why it became so.
+
+### 1.2 What is borrowed rather than this bundle's own work
+
+Two numbers quoted here and in `04-phase-two-note.md` — the +0.35 on a room
+assigning her a role, and the n=20 noise band behind `02-measurement §6`'s
+price — were read off **#215**, a separate branch that gives the participation
+turn memory. That work is not this bundle's, and resolving and measuring it was
+a detour from this line.
+
+**And it is evidence of something other than what this bundle needs.** The
+"with memory" arm is a `FakeMemoryStore` replaying seeded literal strings
+(`harness.py:508,531`); neither `representation` nor `chat` was called. The
+`admin-joke` seed is a flat pre-stated fact — *"the room jokingly calls nora
+the channel's 管理員"* — and the transcript already contains 管理員 three
+times. So it is neither a chronicle nor an account, and no arm compared the
+two.
+
+The honest reading, which the earlier draft did not state: **the number sets
+this tier's bar rather than supporting it.** A one-line flat fact delivered in
+~0.2s already reaches 0.60 on the flagship capability. Culture proposes a
+17–30s dialectic call, a store, a revision chain and a daily adaptor against
+that baseline. The arm that would settle it — chronicle-only versus
+chronicle-plus-culture — does not exist in any suite, and `02-measurement`
+should propose it.
+
+It also falsifies one sentence in `04-phase-two-note.md`: the 秘書 case, as
+seeded, **is** a lookup, and a same-window one.
+
+## 4. The memory system cannot scope an account — and does not need to
+
+**An earlier version of this section claimed `chat` with `session_id` gives a
+room-scoped account, and built the tier on it. That is false.** The measurement
+behind it landed on the wrong question: asked *"how many distinct people have
+spoken in this room"*, `chat` answers 7 / 1 / 2 correctly per room — because
+that is answerable from the session's MESSAGES. A culture account is a question
+about CONCLUSIONS, and conclusions are workspace-wide.
+
+Falsified directly, 2026-09-13: `chat` scoped to a probe session holding two
+messages answers freely about people appearing nowhere in it. `search` is worse
+— scoped to that same session it returns six hits from other rooms, byte-identical
+to the unscoped query. **Neither endpoint honours session scoping for the layer
+this tier needs**, and there is one Honcho workspace behind all of Nora's rooms
+(`_workspace_for` returns the single default; no router is wired).
+
+So there is no room boundary in Honcho, and no workspace boundary either.
+
+### What that changes: the tier stops asking Honcho
+
+Nora already holds every room's messages in Postgres keyed by
+`conversation_id` — **hard-scoped by construction** — and a Dreamer adaptor is
+handed exactly that batch via `record.since(conversation_id=key,
+after_id=watermark)`. The account is written by the Dreamer's own model from
+that batch.
+
+The chronicle-versus-account distinction in §3 still stands and is still the
+point. What was wrong was attributing it to Honcho: **producing an account is a
+property of asking a model to write prose, not a property of the dialectic
+endpoint.** The Dreamer has a model and a loop already, and it reads a corpus
+that is actually scoped.
+
+Three consequences, all simplifications:
+
+- **No new tool.** `ask_room_memory` / `ask_workspace_memory` were built and
+  then closed unmerged (#237) once the path was falsified.
+- **Workspace culture comes back.** Fold the messages of one workspace's rooms
+  and the boundary is DEC-105's own, enforced in our schema rather than hoped
+  for in someone else's API.
+- **The watermark is a cursor again, not a gate** (`01-the-adaptor §4`): the
+  adaptor now reads its batch, so `batch_limit` must be sized for it rather
+  than pinned at 1.
+
+## 4.1 What the dialectic measurement still supports
+
+Measured 2026-09-12, live, against the deployed instance. `chat` — the
+dialectic endpoint, an LLM inside Honcho — answers a culture question with
+prose carrying causation, self-naming with its origin, register, how decisions
+get made, and Nora's own standing in the room. Session-scoped, three real
+rooms each returned a *different* account, each leading with a different thing
+(register / identity / practice).
+
+**So this tier does not need to derive anything.** It needs to ask.
+
+The reason it cannot simply be called inline:
+
+| | shape | latency |
+|---|---|---|
+| `representation` | chronicle | ~0.2s |
+| `chat` (dialectic) | **account** | **17–30s** |
+| gate timeout | | 20s |
+
+Per-window is impossible. Per-day is nothing. **That gap is the entire reason
+a tier exists**, and it makes the tier a cache rather than a model.
+
+## 5. What that settles
+
+**No second model of the room.** The earlier draft built one, and the operator
+named the danger: a room/workspace-scoped re-invention of `representation` and
+the peer card. Two systems accumulating an evolving model of the same entity
+from the same messages is CMS's *interpret twice and two copies drift* — and
+here both would be prose, both injected, both about the same room, with no way
+for the reader to know which to believe. Storing Honcho's own answer removes
+the second interpreter entirely.
+
+**Nothing retires.** Culture is not `standing` and not a `note`. It has no
+`closing_condition`, because it is never settled; no `retired_at`, because it
+does not stop being true; no TTL, because a quiet room's culture is not stale,
+it is *accurate*. A revision's parent link means "the same thing, earlier" —
+not "superseded". The old name does not become false; it becomes history, and
+the history is part of what the new name means.
+
+**The chain is the evolution.** A single `chat` call reasons from scratch and
+has no memory of its last answer, so one call is a snapshot. Honcho gives
+snapshots; keeping them in order is what gives continuity. That is the tier's
+one genuine contribution and it is why a store exists at all.
+
+## 6. Scope, honestly
+
+Three things the first draft claimed as new are the memory system's already:
+
+| claimed | actually |
+|---|---|
+| workspace culture | workspace-wide recall already is this |
+| her own standing in a room | her self-model, already deriving (`observe_me=true`) |
+| per-room knowledge of a person | `session_id` on `representation` — one parameter, works today |
+
+The client omits `session_id` deliberately (*"recall is workspace-wide ON
+PURPOSE"*, design/24 §4). That is a Nora decision, **not a Honcho limitation** —
+this bundle's first draft and one of its reviewers both asserted the limitation
+and both were wrong.
+
+What is genuinely absent is only this: **an account of the room, kept over
+time.** Everything else in the first draft was re-invention.
+
+## 7. Two phases
+
+| | | measurable |
+|---|---|---|
+| **Phase 1** | she supplies something she holds | yes |
+| **Phase 2** | she is a member of the circle and can take a role the room gives her | uptake only |
+
+The boundary is a measurement boundary, which is why the order is not
+preference — Phase 1's instruments are the only thing that could tell you
+whether Phase 2 works. "Proactive" is a third thing on a different axis
+(actively pushing the room forward) and Phase 2 should not borrow its name.
+
+See `04-phase-two-note.md`, deliberately not executable.
