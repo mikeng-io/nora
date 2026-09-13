@@ -361,10 +361,50 @@ path's whole context assembler, a runtime rather than a block). The verb
   standard: *if reverting the code under test does not turn it red, it is not a
   test.*
 
-## Scope
+## A room, and the three things it is not
 
+"Room" is the word everyone reaches for and it names a VIEW, not a unit of
+storage. Four things share it in prose; two of them key stores, and they key
+them differently.
+
+- **conversation** — the unit. One `[[conversations]]` entry in `policy.toml`,
+  resolving to `nora.policy.Conversation`: one platform, one workspace, a
+  label, and **`ids: frozenset[str]`** — a SET of platform thread ids — of
+  which `primary_id` is the one chosen to be stable across runs.
+- **conversation id** — one platform thread identifier. A conversation may
+  hold several (a channel that moved, a re-created group, a thread id). It is
+  what ARRIVED, not what it belongs to.
 - **room** — the conversation a tag happened in, resolved to people
-  (`nora/agent/room.py`). The scope every room-scoped tool resolves *within*.
+  (`nora/agent/room.py`). A runtime view, built per turn, never stored. The
+  scope every room-scoped tool resolves *within*.
+- **scope** — what a Dreamer adaptor iterates over (`scopes()`,
+  `key_kind = "scope"`). Today one conversation's `primary_id`. Distinct from
+  *workspace*, which is the other `key_kind`.
+
+**Which key a store uses follows from WHICH SCHEDULER HANDS IT THE KEY, and is
+not a choice:**
+
+| written by | gets handed | keys on | e.g. |
+|---|---|---|---|
+| ingest / tag path | the message that arrived | `(platform, conversation_id)` | `messages`, `standing`, `decision_log` |
+| a Dreamer adaptor | `scopes()` | `primary_id` | `consolidation_watermark` |
+
+Both are correct for their writer. A store that picks the other one matches
+zero rows on the watermark query, so its adaptor is scheduled, raises nothing,
+logs nothing and never runs.
+
+**They are equal today and that is an accident of data, not a licence to pick
+either.** Every live conversation holds exactly one id (measured 2026-09-13),
+so `primary_id` IS the only `conversation_id`. Give any conversation a second
+and they diverge: two `standing` rows and two `decision_log` streams for one
+`scope`, hence one Dreamer pass. **Nothing reports it, because nothing holds
+both keyings and so nothing compares them.**
+
+  The guard that makes it reportable: `load_policy` asserts no
+  `conversation_id` appears in two conversations, so a collision is a startup
+  error rather than a room whose rows are written under another's platform.
+  What a multi-id conversation SHOULD mean for the per-room stores is still
+  undecided, and "undecided" is currently being relied on.
 - **resolve within scope**, never *resolve then filter* — a person in
   `identity.toml` but not in this room is **absent from the index**, so "not
   here" is indistinguishable from "does not exist" (R-21). Filtering afterwards
