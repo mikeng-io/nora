@@ -5,10 +5,12 @@
     "A multi-paragraph message reaches her whole again. Each message is now its own element in the transcript, so a line break inside one is just a line break — it can no longer be mistaken for the start of somebody else's message, and no longer has to be flattened away to be safe. That was the last visible cost of the fix for reading one person's words under another person's name.",
     "A reply now points at the message it answers by its handle instead of quoting the first few characters of it. Unambiguous where the quote sometimes was not, and slightly cheaper.",
     "The eight blocks she is shown — what she remembers about you, what she remembers about the room, the group's open questions, what her own background loop did, her position, the conversation — are all built by one piece of code now instead of eight. They label themselves consistently, appear in a declared order, and the list at the top of her prompt that explains them is generated from the blocks themselves rather than kept in step by hand.",
-    "Nine places that turn records into prompt text now share one renderer. The two protections that matter — escaping, and one message staying on one line where the format needs it — are applied by that renderer and cannot be switched off by any caller."
+    "Nine places that turn records into prompt text now share one renderer, and so do the memory blocks that list one remembered thing per line — a conclusion containing a line break used to arrive as two separate things she remembers. One message stays on one line wherever the format needs it, and no caller can switch that off.",
+    "Two posts to the operator's review channel — the shadow mirror and the relevance-gate verdict — stopped showing `&amp;` in place of `&` and stopped breaking links. They had been running through the prompt renderer, which escapes for XML; they are chat messages, not prompts."
   ],
   "limitations": [
     "The transcript she reads is a different shape than before. Her behaviour on it has not been measured; the change rests on the structure being sound and on every existing test passing, not on an A/B.",
-    "One attribute ordering changed for consistency across blocks. No content moved with it."
+    "One attribute ordering changed for consistency across blocks. No content moved with it.",
+    "Two blocks in the tag prompt, `<replying_to>` and `<tag_message>`, are still built by hand and still carry no `untrusted` marker or framing sentence, unlike every other block around them. Tracked as #239; marking the message she was asked to answer is a change to what she is told, not to how it is assembled, and it is not being made without measurement."
   ]
 }

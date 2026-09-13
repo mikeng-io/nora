@@ -691,7 +691,6 @@ def render_decisions(
     for label, rows in groups:
         lines.extend(decision_line(row, now=now, label=label) for row in rows)
     return ContextBlock(
-        name="loop_decisions", placement="turn", order=50, key="workspace",
-        header=LOOP_DECISIONS_HEADER, note=_note_for(writers),
+        name="loop_decisions", header=LOOP_DECISIONS_HEADER, note=_note_for(writers),
         body="\n".join(lines) if lines else empty,
     )

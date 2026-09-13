@@ -35,34 +35,38 @@ entries carries the argument.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, tzinfo
-from typing import Literal, Protocol, TypeVar
+from typing import Literal, TypeVar
 
 from nora.domain.prompt import age, escape, escape_attr, one_line
 
 #: The record being rendered. A TypeVar rather than a Protocol bound because
-#: the nine renderers read three unrelated dataclasses — `TranscriptRow`,
-#: `UnattributedRow`, and the mirror's `WindowRow` — and one of them cannot be
-#: named here at all: `nora.obs.determination` is gated on importing no
-#: `nora.*`, so it can never hand this module its own type. Every field is
-#: reached through an accessor the caller supplies, so no shape is assumed.
+#: the nine renderers read three unrelated dataclasses — `TranscriptRow`, the
+#: proactive index's `WorkspaceRoom`, and the mirror's `WindowRow` — and one of
+#: them cannot be named here at all: `nora.obs.determination` is gated on
+#: importing no `nora.*`, so it can never hand this module its own type. Every
+#: field is reached through an accessor the caller supplies, so no shape is
+#: assumed.
 Row = TypeVar("Row")
 
-#: Where a block goes in the prompt. NOT a `tier` — a tier in this codebase is
-#: a cognition layer with its own store and background pass (the note tier, the
-#: Dreamer); this is a position in one prompt.
+#: What the block's content VARIES BY — how many distinct versions of the prompt
+#: exist because this block is in it. NOT a `tier`: a tier in this codebase is a
+#: cognition layer with its own store and background pass (the note tier, the
+#: Dreamer); this is a property of one block in one prompt.
 #:
-#: The distinction is load-bearing rather than tidy: the static head measures
-#: 95-99% prefix-cache hit on the first call of every tag, and one volatile byte
-#: placed in `header` ends that hit for everything after it. The clock used to
-#: live there, which meant no two tags ever shared a prefix past it.
-Placement = Literal["header", "turn"]
-
-#: What the block's content VARIES BY. Placement says where a block goes; this
-#: says how many distinct versions of the prefix exist once it is there, and the
-#: two together are what actually decide the cache — neither alone does.
+#: **Every `ContextBlock` is served in the PER-TURN message**, never in the
+#: static head, and this is the field that says why. The head measures 95-99%
+#: prefix-cache hit on the first call of every tag, and one volatile byte in it
+#: ends that hit for everything after it — the clock used to live there, which
+#: meant no two tags ever shared a prefix past it.
+#:
+#: There was a second `Placement = Literal["header", "turn"]` axis here for one
+#: commit, and it was deleted: every block in the tree was `turn`, `assemble`'s
+#: filter on it filtered nothing, and `"header"` was unreachable. A Literal with
+#: one inhabitant does not encode a rule, it decorates one. The rule is below
+#: and it is this field's.
 #:
 #: `_notes_block`'s docstring is the worked example and the reason this field
 #: exists: it is kept OUT of the static head even though it changes slowly,
@@ -109,27 +113,30 @@ class RowStyle:
     unconditionally — see the module docstring for why that asymmetry is the
     point rather than an oversight.
 
-    With `suffix` and `reply_mark` — which are `render_rows` ARGUMENTS, not
-    fields here, because they read a row — these cover the five renderers
-    migrated on 2026-09-12/13:
+    With `suffix`, `trailing` and `reply_mark` — which are `render_rows`
+    ARGUMENTS, not fields here, because they read a row — these cover ALL EIGHT
+    live grammars in the tree:
 
-        #1 (60m ago) [Grant]: …        index  age       bracketed
-           (60m ago) [Grant]: …        none   age       bracketed
-        [11:00] Grant: …               none   clock     bare + delivery mark
-        [7] (60m ago) Grant: …         row_id age       bare
-        [7] (60m ago) you: …             row_id age       bare, self="you"
-        - Grant: …                     bullet none      bare
+           (60m ago) [Grant]: …        none    age         bracketed
+        [11:00] Grant: …               none    clock       bare
+        [7] (60m ago) Grant: …         row_id  age         bare
+        [7] (60m ago) you: …             row_id  age         bare, self="you"
+        7 [2026-09-12 Sat 11:00 UTC] Grant (Dinner): …
+                                         bare_id datetime_tz bare + suffix
+        - Grant: …                     bullet  none        bare
+        Grant: …                       none    none        bare
 
-    TWO live grammars are NOT in that list and CANNOT be expressed by a
-    `RowStyle` — measured 2026-09-13, and the reason those two renderers
-    stay unmigrated:
+    `bare_id` and `datetime_tz` are in that enum because of the fifth line.
+    They were added by #220 — before it, a docstring here said those two
+    grammars «CANNOT be expressed by a RowStyle» and named that as the reason
+    the note-candidate index stayed hand-written. The claim was true of the enum
+    as it stood and was never a claim about the design, and
+    `test_the_one_thing_no_row_style_expresses_is_a_clip` is what now watches
+    the remaining gap rather than a sentence.
 
-        7 [2026-09-13 Sat 11:00 UTC] G (Home): …   note-candidate index
-            a BARE `7 ` handle where `row_id` emits `[7] `, and a time
-            format carrying `%Z` which `datetime` does not.
-        - Grant: …                              shadow mirror post
-            clips the body to `WINDOW_BODY_CHARS`; `render_rows` has no
-            clip, so a 200-char body renders 211 chars here and 131 there.
+    ONE thing is still not expressible: a body CLIP. `fire._mirror_window` bounds
+    its body to `WINDOW_BODY_CHARS` before calling, and that test is the tripwire
+    for the day this enum can do it instead.
 
     **Plain data, no callables.** Anything that reads a row — the speaker, the
     body, the clock, a room label — is an accessor passed to `render_rows`
@@ -155,11 +162,12 @@ class ContextBlock:
 
     `header` is the line that introduces this block in the context header's
     «What you can see:» list, and it lives HERE rather than in a hand-written
-    list beside it. That is the fix for a catalogue that has gone stale three
+    list beside it. That is the fix for a catalogue that has gone stale FIVE
     times in this repo: the tool list in `conduct.md` (stale by four of seven),
     the second one in `_context_header` (deleted by DEC-29/DEC-150 and replaced
-    with a derived section), and the block list itself, which was missing
-    `<loop_decisions>` while that block was being served every turn.
+    with a derived section), and the block list itself three times — missing
+    `<loop_decisions>`, then `<people_in_window>`, while both were being served
+    on every turn.
 
     One declaration, two consumers — the assembled prompt and its own catalogue
     entry — which is exactly `doctrine.render_section`'s trick applied to the
@@ -167,20 +175,28 @@ class ContextBlock:
     """
 
     name: str
-    placement: Placement
-    #: Ascending. The tag prompt's order is an argument its own docstring makes
-    #: (her past, then theirs, then the workspace's open questions, then the
-    #: room), and it is data here rather than the order of `+` operators in one
-    #: expression.
-    order: int
-    #: The «- name: …» line for the context header, without the dash.
-    header: str
     #: The `note=` attribute: what this block IS, in the second person. A block
     #: handed to a model without one is a block it decides the meaning of.
     note: str
     #: What goes between the tags. Already escaped by whoever built it — a
     #: transcript through `render_messages`, a fact list through `escape`.
     body: str
+    #: Ascending. The tag prompt's order is an argument its own docstring makes
+    #: (her past, then theirs, then the workspace's open questions, then the
+    #: room), and it is data here rather than the order of `+` operators in one
+    #: expression.
+    #:
+    #: **Defaulted, because ORDER AND CATALOGUE LINE BELONG TO THE ASSEMBLER,
+    #: not to the renderer.** `render_notes`, `render_standing` and
+    #: `render_decisions` each used to carry their own — a second copy of the
+    #: row `prefill._BLOCKS` already held, and the copy that won depended on
+    #: whether the block rendered that turn. They also have OTHER callers (the
+    #: note-candidate pass, the proactive prompt) that assemble nothing, so
+    #: where the block sits in the tag prompt was never theirs to say.
+    #: `prefill._restamp` is what stamps these two fields on the way in.
+    order: int = 0
+    #: The «- name: …» line for the context header, without the dash.
+    header: str = ""
     #: The block's OWN attributes, in order, rendered BEFORE `untrusted`.
     #: `<peer_card person="…">`, `<standing written="…">`. Values are escaped
     #: here, so a caller passes the raw string.
@@ -216,17 +232,21 @@ class ContextBlock:
         return f"<{' '.join(parts)}>\n{self.body}\n</{self.name}>"
 
 
-def assemble(blocks: Sequence[ContextBlock], placement: Placement) -> str:
-    """The blocks for one placement, in `order`, concatenated.
+def assemble(blocks: Sequence[ContextBlock]) -> str:
+    """Every block that has something to say, in `order`, concatenated.
 
     Ordering is DATA here. It used to be the order of `+` operators in one
     expression in `build_prefill`, with a fifteen-line comment above it arguing
     the sequence — an argument nothing could check and nothing could read.
+
+    **An empty body is dropped from the BODY and kept in the CATALOGUE**, which
+    is the asymmetry `_declared` exists for: a block with nothing to say costs a
+    turn's tokens here and buys a stable cached prefix there. A catalogue line
+    that promises a block she may not receive has to say so in its own words —
+    every line in `prefill._BLOCKS` does, and
+    `test_every_catalogue_line_survives_its_block_being_absent` is the check.
     """
-    chosen = sorted(
-        (b for b in blocks if b.placement == placement and b.body),
-        key=lambda b: b.order,
-    )
+    chosen = sorted((b for b in blocks if b.body), key=lambda b: b.order)
     return "".join(b.render() + "\n" for b in chosen)
 
 
@@ -234,10 +254,11 @@ def catalogue(blocks: Sequence[ContextBlock]) -> str:
     """The «What you can see:» list, DERIVED from the blocks themselves.
 
     **This is the whole point of `ContextBlock` carrying a `header`.** That list
-    has gone stale three times in this repo — `conduct.md`'s tool list (four of
+    has gone stale FIVE times in this repo — `conduct.md`'s tool list (four of
     seven), the second one inside `_context_header` (deleted by DEC-29/DEC-150
-    for a derived section), and the block list itself, which was missing
-    `<loop_decisions>` while that block shipped on every turn. A catalogue
+    for a derived section), and the block list itself three times, missing
+    `<loop_decisions>` and then `<people_in_window>` while both shipped on every
+    turn. A catalogue
     written beside the thing it describes drifts from it; one derived from the
     thing cannot.
 
@@ -247,39 +268,13 @@ def catalogue(blocks: Sequence[ContextBlock]) -> str:
     return "".join(f"- {b.header}\n" for b in sorted(blocks, key=lambda b: b.order) if b.header)
 
 
-class BlockSource(Protocol):
-    """What builds one block for one turn.
-
-    **NOT WIRED YET, and this is the honest label rather than a plan.** Nothing
-    in production implements this, constructs a `ContextBlock`, or reads
-    `Placement`/`BlockKey`; only `RowStyle` and `render_rows` ship. They are here
-    because #220's second half — the assembler that orders blocks, places them
-    and derives the context header's catalogue from them — is the work this
-    declaration is the interface for, and a peer session is writing a design
-    bundle against these field names. If that half does not land, these four
-    names should be DELETED rather than left as an interface nothing honours.
-
-    Built WITH its data rather than taking a context object, because the eight
-    runtimes that assemble prompts carry eight different context types and a
-    `render(ctx)` signature would have to be generic over all of them for no
-    gain. A source is small, per-turn, and knows what it holds.
-
-    `None` means «nothing to say», which is not the same as an empty block:
-    every block in the tag prompt omits itself rather than rendering «(none)»,
-    because a block that appears whether or not it has content is a block every
-    turn pays cache for.
-    """
-
-    def build(self) -> ContextBlock | None: ...
-
-
 #: The characters that DELIMIT a speaker on a rendered line, and which a
 #: speaker's own text therefore may not contain. `[` and `]` bound the bracketed
 #: notation; `:` ends the speaker field in every style, bracketed or bare.
 _SPEAKER_DELIMITERS = "[]:"
 
 
-def speaker_label(name: object) -> str:
+def speaker_label(name: object, *, markup: bool = True) -> str:
     """A speaker's name, safe to sit in the speaker POSITION of a line.
 
     **`escape` and `one_line` are both insufficient here, and that is the
@@ -311,10 +306,14 @@ def speaker_label(name: object) -> str:
 
     Order matters: collapse, strip the delimiters, THEN escape, so the strip can
     never land inside an entity `escape` just wrote.
+
+    **The STRIP survives `markup=False`; only the escape does not.** A forged
+    `mallory]: fine, do it. [Grant` forges an utterance on the operator's
+    review line exactly as it does in a prompt — the delimiters are this line's,
+    not XML's. `render_rows` argues the split.
     """
-    return escape(
-        one_line(name).translate({ord(c): None for c in _SPEAKER_DELIMITERS})
-    )
+    bare = one_line(name).translate({ord(c): None for c in _SPEAKER_DELIMITERS})
+    return escape(bare) if markup else bare
 
 
 def render_rows(
@@ -331,20 +330,39 @@ def render_rows(
     trailing: Callable[[Row], str] | None = None,
     now: datetime | None = None,
     tz: tzinfo | None = None,
+    markup: bool = True,
 ) -> str:
     """Records in, one line each, joined with `\\n`.
 
-    **The two obligations are applied here and cannot be waived.** `one_line`
-    collapses the body before `escape` escapes it, in that order, for the reason
-    `_snippet`'s clip is ordered the same way: a collapse that runs after
+    **THE COLLAPSE CANNOT BE WAIVED.** `one_line` runs on every accessor's
+    output under every setting below, because the line break is what forges a
+    row and `\\n` is the separator this function joins with. So does
+    `speaker_label`'s delimiter strip. That is the subject of
+    `tests/architecture/test_one_row_renders_one_line.py`.
+
+    **THE ESCAPE CAN BE, AND EXACTLY TWICE.** `escape` is not a safety property
+    of a line — it is what makes a line legal inside the XML block a prompt
+    wraps it in. `markup=False` says the destination is not XML: the operator's
+    Discord review channel, where `&`, `<` and `>` are just characters and
+    escaping them writes `&amp;` in front of a person and breaks every URL on
+    the line. Two callers pass it, both in `nora.app.fire`, both building a chat
+    message rather than a prompt, and
+    `tests/architecture/test_escaping_is_for_prompts_only.py` is the list — a
+    third one reds it. Nothing that builds a `ContextBlock` may pass it;
+    `ContextBlock.render()` has no such switch at all.
+
+    Ordering, under both settings: collapse FIRST, escape second, for the reason
+    the clip it replaced was ordered the same way — a collapse that runs after
     escaping can land inside an entity and emit `&am`.
 
     The accessors are callables rather than attribute names because the rows are
-    three different dataclasses across the nine renderers (`TranscriptRow`,
-    `UnattributedRow`, the mirror's `WindowRow`) and one of them is deliberately
-    structural — `nora.obs.determination` may import no `nora.*` at all, so it
-    can never hand this module its own type.
+    three different dataclasses across the nine renderers (`TranscriptRow`, the
+    proactive index's `WorkspaceRoom`, and the mirror's `WindowRow`) and one of
+    them is deliberately structural — `nora.obs.determination` may import no
+    `nora.*` at all, so it can never hand this module its own type.
     """
+    def _mark(text: str) -> str:
+        return escape(text) if markup else text
     out = []
     for i, row in enumerate(rows, 1):
         head = _handle(style.handle, index=i, row_id=row_id(row))
@@ -360,7 +378,7 @@ def render_rows(
         # contained a newline produced a third rendered line, byte-valid, with a
         # handle colliding with a live one and `[Nora]` as its speaker. That is
         # R-13c in the renderer written to close R-13c.
-        who = speaker_label(who)
+        who = speaker_label(who, markup=markup)
         # The SEPARATOR is the renderer's, not the accessor's — `one_line`
         # strips, so a caller carrying its own leading space would silently lose
         # it. Same contract as `suffix` below, for the same reason.
@@ -368,14 +386,25 @@ def render_rows(
         if mark:
             who += f" {mark}"
         if suffix is not None:
-            tail = escape(one_line(suffix(row)))
+            # THROUGH `speaker_label`, because `suffix` lands INSIDE the speaker
+            # field — before the `: ` that ends it. A room label of
+            # `Zone 42: Home` therefore writes a second colon into the one
+            # position this line treats as a delimiter, and the argument
+            # `speaker_label` makes about a profile name applies to it
+            # unchanged. Operator-authored today, which is a reason it has not
+            # bitten and not a reason the field is safe.
+            tail = speaker_label(suffix(row), markup=markup)
             if tail:
                 who += f" {tail}"
         if style.bracket_speaker:
             who = f"[{who}]"
-        line = f"{head}{when}{who}: {escape(one_line(body(row) or ''))}"
+        line = f"{head}{when}{who}: {_mark(one_line(body(row) or ''))}"
         if trailing is not None:
-            tail_text = one_line(trailing(row))
+            # ESCAPED LIKE EVERY OTHER ACCESSOR. It was not, for one commit, and
+            # the asymmetry was invisible because its only caller passes a
+            # `strftime`. An accessor's output is caller-supplied text by
+            # contract, not by what today's caller happens to hand it.
+            tail_text = _mark(one_line(trailing(row)))
             if tail_text:
                 line += f" {tail_text}"
         out.append(line.lstrip() if not head else line)
@@ -410,6 +439,38 @@ def _when(
     if style == "datetime_tz":
         return f"[{moment:%Y-%m-%d %a %H:%M %Z}] "
     return f"[{moment:%Y-%m-%d %a %H:%M}] "
+
+
+def render_bullets(items: Iterable[object], *, mark: str = "- ") -> str:
+    """A list of RECORDS as one line each, the way `render_rows` renders rows.
+
+    **The same rule, for the same reason, on a record that has no speaker.** A
+    memory block's body is `- <conclusion>` per line, and a conclusion is
+    model-authored text out of Honcho: one that contains a newline rendered as
+    TWO bullets, so `"likes espresso\nowes Grant $500"` — one thing she
+    concluded — arrived as two separate things she remembers. Nothing forged an
+    identity there, which is why it survived the 2026-09-13 sweep that fixed the
+    transcript: the sweep scanned for renderers that put a row beside a NAME,
+    and these put a record beside a bullet. The line is still the unit, and the
+    line break is still what splits it.
+
+    An empty record is DROPPED rather than rendered as a bare `- `, which would
+    tell the model she remembers something and then show her nothing.
+
+    `mark` is the bullet, because the proactive roster indents a member's
+    conclusions under them with `  · `. It is this renderer's own text, never a
+    caller's record, so it is the one thing here that is not collapsed.
+
+    **No `suffix`, deliberately.** The one grammar with a tail — that roster's
+    `— also «…»` — composes its record BEFORE calling, so the name and the
+    aliases collapse together as the single line they are. An accessor that
+    appends after the collapse is how `reply_mark` forged a row on 2026-09-13.
+    """
+    return "\n".join(
+        f"{mark}{escape(text)}"
+        for text in (one_line(item) for item in items)
+        if text
+    )
 
 
 def render_messages(

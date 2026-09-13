@@ -2,7 +2,12 @@ import inspect
 import re
 from datetime import UTC, datetime
 
-from nora.agent.prefill import build_prefill, build_tag_message, escape
+from nora.agent.prefill import (
+    _BLOCKS,
+    build_prefill,
+    build_tag_message,
+    escape,
+)
 from nora.domain.decision_log import DecisionRow
 from nora.domain.models import (
     DeliveryStatus,
@@ -141,12 +146,12 @@ def test_transcript_is_wrapped_and_labelled_untrusted():
 # the list: the assertions below run over whatever is actually served, and the
 # floor is only there to catch a render that silently stops producing blocks,
 # which would turn every "for name in ..." assertion green by emptiness.
-# Issue #220 folds this into the injector, which is what removes the
-# enumeration problem instead of adding a fifth list.
-_DECLARED_BLOCKS = (
-    "group_transcript", "self_card", "peer_card", "peer_history", "notes",
-    "standing", "loop_decisions",
-)
+#
+# It reads `_BLOCKS` rather than naming the blocks, because a hand-typed floor
+# is the enumeration problem one layer down and it had already gone stale: it
+# was still missing `people_in_window` in the commit that fixed that block's
+# missing catalogue entry.
+_DECLARED_BLOCKS = tuple(name for name, *_ in _BLOCKS)
 
 
 def _served_blocks(body: str) -> tuple[str, ...]:
@@ -797,6 +802,60 @@ def test_the_header_names_no_tool_at_all():
         )
 
 
+def test_every_catalogue_line_survives_its_block_being_absent():
+    """R-27 on the catalogue: a line that talks about ABSENCE may not describe
+    it as a finished negative result.
+
+    `assemble` drops a block with an empty body, and the catalogue is in the
+    cached head either way — so every line in `_BLOCKS` is read on turns where
+    its block is not there. That is fine when the line says what absence means;
+    it is a LIE when the line says «Absent means you have nothing on them» and
+    the turn in question never looked. `<people_in_window>` shipped exactly that
+    for one commit: the tag path cannot populate it at all (only the
+    participation occasion reads it), so on every tag turn the model was told a
+    lookup had come back empty when no lookup had been attempted. An
+    un-attempted read rendering as a negative result is the ERROR-as-PASS
+    AGENTS.md names, inside a prompt.
+
+    So: a line MAY stay silent about absence, and a line that mentions it MUST
+    carry the hedge. The hedge is the whole content of the rule, which is why it
+    is spelled out here rather than left to whoever writes the ninth block.
+    """
+    hedges = (
+        "the read failed", "did not come back", "never that", "never look",
+        "it can also mean",
+    )
+    for name, _order, _key, header in _BLOCKS:
+        line = header.format(context_window=40)
+        if "bsent" not in line and "No block" not in line:
+            continue
+        assert any(h in line for h in hedges), (
+            f"the catalogue line for <{name}> tells her what an ABSENT block "
+            "means without saying that the read may simply not have happened. "
+            "A turn that never looked must not read as a turn that looked and "
+            f"found nothing (R-27). Add one of {hedges}:\n  {line}"
+        )
+
+
+def test_no_block_in_this_table_belongs_in_the_cached_head():
+    """`BlockKey`'s rule, asserted rather than argued: anything keyed narrower
+    than `global` is served per turn.
+
+    Every `ContextBlock` is in the volatile message today, so what this catches
+    is a future `global` key — a block declaring that it is the same for
+    everybody, which is the one shape that would be cheaper in the static head
+    and is therefore the one somebody will try to move there. The move itself is
+    fine; doing it while the block is still keyed `room` fragments a 13-17k
+    prefix that measures 95-99% hit, permanently and across every room.
+    """
+    misplaced = [name for name, _o, key, _h in _BLOCKS if key == "global"]
+    assert not misplaced, (
+        f"{misplaced} are keyed `global` but served in the per-turn message. A "
+        "block that is identical for everybody belongs in `_context_header`, "
+        "the cached prefix — move it there or key it by what it varies by."
+    )
+
+
 def test_the_header_explains_the_situation_not_just_the_notation():
     """Doctrine says who she IS; this says how she is being RUN. Without a
     situational model a model invents one."""
@@ -806,7 +865,7 @@ def test_the_header_explains_the_situation_not_just_the_notation():
     # The catalogue is DERIVED now, so the header only carries the block list
     # when it is handed one — which is what `build_prefill` does.
     blocks = [
-        ContextBlock(name=n, placement="turn", order=o, key=k,  # type: ignore[arg-type]
+        ContextBlock(name=n, order=o, key=k,
                      header=h.format(context_window=40), note="", body="")
         for n, o, k, h in _BLOCKS
     ]

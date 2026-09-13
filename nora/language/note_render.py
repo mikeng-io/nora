@@ -97,8 +97,7 @@ def render_notes(
         return None
 
     return ContextBlock(
-        name="notes", placement="turn", order=40, key="workspace",
-        header=NOTES_HEADER, note=NOTES_BLOCK_NOTE,
+        name="notes", header=NOTES_HEADER, note=NOTES_BLOCK_NOTE,
         body="\n".join(_render_entry(n, today=today) for n in standing),
     )
 

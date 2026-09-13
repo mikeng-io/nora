@@ -289,10 +289,18 @@ A capability claim in an authored file now **fails to load**.
   data and is built per turn. Not called a *data block* — "block" already means
   the data one throughout this file and the code (`_notes_block`,
   `_peer_card_block`), and the pairing with `section` carries the rest.
-- **block source** — the thing that builds one block. `ContextBlock` is the
-  rendered result; `BlockSource` is what produces it. The transcript is the
-  first, and every other renderer becomes a configuration of it rather than a
-  new function (#220).
+- **block source** — the function that builds one block: `_peer_card_block`,
+  `render_notes`, `render_standing`. `ContextBlock` is what one returns, and
+  `ContextBlock.render()` is how it becomes text. There is no `BlockSource`
+  Protocol — one was declared ahead of #220 and deleted when the assembler
+  landed without needing it; a source is an ordinary function, and the table
+  that places it (`prefill._BLOCKS`) is the interface.
+- **row renderer** — a configuration of `render_rows`: one record in, one line
+  out, with a **row style** saying which line grammar. Eight of them exist and
+  all eight go through it (#220). The `<group_transcript>` transcript is NOT
+  one — it is the one block that gave up lines entirely, and `render_messages`
+  is its renderer: one `<m>` element per message, so a body keeps its line
+  breaks and the element boundary, not the newline, is the separator.
 - **row style** — the parameters for turning one record into one line: whether
   it carries a handle, which time format, whether the speaker is bracketed,
   and what her own rows are called. Four fields, all of them plain data;

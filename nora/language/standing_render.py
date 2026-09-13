@@ -91,8 +91,7 @@ def render_standing(
         return None
     written = _age(standing.updated_at, now or datetime.now().astimezone())
     return ContextBlock(
-        name="standing", placement="turn", order=60, key="room",
-        header=STANDING_HEADER, note=STANDING_BLOCK_NOTE,
+        name="standing", header=STANDING_HEADER, note=STANDING_BLOCK_NOTE,
         attrs=(("written", written),),
         body=escape(standing.body),
     )

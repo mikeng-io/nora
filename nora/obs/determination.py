@@ -40,7 +40,13 @@ imports empty is what lets it be lifted out whole.
 module RENDERS no window of its own. `render_mirror` takes the window already
 rendered — `nora.app.fire._mirror_window` builds it through the shared
 `render_rows`, because that file may import `nora.domain` freely and this one
-may not. A private copy of the collapse here is what that avoids.
+may not. A private copy of the LINE FORMAT here is what that avoids.
+
+The COLLAPSE is a different question and stays here, in `window_from` and
+`_one_line` below. `WindowRow.body` promises one line to everything that reads
+it, and the log sink (`as_content`) reads it without ever passing through
+`fire`, so the promise has to be kept at the constructor. `_one_line`'s own
+docstring argues why that is not a duplicated policy.
 """
 
 from __future__ import annotations
@@ -123,12 +129,20 @@ class Determination:
         return "declined"
 
 
-def render_mirror(d: Determination, *, window: str = "") -> str:
+def render_mirror(d: Determination, *, window: str) -> str:
     """The shadow mirror post (§10.6): the source room, the verdict, the text
     and the window that closed.
 
     Byte-identical to the `_mirror_text` this replaced. `tests/unit/
     test_fire_path.py`'s shadow suite reads these strings.
+
+    **`window` is REQUIRED, with no default**, and that is the whole of its
+    safety. It carries the rows this module is forbidden to render itself (see
+    the module docstring), so a default of `""` would mean a caller that forgot
+    the argument posted a mirror with the window silently missing — the section
+    an operator reads to see WHAT she read, absent and indistinguishable from a
+    turn where the window was genuinely empty. An empty string still renders
+    nothing; the difference is that somebody had to say so.
     """
     lines = [f"[shadow] {d.platform}/{d.conversation_id}"]
     if d.verdict == "spoke":

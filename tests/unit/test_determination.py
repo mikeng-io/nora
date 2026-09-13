@@ -96,7 +96,7 @@ def test_the_mirror_names_shadow_as_the_holder_not_the_cooldown() -> None:
         verdict="silent", texts=("I would have said this",),
         held=True, shadow_hold=True, window=(),
     )
-    assert render_mirror(d) == (
+    assert render_mirror(d, window="") == (
         "[shadow] signal/room-1\n"
         "verdict: SILENT — she concluded speak; SHADOW MODE held it "
         "(the room hears nothing until the flip). She would have said:\n"
@@ -109,8 +109,8 @@ def test_the_mirror_names_the_cooldown_when_shadow_is_not_the_holder() -> None:
         verdict="silent", texts=("held back",),
         held=True, shadow_hold=False, window=(),
     )
-    assert "the send cooldown held it. She would have said:" in render_mirror(d)
-    assert "SHADOW MODE" not in render_mirror(d)
+    assert "the send cooldown held it. She would have said:" in render_mirror(d, window="")
+    assert "SHADOW MODE" not in render_mirror(d, window="")
 
 
 def test_the_mirror_calls_a_decline_draft_her_reasoning() -> None:
@@ -118,7 +118,7 @@ def test_the_mirror_calls_a_decline_draft_her_reasoning() -> None:
         verdict="silent", texts=("they are only joking around",),
         held=False, stop_reason="no_send_call", window=(),
     )
-    assert render_mirror(d) == (
+    assert render_mirror(d, window="") == (
         "[shadow] signal/room-1\n"
         "verdict: SILENT — she declined the floor.\n"
         "her draft (never sent; doubles as her reasoning):\n"
@@ -131,17 +131,26 @@ def test_a_decline_with_no_draft_omits_the_draft_header() -> None:
     """She had nothing to say and she wrote nothing: the header would promise
     a draft that is not there."""
     d = _determination(verdict="silent", texts=(), held=False, window=())
-    assert render_mirror(d) == (
+    assert render_mirror(d, window="") == (
         "[shadow] signal/room-1\nverdict: SILENT — she declined the floor."
     )
 
 
-def test_the_mirror_renders_an_unmapped_sender_and_an_empty_body() -> None:
-    """`TranscriptRow.sender_name` and `.body` are both `str | None`. The
-    rendering has always printed the name as-is and an absent body as empty;
-    a crash here would take out the review surface for the whole room."""
-    d = _determination(verdict="silent", texts=(), window=(WindowRow(None, None),))
-    assert render_mirror(d, window="- None: ").endswith("- None: ")
+def test_the_mirror_appends_the_window_it_was_handed_under_a_header() -> None:
+    """What `render_mirror` itself decides about the window: whether to print
+    the header at all, and where the block goes.
+
+    Deliberately NOT an assertion that some string comes back — handing this
+    function a window and asserting the same window is in the output is a
+    test that passes with `render_mirror` deleted. What is asserted is the
+    part this function OWNS: an empty window drops the header, a non-empty one
+    adds it, and the window lands last. The rows themselves belong to
+    `fire._mirror_window` and are tested there, on the real row type.
+    """
+    d = _determination(verdict="silent", texts=("no",), held=False, window=())
+    assert "window that closed:" not in render_mirror(d, window="")
+    out = render_mirror(d, window="- alice: hi\n- bob: yo")
+    assert out.endswith("window that closed:\n- alice: hi\n- bob: yo")
 
 
 # ------------------------------------------------------------- the two sinks

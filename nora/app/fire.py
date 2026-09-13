@@ -645,13 +645,25 @@ def _mirror_window(d: Determination) -> str:
 
     That module is gated on importing no `nora.*` at all
     (`test_the_module_imports_nothing_from_nora`), so it cannot reach the shared
-    renderer — and a private copy of the collapse there is exactly the shape
+    renderer — and a private copy of the line format there is exactly the shape
     #220 exists to end. Its ONE consumer is this file, which can import
     `nora.domain.blocks` freely, so the render moves to the caller and the
-    constraint holds without a second implementation.
+    constraint holds without a second implementation. (The COLLAPSE stays in
+    that module, in `window_from`, because `WindowRow.body` promises one line to
+    everything that reads it — the log record included, which never comes
+    through here.)
 
-    `WINDOW_BODY_CHARS` is still the bound, applied before the renderer so the
-    clip measures collapsed text rather than raw.
+    **`markup=False`: this is a Discord message, not a prompt.** An operator
+    reads these verdicts in a review channel, so `a < b && c` has to arrive as
+    `a < b && c` and a link has to stay clickable. Escaping it wrote `&amp;` in
+    front of a person and broke every URL on the line, for one commit, because
+    the renderer it moved to is a PROMPT renderer by default.
+
+    **`WINDOW_BODY_CHARS` is applied to text `window_from` has already
+    collapsed**, so the bound counts characters the reviewer will see. It is
+    applied BEFORE the renderer, and with `markup=False` that is now the same
+    count either way — under `markup=True` a clip at 120 could still have grown
+    to 600 when escaping expanded 120 `&` into `&amp;`.
     """
     if not d.window:
         return ""
@@ -659,6 +671,7 @@ def _mirror_window(d: Determination) -> str:
         d.window, style=_MIRROR_STYLE,
         speaker=lambda r: r.sender_name or "",
         body=lambda r: (r.body or "")[:WINDOW_BODY_CHARS],
+        markup=False,
     )
 
 
@@ -2374,12 +2387,19 @@ class FirePath:
                 # into a delivered message: R-18 then refused the whole post at
                 # the Deliverer, so unmapped senders' GO verdicts silently
                 # never reached the review channel.
+                #
+                # `markup=False` for `_mirror_window`'s reason: this string is
+                # posted to the operator's review channel, where an escaped
+                # `&` is noise and an escaped URL is a dead link. The COLLAPSE
+                # and the speaker-delimiter strip both still apply — they are
+                # what keeps the column one row per line and one name per row.
                 last = render_rows(
                     [row], style=_VERDICT_STYLE,
                     speaker=lambda r: (
                         r.person_name or r.sender_name or "unknown"
                     ),
                     body=lambda r: r.body,
+                    markup=False,
                 )
                 break
             else:

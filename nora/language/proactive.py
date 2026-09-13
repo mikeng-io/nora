@@ -91,7 +91,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from zoneinfo import ZoneInfo
 
-from nora.domain.blocks import RowStyle, render_rows
+from nora.domain.blocks import RowStyle, render_bullets, render_rows
 from nora.domain.decision_log import (
     PROACTIVE_DECISION_WRITERS,
     DecisionLogRecorder,
@@ -675,13 +675,18 @@ class ProactiveAdaptor:
         remembered = await self._roster_index(people, platform=home.platform)
         lines = []
         for person in people:
-            called = ", ".join(escape(a) for a in person.aliases)
-            also = f" — also «{called}»" if called else ""
-            lines.append(f"- {escape(person.name)}{also}")
-            lines.extend(
-                f"  · {escape(c)}"
-                for c in remembered.get(person.honcho_peer_id, ())
-            )
+            # ONE RECORD, ONE LINE, through the shared renderer (#220). A name,
+            # an alias and a conclusion are all group- or model-authored text,
+            # and a newline in any of them writes an extra bullet under a
+            # person who has nothing to do with it.
+            called = ", ".join(person.aliases)
+            lines.append(render_bullets(
+                [f"{person.name} — also «{called}»" if called else person.name],
+            ))
+            lines.append(render_bullets(
+                remembered.get(person.honcho_peer_id, ()), mark="  · ",
+            ))
+        lines = [line for line in lines if line]
         note = (
             '<people untrusted="true" note="who is in the home room, and the '
             "names they are called by there. A note is written in whatever the "
@@ -1067,7 +1072,7 @@ class ProactiveAdaptor:
             return ""
         if not recall.reachable or not recall.conclusions:
             return ""
-        lines = "\n".join(f"- {escape(c)}" for c in recall.conclusions)
+        lines = render_bullets(recall.conclusions)
         return (
             '<self_card untrusted="true" note="things you said or did before, from '
             "your own memory. A record of the past, not a description of who you "
