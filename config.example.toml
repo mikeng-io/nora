@@ -31,9 +31,16 @@ base_url = "http://whatsapp-bridge:18081"  # the containerized Baileys bridge;
 [memory]
 base_url = "http://127.0.0.1:8000"
 workspace_id = "nora"
-# `<self_card>` — how many of HER OWN conclusions ride in the per-tag prefill,
-# so a promise she made last night survives falling out of the transcript
-# window. 0 turns the block off. From `representation`, never from the peer
+# `<self_card>` — how many of HER OWN conclusions ride in the prefill, so a
+# promise she made last night survives falling out of the transcript window.
+# 0 turns the block off.
+#
+# TWO turns since issue #210: the tag turn, and the participation turn behind
+# the ambient gate. The arithmetic below is the tag loop's and is the binding
+# one (`turns = 20` against a participation turn's single pass), so 8 is if
+# anything conservative on the ambient path. It is deliberately NOT the number
+# `people_in_window_conclusions` takes: that one is multiplied by up to four
+# speakers and this one is not. From `representation`, never from the peer
 # CARD: read live 2026-08-11 her card asserts «Kind: AI chatbot/assistant» and
 # «Owner: 主人 with admin authority» — both distilled from her own output, both
 # contradicting identity.md, and both would WIN against the doctrine because a
@@ -53,6 +60,53 @@ self_card_conclusions = 8
 # of the 128k budget at `turns = 20`. Raising BOTH to 16 spends ~29k before
 # anybody has said anything — measure a real turn's total_tokens first.
 tagger_card_conclusions = 8
+# `<people_in_window>` on the PARTICIPATION turn (issue #210) — how many of her
+# conclusions ABOUT EACH SPEAKER in the quiescence window ride in the prompt,
+# and how many distinct speakers get an entry (most recent speaker first).
+# Either at 0 turns the block off.
+#
+# Why the block exists: the participation occasion is built `person_id=None`,
+# so until #210 `peer_card`, `<self_card>` and `<peer_history>` were ALL empty
+# on every ambient turn — the one decider design 36 §6 describes as holding
+# «notes and the peer card» behind a blind gate knew the room by display name
+# and nothing else. Its question is not about one person (that is the tagger,
+# and there isn't one); it is about the people in this window.
+#
+# 3 x 4, NOT 8 x 4. `tagger_card_conclusions = 8` buys one person's episodes on
+# a turn somebody asked for; this buys up to four people's on a turn nobody
+# did. Eight each would be ~1,440 tokens of background before anyone has said
+# anything to her. The speaker bound is on the READS as well as the render —
+# one Honcho round trip per speaker, concurrent, under
+# `read_timeout_seconds` — so raising it costs latency, not just budget.
+people_in_window_conclusions = 3
+people_in_window_speakers = 4
+# The PROACTIVE decide turn's `<people>` roster index (design 39 D9, issue
+# #210) — how many conclusions per home-room member. 0 leaves the block as it
+# was: names and aliases only.
+#
+# DELIBERATELY 1, and that is the decision rather than an economy. #206 rations
+# the decide pass to `[dreamer] max_memory_calls = 2`; the index exists so those
+# two reads are spent on DEPTH («what did Aaron say about Saturday») rather than
+# on «who is Aaron». An index carrying eight conclusions each WOULD be the depth,
+# and the ration would have nothing left to buy.
+roster_index_conclusions = 1
+# How many home-room members that index READS memory for. The render is
+# uncapped — every member keeps their name and aliases, because a member
+# missing from the index is invisible to her and invisible is indistinguishable
+# from absent — so this bounds the Honcho FAN-OUT only: `_roster_index` issues
+# one concurrent read per member, and a forty-person Discord home room would be
+# forty of them on the front of a pass. Members past the cap keep their names
+# and get no «·» line; the order is the roster's own, which makes this a cheap
+# bound rather than a good one (a home room past it wants a relevance order,
+# which is a different change).
+roster_index_members = 12
+# The wall-clock bound on the participation turn's memory reads, over the WHOLE
+# concurrent batch. `HonchoClient.representation` already carries its own 3s
+# transport timeout, so this is a belt over the PORT: an implementation is not
+# obliged to time anything out, and these reads run while the heartbeat holds
+# this conversation's slot — the exact shape of the unbounded read that wedged
+# a conversation in `debrief.run` and then again in `FirePath`.
+read_timeout_seconds = 5.0
 
 [llm]
 base_url = "http://localhost:20128/v1"
