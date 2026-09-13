@@ -43,7 +43,17 @@ ROOT = Path(__file__).resolve().parents[2]
 #: imports it as `_one_line` because its call sites and its two tests read that
 #: name, and `nora.agent.prefill` does the same for `age`; a gate that only knew
 #: the public spelling would read that module as un-collapsed.
-_COLLAPSERS = {"one_line", "_one_line", "_snippet", "render_rows"}
+_DIRECT_COLLAPSERS = {"one_line", "_one_line"}
+
+#: `render_rows` reaches the collapse for its caller, so a renderer that goes
+#: through it has not forgotten. Kept apart from the direct names above because
+#: the tripwire at the bottom of this file has to be able to tell "migrated"
+#: from "still collapsing by hand", and one set cannot answer both questions.
+#:
+#: `_snippet` used to be in here and was deleted with the function (#220). A
+#: name in this set that no longer exists does not fail anything — it quietly
+#: whitelists the NEXT function anybody gives that name.
+_COLLAPSERS = _DIRECT_COLLAPSERS | {"render_rows"}
 
 #: `render_rows` is in that set because it IS the collapse now (#220): it
 #: applies `one_line` to every row unconditionally and there is no `RowStyle`
@@ -93,16 +103,6 @@ _NOT_A_LINE = {
         "encloses."
     ),
     (
-        "nora/language/standing_render.py", "render_standing", 'escape(standing.body)',
-    ): (
-        "`<standing>`: her whole folded position between its own tags, one per "
-        "prompt. `relevance_gate` DOES collapse its standing, and the "
-        "difference is the shape rather than the trust — that renderer joins "
-        "its blocks into one flat document it then splits on newlines, while "
-        "this one is tag-delimited. `nora.language.proactive` renders standing "
-        "one line per ROOM and does collapse it."
-    ),
-    (
         "nora/app/eval_support.py", "run_proactive_act_case", 'seed.notes[0][1].body',
     ): (
         "Not a render at all: the eval seed composes a new NOTE REVISION body "
@@ -126,26 +126,19 @@ _NOT_A_LINE = {
         "module, one line per row, does collapse."
     ),
     (
-        "nora/obs/determination.py", "render_mirror",
-        "(row.body or '')[:WINDOW_BODY_CHARS]",
-    ): (
-        "ALREADY collapsed, at the only constructor. `nora/obs/determination.py` "
-        "is gated on importing no `nora.*` at all "
-        "(`test_the_module_imports_nothing_from_nora`), so it cannot call "
-        "`one_line` — instead `window_from`, the one way a window is ever built, "
-        "collapses every body with the same `str.splitlines` expression, and "
-        "`test_the_mirrors_collapse_agrees_with_the_shared_one_exactly` pins the "
-        "two equal over every separator Python knows."
-    ),
-    (
         "nora/domain/blocks.py", "render", "self.body",
     ): (
-        "ALREADY collapsed, per row, at the only thing that builds a body: "
-        "`render_rows` applies `one_line` to every row before joining them, and "
-        "`tests/unit/test_blocks.py` pins that under every `RowStyle` in the "
-        "parity table. `ContextBlock.body` is the JOINED result, so collapsing "
-        "it here would destroy the line structure the collapse exists to "
-        "protect — it would render an N-row transcript as one line."
+        "ALREADY collapsed, per row, by whatever built the body: "
+        "`render_rows` applies `one_line` to every row before joining them and "
+        "`render_messages` puts each message in its own element, both pinned "
+        "in `tests/unit/test_blocks.py`. `ContextBlock.body` is the JOINED "
+        "result, so collapsing it here would destroy the line structure the "
+        "collapse exists to protect — an N-row transcript would render as one "
+        "line. What makes the exemption safe is not that this is the only "
+        "place a block becomes text — it is not: `prefill.build_tag_message` "
+        "and `_replying_to_block` still build their tags by hand, which is "
+        "issue #239 — it is that every body reaching HERE was joined by a row "
+        "renderer in this same module."
     ),
 }
 
@@ -329,6 +322,15 @@ def test_the_collapse_is_reachable_from_every_layer_that_renders():
 
     `nora/domain` is excluded because the collapse and the shared renderer both
     live there — counting it is a tautology.
+
+    **`_DIRECT_COLLAPSERS`, not `_COLLAPSERS`, and that is what makes this a
+    tripwire rather than a formality.** Counting `render_rows` calls too made it
+    unfirable: the stated end-state is that every renderer goes through
+    `render_rows`, which would have left this counting five packages forever
+    while meaning the exact opposite of what it asserts. Counting only the
+    HAND-ROLLED collapse makes the number fall as the migration proceeds and
+    reach zero when it completes — the moment this docstring has always
+    described and could not, until now, detect.
     """
     import ast
     import collections
@@ -344,14 +346,15 @@ def test_the_collapse_is_reachable_from_every_layer_that_renders():
             continue
         calls = sum(
             isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-            and n.func.id in _COLLAPSERS
+            and n.func.id in _DIRECT_COLLAPSERS
             for n in ast.walk(tree)
         )
         if calls:
             packages[rel.parts[1]] += calls
-    assert len(packages) >= 4, (
-        f"only {sorted(packages)} CALL the collapse outside nora/domain. If that "
-        "is now one package, `one_line` may move to it — but check every caller "
-        "first. If it is zero, the migration is complete and this whole file "
-        "should be deleted rather than kept as a formality."
+    assert packages, (
+        "NO package outside nora/domain calls `one_line` by hand any more: every "
+        "renderer reaches the collapse through `render_rows`. That is this "
+        "file's stated end-state — one unit test on one function now covers what "
+        "this whole gate was written to watch, so DELETE it rather than keep it "
+        "as a formality."
     )

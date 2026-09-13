@@ -2733,10 +2733,10 @@ def build_tool_specs(
             return _memory_result({"messages": []})
         # `reply_to` keeps this tool structurally consistent with the prefilled
         # transcript, and that consistency is the point. If the prefill teaches
-        # `[A ↳ B]` and load_transcript then hands back un-threaded rows, the older
-        # messages look STRUCTURALLY different and the model reads a missing
-        # arrow as "not a reply". JSON, not the arrow — a tool returns data,
-        # the arrow is prompt syntax.
+        # `replying_to=` and load_transcript then hands back un-threaded rows, the
+        # older messages look STRUCTURALLY different and the model reads a missing
+        # pointer as "not a reply". JSON, not the attribute — a tool returns data,
+        # `replying_to` is prompt syntax.
         #
         # Resolution happens ONLY within the rows this call already returned:
         # no extra query from inside a tool, on the reply path, ever. An
@@ -7861,7 +7861,7 @@ Args:
         return out
 
     def _resolve_quote(reply_to: int | None) -> OutboundQuote | None:
-        """`#n` from the rendered transcript -> the row's platform handles.
+        """`n` from the rendered transcript -> the row's platform handles.
 
         A CLOSED SET, which is the whole safety property: only 1..N exist, so
         an out-of-range or absent value resolves to `None` and the message
@@ -7870,9 +7870,9 @@ Args:
         this side, which is what keeps a raw identifier off the wire (R-18).
 
         Positional over `bound_window`, the SAME tuple the prefill rendered
-        (`_transcript_block` numbers it `enumerate(..., 1)`), so the index
-        resolves against what was actually shown rather than a fresh read that
-        may have moved underneath.
+        (`render_messages` numbers it `enumerate(..., 1)` into `n`), so the
+        index resolves against what was actually shown rather than a fresh read
+        that may have moved underneath.
 
         Discord's message id has no column on `messages` and lives in the row's
         `raw_json`; a row that predates it, or a platform that never had one,
@@ -7960,12 +7960,12 @@ Args:
 
         Args:
             text: One message, in your own voice.
-            reply_to: OPTIONAL. The `#n` of the message you are answering, as
-                it appears in the transcript. Use it when the room has more
-                than one thread open and it would otherwise be unclear which
-                one you picked up. Leave it out when there is only one thing
-                happening — a reply threaded onto the obvious message is
-                clutter. Never guess a number that is not on a line you can
+            reply_to: OPTIONAL. The `n` of the `m` element you are answering,
+                as it appears in `group_transcript`. Use it when the room has
+                more than one thread open and it would otherwise be unclear
+                which one you picked up. Leave it out when there is only one
+                thing happening — a reply threaded onto the obvious message is
+                clutter. Never guess a number that is not on a message you can
                 see.
         """
         held_before = deliverer.held_count

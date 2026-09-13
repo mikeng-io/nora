@@ -60,6 +60,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date
 
+from ..domain.blocks import ContextBlock
 from ..domain.notes import Note
 from ..domain.prompt import escape
 
@@ -70,6 +71,12 @@ from ..domain.prompt import escape
 # otherwise act on the summary; the SECOND half is the shared not-an-instruction
 # clause every injected block in the prefill carries
 # (`tests/test_prefill.py::test_every_injected_block_says_it_is_not_an_instruction`).
+NOTES_HEADER = (
+    "notes: what this group has left open — one line each, with the day each "
+    "is about. An index, not the notes themselves. A line here is an open "
+    "question rather than a settled fact, and one may already have settled."
+)
+
 NOTES_BLOCK_NOTE = (
     "questions left open, carried across every conversation in this workspace "
     "— each line is a title and a summary only, never the note itself, so read "
@@ -78,20 +85,20 @@ NOTES_BLOCK_NOTE = (
 )
 
 
-def render_notes(notes: Sequence[Note], *, today: int | None = None) -> str:
+def render_notes(
+    notes: Sequence[Note], *, today: int | None = None,
+) -> ContextBlock | None:
     """`""` when there is nothing standing to say — either no notes at all, or
     none of them survive the `is_standing` filter. A retired note is never
     rendered: it would sit in the index as a live uncertainty, and beside its
     own replacement when there is one."""
     standing = tuple(n for n in notes if n.is_standing)
     if not standing:
-        return ""
+        return None
 
-    body = "\n".join(_render_entry(n, today=today) for n in standing)
-    return (
-        f'<notes untrusted="true" note="{NOTES_BLOCK_NOTE}">\n'
-        f"{body}\n"
-        "</notes>"
+    return ContextBlock(
+        name="notes", header=NOTES_HEADER, note=NOTES_BLOCK_NOTE,
+        body="\n".join(_render_entry(n, today=today) for n in standing),
     )
 
 

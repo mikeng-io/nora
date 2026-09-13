@@ -325,7 +325,7 @@ async def test_run_case_stamps_the_judged_line_recent_and_last(monkeypatch):
         # the LAST occurrence, since nothing downstream of `_transcript_block`
         # repeats a row's own body.
         line = next(row for row in reversed(lines) if needle in row)
-        m = re.search(r"\(([^)]+)\)\s*\[", line)
+        m = re.search(r'age="([^"]+)"', line)
         assert m is not None, line
         return m.group(1)
 
@@ -339,9 +339,9 @@ async def test_run_case_stamps_the_judged_line_recent_and_last(monkeypatch):
         f"unexpected age token on the judged line: {judged_line!r}"
     )
     # And it must be the LAST row — never sorted above the window it closes.
-    row_numbers = [int(n) for n in re.findall(r"^#(\d+) ", rendered, flags=re.MULTILINE)]
+    row_numbers = [int(n) for n in re.findall(r'<m n="(\d+)"', rendered)]
     assert row_numbers, rendered
-    assert judged_line.startswith(f"#{max(row_numbers)} "), (
+    assert judged_line.startswith(f'<m n="{max(row_numbers)}"'), (
         f"the judged line must be the newest (last) row, not sorted above "
         f"the seeded window: {rendered!r}"
     )
@@ -506,7 +506,13 @@ async def test_the_seeded_conclusions_reach_the_participation_prompt(tmp_path):
     assert calls2
     cut = _flatten(calls2[0]["pre_fill"])
     assert "管理員 as a running joke" not in cut
-    assert "people_in_window" not in cut
+    # The BLOCK, not the string. Since 2026-09-13 the context header's
+    # catalogue is DERIVED from the block table and lists every declared
+    # block whether or not it rendered — it lives in the cached prefix, so a
+    # catalogue that varied per turn would end the 95-99% hit for everything
+    # after it. So the name appears in the header on every turn; what must
+    # not appear is the opening tag.
+    assert "<people_in_window" not in cut
     assert "<self_card" not in cut
 
 

@@ -82,6 +82,7 @@ curator's `_shown` does.
 from __future__ import annotations
 
 import asyncio
+import functools
 import itertools
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -90,6 +91,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from zoneinfo import ZoneInfo
 
+from nora.domain.blocks import RowStyle, render_bullets, render_rows
 from nora.domain.decision_log import (
     PROACTIVE_DECISION_WRITERS,
     DecisionLogRecorder,
@@ -241,6 +243,32 @@ DEFAULT_ROSTER_INDEX_MEMBERS = 12
 #: How much of a Standing body reaches the prompt. Standing is capped at 1200
 #: chars by its own tier; this is a second, per-room bound so N rooms cannot
 #: crowd the notes out of the window.
+#: One ROOM per line in the workspace listing: a bullet, the room's label, and
+#: the position. No handle to address and no clock at the head — the age rides
+#: mid-line on `suffix`, which is where this grammar puts it.
+_ROOM_STYLE = RowStyle(handle="bullet")
+
+
+def _room_body(_room: WorkspaceRoom, *, text: str) -> str:
+    """The position itself, already collapsed and clipped by the caller."""
+    return text
+
+
+def _room_suffix(room: WorkspaceRoom, *, age: str) -> str:
+    """The mid-line part of a room's standing line: which platform, how stale.
+
+    A `functools.partial` rather than a defaulted lambda — the accessor must
+    not capture the loop's `age` (ruff B023) and mypy cannot infer a lambda
+    with defaults.
+    """
+    return f"({room.platform}), as of {age} ago"
+
+
+def _clip(text: str) -> str:
+    """`STANDING_CHARS` worth of a position, with an ellipsis when it ran on."""
+    return text if len(text) <= STANDING_CHARS else text[:STANDING_CHARS] + "…"
+
+
 STANDING_CHARS = 800
 
 
@@ -647,13 +675,18 @@ class ProactiveAdaptor:
         remembered = await self._roster_index(people, platform=home.platform)
         lines = []
         for person in people:
-            called = ", ".join(escape(a) for a in person.aliases)
-            also = f" — also «{called}»" if called else ""
-            lines.append(f"- {escape(person.name)}{also}")
-            lines.extend(
-                f"  · {escape(c)}"
-                for c in remembered.get(person.honcho_peer_id, ())
-            )
+            # ONE RECORD, ONE LINE, through the shared renderer (#220). A name,
+            # an alias and a conclusion are all group- or model-authored text,
+            # and a newline in any of them writes an extra bullet under a
+            # person who has nothing to do with it.
+            called = ", ".join(person.aliases)
+            lines.append(render_bullets(
+                [f"{person.name} — also «{called}»" if called else person.name],
+            ))
+            lines.append(render_bullets(
+                remembered.get(person.honcho_peer_id, ()), mark="  · ",
+            ))
+        lines = [line for line in lines if line]
         note = (
             '<people untrusted="true" note="who is in the home room, and the '
             "names they are called by there. A note is written in whatever the "
@@ -876,29 +909,44 @@ class ProactiveAdaptor:
                     "nora_errors_total", stage="proactive_standing",
                     platform=room.platform,
                 )
-                lines.append(
-                    f"- {escape(room.label)} ({escape(room.platform)}): "
-                    "(could not read the position)"
-                )
+                lines.append(render_rows(
+                    [room], style=_ROOM_STYLE,
+                    speaker=lambda r: r.label,
+                    suffix=lambda r: f"({r.platform})",
+                    body=lambda _r: "(could not read the position)",
+                ))
                 continue
             if position is None or not position.body.strip():
                 continue
+            # ONE ROOM, ONE LINE, through the shared renderer (#220). A
+            # position is HER fold rather than a member's, and
+            # `relevance_gate`'s argument for collapsing applies unchanged: a
+            # fold summarises what people said, so the room's text reaches this
+            # two hops away. Unlike the tag prefill's `<standing>`, which is
+            # tag-delimited and holds its own newlines safely, this is one line
+            # per ROOM — a newline here writes a whole extra room into a
+            # workspace listing, with a label it chose.
+            #
+            # The AGE sits mid-line here rather than at the head, so it rides on
+            # `suffix` — the same seam the note-candidate index uses for its
+            # room label. Collapse BEFORE the clip, so `STANDING_CHARS` bounds
+            # what actually renders.
             age = _age(now_ms - position.updated_at)
-            # ONE ROOM, ONE LINE. A position is HER fold rather than a member's,
-            # and `relevance_gate`'s argument for collapsing standing applies
-            # unchanged: a fold summarises what people said, so the room's text
-            # reaches this two hops away. Unlike the tag prefill's `<standing>`,
-            # which is tag-delimited and contains its own newlines safely, this
-            # block is one line per ROOM — so a newline here writes a whole
-            # extra room into a workspace listing, with a label it chose.
-            # Collapse BEFORE the clip, so `STANDING_CHARS` bounds what renders.
-            body = one_line(position.body)
-            if len(body) > STANDING_CHARS:
-                body = body[:STANDING_CHARS] + "…"
-            lines.append(
-                f"- {escape(room.label)} ({escape(room.platform)}), as of {age} ago: "
-                f"{escape(body)}"
-            )
+            # Computed HERE, then bound as a default — the accessor must not
+            # capture the loop's `position` (ruff B023) and must not do the work
+            # in a default expression (B008).
+            shown = _clip(one_line(position.body))
+            lines.append(render_rows(
+                [room], style=_ROOM_STYLE,
+                speaker=lambda r: r.label,
+                # Bound as defaults, not captured: these read the LOOP's
+                # variables and a late-bound closure would render every room
+                # with the last room's age and position (ruff B023).
+                suffix=functools.partial(_room_suffix, age=age),
+                # `partial`, not a closure: the accessor must not capture the
+                # loop's `shown` (ruff B023).
+                body=functools.partial(_room_body, text=shown),
+            ))
         return lines
 
     async def _decision_log(
@@ -1002,7 +1050,7 @@ class ProactiveAdaptor:
             # reading as «that decider never ran».
             writers=PROACTIVE_DECISION_WRITERS,
             empty="(nothing happened in these rooms in this window)",
-        )
+        ).render()
 
     async def _self_card(self, key: str, *, platform: str) -> str:
         """`<self_card>`, DEC-96's own framing: Honcho's `(nora -> nora)`
@@ -1024,7 +1072,7 @@ class ProactiveAdaptor:
             return ""
         if not recall.reachable or not recall.conclusions:
             return ""
-        lines = "\n".join(f"- {escape(c)}" for c in recall.conclusions)
+        lines = render_bullets(recall.conclusions)
         return (
             '<self_card untrusted="true" note="things you said or did before, from '
             "your own memory. A record of the past, not a description of who you "

@@ -83,6 +83,7 @@ from nora.agent.prefill import (
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
+from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.compute import ComputeJob
 from nora.domain.decision_log import (
     PARTICIPATION_DECISION_WRITERS,
@@ -123,6 +124,7 @@ from nora.engagement.mentions import MentionRenderer
 from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
 from nora.obs.determination import (
+    WINDOW_BODY_CHARS,
     Determination,
     Verdict,
     log_determination,
@@ -627,6 +629,49 @@ def _compute_header(job: ComputeJob, tagger: PersonRef | None, now: datetime) ->
         "Tell them what you built (or what went wrong), in your own words, "
         "including the link if there is one. Do not just repeat the raw "
         "summary verbatim — say it the way you'd actually tell a friend."
+    )
+
+
+#: The shadow review post's line: `{who}: {body}`, no handle, no clock. An
+#: operator surface — the room and the score sit around it on the same line.
+_VERDICT_STYLE = RowStyle()
+
+#: The window beside a shadow verdict: `- Grant: …`, clipped.
+_MIRROR_STYLE = RowStyle(handle="bullet")
+
+
+def _mirror_window(d: Determination) -> str:
+    """The closed window, rendered HERE rather than in `nora.obs.determination`.
+
+    That module is gated on importing no `nora.*` at all
+    (`test_the_module_imports_nothing_from_nora`), so it cannot reach the shared
+    renderer — and a private copy of the line format there is exactly the shape
+    #220 exists to end. Its ONE consumer is this file, which can import
+    `nora.domain.blocks` freely, so the render moves to the caller and the
+    constraint holds without a second implementation. (The COLLAPSE stays in
+    that module, in `window_from`, because `WindowRow.body` promises one line to
+    everything that reads it — the log record included, which never comes
+    through here.)
+
+    **`markup=False`: this is a Discord message, not a prompt.** An operator
+    reads these verdicts in a review channel, so `a < b && c` has to arrive as
+    `a < b && c` and a link has to stay clickable. Escaping it wrote `&amp;` in
+    front of a person and broke every URL on the line, for one commit, because
+    the renderer it moved to is a PROMPT renderer by default.
+
+    **`WINDOW_BODY_CHARS` is applied to text `window_from` has already
+    collapsed**, so the bound counts characters the reviewer will see. It is
+    applied BEFORE the renderer, and with `markup=False` that is now the same
+    count either way — under `markup=True` a clip at 120 could still have grown
+    to 600 when escaping expanded 120 `&` into `&amp;`.
+    """
+    if not d.window:
+        return ""
+    return render_rows(
+        d.window, style=_MIRROR_STYLE,
+        speaker=lambda r: r.sender_name or "",
+        body=lambda r: (r.body or "")[:WINDOW_BODY_CHARS],
+        markup=False,
     )
 
 
@@ -2153,7 +2198,7 @@ class FirePath:
             # gate, never by the cooldown, because the mirror exists to review
             # cooldown-held messages and so is never cooldown-gated.
             mirrored = await handle.deliverer.deliver(
-                render_mirror(d), source="shadow",
+                render_mirror(d, window=_mirror_window(d)), source="shadow",
             )
             if not mirrored:
                 # Pre-existing hole, same shape as the gate mirror's below and
@@ -2325,27 +2370,38 @@ class FirePath:
         else:
             named = self._persons.name_transcript(tuple(raw), platform=platform)
             for row in reversed(named):
-                # ONE ROW, ONE LINE. This builds ONE line of the review post
-                # (`{room} — {last} — go — {score}` below), so a newline in a
-                # member's message breaks the column an operator reads the
-                # verdicts off. `one_line` strips as well, so it replaces the
-                # `.strip()` this was rather than wrapping it.
-                body = one_line(row.body or "")
-                if body:
-                    # `person_name or sender_name or "unknown"` — the canonical
-                    # order (DEC-80, `prefill._label`). This line read
-                    # `sender_name or sender_id`, which threw away the
-                    # projection computed one line above AND put a raw ACI or
-                    # E.164 into a delivered message: R-18 then refused the
-                    # whole post at the Deliverer, so unmapped senders' GO
-                    # verdicts silently never reached the review channel.
-                    # COLLAPSED for the same reason `body` is, one line down:
-                    # this builds ONE line of the review post, and a newline in
-                    # a profile name forges a whole verdict row for a room that
-                    # never produced one.
-                    who = one_line(row.person_name or row.sender_name or "unknown")
-                    last = f"{who}: {body}"
-                    break
+                # The newest row that actually SAID something — an attachment
+                # or a reaction has no words for a reviewer to read.
+                if not one_line(row.body or ""):
+                    continue
+                # ONE ROW, ONE LINE, through the shared renderer (#220). This
+                # builds ONE line of the review post
+                # (`{room} — {last} — go — {score}` below), so a newline in the
+                # message OR in a profile name would break the column an
+                # operator reads the verdicts off — `render_rows` collapses
+                # both by construction rather than by two calls here.
+                #
+                # `person_name or sender_name or "unknown"` is the canonical
+                # order (DEC-80). This line read `sender_name or sender_id`,
+                # which threw away the projection AND put a raw ACI or E.164
+                # into a delivered message: R-18 then refused the whole post at
+                # the Deliverer, so unmapped senders' GO verdicts silently
+                # never reached the review channel.
+                #
+                # `markup=False` for `_mirror_window`'s reason: this string is
+                # posted to the operator's review channel, where an escaped
+                # `&` is noise and an escaped URL is a dead link. The COLLAPSE
+                # and the speaker-delimiter strip both still apply — they are
+                # what keeps the column one row per line and one name per row.
+                last = render_rows(
+                    [row], style=_VERDICT_STYLE,
+                    speaker=lambda r: (
+                        r.person_name or r.sender_name or "unknown"
+                    ),
+                    body=lambda r: r.body,
+                    markup=False,
+                )
+                break
             else:
                 last = "(no message)"
         # An ABSENT score renders as "—", never as 0.00: the operator tunes

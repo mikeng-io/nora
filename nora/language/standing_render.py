@@ -34,8 +34,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from ..domain.blocks import ContextBlock
 from ..domain.prompt import age as _age
-from ..domain.prompt import escape, escape_attr
+from ..domain.prompt import escape
 from ..domain.standing import Standing
 
 # Same shape as `nora.language.note_render.NOTES_BLOCK_NOTE` and its siblings:
@@ -47,6 +48,12 @@ from ..domain.standing import Standing
 # The middle clause is this block's own, and it is the one no sibling needs: a
 # position is REWRITTEN each turn and keeps nothing, so anything that has to
 # survive belongs in a note rather than here.
+STANDING_HEADER = (
+    "standing: where you had got to in this conversation when you last folded "
+    "it, with how long ago that was. Your own working position, rewritten "
+    "every turn — not a record, and it may be out of date."
+)
+
 STANDING_BLOCK_NOTE = (
     "where you had got to in this conversation when you last folded it, in "
     "your own words — a working position, not a record: it is rewritten every "
@@ -58,8 +65,8 @@ STANDING_BLOCK_NOTE = (
 
 def render_standing(
     standing: Standing | None, *, now: datetime | None = None,
-) -> str:
-    """`""` when there is no position yet — a conversation Nora has not folded
+) -> ContextBlock | None:
+    """`None` when there is no position yet — a conversation Nora has not folded
     is not a conversation she has an empty opinion about, and rendering an empty
     block would say she had considered it and concluded nothing.
 
@@ -81,11 +88,10 @@ def render_standing(
     messages two hops away.
     """
     if standing is None or not standing.body.strip():
-        return ""
+        return None
     written = _age(standing.updated_at, now or datetime.now().astimezone())
-    return (
-        f'<standing untrusted="true" written="{escape_attr(written)}" '
-        f'note="{STANDING_BLOCK_NOTE}">\n'
-        f"{escape(standing.body)}\n"
-        "</standing>"
+    return ContextBlock(
+        name="standing", header=STANDING_HEADER, note=STANDING_BLOCK_NOTE,
+        attrs=(("written", written),),
+        body=escape(standing.body),
     )

@@ -630,7 +630,13 @@ def test_the_tag_path_renders_no_people_in_window_block() -> None:
         ctx, display_name="Nora", context_window=40, now=T0,
     ))
 
-    assert "people_in_window" not in rendered
+    # The BLOCK, not the string. Since 2026-09-13 the context header's
+    # catalogue is DERIVED from the block table and lists every declared
+    # block whether or not it rendered — it lives in the cached prefix, so a
+    # catalogue that varied per turn would end the 95-99% hit for everything
+    # after it. So the name appears in the header on every turn; what must
+    # not appear is the opening tag.
+    assert "<people_in_window" not in rendered
 
 
 async def test_the_query_takes_the_newest_human_rows_not_what_is_left_after_hers(

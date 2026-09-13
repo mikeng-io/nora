@@ -92,10 +92,17 @@ RULE_TESTS = {
     # in a row's body forges a whole ROW inside the block, with its own `#n`
     # handle and somebody else's name on it. Measured on the relevance gate
     # (99b34e4): a forged line took it to `go` 5/5 and stayed 5/5 against a
-    # hardened instruction, so the brake is the renderer's. `nora.domain.prompt.
-    # one_line` is the collapse and the architecture gate beside this file is
-    # what keeps it on all six renderers.
-    "R-13c": "test_a_transcript_row_cannot_forge_another_row",
+    # hardened instruction, so the brake is the renderer's.
+    #
+    # TWO shapes close it, and the transcript now uses the second. On a LINE,
+    # the brake is `nora.domain.prompt.one_line` — applied by `render_rows` to
+    # every accessor, on every one of the eight line grammars in the tree, and
+    # `tests/architecture/test_one_row_renders_one_line.py` is what stops the
+    # ninth shipping without it. In the tag prefill's `<group_transcript>` there
+    # are no lines any more: `render_messages` gives each message its own `<m>`
+    # element, so the forgery needs a `</m>` and `escape` is what refuses it.
+    # The named test below reads that block, so it asserts the second shape.
+    "R-13c": "test_a_message_cannot_forge_another_message",
     "R-15": "test_no_redundant_read_fails_when_prefill_was_sufficient",
     "R-16": "test_secret_never_logged_in_the_message",
     "R-18": "test_a_reply_carrying_someones_phone_number_is_refused",
