@@ -103,6 +103,9 @@ firing early or late costs one revision and corrupts nothing.
 
 ## Not decided here
 
+- **The gate metric's `conversation_id` label** — no longer a separate issue
+  (#221, closed into this bundle). It is step 1 of `02-measurement §5`, because
+  nothing else here can be measured until it lands.
 - **Whether the gate ever reads culture.** Owned by the gate, unhelped by
   #220, sequenced last, and with #144/#147 and #216 (n=5, unconfirmed) as evidence against
   assuming it. `02-measurement §5`.

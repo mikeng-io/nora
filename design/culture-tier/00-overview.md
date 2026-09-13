@@ -110,6 +110,19 @@ in it. `times_derived` ranks by frequency, and frequency is not continuity.
 
 Culture is an **account**: what this is, and why it became so.
 
+### 1.2 What is borrowed rather than this bundle's own work
+
+Two numbers quoted here and in `04-phase-two-note.md` — the +0.35 on a room
+assigning her a role, and the n=20 noise band behind `02-measurement §6`'s
+price — were read off **#215**, a separate branch that gives the participation
+turn memory. That work is not this bundle's, and resolving and measuring it was
+a detour from this line.
+
+The evidence is cited because it is the closest thing to this tier's own
+decision check that exists, and because it was measured rather than argued. It
+is **borrowed**, and a reader should not take it as something this bundle
+established.
+
 ## 4. The memory system can already produce an account
 
 Measured 2026-09-12, live, against the deployed instance. `chat` — the

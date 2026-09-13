@@ -54,7 +54,14 @@ wherever it is reported.
 `nora_relevance_gate_total` carries `platform` only, **not
 `conversation_id`** — so a refusal cannot be joined to a room and neither
 HOLDING refusal nor override is computable, though both sides of the join
-exist. That is #221 and it ships first.
+exist in the database.
+
+**This is step 1 of this bundle's own implementation, not a separate issue.**
+It was filed as #221 and folded back in here: its only reason to exist is that
+culture's measurement cannot be computed without it, so tracking it apart from
+the thing that needs it was fragmentation. One label on a metric the gate
+already writes, declared in `nora/obs/metric_specs.py`, no behaviour change,
+and it does not touch DEC-179.
 
 One thing the label does not fix: override needs the *time of each individual
 refusal*, and a Prometheus counter gives scrape resolution, loses everything
