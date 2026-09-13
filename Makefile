@@ -7,7 +7,7 @@
 # command changes; this file follows them, not the other way round.
 
 .PHONY: test test-fast test-affected lint typecheck imports gate mutate \
-        setup schema-parity heads decision-numbers \
+        setup hooks schema-parity heads decision-numbers \
         eval-participation eval-note-candidates eval-journeys eval-adversarial \
         release-check release-notes release \
         build build-release up stop logs ps \
@@ -19,6 +19,12 @@
 
 setup:
 	uv sync --extra evals
+
+# --- hooks (CONTRIBUTING.md §Commit messages: the commit-msg/pre-push check) ---
+
+hooks:
+	git config core.hooksPath .githooks
+	@echo "core.hooksPath -> $$(git config core.hooksPath) (run once per clone/worktree)"
 
 # --- gate (AGENTS.md: run before claiming anything is done, and before every commit) ---
 

@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Repo hygiene, no runtime behaviour: GitHub issue forms + PR template + commit-subject enforcement for the contribution conventions that previously lived only in CONTRIBUTING.md prose. Adds .github/ISSUE_TEMPLATE/ (freeform + design-anchored forms, blank issues disabled, two shape labels auto-applied), .github/pull_request_template.md, .githooks/ (commit-msg + pre-push via scripts/check_commit_subject.py, installed by the new `make hooks`), declares the seven de-facto commit types (design/config/build/style/ci/ops/doctrine) plus perf/security, and retires the superseded `Merge <branch>:` merge-subject generation. CONTRIBUTING.md carries the measurements behind each rule."
+}

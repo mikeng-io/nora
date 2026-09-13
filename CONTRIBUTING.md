@@ -48,6 +48,12 @@ worktree too.
 [Conventional Commits](https://www.conventionalcommits.org/) —
 `type(scope): description`:
 
+The type list is **closed** — measured 2026-09-14, a closed list of 17 covers
+85% of the log since 2026-08-01 byte-for-byte, and every failure it catches is
+one of the three defect shapes listed after the table. Add a type by extending
+this table AND `scripts/check_commit_subject.py`'s `TYPES` map in the same
+commit; the checker is the enforcement, the table is the contract.
+
 | type | for |
 |---|---|
 | `feat` | new capability |
@@ -58,6 +64,15 @@ worktree too.
 | `chore` | tooling, hygiene, dependencies |
 | `change` | a deliberate behaviour change that is neither feature nor fix |
 | `merge` | the merge commit for a branch (see below) |
+| `design` | design-bundle / architecture-document work (de-facto since 08-xx, now declared) |
+| `config` | configuration surface — schema, example files, loader |
+| `build` | build/deploy tooling — Dockerfile, compose, Makefile |
+| `style` | formatting or lint with no behaviour change |
+| `ci` | CI / GitHub plumbing |
+| `ops` | operational toggles on the live stack (policy, config reload) |
+| `doctrine` | Nora's doctrine files — voice / conduct / silence / constraints |
+| `perf` | a change that only affects performance (standard Conventional Commits) |
+| `security` | a security-relevant fix (matches the release-fragment `security` type) |
 
 The description is a full clause, and specific beats generic: *"a sampling run
 builds one guard per sample, not one per run"* names the defect; *"fix sampling
@@ -70,6 +85,27 @@ the subject is not doing its job — the subject serves `git log --oneline`, the
 body serves whoever has to decide if this change is safe to build on.
 
 Commits authored in a Claude Code session end with a `Claude-Session:` footer.
+
+**Enforcement — `make hooks`, one `git commit` at a time.** A `commit-msg` and
+`pre-push` hook run `scripts/check_commit_subject.py`, which rejects three
+shapes, each measured in the log before this rule was written:
+
+1. **No type at all** — 294 of 2195 subjects since 2026-08-01. The checker
+   prints the declared list.
+2. **An undeclared type** — eleven spellings lived in the log that the old
+   eight-row table never declared (`design` ×69, `config` ×20, `build` ×12,
+   `style` ×11, `ops` ×7, plus singles). A type in use but not declared is a
+   convention that only looks agreed; now they are either in the table or
+   rejected.
+3. **A default or superseded merge subject** — `Merge pull request #N from …`
+   (62 of them) violates the authored-merge rule below; `Merge <branch>: …`
+   (141 of them) is the superseded second generation, retired the same way
+   branch naming's older generations were: named, not imitated. The current
+   shape is `merge: <the arc>`.
+
+`wip:` subjects are refused too — they are rebase fuel, not history. The hooks
+are installed per clone with `make hooks` and bypassed with `--no-verify`; if
+you bypass, name the reason in the commit body.
 
 ## Merge strategy
 
@@ -87,9 +123,14 @@ what makes `git log master` readable without opening every PR.
 **Title** — the same Conventional-Commit shape as the commit subject, with
 `(#N, DEC-M)` appended when it closes an issue or lands an indexed decision.
 
-**Body** — one block per piece of work, each naming a concrete artifact: the
-file that gates it, the test that would fail without it, the measurement if
-there is one. Then:
+**Body** — open through the PR template (`.github/pull_request_template.md`):
+one block per piece of work, each naming a concrete artifact — the file that
+gates it, the test that would fail without it, the measurement if there is one.
+The template carries the headings below in filing order; delete what does not
+apply. The measured drift, 2026-09-14: 49 of 133 merged PRs carried `Gate on
+the merged tree`, 33 carried `Also`, while two headings this table never
+declared (`Summary` ×38, `Test plan` ×31) grew in — a convention that lives
+only in prose grows whatever headings the author remembers. Then:
 
 - **Also** — side findings worth a reader's attention that aren't the main
   thread.
@@ -100,6 +141,10 @@ there is one. Then:
   `master` (the doctrine hot-reloads on mtime), because that reaches production
   on the next message rather than the next deploy.
 - The `Claude-Session:` footer.
+
+`Summary` and `Test plan` are retired headings, not synonyms: `Summary` is the
+title's job (the subject serves `git log --oneline`), and `Test plan` is
+`Gate on the merged tree` — the outcome, not the intention.
 
 Every branch with a user-observable change also carries a release fragment;
 see `release-fragments/README.md` for the schema and the validation commands.
@@ -175,7 +220,10 @@ not a nuisance to route around.**
 
 Not-yet-built design ideas discussed in a session get **filed as a GitHub
 issue** on `mikeng-io/nora`, not left in a chat transcript or a memory file.
-Scoping, comments and status live on the issue.
+Scoping, comments and status live on the issue. **File through one of the two
+issue forms** (`.github/ISSUE_TEMPLATE/`) — freeform or design-anchored, same
+two shapes as below; blank issues are disabled. The forms carry the headings so
+the convention survives the moment nobody remembers it.
 
 **Title** — `<Area>: <the gap>`, stated as a fact about what is wrong or
 missing, not as a task: *"Note tier: discharge pipeline — route settled note
@@ -214,12 +262,28 @@ content on close"*, not *"Add discharge pipeline"*.
 That last section matters more than it looks: it scopes out the adjacent thing
 the next reader will suggest folding in.
 
-**Labels are barely used and are not a convention.** Measured 2026-09-08: 11 of
-44 open issues carry a label, and every one of them is GitHub's default
-`enhancement` — applied by the issue form, not chosen. So a label currently
-carries no information: its presence says only that an issue was filed a
-particular way. Adopting a real taxonomy is its own decision; until someone
-makes it, do not read meaning into a label and do not invent one per issue.
+**Labels** — two, set by the issue forms, and nothing else:
+
+| label | set by | means |
+|---|---|---|
+| `design-anchored` | the *design-anchored* form | a design document already specified this; the issue builds to spec |
+| `freeform` | the *freeform* form | the issue itself proposes the decision |
+
+A label's only job is to say which body shape the issue carries, set at filing
+time and never a judgement call afterwards. The historical state — measured
+2026-09-08, 11 of 44 open issues labelled, all GitHub's auto-applied default
+`enhancement` — is what happens when labels mean something: they mean nothing.
+**Area is deliberately NOT a label.** It is the title prefix (`<Area>: …`) and
+the form's Area dropdown, which writes `**Area:** …` into the body — grep-able
+in both places, and it cannot go stale the way a label on a closed issue does.
+The 47-open-issue backlog having no visible grouping axis (measured 2026-09-14:
+19 of 108 issues labelled across 2 values, 0 milestones) is the drift this
+section exists to stop.
+
+**On private repos, the forms' `required:` marks are advisory** — GitHub only
+hard-blocks submission on public repos. The form still puts every heading on
+the page at filing time, which is the part that was missing; the title-prefix
+and body conventions above remain the contract.
 
 ## The flow: issue → branch → PR → merge
 

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# commit-msg hook: enforces CONTRIBUTING.md §Commit messages.
+# Installed by `make hooks` (sets core.hooksPath=.githooks). Opt-in per clone,
+# but the rule it enforces is not optional — this is the typing aid, not the law.
+# Bypass for a genuinely exceptional subject: git commit --no-verify, and name
+# the reason in the commit body.
+exec uv run python "$(git rev-parse --git-common-dir)/../scripts/check_commit_subject.py" "$1"

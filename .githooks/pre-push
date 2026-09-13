@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# pre-push hook: refuses a push whose head commit's subject violates
+# CONTRIBUTING.md §Commit messages — the last local chance before the branch
+# is visible to others. Same checker, same rules, one source of truth.
+while read local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+  subject=$(git log -1 --format=%s "$local_sha")
+  tmp=$(mktemp)
+  printf '%s\n' "$subject" > "$tmp"
+  if ! uv run python "$(git rev-parse --git-common-dir)/../scripts/check_commit_subject.py" "$tmp"; then
+    rm -f "$tmp"
+    exit 1
+  fi
+  rm -f "$tmp"
+done
+exit 0
