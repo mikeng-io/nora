@@ -390,7 +390,13 @@ either.** Every live conversation holds exactly one id (measured 2026-09-13),
 so `primary_id` IS the only `conversation_id`. Give any conversation a second
 and they diverge: two `standing` rows and two `decision_log` streams for one
 `scope`, hence one Dreamer pass. **Nothing reports it, because nothing holds
-both keyings and so nothing compares them.** Issue #229.
+both keyings and so nothing compares them.**
+
+  The guard that makes it reportable: `load_policy` asserts no
+  `conversation_id` appears in two conversations, so a collision is a startup
+  error rather than a room whose rows are written under another's platform.
+  What a multi-id conversation SHOULD mean for the per-room stores is still
+  undecided, and "undecided" is currently being relied on.
 - **resolve within scope**, never *resolve then filter* — a person in
   `identity.toml` but not in this room is **absent from the index**, so "not
   here" is indistinguishable from "does not exist" (R-21). Filtering afterwards
