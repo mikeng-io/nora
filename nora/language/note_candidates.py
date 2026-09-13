@@ -64,12 +64,39 @@ the anchor date. The recorded reason for that refusal was §4's — "relying on
 the model to decline is self-attestation on a destructive operation" — and
 **the operation is no longer destructive.** A revision from this path
 APPENDS to the head rather than replacing it (`_appended`, the first half of
-#228), so the worst case of a wrong judgement here is a conflated note whose
-two halves are both still readable, or a duplicate the curator merges.
-Nothing is lost either way, and a self-attestation bar sized for destruction
-is the wrong bar for a recoverable write. That is the whole argument this
-change rests on: the reason to refuse the model's judgement dissolved when
-the loss did.
+#228), so neither way a wrong judgement here can go DESTROYS text: naming the
+wrong note conflates two arrangements into one entry whose halves are both
+still readable, and naming nothing writes a second entry beside the first.
+A self-attestation bar sized for destruction is the wrong bar for a write
+that cannot destroy. That is the whole argument this change rests on: the
+reason to refuse the model's judgement dissolved when the loss did.
+
+**NOTHING MERGES A DUPLICATE, and this argument does not get to pretend
+otherwise (#236).** The curator's merge verb was deleted on 2026-09-08 —
+`nora.language.note_curator`'s own first line, and `NoteSupersedeReason.ALL`
+no longer names `merged` — and part of what made that safe to do was THIS
+gate's date match handling duplicates where they are first seen, which is
+the thing the paragraph above removes. What actually bounds a duplicate
+today is ordinary retirement and nothing else: the curator selects on a
+passed anchor or a due `revisit_at`, and retires only on a grounded `closed`
+citation or on `expired`/`moot`, which `_covers` refuses unless the evidence
+window reaches PAST the anchor and BACK before the note was written. So a
+duplicate retires on its own anchor, on the same terms as the note it
+duplicates, and never because it is a duplicate — and in a room that goes
+quiet after the anchor, `_covers` refuses both copies and both stand. The
+`<notes>` index is UNCAPPED by deliberate decision
+(`nora.language.note_render`), so every live duplicate renders on every tag
+until then. **Duplicates are bounded in TIME and not at all in COUNT.**
+
+That is the real cost, stated rather than assumed away, and the reason it is
+still the side to fail toward is that it is VISIBLE and ADDITIVE where the
+other side is neither: a second entry is something a reader can see and act
+on, while two arrangements appended into one entry look like one arrangement
+and read as authored. What makes "state it and measure it" a position rather
+than a shrug is that the rate is readable — `ambiguous` and `unresolved` are
+distinct gate actions precisely so the two ways this gate deliberately
+writes a duplicate are counted apart from an ordinary create. #236 carries
+the bound itself and is not decided here.
 
 **`uncertainty` is set equal to `description`, a judgement call this module
 records rather than hides.** Design 33 §3 widens the note field convention —
@@ -144,19 +171,44 @@ for its own `title` argument, resolved through the same
 
 - exactly one match -> REVISION (appended, still gated by `_adds_information`
   and the `full` ceiling check);
-- absent, or resolving to nothing -> CREATE;
+- absent -> CREATE, counted `created`: the model said this is new, and it is
+  the common answer;
+- present but resolving to NOTHING -> **CREATE, counted as `unresolved`** —
+  the model named a title no standing note answers to. It lands in the same
+  place as `created` and it is a different reading, which is why it is a
+  different action: this is the model mistyping or inventing a title, the
+  one failure mode this whole design rests on being rare, and until
+  2026-09-13 it was counted plain `created` with no log and no metric —
+  indistinguishable from a candidate that named nothing at all. A design
+  whose safety rests on a rate must be able to read that rate (AGENTS.md:
+  never read an instrument's output as evidence without first checking it
+  can measure the thing);
 - resolving to MORE than one -> **CREATE, counted as `ambiguous`** — never a
   guess. `_resolve_updates` returns every match rather than the first for
   the reason `nora.agent.tools._resolve` does: `standing()` is ordered, so
   "the first one" is a stable, plausible, wrong answer. Appending to the
   wrong note conflates two arrangements and is the failure this whole change
-  removes; a duplicate is recoverable and the curator merges. The gate fails
-  toward the recoverable side, and `ambiguous` is a distinct action so the
-  rate of it is readable rather than hidden inside `created`.
+  removes; a duplicate is visible and overwrites nothing. The gate fails
+  toward the side that loses no text, and `ambiguous` is a distinct action
+  so the rate of it is readable rather than hidden inside `created`.
 
-*The reading that would reopen this:* a measured rate of duplicates the
-curator never merges — at which point the answer is a merge verb that works,
-not a code-side guess at which note the model meant.
+*The reading that would reopen this:* a measured rate on `ambiguous` +
+`unresolved` — at which point the answer is a bound on the pile (#236), not
+a code-side guess at which note the model meant.
+
+**A re-observation that lands on a SETTLED staging row is counted too, and
+which kind it is matters (#235).** `note_candidate`'s uniqueness is
+`(workspace, anchor_date, anchor_entity_ids)`, so a candidate can be handed
+back a row an earlier candidate already settled and returns before the gate
+ever sees it. Two very different things reach that branch — the same
+occasion observed again (a benign no-op) and a DIFFERENT arrangement
+destroyed by the key (a real loss) — and until 2026-09-13 they had an
+identical counter signature, which is the `unavailable`-reported-as-
+`nothing_found` shape R-27 exists to prevent. `_settle` now separates them on
+the one axis #228 made identity — the title, through the same `note_handle`
+— and reports them as `nora_note_candidate_staging_total{outcome}`
+(`STAGING_OUTCOMES`). The collision itself is NOT fixed here; #235 carries
+it. What is fixed is that it can no longer happen silently.
 """
 
 from __future__ import annotations
@@ -260,17 +312,57 @@ GATE_ACTIONS: frozenset[str] = frozenset({
                         # replaced its body (#228).
     "ambiguous",        # the model named a title that answers to MORE than
                         # one standing note. Materialized as a CREATE rather
-                        # than a guess — a duplicate is recoverable and the
-                        # curator merges, appending to the wrong note is the
-                        # conflation #228 exists to remove. Counted apart from
-                        # `created` so the rate of it is readable; exactly one
-                        # action still lands per settled candidate, so the sum
-                        # over this vocabulary stays the number decided.
+                        # than a guess — a duplicate overwrites nothing and is
+                        # visible to a reader, appending to the wrong note is
+                        # the conflation #228 exists to remove. Counted apart
+                        # from `created` so the rate of it is readable; exactly
+                        # one action still lands per settled candidate, so the
+                        # sum over this vocabulary stays the number decided.
+    "unresolved",       # the model named a title NO standing note answers to
+                        # — a mistyped or invented title. Also a CREATE, and a
+                        # different reading from `created`: this is the one
+                        # failure mode the whole design rests on being rare,
+                        # and it was counted plain `created` with no log and
+                        # no metric until 2026-09-13, which made its rate
+                        # unmeasurable. Same invariant as `ambiguous`: one
+                        # action per settled candidate.
     "refused",          # a duplicate with nothing new, or malformed
     "full",             # the appended body would pass BODY_MAX_CHARS — the
                         # revision is refused rather than truncated, and a
                         # rate here says the curator is not retiring
     "deferred",         # a transient failure; left pending, retried next tick
+})
+
+#: Every value `nora_note_candidate_staging_total{outcome}` may carry, derived
+#: from the code for the same reason `GATE_ACTIONS` is. This is the SETTLED-ROW
+#: branch of `_settle`, which the gate's own vocabulary deliberately does not
+#: cover: nothing is decided there, because the decision already happened.
+#:
+#: **Both values exist so that neither is silence.** `note_candidate`'s
+#: uniqueness is `(workspace, anchor_date, anchor_entity_ids)` (#235), so a
+#: candidate that shares a day with an already-settled one — and names no
+#: people, which is the default — is handed back that settled row and returns
+#: before the gate. Two different events reach that branch and they had an
+#: IDENTICAL counter signature until 2026-09-13: `nora_note_candidates_total`
+#: minus `nora_note_candidate_gate_total` could not tell a destroyed proposal
+#: from a benign no-op, which is R-27's `unavailable`-as-`nothing_found` one
+#: layer down. Splitting them is what makes the drop readable; the collision
+#: itself is #235's, not this module's.
+STAGING_OUTCOMES: frozenset[str] = frozenset({
+    "reobserved",       # the SAME arrangement seen again after the gate
+                        # settled it — the benign case, and the one the
+                        # staging table exists to absorb. Nothing was lost.
+    "displaced",        # a DIFFERENT arrangement landed on a settled row and
+                        # was dropped before the gate saw it. A real loss: no
+                        # note, no gate action, and no second chance, because
+                        # the row is terminal. Judged on the TITLE, through
+                        # `note_handle` — the axis #228 made identity — so two
+                        # arrangements sharing a day, a (possibly empty)
+                        # entity list AND a title still read as one. That
+                        # residue is stated, not hidden: the title is the only
+                        # signal this branch has, and `displaced` errs toward
+                        # «something may have been lost», which is the
+                        # direction a loss counter has to fail in.
 })
 
 
@@ -389,18 +481,33 @@ def _parse_candidate(item: Mapping[str, object]) -> _CreateCandidate | None:
     if entities is None:
         return None
 
-    # `updates`: OPTIONAL, and the two ways it can be absent are not the same
-    # thing. Missing or `None` is "this is new" — a real answer and the common
-    # one. Present but unusable (not a string, empty, or past
-    # `MAX_UPDATES_CHARS`) is the model having TRIED to say this is an update
-    # and failed, so the WHOLE candidate goes, exactly as a malformed
-    # `anchor_entity_ids` does. Collapsing the two would turn a garbled
-    # `updates` into a silent create: a duplicate arriving with no tell that
-    # anything went wrong. Kept RAW — `note_handle` normalises at resolution
-    # time, and a log line about a title that resolved to nothing has to show
-    # what the model actually wrote.
+    # `updates`: OPTIONAL, and the ways it can fail to name a note are not
+    # all the same thing.
+    #
+    # Missing, `None`, or an EMPTY/whitespace-only string is "this is new" —
+    # a real answer and the common one. The empty string was refused until
+    # 2026-09-13, on the argument below about a garbled value, and the cost
+    # was badly asymmetric to the risk: `""` is one of the commonest model
+    # spellings of "not applicable", it is not a garbled title (there is
+    # nothing in it to have garbled), and refusing it threw away the WHOLE
+    # note proposal — title, body, closing condition and all — silently. The
+    # worst case of reading it as absent is a create the model may have meant
+    # as an update, which is the side that overwrites nothing and is counted
+    # (`created`); the worst case of refusing it is a note that is never
+    # written at all, counted nowhere.
+    #
+    # Present and genuinely unusable — not a string, or past
+    # `MAX_UPDATES_CHARS` — is still the model having TRIED to name a note and
+    # failed, so the WHOLE candidate goes, exactly as a malformed
+    # `anchor_entity_ids` does. Collapsing THAT into absent would turn a
+    # garbled title into a silent create: a duplicate arriving with no tell
+    # that anything went wrong. Kept RAW — `note_handle` normalises at
+    # resolution time, and a log line about a title that resolved to nothing
+    # has to show what the model actually wrote.
     updates: str | None = None
     raw_updates = item.get("updates")
+    if isinstance(raw_updates, str) and not raw_updates.strip():
+        raw_updates = None
     if raw_updates is not None:
         updates = _text(raw_updates, limit=MAX_UPDATES_CHARS)
         if updates is None:
@@ -904,13 +1011,41 @@ class NoteCandidateAdaptor:
         # counts staging (see `nora.obs.metric_specs`'s `trigger="create"`).
         # `attempts == 0` is the store's own tell for "freshly inserted, not
         # a re-observation" (`record_create_candidate`'s own contract).
-        if row.attempts == 0:
+        if row.attempts == 0 and row.status == CANDIDATE_PENDING:
             self._inc("nora_note_candidates_total", trigger="create")
         if row.status != CANDIDATE_PENDING:
-            # A re-observation of an occasion this tier already decided.
-            # Not a decision — the decision already happened — so it is not
-            # counted on the gate's own vocabulary; `attempts` above already
-            # says the row was seen again.
+            # A candidate handed back a row the gate ALREADY settled. Not a
+            # decision — the decision already happened — so it is not counted
+            # on the gate's own vocabulary. But WHICH of the two things this
+            # is has to be readable (#235, `STAGING_OUTCOMES`): the same
+            # occasion observed again is a no-op, a different arrangement
+            # colliding on the staging key is a proposal destroyed, and the
+            # two were indistinguishable from outside until 2026-09-13.
+            #
+            # `attempts` cannot tell them apart, which is also why the
+            # arrivals increment above is guarded on `pending` rather than on
+            # `attempts` alone: the store returns a settled row UNCHANGED (by
+            # contract, both implementations), so a row that settled on its
+            # first sighting comes back with `attempts == 0` however many
+            # candidates land on it afterwards. The title is what tells them
+            # apart.
+            outcome = (
+                "reobserved"
+                if note_handle(row.title) == note_handle(candidate.title)
+                else "displaced"
+            )
+            if outcome == "displaced":
+                log.warning(
+                    "note-candidates: %r was dropped before the gate — the "
+                    "staging key (anchor_date=%s, %d entities) already holds "
+                    "%r, settled as %s (workspace=%s, issue #235)",
+                    candidate.title, row.anchor_date,
+                    len(row.anchor_entity_ids), row.title, row.status,
+                    workspace,
+                )
+            self._inc(
+                "nora_note_candidate_staging_total", outcome=outcome,
+            )
             return 0
 
         standing = await self._notes.standing(workspace=workspace)
@@ -926,11 +1061,13 @@ class NoteCandidateAdaptor:
                 proposal=proposal, now_ms=now_ms,
             )
         if len(matches) > 1:
-            # FAIL TOWARD THE RECOVERABLE SIDE. Appending to the wrong one of
-            # two same-titled notes conflates two arrangements, which is the
-            # failure #228 exists to remove; a duplicate is recoverable and
-            # the curator merges. Counted as its own action rather than
-            # folded into `created`, so the rate is readable.
+            # FAIL TOWARD THE SIDE THAT LOSES NO TEXT. Appending to the wrong
+            # one of two same-titled notes conflates two arrangements, which
+            # is the failure #228 exists to remove; a duplicate overwrites
+            # nothing and a reader can see both. Nothing MERGES it afterwards
+            # (#236) — stated in the module docstring rather than assumed
+            # here. Counted as its own action rather than folded into
+            # `created`, so the rate is readable.
             log.info(
                 "note-candidates: %r answers to %d standing notes; created "
                 "rather than guessed (workspace=%s)",
@@ -939,6 +1076,24 @@ class NoteCandidateAdaptor:
             return await self._create(
                 workspace=workspace, established_in=established_in, row=row,
                 proposal=proposal, now_ms=now_ms, action="ambiguous",
+            )
+        if candidate.updates is not None:
+            # The model NAMED a standing note and nothing answers to it — it
+            # mistyped a title, or invented one. Writing it as new is right
+            # (the alternative is a code-side guess at what it meant), but it
+            # is not the same event as a candidate that named nothing, and
+            # counting it `created` made the rate of this design's own central
+            # failure mode unmeasurable. `_resolve_updates` normalises both
+            # sides through `note_handle`, so this is not the index-escaping
+            # mismatch it would otherwise be: it is the model's answer not
+            # matching anything the index actually showed it.
+            log.info(
+                "note-candidates: %r answers to no standing note; created as "
+                "new (workspace=%s)", candidate.updates, workspace,
+            )
+            return await self._create(
+                workspace=workspace, established_in=established_in, row=row,
+                proposal=proposal, now_ms=now_ms, action="unresolved",
             )
         return await self._create(
             workspace=workspace, established_in=established_in, row=row,
@@ -950,11 +1105,12 @@ class NoteCandidateAdaptor:
         proposal: Proposal, now_ms: int, action: str = "created",
     ) -> int:
         """`action` is what a SUCCESSFUL create is counted as. `"created"` is
-        the ordinary path; `"ambiguous"` is the same write reached because the
-        title the model named answers to more than one standing note. One
-        action per settled candidate either way — the alternative, counting
-        `ambiguous` beside `created`, would make the vocabulary's sum stop
-        being the number of candidates the gate decided."""
+        the ordinary path — the model named no standing note. `"ambiguous"`
+        and `"unresolved"` are the same write reached because the title it
+        DID name answers to more than one standing note, or to none. One
+        action per settled candidate in all three cases — the alternative,
+        counting either beside `created`, would make the vocabulary's sum
+        stop being the number of candidates the gate decided."""
         try:
             payload = NoteCreationProposal(
                 title=row.title, description=row.description,

@@ -2324,13 +2324,15 @@ class NoteCollaborator(Protocol):
     ) -> int: ...
 
 
-#: RE-EXPORTED, not defined here. `note_handle` moved to `nora.domain.notes`
-#: on 2026-09-13 (#228) when `nora.language.note_candidates` became its fourth
-#: reader: `nora.language` sits below `nora.agent` in the layered import
-#: contract, so the choice was move it down or keep a second copy, and the
-#: whole argument for one spelling is in that function's own docstring. The
-#: name stays importable from here because `nora.agent.guards` and
-#: `nora.engagement.stages.debrief` already read it from this module.
+#: NOT DEFINED HERE — an ordinary import, used by `note_read`/`note_update`
+#: below. `note_handle` moved to `nora.domain.notes` on 2026-09-13 (#228) when
+#: `nora.language.note_candidates` became its fourth reader: `nora.language`
+#: sits below `nora.agent` in the layered import contract, so the choice was
+#: move it down or keep a second copy, and the whole argument for one spelling
+#: is in that function's own docstring. It also stays importable FROM here
+#: because `nora.agent.guards` and `nora.engagement.stages.debrief` already
+#: read it off this module — that re-export is incidental, not the reason the
+#: name is in this file.
 
 
 def build_tool_specs(

@@ -50,9 +50,13 @@ so an entry's mere presence already says the question is still open — the
 closing condition would tell her what would CLOSE it, which is a revise-time
 question, and §6.2 requires a `note_read` before any revision anyway.
 
-Nothing writes this tier yet (`TagContext.notes` defaults to `()`), so in
-production today this module always renders nothing; that is the intended,
-dormant shape.
+**This tier is LIVE.** `TagContext.notes` still defaults to `()` — an
+unwired caller renders nothing rather than raising — but
+`nora.engagement.context` populates it from the workspace's standing notes,
+and the note-candidates pass (#98) writes them, so this index is on the
+prompt in production. The paragraph here said the opposite until 2026-09-13,
+which is the ordinary cost of a "not yet" written beside a switch somebody
+else later flips.
 """
 
 from __future__ import annotations

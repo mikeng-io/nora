@@ -13,12 +13,26 @@ resolved entity set was empty was refused by design (a date alone is not an
 occasion — «Dinner, 9 Sept» beside «Ada's flight to Tokyo»). Merge was
 therefore inert by construction, and the whole chain — the registry store,
 the resolution pass, `merge_groups`/`merge`, this module's merge half — was
-removed rather than left wired-and-inert. Duplicate arrangements are handled
-where a duplicate is first SEEN: `nora.language.note_candidates`' create gate
-matches a proposed note against standing notes by anchor date and updates
-rather than creates. *The reading that would reopen merge here:* a tier that
-mints canonical entities again, at which point a resolved anchor is
-comparable and the two-weddings argument applies as it did.
+removed rather than left wired-and-inert.
+
+**What this paragraph used to say next was that duplicates are handled where
+a duplicate is first SEEN — `nora.language.note_candidates`' create gate
+matching a proposed note against standing notes by ANCHOR DATE and updating
+rather than creating. That mechanism was deleted on 2026-09-13 (#228)**, on
+its own evidence: the date arm had fired twice since the tier shipped and
+conflated two unrelated occasions both times. The gate now asks the MODEL
+which standing note a proposal updates and resolves the title it names; a
+proposal that names nothing, or names something no note answers to, is
+written as a NEW note. That is deliberately the side that overwrites no
+text — and it means **nothing merges a duplicate anywhere in this tier any
+more.** What bounds one is the retire half below, on its own anchor and its
+own evidence, never its duplicate-ness. Stated here rather than left to be
+rediscovered; **issue #236 carries the bound**, and
+`nora_note_candidate_gate_total{action="ambiguous"|"unresolved"}` is what
+makes the rate readable in the meantime. *The reading that would reopen
+merge here:* a tier that mints canonical entities again, at which point a
+resolved anchor is comparable and the two-weddings argument applies as it
+did.
 
 The retire half is the half that answers «the notebook only grows».
 
@@ -51,7 +65,8 @@ new:
 **What did NOT move**: the reaching-a-person half (`schedule_reminder`) was
 never built here either — deferred to the proactive adapter
 (design/dreamer-agent-loop/33 §8), which is a different tier's job. This
-module still only merges and retires; it never speaks.
+module still only retires (and, on a grounded close, discharges); it never
+speaks.
 
 ## Selection: SQL-only, TWO reads, and their union
 

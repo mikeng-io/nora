@@ -301,8 +301,11 @@ class Note:
     replaced_by: str | None = None
     # WHY it was retired — `NoteSupersedeReason`'s vocabulary, written by
     # `DreamSink.supersede`. A closed vocabulary rather than free text because
-    # "how many notes did the curator merge this week" is the reading that
-    # justifies the curator existing, and prose does not aggregate. `None`
+    # "how many notes did the curator retire this week, and on what ground"
+    # is the reading that justifies the curator existing, and prose does not
+    # aggregate. (It was written as "how many did it merge"; merge was
+    # deleted 2026-09-08 and `NoteSupersedeReason.ALL` no longer names it.)
+    # `None`
     # until retired; the `retired_at is None` invariant below is what pairs
     # them.
     retire_reason: str | None = None
@@ -651,15 +654,17 @@ def tag_path_progressed_since_wake(
     **It used to ask who wrote the CURRENT HEAD**, and that is a different
     question with a different answer on the sequence that matters:
 
-        wake at R5 → the room revises (R6, `tag:miles`) → the curator merges or
-        the debrief appends (R7, a run id)
+        wake at R5 → the room revises (R6, `tag:miles`) → a background pass
+        appends (R7, a run id)
 
     The head is R7, background-authored, so the old test said «no progress»,
     charged a strike, and LEFT THE WATERMARK AT R5 — so the same R6 could never
     count on any later tick either. A note the room is actively working, that a
     background pass also touches each cycle, never resets and marches to the
-    strike ceiling. `merge` writes exactly such a revision, so a merged
-    survivor's head is background-authored BY CONSTRUCTION.
+    strike ceiling. The curator's `merge` wrote exactly such a revision and
+    is gone (2026-09-08); the note-candidates gate's appended revision
+    (`nora.language.note_candidates`, #228) writes one on the same shape, so
+    the sequence is live and this walk still earns its keep.
 
     Both implementations agreed on the wrong answer, which is why the contract
     suite could not see it: they shared a belief, not a check.
@@ -790,8 +795,8 @@ class StaleNoteHeadError(Exception):
     **Why a refusal and not a merge, an overwrite, or a silent no-op.** A note's
     value is the *arrangement* — the writer read one body, reasoned over it, and
     is now appending prose that only makes sense against that body. If the head
-    moved (the curator merged the note mid-turn, or a parallel turn in the other
-    room of the same workspace revised it), the text being appended is an answer
+    moved (the note-candidates gate appended to it mid-turn, or a parallel turn
+    in the other room of the same workspace revised it), the text being appended is an answer
     to a question that has changed. Writing it on top destroys the intervening
     revision's arrangement with nothing recording that it happened; returning 0
     and carrying on reports «nothing to do» for what was actually «I could not

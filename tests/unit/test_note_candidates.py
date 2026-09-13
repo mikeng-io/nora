@@ -19,6 +19,7 @@ from nora.domain.notes import BODY_MAX_CHARS
 from nora.domain.ports import Proposal
 from nora.language.note_candidates import (
     GATE_ACTIONS,
+    STAGING_OUTCOMES,
     UNNAMED_ROOM,
     NoteCandidateAdaptor,
     _adds_information,
@@ -27,6 +28,7 @@ from nora.language.note_candidates import (
     _parse_candidate,
     _resolve_updates,
 )
+from nora.language.note_render import render_notes
 from nora.obs.metrics import Metrics
 from nora.testing.note_store import InMemoryNoteStore
 
@@ -374,12 +376,17 @@ def test_parse_candidate_keeps_the_named_title_verbatim():
     assert candidate.updates == "Dinner &amp; Drinks", "stripped, not folded"
 
 
-@pytest.mark.parametrize("bad", [7, True, [], {}, "", "   ", "x" * 400])
+@pytest.mark.parametrize("bad", [7, True, [], {}, "x" * 400])
 def test_parse_candidate_drops_a_malformed_updates_rather_than_creating(bad):
     """Present and unusable is the model having TRIED to say this is an
     update. Treating that as absent would turn a garbled answer into a silent
     create — a duplicate arriving with no tell that anything went wrong — so
-    the whole candidate goes, exactly as a bad `anchor_entity_ids` does."""
+    the whole candidate goes, exactly as a bad `anchor_entity_ids` does.
+
+    `""` and whitespace are NOT in this list since 2026-09-13: an empty string
+    names nothing and garbles nothing, and is covered by
+    `test_an_empty_updates_reads_as_new_rather_than_discarding_the_candidate`.
+    """
     assert _parse_candidate(_item(updates=bad)) is None
 
 
@@ -387,16 +394,38 @@ def test_parse_candidate_accepts_an_escaped_title_longer_than_the_title_cap():
     """`MAX_UPDATES_CHARS` is deliberately not `TITLE_MAX_CHARS`: the value is
     the title as the INDEX showed it, and the index escapes what it renders
     (R-13), so 「&」 costs five characters there. Capping at the title's own
-    limit would refuse exactly the notes whose titles carry punctuation."""
+    limit would refuse exactly the notes whose titles carry punctuation.
+
+    The over-long value is taken from `render_notes` itself, not from
+    `escape`: what has to fit under the cap is whatever the index actually
+    puts in front of the model.
+    """
     from nora.domain.notes import TITLE_MAX_CHARS
-    from nora.domain.prompt import escape
 
     stored = "&" * TITLE_MAX_CHARS
-    as_rendered = escape(stored)
+    as_rendered = _as_the_index_rendered_it(_note(title=stored))
     assert len(as_rendered) > TITLE_MAX_CHARS, "the fixture proves nothing otherwise"
 
     candidate = _parse_candidate(_item(updates=as_rendered))
     assert candidate is not None and candidate.updates == as_rendered
+
+
+def test_an_empty_updates_reads_as_new_rather_than_discarding_the_candidate():
+    """**W3, changed 2026-09-13.** `""` and whitespace used to be refused
+    alongside a garbled title, and the cost was badly asymmetric to the risk:
+    an empty string is one of the commonest model spellings of "not
+    applicable", there is nothing in it that could have been a garbled title,
+    and refusing it threw away the WHOLE note proposal — title, body, closing
+    condition — with no tell anywhere. Reading it as absent costs at worst a
+    create the model may have meant as an update, which overwrites nothing
+    and is counted. Everything genuinely unusable still drops the candidate;
+    that is the parametrized test above."""
+    for spelling in ("", "   ", "\n\t "):
+        candidate = _parse_candidate(_item(updates=spelling))
+        assert candidate is not None, f"{spelling!r} lost the whole proposal"
+        assert candidate.updates is None, (
+            f"{spelling!r} must read as ABSENT, never as a title to resolve"
+        )
 
 
 def test_parse_candidate_accepts_free_text_anchor_entities():
@@ -431,6 +460,22 @@ async def test_accept_keeps_a_candidate_whose_ids_are_all_in_the_batch():
 # ---------------------------------------------------------------------------
 # the deterministic gate — a pure function, tested directly
 # ---------------------------------------------------------------------------
+
+
+def _as_the_index_rendered_it(note) -> str:
+    """The title a model reads off `<notes>`, taken from the REAL renderer.
+
+    Lifted out of `render_notes`' own output rather than by calling `escape`
+    directly: the contract `note_handle` has to satisfy is a round trip
+    through THE INDEX, and an assertion against `escape(...)` would stay green
+    if `_render_entry` ever changed how it writes a title. The line shape is
+    `- <title> — <description> (about …)`, so the title is what sits between
+    the bullet and the first em-dash separator — which is why every fixture
+    that uses this keeps that separator out of its own title.
+    """
+    body = render_notes((note,))
+    line = next(ln for ln in body.splitlines() if ln.startswith("- "))
+    return line[2:].split(" — ", 1)[0]
 
 
 def _note(**overrides):
@@ -493,11 +538,13 @@ def test_a_named_title_resolves_through_the_index_escaping():
     """`note_handle`'s whole reason, reached from this caller: the index
     ESCAPES what it renders (R-13), so the title the model reads back is not
     the title the store holds. A raw `==` here would refuse every note whose
-    title carries punctuation — and the model would be right and ignored."""
-    from nora.domain.prompt import escape
+    title carries punctuation — and the model would be right and ignored.
 
+    The escaped form comes out of `render_notes`, not out of `escape`: the
+    property is a round trip through THE INDEX, and binding it to the escaper
+    would stay green if `_render_entry` changed how it writes a title."""
     note = _note(title="Dinner & drinks")
-    as_the_model_saw_it = escape(note.title)
+    as_the_model_saw_it = _as_the_index_rendered_it(note)
 
     assert as_the_model_saw_it != note.title, "the fixture proves nothing otherwise"
     assert _resolve_updates(
@@ -778,12 +825,20 @@ async def test_two_same_day_candidates_with_no_entities_still_collide_at_staging
     It is NOT fixed here: the staging key reverses its own recorded review
     finding (M10 applied to staging), and changing it takes a migration, a
     contract-suite reversal and both store implementations — a second
-    decision, with its own evidence to gather. What this test does is make it
-    a measured fact rather than a surprise, and the objective now tells the
-    model to name the people whenever two same-day entries are in one batch,
-    which is what routes around it. Tracked separately; when it IS fixed,
-    this test is the one that must be deliberately inverted."""
-    adaptor, store = _adaptor()
+    decision, with its own evidence to gather (#235). What this test does is
+    make it a measured fact rather than a surprise, and the objective tells
+    the model to name the people whenever two same-day entries are in ONE
+    batch, which routes around it in that case and only that case. Tracked
+    separately; when it IS fixed, this test is the one that must be
+    deliberately inverted.
+
+    **The bound is on the COUNT; the silence is not part of it.** Asserting
+    `written == 1` and stopping would leave the drop invisible, which is the
+    separate defect — so the destroyed proposal's own signal is asserted
+    here, and `test_a_destroyed_proposal_is_not_counted_as_a_re_observation`
+    is what proves it says something a benign re-observation does not."""
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
 
     written = await adaptor.commit(
         key=SCOPE,
@@ -810,14 +865,22 @@ async def test_two_same_day_candidates_with_no_entities_still_collide_at_staging
         "one staged row for two proposals — the collision is at the staging "
         "key, not at the gate"
     )
+    assert metrics.get(
+        "nora_note_candidate_staging_total", outcome="displaced",
+    ) == 1, "a destroyed proposal must not be silent, even while it stands"
+    assert metrics.get(
+        "nora_note_candidate_staging_total", outcome="reobserved",
+    ) == 0, "nothing here was re-observed; one occasion was lost"
 
 
 async def test_an_ambiguous_title_creates_rather_than_guessing():
     """Two standing notes answer to one title. Appending to the wrong one
-    conflates two arrangements — the failure this whole change removes; a
-    duplicate is recoverable and the curator merges. So the gate creates, and
-    counts it `ambiguous` rather than folding it into `created`, so the rate
-    of it is readable."""
+    conflates two arrangements — the failure this whole change removes —
+    while a duplicate overwrites nothing and a reader can see both. NOTHING
+    merges the duplicate afterwards (#236); the gate creates because that is
+    the side that loses no text, not because something downstream tidies up,
+    and counts it `ambiguous` rather than folding it into `created` so the
+    rate of it is readable."""
     metrics = Metrics()
     adaptor, store = _adaptor(metrics=metrics)
     # Two DIFFERENT stored titles that `note_handle` normalises to one. The
@@ -863,6 +926,144 @@ async def test_an_ambiguous_title_creates_rather_than_guessing():
     assert metrics.get("nora_note_candidate_gate_total", action="created") == 0, (
         "counted apart from created, or the rate is invisible"
     )
+
+
+async def test_a_title_that_answers_to_nothing_is_counted_apart_from_a_create():
+    """**The one failure this whole design rests on NOT happening, made
+    visible.** A candidate that NAMES a standing note and names one nothing
+    answers to is the model mistyping or inventing a title — the exact
+    failure mode handing identity to the model buys — and until 2026-09-13 it
+    was counted plain `created`, with no log line either, which made it
+    indistinguishable from a candidate that named nothing at all. A design
+    that rests on a rate has to be able to read the rate.
+
+    The write is unchanged and deliberately so: creating is right, because
+    the alternative is a code-side guess at what the model meant. What
+    changes is that the create says WHY."""
+    metrics = Metrics()
+    adaptor, store = _adaptor(metrics=metrics)
+    await store.create(
+        workspace=WS, title="Wedding venue", description="d", uncertainty="u",
+        closing_condition="c", established_in="conv-1", body="b",
+        established_by="tag:miles", now_ms=NOW, anchor_date=20260919,
+    )
+
+    written = await adaptor.commit(
+        key=SCOPE,
+        proposals=(_proposal(_CreateCandidate(
+            title="Wedding venu", description="d2", body="a different thread",
+            closing_condition="c", anchor_date=20260919,
+            anchor_entity_ids=(), message_ids=(2,),
+            updates="Wedding venu",          # one character off the index line
+        )),),
+        now_ms=NOW + 1,
+    )
+
+    assert written == 1
+    assert len(await store.standing(workspace=WS)) == 2, (
+        "a mistyped title still creates; guessing at what was meant is the "
+        "thing #228 removed"
+    )
+    assert metrics.get(
+        "nora_note_candidate_gate_total", action="unresolved",
+    ) == 1
+    assert metrics.get("nora_note_candidate_gate_total", action="created") == 0, (
+        "folded into created, the rate of a mistyped title is unreadable"
+    )
+
+    # And the negative half: naming NOTHING is still plain `created`, or the
+    # new action says nothing that `created` did not already say.
+    await adaptor.commit(
+        key=SCOPE,
+        proposals=(_proposal(_CreateCandidate(
+            title="Something else entirely", description="d3", body="b3",
+            closing_condition="c", anchor_date=20260925,
+            anchor_entity_ids=(), message_ids=(3,),
+        )),),
+        now_ms=NOW + 2,
+    )
+    assert metrics.get("nora_note_candidate_gate_total", action="created") == 1
+    assert metrics.get(
+        "nora_note_candidate_gate_total", action="unresolved",
+    ) == 1, "an unnamed candidate is not an unresolved one"
+
+
+async def test_a_destroyed_proposal_is_not_counted_as_a_re_observation():
+    """**R-27 at the staging layer (#235).** Two things reach the settled-row
+    branch and they are opposites: the SAME occasion observed again across
+    ticks (benign — the staging table exists to absorb it) and a DIFFERENT
+    arrangement that collided on the staging key and was destroyed before the
+    gate ever saw it. Measured against this adaptor before 2026-09-13 the two
+    produced an identical counter signature — same arrivals, same gate total,
+    and `candidates_total - gate_total` could not separate «a proposal was
+    destroyed» from «nothing happened». That is the
+    `unavailable`-reported-as-`nothing_found` shape R-27 exists to prevent.
+
+    Both halves run here, against one adaptor each, and the assertion is that
+    their signatures DIFFER. A test that only checked the destroyed half
+    would stay green if the benign half started reporting a loss too."""
+    lost_metrics = Metrics()
+    lost, lost_store = _adaptor(metrics=lost_metrics)
+    two_arrangements = (
+        _proposal(_CreateCandidate(
+            title="Sign-up deadline", description="d", body="the sign-up half",
+            closing_condition="c", anchor_date=20260911,
+            anchor_entity_ids=(), message_ids=(1,),
+        )),
+        _proposal(_CreateCandidate(
+            title="Which night the game session is", description="d",
+            body="the games half", closing_condition="c",
+            anchor_date=20260911, anchor_entity_ids=(), message_ids=(2,),
+        )),
+    )
+    await lost.commit(key=SCOPE, proposals=two_arrangements, now_ms=NOW)
+
+    benign_metrics = Metrics()
+    benign, benign_store = _adaptor(metrics=benign_metrics)
+    same_occasion = _CreateCandidate(
+        title="Sign-up deadline", description="d", body="the sign-up half",
+        closing_condition="c", anchor_date=20260911,
+        anchor_entity_ids=(), message_ids=(1,),
+    )
+    await benign.commit(
+        key=SCOPE, proposals=(_proposal(same_occasion),), now_ms=NOW,
+    )
+    await benign.commit(
+        key=SCOPE, proposals=(_proposal(same_occasion),), now_ms=NOW + 60_000,
+    )
+
+    # The two runs are the shape the review measured: one note each, one gate
+    # action each. That is the positive control — without it this test could
+    # pass against a build that had simply stopped writing notes.
+    assert len(await lost_store.standing(workspace=WS)) == 1
+    assert len(await benign_store.standing(workspace=WS)) == 1
+    for m in (lost_metrics, benign_metrics):
+        assert sum(
+            m.get("nora_note_candidate_gate_total", action=a)
+            for a in GATE_ACTIONS
+        ) == 1
+
+    # And here is what used to be identical and now is not.
+    assert lost_metrics.get(
+        "nora_note_candidate_staging_total", outcome="displaced",
+    ) == 1
+    assert lost_metrics.get(
+        "nora_note_candidate_staging_total", outcome="reobserved",
+    ) == 0
+    assert benign_metrics.get(
+        "nora_note_candidate_staging_total", outcome="reobserved",
+    ) == 1
+    assert benign_metrics.get(
+        "nora_note_candidate_staging_total", outcome="displaced",
+    ) == 0, "a re-observation is not a loss, and must never report as one"
+
+    # The arrivals series is not the instrument for this and no longer
+    # pretends to be: a settled row comes back UNCHANGED, so its `attempts`
+    # stays 0 and the old `attempts == 0` test counted a second arrival for a
+    # row nothing had staged again.
+    assert benign_metrics.get(
+        "nora_note_candidates_total", trigger="create",
+    ) == 1, "one occasion staged once, however many times it is re-observed"
 
 
 async def test_an_unrelated_candidate_on_the_same_date_cannot_destroy_the_head():
@@ -1049,6 +1250,24 @@ def test_gate_actions_vocabulary_matches_the_metric_help_text():
         assert re.search(rf"\b{re.escape(action)}\b", spec.help_text), (
             f"nora_note_candidate_gate_total{{action={action!r}}} is emitted "
             f"and the help text does not name it"
+        )
+
+
+def test_staging_outcomes_vocabulary_matches_the_metric_help_text():
+    """The same guard for the settled-row series (#235): the value is emitted
+    from `_settle`, and a help text that does not name it is a dashboard
+    label nobody can look up."""
+    import re
+
+    from nora.obs.metric_specs import _COUNTERS
+
+    spec = next(
+        c for c in _COUNTERS if c.name == "nora_note_candidate_staging_total"
+    )
+    for outcome in STAGING_OUTCOMES:
+        assert re.search(rf"\b{re.escape(outcome)}\b", spec.help_text), (
+            f"nora_note_candidate_staging_total{{outcome={outcome!r}}} is "
+            f"emitted and the help text does not name it"
         )
 
 
