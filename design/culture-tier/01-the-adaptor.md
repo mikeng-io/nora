@@ -73,6 +73,62 @@ E.164, UUIDs, key-shaped strings, the model's own name — and not names or
 nicknames. So an account carrying the room's in-group names survives intact
 while a phone number never could, which is exactly the line culture needs.
 
+## 1.2 The two verbs, specified
+
+Enough detail to implement without re-deciding anything.
+
+### `HonchoClient.chat` gains one parameter
+
+```python
+async def chat(self, *, peer_id, query, reasoning_level="low",
+               target=None, session_id=None, workspace_id=None) -> str | None:
+    ...
+    if session_id is not None:
+        body["session_id"] = session_id
+```
+
+Three lines. The endpoint already accepts and validates it — measured
+2026-09-13: a real session narrows the corpus (one-person room answers 1,
+seven-person room answers 7), a nonsense one is a 404. Only the client could
+not send it.
+
+The session id is **derived, never guessed**: `f"nora-conv-{_safe_conversation_key(conversation_id)}"`,
+the same expression `ensure_session` uses (`client.py:415`). A Signal group id
+422s the API on its `+ / =`, which is what `_safe_conversation_key` exists for,
+so a hand-built id is a live outage waiting to happen.
+
+### `ask_room_memory(depth, query)` and `ask_workspace_memory(depth, query)`
+
+```
+ask_room_memory       -> chat(peer_id=nora, target=nora, session_id=<this room>)
+ask_workspace_memory  -> chat(peer_id=nora, target=nora)      # no session: workspace-wide is the default
+```
+
+Both `read_only=True`. Both take the same `depth` vocabulary as `ask_memory`.
+
+**Neither resolves a person, so neither calls `room.scope()`.** That is the
+whole difference from `ask_memory`, whose roster dependency exists only to turn
+a name into `ref.honcho_peer_id` (`tools.py:3123-3140`). These verbs take the
+conversation id straight off the `Room` (`room.py:160`), which a scope-keyed
+adaptor always has even when `roster_source is None`. **Do not add a
+`view.available` guard to these tools** — it is the guard that makes
+`ask_memory` return `unavailable` forever for a scope-keyed adaptor, and copying
+it would reproduce the bug these verbs exist to route around.
+
+**Outcomes, matching `ask_memory`'s contract:** `ok` with the answer;
+`unavailable` when the call failed or returned nothing — the reasoner cannot
+separate "nothing known" from "could not reach", so both are `unavailable`,
+honestly. `scan_identifiers` still withholds an answer that carries one
+(`tools.py:3162`), which for this tier means no revision that tick rather than a
+leak.
+
+**Timeout is `_chat_timeout`, not the tool default.** These are 17–30s
+reasoning calls; the measured range on real rooms is 22.4 / 24.5 / 29.7s.
+
+**Metrics:** declare a `nora_culture_*` family. Every sibling tier declared one,
+and the generic `nora_dream_*{adaptor}` series carries no key label, so with six
+rooms it cannot say which ones ever produced a revision.
+
 ## 2. What the model is asked
 
 One question, per room, on the Dreamer clock, through `ask_room_memory`: *describe this room's culture as
