@@ -1450,11 +1450,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_note_candidate_gate_total",
         "The note-candidates adaptor's deterministic gate, by outcome: "
-        "created (materialized as a brand new note), updated (materialized "
-        "as a revision to a standing note anchored to the same calendar day "
-        "— the gate compares the DATE alone since 2026-09-08), refused (a "
+        "created (materialized as a brand new note), updated (APPENDED as a "
+        "revision to a standing note anchored to the same calendar day "
+        "— the gate compares the DATE alone since 2026-09-08, and appends "
+        "rather than replaces since 2026-09-13, issue #228), refused (a "
         "duplicate with nothing new, or a malformed proposal the domain type "
-        "itself rejected), or deferred (a transient failure — a raced CAS, a "
+        "itself rejected), full (the appended body would pass the note body "
+        "ceiling, so the revision was refused rather than truncated — a rate "
+        "here reads as the curator not retiring, never as a model fault), "
+        "or deferred (a transient failure — a raced CAS, a "
         "store exception, a note that moved or retired between the read and "
         "the write, or a candidate already settled by an earlier tick — left "
         "PENDING for the next tick to retry, never a decision).",
