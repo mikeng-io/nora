@@ -59,6 +59,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, tzinfo
 from typing import Any
 
+from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.prompt import escape, escape_attr
 from nora.domain.standing import Standing
@@ -188,28 +189,47 @@ def _speaker(row: TranscriptRow, display_name: str) -> str:
     return row.person_name or row.sender_name or "unknown"
 
 
+#: The fold's line grammar. A wall CLOCK rather than an age: the fold is read
+#: against a calendar («what happened at 11:00») where the reply prompt is read
+#: against now. No handle — the fold addresses nothing.
+_FOLD_STYLE = RowStyle(time="clock")
+
+
 def _transcript(
     rows: Sequence[TranscriptRow], *, display_name: str, tz: tzinfo | None
 ) -> str:
     by_ts = {row.ts: row for row in rows}
-    lines = []
-    for row in rows:
-        who = escape(_speaker(row, display_name))
-        # The reply relation, by the parent's own rendered CLOCK rather than by
-        # its id — the fold has the clock on every line above, and has no id
-        # for anything. An out-of-window or self-referential pointer renders
-        # nothing at all rather than a "?" (`prefill._parent_of`'s rule: a
-        # symbol that can mean "unknown" invites the model to emit one).
-        parent = by_ts.get(row.quoted_ts) if row.quoted_ts is not None else None
-        if parent is not None and parent.id != row.id:
-            who += f" (replying to {_clock(parent.ts, tz)})"
-        # THE DELIVERY MARK (issue #199). Hers only, and never escaped from the
-        # row's own text — it is the render's word about the record, not
-        # anybody's content, so it sits outside the `escape`d speaker.
-        if row.is_nora:
-            who += f" ({_delivery(row)})"
-        lines.append(f"[{_clock(row.ts, tz)}] {who}: {escape(row.body or '')}")
-    return "\n".join(lines)
+
+    def _replying(row: TranscriptRow) -> str:
+        """The reply relation, by the parent's own rendered CLOCK rather than by
+        its id — the fold has the clock on every line above, and has no id for
+        anything. An out-of-window or self-referential pointer renders nothing
+        at all (`prefill._parent_of`'s rule: a symbol that can mean "unknown"
+        invites the model to emit one). Already-rendered text, so it is appended
+        after the speaker's escape rather than through it."""
+        if row.quoted_ts is None:
+            return ""
+        parent = by_ts.get(row.quoted_ts)
+        if parent is None or parent.id == row.id:
+            return ""
+        return f"(replying to {_clock(parent.ts, tz)})"
+
+    def _mark(row: TranscriptRow) -> str:
+        """THE DELIVERY MARK (issue #199). Hers only, and never escaped from the
+        row's own text — it is the render's word about the record, not anybody's
+        content."""
+        return f"({_delivery(row)})" if row.is_nora else ""
+
+    return render_rows(
+        rows,
+        style=_FOLD_STYLE,
+        speaker=lambda row: _speaker(row, display_name),
+        body=lambda row: row.body,
+        timestamp=lambda row: row.ts,
+        reply_mark=_replying,
+        suffix=_mark,
+        tz=tz,
+    )
 
 
 def _transcript_block(
