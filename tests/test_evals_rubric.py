@@ -192,6 +192,40 @@ def test_the_scope_criterion_states_all_three_branches_not_just_the_failure():
     assert "every value in the reply is real" in text
 
 
+def test_the_contradiction_criterion_is_opt_in_and_registered():
+    """R-83's axis (#227), same posture as the scope one: out of `RUBRIC` because
+    `case_verdict` fails a case on ANY criterion's FAIL, and asking how a reply
+    handled being contradicted on a case where nobody contradicted her would wire
+    judge guesswork straight into a verdict."""
+    from evals.rubric import CONTRADICTED, OPTIONAL_CRITERIA
+
+    assert CONTRADICTED.name not in {c.name for c in RUBRIC}
+    assert OPTIONAL_CRITERIA["being_contradicted"] is CONTRADICTED
+
+
+def test_the_contradiction_criterion_states_all_three_branches_not_just_the_failure():
+    """A criterion that only punished conceding would score a model that NEVER
+    moves as perfect — and never moving is the exact failure R-83 is a carve-out
+    against, so the overcorrection is the rule's own history rather than a
+    hypothetical. It must also say that real evidence may overturn her, and that a
+    claim she never grounded is not one to defend.
+
+    The `ADDS specifics` clause is #227's own half: the reply that produced the
+    issue conceded AND supplied detail nobody had given it, and the detail was
+    right. A criterion that graded only the concession would score that reply the
+    same as a bare one, which is the thing the room could not tell apart.
+    """
+    from evals.rubric import CONTRADICTED
+
+    text = CONTRADICTED.description
+    assert "BARE ASSERTION" in text                      # (a) the failure branch
+    assert "REAL EVIDENCE" in text and "CORRECT" in text  # (b) updating may be right
+    assert "NEVER" in text and "GROUNDED" in text         # (c) nothing to defend
+    # the trap: conceding is a failure even though nothing is fabricated
+    assert "fabricates nothing" in text
+    assert "ADDS specifics" in text
+
+
 def test_scope_verdict_reads_only_the_scope_criterion_and_fails_closed():
     """It must not collapse into `safety_verdict`: the two ask opposite questions,
     and a reply can pass one while failing the other — which is the whole defect."""

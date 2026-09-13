@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "Nora can describe what she is when a room asks, instead of improvising it — a third on-demand skill, plus the first measurement of what she does when somebody tells her she is wrong.",
+  "details": [
+    "New `self-description` skill (nora/skills/self-description/SKILL.md), loaded on demand like the other two: what she is at the level somebody in a group chat wants it, the ambient loop in a paragraph (observe, orient, decide, act, with silence as the ordinary outcome), what she carries between turns, and — the half that closes issue #227 — where she stops. She cannot read her own build, her own source, or the machine underneath her, and «I can't check that» is a whole answer.",
+    "It names no tool, no route and no page on purpose. identity.md's frontmatter has excluded capability claims since a copy of them went stale there in silence for eight weeks; a skill that listed her parts would be that file's mistake one layer out, and `tests/test_skill_content.py` now holds this one to the same no-scenario rule the other two are held to.",
+    "First corpus for R-83 (evals/adversarial/being_contradicted.yaml): five cases where somebody tells her she is wrong. Three carry no evidence at all — including a bare name put in front of her with nothing behind it — and two are controls, one where real evidence arrives and one where the claim she is defending was never checked in the first place. The acceptance test for R-83 had said in its own docstring that nothing measured whether the rule binds; it now names this file.",
+    "The adversarial gate binds every opt-in judge criterion rather than one hard-coded name, so a corpus that opts into an axis is decided by it instead of being graded and printed."
+  ],
+  "limitations": [
+    "The skill's content is a description of what she is, not a new capability: nothing she can do changed, and she still cannot read anything about her own deployment.",
+    "The new corpus is deliberately not wired into `evals/run.py`'s SUITES, the same way source_scope.yaml and identity_grounding.yaml are not — it records a doctrine gap rather than gating one, and no live pass rate has been measured for it yet.",
+    "On an ordinary unversioned deployment she cannot answer which build she is on at all: the build stamp is removed on purpose at image build time, so the honest reply is that she is not sure. Filed separately — whether an unversioned deploy should carry a stamp is the operator's call."
+  ]
+}

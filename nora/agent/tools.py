@@ -1050,11 +1050,20 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # — and cannot improve the answer, the same reason `group_members` is 1 ("a
     # second call returns the identical answer"). At 1, R-7's repeat veto ("you
     # already called skills and have that context, answer from what you have")
-    # is precisely the right thing to tell a model that tries. Two skills now
-    # ship (`navigation`, `personalization`), and one message can legitimately
-    # span both domains — a wayfinding question with a personalization angle —
-    # so a turn may need two DIFFERENT activations. The repeat-veto still stops
-    # a second load of the SAME skill; 2 allows one of each.
+    # is precisely the right thing to tell a model that tries. Two skills
+    # shipped then (`navigation`, `personalization`), and one message can
+    # legitimately span both domains — a wayfinding question with a
+    # personalization angle — so a turn may need two DIFFERENT activations. The
+    # repeat-veto still stops a second load of the SAME skill; 2 allows one of
+    # each.
+    #
+    # A THIRD skill shipped 2026-09-13 (`self-description`, issue #227) and the
+    # budget stays 2, which is a decision rather than an oversight: the number
+    # bounds how many domains ONE message can span, not how many skills exist.
+    # A question about what she is does not also need a route planned or a
+    # recommendation weighed, so the pair that can co-occur is still a pair.
+    # Raise it when a message is measured spanning three, not because the
+    # directory grew.
     #
     # `terminal=False`: activating a skill is the START of using its judgement —
     # she still has to route, or reply — never the end of a turn. `time_shiftable`

@@ -22,6 +22,12 @@ SKILLS_DIR = Path(__file__).resolve().parents[1] / "nora" / "skills"
 _SCENARIOS: dict[str, tuple[str, ...]] = {
     "navigation": ("dinner", "airport", "shopping", "晚飯", "機場", "食飯", "買嘢"),
     "personalization": ("game", "restaurant", "film", "game night", "食飯", "睇戲"),
+    # The scenarios that produced #227: a bare hostname and a question about a
+    # website. A self-account that answers by naming pages, a version number or
+    # a repository is the same failure one layer in — it describes an instance
+    # instead of the shape, and the instance is what goes stale in silence.
+    "self-description": ("website", "網站", "homepage", "version number",
+                         "release notes", "github"),
 }
 
 
