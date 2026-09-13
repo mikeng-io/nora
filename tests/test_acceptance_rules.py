@@ -85,6 +85,17 @@ RULE_TESTS = {
     "R-12": "test_self_tag_ignored",
     "R-13": "test_prefill_escapes_angle_brackets",
     "R-13b": "test_forged_closing_tag_is_escaped",
+    # R-13c: R-13's rule on the LINE axis rather than the tag axis, and a new
+    # key rather than a rewrite of R-13 for the DEC-40 precedent above — both
+    # named tests still assert exactly what they were registered for, and what
+    # they never asserted is this. `escape` closes the block boundary; a newline
+    # in a row's body forges a whole ROW inside the block, with its own `#n`
+    # handle and somebody else's name on it. Measured on the relevance gate
+    # (99b34e4): a forged line took it to `go` 5/5 and stayed 5/5 against a
+    # hardened instruction, so the brake is the renderer's. `nora.domain.prompt.
+    # one_line` is the collapse and the architecture gate beside this file is
+    # what keeps it on all six renderers.
+    "R-13c": "test_a_transcript_row_cannot_forge_another_row",
     "R-15": "test_no_redundant_read_fails_when_prefill_was_sufficient",
     "R-16": "test_secret_never_logged_in_the_message",
     "R-18": "test_a_reply_carrying_someones_phone_number_is_refused",

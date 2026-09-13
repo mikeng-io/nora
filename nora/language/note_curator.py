@@ -127,6 +127,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from typing import Any, ClassVar, Literal, Protocol, get_args
 
+from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.bounds import over_fetch
 from nora.domain.gatherings import AmbiguousOpenGatheringsError
 from nora.domain.media_join import MediaJoin
@@ -139,7 +140,7 @@ from nora.domain.notes import (
     default_revisit_at,
 )
 from nora.domain.ports import Proposal
-from nora.domain.prompt import age, escape, escape_attr
+from nora.domain.prompt import escape, escape_attr
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.curator")
@@ -1509,6 +1510,13 @@ def _own_sends(since: Sequence[TranscriptRow]) -> tuple[TranscriptRow, ...]:
     )
 
 
+#: The curator's two grammars. `row_id` and not `index`, because the grounding
+#: check cites these ids back — they are the note tier's real handles, unlike
+#: the transcript's per-render `#n`.
+_OWN_SENDS_STYLE = RowStyle(handle="row_id", time="age", self_name="you")
+_EVIDENCE_STYLE = RowStyle(handle="row_id", time="age")
+
+
 def _render_own_sends(
     own_sends: Sequence[TranscriptRow], *, now: datetime,
 ) -> str:
@@ -1535,10 +1543,21 @@ def _render_own_sends(
         "to that room — that is the send record's own answer, not mine. "
         "Nobody else in the room wrote any of them."
     ]
-    for row in own_sends:
-        when = f"({age(row.ts, now)}) " if row.ts else ""
-        lines.append(f"[{row.id}] {when}you: {escape(row.body or '')}")
-    return "\n".join(lines)
+    # ONE ROW, ONE LINE, and the collapse is `render_rows`' rather than this
+    # function's. These are HER sends rather than a member's, and it still
+    # applies for `relevance_gate`'s reason: the block one line up asserts
+    # «nobody else in the room wrote any of them», so a second line forged out
+    # of one of her bodies inherits that assertion.
+    rows = render_rows(
+        own_sends, style=_OWN_SENDS_STYLE,
+        # No `speaker` accessor: `is_self` is always true here and
+        # `_OWN_SENDS_STYLE.self_name` wins over it in `render_rows`, so one
+        # would be unreachable. These rows are hers by construction.
+        speaker=lambda r: "", body=lambda r: r.body,
+        timestamp=lambda r: r.ts or None, row_id=lambda r: r.id,
+        is_self=lambda r: True, now=now,
+    )
+    return "\n".join(lines + ([rows] if rows else []))
 
 
 def _render_evidence(
@@ -1573,15 +1592,16 @@ def _render_evidence(
             "evidence: NONE — nothing has been said in that conversation "
             "since this note was written."
         ) + tail
-    lines = ["evidence, newest last:"]
-    for row in evidence:
-        speaker = row.person_name or row.sender_name or row.sender_id
-        # WHEN it was said. «has this closed?» and «has the room moved on?»
-        # are questions about time, and the rows carried none.
-        when = f"({age(row.ts, now)}) " if row.ts else ""
-        lines.append(
-            f"[{row.id}] {when}{escape(speaker)}: {escape(row.body or '')}"
-        )
+    # ONE ROW, ONE LINE — `render_rows`'. The curator decides whether a note has
+    # CLOSED from these rows; a member who can forge one can retire somebody
+    # else's open question by writing the line that closes it.
+    rendered = render_rows(
+        evidence, style=_EVIDENCE_STYLE,
+        speaker=lambda r: r.person_name or r.sender_name or "unknown",
+        body=lambda r: r.body, timestamp=lambda r: r.ts or None,
+        row_id=lambda r: r.id, now=now,
+    )
+    lines = ["evidence, newest last:", rendered]
     return "\n".join(lines) + tail
 
 

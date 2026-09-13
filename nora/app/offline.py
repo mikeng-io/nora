@@ -248,6 +248,18 @@ def build_offline_pipeline(
             },
             standing=standing,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
+            # The participation turn's memory reads (issue #210). ONE knob set,
+            # read at the composition root exactly as the tag assembler reads
+            # `self_card_conclusions` — two readers each carrying their own idea
+            # of how much memory a prompt may hold is how the fire path came to
+            # render none at all. Not gated on `[participation] enabled`: every
+            # read is gated on `occasion.kind == "participation"` in
+            # `_read_memory`, which is a condition no other occasion can meet,
+            # and a second gate here would be a place for the two to disagree.
+            self_card_conclusions=cfg.memory.self_card_conclusions,
+            people_in_window_conclusions=cfg.memory.people_in_window_conclusions,
+            people_in_window_speakers=cfg.memory.people_in_window_speakers,
+            memory_read_timeout_seconds=cfg.memory.read_timeout_seconds,
             # The shared decision log (issue #199). `None` on purpose, and the
             # keyword is written out rather than defaulted so the parity gate
             # can see the choice: an eval drives ONE turn against a scripted

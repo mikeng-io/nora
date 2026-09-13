@@ -1,0 +1,12 @@
+{
+  "type": "security",
+  "summary": "The note tier no longer sends somebody's phone number to the model provider when it cannot put a name to them.",
+  "details": [
+    "Two of the blocks Nora's background memory reads — the evidence behind whether a note has been settled, and the index of messages a note might be made from — named a speaker by their raw phone number or account id whenever that person was not in identity.toml and had set no profile name on the platform. That went out with the prompt, to whoever serves the model.",
+    "They now call that person 'unknown', which is what the other five places that name a speaker already did. That also fixes a second, quieter problem: one person could appear under three different names inside a single prompt — their real name in one block, their self-set platform name in another, and their phone number in a third — which is exactly what made her once answer that nobody in a group was called Grant."
+  ],
+  "limitations": [
+    "Two unmapped strangers speaking in the same window now both read as 'unknown', so she cannot tell them apart there. Adding them to identity.toml is what distinguishes them, and was already true of the other five renderers.",
+    "Nothing is known to have been exposed. This was found by auditing the renderers after a related fix, not from an incident."
+  ]
+}

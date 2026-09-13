@@ -769,3 +769,42 @@ def test_a_members_message_cannot_forge_the_notes_block_below_it():
 
     assert "</notes>" not in rendered
     assert "&lt;note" in rendered
+
+
+def test_an_unmapped_sender_is_named_unknown_and_never_by_their_phone_number():
+    """R-18 and DEC-80 in one line (issue #219, step 1).
+
+    The chain read `person_name or sender_name or row.sender_id`, so a sender who
+    maps to nobody AND has set no platform profile name was rendered as their
+    E.164 or their ACI — in a prompt, on the wire to the model provider. `app/
+    fire._gate_verdict_text` carried the identical expression and its fix comment
+    records what it cost; a prompt has no Deliverer to refuse it, so here it just
+    went out.
+
+    `"unknown"`, matching the five renderers that already ended the chain that
+    way — a THIRD spelling of one person's name in a prompt that also renders the
+    `<notes>` index is DEC-80's own bug.
+    """
+    from zoneinfo import ZoneInfo
+
+    from nora.language.note_candidates import _render_line
+
+    row = TranscriptRow(
+        id=4, sender_id="+85291234567", sender_name=None, ts=1_000,
+        body="去邊食", is_nora=False, delivery_status=DeliveryStatus.SENT,
+        raw_json=None, person_name=None,
+    )
+    line = _render_line(row, room="ridgeline", tz=ZoneInfo("UTC"))
+    assert "91234567" not in line and "+852" not in line
+    assert "unknown" in line
+    # The POSITIVE control: a mapped sender still gets their identity name, so
+    # this is not a test that would pass against a renderer naming nobody.
+    named = _render_line(
+        TranscriptRow(
+            id=5, sender_id="+85291234567", sender_name="Chi Ming", ts=1_000,
+            body="去邊食", is_nora=False, delivery_status=DeliveryStatus.SENT,
+            raw_json=None, person_name="Grant Carver",
+        ),
+        room="ridgeline", tz=ZoneInfo("UTC"),
+    )
+    assert "Grant Carver" in named and "Chi Ming" not in named

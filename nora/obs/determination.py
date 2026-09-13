@@ -36,6 +36,9 @@ shapes rather than one event whose fields come and go with the log level.
 and the standard library, nothing else. A determination is not a Nora idea —
 it is what any occasion that may decline the floor produces — and keeping the
 imports empty is what lets it be lifted out whole.
+`test_the_module_imports_nothing_from_nora` is the check, and it is why the
+ONE-ROW-ONE-LINE collapse every other renderer calls is not called here: see
+`render_mirror` and `window_from` below for where it happens instead.
 """
 
 from __future__ import annotations
@@ -72,6 +75,14 @@ class WindowRow:
     """
 
     sender_name: str | None
+    #: ONE LINE, ALREADY. `render_mirror` puts this on a line of its own beside
+    #: a name, so a body holding a line break forges a window row under a name
+    #: that never said it. The collapse is `nora.domain.prompt.one_line` and it
+    #: belongs to whoever builds this — this module may not import it (see the
+    #: module docstring) — so `window_from`, the only constructor, does it
+    #: rather than asking its caller to remember. An obligation stated in a
+    #: comment is the kind that gets forgotten; that is this whole change's
+    #: story.
     body: str | None
 
 
@@ -140,6 +151,13 @@ def render_mirror(d: Determination) -> str:
         lines.append(f"(stop: {d.stop_reason})")
     if d.window:
         lines.append("window that closed:")
+        # ONE ROW, ONE LINE — and the collapse is the CALLER's, which is the
+        # only shape available to a module that may not import `nora.*`. These
+        # are one line per window row in a post an operator reads the verdicts
+        # off, so a newline in a member's message writes an extra
+        # `- somebody: …` line under a name that never said it. `window_from`
+        # is the only way a window is ever built and it collapses every body
+        # there, so a row reaching this line has already been through it.
         lines.extend(
             f"- {row.sender_name}: {(row.body or '')[:WINDOW_BODY_CHARS]}"
             for row in d.window
@@ -210,8 +228,46 @@ def window_from(rows: Any) -> tuple[WindowRow, ...]:
 
     Takes anything with `sender_name` and `body` — `TranscriptRow` at runtime —
     so the domain type stays on the caller's side of the import.
+
+    **Bodies are collapsed to one line here**, which is what makes
+    `WindowRow.body`'s promise true. `str.splitlines` is the stdlib answer to
+    «what ends a line», so rejoining its output with a space needs no regex, no
+    table of separators and no `nora.*` import — see `_one_line` below.
+
+    Doing it here rather than asking the caller to is the same judgement
+    `MediaJoin` is one class for: one renderer remembering and the next
+    forgetting is what this change exists to stop, and this is the only way a
+    `Determination`'s window is ever built.
     """
     return tuple(
-        WindowRow(sender_name=row.sender_name, body=row.body)
+        WindowRow(
+            # THE NAME IS COLLAPSED TOO, and the `person_name` projection is
+            # preferred over the self-set platform one (DEC-80) — `render_mirror`
+            # puts this on a line of its own beside a body, so a newline in a
+            # profile name forges a window row, and the raw profile name is a
+            # second name for somebody the verdict line above already called
+            # something else.
+            sender_name=_one_line(
+                getattr(row, "person_name", None) or row.sender_name or ""
+            ) or None,
+            body=None if row.body is None else _one_line(row.body),
+        )
         for row in list(rows)[-WINDOW_ROWS:]
     )
+
+
+def _one_line(body: str) -> str:
+    """`body` with every line break replaced by the space a reader would see.
+
+    **Not a second copy of a policy** — that is the distinction that makes this
+    acceptable where a duplicated separator table would not be. The policy is
+    «what ends a line», and `str.splitlines` IS that answer, in the standard
+    library, for both this function and `nora.domain.prompt.one_line`. There is
+    no list here that can drift out of step with one over there, because
+    neither of them holds a list.
+
+    `tests/unit/test_determination.py` pins the agreement directly against
+    `one_line` over a shared corpus, so a divergence reds rather than waits to
+    be noticed.
+    """
+    return " ".join(part.strip() for part in body.splitlines() if part.strip())

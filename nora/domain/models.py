@@ -353,6 +353,31 @@ class TagContext:
     # called at all for an empty tuple, so a deployed prompt gains nothing
     # until something populates it.
     decisions: tuple[tuple[str, tuple[DecisionRow, ...]], ...] = ()
+    # `<people_in_window>` (issue #210) — what Honcho has concluded about EACH
+    # PERSON WHO SPOKE in the transcript window, as `(display name, conclusions)`
+    # pairs, most recent speaker first. The same `representation` verb as
+    # `tagger_card` above with `target` set to them, run once per speaker.
+    #
+    # It exists because `tagger_card` is keyed on ONE person — whoever tagged
+    # her — and the participation occasion has no tagger at all
+    # (`participation_occasion` builds `person_id=None`, so `ref is None`, so
+    # `peer_card`, `tagger_card` and `self_card` were all empty on every
+    # ambient turn). The ambient decider's question is not about one person; it
+    # is about the people in this window, and «Aaron asks this every week and
+    # never means it» is exactly the input that separates a turn worth taking
+    # from one that is not.
+    #
+    # NOT a superset of `tagger_card` and not a replacement for it: that block
+    # names the person who is ASKING, this one names the people who are
+    # TALKING, and on the tag path those are different facts with different
+    # weight. Populated only for the participation occasion today
+    # (`FirePath.build_context`), for `decisions`' reason: a reminder firing
+    # was decided when its row was written.
+    #
+    # Defaulted empty like its siblings, and `_people_in_window_block` renders
+    # nothing for an empty tuple, so a deployed prompt gains nothing until
+    # something populates it.
+    people_in_window: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 @dataclass(frozen=True)
