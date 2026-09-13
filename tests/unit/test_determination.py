@@ -76,7 +76,10 @@ def test_the_mirror_renders_a_spoke_determination_whole() -> None:
         verdict="spoke", texts=("7pm then",), held=False,
         window=(WindowRow("alice", "what time again"),),
     )
-    assert render_mirror(d) == (
+    # The window is rendered by the CALLER now (`fire._mirror_window`), because
+    # this module may import no `nora.*` and so cannot reach the shared row
+    # renderer. `render_mirror` composes what it is handed.
+    assert render_mirror(d, window="- alice: what time again") == (
         "[shadow] signal/room-1\n"
         "verdict: SPOKE — the room heard:\n"
         "7pm then\n"
@@ -138,7 +141,7 @@ def test_the_mirror_renders_an_unmapped_sender_and_an_empty_body() -> None:
     rendering has always printed the name as-is and an absent body as empty;
     a crash here would take out the review surface for the whole room."""
     d = _determination(verdict="silent", texts=(), window=(WindowRow(None, None),))
-    assert render_mirror(d).endswith("- None: ")
+    assert render_mirror(d, window="- None: ").endswith("- None: ")
 
 
 # ------------------------------------------------------------- the two sinks

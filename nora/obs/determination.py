@@ -36,9 +36,11 @@ shapes rather than one event whose fields come and go with the log level.
 and the standard library, nothing else. A determination is not a Nora idea —
 it is what any occasion that may decline the floor produces — and keeping the
 imports empty is what lets it be lifted out whole.
-`test_the_module_imports_nothing_from_nora` is the check, and it is why the
-ONE-ROW-ONE-LINE collapse every other renderer calls is not called here: see
-`render_mirror` and `window_from` below for where it happens instead.
+`test_the_module_imports_nothing_from_nora` is the check, and it is why this
+module RENDERS no window of its own. `render_mirror` takes the window already
+rendered — `nora.app.fire._mirror_window` builds it through the shared
+`render_rows`, because that file may import `nora.domain` freely and this one
+may not. A private copy of the collapse here is what that avoids.
 """
 
 from __future__ import annotations
@@ -121,7 +123,7 @@ class Determination:
         return "declined"
 
 
-def render_mirror(d: Determination) -> str:
+def render_mirror(d: Determination, *, window: str = "") -> str:
     """The shadow mirror post (§10.6): the source room, the verdict, the text
     and the window that closed.
 
@@ -149,19 +151,9 @@ def render_mirror(d: Determination) -> str:
     lines.extend(d.texts)
     if d.stop_reason:
         lines.append(f"(stop: {d.stop_reason})")
-    if d.window:
+    if window:
         lines.append("window that closed:")
-        # ONE ROW, ONE LINE — and the collapse is the CALLER's, which is the
-        # only shape available to a module that may not import `nora.*`. These
-        # are one line per window row in a post an operator reads the verdicts
-        # off, so a newline in a member's message writes an extra
-        # `- somebody: …` line under a name that never said it. `window_from`
-        # is the only way a window is ever built and it collapses every body
-        # there, so a row reaching this line has already been through it.
-        lines.extend(
-            f"- {row.sender_name}: {(row.body or '')[:WINDOW_BODY_CHARS]}"
-            for row in d.window
-        )
+        lines.append(window)
     return "\n".join(lines)
 
 

@@ -4,6 +4,16 @@ from nora.domain.notes import DESCRIPTION_MAX_CHARS, TITLE_MAX_CHARS, Note
 from nora.language.note_render import NOTES_BLOCK_NOTE, render_notes
 
 
+def _text(block) -> str:
+    """The block's bytes, or `""` when there is no block.
+
+    The three renderers return a `ContextBlock` since #220's second half — the
+    block declares itself and `ContextBlock.render()` is the only thing that
+    turns one into text. These tests assert on the bytes, so they render here.
+    A `None` is «no block at all», which is what `""` used to mean.
+    """
+    return block.render() if block is not None else ""
+
 def _note(
     note_id="0191f2c4-0000-7000-8000-000000000001",
     title="9 Sept dinner",
@@ -26,11 +36,11 @@ def test_an_empty_tier_renders_no_block_at_all():
     empty block. This is what lets the tier ship dormant — `TagContext.notes`
     defaults to `()` and nothing writes it yet, so today this renders nothing
     in production and adds no tokens to any tag."""
-    assert render_notes(()) == ""
+    assert _text(render_notes(())) == ""
 
 
 def test_the_index_carries_the_title_and_the_description():
-    out = render_notes((_note(),))
+    out = _text(render_notes((_note(),)))
     assert "9 Sept dinner" in out
     assert "Three venues on the table; nobody has picked one." in out
 
@@ -42,9 +52,9 @@ def test_the_body_is_not_in_the_index():
     docstring for the closing-condition ruling in particular. This is the test
     that turns red if somebody widens the line "while they are in here", which
     is how a per-tag block with no top-N grows without anyone deciding to."""
-    out = render_notes((_note(
+    out = _text(render_notes((_note(
         uncertainty="UNCERTAINTY-SENTINEL", closing_condition="CLOSING-SENTINEL",
-    ),))
+    ),)))
     assert "UNCERTAINTY-SENTINEL" not in out
     assert "CLOSING-SENTINEL" not in out
 
@@ -65,7 +75,7 @@ def test_the_opening_tag_carries_the_note_and_the_marker():
     regression that moved the note into the body text — still true, but no
     longer load-bearing at the un-spoofable position — would pass every other
     test in this file."""
-    out = render_notes((_note(),))
+    out = _text(render_notes((_note(),)))
     opening_tag = out[: out.index(">") + 1]
     assert NOTES_BLOCK_NOTE in opening_tag
     assert 'untrusted="true"' in opening_tag
@@ -75,7 +85,7 @@ def test_everything_model_authored_is_escaped():
     """R-13. A title and a description are model-authored from group-authored
     material, so they reach the prompt through `nora.domain.prompt.escape` like
     every other injected block's contents."""
-    out = render_notes((_note(title="<injected>", description="a & b"),))
+    out = _text(render_notes((_note(title="<injected>", description="a & b"),)))
     assert "<injected>" not in out
     assert "&lt;injected&gt;" in out
     assert "&amp;" in out
@@ -92,7 +102,7 @@ def test_a_retired_note_is_never_rendered_beside_a_standing_one():
         note_id="0191f2c4-0000-7000-8000-000000000002",
         title="retired note", retired_at=99,
     )
-    out = render_notes((retired, standing))
+    out = _text(render_notes((retired, standing)))
     assert "retired note" not in out
     assert "standing note" in out
     assert out.count("\n- ") == 1
@@ -117,7 +127,7 @@ def test_the_index_is_uncapped_and_every_standing_note_appears():
         _note(note_id=f"0191f2c4-0000-7000-8000-{i:012d}", title=f"note {i:03d}")
         for i in range(60)
     )
-    out = render_notes(notes)
+    out = _text(render_notes(notes))
     for i in range(60):
         assert f"note {i:03d}" in out, i
     assert out.count("\n- ") == 60
@@ -130,8 +140,8 @@ def test_the_entries_are_capped_upstream_not_here():
     a renderer that quietly shortened would make this renderer the place the
     cap lives, which is exactly what `nora.domain.notes` moved away from.
     A maximal note renders in full."""
-    out = render_notes((_note(
+    out = _text(render_notes((_note(
         title="t" * TITLE_MAX_CHARS, description="d" * DESCRIPTION_MAX_CHARS,
-    ),))
+    ),)))
     assert "t" * TITLE_MAX_CHARS in out
     assert "d" * DESCRIPTION_MAX_CHARS in out

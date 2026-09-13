@@ -84,8 +84,10 @@ BlockKey = Literal["global", "workspace", "room", "person", "turn"]
 #: a lookup that might hit some other row, and no raw identifier reaches the
 #: model. `row_id` is the note tier's `[7]`, which IS the row id because the
 #: curator's grounding check cites it back. `bullet` is the operator surfaces'
-#: `- `, which addresses nothing.
-HandleStyle = Literal["none", "index", "row_id", "bullet"]
+#: `- `, which addresses nothing. `bare_id` is the note-candidate index's `7 `
+#: — the same row id without brackets, because that line already opens with a
+#: bracketed clock and two bracketed fields in a row read as one.
+HandleStyle = Literal["none", "index", "row_id", "bare_id", "bullet"]
 
 #: How the time on a line is written, or that there is none.
 #:
@@ -95,7 +97,7 @@ HandleStyle = Literal["none", "index", "row_id", "bullet"]
 #: and the note-candidate index's, which are read against a calendar rather than
 #: against now. `none` exists because three renderers genuinely have no time —
 #: and per AGENTS.md that is a thing to justify, not a default to reach for.
-TimeStyle = Literal["none", "age", "clock", "datetime"]
+TimeStyle = Literal["none", "age", "clock", "datetime", "datetime_tz"]
 
 
 @dataclass(frozen=True)
@@ -171,20 +173,23 @@ class ContextBlock:
     #: room), and it is data here rather than the order of `+` operators in one
     #: expression.
     order: int
-    #: The «- name: …» line for the context header, without the dash. Empty only
-    #: for a block that is not part of that catalogue.
+    #: The «- name: …» line for the context header, without the dash.
     header: str
-    #: The block's OWN rendered bytes, tag included. A field rather than
-    #: something this class always builds, because three packages render blocks
-    #: — `nora.agent.prefill`, `nora.language.note_render`,
-    #: `nora.language.standing_render` — and the value of DECLARING a block is
-    #: the name, the order, the placement and the catalogue line, not who writes
-    #: the angle brackets. `render()` builds one for a block with no renderer of
-    #: its own; a block that has one passes its own text.
-    text: str = ""
-    #: For `render()` only — the framing and body of a block this class builds.
-    note: str = ""
-    body: str = ""
+    #: The `note=` attribute: what this block IS, in the second person. A block
+    #: handed to a model without one is a block it decides the meaning of.
+    note: str
+    #: What goes between the tags. Already escaped by whoever built it — a
+    #: transcript through `render_messages`, a fact list through `escape`.
+    body: str
+    #: The block's OWN attributes, in order, rendered BEFORE `untrusted`.
+    #: `<peer_card person="…">`, `<standing written="…">`. Values are escaped
+    #: here, so a caller passes the raw string.
+    #:
+    #: **Attribute order is uniform now and that is a deliberate byte change.**
+    #: `peer_card` put its own attribute first and `standing` put its own after
+    #: `untrusted`; two blocks, two orders, for no reason anybody wrote down.
+    #: One renderer means one order.
+    attrs: tuple[tuple[str, str], ...] = ()
     #: What the content varies by — see `BlockKey`. Defaulted to `turn` because
     #: that is the safe end: a block wrongly declared `turn` costs nothing but a
     #: cache line it never had, and one wrongly declared `global` silently
@@ -195,13 +200,20 @@ class ContextBlock:
     untrusted: bool = True
 
     def render(self) -> str:
-        """The block's own bytes — opening tag with its framing, body, close."""
-        marker = ' untrusted="true"' if self.untrusted else ""
-        return (
-            f"<{self.name}{marker} note=\"{escape_attr(self.note)}\">\n"
-            f"{self.body}\n"
-            f"</{self.name}>"
-        )
+        """The block's own bytes, and the ONLY way a block becomes text.
+
+        There is no `text` field and no path around this method — that is what
+        makes `untrusted` and `note` properties of a block rather than things
+        seven renderers each remembered to type. Before #220's second half they
+        were: `<peer_card>` shipped with neither for months, and the two
+        note-tier blocks still have neither on master.
+        """
+        parts = [self.name]
+        parts += [f'{k}="{escape_attr(v)}"' for k, v in self.attrs]
+        if self.untrusted:
+            parts.append('untrusted="true"')
+        parts.append(f'note="{escape_attr(self.note)}"')
+        return f"<{' '.join(parts)}>\n{self.body}\n</{self.name}>"
 
 
 def assemble(blocks: Sequence[ContextBlock], placement: Placement) -> str:
@@ -212,9 +224,10 @@ def assemble(blocks: Sequence[ContextBlock], placement: Placement) -> str:
     the sequence — an argument nothing could check and nothing could read.
     """
     chosen = sorted(
-        (b for b in blocks if b.placement == placement), key=lambda b: b.order,
+        (b for b in blocks if b.placement == placement and b.body),
+        key=lambda b: b.order,
     )
-    return "".join(b.text for b in chosen)
+    return "".join(b.render() + "\n" for b in chosen)
 
 
 def catalogue(blocks: Sequence[ContextBlock]) -> str:
@@ -315,6 +328,7 @@ def render_rows(
     is_self: Callable[[Row], bool] = lambda _: False,
     reply_mark: Callable[[Row], str] = lambda _: "",
     suffix: Callable[[Row], str] | None = None,
+    trailing: Callable[[Row], str] | None = None,
     now: datetime | None = None,
     tz: tzinfo | None = None,
 ) -> str:
@@ -360,6 +374,10 @@ def render_rows(
         if style.bracket_speaker:
             who = f"[{who}]"
         line = f"{head}{when}{who}: {escape(one_line(body(row) or ''))}"
+        if trailing is not None:
+            tail_text = one_line(trailing(row))
+            if tail_text:
+                line += f" {tail_text}"
         out.append(line.lstrip() if not head else line)
     return "\n".join(out)
 
@@ -369,6 +387,8 @@ def _handle(style: HandleStyle, *, index: int, row_id: object) -> str:
         return f"#{index} "
     if style == "row_id":
         return f"[{row_id}] "
+    if style == "bare_id":
+        return f"{row_id} "
     if style == "bullet":
         return "- "
     return ""
@@ -387,6 +407,8 @@ def _when(
     moment = datetime.fromtimestamp(ts / 1000, tz=tz)
     if style == "clock":
         return f"[{moment:%H:%M}] "
+    if style == "datetime_tz":
+        return f"[{moment:%Y-%m-%d %a %H:%M %Z}] "
     return f"[{moment:%Y-%m-%d %a %H:%M}] "
 
 

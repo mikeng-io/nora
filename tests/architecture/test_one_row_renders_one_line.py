@@ -93,16 +93,6 @@ _NOT_A_LINE = {
         "encloses."
     ),
     (
-        "nora/language/standing_render.py", "render_standing", 'escape(standing.body)',
-    ): (
-        "`<standing>`: her whole folded position between its own tags, one per "
-        "prompt. `relevance_gate` DOES collapse its standing, and the "
-        "difference is the shape rather than the trust — that renderer joins "
-        "its blocks into one flat document it then splits on newlines, while "
-        "this one is tag-delimited. `nora.language.proactive` renders standing "
-        "one line per ROOM and does collapse it."
-    ),
-    (
         "nora/app/eval_support.py", "run_proactive_act_case", 'seed.notes[0][1].body',
     ): (
         "Not a render at all: the eval seed composes a new NOTE REVISION body "
@@ -126,26 +116,16 @@ _NOT_A_LINE = {
         "module, one line per row, does collapse."
     ),
     (
-        "nora/obs/determination.py", "render_mirror",
-        "(row.body or '')[:WINDOW_BODY_CHARS]",
-    ): (
-        "ALREADY collapsed, at the only constructor. `nora/obs/determination.py` "
-        "is gated on importing no `nora.*` at all "
-        "(`test_the_module_imports_nothing_from_nora`), so it cannot call "
-        "`one_line` — instead `window_from`, the one way a window is ever built, "
-        "collapses every body with the same `str.splitlines` expression, and "
-        "`test_the_mirrors_collapse_agrees_with_the_shared_one_exactly` pins the "
-        "two equal over every separator Python knows."
-    ),
-    (
         "nora/domain/blocks.py", "render", "self.body",
     ): (
-        "ALREADY collapsed, per row, at the only thing that builds a body: "
-        "`render_rows` applies `one_line` to every row before joining them, and "
-        "`tests/unit/test_blocks.py` pins that under every `RowStyle` in the "
-        "parity table. `ContextBlock.body` is the JOINED result, so collapsing "
-        "it here would destroy the line structure the collapse exists to "
-        "protect — it would render an N-row transcript as one line."
+        "ALREADY collapsed, per row, by whatever built the body: "
+        "`render_rows` applies `one_line` to every row before joining them and "
+        "`render_messages` puts each message in its own element, both pinned "
+        "in `tests/unit/test_blocks.py`. `ContextBlock.body` is the JOINED "
+        "result, so collapsing it here would destroy the line structure the "
+        "collapse exists to protect — an N-row transcript would render as one "
+        "line. This is the ONLY place a block becomes text, which is what "
+        "makes the exemption safe to hold."
     ),
 }
 

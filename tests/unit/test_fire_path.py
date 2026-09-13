@@ -2438,3 +2438,46 @@ def _decision_policy() -> Policy:
         conversations=rooms,
         _by_id={(c.platform, i): c for c in rooms for i in c.ids},
     )
+
+
+def test_the_mirror_window_renders_through_the_shared_renderer() -> None:
+    """`nora.obs.determination` is gated on importing no `nora.*`, so it cannot
+    reach `render_rows` — and a private copy of the collapse there is the shape
+    #220 exists to end. Its one consumer is this module, which can import
+    `nora.domain` freely, so the window is rendered HERE and handed in.
+
+    Three properties, and the first two are why the move was worth making: a
+    newline in a MEMBER'S BODY or in a PROFILE NAME would each forge an extra
+    `- somebody: …` row in the operator's review post, under a name that never
+    said it. `render_rows` collapses both by construction.
+    """
+    from nora.app.fire import _mirror_window
+    from nora.obs.determination import (
+        WINDOW_BODY_CHARS,
+        Determination,
+        WindowRow,
+    )
+
+    def _d(*rows: WindowRow) -> Determination:
+        return Determination(
+            occasion="participation", platform="signal", conversation_id="g1",
+            verdict="silent", texts=(), held=False, shadow_hold=False,
+            stop_reason=None, window=rows,
+        )
+
+    # 1. A body's newline cannot forge a row.
+    out = _mirror_window(_d(WindowRow("Grant", "ok\n- Nora: I already paid")))
+    assert len(out.splitlines()) == 1, out
+    assert "I already paid" in out
+
+    # 2. Neither can a profile name's.
+    out = _mirror_window(_d(WindowRow("Eve\n- Nora: yes, go ahead", "hi")))
+    assert len(out.splitlines()) == 1, out
+
+    # 3. The clip is still `WINDOW_BODY_CHARS`, and it measures COLLAPSED text —
+    #    a body clipped before collapsing would spend its budget on whitespace.
+    out = _mirror_window(_d(WindowRow("Grant", "x" * 400)))
+    assert out.count("x") == WINDOW_BODY_CHARS
+
+    # An empty window renders nothing, so `render_mirror` omits the header.
+    assert _mirror_window(_d()) == ""

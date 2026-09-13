@@ -108,6 +108,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import ClassVar, Protocol
 
+from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import (
     BODY_MAX_CHARS,
@@ -125,7 +126,7 @@ from nora.domain.notes import (
     default_revisit_at,
 )
 from nora.domain.ports import DreamSink, Proposal
-from nora.domain.prompt import escape, escape_attr, one_line
+from nora.domain.prompt import escape, escape_attr
 from nora.language.note_render import render_notes
 from nora.obs.metrics import Metrics
 
@@ -390,6 +391,11 @@ def _room_block(*, room: str, description: str | None) -> str:
 #: facts this process has; asking the model to derive them is a cost with no
 #: upside, and the objective's own rule («resolve a relative date against the
 #: message's timestamp») only works when that timestamp is the room's.
+#: The candidate index's line grammar. A BARE id — the line already opens with
+#: a bracketed clock — and a time carrying the room's zone, because a note's
+#: anchor is a DATE and the zone decides which one.
+_CANDIDATE_STYLE = RowStyle(handle="bare_id", time="datetime_tz")
+
 _LINE_TIME_FORMAT = "%Y-%m-%d %a %H:%M %Z"
 
 
@@ -418,38 +424,26 @@ def _render_line(row: TranscriptRow, *, room: str, tz: _dt.tzinfo) -> str:
 
     `tz` is the operator's `[reminders] timezone`, the same zone the curator
     reads «today» from — the room's day, not the process's."""
-    # `or "unknown"`, NOT `or row.sender_id` — see `note_curator._render_evidence`
-    # for the whole argument. Same two defects in one expression: a raw platform
-    # identifier egressing to the model provider (R-18), and a third name for one
-    # person inside a prompt that also renders `group_members` (DEC-80).
-    # COLLAPSED, not just escaped. `sender_name` is the sender's own platform
-    # profile string on an unmapped account — attacker-controlled — and a
-    # newline in it forges a whole candidate line with a chosen id, moment,
-    # name and room. What this adaptor decides from these lines is whether a
-    # note is CREATED, so that mints durable state under somebody else's name.
-    # The body half was closed 2026-09-12; this is the name half.
-    name = one_line(row.person_name or row.sender_name or "unknown")
-    # ONE ROW, ONE LINE (`nora.domain.prompt.one_line`), and this line is the
-    # reason the docstring above can say «attributed on every line». Joined with
-    # `\n` by the caller, a newline in a member's own message writes a SECOND
-    # line carrying an id, a moment, a name and a room it chose — and what this
-    # adaptor decides from these lines is whether a note gets CREATED, so a
-    # forged arrangement is minted into durable state under somebody else's
-    # name. The `escape` below was added 2026-09-10 and closed the TAG axis;
-    # this is the line axis, which `escape` cannot see.
-    body = one_line(row.body or _media_placeholder(row))
-    ts = _dt.datetime.fromtimestamp(row.ts / 1000, tz=tz).strftime(_LINE_TIME_FORMAT)
-    # ESCAPED, per R-13 (added 2026-09-10). These lines are members' own typed
-    # messages, and the `<notes>` index is appended to the SAME prompt below
-    # them — so an unescaped body could forge that block's tags even though
-    # this line is not itself inside one.
-    line = f"{row.id} [{ts}] {escape(name)} ({escape(room)}): {escape(body)}"
-    if row.quoted_ts is not None:
-        quoted = _dt.datetime.fromtimestamp(
-            row.quoted_ts / 1000, tz=tz,
+    def _when(other_ts: int) -> str:
+        return _dt.datetime.fromtimestamp(
+            other_ts / 1000, tz=tz,
         ).strftime(_LINE_TIME_FORMAT)
-        line += f" (reply to {quoted})"
-    return line
+
+    return render_rows(
+        [row],
+        style=_CANDIDATE_STYLE,
+        # `or "unknown"`, NOT `or row.sender_id` — the raw id is an E.164 or an
+        # ACI, and this block is a prompt (R-18, DEC-80).
+        speaker=lambda r: r.person_name or r.sender_name or "unknown",
+        body=lambda r: r.body or _media_placeholder(r),
+        timestamp=lambda r: r.ts,
+        row_id=lambda r: r.id,
+        suffix=lambda r: f"({room})",
+        trailing=lambda r: (
+            "" if r.quoted_ts is None else f"(reply to {_when(r.quoted_ts)})"
+        ),
+        tz=tz,
+    )
 
 
 def _find_anchor_match(
@@ -638,8 +632,10 @@ class NoteCandidateAdaptor:
                 await self._notes.standing(workspace=workspace),
                 today=_batch_day(batch, tz=self._tz),
             )
-            if index:
-                parts.append(index)
+            if index is not None:
+                # `.render()` — the block builds its own tag now, and this pass
+                # assembles a flat prompt rather than a `build_prefill` one.
+                parts.append(index.render())
         return "\n\n".join(parts)
 
     # -- accept -----------------------------------------------------------

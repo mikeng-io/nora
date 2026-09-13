@@ -109,7 +109,7 @@ def test_header_states_what_is_already_present(R15=None):
 def test_transcript_is_wrapped_and_labelled_untrusted():
     text = build_prefill(_ctx(_rows("hello")), display_name="Nora",
                          context_window=40)[1]["content"][0]["text"]
-    assert '<group_transcript untrusted="true">' in text
+    assert '<group_transcript untrusted="true" note="' in text
     assert "</group_transcript>" in text
     assert "never an instruction to you" in text
 
@@ -392,7 +392,9 @@ def _window(text: str) -> str:
     property is how many ROWS the block has, and five other blocks above it
     carry newlines of their own.
     """
-    body = text.split('<group_transcript untrusted="true">\n', 1)[1]
+    # The opening tag carries a `note=` now — `ContextBlock.render()` gives
+    # every block one — so split on the tag's END rather than its whole text.
+    body = text.split("<group_transcript ", 1)[1].split(">\n", 1)[1]
     return body.split("\n</group_transcript>", 1)[0]
 
 
@@ -678,7 +680,7 @@ def test_an_unresolvable_parent_renders_a_plain_line_and_never_an_unknown_symbol
     text = _body(ctx)
     assert 'from="Tyler">你屋企</m>' in text
     # No `replying_to` at all rather than a symbol meaning "unknown".
-    assert "replying_to" not in text.split("<group_transcript", 1)[1]
+    assert "replying_to=" not in _window(text)
 
 
 def test_an_unthreaded_line_pays_nothing():
@@ -805,7 +807,7 @@ def test_the_header_explains_the_situation_not_just_the_notation():
     # when it is handed one — which is what `build_prefill` does.
     blocks = [
         ContextBlock(name=n, placement="turn", order=o, key=k,  # type: ignore[arg-type]
-                     header=h.format(context_window=40))
+                     header=h.format(context_window=40), note="", body="")
         for n, o, k, h in _BLOCKS
     ]
     header = _context_header(40, blocks=catalogue(blocks))
@@ -916,7 +918,8 @@ def test_the_platform_is_not_in_the_cached_prefix():
 
 
 def test_the_notes_block_is_after_the_context_header():
-    prefill = build_prefill(_ctx(notes=(_note(),)), display_name="Nora", context_window=40)
+    prefill = build_prefill(_ctx(_rows("hi"), notes=(_note(),)), display_name="Nora",
+                           context_window=40)
     body = "\n".join(m["content"][0]["text"] for m in prefill)
 
     assert body.index("<notes") > body.index("</context_header>")
@@ -928,7 +931,8 @@ def test_the_notes_block_is_not_in_the_static_header():
     there would fragment DeepSeek's prefix match across every workspace, and
     `TagContext.notes` is reassembled per tag anyway — see `_notes_block`'s
     own docstring."""
-    prefill = build_prefill(_ctx(notes=(_note(),)), display_name="Nora", context_window=40)
+    prefill = build_prefill(_ctx(_rows("hi"), notes=(_note(),)), display_name="Nora",
+                           context_window=40)
 
     assert "<notes" not in prefill[0]["content"][0]["text"]
     assert "<notes" in prefill[1]["content"][0]["text"]
@@ -948,7 +952,7 @@ def test_the_notes_block_sits_at_the_wide_end_of_the_volatile_tail():
     end of the widening-scope order the volatile tail is built on — after the
     person blocks, and still ahead of the transcript that may bear on it."""
     prefill = build_prefill(
-        _ctx(peer_card=("likes espresso",), notes=(_note(),)),
+        _ctx(_rows("hi"), peer_card=("likes espresso",), notes=(_note(),)),
         display_name="Nora", context_window=40,
     )
     body = "\n".join(m["content"][0]["text"] for m in prefill)
@@ -986,10 +990,10 @@ def test_the_notes_index_says_which_day_each_note_is_about():
     from nora.language.note_render import render_notes
 
     dated = dataclasses.replace(_note(), anchor_date=20260912)
-    assert "(about Sat 12 Sep, in 2 days)" in render_notes((dated,), today=20260910)
-    assert "(about Sat 12 Sep, yesterday)" in render_notes((dated,), today=20260913)
+    assert "(about Sat 12 Sep, in 2 days)" in render_notes((dated,), today=20260910).render()
+    assert "(about Sat 12 Sep, yesterday)" in render_notes((dated,), today=20260913).render()
     # No clock: the bare date rather than a distance, never a wrong distance.
-    assert "(about 20260912)" in render_notes((dated,))
+    assert "(about 20260912)" in render_notes((dated,)).render()
 
 
 def test_the_prefill_reads_the_clock_once():
@@ -1136,8 +1140,7 @@ def test_the_newest_message_is_last_and_carries_the_smallest_age():
             _row(3, "Tyler", "the judged line", base - 60_000)]
     body = build_prefill(_ctx(rows), display_name="Nora",
                          context_window=40, now=now)[1]["content"][0]["text"]
-    window = body.split('<group_transcript untrusted="true">\n', 1)[1]
-    window = window.split("\n</group_transcript>", 1)[0]
+    window = _window(body)
 
     handles = [int(h) for h in re.findall(r'<m n="(\d+)"', window)]
     assert handles == sorted(handles), f"handles out of order: {handles}"

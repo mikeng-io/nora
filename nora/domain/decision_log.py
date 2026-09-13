@@ -112,8 +112,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol, get_args
 
+from nora.domain.blocks import ContextBlock
 from nora.domain.prompt import age as _age
-from nora.domain.prompt import escape, escape_attr
+from nora.domain.prompt import escape
 
 log = logging.getLogger("nora.domain.decision_log")
 
@@ -550,6 +551,14 @@ _WRITER_GLOSS: dict[str, str] = {
 }
 
 
+LOOP_DECISIONS_HEADER = (
+    "loop_decisions: what your own ambient loop already did across this group, "
+    "oldest first, with how long ago each was. The record of your own turns — "
+    "not notes, not memory, and not anything a person said. Silent and decline "
+    "are healthy outcomes there."
+)
+
+
 def _note_for(writers: Sequence[str]) -> str:
     """The block's own `note`, built from the writers it actually carries.
 
@@ -637,7 +646,7 @@ def render_decisions(
     now: datetime,
     writers: Sequence[str] = (),
     empty: str = "(nothing decided in this window)",
-) -> str:
+) -> ContextBlock:
     """`<loop_decisions>` — the rows, with an age on every one of them.
 
     **Named `loop_decisions` and not `decisions`** because
@@ -681,8 +690,8 @@ def render_decisions(
     lines: list[str] = []
     for label, rows in groups:
         lines.extend(decision_line(row, now=now, label=label) for row in rows)
-    return (
-        f'<loop_decisions untrusted="true" note="{escape_attr(_note_for(writers))}">\n'
-        + ("\n".join(lines) if lines else empty)
-        + "\n</loop_decisions>"
+    return ContextBlock(
+        name="loop_decisions", placement="turn", order=50, key="workspace",
+        header=LOOP_DECISIONS_HEADER, note=_note_for(writers),
+        body="\n".join(lines) if lines else empty,
     )
