@@ -173,9 +173,12 @@ def test_budgets_match_todays_table():
         # The plugin-provided activation tool (DEC-50, activating DEC-48). It is
         # in `budgets()` ONLY so R-7 admits the `AgentSkills` activation call;
         # the registry does not BUILD it (see the tests below). Sized 2 since
-        # 2026-09-03: two skills ship (navigation, personalization) and one turn
-        # may span both; the repeat-veto still stops re-activating the SAME
-        # skill, which re-injects a body already in context.
+        # 2026-09-03: two skills shipped (navigation, personalization) and one
+        # turn may span both; the repeat-veto still stops re-activating the SAME
+        # skill, which re-injects a body already in context. `self-description`
+        # (2026-09-13, #227) made it three and the number did not move — it
+        # bounds the domains one MESSAGE can span, not the size of the
+        # directory.
         "skills": 2,
         # One message can name two images (a photo AND a screenshot); the
         # per-call vision timeout, not this number, is what keeps two describe

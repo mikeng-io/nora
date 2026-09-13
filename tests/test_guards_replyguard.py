@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from nora.agent.guards import ReplyGuard
 from nora.agent.registry import ToolRegistry
 from nora.obs.metrics import Metrics
@@ -458,3 +460,53 @@ def test_the_veto_names_the_number_it_is_counting():
 
     assert message is not None
     assert f"{BUDGETS['place_info']} time(s)" in message
+
+
+def test_the_skills_veto_does_not_claim_she_holds_a_skill_she_never_loaded():
+    """R-7's generic sentence — «you already called X N time(s) and have that
+    context, answer from what you already have» — is true of every tool on the
+    table whose repeat call returns the identical answer. `skills` is not one of
+    them: the argument picks which body loads.
+
+    It was true here only while the budget equalled the directory size. Three
+    skills now ship against a budget of 2 (2026-09-13, #227), so two mis-routed
+    activations leave the third unreachable, and telling her she has its context
+    is telling her to describe a body she was never given — the same move that
+    produced the issue this skill was added for.
+
+    Reverting the `skills` branch in `ReplyGuard.evaluate` turns this red.
+    """
+    g = _guard()
+    for _ in range(BUDGETS["skills"]):
+        assert g.evaluate("skills", {"skill_name": "navigation"}) is None
+        g.record("skills")
+
+    message = g.evaluate("skills", {"skill_name": "self-description"})
+
+    assert message is not None
+    assert f"{BUDGETS['skills']} skill(s)" in message
+    # The false half, gone: it must not tell her she holds what she did not load.
+    assert "have that context" not in message
+    assert "from what you already have" not in message
+    # And the true half, said: what did not come back is not in front of her, and
+    # the honest move is to say so rather than fill the gap.
+    assert "not in front of you" in message
+    assert "cannot check" in message
+    # "called", not "activated" (review nit): `spent` is `record`'s count, and
+    # `record` fires for any completed call this guard did not veto — including a
+    # `skills(<unknown>)` that resolved nothing. A call is what was spent; an
+    # activation is not what every one of them bought.
+    assert "already called" in message
+    assert "activated" not in message
+
+
+def test_the_skills_budget_is_smaller_than_the_directory_it_rations():
+    """The positive control for the test above: it is only measuring something
+    while the budget CAN be exhausted with a skill still unloaded. If a fourth
+    skill ships, or the budget is raised, this is the line that says the premise
+    moved — not silence."""
+    shipped = [p for p in (Path(__file__).resolve().parents[1] / "nora" / "skills")
+               .iterdir() if (p / "SKILL.md").is_file()]
+    assert len(shipped) > BUDGETS["skills"], (
+        "the R-7 sentence's defect only exists while the budget is the smaller "
+        "number; re-read nora/agent/guards.py's skills branch if this fires")

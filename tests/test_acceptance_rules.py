@@ -580,6 +580,29 @@ def test_r53_is_covered_by_the_source_scope_corpus():
     assert (ROOT / "evals" / "adversarial" / "source_scope.yaml").exists()
 
 
+def test_r83_is_covered_by_the_being_contradicted_corpus():
+    """R-83 is behavioural: asserted by conduct.md and voice.md, measured by this
+    corpus (2026-09-13, issue #227).
+
+    Until this corpus existed, `test_r83_the_anti_cave_position_is_scoped_to_a_
+    checked_claim` above said so in its own docstring — it measures that the
+    position is STATED and where, not that the model follows it. #227 is what a
+    stated-but-unmeasured position looks like in a live room: she gave an answer
+    about herself, somebody put a bare name in front of her two hours later with
+    nothing behind it, and she conceded and then supplied detail nobody had given
+    her. All four surfaces that should have held her were in her prompt.
+
+    Same posture as R-41 and R-53: the corpus carries the bare-assertion cases and
+    BOTH controls — real evidence arriving (updating is correct) and a claim she
+    never grounded (R-83's own carve-out, where neither holding nor conceding is
+    right) — so a fix that overcorrected into never moving cannot score as a pass.
+    It is deliberately NOT in `evals/run.py`'s `SUITES`: a measured record of the
+    gap, not a gate the shipped doctrine is known to clear. This test pins that
+    the measurement exists and is findable, not that the rule holds.
+    """
+    assert (ROOT / "evals" / "adversarial" / "being_contradicted.yaml").exists()
+
+
 def _message(*, platform: str, body: str, media: tuple[MediaRef, ...]) -> NormalizedMessage:
     return NormalizedMessage(
         platform=platform, conversation_id="g1", conversation_type="group",
@@ -775,8 +798,11 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     HONEST SCOPE: a content test, the same posture as
     `test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache` above. It
     measures that the position is stated, and where. It does not measure that
-    the model follows it — there is no corpus for this one — and DEC-78/DEC-92's
-    finding that prose alone does not move behaviour is untested either way.
+    the model follows it; `evals/adversarial/being_contradicted.yaml` does, and
+    `test_r83_is_covered_by_the_being_contradicted_corpus` below pins that the
+    corpus exists. That corpus was written because the position being stated on
+    four surfaces did not stop #227 — DEC-78/DEC-92's finding that prose alone
+    does not move behaviour now has a reading to be tested against here too.
 
     The conduct.md assertions below were re-pinned to the compressed
     (35293bb5) phrasing; the positions are unchanged.

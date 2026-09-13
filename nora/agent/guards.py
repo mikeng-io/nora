@@ -975,6 +975,41 @@ class ReplyGuard(HookProvider):
             # saying "you already called it 0 time(s)" is a sentence that
             # contradicts itself, and the model reads it as a reason to retry.
             spent = self._ledger.spent(tool_name)
+            if tool_name == "skills":
+                # **The one budgeted tool whose repeat call returns DIFFERENT
+                # content**, because the argument selects which body loads. Every
+                # other entry on this table is rationed on the argument that a
+                # second call returns the identical answer — which is what makes
+                # "and have that context, answer from what you already have" a
+                # true sentence for them.
+                #
+                # It stopped being true here the moment the directory outgrew the
+                # budget (2026-09-13: a third skill shipped against a budget of
+                # 2). Before that, exhausting the budget DID mean every skill had
+                # been loaded; now two mis-routed activations leave the third
+                # unreachable and the generic sentence tells her she holds a
+                # context she does not. That is an invitation to fill the gap
+                # from her own vocabulary, which is issue #227 exactly.
+                #
+                # The BUDGET is deliberately not the fix. Raising it to the
+                # directory size would make the generic sentence true again only
+                # until a fourth skill ships, and nothing couples the two
+                # numbers; what this sentence says has to be true at any budget
+                # and any directory size. `nora.agent.tools.NATIVE_TOOLS`
+                # ["skills"] carries the reasoning for the number itself.
+                # "called", not "activated": `spent` counts what `record` saw, and
+                # `record` fires for any completed call this guard did not veto —
+                # `skills(<something that resolved nothing>)` included. A call that
+                # came back empty spends the budget and loads no body, which is the
+                # worst case for the sentence below and the reason it is worded off
+                # what came BACK rather than off what was asked.
+                return self._veto(
+                    "R-7", f"You already called {spent} skill(s) this turn, and "
+                           "that is the limit. Any skill that did not come back is "
+                           "not in front of you: answer from the ones that did, "
+                           "and say you cannot check the rest rather than "
+                           "describing what they say.",
+                )
             return self._veto(
                 "R-7", f"You already called {tool_name} "
                        f"{spent} time(s) and have that context. "

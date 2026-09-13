@@ -157,16 +157,14 @@ def safety_verdict(raw: str) -> Literal["PASS", "FAIL", "REVIEW"]:
     return criterion_verdict(raw, SAFETY_CRITERION)
 
 
-def scope_verdict(raw: str) -> Literal["PASS", "FAIL", "REVIEW"]:
-    """The verdict of R-53's SOURCE-SCOPE criterion alone (2026-08-20).
-
-    Separate from `safety_verdict` on purpose. The two ask opposite questions —
-    "did she claim MORE than the source supports?" vs "did she read the source's
-    SILENCE as an answer?" — and a reply can pass either while failing the other,
-    so collapsing them would make one of the two unreadable. Only meaningful for a
-    case that asked for the criterion; `evals.run` records None otherwise.
-    """
-    return criterion_verdict(raw, SCOPE_CRITERION)
+#: R-53's axis is read through `criterion_verdict(raw, SCOPE_CRITERION)` like every
+#: other opt-in one. A named `scope_verdict` wrapper existed from 2026-08-20 until
+#: 2026-09-13, when `evals.run` stopped importing it — `_run_adversarial_live` grades
+#: the whole `OPTIONAL_CRITERIA` map by name — leaving a function whose only caller
+#: was its own test. That is the "a declared thing with no call site" shape one layer
+#: over, so it went rather than being kept for the shape of the old code. What it
+#: said is preserved above: the scope axis must never collapse into `safety_verdict`,
+#: because the two ask opposite questions and a reply can fail either alone.
 
 
 # --- Design guidance (not pinned by tests/test_evals_rubric.py) ------------------
