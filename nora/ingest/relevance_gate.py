@@ -60,11 +60,13 @@ from xml.sax.saxutils import escape
 
 from pydantic import BaseModel, Field
 
+from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import RecordStore
 from nora.domain.prompt import age as _age
 from nora.domain.prompt import escape_attr
+from nora.domain.prompt import one_line as _one_line
 from nora.domain.provenance import instruction_sha256
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import annotate, generation
@@ -334,18 +336,20 @@ def build_system_prompt(instruction: str, capabilities: str = "") -> str:
     return f"{text}\n\n{block}"
 
 
-_WHITESPACE_RUN = re.compile(r"\s*[\r\n\u2028\u2029]+\s*")
+# `_one_line` is `nora.domain.prompt.one_line`, imported under this module's own
+# name because its call sites and its two tests read it. It was BORN here, as a
+# private copy, and that is precisely what went wrong: the gate was one of six
+# renderers with this hole and the only one that got the fix, so the tag path
+# kept forging rows for two more days while this file's tests stayed green. The
+# shared version also widens the separator set to everything `str.splitlines`
+# breaks on — a superset of the four this copy collapsed, so both tests below
+# still pin exactly what they pinned.
 
 
-def _one_line(body: str) -> str:
-    """One transcript row is one line, whatever the sender typed.
-
-    Every line separator the renderer treats as structural — `\n`, `\r`, and
-    the Unicode line/paragraph separators, which a client will happily send —
-    collapses to a single space, so a row's content can never produce a second
-    row. See `render_context`'s docstring for the forgery this closes.
-    """
-    return _WHITESPACE_RUN.sub(" ", body).strip()
+#: The gate's line grammar. No handle — it addresses nothing and replies to
+#: nothing; `self_name="assistant"` because this prompt speaks of her in the
+#: third person, unlike the tag prefill which uses her display name.
+_GATE_STYLE = RowStyle(time="age", bracket_speaker=True, self_name="assistant")
 
 
 def render_context(
@@ -399,19 +403,23 @@ def render_context(
     # past this, is it still waiting, did somebody already answer — and it was
     # making all three on a wall of undated lines.
     clock = now or datetime.now(UTC)
-    lines = []
-    for row in transcript:
-        body = _one_line(row.body or "")
-        if not body:
-            continue
-        who = (
-            "assistant" if row.is_nora
-            else (row.person_name or row.sender_name or "unknown")
-        )
-        age = _age(row.ts, clock) if row.ts else ""
-        prefix = f"({age}) " if age else ""
-        lines.append(f"{prefix}[{escape(who)}]: {escape(body)}")
-    transcript_block = "\n".join(lines) if lines else "(no messages)"
+    # A row with nothing left after the collapse is DROPPED, not rendered as an
+    # empty line. That is a filter rather than a style, so it stays here: an
+    # attachment or a reaction carries no words for this gate to weigh, and a
+    # bare `[somebody]:` is a row that looks like silence from a person who did
+    # not speak.
+    rows = tuple(r for r in transcript if _one_line(r.body or ""))
+    transcript_block = render_rows(
+        rows,
+        style=_GATE_STYLE,
+        speaker=lambda r: r.person_name or r.sender_name or "unknown",
+        body=lambda r: r.body,
+        # `or None` preserves the pre-existing reading of a FALSY ts — a row
+        # stamped 0 renders no age rather than «56y ago».
+        timestamp=lambda r: r.ts or None,
+        is_self=lambda r: r.is_nora,
+        now=clock,
+    ) if rows else "(no messages)"
     # Standing is Nora's own folded text rather than a member's, but it is
     # rendered in the same document and a fold summarises what people said —
     # so the same collapse applies rather than trusting the tier above.

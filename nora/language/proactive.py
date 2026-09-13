@@ -108,7 +108,7 @@ from nora.domain.ports import (
     Proposal,
     Recollection,
 )
-from nora.domain.prompt import escape, escape_attr
+from nora.domain.prompt import escape, escape_attr, one_line
 from nora.domain.reminders import Reminder
 from nora.domain.standing import Standing
 from nora.obs.metrics import Metrics
@@ -884,7 +884,15 @@ class ProactiveAdaptor:
             if position is None or not position.body.strip():
                 continue
             age = _age(now_ms - position.updated_at)
-            body = position.body.strip()
+            # ONE ROOM, ONE LINE. A position is HER fold rather than a member's,
+            # and `relevance_gate`'s argument for collapsing standing applies
+            # unchanged: a fold summarises what people said, so the room's text
+            # reaches this two hops away. Unlike the tag prefill's `<standing>`,
+            # which is tag-delimited and contains its own newlines safely, this
+            # block is one line per ROOM — so a newline here writes a whole
+            # extra room into a workspace listing, with a label it chose.
+            # Collapse BEFORE the clip, so `STANDING_CHARS` bounds what renders.
+            body = one_line(position.body)
             if len(body) > STANDING_CHARS:
                 body = body[:STANDING_CHARS] + "…"
             lines.append(
